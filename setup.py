@@ -48,5 +48,7 @@ if __name__ == '__main__':
           package_data=data_files,
           requires=required_packages,
           install_requires=install_requires,
+          test_requires=required_packages,
           provides=provides,
+          test_suite="test",
           dependency_links=dependency_links)
