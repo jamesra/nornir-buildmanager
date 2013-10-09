@@ -18,7 +18,7 @@ import logging
 import glob
 import VolumeManagerHelpers as VMH
 
-import nornir_buildmanager.operations.Versions as Versions;
+import nornir_buildmanager.operations.versions as Versions;
 # import
 import nornir_buildmanager.Config as Config
 import nornir_shared.misc as misc
