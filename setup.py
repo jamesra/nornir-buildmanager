@@ -23,7 +23,7 @@ if __name__ == '__main__':
                         "nornir_shared",
                         "nornir_imageregistration",
                         "numpy",
-                        "scipy",
+                        "scipy>=0.12",
                         "matplotlib"]
 
     packages = find_packages()
@@ -38,6 +38,10 @@ if __name__ == '__main__':
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
     scripts = ['']
 
+    entry_points = {
+        'console_scripts': [
+            'nornir_build = nornir_buildmanager.build']}
+
     setup(name='nornir_buildmanager',
           version='1.0',
           description="Scripts for the construction of 3D volumes from 2D image sets.",
@@ -47,6 +51,7 @@ if __name__ == '__main__':
           packages=packages,
           package_data=data_files,
           requires=required_packages,
+          entry_points = entry_points, 
           install_requires=install_requires,
           test_requires=required_packages,
           provides=provides,
