@@ -192,8 +192,7 @@ def SetupLogging(OutputPath):
 
     eh.setFormatter(formatter)
 
-
-if __name__ == '__main__':
+def Main():
 
 #    nornir_shared.Misc.RunWithProfiler('Execute()', "C:/Temp/profile.pr")
 
@@ -204,3 +203,8 @@ if __name__ == '__main__':
     SetupLogging(args.volumepath)
 
     Execute()
+
+
+if __name__ == '__main__':
+    Main()
+    

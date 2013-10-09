@@ -22,7 +22,7 @@ if __name__ == '__main__':
     install_requires = ["nornir_pools",
                         "nornir_shared",
                         "nornir_imageregistration",
-                        "numpy",
+                        "numpy>=1.7.1",
                         "scipy>=0.12",
                         "matplotlib"]
 
@@ -40,7 +40,7 @@ if __name__ == '__main__':
 
     entry_points = {
         'console_scripts': [
-            'nornir_build = nornir_buildmanager.build']}
+            'nornir_build = nornir_buildmanager.build:Main']}
 
     setup(name='nornir_buildmanager',
           version='1.0',
