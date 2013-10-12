@@ -157,9 +157,8 @@ class PipelineManager(object):
     def __init__(self, pipelinesRoot, pipelineData):
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
-        self.PipelineRoot = pipelinesRoot
-        pass
-
+        self.PipelineRoot = pipelinesRoot 
+        
     @classmethod
     def ToElementString(self, element):
         strList = xml.etree.ElementTree.tostringlist(element)

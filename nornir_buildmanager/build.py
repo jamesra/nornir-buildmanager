@@ -4,8 +4,7 @@ import sys
 import os
 
 import time
-import argparse
-import LowPriority
+import argparse 
 import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.tasktimer import TaskTimer
 import logging
@@ -109,9 +108,7 @@ def Execute(buildArgs=None):
     dargs = dict()
     # dargs.update(args.__dict__)
 
-    TimingOutput = 'Timing.txt'
-
-    LowPriority.lowpriority()
+    TimingOutput = 'Timing.txt' 
 
     Timer = TaskTimer()
 

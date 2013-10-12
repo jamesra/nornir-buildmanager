@@ -1211,7 +1211,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
 
     GroupParent = InputStosGroupNode.Parent
 
-    OutputGroupNode = VolumeManagerETree.StosGroupNode(OutputGroupName, InputStosGroupNode.Downsample)
+    OutputGroupNode = VolumeManagerETree.StosGroupNode(OutputGroupName, OutputDownsample)
     (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)
 
     if not os.path.exists(OutputGroupNode.FullPath):
