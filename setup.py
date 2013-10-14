@@ -6,6 +6,8 @@ Created on Aug 30, 2013
 
 from ez_setup import use_setuptools
 from setuptools import setup, find_packages
+import os
+import glob
 
 # This if test prevents an infinite recursion running tests from "python setup.py test"
 if __name__ == '__main__':
@@ -37,7 +39,8 @@ if __name__ == '__main__':
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
 
-    scripts = ['scripts/buildn.py']
+    scripts = glob.glob(os.path.join('scripts', '*.py'))
+
     entry_points = {'console_scripts' : ['buildn = buildn:Execute']}
 
     entry_points = {
