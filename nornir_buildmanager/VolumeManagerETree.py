@@ -18,7 +18,7 @@ import logging
 import glob
 import VolumeManagerHelpers as VMH
 
-import nornir_buildmanager.operations.versions as Versions;
+import nornir_buildmanager.operations.versions as versions
 # import
 import nornir_buildmanager.Config as Config
 import nornir_shared.misc as misc
@@ -30,162 +30,162 @@ import sys
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
 
-__LoadedVolumeXMLDict__ = dict();
+__LoadedVolumeXMLDict__ = dict()
 
 
 def ValidateAttributesAreStrings(Element, logger=None):
 
     if logger is None:
-        logger = logging.getLogger('VolumeManager');
+        logger = logging.getLogger('VolumeManager')
 
     # Make sure each attribute is a string
     for k, v in enumerate(Element.attrib):
-        assert isinstance(v, str);
+        assert isinstance(v, str)
         if not isinstance(v, str):
-            logger.warning("Attribute is not a string");
-            Element.attrib[k] = str(v);
+            logger.warning("Attribute is not a string")
+            Element.attrib[k] = str(v)
 
 
 def NodePathKey(NodeA):
     '''Sort section nodes by number'''
-    return NodeA.tag;
+    return NodeA.tag
 
 
 def NodeCompare(NodeA, NodeB):
     '''Sort section nodes by number'''
 
-    cmpVal = cmp(NodeA.tag, NodeB.tag);
+    cmpVal = cmp(NodeA.tag, NodeB.tag)
 
     if cmpVal == 0:
-        cmpVal = cmp(NodeA.attrib.get('Path', ''), NodeB.attrib.get('Path', ''));
+        cmpVal = cmp(NodeA.attrib.get('Path', ''), NodeB.attrib.get('Path', ''))
 
-    return cmpVal;
+    return cmpVal
 
 
 class VolumeManager():
     def __init__(self, volumeData, filename):
-        self.Data = volumeData;
-        self.XMLFilename = filename;
-        pass;
+        self.Data = volumeData
+        self.XMLFilename = filename
+        pass
 
     @classmethod
     def Create(cls, VolumePath):
-        VolumeManager.Load(VolumePath, Create=True);
+        VolumeManager.Load(VolumePath, Create=True)
 
 
     @classmethod
     def Load(cls, VolumePath, Create=False, UseCache=True):
         '''Load the volume information for the specified directory or create one if it doesn't exist'''
-        Filename = os.path.join(VolumePath, "VolumeData.xml");
+        Filename = os.path.join(VolumePath, "VolumeData.xml")
         if not os.path.exists(Filename):
-            prettyoutput.Log("Provided volume description file does not exist: " + Filename);
+            prettyoutput.Log("Provided volume description file does not exist: " + Filename)
 
-            OldVolume = os.path.join(VolumePath, "Volume.xml");
+            OldVolume = os.path.join(VolumePath, "Volume.xml")
             if(os.path.exists(OldVolume)):
-                VolumeRoot = ElementTree.parse(OldVolume).getroot();
-                # Volumes.CreateFromDOM(XMLTree);
-                VolumeRoot.attrib['Path'] = VolumePath;
-                cls.WrapElement(VolumeRoot);
+                VolumeRoot = ElementTree.parse(OldVolume).getroot()
+                # Volumes.CreateFromDOM(XMLTree)
+                VolumeRoot.attrib['Path'] = VolumePath
+                cls.WrapElement(VolumeRoot)
                 VolumeManager.__SetElementParent__(VolumeRoot)
-                VolumeRoot.Save();
+                VolumeRoot.Save()
 
 
         if not os.path.exists(Filename):
             if(Create):
                 if not os.path.exists(VolumePath):
-                    os.makedirs(VolumePath);
+                    os.makedirs(VolumePath)
 
-                VolumeRoot = ElementTree.Element('Volume', {"Name" : os.path.basename(VolumePath), "Path" : VolumePath});
-                # VM =  VolumeManager(VolumeData, Filename);
-                # return VM;
+                VolumeRoot = ElementTree.Element('Volume', {"Name" : os.path.basename(VolumePath), "Path" : VolumePath})
+                # VM =  VolumeManager(VolumeData, Filename)
+                # return VM
             else:
-                return None;
+                return None
         else:
             # 5/16/2012 Loading these XML files is really slow, so they are cached.
             # if not __LoadedVolumeXMLDict__.get(Filename, None) is None and UseCache:
-            #    XMLTree = __LoadedVolumeXMLDict__[Filename];
+            #    XMLTree = __LoadedVolumeXMLDict__[Filename]
             # else:
-            XMLTree = ElementTree.parse(Filename);
-            # VolumeData = Volumes.CreateFromDOM(XMLTree);
-            # __LoadedVolumeXMLDict__[Filename] = XMLTree;
+            XMLTree = ElementTree.parse(Filename)
+            # VolumeData = Volumes.CreateFromDOM(XMLTree)
+            # __LoadedVolumeXMLDict__[Filename] = XMLTree
 
-            VolumeRoot = XMLTree.getroot();
+            VolumeRoot = XMLTree.getroot()
 
-        VolumeRoot.attrib['Path'] = VolumePath;
-        VolumeRoot = XContainerElementWrapper.wrap(VolumeRoot);
-        VolumeManager.__SetElementParent__(VolumeRoot);
+        VolumeRoot.attrib['Path'] = VolumePath
+        VolumeRoot = XContainerElementWrapper.wrap(VolumeRoot)
+        VolumeManager.__SetElementParent__(VolumeRoot)
 
-        prettyoutput.Log("Volume Root: " + VolumeRoot.attrib['Path']);
-        # VolumeManager.__RemoveElementsWithoutPath__(VolumeRoot);
+        prettyoutput.Log("Volume Root: " + VolumeRoot.attrib['Path'])
+        # VolumeManager.__RemoveElementsWithoutPath__(VolumeRoot)
 
-        return VolumeRoot;
-        # return cls.__init__(VolumeData, Filename);
+        return VolumeRoot
+        # return cls.__init__(VolumeData, Filename)
 
     @classmethod
     def WrapElement(cls, e):
-        OverrideClassName = e.tag + 'Node';
-        OverrideClass = reflection.get_module_class('nornir_buildmanager.VolumeManagerETree', OverrideClassName, LogErrIfNotFound=False);
+        OverrideClassName = e.tag + 'Node'
+        OverrideClass = reflection.get_module_class('nornir_buildmanager.VolumeManagerETree', OverrideClassName, LogErrIfNotFound=False)
         if not OverrideClass is None:
-            OverrideClass.wrap(e);
+            OverrideClass.wrap(e)
         elif not (e.attrib.get("Path", None) is None):
             if os.path.isfile(e.attrib.get("Path")):
-                XFileElementWrapper.wrap(e);
+                XFileElementWrapper.wrap(e)
             else:
-                XContainerElementWrapper.wrap(e);
+                XContainerElementWrapper.wrap(e)
         else:
-            XElementWrapper.wrap(e);
+            XElementWrapper.wrap(e)
 
     @classmethod
     def __SetElementParent__(cls, Element, ParentElement=None):
-        Element.Parent = ParentElement;
+        Element.Parent = ParentElement
 
         for i in range(len(Element) - 1, -1, -1):
             e = Element[i]
-            if e.tag in Versions.DeprecatedNodes:
-                del Element[i];
+            if e.tag in versions.DeprecatedNodes:
+                del Element[i]
 
         for e in Element:
             if(isinstance(e, ElementTree.Element)):
                 # Find out if we have an override class defined
-                cls.WrapElement(e);
+                cls.WrapElement(e)
 
-            VolumeManager.__SetElementParent__(e, Element);
+            VolumeManager.__SetElementParent__(e, Element)
 
-        return;
+        return
 
-        return False;
+        return False
 
     @classmethod
     def __SortNodes__(cls, Element):
         '''Remove all elements that should be found on the file system but are not'''
-        Element._children.sort(key=operator.attrgetter('SortKey'));
+        Element._children.sort(key=operator.attrgetter('SortKey'))
 
         for e in Element:
-            cls.__SortNodes__(e);
+            cls.__SortNodes__(e)
 
     @classmethod
     def __RemoveEmptyElements__(cls, Element):
         '''Remove all elements that should be found on the file system but are not'''
         for i in range(len(Element) - 1, -1, -1):
-            e = Element[i];
+            e = Element[i]
             if len(e.keys()) == 0 and len(list(e)) == 0:
-                Element.remove(e);
-                continue;
+                Element.remove(e)
+                continue
 
-            cls.__RemoveEmptyElements__(e);
+            cls.__RemoveEmptyElements__(e)
 
         return
 
 
     def __str__(self):
-        return self.VolumeData.toxml();
+        return self.VolumeData.toxml()
 
     @classmethod
     def CalcVolumeChecksum(cls, VolumeObj):
-        XMLString = ElementTree.tostring(VolumeObj, encoding="utf-8");
-        OldChecksum = VolumeObj.get('Checksum', '');
-        XMLString = XMLString.replace(OldChecksum, "", 1);
-        return nornir_shared.Checksum.DataChecksum(XMLString);
+        XMLString = ElementTree.tostring(VolumeObj, encoding="utf-8")
+        OldChecksum = VolumeObj.get('Checksum', '')
+        XMLString = XMLString.replace(OldChecksum, "", 1)
+        return nornir_shared.Checksum.DataChecksum(XMLString)
 
 
     @classmethod
@@ -193,82 +193,82 @@ class VolumeManager():
         '''Save the volume to an XML file'''
 
         '''We cannot include the volume checksum in the calculation because including it changes the checksum'''
-#        NewChecksum = cls.CalcVolumeChecksum(VolumeObj);
-#        OldChecksum = VolumeObj.get('Checksum', '');
+#        NewChecksum = cls.CalcVolumeChecksum(VolumeObj)
+#        OldChecksum = VolumeObj.get('Checksum', '')
 #
 #        if OldChecksum == NewChecksum:
 #            '''When the checksums match there is nothing new to save'''
-#            return;
+#            return
 
-        # cls.__RemoveElementsWithoutPath__(VolumeObj);
-        # cls.__SortNodes__(VolumeObj);
-        # cls.__RemoveEmptyElements__(VolumeObj);
+        # cls.__RemoveElementsWithoutPath__(VolumeObj)
+        # cls.__SortNodes__(VolumeObj)
+        # cls.__RemoveEmptyElements__(VolumeObj)
 
-        VolumeObj.Save();
+        VolumeObj.Save()
 
 #        #Make sure any changes are accounted for by calculating a new checksum
-#        NewChecksum = cls.CalcVolumeChecksum(VolumeObj);
-#        VolumeObj.attrib['Checksum'] = NewChecksum;
+#        NewChecksum = cls.CalcVolumeChecksum(VolumeObj)
+#        VolumeObj.attrib['Checksum'] = NewChecksum
 #
-#        TempXMLFilename = os.path.join(VolumePath, 'TempVolume.XML');
+#        TempXMLFilename = os.path.join(VolumePath, 'TempVolume.XML')
 #
-#        OutputXML = ElementTree.tostring(VolumeObj, encoding="utf-8");
+#        OutputXML = ElementTree.tostring(VolumeObj, encoding="utf-8")
 #
-#        hFile = open(TempXMLFilename, 'w');
-#        hFile.write(OutputXML);
-#        hFile.close();
+#        hFile = open(TempXMLFilename, 'w')
+#        hFile.write(OutputXML)
+#        hFile.close()
 #
-#        XMLFilename = os.path.join(VolumePath, 'Volume.XML');
+#        XMLFilename = os.path.join(VolumePath, 'Volume.XML')
 #
 #        shutil.copy(TempXMLFilename, XMLFilename)
 #        os.remove(TempXMLFilename)
 #
 #        #Update the cache we use to load volumes
-#        __LoadedVolumeXMLDict__[XMLFilename] = ElementTree.ElementTree(VolumeObj);
+#        __LoadedVolumeXMLDict__[XMLFilename] = ElementTree.ElementTree(VolumeObj)
 
 
 class XPropertiesElementWrapper(ElementTree.Element):
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.tag;
+        return self.tag
 
     @property
     def Name(self):
-        return self.attrib.get("Name", None);
+        return self.attrib.get("Name", None)
 
     @Name.setter
     def Name(self, value):
-        self.attrib["Name"] = value;
+        self.attrib["Name"] = value
 
     @property
     def Parent(self):
-        return self._Parent;
+        return self._Parent
 
     @Parent.setter
     def Parent(self, Value):
-        self.__dict__['_Parent'] = Value;
+        self.__dict__['_Parent'] = Value
         if '__fullpath' in self.__dict__:
-            del self.__dict__['__fullpath'];
+            del self.__dict__['__fullpath']
 
     '''Wrapper for a properties element'''
     def __init__(self, tag, attrib=None, **extra):
-        super(XPropertiesElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra);
+        super(XPropertiesElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
     def wrap(cls, dictElement):
 
-        dictElement.__class__ = cls;
-        return dictElement;
+        dictElement.__class__ = cls
+        return dictElement
 
 
     def __getEntry__(self, key):
-        prettyoutput.Log(key);
-        iterator = self.find('Entry[@Name="' + str(key) + '"]');
+        prettyoutput.Log(key)
+        iterator = self.find('Entry[@Name="' + str(key) + '"]')
         if iterator is None:
-            return None;
+            return None
 
-        return iterator;
+        return iterator
 
 
     def __getattr__(self, name):
@@ -277,13 +277,13 @@ class XPropertiesElementWrapper(ElementTree.Element):
 
         Note that if the attribute is found through the normal mechanism, __getattr__() is not called. (This is an intentional asymmetry between __getattr__() and __setattr__().) This is done both for efficiency reasons and because otherwise __getattr__() would have no way to access other attributes of the instance. Note that at least for instance variables, you can fake total control by not inserting any values in the instance attribute dictionary (but instead inserting them in another object). See the __getattribute__() method below for a way to actually get total control in new-style classes.'''
         if '_children' in self.__dict__:
-            entry = self.__getEntry__(name);
+            entry = self.__getEntry__(name)
             if(entry is not None):
-                valstr = entry.attrib["Value"];
+                valstr = entry.attrib["Value"]
                 valstr = str(urllib.unquote_plus(valstr))
-                return pickle.loads(valstr);
+                return pickle.loads(valstr)
 
-        raise AttributeError(name);
+        raise AttributeError(name)
 
 
     def __setattr__(self, name, value):
@@ -291,147 +291,147 @@ class XPropertiesElementWrapper(ElementTree.Element):
 
         '''Called when an attribute assignment is attempted. This is called instead of the normal mechanism (i.e. store the value in the instance dictionary). name is the attribute name, value is the value to be assigned to it.'''
         if(hasattr(self.__class__, name)):
-            attribute = getattr(self.__class__, name);
+            attribute = getattr(self.__class__, name)
             if(isinstance(attribute, property)):
                 attribute.fset(self, value)
                 return
             else:
-                super(XPropertiesElementWrapper, self).__setattr__(name, value);
+                super(XPropertiesElementWrapper, self).__setattr__(name, value)
                 return
 
         if(name in self.__dict__):
-            self.__dict__[name] = value;
+            self.__dict__[name] = value
         elif(name[0] == '_'):
-            self.__dict__[name] = value;
+            self.__dict__[name] = value
         else:
-                valstr = pickle.dumps(value, 0);
-                valstr = urllib.quote_plus(valstr);
+                valstr = pickle.dumps(value, 0)
+                valstr = urllib.quote_plus(valstr)
 
-                entry = self.__getEntry__(name);
+                entry = self.__getEntry__(name)
                 if entry is None:
-                    entry = ElementTree.Element("Entry", {'Name':name, 'Value':valstr});
-                    self.append(entry);
+                    entry = ElementTree.Element("Entry", {'Name':name, 'Value':valstr})
+                    self.append(entry)
                 else:
-                    entry.attrib['Value'] = valstr;
+                    entry.attrib['Value'] = valstr
 
     def __delattr__(self, name):
         '''Like __setattr__() but for attribute deletion instead of assignment. This should only be implemented if del obj.name is meaningful for the object.'''
         if(name in self.__dict__):
-            self.__dict__.pop(name);
+            self.__dict__.pop(name)
         else:
             entry = self.find('Entry[@Name="' + str(name) + '"]')
             if not entry is None:
-                self.remove(entry);
+                self.remove(entry)
 
 
 class XElementWrapper(ElementTree.Element):
 
-    logger = logging.getLogger('VolumeManager');
+    logger = logging.getLogger('VolumeManager')
 
     def sort(self):
         '''Order child elements'''
-        self._children.sort(key=operator.attrgetter('SortKey'));
+        self._children.sort(key=operator.attrgetter('SortKey'))
 
         for c in self._children:
             if len(c._children) <= 1:
-                continue;
+                continue
 
             if isinstance(c, XElementWrapper):
-                c.sort();
+                c.sort()
 
     @property
     def CreationTime(self):
-        datestr = self.get('CreationDate', datetime.datetime.max);
-        return datetime.datetime.strptime(datestr);
+        datestr = self.get('CreationDate', datetime.datetime.max)
+        return datetime.datetime.strptime(datestr)
 
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.tag;
+        return self.tag
 
     def __str__(self):
-        strList = ElementTree.tostringlist(self);
-        outStr = "";
+        strList = ElementTree.tostringlist(self)
+        outStr = ""
         for s in strList:
-            outStr = outStr + " " + s.decode('utf-8');
+            outStr = outStr + " " + s.decode('utf-8')
             if s == '>':
-                break;
+                break
 
-        return outStr;
+        return outStr
 
     def _GetAttribFromParent(self, attribName):
-        p = self._Parent;
+        p = self._Parent
         while p is not None:
             if attribName in p.attrib:
-                return p.attrib[attribName];
+                return p.attrib[attribName]
 
             if hasattr(p, '_Parent'):
-                p = p._Parent;
+                p = p._Parent
             else:
-                return None;
+                return None
 
     @property
     def Checksum(self):
-        return self.get('Checksum', "");
+        return self.get('Checksum', "")
 
     @Checksum.setter
     def Checksum(self, Value):
         if not isinstance(Value, str):
-            XElementWrapper.logger.warning('Setting non string value on XElement.Checksum, automatically corrected: ' + str(Value));
-        self.attrib['Checksum'] = str(Value);
+            XElementWrapper.logger.warning('Setting non string value on XElement.Checksum, automatically corrected: ' + str(Value))
+        self.attrib['Checksum'] = str(Value)
         return
 
     @property
     def Version(self):
-        return float(self.attrib.get('Version', 1.0));
+        return float(self.attrib.get('Version', 1.0))
 
     @Version.setter
     def Version(self, Value):
-        self.attrib['Version'] = str(Value);
+        self.attrib['Version'] = str(Value)
 
     @property
     def Parent(self):
-        return self._Parent;
+        return self._Parent
 
     @Parent.setter
     def Parent(self, Value):
-        self.__dict__['_Parent'] = Value;
+        self.__dict__['_Parent'] = Value
         if '__fullpath' in self.__dict__:
-            del self.__dict__['__fullpath'];
+            del self.__dict__['__fullpath']
 
     @classmethod
     def __GetCreationTimeString__(cls):
-        now = datetime.datetime.now();
-        now = now.replace(microsecond=0);
-        return str(now);
+        now = datetime.datetime.now()
+        now = now.replace(microsecond=0)
+        return str(now)
 
     def __init__(self, tag, attrib=None, **extra):
 
         global nid
-        self.__dict__['id'] = nid;
-        nid = nid + 1;
+        self.__dict__['id'] = nid
+        nid = nid + 1
 
         if(attrib is None):
-            attrib = {};
+            attrib = {}
         else:
-            StringAttrib = {};
+            StringAttrib = {}
             for k in attrib.keys():
                 if not isinstance(attrib[k], str):
-                    XElementWrapper.logger.info('Setting non string value on <' + str(tag) + '>, automatically corrected: ' + k + ' -> ' + str(attrib[k]));
-                    StringAttrib[k] = str(attrib[k]);
+                    XElementWrapper.logger.info('Setting non string value on <' + str(tag) + '>, automatically corrected: ' + k + ' -> ' + str(attrib[k]))
+                    StringAttrib[k] = str(attrib[k])
                 else:
-                    StringAttrib[k] = attrib[k];
+                    StringAttrib[k] = attrib[k]
 
-            attrib = StringAttrib;
+            attrib = StringAttrib
 
 
-        super(XElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra);
+        super(XElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra)
 
-        self._Parent = None;
+        self._Parent = None
 
         if not self.tag.endswith("_Link"):
-            self.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__();
-            self.Version = Versions.GetLatestVersionForNodeType(tag);
+            self.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__()
+            self.Version = versions.GetLatestVersionForNodeType(tag)
 
     @classmethod
     def RemoveDuplicateElements(cls, tagName):
@@ -456,32 +456,32 @@ class XElementWrapper(ElementTree.Element):
            Returns Tuple of state and a string with a reason'''
 
         if not 'Version' in self.attrib:
-            if Versions.GetLatestVersionForNodeType(self.tag) > 1.0:
+            if versions.GetLatestVersionForNodeType(self.tag) > 1.0:
                 return [False, "Node version outdated"]
 
-        if not Versions.IsNodeVersionCompatible(self.tag, self.Version):
+        if not versions.IsNodeVersionCompatible(self.tag, self.Version):
             return [False, "Node version outdated"]
 
-        return [True, ""];
+        return [True, ""]
 
 
     def CleanIfInvalid(self):
         '''Remove the contents of this node if it is out of date, returns true if node was cleaned'''
-        Valid = self.IsValid();
+        Valid = self.IsValid()
 
         if isinstance(Valid, bool):
-            Valid = [Valid, ""];
+            Valid = [Valid, ""]
 
 
         if not Valid[0]:
-            self.Clean(Valid[1]);
+            self.Clean(Valid[1])
 
-        return not Valid[0];
+        return not Valid[0]
 
 
     def Clean(self, reason=None):
 
-        DisplayStr = ' --- Cleaning ' + self.ToElementString() + ". ";
+        DisplayStr = ' --- Cleaning ' + self.ToElementString() + ". "
 
         '''Remove the contents referred to by this node from the disk'''
         prettyoutput.Log(DisplayStr)
@@ -492,11 +492,11 @@ class XElementWrapper(ElementTree.Element):
         children = copy.copy(self._children)
         for child in children:
             if isinstance(child, XElementWrapper):
-                child.Clean(reason="Parent was removed");
+                child.Clean(reason="Parent was removed")
 
         if not self.Parent is None:
             try:
-                self.Parent.remove(self);
+                self.Parent.remove(self)
             except:
                 # Sometimes we have not been added to the parent at this point
                 pass
@@ -505,34 +505,34 @@ class XElementWrapper(ElementTree.Element):
     def wrap(cls, dictElement):
         '''Change the class of an ElementTree.Element(PropertyElementName) to add our wrapper functions'''
         if(dictElement.__class__ == cls):
-            return dictElement;
+            return dictElement
 
         if(isinstance(dictElement, cls)):
-            return dictElement;
+            return dictElement
 
-        dictElement.__class__ = cls;
+        dictElement.__class__ = cls
 
         if not 'CreationDate' in dictElement.attrib:
             cls.logger.info("Populating missing CreationDate attribute " + dictElement.ToElementString())
-            dictElement.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__();
+            dictElement.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__()
 
         if(isinstance(dictElement, XContainerElementWrapper)):
             if(not 'Path' in dictElement.attrib):
-                print dictElement.ToElementString() + " no path attribute but being set as container";
-            assert('Path' in dictElement.attrib);
+                print dictElement.ToElementString() + " no path attribute but being set as container"
+            assert('Path' in dictElement.attrib)
 
-        return dictElement;
+        return dictElement
 
 
     def ToElementString(self):
-        strList = ElementTree.tostringlist(self);
-        outStr = "";
+        strList = ElementTree.tostringlist(self)
+        outStr = ""
         for s in strList:
-            outStr = outStr + " " + s.decode('utf-8');
+            outStr = outStr + " " + s.decode('utf-8')
             if s == '>':
-                break;
+                break
 
-        return outStr;
+        return outStr
 
 
     def __getattr__(self, name):
@@ -541,138 +541,138 @@ class XElementWrapper(ElementTree.Element):
 
         Note that if the attribute is found through the normal mechanism, __getattr__() is not called. (This is an intentional asymmetry between __getattr__() and __setattr__().) This is done both for efficiency reasons and because otherwise __getattr__() would have no way to access other attributes of the instance. Note that at least for instance variables, you can fake total control by not inserting any values in the instance attribute dictionary (but instead inserting them in another object). See the __getattribute__() method below for a way to actually get total control in new-style classes.'''
         if(name in self.attrib):
-            return self.attrib[name];
+            return self.attrib[name]
 
         if name in self.__dict__:
-            return self.__dict__[name];
+            return self.__dict__[name]
 
-        superClass = super(XElementWrapper, self);
+        superClass = super(XElementWrapper, self)
         if not superClass is None:
             if hasattr(superClass, '__getattr__'):
-                return superClass.__getattr__(name);
+                return superClass.__getattr__(name)
 
-        raise AttributeError(name);
+        raise AttributeError(name)
 
     def __setattr__(self, name, value):
 
         '''Called when an attribute assignment is attempted. This is called instead of the normal mechanism (i.e. store the value in the instance dictionary). name is the attribute name, value is the value to be assigned to it.'''
         if(hasattr(self.__class__, name)):
-            attribute = getattr(self.__class__, name);
+            attribute = getattr(self.__class__, name)
             if isinstance(attribute, property):
                 if not attribute.fset is None:
                     attribute.fset(self, value)
                     return
                 else:
-                    assert (not attribute.fset is None);  # Why are we trying to set a property without a setter?
+                    assert (not attribute.fset is None)  # Why are we trying to set a property without a setter?
             else:
-                super(XElementWrapper, self).__setattr__(name, value);
+                super(XElementWrapper, self).__setattr__(name, value)
                 return
 
         if(name in self.__dict__):
-            self.__dict__[name] = value;
+            self.__dict__[name] = value
         elif(name[0] == '_'):
-            self.__dict__[name] = value;
+            self.__dict__[name] = value
         elif(self.attrib is not None):
             if not isinstance(value, str):
-                XElementWrapper.logger.info('Setting non string value on <' + str(self.tag) + '>, automatically corrected: ' + name + ' -> ' + str(value));
+                XElementWrapper.logger.info('Setting non string value on <' + str(self.tag) + '>, automatically corrected: ' + name + ' -> ' + str(value))
 
                 if isinstance(value, float):
-                    self.attrib[name] = '%g' % value;
+                    self.attrib[name] = '%g' % value
                 else:
-                    self.attrib[name] = str(value);
+                    self.attrib[name] = str(value)
             else:
-                self.attrib[name] = value;
+                self.attrib[name] = value
 
 
     def __delattr__(self, name):
 
         '''Like __setattr__() but for attribute deletion instead of assignment. This should only be implemented if del obj.name is meaningful for the object.'''
         if(name in self.__dict__):
-            self.__dict__.pop(name);
+            self.__dict__.pop(name)
         elif(name in self.attrib):
-            self.attrib.pop(name);
+            self.attrib.pop(name)
 
 
     def CompareAttributes(self, dictAttrib):
         '''Compare the passed dictionary with the attributes on the node, return entries which do not match'''
-        mismatched = list();
+        mismatched = list()
 
         for entry, val in dictAttrib.items():
             if hasattr(self, entry):
                 if getattr(self, entry) != val:
-                    mismatched.append(entry);
+                    mismatched.append(entry)
             else:
-                mismatched.append(entry[0]);
+                mismatched.append(entry[0])
 
         return mismatched
 
 
     def RemoveOldChildrenByAttrib(self, ElementName, AttribName, AttribValue):
         '''If multiple children match the criteria, we remove all but the child with the latest creation date'''
-        Children = self.GetChildrenByAttrib(ElementName, AttribName, AttribValue);
+        Children = self.GetChildrenByAttrib(ElementName, AttribName, AttribValue)
         if Children is None:
             return
 
         if len(Children) < 2:
-            return;
+            return
 
-        OldestChild = Children[0];
+        OldestChild = Children[0]
         for iChild in range(1, len(Children)):
-            Child = Children[iChild];
+            Child = Children[iChild]
             if not hasattr(Child, 'CreationDate'):
-                self.remove(Child);
+                self.remove(Child)
             else:
                 if not hasattr(OldestChild, 'CreationDate'):
-                    self.remove(OldestChild);
-                    OldestChild = Child;
+                    self.remove(OldestChild)
+                    OldestChild = Child
                 else:
                     if OldestChild.CreationDate < Child.CreationDate:
-                        self.remove(OldestChild);
-                        OldestChild = Child;
+                        self.remove(OldestChild)
+                        OldestChild = Child
                     else:
-                        self.remove(Child);
+                        self.remove(Child)
 
 
     def GetChildrenByAttrib(self, ElementName, AttribName, AttribValue):
-        XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue};
-        Children = self.findall(XPathStr);
+        XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
+        Children = self.findall(XPathStr)
 
         if Children is None:
-            return [];
+            return []
 
-        return list(Children);
+        return list(Children)
 
     def GetChildByAttrib(self, ElementName, AttribName, AttribValue):
 
-        XPathStr = "";
+        XPathStr = ""
         if isinstance(AttribValue, float):
-            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue};
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
         else:
-            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue};
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
 
-        assert(len(XPathStr) > 0);
-        Child = self.find(XPathStr);
+        assert(len(XPathStr) > 0)
+        Child = self.find(XPathStr)
         # if(len(Children) > 1):
-        #    prettyoutput.LogErr("Multiple nodes found fitting criteria: " + XPathStr);
-        #    return Children;
+        #    prettyoutput.LogErr("Multiple nodes found fitting criteria: " + XPathStr)
+        #    return Children
 
         # if len(Children) == 0:
-        #    return None;
+        #    return None
 
         if Child is None:
-            return None;
+            return None
 
-        return Child ;
+        return Child
 
     def Contains(self, Element):
         for c in self:
             for k, v in c.attrib:
                 if k == 'CreationDate':
-                    continue;
+                    continue
                 if k in self.attrib:
                     if not v == self.attrib[k]:
-                        return False;
-        return True;
+                        return False
+        return True
 
     def UpdateOrAddChildByAttrib(self, Element, AttribNames=None):
         if(AttribNames is None):
@@ -701,83 +701,83 @@ class XElementWrapper(ElementTree.Element):
            '''
 
         if(XPath is None):
-            XPath = Element.tag;
+            XPath = Element.tag
 
-        NewNodeCreated = False;
+        NewNodeCreated = False
 
         '''Eliminates duplicates if they are found'''
 #        if self.Contains(Element):
 #            return
-        # MatchingChildren = list(self.findall(XPath));
+        # MatchingChildren = list(self.findall(XPath))
         # if(len(MatchingChildren) > 1):
-            # for i in range(1,len(MatchingChiElement.Parent = self;dren)):
-                # self.remove(MatchingChildren[i]);
+            # for i in range(1,len(MatchingChiElement.Parent = selfdren)):
+                # self.remove(MatchingChildren[i])
 
         '''Returns the existing element if it exists, adds ChildElement with specified attributes if it does not exist.'''
-        Child = self.find(XPath);
+        Child = self.find(XPath)
         if Child is None:
             if not Element is None:
-                self.append(Element);
+                self.append(Element)
                 assert(Element in self)
-                Child = Element;
-                NewNodeCreated = True;
+                Child = Element
+                NewNodeCreated = True
             else:
                 # No data provided to create the child element
-                return None;
+                return None
 
         # Make sure the parent is set correctly
-        VolumeManager.WrapElement(Child);
-        Child.Parent = self;
+        VolumeManager.WrapElement(Child)
+        Child.Parent = self
 
-        return (NewNodeCreated, Child);
+        return (NewNodeCreated, Child)
 
     def append(self, Child):
-        assert(not self == Child);
-        super(XElementWrapper, self).append(Child);
-        Child.Parent = self;
-        assert(Child in self);
+        assert(not self == Child)
+        super(XElementWrapper, self).append(Child)
+        Child.Parent = self
+        assert(Child in self)
 
 
     def FindParent(self, ParentTag):
         '''Find parent with specified tag'''
-        assert (not ParentTag is None);
-        P = self._Parent;
+        assert (not ParentTag is None)
+        P = self._Parent
         while P is not None:
             if(P.tag == ParentTag):
-                return P;
-            P = P._Parent;
-        return None;
+                return P
+            P = P._Parent
+        return None
 
     def FindFromParent(self, xpath):
         '''Run find on xpath on each parent, return first hit'''
-#        assert (not ParentTag is None);
-        P = self._Parent;
+#        assert (not ParentTag is None)
+        P = self._Parent
         while P is not None:
             result = P.find(xpath)
             if not result is None:
                 return result
 
-            P = P._Parent;
-        return None;
+            P = P._Parent
+        return None
 
     def ReplaceChildWithLink(self, child):
         if isinstance(child, XContainerElementWrapper):
             if not child in self:
-                return;
+                return
 
-            LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib);
-            # SaveElement.append(LinkElement);
-            self.append(LinkElement);
-            self.remove(child);
+            LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib)
+            # SaveElement.append(LinkElement)
+            self.append(LinkElement)
+            self.remove(child)
 
 
 
     # replacement for find function that loads subdirectory xml files
     def find(self, xpath):
 
-        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(xpath);
+        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(xpath)
 
-        matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath);
+        matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
         for match in matchiterator:
             # Run in a loop because find returns the first match, if the first match is invalid look for another
             if len(RemainingXPath) > 0:
@@ -786,7 +786,7 @@ class XElementWrapper(ElementTree.Element):
                 if not foundChild is None:
                     return foundChild
             else:
-                return match;
+                return match
 
         if not isinstance(self, XContainerElementWrapper):
             return None
@@ -794,7 +794,7 @@ class XElementWrapper(ElementTree.Element):
         SubContainersIterator = super(XElementWrapper, self).findall(LinkedElementsXPath)
 
         if SubContainersIterator is None:
-            return None;
+            return None
 
         # Run in a loop because the match may not exist on the first element returned by find
         for SubContainer in SubContainersIterator:
@@ -805,12 +805,12 @@ class XElementWrapper(ElementTree.Element):
             SubContainerPath = os.path.join(self.FullPath, SubContainer.attrib["Path"])
 
             # OK, open the subcontainer, add it to ourselves as an element and run the rest of the search
-            SubContainerElement = self.LoadSubElement(SubContainerPath);
+            SubContainerElement = self.LoadSubElement(SubContainerPath)
             if(SubContainerElement is None):
                 continue
 
             if len(RemainingXPath) > 0:
-                result = SubContainerElement.find(RemainingXPath);
+                result = SubContainerElement.find(RemainingXPath)
                 if not result is None:
                     return result
             else:
@@ -827,13 +827,13 @@ class XElementWrapper(ElementTree.Element):
             Logger.warn("Backslash found in xpath query, is this intentional or should it be a forward slash?")
             Logger.warn("XPath: " + xpath)
 
-        parts = xpath.split('/');
-        UnlinkedElementsXPath = parts[0];
-        SubContainerName = UnlinkedElementsXPath.split('[')[0];
+        parts = xpath.split('/')
+        UnlinkedElementsXPath = parts[0]
+        SubContainerName = UnlinkedElementsXPath.split('[')[0]
         LinkedSubContainerName = SubContainerName + "_Link"
-        LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1);
-        RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:];
-        return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath);
+        LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1)
+        RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
+        return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath)
 
 
     def findall(self, match):
@@ -849,7 +849,7 @@ class XElementWrapper(ElementTree.Element):
 
         LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
         if LinkMatches is None:
-            return  # matches;
+            return  # matches
 
         for link in LinkMatches:
             self.remove(link)
@@ -864,16 +864,16 @@ class XElementWrapper(ElementTree.Element):
 #                if subContainerMatches is not None:
 #                    for m in subContainerMatches:
 #                        yield m
-#                    # matches.extend(subContainerMatches);
+#                    # matches.extend(subContainerMatches)
 #            else:
 #                yield SubContainerElement
 
-            # print "Unloading " + str(SubContainerElement);
+            # print "Unloading " + str(SubContainerElement)
             # self.remove(SubContainerElement)
             # self.append(link)
-                # matches.append(SubContainerElement);
+                # matches.append(SubContainerElement)
 
-        # return matches;
+        # return matches
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
 
         for m in matches:
@@ -890,14 +890,14 @@ class XResourceElementWrapper(XElementWrapper):
 
     @property
     def Path(self):
-        return self.attrib.get('Path', '');
+        return self.attrib.get('Path', '')
 
     @Path.setter
     def Path(self, val):
-        self.attrib['Path'] = val;
+        self.attrib['Path'] = val
 
         if hasattr(self, '__fullpath'):
-            del self.__dict__['__fullpath'];
+            del self.__dict__['__fullpath']
 
     @property
     def FullPath(self):
@@ -905,76 +905,76 @@ class XResourceElementWrapper(XElementWrapper):
         FullPathStr = self.__dict__.get('__fullpath', None)
 
         if FullPathStr is None:
-            FullPathStr = self.Path;
+            FullPathStr = self.Path
 
             if(not hasattr(self, '_Parent')):
-                return FullPathStr;
+                return FullPathStr
 
-            IterElem = self.Parent;
+            IterElem = self.Parent
 
             while not IterElem is None:
                 if hasattr(IterElem, 'FullPath'):
-                    FullPathStr = os.path.join(IterElem.FullPath, FullPathStr);
-                    IterElem = None;
-                    break;
+                    FullPathStr = os.path.join(IterElem.FullPath, FullPathStr)
+                    IterElem = None
+                    break
 
                 elif hasattr(IterElem, '_Parent'):
-                    IterElem = IterElem._Parent;
+                    IterElem = IterElem._Parent
                 else:
-                    raise Exception("FullPath could not be generated for resource");
+                    raise Exception("FullPath could not be generated for resource")
 
             if os.path.isdir(FullPathStr):  # Don't create a directory for files
                 if not os.path.exists(FullPathStr):
-                    prettyoutput.Log("Creating missing directory for FullPath: " + FullPathStr);
-                    os.makedirs(FullPathStr);
+                    prettyoutput.Log("Creating missing directory for FullPath: " + FullPathStr)
+                    os.makedirs(FullPathStr)
 
 #            if not os.path.isdir(FullPathStr): #Don't create a directory for files
 #                if not os.path.exists(FullPathStr):
-#                    prettyoutput.Log("Creating missing directory for FullPath: " + FullPathStr);
-#                    os.makedirs(FullPathStr);
+#                    prettyoutput.Log("Creating missing directory for FullPath: " + FullPathStr)
+#                    os.makedirs(FullPathStr)
 #            else:
-#                dirname = os.path.dirname(FullPathStr);
+#                dirname = os.path.dirname(FullPathStr)
 #                if not os.path.exists(dirname):
-#                    prettyoutput.Log("Creating missing directory for FullPath: " + FullPathStr);
-#                    os.makedirs(dirname);
+#                    prettyoutput.Log("Creating missing directory for FullPath: " + FullPathStr)
+#                    os.makedirs(dirname)
 
-            self.__dict__['__fullpath'] = FullPathStr;
+            self.__dict__['__fullpath'] = FullPathStr
 
-        return FullPathStr;
+        return FullPathStr
 
-    PropertyElementName = 'Properties';
+    PropertyElementName = 'Properties'
 
     @property
     def Properties(self):
-        PropertyNode = self.find(XContainerElementWrapper.PropertyElementName);
+        PropertyNode = self.find(XContainerElementWrapper.PropertyElementName)
         if(PropertyNode is None):
-            PropertyNode = XPropertiesElementWrapper.wrap(ElementTree.Element(XContainerElementWrapper.PropertyElementName));
-            self.append(PropertyNode);
+            PropertyNode = XPropertiesElementWrapper.wrap(ElementTree.Element(XContainerElementWrapper.PropertyElementName))
+            self.append(PropertyNode)
         else:
-            XPropertiesElementWrapper.wrap(PropertyNode);
+            XPropertiesElementWrapper.wrap(PropertyNode)
 
-        assert(isinstance(PropertyNode, XPropertiesElementWrapper));
+        assert(isinstance(PropertyNode, XPropertiesElementWrapper))
 
-        return PropertyNode;
+        return PropertyNode
 
     def ToElementString(self):
-        outStr = self.FullPath;
-        return outStr;
+        outStr = self.FullPath
+        return outStr
 
     def Clean(self, reason=None):
         '''Remove the contents referred to by this node from the disk'''
         if os.path.exists(self.FullPath):
             try:
                 if os.path.isdir(self.FullPath):
-                    shutil.rmtree(self.FullPath);
+                    shutil.rmtree(self.FullPath)
                 else:
-                    os.remove(self.FullPath);
+                    os.remove(self.FullPath)
             except:
-                Logger = logging.getLogger('Volume Manager');
-                Logger.warning('Could not delete cleaned directory: ' + self.FullPath);
+                Logger = logging.getLogger('Volume Manager')
+                Logger.warning('Could not delete cleaned directory: ' + self.FullPath)
                 pass
 
-        return super(XResourceElementWrapper, self).Clean(reason=reason);
+        return super(XResourceElementWrapper, self).Clean(reason=reason)
 
 class XFileElementWrapper(XResourceElementWrapper):
     '''Refers to a file generated by the pipeline'''
@@ -983,9 +983,9 @@ class XFileElementWrapper(XResourceElementWrapper):
     def Name(self):
 
         if not 'Name' in self.attrib:
-            return self._GetAttribFromParent('Name');
+            return self._GetAttribFromParent('Name')
 
-        return self.attrib['Name'];
+        return self.attrib['Name']
 
     @Name.setter
     def Name(self, value):
@@ -995,9 +995,9 @@ class XFileElementWrapper(XResourceElementWrapper):
     @property
     def Type(self):
         if not 'Type' in self.attrib:
-            return self._GetAttribFromParent('Type');
+            return self._GetAttribFromParent('Type')
 
-        return self.attrib['Type'];
+        return self.attrib['Type']
 
     @Type.setter
     def Type(self, value):
@@ -1005,40 +1005,40 @@ class XFileElementWrapper(XResourceElementWrapper):
 
     @property
     def Path(self):
-        return self.attrib.get('Path', '');
+        return self.attrib.get('Path', '')
 
     @Path.setter
     def Path(self, val):
-        self.attrib['Path'] = val;
-        directory = os.path.dirname(self.FullPath);
+        self.attrib['Path'] = val
+        directory = os.path.dirname(self.FullPath)
 
         if not os.path.exists(directory):
-            os.makedirs(directory);
+            os.makedirs(directory)
 
         if hasattr(self, '__fullpath'):
-            del self.__dict__['__fullpath'];
+            del self.__dict__['__fullpath']
         return
 
     def IsValid(self):
         if not os.path.exists(self.FullPath):
-            return [False, 'File does not exist'];
+            return [False, 'File does not exist']
 
-        return super(XFileElementWrapper, self).IsValid();
+        return super(XFileElementWrapper, self).IsValid()
 
     def __init__(self, tag, Path, attrib, **extra):
-        super(XFileElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra);
-        self.attrib['Path'] = Path;
+        super(XFileElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra)
+        self.attrib['Path'] = Path
 
     @property
     def Checksum(self):
         '''Checksum of the file resource when the node was last updated'''
-        checksum = self.get('Checksum', None);
+        checksum = self.get('Checksum', None)
         if checksum is None:
             if os.path.exists(self.FullPath):
                 checksum = nornir_shared.checksum.FileChecksum(self.FullPath)
-                self.attrib['Checksum'] = str(checksum);
+                self.attrib['Checksum'] = str(checksum)
 
-        return checksum;
+        return checksum
 
 class XContainerElementWrapper(XResourceElementWrapper):
 
@@ -1046,33 +1046,33 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def SortKey(self):
         '''The default key used for sorting elements'''
 
-        tag = self.tag;
+        tag = self.tag
         if tag.endswith("_Link"):
-            tag = tag[:-len("_Link")];
-            tag = tag + "Node";
+            tag = tag[:-len("_Link")]
+            tag = tag + "Node"
 
             current_module = sys.modules[__name__]
             if hasattr(current_module, tag):
-                tagClass = getattr(current_module, tag);
-                # nornir_shared.Reflection.get_class(tag);
+                tagClass = getattr(current_module, tag)
+                # nornir_shared.Reflection.get_class(tag)
 
                 if not tagClass is None:
                     if hasattr(tagClass, "ClassSortKey"):
-                        return tagClass.ClassSortKey(self);
+                        return tagClass.ClassSortKey(self)
 
-        return self.tag;
+        return self.tag
 
     @property
     def Name(self):
-        return self.get('Name', '');
+        return self.get('Name', '')
 
     @Name.setter
     def Name(self, Value):
-        self.attrib['Name'] = Value;
+        self.attrib['Name'] = Value
 
     @property
     def Path(self):
-        return self.attrib.get('Path', '');
+        return self.attrib.get('Path', '')
 
     @Path.setter
     def Path(self, val):
@@ -1080,92 +1080,92 @@ class XContainerElementWrapper(XResourceElementWrapper):
         super(XContainerElementWrapper, self.__class__).Path.fset(self, val)
 
         if not os.path.isdir(self.FullPath):
-            assert not os.path.isfile(self.FullPath)  # , "Container element path attribute refers to a file.  Remove any '.' from names if it is a directory");
-            os.makedirs(self.FullPath);
+            assert not os.path.isfile(self.FullPath)  # , "Container element path attribute refers to a file.  Remove any '.' from names if it is a directory")
+            os.makedirs(self.FullPath)
 
         return
 
     def IsValid(self):
-        ResourcePath = self.FullPath;
+        ResourcePath = self.FullPath
         if not os.path.isdir(ResourcePath):
-            return [False, 'Directory does not exist'];
+            return [False, 'Directory does not exist']
 
         if os.path.isdir(ResourcePath) and not self.Parent is None:
             if len(os.listdir(ResourcePath)) == 0:
-                return [False, 'Directory is empty'] ;
+                return [False, 'Directory is empty']
 
-        return super(XContainerElementWrapper, self).IsValid();
+        return super(XContainerElementWrapper, self).IsValid()
 
     def UpdateSubElements(self):
         '''Recursively searches directories for VolumeData.xml files.
            Adds discovered nodes into the volume. 
            Removes missing nodes from the volume.'''
 
-        dirNames = os.listdir(self.FullPath);
-        dirList = [];
+        dirNames = os.listdir(self.FullPath)
+        dirList = []
 
         for dirname in dirNames:
-            volumeDataFullPath = os.path.join(dirname, "VolumeData.xml");
+            volumeDataFullPath = os.path.join(dirname, "VolumeData.xml")
             if os.path.exists(volumeDataFullPath):
                 # Check to be sure that this is a new node
-                existingChild = self.find("[@Path='" + os.path.basename(dirname) + "']");
+                existingChild = self.find("[@Path='" + os.path.basename(dirname) + "']")
 
                 if not existingChild is None:
-                    continue;
+                    continue
 
                 # Load the VolumeData.xml, take the root element name and create a link in our element
-                self.LoadSubElement(volumeDataFullPath);
+                self.LoadSubElement(volumeDataFullPath)
 
         for child in self:
             if hasattr(child, "UpdateSubElements"):
-                child.UpdateSubElements();
+                child.UpdateSubElements()
 
-        self.CleanIfInvalid();
-        self.Save(recurse=False);
+        self.CleanIfInvalid()
+        self.Save(recurse=False)
 
     def LoadSubElement(self, Path):
-        logger = logging.getLogger('VolumeManager');
-        Filename = os.path.join(Path, "VolumeData.xml");
+        logger = logging.getLogger('VolumeManager')
+        Filename = os.path.join(Path, "VolumeData.xml")
         if not os.path.exists(Filename):
-            logger.error(Filename + " does not exist");
-            return None;
+            logger.error(Filename + " does not exist")
+            return None
 
-        # print Filename;
+        # print Filename
         try:
-            XMLTree = ElementTree.parse(Filename);
+            XMLTree = ElementTree.parse(Filename)
         except Exception as e:
-            logger.error("Parse error for " + Filename);
-            logger.error(str(e));
-            return None;
+            logger.error("Parse error for " + Filename)
+            logger.error(str(e))
+            return None
 
-        XMLElement = XMLTree.getroot();
+        XMLElement = XMLTree.getroot()
 
-        VolumeManager.WrapElement(XMLElement);
-       # SubContainer = XContainerElementWrapper.wrap(XMLElement);
+        VolumeManager.WrapElement(XMLElement)
+       # SubContainer = XContainerElementWrapper.wrap(XMLElement)
 
-        VolumeManager.__SetElementParent__(XMLElement, self);
+        VolumeManager.__SetElementParent__(XMLElement, self)
 
-        self.append(XMLElement);
+        self.append(XMLElement)
 
-        NotValid = XMLElement.CleanIfInvalid();
+        NotValid = XMLElement.CleanIfInvalid()
         if NotValid:
-            return None;
+            return None
 
-        return XMLElement;
+        return XMLElement
 
 
     def __init__(self, tag, Name, Path=None, attrib=None, **extra):
 
         if Path is None:
-            Path = Name;
+            Path = Name
 
         if(attrib is None):
-            attrib = {};
+            attrib = {}
 
-        super(XContainerElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra);
+        super(XContainerElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra)
 
-        self.attrib['Name'] = Name;
-        self.attrib['Path'] = Path;
+        self.attrib['Name'] = Name
+        self.attrib['Path'] = Path
 
 
 
@@ -1188,11 +1188,11 @@ class XContainerElementWrapper(XResourceElementWrapper):
         # which would break the pipeline manager in subtle ways
         SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
         if(not self.text is None):
-            SaveElement.text = self.text;
+            SaveElement.text = self.text
 
         ValidateAttributesAreStrings(self, logger)
 
-        # SaveTree = ElementTree.ElementTree(SaveElement);
+        # SaveTree = ElementTree.ElementTree(SaveElement)
 
         # Any child containers we create a link to and remove from our file
         for i in range(len(self) - 1, -1, -1):
@@ -1203,15 +1203,15 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
             if isinstance(child, XContainerElementWrapper):
                 LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib)
-                # SaveElement.append(LinkElement);
+                # SaveElement.append(LinkElement)
                 SaveElement.append(LinkElement)
 
                 if(recurse):
                     child.Save(tabLevel + 1)
 
-                # logger.warn("Unloading " + child.tag);
-                # del self[i];
-                # self.append(LinkElement);
+                # logger.warn("Unloading " + child.tag)
+                # del self[i]
+                # self.append(LinkElement)
             else:
                 if isinstance(SaveElement, XElementWrapper):
                     ValidateAttributesAreStrings(SaveElement, logger)
@@ -1220,26 +1220,26 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 SaveElement.append(child)
 
         self.__SaveXML(xmlfilename, SaveElement)
-#        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement);
+#        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
 
         # If we are the root of all saves then make sure they have all completed before returning
         # if(tabLevel == 0 or recurse==False):
-            # pool.wait_completion();
+            # pool.wait_completion()
 
 
     def __SaveXML(self, xmlfilename, SaveElement):
         '''Intended to be called on a thread from the save function'''
         if not os.path.exists(self.FullPath):
-            os.makedirs(self.FullPath);
+            os.makedirs(self.FullPath)
 
-        TempXMLFilename = os.path.join(self.FullPath, 'Temp_' + xmlfilename);
-        XMLFilename = os.path.join(self.FullPath, xmlfilename);
+        TempXMLFilename = os.path.join(self.FullPath, 'Temp_' + xmlfilename)
+        XMLFilename = os.path.join(self.FullPath, xmlfilename)
 
-        OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8");
-       # print OutputXML;
+        OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
+       # print OutputXML
         with open(TempXMLFilename, 'w') as hFile:
-            hFile.write(OutputXML);
-            hFile.close();
+            hFile.write(OutputXML)
+            hFile.close()
 
         shutil.copy(TempXMLFilename, XMLFilename)
         os.remove(TempXMLFilename)
@@ -1257,56 +1257,56 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
         '''If recurse = False we only save this element, no child elements are saved'''
 
         if tabLevel is None:
-            tabLevel = 0;
+            tabLevel = 0
 
-        self.sort();
+        self.sort()
 
-        # pool = Pools.GetGlobalThreadPool();
+        # pool = Pools.GetGlobalThreadPool()
 
-        logger = logging.getLogger('VolumeManager');
-        tabs = '\t' * tabLevel;
-        logger.info('Saving ' + tabs + str(self));
-        xmlfilename = 'VolumeData.xml';
+        logger = logging.getLogger('VolumeManager')
+        tabs = '\t' * tabLevel
+        logger.info('Saving ' + tabs + str(self))
+        xmlfilename = 'VolumeData.xml'
         # Create a copy of ourselves for saving
-        SaveElement = ElementTree.Element(self.tag, attrib=self.attrib);
+        SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
         if(not self.text is None):
-            SaveElement.text = self.text;
+            SaveElement.text = self.text
 
-        ValidateAttributesAreStrings(self, logger);
+        ValidateAttributesAreStrings(self, logger)
 
-        # SaveTree = ElementTree.ElementTree(SaveElement);
+        # SaveTree = ElementTree.ElementTree(SaveElement)
 
         # Any child containers we create a link to and remove from our file
         for i in range(len(self) - 1, -1, -1):
-            child = self[i];
+            child = self[i]
             if child.tag.endswith('_Link'):
-                SaveElement.append(child);
-                continue;
+                SaveElement.append(child)
+                continue
 
             if isinstance(child, XContainerElementWrapper):
-                LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib);
-                # SaveElement.append(LinkElement);
-                SaveElement.append(LinkElement);
+                LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib)
+                # SaveElement.append(LinkElement)
+                SaveElement.append(LinkElement)
 
                 if(recurse):
-                    child.Save(tabLevel + 1);
+                    child.Save(tabLevel + 1)
 
-                # logger.warn("Unloading " + child.tag);
-                # del self[i];
-                # self.append(LinkElement);
+                # logger.warn("Unloading " + child.tag)
+                # del self[i]
+                # self.append(LinkElement)
             else:
                 if isinstance(SaveElement, XElementWrapper):
-                    ValidateAttributesAreStrings(SaveElement, logger);
-                    SaveElement.sort();
+                    ValidateAttributesAreStrings(SaveElement, logger)
+                    SaveElement.sort()
 
-                SaveElement.append(child);
+                SaveElement.append(child)
 
-        self.__SaveXML(xmlfilename, SaveElement);
-#        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement);
+        self.__SaveXML(xmlfilename, SaveElement)
+#        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
 
         # If we are the root of all saves then make sure they have all completed before returning
         # if(tabLevel == 0 or recurse==False):
-            # pool.wait_completion();
+            # pool.wait_completion()
 
 class BlockNode(XContainerElementWrapper):
 
@@ -1318,7 +1318,7 @@ class BlockNode(XContainerElementWrapper):
         return self.GetChildByAttrib('Section', 'Number', Number)
 
     def __init__(self, Name, Path, attrib=None, **extra):
-        super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra);
+        super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
 class ChannelNode(XContainerElementWrapper):
@@ -1341,7 +1341,7 @@ class ChannelNode(XContainerElementWrapper):
 
 
     def __init__(self, Name, Path, attrib=None, **extra):
-        super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra);
+        super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
 class FilterNode(XContainerElementWrapper):
@@ -1463,26 +1463,26 @@ class FilterNode(XContainerElementWrapper):
         if Path is None:
             Path = Name
 
-        super(FilterNode, self).__init__(tag='Filter', Name=Name, Path=Path, attrib=attrib, **extra);
+        super(FilterNode, self).__init__(tag='Filter', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
 class NotesNode(XElementWrapper):
 
     def __init__(self, Text=None, SourceFilename=None, attrib=None, **extra):
 
-        super(NotesNode, self).__init__(tag='Notes', attrib=attrib, **extra);
+        super(NotesNode, self).__init__(tag='Notes', attrib=attrib, **extra)
 
         if not Text is None:
-            self.text = Text;
+            self.text = Text
 
         if not SourceFilename is None:
-            self.SourceFilename = SourceFilename;
+            self.SourceFilename = SourceFilename
         else:
-            self.SourceFilename = "";
+            self.SourceFilename = ""
 
 
     def CleanIfInvalid(self):
-        return False;
+        return False
 
 
 class SectionNode(XContainerElementWrapper):
@@ -1490,7 +1490,7 @@ class SectionNode(XContainerElementWrapper):
     @classmethod
     def ClassSortKey(cls, self):
         '''Required for objects derived from XContainerElementWrapper'''
-        return "Section " + (Config.Current.SectionTemplate % int(self.Number));
+        return "Section " + (Config.Current.SectionTemplate % int(self.Number))
 
     @property
     def SortKey(self):
@@ -1503,11 +1503,11 @@ class SectionNode(XContainerElementWrapper):
 
     @property
     def Number(self):
-        return int(self.get('Number', '0'));
+        return int(self.get('Number', '0'))
 
     @Number.setter
     def Number(self, Value):
-        self.attrib['Number'] = str(int(Value));
+        self.attrib['Number'] = str(int(Value))
 
     def GetChannel(self, Channel):
         return self.GetChildByAttrib('Channel', 'Name', Channel)
@@ -1530,25 +1530,25 @@ class SectionNode(XContainerElementWrapper):
     def __init__(self, Number, Name=None, Path=None, attrib=None, **extra):
 
         if Name is None:
-            Name = str(Number);
+            Name = str(Number)
 
         if Path is None:
-            Path = Config.Current.SectionTemplate % Number;
+            Path = Config.Current.SectionTemplate % Number
 
-        super(SectionNode, self).__init__(tag='Section', Name=Name, Path=Path, attrib=attrib, **extra);
-        self.Number = Number;
+        super(SectionNode, self).__init__(tag='Section', Name=Name, Path=Path, attrib=attrib, **extra)
+        self.Number = Number
 
 
 class StosGroupNode(XContainerElementWrapper):
 
     @property
     def Downsample(self):
-        return float(self.attrib['Downsample']);
+        return float(self.attrib['Downsample'])
 
     @Downsample.setter
     def Downsample(self, val):
         '''The default key used for sorting elements'''
-        self.attrib['Downsample'] = '%g' % val;
+        self.attrib['Downsample'] = '%g' % val
 
     @property
     def SectionMappings(self):
@@ -1612,8 +1612,8 @@ class StosGroupNode(XContainerElementWrapper):
 
     def __init__(self, Name, Downsample, attrib=None, **extra):
 
-        super(StosGroupNode, self).__init__(tag='StosGroup', Name=Name, Path=Name, attrib=attrib, **extra);
-        self.Downsample = Downsample;
+        super(StosGroupNode, self).__init__(tag='StosGroup', Name=Name, Path=Name, attrib=attrib, **extra)
+        self.Downsample = Downsample
 
 
 class StosMapNode(XElementWrapper):
@@ -1624,7 +1624,7 @@ class StosMapNode(XElementWrapper):
 
     @CenterSection.setter
     def CenterSection(self, val):
-        self.attrib['CenterSection'] = str(val);
+        self.attrib['CenterSection'] = str(val)
 
     @property
     def Mappings(self):
@@ -1644,30 +1644,30 @@ class StosMapNode(XElementWrapper):
 
     @property
     def AllowDuplicates(self):
-        return self.attrib.get('AllowDuplicates', True);
+        return self.attrib.get('AllowDuplicates', True)
 
     def AddMapping(self, Control, Mapped):
         '''Create a mapping to a control section'''
-        childMapping = self.GetChildByAttrib('Mapping', 'Control', Control);
+        childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
         if childMapping is None:
-            childMapping = MappingNode(Control, Mapped);
-            self.append(childMapping);
+            childMapping = MappingNode(Control, Mapped)
+            self.append(childMapping)
         else:
             if not Mapped in childMapping.Mapped:
-                childMapping.AddMapping(Mapped);
+                childMapping.AddMapping(Mapped)
 
-        return;
+        return
 
     def FindControlForMapped(self, MappedSection):
         '''Given a section to be mapped, return the first control section found'''
         for m in self:
             if not m.tag == 'Mapping':
-                continue;
+                continue
 
             if(MappedSection in m.Mapped):
-                return m.Control;
+                return m.Control
 
-        return None;
+        return None
 
     def IsValid(self):
         '''Check for mappings whose control section is in the non-stos section numbers list'''
@@ -1677,41 +1677,41 @@ class StosMapNode(XElementWrapper):
 
         NonStosSectionsNode = self.Parent.find('NonStosSectionNumbers')
 
-        AlreadyMappedSections = [];
+        AlreadyMappedSections = []
 
         if NonStosSectionsNode is None:
             return super(StosMapNode, self).IsValid()
 
-        NonStosSections = misc.ListFromAttribute(NonStosSectionsNode.text);
+        NonStosSections = misc.ListFromAttribute(NonStosSectionsNode.text)
 
-        MappingNodes = list(self.findall('Mapping'));
+        MappingNodes = list(self.findall('Mapping'))
 
         for i in range(len(MappingNodes) - 1, -1, -1):
-            Mapping = MappingNodes[i];
+            Mapping = MappingNodes[i]
             if Mapping.Control in NonStosSections:
-                Mapping.Clean();
-                XElementWrapper.logger.warn('Mappings for control section ' + str(Mapping.Control) + ' removed due to existance in NonStosSectionNumbers element');
+                Mapping.Clean()
+                XElementWrapper.logger.warn('Mappings for control section ' + str(Mapping.Control) + ' removed due to existance in NonStosSectionNumbers element')
             else:
-                MappedSections = Mapping.Mapped;
+                MappedSections = Mapping.Mapped
                 for i in range(len(MappedSections) - 1, -1, -1):
-                    MappedSection = MappedSections[i];
+                    MappedSection = MappedSections[i]
                     if MappedSection in AlreadyMappedSections and not self.AllowDuplicates:
-                        del MappedSections[i];
-                        XElementWrapper.logger.warn('Removing duplicate mapping ' + str(MappedSection) + ' -> ' + str(Mapping.Control));
+                        del MappedSections[i]
+                        XElementWrapper.logger.warn('Removing duplicate mapping ' + str(MappedSection) + ' -> ' + str(Mapping.Control))
                     else:
-                        AlreadyMappedSections.append(MappedSection);
+                        AlreadyMappedSections.append(MappedSection)
 
                 if len(MappedSections) == 0:
-                    Mapping.Clean();
-                    XElementWrapper.logger.warn('No mappings remain for control section ' + str(Mapping.Control));
+                    Mapping.Clean()
+                    XElementWrapper.logger.warn('No mappings remain for control section ' + str(Mapping.Control))
                 elif len(MappedSections) != Mapping.Mapped:
-                    Mapping.Mapped = MappedSections;
+                    Mapping.Mapped = MappedSections
 
 
         return super(StosMapNode, self).IsValid()
 
     def __init__(self, Name, attrib=None, **extra):
-        super(StosMapNode, self).__init__(tag='StosMap', Name=Name, attrib=attrib, **extra);
+        super(StosMapNode, self).__init__(tag='StosMap', Name=Name, attrib=attrib, **extra)
 
 
 class MappingNode(XElementWrapper):
@@ -1719,147 +1719,147 @@ class MappingNode(XElementWrapper):
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.tag + ' ' + (Config.Current.SectionTemplate % self.Control);
+        return self.tag + ' ' + (Config.Current.SectionTemplate % self.Control)
 
     @property
     def Control(self):
-        return int(self.attrib['Control']);
+        return int(self.attrib['Control'])
 
     @property
     def Mapped(self):
-        mappedList = misc.ListFromAttribute(self.get('Mapped', []));
-        mappedList.sort();
-        return mappedList;
+        mappedList = misc.ListFromAttribute(self.get('Mapped', []))
+        mappedList.sort()
+        return mappedList
 
     @Mapped.setter
     def Mapped(self, value):
-        AdjacentSectionString = '';
+        AdjacentSectionString = ''
         if isinstance(value, list):
-            value.sort();
-            AdjacentSectionString = ','.join(str(x) for x in value);
+            value.sort()
+            AdjacentSectionString = ','.join(str(x) for x in value)
         else:
-            AdjacentSectionString = str(value);
+            AdjacentSectionString = str(value)
 
-        self.attrib['Mapped'] = AdjacentSectionString;
+        self.attrib['Mapped'] = AdjacentSectionString
 
     def AddMapping(self, value):
-        intval = int(value);
-        Mappings = self.Mapped;
+        intval = int(value)
+        Mappings = self.Mapped
         if intval in Mappings:
             return
         else:
-            Mappings.append(value);
-            self.Mapped = Mappings;
+            Mappings.append(value)
+            self.Mapped = Mappings
 
     def RemoveMapping(self, value):
-        intval = int(value);
-        Mappings = self.Mapped;
-        Mappings.remove(intval);
-        self.Mapped = Mappings;
+        intval = int(value)
+        Mappings = self.Mapped
+        Mappings.remove(intval)
+        self.Mapped = Mappings
 
 
     def __init__(self, ControlNumber, MappedNumbers, attrib=None, **extra):
-        super(MappingNode, self).__init__(tag='Mapping', attrib=attrib, **extra);
+        super(MappingNode, self).__init__(tag='Mapping', attrib=attrib, **extra)
 
-        self.attrib['Control'] = str(ControlNumber);
-        self.Mapped = MappedNumbers;
+        self.attrib['Control'] = str(ControlNumber)
+        self.Mapped = MappedNumbers
 
 
 class MosaicBaseNode(XFileElementWrapper):
 
     @classmethod
     def GetFilename(cls, Name, Type):
-        Path = Name + Type + '.mosaic';
-        return Path;
+        Path = Name + Type + '.mosaic'
+        return Path
 
     def _CalcChecksum(self):
-        (file, ext) = os.path.splitext(self.Path);
-        ext = ext.lower();
+        (file, ext) = os.path.splitext(self.Path)
+        ext = ext.lower()
 
         if not os.path.exists(self.FullPath):
-            return None;
+            return None
 
         if ext == '.stos':
-            return stosfile.StosFile.LoadChecksum(self.FullPath);
+            return stosfile.StosFile.LoadChecksum(self.FullPath)
         elif ext == '.mosaic':
-            return mosaicfile.MosaicFile.LoadChecksum(self.FullPath);
+            return mosaicfile.MosaicFile.LoadChecksum(self.FullPath)
         else:
             raise Exception("Cannot compute checksum for unknown transform type")
 
-        return None;
+        return None
 
     @property
     def Checksum(self):
         '''Checksum of the file resource when the node was last updated'''
-        checksum = self.attrib.get('Checksum', None);
+        checksum = self.attrib.get('Checksum', None)
         if checksum is None:
-            return self._CalcChecksum();
+            return self._CalcChecksum()
 
-        return checksum;
+        return checksum
 
     @Checksum.setter
     def Checksum(self, val):
         '''Checksum of the file resource when the node was last updated'''
-        self.attrib['Checksum'] = val;
+        self.attrib['Checksum'] = val
 
     def IsValid(self):
 
-        knownChecksum = self.attrib.get('Checksum', None);
+        knownChecksum = self.attrib.get('Checksum', None)
         if not knownChecksum is None:
-            fileChecksum = self._CalcChecksum();
+            fileChecksum = self._CalcChecksum()
 
             if not knownChecksum == fileChecksum:
-                return [False, "File checksum does not match meta-data"];
+                return [False, "File checksum does not match meta-data"]
 
-        return super(MosaicBaseNode, self).IsValid();
+        return super(MosaicBaseNode, self).IsValid()
 
     def __init__(self, tag, Name, Type, Path=None, attrib=None, **extra):
 
         if Path is None:
-            Path = MosaicBaseNode.GetFilename(Name, Type);
+            Path = MosaicBaseNode.GetFilename(Name, Type)
 
-        super(MosaicBaseNode, self).__init__(tag=tag, Path=Path, attrib=attrib, **extra);
-        self.attrib['Name'] = Name;
-        self.attrib['Type'] = Type;
+        super(MosaicBaseNode, self).__init__(tag=tag, Path=Path, attrib=attrib, **extra)
+        self.attrib['Name'] = Name
+        self.attrib['Type'] = Type
 
 
     @property
     def InputTransformName(self):
-        return self.get('InputTransformName', '');
+        return self.get('InputTransformName', '')
 
     @InputTransformName.setter
     def InputTransformName(self, Value):
-        self.attrib['InputTransformName'] = Value;
+        self.attrib['InputTransformName'] = Value
 
     @property
     def InputImageDir(self):
-        return self.get('InputTransform', '');
+        return self.get('InputTransform', '')
 
     @InputImageDir.setter
     def InputImageDir(self, Value):
-        self.attrib['InputImageDir'] = Value;
+        self.attrib['InputImageDir'] = Value
 
     @property
     def InputTransformChecksum(self):
-        return self.get('InputTransformChecksum', '');
+        return self.get('InputTransformChecksum', '')
 
     @InputTransformChecksum.setter
     def InputTransformChecksum(self, Value):
-        self.attrib['InputTransformChecksum'] = Value;
+        self.attrib['InputTransformChecksum'] = Value
 
     @property
     def Type(self):
-        return self.attrib.get('Type', '');
+        return self.attrib.get('Type', '')
 
     @Type.setter
     def Type(self, Value):
-        self.attrib['Type'] = Value;
+        self.attrib['Type'] = Value
 
 
 class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
 
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
-        super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra);
+        super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
 
     def IsValid(self):
         valid = VMH.InputTransformHandler.InputTransformIsValid(self)
@@ -1870,10 +1870,10 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
 
     def __init__(self, Name, Type, Path, attrib=None, **extra):
-        super(ImageSetBaseNode, self).__init__(tag='ImageSet', Name=Name, Path=Path, attrib=attrib, **extra);
-        self.attrib['Name'] = Name;
-        self.attrib['Type'] = Type;
-        self.attrib['Path'] = Path;
+        super(ImageSetBaseNode, self).__init__(tag='ImageSet', Name=Name, Path=Path, attrib=attrib, **extra)
+        self.attrib['Name'] = Name
+        self.attrib['Type'] = Type
+        self.attrib['Path'] = Path
 
     def GetImage(self, Downsample):
         '''Returns image node for the specified downsample or None'''
@@ -1953,7 +1953,7 @@ class ImageSetNode(ImageSetBaseNode):
         # if Path is None:
         #    Path = ImageSetNode.Name + Type
 
-        super(ImageSetNode, self).__init__(Name=ImageSetNode.DefaultName, Type=Type, Path=ImageSetNode.DefaultPath, attrib=attrib, **extra);
+        super(ImageSetNode, self).__init__(Name=ImageSetNode.DefaultName, Type=Type, Path=ImageSetNode.DefaultPath, attrib=attrib, **extra)
 
 
 class ImageNode(XFileElementWrapper):
@@ -1962,34 +1962,34 @@ class ImageNode(XFileElementWrapper):
 
     def __init__(self, Path, attrib=None, **extra):
 
-        super(ImageNode, self).__init__(tag='Image', Path=Path, attrib=attrib, **extra);
+        super(ImageNode, self).__init__(tag='Image', Path=Path, attrib=attrib, **extra)
 
 
     def IsValid(self):
         if not os.path.exists(self.FullPath):
-            return [False, 'File does not exist'];
+            return [False, 'File does not exist']
 
         if(self.Checksum != nornir_shared.checksum.FilesizeChecksum(self.FullPath)):
-            return [False, "Checksum mismatch"];
+            return [False, "Checksum mismatch"]
 
-        return super(ImageNode, self).IsValid();
+        return super(ImageNode, self).IsValid()
 
 
     @property
     def Checksum(self):
-        checksum = self.get('Checksum', None);
+        checksum = self.get('Checksum', None)
         if checksum is None:
-            checksum = nornir_shared.checksum.FilesizeChecksum(self.FullPath);
-            self.attrib['Checksum'] = str(checksum);
+            checksum = nornir_shared.checksum.FilesizeChecksum(self.FullPath)
+            self.attrib['Checksum'] = str(checksum)
 
-        return checksum;
+        return checksum
 
 
 class DataNode(XFileElementWrapper):
     '''Refers to an external file containing data'''
     def __init__(self, Path, attrib=None, **extra):
 
-        super(DataNode, self).__init__(tag='Data', Path=Path, attrib=attrib, **extra);
+        super(DataNode, self).__init__(tag='Data', Path=Path, attrib=attrib, **extra)
 
 
 class SectionMappingsNode(XElementWrapper):
@@ -1997,7 +1997,7 @@ class SectionMappingsNode(XElementWrapper):
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.tag + ' ' + (Config.Current.SectionTemplate % self.MappedSectionNumber);
+        return self.tag + ' ' + (Config.Current.SectionTemplate % self.MappedSectionNumber)
 
     @property
     def MappedSectionNumber(self):
@@ -2028,47 +2028,47 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
     @property
     def LevelFormat(self):
-        return self.attrib['LevelFormat'];
+        return self.attrib['LevelFormat']
 
     @LevelFormat.setter
     def LevelFormat(self, val):
-        assert(isinstance(val, str));
-        self.attrib['LevelFormat'] = val;
+        assert(isinstance(val, str))
+        self.attrib['LevelFormat'] = val
 
     @property
     def NumberOfTiles(self):
-        return int(self.attrib.get('NumberOfTiles', 0));
+        return int(self.attrib.get('NumberOfTiles', 0))
 
     @NumberOfTiles.setter
     def NumberOfTiles(self, val):
-        self.attrib['NumberOfTiles'] = '%d' % val;
+        self.attrib['NumberOfTiles'] = '%d' % val
 
     @property
     def ImageFormatExt(self):
-        return self.attrib['ImageFormatExt'];
+        return self.attrib['ImageFormatExt']
 
     @ImageFormatExt.setter
     def ImageFormatExt(self, val):
-        assert(isinstance(val, str));
-        self.attrib['ImageFormatExt'] = val;
+        assert(isinstance(val, str))
+        self.attrib['ImageFormatExt'] = val
 
 
     def __init__(self, NumberOfTiles, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
 
         if LevelFormat is None:
-            LevelFormat = Config.Current.LevelFormat;
+            LevelFormat = Config.Current.LevelFormat
 
         if ImageFormatExt is None:
-            ImageFormatExt = '.png';
+            ImageFormatExt = '.png'
 
         super(TilePyramidNode, self).__init__(tag='TilePyramid',
                                                Name=TilePyramidNode.DefaultName,
                                                Path=TilePyramidNode.DefaultPath,
-                                               attrib=attrib, **extra);
+                                               attrib=attrib, **extra)
 
-        self.attrib['NumberOfTiles'] = str(NumberOfTiles);
-        self.attrib['LevelFormat'] = LevelFormat;
-        self.attrib['ImageFormatExt'] = ImageFormatExt;
+        self.attrib['NumberOfTiles'] = str(NumberOfTiles)
+        self.attrib['LevelFormat'] = LevelFormat
+        self.attrib['ImageFormatExt'] = ImageFormatExt
 
 
 class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
@@ -2078,35 +2078,35 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
     @property
     def FilePrefix(self):
-        return self.attrib['FilePrefix'];
+        return self.attrib['FilePrefix']
 
     @FilePrefix.setter
     def FilePrefix(self, val):
-        self.attrib['FilePrefix'] = val;
+        self.attrib['FilePrefix'] = val
 
     @property
     def FilePostfix(self):
-        return self.attrib['FilePostfix'];
+        return self.attrib['FilePostfix']
 
     @FilePostfix.setter
     def FilePostfix(self, val):
-        self.attrib['FilePostfix'] = val;
+        self.attrib['FilePostfix'] = val
 
     @property
     def TileXDim(self):
-        return int(self.attrib['TileXDim']);
+        return int(self.attrib['TileXDim'])
 
     @TileXDim.setter
     def TileXDim(self, val):
-        self.attrib['TileXDim'] = '%d' % int(val);
+        self.attrib['TileXDim'] = '%d' % int(val)
 
     @property
     def TileYDim(self):
-        return int(self.attrib['TileYDim']);
+        return int(self.attrib['TileYDim'])
 
     @TileYDim.setter
     def TileYDim(self, val):
-        self.attrib['TileYDim'] = '%d' % int(val);
+        self.attrib['TileYDim'] = '%d' % int(val)
 
     def __init__(self, attrib=None, **extra):
         super(TilesetNode, self).__init__(tag='Tileset', Name=TilesetNode.DefaultName, attrib=attrib, **extra)
@@ -2121,7 +2121,7 @@ class LevelNode(XContainerElementWrapper):
     @classmethod
     def ClassSortKey(cls, self):
         '''Required for objects derived from XContainerElementWrapper'''
-        return "Level" + ' ' + Config.Current.DownsampleFormat % float(self.Downsample);
+        return "Level" + ' ' + Config.Current.DownsampleFormat % float(self.Downsample)
 
     @property
     def SortKey(self):
@@ -2130,137 +2130,137 @@ class LevelNode(XContainerElementWrapper):
 
     @property
     def Name(self):
-        return '%g' % self.Downsample;
+        return '%g' % self.Downsample
 
     @Name.setter
     def Name(self, Value):
-        assert False  # , "Attempting to set name on LevelNode");
+        assert False  # , "Attempting to set name on LevelNode")
 
     @property
     def Downsample(self):
-        assert('Downsample' in self.attrib);
-        return float(self.attrib.get('Downsample', ''));
+        assert('Downsample' in self.attrib)
+        return float(self.attrib.get('Downsample', ''))
 
     @Downsample.setter
     def Downsample(self, Value):
-        self.attrib['Downsample'] = '%g' % Value;
+        self.attrib['Downsample'] = '%g' % Value
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
 
-        PyramidNode = self.Parent;
+        PyramidNode = self.Parent
 
         if not os.path.exists(self.FullPath):
-            return [False, "Path does not exist"];
+            return [False, "Path does not exist"]
 
         if(isinstance(PyramidNode, TilePyramidNode)):
-            globfullpath = os.path.join(self.FullPath, '*' + PyramidNode.ImageFormatExt);
+            globfullpath = os.path.join(self.FullPath, '*' + PyramidNode.ImageFormatExt)
 
-            files = glob.glob(globfullpath);
+            files = glob.glob(globfullpath)
 
             if(len(files) == 0):
-                return [False, "No files in level"];
+                return [False, "No files in level"]
 
-            FileNumberMatch = len(files) <= PyramidNode.NumberOfTiles;
+            FileNumberMatch = len(files) <= PyramidNode.NumberOfTiles
 
             if not FileNumberMatch:
-                return [False, "File count mismatch for level"];
+                return [False, "File count mismatch for level"]
         elif(isinstance(PyramidNode, TilesetNode)):
             # Make sure each level has at least one tile from the last column on the disk.
-            FilePrefix = PyramidNode.FilePrefix;
-            FilePostfix = PyramidNode.FilePostfix;
-            GridXDim = int(self.GridDimX) - 1;
-            GridYDim = int(self.GridDimY) - 1;
+            FilePrefix = PyramidNode.FilePrefix
+            FilePostfix = PyramidNode.FilePostfix
+            GridXDim = int(self.GridDimX) - 1
+            GridYDim = int(self.GridDimY) - 1
 
-            GridXString = Config.Current.GridTileCoordTemplate % GridXDim;
-            # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + Config.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix);
+            GridXString = Config.Current.GridTileCoordTemplate % GridXDim
+            # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + Config.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
             MatchString = os.path.join(self.FullPath, Config.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
                                                                                         'X' :  GridXString,
                                                                                         'Y' : '*',
-                                                                                        'postfix' :  FilePostfix});
+                                                                                        'postfix' :  FilePostfix})
 
             # Start with the middle because it is more likely to have a match earlier
-            TestIndicies = range(GridYDim / 2, GridYDim);
-            TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1));
+            TestIndicies = range(GridYDim / 2, GridYDim)
+            TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
             for iY in TestIndicies:
                 # MatchString = os.path.join(OutputDir, FilePrefix +
                 #                           'X' + Config.GridTileCoordFormat % GridXDim +
                 #                           '_Y' + Config.GridTileCoordFormat % iY +
-                #                           FilePostfix);
+                #                           FilePostfix)
                 MatchString = os.path.join(self.FullPath, Config.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
                                                                                         'X' : GridXString,
                                                                                         'Y' : Config.Current.GridTileCoordTemplate % iY,
-                                                                                        'postfix' : FilePostfix});
+                                                                                        'postfix' : FilePostfix})
                 if(os.path.exists(MatchString)):
-                    return [True, "Last column found"];
+                    return [True, "Last column found"]
 
                 MatchString = os.path.join(self.FullPath, Config.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
                                                                                         'X' : str(GridXDim),
                                                                                         'Y' : str(iY),
-                                                                                        'postfix' : FilePostfix});
+                                                                                        'postfix' : FilePostfix})
                 if(os.path.exists(MatchString)):
-                    return [True, "Last column found"];
+                    return [True, "Last column found"]
 
 
 
-            return [False, "Last column of tileset not found"];
+            return [False, "Last column of tileset not found"]
 
-        return super(LevelNode, self).IsValid();
+        return super(LevelNode, self).IsValid()
 
 
     def __init__(self, Level, attrib=None, **extra):
 
         if(attrib is None):
-            attrib = {};
+            attrib = {}
 
-        attrib['Path'] = Config.Current.LevelFormat % int(Level);
-        attrib['Downsample'] = '%g' % Level;
-        super(XContainerElementWrapper, self).__init__(tag='Level', attrib=attrib, **extra);
+        attrib['Path'] = Config.Current.LevelFormat % int(Level)
+        attrib['Downsample'] = '%g' % Level
+        super(XContainerElementWrapper, self).__init__(tag='Level', attrib=attrib, **extra)
 
 
 class HistogramBase(XElementWrapper):
 
     @property
     def DataNode(self):
-        return self.find('Data');
+        return self.find('Data')
 
     @property
     def ImageNode(self):
-        return self.find('Image');
+        return self.find('Image')
 
     @property
     def DataFullPath(self):
         if self.DataNode is None:
-            return "";
+            return ""
 
-        return self.DataNode.FullPath;
+        return self.DataNode.FullPath
 
     @property
     def ImageFullPath(self):
         if self.ImageNode is None:
-            return "";
+            return ""
 
-        return self.ImageNode.FullPath;
+        return self.ImageNode.FullPath
 
     @property
     def Checksum(self):
         if(self.DataNode is None):
-            return "";
+            return ""
         else:
-            return self.DataNode.Checksum;
+            return self.DataNode.Checksum
 
     def IsValid(self):
         '''Remove this node if our output does not exist'''
         if self.DataNode is None:
-            return [False, "No data node found"];
+            return [False, "No data node found"]
 
         '''Check for the transform node and ensure the checksums match'''
         # TransformNode = self.Parent.find('Transform')
 
-        return True;
+        return True
 
     def __init__(self, tag, attrib, **extra):
-        super(HistogramBase, self).__init__(tag=tag, attrib=attrib, **extra);
+        super(HistogramBase, self).__init__(tag=tag, attrib=attrib, **extra)
 
 
 class AutoLevelHintNode(XElementWrapper):
@@ -2268,32 +2268,32 @@ class AutoLevelHintNode(XElementWrapper):
     @property
     def UserRequestedMinIntensityCutoff(self):
         '''Returns None or a float'''
-        val = self.attrib.get('UserRequestedMinIntensityCutoff', None);
+        val = self.attrib.get('UserRequestedMinIntensityCutoff', None)
         if val is None or len(val) == 0:
-            return None;
-        return float(val);
+            return None
+        return float(val)
 
     @UserRequestedMinIntensityCutoff.setter
     def UserRequestedMinIntensityCutoff(self, val):
         if val is None:
-            self.attrib['UserRequestedMinIntensityCutoff'] = "";
+            self.attrib['UserRequestedMinIntensityCutoff'] = ""
         else:
-            self.attrib['UserRequestedMinIntensityCutoff'] = "%g" % val;
+            self.attrib['UserRequestedMinIntensityCutoff'] = "%g" % val
 
     @property
     def UserRequestedMaxIntensityCutoff(self):
         '''Returns None or a float'''
-        val = self.attrib.get('UserRequestedMaxIntensityCutoff', None);
+        val = self.attrib.get('UserRequestedMaxIntensityCutoff', None)
         if val is None or len(val) == 0:
-            return None;
-        return float(val);
+            return None
+        return float(val)
 
     @UserRequestedMaxIntensityCutoff.setter
     def UserRequestedMaxIntensityCutoff(self, val):
         if val is None:
-            self.attrib['UserRequestedMaxIntensityCutoff'] = "";
+            self.attrib['UserRequestedMaxIntensityCutoff'] = ""
         else:
-            self.attrib['UserRequestedMaxIntensityCutoff'] = "%g" % val;
+            self.attrib['UserRequestedMaxIntensityCutoff'] = "%g" % val
 
     @property
     def UserRequestedGamma(self):
@@ -2314,106 +2314,106 @@ class AutoLevelHintNode(XElementWrapper):
         attrib = {'UserRequestedMinIntensityCutoff' : "",
                   'UserRequestedMaxIntensityCutoff' : "",
                   'UserRequestedGamma' : ""}
-        super(AutoLevelHintNode, self).__init__(tag='AutoLevelHint', attrib=attrib);
+        super(AutoLevelHintNode, self).__init__(tag='AutoLevelHint', attrib=attrib)
 
 
 class HistogramNode(HistogramBase):
 
     def __init__(self, InputTransformNode, Type, attrib, **extra):
-        super(HistogramNode, self).__init__(tag='Histogram', attrib=attrib, **extra);
-        self.attrib['InputTransformType'] = InputTransformNode.Type;
-        self.attrib['InputTransformChecksum'] = InputTransformNode.Checksum;
-        self.attrib['Type'] = Type;
+        super(HistogramNode, self).__init__(tag='Histogram', attrib=attrib, **extra)
+        self.attrib['InputTransformType'] = InputTransformNode.Type
+        self.attrib['InputTransformChecksum'] = InputTransformNode.Checksum
+        self.attrib['Type'] = Type
 
 
 class PruneNode(HistogramBase):
 
     @property
     def Overlap(self):
-        return float(self.attrib['Overlap']);
+        return float(self.attrib['Overlap'])
 
     @property
     def UserRequestedCutoff(self):
-        val = self.attrib.get('UserRequestedCutoff', None);
+        val = self.attrib.get('UserRequestedCutoff', None)
         if isinstance(val, str):
             if len(val) == 0:
-                return None;
+                return None
 
         if not val is None:
-            val = float(val);
+            val = float(val)
 
-        return val;
+        return val
 
     @UserRequestedCutoff.setter
     def UserRequestedCutoff(self, val):
         if val is None:
-            val = "";
+            val = ""
 
-        self.attrib['UserRequestedCutoff'] = str(val);
+        self.attrib['UserRequestedCutoff'] = str(val)
 
     def __init__(self, Type, Overlap, attrib=None, **extra):
-        super(PruneNode, self).__init__(tag='Prune', attrib=attrib, **extra);
-        self.attrib['Type'] = Type;
-        self.attrib['Overlap'] = str(Overlap);
+        super(PruneNode, self).__init__(tag='Prune', attrib=attrib, **extra)
+        self.attrib['Type'] = Type
+        self.attrib['Overlap'] = str(Overlap)
 
         if not 'UserRequestedCutoff' in self.attrib:
-            self.attrib['UserRequestedCutoff'] = "";
+            self.attrib['UserRequestedCutoff'] = ""
 
 if __name__ == '__main__':
-    VolumeManager.Load("C:\Temp");
+    VolumeManager.Load("C:\Temp")
 
-    tagdict = XPropertiesElementWrapper.wrap(ElementTree.Element("Tag"));
-    tagdict.V = 5;
-    tagdict.Path = "path";
+    tagdict = XPropertiesElementWrapper.wrap(ElementTree.Element("Tag"))
+    tagdict.V = 5
+    tagdict.Path = "path"
 
-    tagdict.Value = 34.56;
+    tagdict.Value = 34.56
 
-    tagdict.Value = 43.7;
+    tagdict.Value = 43.7
 
-    print(ElementTree.tostring(tagdict));
+    print(ElementTree.tostring(tagdict))
 
-    del tagdict.Value;
-    del tagdict.Path;
+    del tagdict.Value
+    del tagdict.Path
 
-    print(ElementTree.tostring(tagdict));
+    print(ElementTree.tostring(tagdict))
 
 
-    tagdict = XElementWrapper.wrap(ElementTree.Element("Tag"));
-    tagdict.V = 5;
-    tagdict.Path = "path";
+    tagdict = XElementWrapper.wrap(ElementTree.Element("Tag"))
+    tagdict.V = 5
+    tagdict.Path = "path"
 
-    tagdict.Value = 34.56;
+    tagdict.Value = 34.56
 
-    tagdict.Value = 43.7;
+    tagdict.Value = 43.7
 
-    print(ElementTree.tostring(tagdict));
+    print(ElementTree.tostring(tagdict))
 
-    del tagdict.Value;
-    del tagdict.Path;
+    del tagdict.Value
+    del tagdict.Path
 
-    print(ElementTree.tostring(tagdict));
+    print(ElementTree.tostring(tagdict))
 
-    tagdict = XContainerElementWrapper.wrap(ElementTree.Element("Tag"));
-    tagdict.V = 5;
-    tagdict.Path = "path";
+    tagdict = XContainerElementWrapper.wrap(ElementTree.Element("Tag"))
+    tagdict.V = 5
+    tagdict.Path = "path"
 
-    tagdict.Value = 34.56;
+    tagdict.Value = 34.56
 
-    tagdict.Value = 43.7;
+    tagdict.Value = 43.7
 
     tagdict.Properties.Path = "Path2"
-    tagdict.Properties.Value = 75;
-    tagdict.Properties.Value = 57;
+    tagdict.Properties.Value = 75
+    tagdict.Properties.Value = 57
 
-    print(ElementTree.tostring(tagdict));
+    print(ElementTree.tostring(tagdict))
 
-    del tagdict.Value;
-    del tagdict.Path;
+    del tagdict.Value
+    del tagdict.Path
 
-    del tagdict.Properties.Value;
-    del tagdict.Properties.Path;
+    del tagdict.Properties.Value
+    del tagdict.Properties.Path
 
-    print(ElementTree.tostring(tagdict));
+    print(ElementTree.tostring(tagdict))
 
 
 
