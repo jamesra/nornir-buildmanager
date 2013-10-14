@@ -36,7 +36,9 @@ if __name__ == '__main__':
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
-    scripts = ['']
+
+    scripts = ['scripts/buildn.py']
+    entry_points = {'console_scripts' : ['buildn = buildn:Execute']}
 
     entry_points = {
         'console_scripts': [
@@ -44,6 +46,8 @@ if __name__ == '__main__':
 
     setup(name='nornir_buildmanager',
           version='1.0',
+          entry_points=entry_points,
+          scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",
           author_email="James.R.Anderson@utah.edu",
