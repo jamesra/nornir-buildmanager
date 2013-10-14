@@ -14,13 +14,6 @@ if __name__ == '__main__':
 
     use_setuptools()
 
-    required_packages = ["nornir_pools",
-                         "nornir_shared",
-                         "nornir_imageregistration",
-                        "numpy",
-                        "scipy",
-                        "matplotlib"]
-
     install_requires = ["nornir_pools",
                         "nornir_shared",
                         "nornir_imageregistration",
@@ -41,15 +34,12 @@ if __name__ == '__main__':
 
     scripts = glob.glob(os.path.join('scripts', '*.py'))
 
-    entry_points = {'console_scripts' : ['buildn = buildn:Execute']}
-
     entry_points = {
         'console_scripts': [
-            'nornir_build = nornir_buildmanager.build:Main']}
+            'nornir-build = nornir_buildmanager.build:Main']}
 
     setup(name='nornir_buildmanager',
           version='1.0',
-          entry_points=entry_points,
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",
@@ -57,10 +47,9 @@ if __name__ == '__main__':
           url="https://github.com/jamesra/nornir-buildmanager",
           packages=packages,
           package_data=data_files,
-          requires=required_packages,
           entry_points = entry_points, 
           install_requires=install_requires,
-          test_requires=required_packages,
+          test_requires=install_requires,
           provides=provides,
           test_suite="test",
           dependency_links=dependency_links)
