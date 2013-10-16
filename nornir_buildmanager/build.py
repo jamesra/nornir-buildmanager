@@ -11,8 +11,10 @@ import logging
 from nornir_buildmanager import *
 from nornir_imageregistration.io import *
 
+from pkg_resources import resource_filename
 
 def ConfigDataPath():
+    return resource_filename(__name__, 'config')
 
     try:
         path = os.path.dirname(__file__)

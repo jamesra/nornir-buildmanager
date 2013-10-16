@@ -34,9 +34,11 @@ if __name__ == '__main__':
 
     scripts = glob.glob(os.path.join('scripts', '*.py'))
 
-    entry_points = {
-        'console_scripts': [
-            'nornir-build = nornir_buildmanager.build:Main']}
+    cmdFiles = glob.glob(os.path.join('scripts', '*.cmd'))
+
+    scripts.extend(cmdFiles)
+
+    entry_points = {'console_scripts': ['nornir-build = nornir_buildmanager.build:Main']}
 
     setup(name='nornir_buildmanager',
           version='1.0',
