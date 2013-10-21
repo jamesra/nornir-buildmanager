@@ -8,7 +8,7 @@ import VolumeManagerETree as VM
 import re
 
 
-def SearchCollection(Objects, AttribName, RegExStr):
+def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
     '''Search a list of object's attributes using a regular express.
        Returns list of objects with matching attributes.
        Returns all entries if RegExStr is None'''
@@ -17,6 +17,11 @@ def SearchCollection(Objects, AttribName, RegExStr):
         return Objects
 
     Matches = []
+    
+    flags = None
+    if not CaseSensitive:
+        flags = re.IGNORECASE
+    
     for MatchObj in Objects:
         if not hasattr(MatchObj, AttribName):
             continue
@@ -29,7 +34,7 @@ def SearchCollection(Objects, AttribName, RegExStr):
             Matches.append(MatchObj)
             continue
 
-        match = re.match(RegExStr, Attrib)
+        match = re.match(RegExStr, Attrib, flags)
         if not match is None:
             Matches.append(MatchObj)
 
