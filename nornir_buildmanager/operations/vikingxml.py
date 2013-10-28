@@ -255,7 +255,7 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
     # Find all of the section tags
     print("Adding Sections\n");
     for BlockNode in InputVolumeNode.findall('Block'):
-        for SectionNode in BlockNode.findall('Section'):
+        for SectionNode in BlockNode.Sections:
 
             if not ECLIPSE:
                 print('\b' * 8);
@@ -281,18 +281,18 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
 
 def ParseChannels(SectionNode, OutputSectionNode):
 
-    for ChannelNode in SectionNode.findall('Channel'):
+    for ChannelNode in SectionNode.Channels:
         for TransformNode in ChannelNode.findall('Transform'):
             OutputTransformNode = ParseTransform(TransformNode, OutputSectionNode);
             if not OutputTransformNode is None:
                 OutputTransformNode.attrib['Path'] = os.path.join(ChannelNode.Path, OutputTransformNode.attrib['Path']);
 
-        for FilterNode in ChannelNode.findall('Filter'):
-            for TilePyramid in FilterNode.findall('TilePyramid'):
-                OutputPyramidNode = ParsePyramidNode(FilterNode, TilePyramid, OutputSectionNode);
+        for FilterNode in ChannelNode.Filters:
+            for tilepyramid in FilterNode.findall('TilePyramid'):
+                OutputPyramidNode = ParsePyramidNode(FilterNode, tilepyramid, OutputSectionNode);
                 OutputPyramidNode.attrib['Path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputPyramidNode.attrib['Path']);
-            for Tileset in FilterNode.findall('Tileset'):
-                OutputTilesetNode = ParseTilesetNode(FilterNode, Tileset, OutputSectionNode);
+            for tileset in FilterNode.findall('Tileset'):
+                OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode);
                 OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path']);
                 print "Tileset found for section " + str(SectionNode.attrib["Number"]);
 
@@ -349,7 +349,7 @@ def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
                                                          'Name' : FilterNode.Name,
                                                          'LevelFormat' : InputPyramidNode.LevelFormat});
 
-    for LevelNode in InputPyramidNode.findall('Level'):
+    for LevelNode in InputPyramidNode.Levels:
         ETree.SubElement(OutputPyramidNode, 'Level', {'Path' : LevelNode.Path,
                                                       'Downsample' : '%g' % LevelNode.Downsample});
 
@@ -365,7 +365,7 @@ def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
                                                          'FilePostfix' : InputTilesetNode.FilePostfix,
                                                          'CoordFormat' : InputTilesetNode.CoordFormat});
 
-    for LevelNode in InputTilesetNode.findall('Level'):
+    for LevelNode in InputTilesetNode.Levels:
         ETree.SubElement(OutputTilesetNode, 'Level', {'path' : LevelNode.Path,
                                                       'Downsample' : '%g' % LevelNode.Downsample,
                                                       'GridDimX' : str(LevelNode.GridDimX),

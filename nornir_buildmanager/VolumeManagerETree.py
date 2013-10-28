@@ -781,10 +781,10 @@ class XElementWrapper(ElementTree.Element):
         matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
         for match in matchiterator:
             # Run in a loop because find returns the first match, if the first match is invalid look for another
-            NotValid = match.CleanIfInvalid()
-            if NotValid:
-                continue 
-                
+#             NotValid = match.CleanIfInvalid()
+#             if NotValid:
+#                 continue
+#
             if len(RemainingXPath) > 0:
                 foundChild = match.find(RemainingXPath)
                 
@@ -884,9 +884,9 @@ class XElementWrapper(ElementTree.Element):
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
 
         for m in matches:
-            NotValid = m.CleanIfInvalid()
-            if NotValid:
-                continue 
+#             NotValid = m.CleanIfInvalid()
+#             if NotValid:
+#                 continue
             
             if len(RemainingXPath) > 0:
                 subContainerMatches = m.findall(RemainingXPath)

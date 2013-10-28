@@ -16,12 +16,12 @@ from pkg_resources import resource_filename
 def ConfigDataPath():
     return resource_filename(__name__, 'config')
 
-    try:
-        path = os.path.dirname(__file__)
-    except:
-        path = os.getcwd()
-
-    return os.path.join(path, 'config')
+#     try:
+#         path = os.path.dirname(__file__)
+#     except:
+#         path = os.getcwd()
+#
+#     return os.path.join(path, 'config')
 
 
 def ProcessArgs():
