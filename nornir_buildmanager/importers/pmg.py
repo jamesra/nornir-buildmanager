@@ -267,6 +267,9 @@ class PMGImport(object):
             InputTileToOutputTile = {}
             PngTiles = {}
             TileKeys = Tiles.keys()
+
+
+            imageSize = []
             for inputTile in TileKeys:
                 [base, ext] = os.path.splitext(inputTile)
                 pngMosaicTile = base + '.png'
@@ -274,15 +277,18 @@ class PMGImport(object):
                 OutputTileFullPath = os.path.join(LevelObj.FullPath, pngMosaicTile)
                 InputTileFullPath = os.path.join(PMGDir, inputTile)
 
+
+
                 if not os.path.exists(OutputTileFullPath):
                     InputTileToOutputTile[InputTileFullPath] = OutputTileFullPath
 
                 PngTiles[pngMosaicTile] = Tiles[inputTile]
+                imageSize.append(nornir_shared.images.GetImageSize(InputTileFullPath))
 
             ConvertImagesInDict(InputTileToOutputTile, Flip=False, Bpp=TargetBpp)
 
             if not os.path.exists(transformObj.FullPath):
-                mosaicfile.MosaicFile.Write(transformObj.FullPath, PngTiles, Flip=Flip)
+                mosaicfile.MosaicFile.Write(transformObj.FullPath, PngTiles, Flip=Flip, ImageSize=imageSize)
 
         return [PMG.Section, ChannelName]
 
