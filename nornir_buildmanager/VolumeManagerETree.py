@@ -134,6 +134,7 @@ class VolumeManager():
                 XContainerElementWrapper.wrap(e)
         else:
             XElementWrapper.wrap(e)
+            
 
     @classmethod
     def __SetElementParent__(cls, Element, ParentElement=None):
@@ -780,10 +781,16 @@ class XElementWrapper(ElementTree.Element):
         matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
         for match in matchiterator:
             # Run in a loop because find returns the first match, if the first match is invalid look for another
+            NotValid = match.CleanIfInvalid()
+            if NotValid:
+                continue 
+                
             if len(RemainingXPath) > 0:
                 foundChild = match.find(RemainingXPath)
+                
+                
                 # Continue searching links if we don't find a result on the loaded elements
-                if not foundChild is None:
+                if not foundChild is None: 
                     return foundChild
             else:
                 return match
@@ -877,6 +884,10 @@ class XElementWrapper(ElementTree.Element):
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
 
         for m in matches:
+            NotValid = m.CleanIfInvalid()
+            if NotValid:
+                continue 
+            
             if len(RemainingXPath) > 0:
                 subContainerMatches = m.findall(RemainingXPath)
                 if subContainerMatches is not None:

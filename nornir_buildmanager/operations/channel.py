@@ -98,7 +98,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
         SaveFilterNode = True
 
     BlobPyramidImageSet = operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, Logger, **kwargs)
-    SaveFilterNode = not BlobPyramidImageSet is None
+    SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
 
     if(not 'InputImageChecksum' in BlobImageSet):
         BlobImageSet.InputImageChecksum = ImageSetNode.Checksum

@@ -67,6 +67,7 @@ class InputTransformHandler(object):
 
     def InputTransformIsValid(self):
         # Verify that the input transform matches the checksum we recorded for the input
+        
         InputTransformType = self.attrib.get('InputTransformType', None)
         if InputTransformType is None:
             return True
