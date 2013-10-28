@@ -169,7 +169,7 @@ class ImportManager(object):
 
         # Get all of the directories we should consider running PMGToMosaic on.
         for extension in self.ImporterDict.keys():
-            DirList = RecurseSubdirectories(RootPath, RequiredFiles="*." + extension);
+            DirList = RecurseSubdirectoriesGenerator(RootPath, RequiredFiles="*." + extension);
             ExtenstonDataObj = self.ImporterDict[extension];
 
             for Path in DirList:

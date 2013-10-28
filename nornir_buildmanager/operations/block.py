@@ -537,10 +537,7 @@ def FixStosFilePaths(ControlFilter, MappedFilter, StosTransformNode, Downsample,
 def SectionToVolumeImage(Parameters, TransformNode, Logger, CropUndefined=True, **kwargs):
     '''Executre ir-stom on a provided .stos file'''
 
-    GroupNode = TransformNode.FindParent("StosGroup")
-
-
-
+    GroupNode = TransformNode.FindParent("StosGroup") 
     SaveRequired = False
 
     SectionMappingNode = TransformNode.FindParent('SectionMappings')
@@ -885,6 +882,8 @@ def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample
        returns true if a new stos file was generated'''
 
     # Replace the automatic files if they are outdated.
+    #We should not be trying to create output if we have no input
+    assert(os.path.exists(InputTransformNode.FullPath) )
 
     files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputTransformPath)
     if not os.path.exists(OutputTransformPath):
@@ -914,7 +913,12 @@ def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample
 
 
 def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInputStosFullPath):
-    # Use the manual stos file if it exists, prevent any cleanup from occurring on the manual file
+    ''' Use the manual stos file if it exists, prevent any cleanup from occurring on the manual file '''
+    
+    if not os.path.exists(AutomaticInputStosFullPath):
+        if os.path.exists(ManualInputStosFullPath):
+            return ManualInputStosFullPath
+             
     InputStosFullPath = AutomaticInputStosFullPath
     if os.path.exists(ManualInputStosFullPath):
         InputStosFullPath = ManualInputStosFullPath
@@ -997,12 +1001,21 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                                                                     ControlFilter=ControlFilter,
                                                                     MappedFilter=MappedFilter,
                                                                     OutputDownsample=OutputDownsample)
+            
+            if not os.path.exists(InputStosFullPath):
+                #Hmm... no input.  This is worth reporting and moving on
+                Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
+                InputGroupNode.remove(InputTransformNode)
+                continue
 
-
+            
             OutputSectionMappingNode = VolumeManagerETree.XElementWrapper('SectionMappings', InputSectionMappingNode.attrib)
             (added, OutputSectionMappingNode) = StosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode, 'MappedSectionNumber')
             if added:
                 SaveGroupNode = True
+                
+            #If the manual or automatic stos file is newer than the output, remove the output
+            #files.RemoveOutdatedFile(InputStosFullPath, OutputStosFullPath)
 
             # Remove our output if it was generated from an input transform with a different checksum
             if os.path.exists(OutputStosFullPath):
@@ -1029,15 +1042,22 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                     prettyoutput.Log(cmd)
                     subprocess.call(cmd + " && exit", shell=True)
 
-                    SaveGroupNode = True
+                    if not os.path.exists(OutputStosFullPath):
+                        Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
+                        OutputSectionMappingNode.remove(stosNode)
+                        stosNode = None
+                        continue
+                    else:
+                        SaveGroupNode = True
                 else:
                     prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
                     shutil.copy(ManualStosFileFullPath, OutputStosFullPath)
 
                 stosNode.Path = OutputFile
-
-            stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
-            stosNode.InputTransformChecksum = InputStosFileChecksum
+            
+            if os.path.exists(OutputStosFullPath):    
+                stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+                stosNode.InputTransformChecksum = InputStosFileChecksum
 
     if SaveBlockNode:
         return BlockNode
@@ -1074,10 +1094,7 @@ def __RegistrationTreeToStosMap(rt, StosMapName):
         __AddRegistrationTreeNodeToStosMap(OutputStosMap, rt, rootNode.SectionNumber)
 
     return OutputStosMap
-
-
-
-
+ 
 
 def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupNode, ControlToVolumeTransform=None):
     ControlSection = Node.SectionNumber

@@ -327,7 +327,7 @@ class SerialEMIDocImport(object):
             for i in range(MinUsefulLowBit, MaxUsefulHighBit):
                 andValue = andValue + pow(2, i)
 
-            nornir_shared.Images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
+            nornir_shared.images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
             
             for inputImage in ImageMap:
                 outputImageFullPath = ImageMap[inputImage]
@@ -366,7 +366,7 @@ def GetMinMaxCutoffs(listfilenames, histogramFullPath = None):
             histogramObj = Histogram.Load(histogramFullPath)
 
     if histogramObj is None:
-        Bpp = nornir_shared.Images.GetImageBpp(listfilenames[0])
+        Bpp = nornir_shared.images.GetImageBpp(listfilenames[0])
         histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, Scale=.125, numBins=2048)
 
         if not histogramFullPath is None:
