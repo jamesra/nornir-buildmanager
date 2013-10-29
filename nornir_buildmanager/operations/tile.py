@@ -598,7 +598,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransformName, Logge
     # Adjust all of the control points such that the origin is at 0,0
     for imagename in Transforms.keys():
         transform = Transforms[imagename]
-        transform.TranslateFixed((-minX, -minY))
+        transform.TranslateFixed((-minY, -minX))
         mosaic.ImageToTransform[imagename] = factory.TransformToIRToolsGridString(transform, transform.gridWidth, transform.gridHeight)
 
 
