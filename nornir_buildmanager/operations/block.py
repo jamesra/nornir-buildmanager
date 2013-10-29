@@ -1015,8 +1015,9 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                 SaveGroupNode = True
                 
             #If the manual or automatic stos file is newer than the output, remove the output
-            #files.RemoveOutdatedFile(InputStosFullPath, OutputStosFullPath)
-
+            if files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputStosFullPath):
+                SaveGroupNode = True 
+            
             # Remove our output if it was generated from an input transform with a different checksum
             if os.path.exists(OutputStosFullPath):
                 stosNode = OutputSectionMappingNode.GetChildByAttrib('Transform', 'ControlSectionNumber', InputTransformNode.ControlSectionNumber)
@@ -1024,6 +1025,10 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                     if 'InputTransformChecksum' in stosNode.attrib:
                         if(InputStosFileChecksum != stosNode.InputTransformChecksum):
                             os.remove(OutputStosFullPath)
+                            SaveGroupNode = True
+#                    else:
+#                        os.remove(OutputStosFullPath)
+#                        SaveGroupNode = True
 
             # Replace the automatic files if they are outdated.
             # GenerateStosFile(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter, MappedFilter)
