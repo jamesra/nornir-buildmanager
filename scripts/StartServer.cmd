@@ -1,0 +1,1 @@
+python C:\Python27\Lib\site-packages\pp-1.6.4-py2.7.egg\EGG-INFO\scripts\ppserver.py -a -d
