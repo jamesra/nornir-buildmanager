@@ -8,7 +8,7 @@ from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
 import logging
-from nornir_shared.plot import Histogram
+from nornir_shared.plot import Histogram as PlotHistogram
 
 from nornir_buildmanager.operations.tile import VerifyTiles
 
@@ -373,7 +373,7 @@ def GetMinMaxCutoffs(listfilenames, histogramFullPath = None):
             histogramObj.Save(histogramFullPath)
 
             HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
-            PlotHistogram.PlotHistogram(histogramFullPath, HistogramImageFullPath, Title="Raw Data Pixel Intensity")
+            PlotHistogram(histogramFullPath, HistogramImageFullPath, Title="Raw Data Pixel Intensity")
 
     assert(not histogramObj is None)
 
