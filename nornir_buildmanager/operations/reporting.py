@@ -160,7 +160,7 @@ def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirector
 
         TPool = Pools.GetGlobalMultithreadingPool()
 
-        TPool.add_task(ThumbnailFilename, PlotHistogram.PolyLinePlot, lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
+        TPool.add_task(ThumbnailFilename, nornir_shared.plot.PolyLine, lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
         # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
         HTMLImage = HTMLImageTemplate % {'src' : ImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
         HTMLAnchor = HTMLAnchorTemplate % {'href' : ImgSrcPath, 'body' : HTMLImage }
