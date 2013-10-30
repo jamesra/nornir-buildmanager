@@ -364,14 +364,14 @@
   			</Iterate>
   		</Iterate>
   		
-  		<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#StovOutputGroupName']">
+  		<!--<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#StovOutputGroupName']">
   		  <Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovOutputGroupName#StovDownsample']">
           	<PythonCall Function="block.AssembleStosOverlays" GroupNode="#StosGroupNode"/>
           </Iterate>
-        </Iterate>		
+        </Iterate> -->		
   	</Iterate>
   	
-  	<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="SliceToVolume" StosGroupName="#StovOutputGroupName#StovDownsample"/>
+  	<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
   </Pipeline>
   
   <Pipeline Name="ScaleVolumeTransforms" Description="Changes stos files to use the specified filters and downsample level">
