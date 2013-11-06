@@ -201,7 +201,7 @@ class PruneObj:
         TransformObj.RemoveInvalidMosaicImages(FullTilePath)
 
         files = []
-        for f in TransformObj.ImageToTransform.keys():
+        for f in TransformObj.ImageToTransformString.keys():
             files.append(os.path.join(FullTilePath, f))
 
         TileToScore = Prune(files, Overlap)
@@ -340,8 +340,8 @@ class PruneObj:
         mosaic = mosaicfile.MosaicFile.Load(SourceMosaicFullPath)
 
         # We copy this because if an input image is missing there will not be a prune score and it should be removed from the .mosaic file
-        inputImageToTransforms = copy.deepcopy(mosaic.ImageToTransform)
-        mosaic.ImageToTransform.clear()
+        inputImageToTransforms = copy.deepcopy(mosaic.ImageToTransformString)
+        mosaic.ImageToTransformString.clear()
 
         numRemoved = 0
 
@@ -356,11 +356,11 @@ class PruneObj:
                     if not keyVal in inputImageToTransforms:
                         raise KeyError ("PruneObj: Cannot locate image file in .mosaic " + keyVal)
 
-                mosaic.ImageToTransform[keyVal] = inputImageToTransforms[keyVal]
+                mosaic.ImageToTransformString[keyVal] = inputImageToTransforms[keyVal]
             else:
                 numRemoved = numRemoved + 1
 
-        if(len(mosaic.ImageToTransform) <= 0):
+        if(len(mosaic.ImageToTransformString) <= 0):
             prettyoutput.LogErr("All tiles removed when using threshold = " + str(Tolerance) + "\nThe prune request was ignored")
             return
         else:

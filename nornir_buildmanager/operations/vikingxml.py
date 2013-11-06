@@ -310,11 +310,11 @@ def ParseTransform(TransformNode, OutputSectionNode):
         return
 
     # Figure out what the tile prefix and postfix are for this mosaic file by extrapolating from the first tile filename
-    for k in mFile.ImageToTransform.keys():
+    for k in mFile.ImageToTransformString.keys():
         TileFileName = k;
         break;
 
-    # TileFileName = mFile.ImageToTransform.keys()[0];
+    # TileFileName = mFile.ImageToTransformString.keys()[0];
 
     # Figure out prefix and postfix parts of filenames
     parts = TileFileName.split('.');

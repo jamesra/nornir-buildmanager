@@ -177,6 +177,7 @@ class PMGImport(object):
                 PMG.Section = PMG.Spot
 
 
+
             sectionObj = SectionNode(PMG.Section)
 
             [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')

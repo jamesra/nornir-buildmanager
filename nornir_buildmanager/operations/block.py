@@ -1390,7 +1390,7 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, TransformNode, Out
 
     ControlImageBounds = SToV.ControlImageDim
 
-    for imagename, transform in mosaic.ImageToTransform.iteritems():
+    for imagename, transform in mosaic.ImageToTransformString.iteritems():
         MosaicToSectionTransform = factory.LoadTransform(transform)
 
         task = Pool.add_task(imagename, StoVTransform.AddTransform, MosaicToSectionTransform)
@@ -1414,7 +1414,7 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, TransformNode, Out
         maxX = max(maxX, bbox[2])
         maxY = max(maxY, bbox[3])
 
-        mosaic.ImageToTransform[task.imagename] = factory.TransformToIRToolsGridString(MosaicToVolume, task.dimX, task.dimY)
+        mosaic.ImageToTransformString[task.imagename] = factory.TransformToIRToolsGridString(MosaicToVolume, task.dimX, task.dimY)
 
     CropBoxString = ','.join(str(x) for x in (minX, minY, ControlImageBounds[2], ControlImageBounds[3]))
     OutputTransformNode.CropBox = CropBoxString

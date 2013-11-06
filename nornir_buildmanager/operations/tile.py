@@ -127,7 +127,7 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     ImageFiles = glob.glob(OutputLevelNode.FullPath + os.sep + '*' + InputPyramidNode.ImageFormatExt)
     basenameImageFiles = map(os.path.basename, ImageFiles)
 
-    for i in mFile.ImageToTransform:
+    for i in mFile.ImageToTransformString:
         if not i in basenameImageFiles:
             # Don't return false unless the input exists
             if os.path.exists(os.path.join(InputLevelNode.FullPath, i)):
@@ -472,7 +472,7 @@ def AutolevelTiles(Parameters, LevelNode=None, TransformNode=None, OutputFilterN
         os.makedirs(OutputFilterNode.FullPath)
 
     Input = mosaicfile.MosaicFile.Load(InputMosaicFullPath)
-    ImageFiles = Input.ImageToTransform.keys()
+    ImageFiles = Input.ImageToTransformString.keys()
 
     InputImagePath = InputLevelNode.FullPath
 
@@ -570,7 +570,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransformName, Logge
     maxY = -float('Inf')
 
     Transforms = {}
-    for imagename, transform in mosaic.ImageToTransform.iteritems():
+    for imagename, transform in mosaic.ImageToTransformString.iteritems():
         MosaicToSectionTransform = factory.LoadTransform(transform)
         Transforms[imagename] = MosaicToSectionTransform
         bbox = MosaicToSectionTransform.ControlPointBoundingBox
@@ -599,7 +599,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransformName, Logge
     for imagename in Transforms.keys():
         transform = Transforms[imagename]
         transform.TranslateFixed((-minY, -minX))
-        mosaic.ImageToTransform[imagename] = factory.TransformToIRToolsGridString(transform, transform.gridWidth, transform.gridHeight)
+        mosaic.ImageToTransformString[imagename] = factory.TransformToIRToolsGridString(transform, transform.gridWidth, transform.gridHeight)
 
 
     mosaic.Save(OutputTransformNode.FullPath)
@@ -689,7 +689,7 @@ def HistogramFilter(Parameters, FilterNode, LevelNode, TransformNode, **kwargs):
 
         FullTilePath = LevelNode.FullPath
         fulltilepaths = list()
-        for k in mosaic.ImageToTransform.keys():
+        for k in mosaic.ImageToTransformString.keys():
             fulltilepaths.append(os.path.join(FullTilePath, k))
 
         histogramObj = image_stats.Histogram(fulltilepaths, Bpp=Bpp)
