@@ -34,3 +34,5 @@ nosetests.xml
 .project
 .pydevproject
 /Logs/
+/test_volumemanager/
+/StosBrute16/
