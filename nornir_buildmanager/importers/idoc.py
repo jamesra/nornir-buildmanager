@@ -341,7 +341,10 @@ class SerialEMIDocImport(object):
             for f in ImageMap:
                 shutil.copy(f, ImageMap[f])
 
-
+        if len(PositionMap) == 0:
+            prettyoutput.Log("No tiles could be mapped to a position, skipping import")
+            return 
+        
         # If we wrote new images replace the .mosaic file
         if ImageConversionRequired or not os.path.exists(SupertilePath) or MissingInputImage:
             # Writing this file indicates import succeeded and we don't need to repeat these steps, writing it will possibly invalidate a lot of downstream data
@@ -353,7 +356,7 @@ class SerialEMIDocImport(object):
             #Sometimes files fail to convert, when this occurs remove them from the .mosaic
             if MFile.RemoveInvalidMosaicImages(OutputImagePath):
                 MFile.Save(SupertilePath)
-                
+
             transformObj.Checksum = MFile.Checksum
 
 
@@ -549,6 +552,9 @@ class IDocTileData():
         self.ExposureTime = None
         self.MinMaxMean = None
         self.TargetDefocus = None
+        
+    def __str__(self):
+        return self.Image
 
 
 class IDoc():
