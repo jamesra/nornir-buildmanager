@@ -341,6 +341,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         buildArgs = ['Build.py', '-volume', self.TestOutputPath,
                                  '-pipeline', 'CreateBlobFilter',
                                  '-debug', \
+                                 '-BlobFilters', 'mosaic',
                                  '-BlobRadius', '1',
                                  '-BlobMedian', '1',
                                  '-NumAdjacentSections', '1',
@@ -349,6 +350,16 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         VolumeObj = self.RunBuild(buildArgs)
         BlobFilterNode = VolumeObj.find('Block/Section/Channel/Filter[@Name="Blob_mosaic"]')
         self.assertIsNotNone(BlobFilterNode)
+
+        BlobImageNode = BlobFilterNode.GetImage(1)
+        self.assertTrue(os.path.exists(BlobImageNode.FullPath), "Blob output image file does not exist")
+
+        oldstat = os.stat(BlobImageNode.FullPath)
+
+        VolumeObj = self.RunBuild(buildArgs)
+
+        newstat = os.stat(BlobImageNode.FullPath)
+        self.assertEqual(oldstat.st_ctime, newstat.st_ctime, "Blob image recreated after second call to build")
 
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']
