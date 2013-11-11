@@ -101,10 +101,10 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
     SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
 
     if(not 'InputImageChecksum' in BlobImageSet):
-        BlobImageSet.InputImageChecksum = ImageSetNode.Checksum
+        BlobImageSet.InputImageChecksum = InputImageNode.Checksum
 
     if(not 'InputImageChecksum' in BlobImageNode):
-        BlobImageNode.InputImageChecksum = ImageSetNode.Checksum
+        BlobImageNode.InputImageChecksum = InputImageNode.Checksum
 
     if SaveFilterNode:
         return InputFilter.Parent
