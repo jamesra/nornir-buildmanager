@@ -344,6 +344,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                                  '-BlobFilters', 'mosaic',
                                  '-BlobRadius', '1',
                                  '-BlobMedian', '1',
+                                 '-BlobLevels', '1,4',
                                  '-NumAdjacentSections', '1',
                                  '-debug']
 
@@ -354,12 +355,20 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         BlobImageNode = BlobFilterNode.GetImage(1)
         self.assertTrue(os.path.exists(BlobImageNode.FullPath), "Blob output image file does not exist")
 
+        BlobImageNodeDSFour = BlobFilterNode.GetImage(4)
+        self.assertTrue(os.path.exists(BlobImageNodeDSFour.FullPath), "Blob output image file does not exist")
+
         oldstat = os.stat(BlobImageNode.FullPath)
+        oldstatDSFour = os.stat(BlobImageNodeDSFour.FullPath)
 
         VolumeObj = self.RunBuild(buildArgs)
 
         newstat = os.stat(BlobImageNode.FullPath)
+        newstatDSFour = os.stat(BlobImageNodeDSFour.FullPath)
+
         self.assertEqual(oldstat.st_ctime, newstat.st_ctime, "Blob image recreated after second call to build")
+        self.assertEqual(oldstatDSFour.st_ctime, newstatDSFour.st_ctime, "Blob image recreated after second call to build")
+
 
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']

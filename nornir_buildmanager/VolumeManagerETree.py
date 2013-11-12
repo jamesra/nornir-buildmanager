@@ -134,7 +134,7 @@ class VolumeManager():
                 XContainerElementWrapper.wrap(e)
         else:
             XElementWrapper.wrap(e)
-            
+
 
     @classmethod
     def __SetElementParent__(cls, Element, ParentElement=None):
@@ -787,10 +787,10 @@ class XElementWrapper(ElementTree.Element):
 #
             if len(RemainingXPath) > 0:
                 foundChild = match.find(RemainingXPath)
-                
-                
+
+
                 # Continue searching links if we don't find a result on the loaded elements
-                if not foundChild is None: 
+                if not foundChild is None:
                     return foundChild
             else:
                 return match
@@ -887,7 +887,7 @@ class XElementWrapper(ElementTree.Element):
 #             NotValid = m.CleanIfInvalid()
 #             if NotValid:
 #                 continue
-            
+
             if len(RemainingXPath) > 0:
                 subContainerMatches = m.findall(RemainingXPath)
                 if subContainerMatches is not None:
@@ -1921,24 +1921,38 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
         return imageNode
 
-    def __GenerateMissingImageLevel(self, OutputImage, Downsample):
-        '''Creates a downsampled image from available high-res images if needed'''
+    def __GetImageNearestToLevel(self, Downsample):
+        '''Returns the nearest existing image and downsample level lower than the requested downsample level'''
 
         SourceImage = None
         SourceDownsample = Downsample / 2
         while SourceDownsample > 0:
             SourceImage = self.GetImage(SourceDownsample)
             if not SourceImage is None:
-                break
+
+                # Only return images that actually are on disk
+                if os.path.exists(SourceImage.FullPath):
+                    break
+                else:
+                    # Probably a bad node, remove it
+                    self.CleanIfInvalid()
 
             SourceDownsample = SourceDownsample / 2
+
+        return (SourceImage, SourceDownsample)
+
+    def __GenerateMissingImageLevel(self, OutputImage, Downsample):
+        '''Creates a downsampled image from available high-res images if needed'''
+
+        (SourceImage, SourceDownsample) = self.__GetImageNearestToLevel(Downsample)
 
         if SourceImage is None:
             # raise Exception("No source image available to generate missing downsample level: " + OutputImage)
             return None
 
         OutputImage.Path = SourceImage.Path
-
+        if 'InputImageChecksum' in SourceImage.attrib:
+            OutputImage.InputImageChecksum = SourceImage.InputImageChecksum
 
         ShrinkP = nornir_shared.images.Shrink(SourceImage.FullPath, OutputImage.FullPath, float(Downsample) / float(SourceDownsample))
         ShrinkP.wait()

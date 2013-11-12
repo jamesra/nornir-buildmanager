@@ -1054,17 +1054,23 @@ def BuildImagePyramid(ImageSetNode, Logger, Levels=None, Interlace=True, **kwarg
         if not os.path.exists(TargetImageNode.Parent.FullPath):
             os.makedirs(TargetImageNode.Parent.FullPath)
 
+        buildLevel = False
+        if os.path.exists(TargetImageNode.FullPath):
+            if 'InputImageChecksum' in SourceImageNode.attrib:
+                TargetImageNode = transforms.RemoveOnMismatch(TargetImageNode, "InputImageChecksum", SourceImageNode.InputImageChecksum)
 
-        if 'InputImageChecksum' in SourceImageNode.attrib:
-            transforms.RemoveOnMismatch(TargetImageNode, "InputImageChecksum", SourceImageNode.InputImageChecksum)
-            # Recreate the node if needed
-            TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel)
+                if TargetImageNode is None:
+                    buildLevel = True
+                    # Recreate the node if needed
+                    TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel)
 
-#            RemoveOnMismatch()
-#            if(TargetImageNode.attrib["InputImageChecksum"] != SourceImageNode.InputImageChecksum):
-#                os.remove(TargetImageNode.FullPath)
+    #            RemoveOnMismatch()
+    #            if(TargetImageNode.attrib["InputImageChecksum"] != SourceImageNode.InputImageChecksum):
+    #                os.remove(TargetImageNode.FullPath)
+        else:
+            buildLevel = True
 
-        if not os.path.exists(TargetImageNode.FullPath):
+        if buildLevel:
             scale = thisLevel / SourceLevel
             NewP = images.Shrink(SourceImageNode.FullPath, TargetImageNode.FullPath, scale)
             NewP.wait()

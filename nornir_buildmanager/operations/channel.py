@@ -81,9 +81,12 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
 
         MaskStr = ' -mask %s ' % InputMaskNode.FullPath
 
-    BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName)
+    BlobImageNode = OutputFilterNode.Imageset.GetImage(thisLevel)
+    if not BlobImageNode is None:
+        BlobImageNode = transforms.RemoveOnMismatch(BlobImageNode, "InputImageChecksum", InputImageNode.Checksum)
 
-    RemoveOutdatedFile(InputImageNode.FullPath, BlobImageNode.FullPath)
+    if BlobImageNode is None:
+        BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName)
 
     if not os.path.exists(BlobImageNode.FullPath):
 
@@ -97,14 +100,16 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
         subprocess.call(cmd + " && exit", shell=True)
         SaveFilterNode = True
 
-    BlobPyramidImageSet = operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, Logger, **kwargs)
-    SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
-
     if(not 'InputImageChecksum' in BlobImageSet):
         BlobImageSet.InputImageChecksum = InputImageNode.Checksum
+        SaveFilterNode = True
 
     if(not 'InputImageChecksum' in BlobImageNode):
         BlobImageNode.InputImageChecksum = InputImageNode.Checksum
+        SaveFilterNode = True
+
+    BlobPyramidImageSet = operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, Logger, **kwargs)
+    SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
 
     if SaveFilterNode:
         return InputFilter.Parent
