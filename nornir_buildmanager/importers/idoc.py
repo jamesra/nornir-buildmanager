@@ -1,16 +1,16 @@
-import sys
-import re
-from nornir_imageregistration.io import mosaicfile
-from nornir_imageregistration import image_stats
-from nornir_shared.images import *
-from nornir_shared.histogram import *
-from nornir_buildmanager.VolumeManagerETree import *
-from nornir_shared.mathhelper import ListMedian
-from nornir_shared.files import RemoveOutdatedFile
 import logging
-from nornir_shared.plot import Histogram as PlotHistogram
+import re
+import sys
 
+from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.operations.tile import VerifyTiles
+from nornir_imageregistration import image_stats
+from nornir_imageregistration.io import mosaicfile
+from nornir_shared.files import RemoveOutdatedFile
+from nornir_shared.histogram import *
+from nornir_shared.images import *
+from nornir_shared.mathhelper import ListMedian
+from nornir_shared.plot import Histogram as PlotHistogram
 
 
 class SerialEMIDocImport(object):

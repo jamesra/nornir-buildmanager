@@ -4,18 +4,20 @@ Created on Oct 3, 2012
 @author: u0490822
 '''
 
-import logging
-import shutil
-import os
-import nornir_shared.images
-import nornir_pools as Pools
 import datetime
+import logging
+import os
+import shutil
+
 import nornir_buildmanager.importers.idoc as idoc
+from nornir_buildmanager.pipelinemanager import PipelineManager
+import nornir_pools as Pools
+import nornir_shared.images
 import nornir_shared.plot
 import nornir_shared.prettyoutput
-from nornir_buildmanager.pipelinemanager import PipelineManager
-# import Pipelines.VolumeManagerETree as VolumeManager
 
+
+# import Pipelines.VolumeManagerETree as VolumeManager
 if __name__ == '__main__':
     pass
 

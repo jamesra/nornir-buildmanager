@@ -4,10 +4,13 @@ Created on Aug 30, 2013
 @author: James Anderson
 '''
 
-from ez_setup import use_setuptools
-from setuptools import setup, find_packages
-import os
 import glob
+import os
+
+from setuptools import setup, find_packages
+
+from ez_setup import use_setuptools
+
 
 # This if test prevents an infinite recursion running tests from "python setup.py test"
 if __name__ == '__main__':

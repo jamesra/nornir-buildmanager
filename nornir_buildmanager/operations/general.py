@@ -4,17 +4,18 @@ Created on Aug 27, 2013
 @author: u0490822
 '''
 
-import sys
 import os
+import subprocess
+import sys
+
 from nornir_buildmanager import *
 from nornir_buildmanager.VolumeManagerETree import *
-from nornir_imageregistration.io import  mosaicfile
-import subprocess
-from nornir_shared.histogram import Histogram
+from nornir_buildmanager.validation import transforms
+from nornir_imageregistration.io import mosaicfile
+from nornir_imageregistration.transforms import *
 from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile
-from nornir_imageregistration.transforms import *
-from nornir_buildmanager.validation import transforms
+from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 
 

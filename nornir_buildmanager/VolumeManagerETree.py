@@ -1,32 +1,28 @@
 
-import os
-import nornir_shared.prettyoutput as prettyoutput
-import nornir_shared.reflection as reflection
-import nornir_shared.checksum
-
 import copy
 import datetime
+import glob
+import logging
+import operator
+import os
 import pickle
+import shutil
+import sys
 import urllib
 
-from nornir_imageregistration.io import *
-
-import xml.etree.ElementTree as ElementTree
-import shutil
-import operator
-import logging
-import glob
 import VolumeManagerHelpers as VMH
-
-import nornir_buildmanager.operations.versions as versions
-# import
 import nornir_buildmanager.Config as Config
-import nornir_shared.misc as misc
-
-
+import nornir_buildmanager.operations.versions as versions
+from nornir_imageregistration.io import *
 import nornir_pools as Pools
-import sys
+import nornir_shared.checksum
+import nornir_shared.misc as misc
+import nornir_shared.prettyoutput as prettyoutput
+import nornir_shared.reflection as reflection
+import xml.etree.ElementTree as ElementTree
 
+
+# import
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
 

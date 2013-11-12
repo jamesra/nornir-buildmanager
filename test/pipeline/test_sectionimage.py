@@ -3,13 +3,14 @@ Created on Apr 15, 2013
 
 @author: u0490822
 '''
-import unittest
-import setup_pipeline
 import glob
 import os
+import unittest
+
 import nornir_buildmanager.VolumeManagerETree
 import nornir_buildmanager.importers.sectionimage as sectionimage
 from setup_pipeline import VolumeEntry
+import setup_pipeline
 
 
 class ImportLMImages(setup_pipeline.PipelineTest):

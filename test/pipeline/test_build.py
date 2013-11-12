@@ -3,9 +3,11 @@ Created on Feb 22, 2013
 
 @author: u0490822
 '''
-import unittest
 import glob
+import unittest
+
 from setup_pipeline import *
+
 
 class PrepareThenMosaicTest(PipelineTest):
     '''Run the build with prepare, then run again with mosiac'''

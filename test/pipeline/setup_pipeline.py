@@ -3,20 +3,20 @@ Created on Feb 14, 2013
 
 @author: u0490822
 '''
-import unittest
-
+import logging
 import os
 import shutil
-import tempfile
-import nornir_shared.misc
-import nornir_buildmanager.build as build
-import logging
 import sys
+import tempfile
+import unittest
+
 import test.testbase
 
 from nornir_buildmanager.VolumeManagerETree import *
-from nornir_imageregistration.io.mosaicfile import *
+import nornir_buildmanager.build as build
 from nornir_buildmanager.validation import transforms
+from nornir_imageregistration.io.mosaicfile import *
+import nornir_shared.misc
 
 
 def VerifyVolume(test, VolumeObj, listVolumeEntries):

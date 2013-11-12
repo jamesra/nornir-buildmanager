@@ -3,25 +3,22 @@ Created on Feb 13, 2013
 
 @author: u0490822
 '''
-import unittest
-
-import unittest
-import nornir_buildmanager.importers.idoc as idoc
-import os
-import shutil
 import glob
 import logging
-
-from nornir_imageregistration.io.mosaicfile import MosaicFile
+import os
+import shutil
+import unittest
+import unittest
 
 from nornir_buildmanager.VolumeManagerETree import VolumeManager
-import nornir_shared.misc
-import nornir_shared.files
-
 import nornir_buildmanager.build as build
+from nornir_buildmanager.importers.idoc import SerialEMLog
+import nornir_buildmanager.importers.idoc as idoc
+from nornir_imageregistration.io.mosaicfile import MosaicFile
+import nornir_shared.files
+import nornir_shared.misc
 import setup_pipeline
 
-from nornir_buildmanager.importers.idoc import SerialEMLog
 
 class IDocTest(setup_pipeline.PipelineTest):
 

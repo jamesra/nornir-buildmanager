@@ -5,26 +5,23 @@ Created on Jun 22, 2012
 '''
 
 
-from nornir_imageregistration.io import stosfile, mosaicfile
-from nornir_imageregistration.transforms import *
-from nornir_imageregistration import assemble
-
+import copy
+import itertools
+import logging
 import os
-import subprocess
+import random
 import shutil
+import subprocess
 
-from nornir_shared import *
 from nornir_buildmanager import VolumeManagerETree, VolumeManagerHelpers
 from nornir_buildmanager.metadatautils import *
-import nornir_pools as pools
-import copy
-import logging
-import itertools
 from nornir_buildmanager.validation import transforms
+from nornir_imageregistration import assemble
+from nornir_imageregistration.io import stosfile, mosaicfile
+from nornir_imageregistration.transforms import *
+import nornir_pools as pools
+from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
-
-
-import random
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):

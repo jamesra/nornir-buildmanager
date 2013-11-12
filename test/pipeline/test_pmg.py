@@ -4,20 +4,20 @@ Created on Feb 6, 2013
 @author: u0490822
 '''
 
-import unittest
-import nornir_buildmanager.importers.pmg as pmg
-import os
-import shutil
 import glob
 import logging
-
-from nornir_imageregistration.io.mosaicfile import MosaicFile
-from nornir_buildmanager.importers.pmg import ParsePMGFilename, PMGInfo
+import os
+import shutil
+import unittest
 
 import nornir_buildmanager.VolumeManagerETree
-import nornir_shared.misc
+from nornir_buildmanager.importers.pmg import ParsePMGFilename, PMGInfo
+import nornir_buildmanager.importers.pmg as pmg
+from nornir_imageregistration.io.mosaicfile import MosaicFile
 import nornir_shared.files
+import nornir_shared.misc
 import setup_pipeline
+
 
 PMGData = {"6750_10677D_WDF_20x_02_G.pmg" : PMGInfo(Slide = 6750,
                                                  Block = '10677D',

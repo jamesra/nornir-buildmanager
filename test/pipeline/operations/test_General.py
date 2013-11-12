@@ -4,8 +4,10 @@ Created on Aug 27, 2013
 @author: u0490822
 '''
 import unittest
-import nornir_buildmanager.operations.general as General
+
 from test.pipeline.setup_pipeline import *
+
+import nornir_buildmanager.operations.general as General
 
 
 class TestGeneralOps(PrepareAndMosaicSetup):

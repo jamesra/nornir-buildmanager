@@ -1,21 +1,20 @@
-import sys
-import os
-import shutil
-import nornir_shared.prettyoutput as prettyoutput
 import glob
 import logging
-from nornir_imageregistration.io import  mosaicfile
-from nornir_imageregistration import image_stats
-from nornir_buildmanager.VolumeManagerETree import *
-from nornir_shared.files import *
-from nornir_shared.images import *
-
-from nornir_buildmanager import  Config
-
-from nornir_buildmanager.operations.tile import VerifyTiles
+import os
+import shutil
+import sys
 
 from filenameparser import ParseFilename, mapping
+from nornir_buildmanager import Config
+from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser
+from nornir_buildmanager.operations.tile import VerifyTiles
+from nornir_imageregistration import image_stats
+from nornir_imageregistration.io import mosaicfile
+from nornir_shared.files import *
+from nornir_shared.images import *
+import nornir_shared.prettyoutput as prettyoutput
+
 
 DEBUG = False
 

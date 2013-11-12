@@ -4,16 +4,17 @@ Created on Jun 4, 2012
 @author: Jamesan
 '''
 
-from nornir_buildmanager import *
-from nornir_imageregistration.io import  *
-from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
-import subprocess
-import shutil
-from nornir_shared import *
-import os
 import logging
-from nornir_buildmanager.validation import transforms
+import os
+import shutil
+import subprocess
 
+from nornir_buildmanager import *
+from nornir_buildmanager.validation import transforms
+from nornir_imageregistration.io import *
+from nornir_shared import *
+from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
+    ProgressOutputInterceptor
 
 
 def TranslateTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):

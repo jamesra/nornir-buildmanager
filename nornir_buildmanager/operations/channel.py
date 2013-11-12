@@ -4,19 +4,21 @@ Created on Aug 27, 2013
 @author: u0490822
 '''
 
+import math
+import subprocess
 import sys
+import xml
+
 from nornir_buildmanager import *
 from nornir_buildmanager.VolumeManagerETree import *
-from nornir_imageregistration.io import  mosaicfile
-import subprocess
-from nornir_shared.histogram import Histogram
+from nornir_buildmanager.validation import transforms
+from nornir_imageregistration.io import mosaicfile
+from nornir_imageregistration.transforms import *
 from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile
-import math
-import xml
-from nornir_imageregistration.transforms import *
-from nornir_buildmanager.validation import transforms
+from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
+
 
 def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
     '''@FilterNode.  Create  a new filter which has been processed with blob'''

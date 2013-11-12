@@ -1,6 +1,7 @@
 import idoc;
-from nornir_shared.images import *
 from nornir_buildmanager.VolumeManagerETree import *
+from nornir_shared.images import *
+
 
 class SerialEMMDocImport(idoc.SerialEMIDocImport):
 

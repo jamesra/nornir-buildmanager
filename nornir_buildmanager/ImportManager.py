@@ -4,17 +4,20 @@ Created on Apr 2, 2012
 @author: James Anderson
 '''
 
-from nornir_shared.reflection import *
-from nornir_shared.files import *
-import nornir_shared.prettyoutput as prettyoutput;
-import os
-import xml.etree.ElementTree
-import argparse;
-import sys
 import logging
-import nornir_buildmanager.VolumeManagerETree as VM
+import os
+import sys
+import xml.etree.ElementTree
 
 from nornir_buildmanager import Config
+import nornir_buildmanager.VolumeManagerETree as VM
+from nornir_shared.files import *
+from nornir_shared.reflection import *
+
+
+import nornir_shared.prettyoutput as prettyoutput;
+import argparse;
+
 
 
 def DefaultImportPackagePath():

@@ -4,14 +4,16 @@ Created on Jul 3, 2012
 @author: Jamesan
 '''
 
-import nornir_shared.prettyoutput as prettyoutput
-from nornir_shared.files import RecurseSubdirectories
-import os
-import xml.etree.ElementTree as ETree
-import nornir_buildmanager.VolumeManagerETree
-from nornir_imageregistration.io import *
 import copy
 import functools
+import os
+
+import nornir_buildmanager.VolumeManagerETree
+from nornir_imageregistration.io import *
+from nornir_shared.files import RecurseSubdirectories
+import nornir_shared.prettyoutput as prettyoutput
+import xml.etree.ElementTree as ETree
+
 
 ECLIPSE = 'ECLIPSE' in os.environ;
 

@@ -3,18 +3,19 @@ Created on Feb 11, 2013
 
 @author: u0490822
 '''
-import unittest
+import logging
 import os
 import shutil
 import tempfile
-import nornir_shared.files
-import nornir_shared.misc
-import nornir_buildmanager.build as build
-import logging
-from nornir_buildmanager.validation import transforms
-from nornir_buildmanager.VolumeManagerETree import *
+import unittest
+
 from test.pipeline.setup_pipeline import *
 
+from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager.build as build
+from nornir_buildmanager.validation import transforms
+import nornir_shared.files
+import nornir_shared.misc
 
 
 class TransformIsValidTest(PrepareAndMosaicSetup):

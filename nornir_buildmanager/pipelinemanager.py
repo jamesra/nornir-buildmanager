@@ -4,20 +4,21 @@ Created on Apr 2, 2012
 @author: James Anderson
 '''
 
-import sys
-import re
-import nornir_shared.prettyoutput as prettyoutput
-import os
-import xml.etree
 import copy
+import logging
+import os
+import re
+import sys
+import traceback
+import xml.etree
+
+from nornir_buildmanager import VolumeManagerETree
+import nornir_shared.prettyoutput as prettyoutput
+import nornir_shared.reflection
+
+
 # from nornir_buildmanager.Data import Volumes
 # from nornir_buildmanager.Data import Pipelines
-from nornir_buildmanager import VolumeManagerETree
-import nornir_shared.reflection
-import traceback
-import logging
-
-
 class PipelineError(Exception):
     '''An expected node did not exist'''
 

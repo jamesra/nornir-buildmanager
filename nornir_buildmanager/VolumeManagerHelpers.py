@@ -4,8 +4,9 @@ Created on Oct 11, 2012
 @author: u0490822
 '''
 
-import VolumeManagerETree as VM
 import re
+
+import VolumeManagerETree as VM
 
 
 def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):

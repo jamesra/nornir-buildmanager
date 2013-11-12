@@ -1,17 +1,18 @@
 #! /Library/Frameworks/Python.framework/Versions/Current/bin python
 
-import sys
-import os
-
-import time
-import argparse 
-import nornir_shared.prettyoutput as prettyoutput
-from nornir_shared.tasktimer import TaskTimer
+import argparse
 import logging
-from nornir_buildmanager import *
-from nornir_imageregistration.io import *
+import os
+import sys
+import time
 
 from pkg_resources import resource_filename
+
+from nornir_buildmanager import *
+from nornir_imageregistration.io import *
+import nornir_shared.prettyoutput as prettyoutput
+from nornir_shared.tasktimer import TaskTimer
+
 
 def ConfigDataPath():
     return resource_filename(__name__, 'config')

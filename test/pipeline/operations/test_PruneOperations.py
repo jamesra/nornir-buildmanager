@@ -3,13 +3,13 @@ Created on Feb 14, 2013
 
 @author: u0490822
 '''
-import test.pipeline.setup_pipeline
-import unittest
 import os
+import unittest
 
-from nornir_imageregistration.io.mosaicfile import MosaicFile
+import test.pipeline.setup_pipeline
 
 from nornir_buildmanager.operations.pruneobj import PruneObj
+from nornir_imageregistration.io.mosaicfile import MosaicFile
 
 
 class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
