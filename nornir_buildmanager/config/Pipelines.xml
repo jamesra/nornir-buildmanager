@@ -213,6 +213,9 @@
   </Pipeline>
 
   <Pipeline Name="EmailReport" Description="E-mail the summary for a volume">
+  	<Arguments>
+  		<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter used to build leveled and mosaic images" required="False"/>
+  	</Arguments>
     <Select VariableName="ReportingElement" XPath="Block"/>
     <PythonCall Function="reporting.GenerateTableReport"
      		    OutputFile="ImageReport.html"
@@ -220,7 +223,7 @@
      		    RowLabelAttrib="Number"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='16']/Image,Channel/Data[@Name='Log'],Channel/Filter/Histogram/Image,Channel/Filter/Prune/Image" />
+     		    ColumnXPaths="Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='16']/Image,Channel/Data,Channel/Filter[@Name='#InputFilter']/Histogram/Image,Channel/Filter[@Name='#InputFilter']/Prune/Image" />
 
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
   </Pipeline>
