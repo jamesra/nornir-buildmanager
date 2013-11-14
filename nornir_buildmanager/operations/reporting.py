@@ -20,6 +20,44 @@ if __name__ == '__main__':
     pass
 
 
+def HTMLBuilder(list):
+    '''A list of strings that contain HTML'''
+    
+    @property
+    def IndentLevel(self):
+        return self.__IndentLevel
+    
+    def Indent(self):
+        self.__IndentLevel += 1
+        
+    def Dedent(self):
+        self.__IndentLevel += 1
+    
+    def __init__(self, indentlevel = None):
+        super(HTMLBuilder,self).__init__()
+        
+        if indentlevel is None:
+            self.__IndentLevel = 0
+        else:  
+            self.__IndentLevel = indentlevel
+    
+    def __IndentString(self, indent):
+        
+        if indent is None:
+            return ''
+        
+        return ' ' * indent
+    
+    def Add(self, value):
+        if isinstance(value,list):
+            self.extend(value)
+        elif isinstance(value, str):
+            self.append(self.__IndentString(self.IndentLevel) + value)
+        
+    def __str__(self):
+        return ''.join([x for x in self])
+    
+
 HTMLImageTemplate = '<img src="%(src)s" alt="%(AltText)s" width="%(ImageWidth)s" height="%(ImageHeight)s" />'
 HTMLAnchorTemplate = '<a href="%(href)s">%(body)s</a>'
 
@@ -105,29 +143,46 @@ def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirector
 
     TableEntries = []
     if 'AverageTileDrift' in DataNode.attrib:
-        TableEntries.append(['Average Tile Drift:', '%.3g nm/sec' % float(DataNode.AverageTileDrift)])
+        TableEntries.append(['Average tile drift:', '%.3g nm/sec' % float(DataNode.AverageTileDrift)])
+        
+    if 'MinTileDrift' in DataNode.attrib:
+        TableEntries.append(['Min tile drift:', '%.3g nm/sec' % float(DataNode.MinTileDrift)])
+        
+    if 'MaxTileDrift' in DataNode.attrib:
+        TableEntries.append(['Max tile drift:', '%.3g nm/sec' % float(DataNode.MaxTileDrift)])
 
     if 'AverageTileTime' in DataNode.attrib:
-        TableEntries.append(['Average Tile Time:', '%.3g' % float(DataNode.AverageTileTime)])
+        TableEntries.append(['Average tile time:', '%.3g' % float(DataNode.AverageTileTime)])
+        
+    if 'FastestTileTime' in DataNode.attrib:
+        dtime = datetime.timedelta(seconds=float(DataNode.CaptureTime))
+        TableEntries.append(['Fastest tile time:', str(dtime)])
 
     if 'CaptureTime' in DataNode.attrib:
         dtime = datetime.timedelta(seconds=float(DataNode.CaptureTime))
         TableEntries.append(['Total capture time:', str(dtime)])
-
+        
     logFilePath = DataNode.FullPath
     if os.path.exists(logFilePath):
+        
         Data = idoc.SerialEMLog.Load(logFilePath)
+        
+        TPool = Pools.GetGlobalMultithreadingPool()
 
         LogSrcFullPath = os.path.join(RelPath, DataNode.Path)
+ 
+        DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.png"
+        DriftSettleImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, DriftSettleThumbnailFilename)
+        DriftSettleThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, DriftSettleThumbnailFilename)
 
-
-
-        ThumbnailFilename = GetTempFileSaltString() + "Drift.png"
-        ImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, ThumbnailFilename)
-        ThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, ThumbnailFilename)
-
-
-
+        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime(Data, DriftSettleThumbnailOutputFullPath))
+        
+        DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
+        DriftGridImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, DriftGridThumbnailFilename)
+        DriftGridThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, DriftGridThumbnailFilename)
+        
+        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid(Data, DriftGridThumbnailOutputFullPath))
+        
         # Build a histogram of drift settings
 #        x = []
 #        y = []
@@ -140,34 +195,17 @@ def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirector
 #        ImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, ThumbnailFilename)
 #        ThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, ThumbnailFilename)
 
-        lines = []
-        maxdrift = None
-        NumTiles = int(0)
-        for t in Data.tileData.values():
-            if not (t.dwellTime is None or t.drift is None):
-                time = []
-                drift = []
-
-                for s in t.driftStamps:
-                    time.append(s[0])
-                    drift.append(s[1])
-
-                maxdrift = max(maxdrift, t.driftStamps[-1][1])
-                lines.append((time, drift))
-                NumTiles = NumTiles + 1
-
-        TableEntries.append(['Number of Tiles', str(NumTiles)])
-
-        TPool = Pools.GetGlobalMultithreadingPool()
-
-        TPool.add_task(ThumbnailFilename, nornir_shared.plot.PolyLine, lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
-        # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
-        HTMLImage = HTMLImageTemplate % {'src' : ImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
-        HTMLAnchor = HTMLAnchorTemplate % {'href' : ImgSrcPath, 'body' : HTMLImage }
+        TableEntries.append(['Number of Tiles', str(Data.NumTiles)])
+                # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
+        HTMLDriftSettleImage = HTMLImageTemplate % {'src' : DriftSettleImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
+        HTMLDriftSettleAnchor = HTMLAnchorTemplate % {'href' : DriftSettleImgSrcPath, 'body' : HTMLDriftSettleImage }
+        
+        HTMLDriftGridImage = HTMLImageTemplate % {'src' : DriftGridImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
+        HTMLDriftGridAnchor = HTMLAnchorTemplate % {'href' : DriftGridImgSrcPath, 'body' : HTMLDriftGridImage }
 
         TableEntries.append(HTMLAnchorTemplate % {'href' : LogSrcFullPath, 'body' : "Log File" })
-
-        TableEntries.append(HTMLAnchor)
+        TableEntries.append(HTMLDriftSettleAnchor)
+        TableEntries.append(HTMLDriftGridAnchor)
 
 
 
@@ -176,6 +214,14 @@ def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirector
 
     HTML = MatrixToTable(TableEntries)
     return HTML
+
+
+def AddImageToTable(TableEntries, ThumbnailDirectoryRelPath, ThumbnailDirectory, DriftSettleThumbnailFilename):
+    DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.png"
+    DriftSettleImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, DriftSettleThumbnailFilename)
+    DriftSettleThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, DriftSettleThumbnailFilename)
+
+    
 
 
 def ImgTagFromImageNode(ImageNode, ThumbnailDirectory, RelPath, ThumbnailDirectoryRelPath, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
@@ -341,7 +387,7 @@ def CreateHTMLDoc(OutputFile, HTMLBody):
     HTMLHeader = "<!DOCTYPE html> \n" + "<html>\n " + "<body>\n"
     HTMLFooter = "</body>\n" + "</html>\n"
 
-    HTML = HTMLHeader + HTMLBody + HTMLFooter
+    HTML = HTMLHeader + str(HTMLBody) + HTMLFooter
 
     if os.path.exists(OutputFile):
         os.remove(OutputFile)
@@ -350,6 +396,79 @@ def CreateHTMLDoc(OutputFile, HTMLBody):
         f = open(OutputFile, 'w')
         f.write(HTML)
         f.close()
+        
+        
+def __IndentString(IndentLevel):
+    return ' '  * IndentLevel
+
+def __AppendHTML(html, newHtml, IndentLevel):
+    html.append(__IndentString(IndentLevel) + newHtml)
+    
+def __ValueToTableCell(value, IndentLevel):
+    '''Converts a value to a table cell'''
+    HTML = HTMLBuilder(IndentLevel)
+     
+    if isinstance(value, str):
+        HTML.Add('<td valign="top"> ')
+        HTML.Add(value)
+    elif isinstance(value, dict):
+        HTML.Add('<td valign="left">\n')
+        HTML.Indent()
+        HTML.Add(DictToTable(value, IndentLevel))
+        HTML.Dedent() 
+    elif isinstance(value, list):
+        HTML.Add('<td valign="left">\n ')
+        HTML.Indent()
+        HTML.Add(__ListToTableColumns(value, IndentLevel))
+        HTML.Dedent()
+    else:
+        HTML.Add("Unknown type passed to __ValueToHTML")
+        
+    
+    HTML.Add("</td>\n") 
+        
+    return HTML
+        
+        
+def __ListToTableColumns(listColumns, IndentLevel):
+    '''Convert a list to a set of <tf> columns in a table'''
+    
+    HTML = HTMLBuilder(IndentLevel)
+    
+    for entry in listColumns:
+        HTML.Add(__ValueToTableCell(entry, HTML.IndentLevel))
+    
+    return HTML
+        
+    
+
+def DictToTable(RowDict=None, IndentLevel=None):
+    
+    HTML = HTMLBuilder(IndentLevel)
+        
+    HTML.Add("<table>\n")
+    HTML.Indent()
+    
+    keys = RowDict.keys()
+    keys.sort()
+    
+    for row in keys:
+        value = RowDict[row]
+        
+        HTML.Add('<tr>\n')
+        HTML.Indent()
+        
+        HTML.Add(__ValueToTableCell(value), HTML.IndentLevel)
+        
+        HTML.Dedent()
+        HTML.Add("</tr>\n")
+        
+    HTML.Add("</table>\n")
+    
+    HTML.Dedent()
+    
+    return HTML
+ 
 
 def MatrixToTable(RowBodyList=None, IndentLevel=None):
     '''Convert a list of lists containing HTML fragments into a table'''
