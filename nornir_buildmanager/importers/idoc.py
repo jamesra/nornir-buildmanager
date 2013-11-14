@@ -8,7 +8,7 @@ from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
 import logging
-from nornir_shared.plot import Histogram as PlotHistogram
+import nornir_shared.plot as plot 
 
 from nornir_buildmanager.operations.tile import VerifyTiles
 
@@ -684,6 +684,7 @@ class LogTileData():
             return drift
 
         return None
+    
 
     def __str__(self):
         text = ""
@@ -737,6 +738,51 @@ class SerialEMLog():
             total = total + t.drift
 
         return total / count
+    
+    
+    @property
+    def FastestTileTime(self):
+        '''Shortest time to capture a tile in seconds'''
+        
+        fastestTime = None
+        for t in self.tileData.values():
+            if not (t.dwellTime is None or t.drift is None): 
+                if fastestTime is None:
+                    fastestTime = t.totalTime
+                else:
+                    fastestTime = min(fastestTime, t.totalTime)
+        
+        return fastestTime
+               
+    @property
+    def MaxTileDrift(self):
+        '''Largest drift for a tile in seconds'''
+        maxdrift = 0
+        for t in self.tileData.values():
+            if not (t.dwellTime is None or t.drift is None):
+                maxdrift = max(maxdrift, t.driftStamps[-1][1])
+               
+        return maxdrift
+    
+    @property
+    def MinTileDrift(self):
+        '''Largest drift for a tile in seconds'''
+        mindrift = self.MaxDrift + 1
+        for t in self.tileData.values():
+            if not (t.dwellTime is None or t.drift is None):
+                mindrift = min(mindrift, t.driftStamps[-1][1])
+               
+        return mindrift
+    
+    
+    @property
+    def NumTiles(self):
+        NumTiles = 0
+        for t in self.tileData.values():
+            if not (t.dwellTime is None or t.drift is None):
+                NumTiles = NumTiles + 1
+                
+        return NumTiles
 
     def __init__(self):
         self.tileData = {}  # The time required to capture each tile
@@ -887,22 +933,53 @@ class SerialEMLog():
                 Data.MontageEnd = LastValidTimestamp
 
         return Data
+    
+
+def __argToSerialEMLog(arg):
+    Data = None
+    if isinstance(arg, str):
+        Data = SerialEMLog.Load(sys.argv[1])
+    elif isinstance(arg, SerialEMLog):
+        Data = arg
+    else:        
+        raise Exception("Invalid argument type to PlotDrifGrid")
+    
+    return Data
 
 
-if __name__ == "__main__":
+def PlotDriftSettleTime(DataSource, OutputImageFile):
+    '''Create a poly line plot showing how each tiles drift rate changed over time'''
+    
+    Data = __argToSerialEMLog(DataSource)
+    
+    lines = []
+    maxdrift = None
+    NumTiles = int(0)
+    for t in Data.tileData.values():
+        if not (t.dwellTime is None or t.drift is None):
+            time = []
+            drift = []
 
-    import datetime
+            for s in t.driftStamps:
+                time.append(s[0])
+                drift.append(s[1])
+
+            maxdrift = max(maxdrift, t.driftStamps[-1][1])
+            lines.append((time, drift))
+            NumTiles = NumTiles + 1
+  
+    plot.PolyLine(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=OutputImageFile)
+
+    return 
 
 
-    Data = SerialEMLog.Load(sys.argv[1])
+def PlotDriftGrid(DataSource, OutputImageFile):
+    
+    Data = __argToSerialEMLog(DataSource)
 
-    dtime = datetime.timedelta(seconds=(Data.MontageEnd - Data.MontageStart))
+    
 
-    print "%d tiles" % len(Data.tileData)
-    print "Average drift: %g nm/sec" % Data.AverageTileDrift
-    print "Average tile time: %g sec" % Data.AverageTileTime
-    print "Total time: %s" % str(dtime)
-
+ 
     lines = []
     maxdrift = None
     NumTiles = int(0)
@@ -937,8 +1014,8 @@ if __name__ == "__main__":
             lines.append((time, drift))
             NumTiles = NumTiles + 1
 
-    print "Fastest Capture: %g" % fastestTime
-    print "Total tiles: %d" % NumTiles
+#    print "Fastest Capture: %g" % fastestTime
+#    
 
    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
 
@@ -950,6 +1027,36 @@ if __name__ == "__main__":
         y.append(d[1])
         s.append(d[2])
 
-    PlotHistogram.ScatterPlot(x, y, s, c=c, Title="Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries")
+    title="Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
+    
+    plot.Scatter(x, y, s, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
 
+    return 
+
+
+if __name__ == "__main__":
+    
+    datapath = sys.argv[1]
+   
+    basename = os.path.basename(datapath)
+    (outfile, ext) = os.path.splitext(basename)
+    outdir = os.path.dirname(datapath)
+    
+    Data = __argToSerialEMLog(datapath)
+    
+    dtime = datetime.timedelta(seconds=(Data.MontageEnd - Data.MontageStart))
+
+    print "%d tiles" % len(Data.tileData)
+    
+    print "Average drift: %g nm/sec" % Data.AverageTileDrift
+    print "Min drift: %g nm/sec" % Data.MinTileDrift
+    print "Max drift: %g nm/sec" % Data.MaxTileDrift
+    print "Average tile time: %g sec" % Data.AverageTileTime
+    print "Fastest tile time: %g sec" % Data.FastestTileTime
+    print "Total time: %s" % str(dtime)
+    print "Total tiles: %d" % Data.NumTiles
+    
+    PlotDriftGrid(datapath, os.path.join(outdir, outfile + "_driftgrid.svg"))
+    PlotDriftSettleTime(datapath, os.path.join(outdir, outfile + "_settletime.svg"))
+     
 
