@@ -14,13 +14,24 @@ import nornir_buildmanager.importers.idoc as idoc
 import nornir_shared.plot
 import nornir_shared.prettyoutput
 from nornir_buildmanager.pipelinemanager import PipelineManager
+import nornir_shared.files as nfiles
 # import Pipelines.VolumeManagerETree as VolumeManager
 
 if __name__ == '__main__':
     pass
 
 
-def HTMLBuilder(list):
+class RowList(list):
+    '''class used for HTML to place into rows'''
+    pass
+
+class ColumnList(list):
+    '''Class used for HTML to place into columns'''
+    pass
+        
+
+
+class HTMLBuilder(list):
     '''A list of strings that contain HTML'''
     
     @property
@@ -31,7 +42,7 @@ def HTMLBuilder(list):
         self.__IndentLevel += 1
         
     def Dedent(self):
-        self.__IndentLevel += 1
+        self.__IndentLevel -= 1
     
     def __init__(self, indentlevel = None):
         super(HTMLBuilder,self).__init__()
@@ -57,6 +68,71 @@ def HTMLBuilder(list):
     def __str__(self):
         return ''.join([x for x in self])
     
+
+class HTMLPaths(object):
+     
+    @property
+    def SourceRootDir(self):
+        return self._SourceRootDir
+    
+    @property
+    def OutputDir(self):
+        return self._OutputDir
+    
+    @property
+    def OutputFile(self):
+        return self._OutputFile
+    
+    @property
+    def ThumbnailDir(self):
+        return self._ThumbnailDir
+    
+    @property
+    def ThumbnailRelative(self):
+        return self._ThumbnialRootRelative
+    
+    def __init__(self, RootElementPath, OutputFileFullPath):
+        
+        if OutputFileFullPath is None:
+            OutputFileFullPath = "DefaultReport.html"
+        
+        self._SourceRootDir = RootElementPath
+        if not isinstance(RootElementPath, str):
+            self._SourceRootDir = RootElementPath.Path
+            
+        
+        self._OutputDir = os.path.dirname(OutputFileFullPath)
+        self._OutputDir.strip()        
+        if len(self.OutputDir) == 0:
+            self._OutputDir = RootElementPath
+            self._OutputFile = os.path.basename(OutputFileFullPath)
+        else: 
+            self._OutputFile = os.path.basename(OutputFileFullPath)
+            
+        (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
+                
+        
+    def GetSubNodeRelativePath(self, subpath):
+        
+        fullpath = subpath
+        if not isinstance(fullpath, str):
+            fullpath = subpath.FullPath
+        
+        RelativePath = fullpath.replace(self.SourceRootDir, '')
+        RelativePath = os.path.dirname(RelativePath)
+        if(RelativePath[0] == os.sep or
+           RelativePath[0] == os.altsep):
+            RelativePath = RelativePath[1:]
+            
+        return RelativePath
+
+    def __ThumbnailPaths(self):
+        '''Return relative and absolute thumnails for an OutputFile'''
+        (ThumbnailDirectory, ext) = os.path.splitext(self.OutputFile)
+        ThumbnailDirectoryFullPath = os.path.join(self.OutputDir, ThumbnailDirectory)
+        
+        return (ThumbnailDirectory, ThumbnailDirectoryFullPath)
+
 
 HTMLImageTemplate = '<img src="%(src)s" alt="%(AltText)s" width="%(ImageWidth)s" height="%(ImageHeight)s" />'
 HTMLAnchorTemplate = '<a href="%(href)s">%(body)s</a>'
@@ -94,43 +170,157 @@ def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
 
     return None
 
-def ScatterPlotStageDrift(Parameters, DataNode, **kwargs):
-    logFilePath = DataNode.FullPath
 
-    DriftImageName = "StageDrift" + DataNode.Name + ".png"
-
-    # ImageNode = DataNode.GetOrAddChildByAttrib(VolumeManager.ImageNode(Path=DriftImageName))
-
-    if os.path.exists(logFilePath):
-        Data = idoc.SerialEMLog.Load(logFilePath)
-
-        lines = []
-        maxdrift = None
-        for t in Data.tileData.values():
-            if not (t.dwellTime is None or t.drift is None):
-                time = []
-                drift = []
-
-                for s in t.driftStamps:
-                    time.append(s[0])
-                    drift.append(s[1])
-
-                maxdrift = max(maxdrift, t.driftStamps[-1][1])
-                lines.append((time, drift))
-
-        nornir_shared.plot.PolyLine(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
-
-
-def HTMLFromNotesNode(DataNode, RelPath, **kwargs):
-    notesFilePath = DataNode.FullPath
-    if os.path.exists(notesFilePath):
-        NotesSrcFullPath = os.path.join(RelPath, DataNode.Path)
-        return HTMLAnchorTemplate % {'href' : NotesSrcFullPath, 'body' : "Notes" }
+def __patchupNotesPath(NotesNode):
+    '''Temp fix for old notes elements without a path attribute'''
+    if 'SourceFilename' in NotesNode.attrib:
+        return NotesNode.SourceFilename        
+    elif 'Path' in NotesNode.attrib:
+        return NotesNode.Path
     else:
-        return None
+        raise Exception('No path data for notes node')
+    
+
+def __RemoveRTFBracket(rtfStr):
+    '''Removes brackets from rtfStr in pairs'''
+    
+    assert(rtfStr[0] == '{')
+    rtfStr = rtfStr[1:]
+    rbracket = rtfStr.find('}')
+    lbracket = rtfStr.find('{')
+    
+    if lbracket < 0:
+        return rtfStr[rbracket+1:]
+    
+    if rbracket < 0:
+        '''No paired bracket, remove left bracket and return'''
+        return rtfStr
+    
+    if lbracket < rbracket:
+        rtfStr = rtfStr[:lbracket] + __RemoveRTFBracket(rtfStr[lbracket:])
+        return __RemoveRTFBracket('{' + rtfStr)
+    else:
+        return rtfStr[rbracket+1:] 
+    
+def __RTFToHTML(rtfStr):
+    '''Crudely convert a rich-text string to html'''
+    
+    translationTable = {'\pard' : '<br\>', 
+                        '\par' : '<br\>',
+                        '\viewkind' : ''}
+    
+    if(rtfStr[0] == '{'):
+        rtfStr = rtfStr[1:-2]
+    
+    HTMLOut = HTMLBuilder()
+    
+    HTMLOut.Add('<p>')
+
+    translatekeys = translationTable.keys()
+    translatekeys = sorted(translatekeys, key=len, reverse=True)
+    
+    while len(rtfStr) > 0:
+        
+        if '{' == rtfStr[0]:
+            rtfStr = __RemoveRTFBracket(rtfStr)
+            continue            
+        
+        for key in translatekeys:
+            if rtfStr.startswith(key):
+                HTMLOut.Add(translationTable[key])
+                rtfStr = rtfStr[len(key):]
+                continue
+            
+        if rtfStr.startswith('\\'):
+            rtfStr = rtfStr[1:]
+            iSlash = rtfStr.find('\\')
+            iSpace = rtfStr.find(' ')
+            iBracket = rtfStr.find('{')
+            
+            indicies = [iSlash, iSpace, iBracket]
+            goodIndex = []
+            for i in indicies:
+                if i > 0:
+                    goodIndex.append(i)
+                    
+            if len(goodIndex) == 0:
+                #The string is empty, stop the loop
+                break 
+            
+            iClip = min(goodIndex)
+                
+            rtfStr = rtfStr[iClip:]
+        else:
+            HTMLOut.Add(rtfStr[0])
+            rtfStr = rtfStr[1:]
+    
+    outStr =  str(HTMLOut).strip() 
+    while outStr.endswith('<br\>'):
+        outStr = outStr[:-len('<br\>')].strip()
+        
+    if len(HTMLOut) > 0:
+        return '<p>' + outStr    
+            
+    return ''
+        
+
+def HTMLFromNotesNode(DataNode, htmlPaths, **kwargs):
+    
+    #Temp patch
+    FullPath = os.path.join(DataNode.Parent.FullPath, __patchupNotesPath(DataNode))
+    RelPath = htmlPaths.GetSubNodeRelativePath(FullPath)
+    
+    (junk, ext) = os.path.splitext(__patchupNotesPath(DataNode))
+    ext = ext.lower() 
+    
+    HTML = ""
+     
+    if os.path.exists(FullPath):
+        NotesSrcFullPath = os.path.join(RelPath, __patchupNotesPath(DataNode))               
+        HTML += HTMLAnchorTemplate % {'href' : NotesSrcFullPath, 'body' : "<b>Notes</b>: " }
+        
+    if not (DataNode.text is None or len(DataNode.text) == 0):
+        if 'rtf' in ext or 'doc' in ext:
+            HTML += __RTFToHTML(DataNode.text)
+        else:
+            HTML += DataNode.text
+     
+    if len(HTML) == 0:
+        return None   
+         
+    return HTML
 
 
-def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirectoryRelPath, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
+def __ExtractLogDataText(Data):
+    
+    Rows = {}
+    
+    if hasattr(Data, 'AverageTileDrift'):
+        Rows['AverageTileDrift'] = ['Average tile drift:', '%.3g nm/sec' % float(Data.AverageTileDrift)]
+        
+    if hasattr(Data, 'MinTileDrift'):
+        Rows['MinTileDrift'] = ['Min tile drift:', '%.3g nm/sec' % float(Data.MinTileDrift)]
+                                        
+    if hasattr(Data, 'MaxTileDrift'):
+        Rows['MaxTileDrift'] =['Max tile drift:', '%.3g nm/sec' % float(Data.MaxTileDrift)]
+
+    if hasattr(Data, 'AverageTileTime'):
+        Rows['AverageTileTime'] = ['Average tile time:', '%.3g' % float(Data.AverageTileTime)]
+        
+    if hasattr(Data, 'FastestTileTime'): 
+        Rows['FastestTileTime'] = ['Fastest tile time:', str(Data.FastestTileTime)]
+         
+    if hasattr(Data, 'NumTiles'): 
+        Rows['NumTiles'] = ['Number of tiles:', str(Data.NumTiles)]
+
+    if hasattr(Data, 'TotalTime'):
+        dtime = datetime.timedelta(seconds=float(Data.TotalTime))
+        Rows['CaptureTime'] = ['Total capture time:', str(dtime)]
+
+    return Rows
+    
+
+def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
 
     if MaxImageWidth is None:
         MaxImageWidth = 1024
@@ -141,46 +331,36 @@ def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirector
     if not DataNode.Name == 'Log':
         return None
 
-    TableEntries = []
-    if 'AverageTileDrift' in DataNode.attrib:
-        TableEntries.append(['Average tile drift:', '%.3g nm/sec' % float(DataNode.AverageTileDrift)])
-        
-    if 'MinTileDrift' in DataNode.attrib:
-        TableEntries.append(['Min tile drift:', '%.3g nm/sec' % float(DataNode.MinTileDrift)])
-        
-    if 'MaxTileDrift' in DataNode.attrib:
-        TableEntries.append(['Max tile drift:', '%.3g nm/sec' % float(DataNode.MaxTileDrift)])
-
-    if 'AverageTileTime' in DataNode.attrib:
-        TableEntries.append(['Average tile time:', '%.3g' % float(DataNode.AverageTileTime)])
-        
-    if 'FastestTileTime' in DataNode.attrib:
-        dtime = datetime.timedelta(seconds=float(DataNode.CaptureTime))
-        TableEntries.append(['Fastest tile time:', str(dtime)])
-
-    if 'CaptureTime' in DataNode.attrib:
-        dtime = datetime.timedelta(seconds=float(DataNode.CaptureTime))
-        TableEntries.append(['Total capture time:', str(dtime)])
+    TableEntries = {}
+    
         
     logFilePath = DataNode.FullPath
     if os.path.exists(logFilePath):
         
         Data = idoc.SerialEMLog.Load(logFilePath)
         
+        RelPath = htmlpaths.GetSubNodeRelativePath(DataNode)
+        
+        TableEntries["2"] = __ExtractLogDataText(Data)
+        
         TPool = Pools.GetGlobalMultithreadingPool()
 
         LogSrcFullPath = os.path.join(RelPath, DataNode.Path)
  
         DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.png"
-        DriftSettleImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, DriftSettleThumbnailFilename)
-        DriftSettleThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, DriftSettleThumbnailFilename)
-
+        DriftSettleImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftSettleThumbnailFilename)
+        DriftSettleThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftSettleThumbnailFilename)
+        
+        #nfiles.RemoveOutdatedFile(logFilePath, DriftSettleThumbnailOutputFullPath)
+        #if not os.path.exists(DriftSettleThumbnailOutputFullPath):
         TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime(Data, DriftSettleThumbnailOutputFullPath))
         
         DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
-        DriftGridImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, DriftGridThumbnailFilename)
-        DriftGridThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, DriftGridThumbnailFilename)
+        DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
+        DriftGridThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftGridThumbnailFilename)
         
+        #nfiles.RemoveOutdatedFile(logFilePath, DriftGridThumbnailFilename)
+        #if not os.path.exists(DriftGridThumbnailFilename):
         TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid(Data, DriftGridThumbnailOutputFullPath))
         
         # Build a histogram of drift settings
@@ -195,7 +375,7 @@ def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirector
 #        ImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, ThumbnailFilename)
 #        ThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, ThumbnailFilename)
 
-        TableEntries.append(['Number of Tiles', str(Data.NumTiles)])
+        
                 # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
         HTMLDriftSettleImage = HTMLImageTemplate % {'src' : DriftSettleImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
         HTMLDriftSettleAnchor = HTMLAnchorTemplate % {'href' : DriftSettleImgSrcPath, 'body' : HTMLDriftSettleImage }
@@ -203,28 +383,46 @@ def HTMLFromLogDataNode(DataNode, ThumbnailDirectory, RelPath, ThumbnailDirector
         HTMLDriftGridImage = HTMLImageTemplate % {'src' : DriftGridImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
         HTMLDriftGridAnchor = HTMLAnchorTemplate % {'href' : DriftGridImgSrcPath, 'body' : HTMLDriftGridImage }
 
-        TableEntries.append(HTMLAnchorTemplate % {'href' : LogSrcFullPath, 'body' : "Log File" })
-        TableEntries.append(HTMLDriftSettleAnchor)
-        TableEntries.append(HTMLDriftGridAnchor)
-
+        TableEntries["1"] = HTMLAnchorTemplate % {'href' : LogSrcFullPath, 'body' : "Log File" } 
+        TableEntries["3"] = ColumnList([HTMLDriftSettleAnchor,HTMLDriftGridAnchor])
+    else:
+        if 'AverageTileDrift' in DataNode.attrib:
+            TableEntries.append(['Average tile drift:', '%.3g nm/sec' % float(DataNode.AverageTileDrift)])
+            
+        if 'MinTileDrift' in DataNode.attrib:
+            TableEntries.append(['Min tile drift:', '%.3g nm/sec' % float(DataNode.MinTileDrift)])
+            
+        if 'MaxTileDrift' in DataNode.attrib:
+            TableEntries.append(['Max tile drift:', '%.3g nm/sec' % float(DataNode.MaxTileDrift)])
+    
+        if 'AverageTileTime' in DataNode.attrib:
+            TableEntries.append(['Average tile time:', '%.3g' % float(DataNode.AverageTileTime)])
+            
+        if 'FastestTileTime' in DataNode.attrib:
+            dtime = datetime.timedelta(seconds=float(DataNode.FastestTileTime))
+            TableEntries.append(['Fastest tile time:', str(dtime)])
+    
+        if 'CaptureTime' in DataNode.attrib:
+            dtime = datetime.timedelta(seconds=float(DataNode.CaptureTime))
+            TableEntries.append(['Total capture time:', str(dtime)])
+            
+            
 
 
     if len(TableEntries) == 0:
         return None
 
-    HTML = MatrixToTable(TableEntries)
-    return HTML
+    #HTML = MatrixToTable(TableEntries)
+    return TableEntries
 
 
-def AddImageToTable(TableEntries, ThumbnailDirectoryRelPath, ThumbnailDirectory, DriftSettleThumbnailFilename):
+def AddImageToTable(TableEntries, htmlPaths, DriftSettleThumbnailFilename):
     DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.png"
-    DriftSettleImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, DriftSettleThumbnailFilename)
-    DriftSettleThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, DriftSettleThumbnailFilename)
+    DriftSettleImgSrcPath = os.path.join(htmlPaths.ThumbnailRelative, DriftSettleThumbnailFilename)
+    DriftSettleThumbnailOutputFullPath = os.path.join(htmlPaths.ThumbnailDir, DriftSettleThumbnailFilename)
+ 
 
-    
-
-
-def ImgTagFromImageNode(ImageNode, ThumbnailDirectory, RelPath, ThumbnailDirectoryRelPath, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
+def ImgTagFromImageNode(ImageNode,  HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
     '''Create the HTML to display an image with an anchor to the full image.
        If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute'''
 
@@ -243,7 +441,7 @@ def ImgTagFromImageNode(ImageNode, ThumbnailDirectory, RelPath, ThumbnailDirecto
         Logger.error("Missing image file: " + FullImgSrcPath)
         return ""
 
-
+    RelPath = HtmlPaths.GetSubNodeRelativePath(ImageNode)
     if not RelPath is None:
         FullImgSrcPath = os.path.join(RelPath, ImageNode.Path)
         if(FullImgSrcPath[0] == os.sep or
@@ -259,14 +457,16 @@ def ImgTagFromImageNode(ImageNode, ThumbnailDirectory, RelPath, ThumbnailDirecto
         Scale = max(float(Width) / MaxImageWidth, float(Height) / MaxImageHeight)
         Scale = 1 / Scale
 
-        if not os.path.exists(ThumbnailDirectory):
-            os.makedirs(ThumbnailDirectory)
+        if not os.path.exists(HtmlPaths.ThumbnailDir):
+            os.makedirs(HtmlPaths.ThumbnailDir)
 
         ThumbnailFilename = GetTempFileSaltString() + ImageNode.Path
-        ImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, ThumbnailFilename)
+        ImgSrcPath = os.path.join(HtmlPaths.ThumbnailRelative, ThumbnailFilename)
 
-        ThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, ThumbnailFilename)
-
+        ThumbnailOutputFullPath = os.path.join(HtmlPaths.ThumbnailDir, ThumbnailFilename)
+        
+        #nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
+        #if not os.path.exists(ThumbnailOutputFullPath):    
         cmd = "Convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
         Pool = Pools.GetGlobalProcessPool()
         Pool.add_task(cmd, cmd + " && exit", shell=True)
@@ -279,13 +479,71 @@ def ImgTagFromImageNode(ImageNode, ThumbnailDirectory, RelPath, ThumbnailDirecto
 
     return HTMLAnchor
 
+def __anchorStringForHeader(Text):
+    return '<a id="%(id)s"><b>%(id)s</b></a>' % {'id' : Text}
+
+
+
+
+    
+def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
+    '''Create HTML to describe an element'''
+    if not isinstance(ColumnXPaths, list):
+        xpathStrings = str(ColumnXPaths).strip().split(',')
+        ColumnXPaths = xpathStrings
+
+    if len(ColumnXPaths) == 0:
+        return
+    
+    ColumnBodyList = ColumnList()
+
+    if hasattr(RowElement, RowLabelAttrib):
+        RowLabel = str(getattr(RowElement, RowLabelAttrib))
+
+    if RowLabel is None:
+        RowLabel = str(RowElement)
+
+    # OK, build the columns
+    astr = __anchorStringForHeader(RowLabel)
+    ColumnBodyList.append(astr)
+    CaptionHTML = None
+    for ColXPath in ColumnXPaths:
+
+        ColXPath = PipelineManager.SubstituteStringVariables(ColXPath, kwargs)
+        ColSubElements = RowElement.findall(ColXPath)
+        # Create a new table inside if len(ColSubElements) > 1?
+        for ColSubElement in ColSubElements:
+
+            HTML = None
+            if ColSubElement.tag == "Image":
+                if not 'assemble' in ColXPath:
+                    kwargs['MaxImageWidth'] = 364
+                    kwargs['MaxImageHeight'] = 364
+                else:
+                    kwargs['MaxImageWidth'] = 512
+                    kwargs['MaxImageHeight'] = 512
+
+                HTML = ImgTagFromImageNode(ImageNode=ColSubElement, HtmlPaths=HTMLPaths, Logger=Logger, **kwargs)
+            elif ColSubElement.tag == "Data":
+                kwargs['MaxImageWidth'] = 364
+                kwargs['MaxImageHeight'] = 364
+                HTML = HTMLFromLogDataNode(ColSubElement,  HTMLPaths, Logger=Logger, **kwargs)
+
+            elif ColSubElement.tag == "Notes":
+                CaptionHTML = HTMLFromNotesNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
+
+            if not HTML is None:
+                ColumnBodyList.append(HTML)
+    
+    if not CaptionHTML is None:
+        ColumnBodyList.append('<caption align=bottom>%s</caption>' % CaptionHTML)
+    
+    return ColumnBodyList
+
 def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
     '''Create an HTML table that uses the RowXPath as the root for searches listed under ColumnXPaths
        ColumnXPaths are a list of comma delimited XPath searches.  Each XPath search results in a new column for the row
        Much more sophisticated reports would be possible by building a framework similiar to the pipeline manager, but time'''
-
-    if(OutputFile is None):
-        OutputFile = os.path.join(ReportingElement.FullPath, 'Report.html')
 
     if RowLabelAttrib is None:
         RowLabelAttrib = "Name"
@@ -296,26 +554,15 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     if len(ColumnXPaths) == 0:
         return
-
+     
     RootElement = ReportingElement
     while hasattr(RootElement, 'Parent'):
         if not RootElement.Parent is None:
             RootElement = RootElement.Parent
         else:
             break
-
-    OutputPath = os.path.dirname(OutputFile)
-    if OutputPath is None:
-        OutputPath = RootElement.FullPath
-        OutputFile = os.path.join(OutputPath, OutputFile)
-    elif len(OutputPath) == 0:
-        OutputPath = RootElement.FullPath
-        OutputFile = os.path.join(OutputPath, OutputFile)
-
-    # Determine the directory to use if images require thumbnails
-    ThumbnailDirectory = os.path.basename(OutputFile)
-    (ThumbnailDirectory, ext) = os.path.splitext(ThumbnailDirectory)
-    ThumbnailDirectoryFullPath = os.path.join(OutputPath, ThumbnailDirectory)
+        
+    Paths = HTMLPaths(RootElement.FullPath, OutputFile)
 
     # OK, start walking the columns.  Then walk the rows
     RowElements = list(ReportingElement.findall(RowXPath))
@@ -324,63 +571,27 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     # Build a 2D list to build the table from later
 
-    RowBodyList = []
+    tableDict = {}
+    RowBodyList = ColumnList()
     NumRows = len(RowElements)
-    iRow = 0
-    for RowElement in RowElements:
-        ColumnBodyList = []
-
-        nornir_shared.prettyoutput.CurseProgress("Adding row", iRow, Total=NumRows)
-
+    for (iRow, RowElement) in enumerate(RowElements):
+        
         if hasattr(RowElement, RowLabelAttrib):
-            RowLabel = str(getattr(RowElement, RowLabelAttrib))
-
+            RowLabel = getattr(RowElement, RowLabelAttrib)
+    
         if RowLabel is None:
-            RowLabel = str(RowElement)
+            RowLabel = RowElement
+        
+        nornir_shared.prettyoutput.CurseProgress("Adding row", iRow, Total=NumRows)
+        
+        result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        RowBodyList.append(result)
+        tableDict[RowLabel] = result
 
-        # OK, build the columns
-        ColumnBodyList.append('<a id="%(id)s"><b>%(id)s</b></a>' % {'id' : RowLabel})
-        for ColXPath in ColumnXPaths:
+    #HTML = MatrixToTable(RowBodyList=RowBodyList)
+    HTML = DictToTable(tableDict)
 
-            ColXPath = PipelineManager.SubstituteStringVariables(ColXPath, kwargs)
-            ColSubElements = RowElement.findall(ColXPath)
-            # Create a new table inside if len(ColSubElements) > 1?
-            for ColSubElement in ColSubElements:
-
-                RelativePath = ColSubElement.FullPath.replace(RootElement.Path, '')
-                RelativePath = os.path.dirname(RelativePath)
-                if(RelativePath[0] == os.sep or
-                   RelativePath[0] == os.altsep):
-                    RelativePath = RelativePath[1:]
-
-                HTML = ""
-                if ColSubElement.tag == "Image":
-                    if not 'assemble' in ColXPath:
-                        kwargs['MaxImageWidth'] = 364
-                        kwargs['MaxImageHeight'] = 364
-                    else:
-                        kwargs['MaxImageWidth'] = 512
-                        kwargs['MaxImageHeight'] = 512
-
-                    HTML = ImgTagFromImageNode(ImageNode=ColSubElement, ThumbnailDirectory=ThumbnailDirectoryFullPath, ThumbnailDirectoryRelPath=ThumbnailDirectory, RelPath=RelativePath, Logger=Logger, **kwargs)
-                elif ColSubElement.tag == "Data":
-                    kwargs['MaxImageWidth'] = 364
-                    kwargs['MaxImageHeight'] = 364
-                    HTML = HTMLFromLogDataNode(ColSubElement, ThumbnailDirectory=ThumbnailDirectoryFullPath, ThumbnailDirectoryRelPath=ThumbnailDirectory, RelPath=RelativePath, Logger=Logger, **kwargs)
-
-                elif ColSubElement.tag == "Notes":
-                    HTML = HTMLFromNotesNode(ColSubElement, RelPath=RelativePath, **kwargs)
-
-                if not HTML is None:
-                    ColumnBodyList.append(HTML)
-
-        RowBodyList.append(ColumnBodyList)
-
-        iRow = iRow + 1
-
-    HTML = MatrixToTable(RowBodyList=RowBodyList)
-
-    CreateHTMLDoc(OutputFile, HTMLBody=HTML)
+    CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
     return None
 
 def CreateHTMLDoc(OutputFile, HTMLBody):
@@ -412,14 +623,14 @@ def __ValueToTableCell(value, IndentLevel):
         HTML.Add('<td valign="top"> ')
         HTML.Add(value)
     elif isinstance(value, dict):
-        HTML.Add('<td valign="left">\n')
+        HTML.Add('<td valign="top">\n')
         HTML.Indent()
-        HTML.Add(DictToTable(value, IndentLevel))
+        HTML.Add(DictToTable(value, HTML.IndentLevel))
         HTML.Dedent() 
     elif isinstance(value, list):
-        HTML.Add('<td valign="left">\n ')
+        HTML.Add('<td valign="top">\n ')
         HTML.Indent()
-        HTML.Add(__ListToTableColumns(value, IndentLevel))
+        HTML.Add(__ListToTableColumns(value, HTML.IndentLevel))
         HTML.Dedent()
     else:
         HTML.Add("Unknown type passed to __ValueToHTML")
@@ -435,8 +646,19 @@ def __ListToTableColumns(listColumns, IndentLevel):
     
     HTML = HTMLBuilder(IndentLevel)
     
+    HTML.Add("<table>\n")
+    HTML.Indent()
+    HTML.Add("<tr>\n")
+    HTML.Indent()
+    
     for entry in listColumns:
         HTML.Add(__ValueToTableCell(entry, HTML.IndentLevel))
+    
+    HTML.Dedent()
+    HTML.Add("</tr>\n")
+    HTML.Dedent()
+    HTML.Add("</table>\n")
+    
     
     return HTML
         
@@ -445,27 +667,32 @@ def __ListToTableColumns(listColumns, IndentLevel):
 def DictToTable(RowDict=None, IndentLevel=None):
     
     HTML = HTMLBuilder(IndentLevel)
-        
-    HTML.Add("<table>\n")
+    
+    if IndentLevel is None:
+        HTML.Add('<table border="border">\n')
+    else:
+        HTML.Add("<table>\n")
     HTML.Indent()
     
     keys = RowDict.keys()
-    keys.sort()
+    keys.sort(reverse=True)
     
     for row in keys:
         value = RowDict[row]
         
         HTML.Add('<tr>\n')
         HTML.Indent()
+         
         
-        HTML.Add(__ValueToTableCell(value), HTML.IndentLevel)
+        HTML.Add(__ValueToTableCell(value,HTML.IndentLevel))
         
         HTML.Dedent()
         HTML.Add("</tr>\n")
-        
+    
+    HTML.Dedent()    
     HTML.Add("</table>\n")
     
-    HTML.Dedent()
+    
     
     return HTML
  
@@ -487,7 +714,7 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
 
 
         if isinstance(columnList, str):
-            HTML = HTML + '<td valign="top">'
+            HTML = HTML + '<td>'
             HTML = HTML + columnList
             HTML = HTML + "</td>\n"
         else:

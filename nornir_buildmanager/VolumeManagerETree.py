@@ -1477,7 +1477,7 @@ class FilterNode(XContainerElementWrapper):
         super(FilterNode, self).__init__(tag='Filter', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
-class NotesNode(XElementWrapper):
+class NotesNode(XResourceElementWrapper):
 
     def __init__(self, Text=None, SourceFilename=None, attrib=None, **extra):
 
@@ -1488,8 +1488,10 @@ class NotesNode(XElementWrapper):
 
         if not SourceFilename is None:
             self.SourceFilename = SourceFilename
+            self.Path = os.path.basename(SourceFilename)
         else:
             self.SourceFilename = ""
+            self.Path = os.path.basename(SourceFilename)
 
 
     def CleanIfInvalid(self):

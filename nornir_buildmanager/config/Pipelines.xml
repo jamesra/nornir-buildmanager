@@ -178,7 +178,7 @@
      		    RowLabelAttrib="Number"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='16']/Image,Channel/Data,Channel/Filter[@Name='#InputFilter']/Histogram/Image,Channel/Filter[@Name='#InputFilter']/Prune/Image" />
+     		    ColumnXPaths="Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='16']/Image,Channel/Notes,Channel/Data,Channel/Filter[@Name='#InputFilter']/Histogram/Image,Channel/Filter[@Name='#InputFilter']/Prune/Image" />
 
     <PythonCall Function="vikingxml.CreateVikingXML"  OutputFile="TEMMosaic.vikingxml"/>
     		    
@@ -223,7 +223,7 @@
      		    RowLabelAttrib="Number"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='16']/Image,Channel/Data,Channel/Filter[@Name='#InputFilter']/Histogram/Image,Channel/Filter[@Name='#InputFilter']/Prune/Image" />
+     		    ColumnXPaths="Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='16']/Image,Channel/Notes,Channel/Data,Channel/Filter[@Name='#InputFilter']/Histogram/Image,Channel/Filter[@Name='#InputFilter']/Prune/Image" />
 
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
   </Pipeline>
@@ -231,7 +231,7 @@
   <Pipeline Name="EmailStosReport" Description="E-mail the summary for a volume">
     <Select VariableName="ReportingElement" XPath="Block"/>
     <PythonCall Function="reporting.GenerateTableReport"
-     		    OutputFile="ImageReport.html"
+     		    OutputFile="StosReport.html"
      		    RowXPath="StosGroup[@Name='StosGrid16']"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
