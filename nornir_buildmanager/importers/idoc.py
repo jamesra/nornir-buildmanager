@@ -1,8 +1,10 @@
 import sys
 import re
+import cPickle as pickle
 from nornir_imageregistration.io import mosaicfile
 from nornir_imageregistration import image_stats
 from nornir_shared.images import *
+import nornir_shared.files as files
 from nornir_shared.histogram import *
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.mathhelper import ListMedian
@@ -711,7 +713,12 @@ class LogTileData():
         self.driftUnits = None  # nm/sec
         self.coordinates = None
 
-class SerialEMLog():
+class SerialEMLog(object):
+    
+    @classmethod
+    def __ObjVersion(cls):
+        '''Used for knowing when to ignore a pickled file'''
+        return 1
 
     @property
     def TotalTime(self):
@@ -799,7 +806,47 @@ class SerialEMLog():
         self.PropertiesVersion = None  # Timestamp of properties file, if known
         self.MontageStart = None  # timestamp when acquire began
         self.MontageEnd = None  # timestamp when acquire ended
-        pass
+        
+        self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()
+    
+    @classmethod
+    def __PickleLoad(cls, logfullPath):
+        
+        obj = None
+        picklePath = logfullPath + ".pickle"
+        
+        files.RemoveOutdatedFile(logfullPath, picklePath)
+        
+        if os.path.exists(picklePath):
+            try:
+                with open(picklePath, 'r') as filehandle:
+                    obj = pickle.load(filehandle)
+                    
+                    if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+                        raise Exception("Version mismatch in pickled file: " + picklePath)
+            except Exception as e:
+                try:
+                    os.remove(picklePath)
+                except Exception as e:
+                    pass
+                
+                obj = None
+        
+        return obj 
+    
+    def __PickleSave(self, logfullPath):
+    
+        obj = None
+        picklePath = logfullPath + ".pickle"
+        
+        try:
+            with open(picklePath, 'w') as filehandle:
+                pickle.dump(self, filehandle, protocol=0)
+        except: 
+            try:
+                os.path.remove(picklePath)
+            except:
+                pass
 
     @classmethod
     def Load(cls, logfullPath):
@@ -824,6 +871,13 @@ class SerialEMLog():
         # Captures in SerialEM overlap.  Once the stage is in position the exposure is done,
         # then simultaneously the stage moves while the camera is read.  Generally the stage
         # finishes movement before the image is saved, but we should not count on this behaviour
+        
+        #Parsing these logs takes quite a while sometimes
+        obj = cls.__PickleLoad(logfullPath)
+        
+        if not obj is None:
+            return obj
+        
 
         Data = SerialEMLog()
         NextTile = None  # The tile we are currently moving the stage, focusing on, and setting up an aquisition for.
@@ -940,6 +994,7 @@ class SerialEMLog():
             if Data.MontageEnd is None and not LastValidTimestamp is None:
                 Data.MontageEnd = LastValidTimestamp
 
+        Data.__PickleSave(logfullPath)
         return Data
     
 
