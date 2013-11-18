@@ -166,12 +166,26 @@ def GetTempFileSaltString():
 def CopyFiles(DataNode, OutputDir, Move=False, **kwargs):
     if OutputDir is None:
         return
+    
+    logger = kwargs.get('Logger', logging.getLogger('CopyFiles'))
 
     if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)
+        os.makedirs(OutputDir)    
 
     if os.path.exists(DataNode.FullPath):
-        shutil.copy(DataNode.FullPath, OutputDir)
+        
+        if os.path.isfile(DataNode.FullPath):
+            OutputFileFullPath = os.path.join(OutputDir, DataNode.Path)
+            nfiles.RemoveOutdatedFile(DataNode.FullPath, OutputFileFullPath)
+            
+            if not os.path.exists(OutputFileFullPath):
+                
+                logger.info(DataNode.FullPath + " -> " + OutputFileFullPath)
+                shutil.copyfile(DataNode.FullPath, OutputFileFullPath)
+        else:
+            #Just copy the directory over, this is an odd case
+            logger.info("Copy directory " + DataNode.FullPath + " -> " + OutputDir)
+            shutil.copy(DataNode.FullPath, OutputDir)
 
 def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
     if OutputDir is None:

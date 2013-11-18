@@ -451,6 +451,18 @@
 	   </Iterate>  
   	</Iterate>
   </Pipeline>
+  
+  <Pipeline Name="ExportMosaics" Description="Copies images of sections to an output directory">   
+     <Arguments>
+      	<Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="8" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
+      	<Argument flag="-Filter" dest="Filter" default="Leveled" help="Filter used to build leveled and mosaic images" required="False"/>
+      	<Argument flag="-Output" dest="OutputDir" help="Directory to move assembled images to" required="False"/>
+    </Arguments>
+	  
+    <Iterate VariableName="DataNode" XPath="Block/Section/Channel/Filter[@Name='#Filter']/ImageSet/Level[@Downsample='#AssembleDownsample']/Image">
+   		<PythonCall Function="reporting.CopyFiles" OutputDir="#OutputDir"/>
+   	</Iterate>
+  </Pipeline>
 
   <Pipeline Name="LM">
 
