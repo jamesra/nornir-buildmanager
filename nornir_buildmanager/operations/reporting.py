@@ -28,6 +28,10 @@ class RowList(list):
 class ColumnList(list):
     '''Class used for HTML to place into columns'''
     pass
+
+class UnorderedItemList(list):
+    '''Class used for HTML to create unordered list from items'''
+    pass
         
 
 
@@ -277,7 +281,8 @@ def HTMLFromNotesNode(DataNode, htmlPaths, **kwargs):
      
     if os.path.exists(FullPath):
         NotesSrcFullPath = os.path.join(RelPath, __patchupNotesPath(DataNode))               
-        HTML += HTMLAnchorTemplate % {'href' : NotesSrcFullPath, 'body' : "<b>Notes</b>: " }
+        HTML += HTMLAnchorTemplate % {'href' : NotesSrcFullPath, 'body' : "<b>Notes</b>"}
+        HTML += ": " 
         
     if not (DataNode.text is None or len(DataNode.text) == 0):
         if 'rtf' in ext or 'doc' in ext:
@@ -293,31 +298,50 @@ def HTMLFromNotesNode(DataNode, htmlPaths, **kwargs):
 
 def __ExtractLogDataText(Data):
     
-    Rows = {}
+    DriftRows = RowList()
+    TimeRows = RowList()
+    MetaRows = RowList() 
+    Columns = ColumnList()
     
+            
     if hasattr(Data, 'AverageTileDrift'):
-        Rows['AverageTileDrift'] = ['Average tile drift:', '%.3g nm/sec' % float(Data.AverageTileDrift)]
+        DriftRows.append(['Avg. tile drift:', '<b>%.3g nm/sec</b>' % float(Data.AverageTileDrift)])
         
     if hasattr(Data, 'MinTileDrift'):
-        Rows['MinTileDrift'] = ['Min tile drift:', '%.3g nm/sec' % float(Data.MinTileDrift)]
+        DriftRows.append(['Min tile drift:', '%.3g nm/sec' % float(Data.MinTileDrift)])
                                         
     if hasattr(Data, 'MaxTileDrift'):
-        Rows['MaxTileDrift'] =['Max tile drift:', '%.3g nm/sec' % float(Data.MaxTileDrift)]
+        DriftRows.append(['Max tile drift:', '%.3g nm/sec' % float(Data.MaxTileDrift)])
 
     if hasattr(Data, 'AverageTileTime'):
-        Rows['AverageTileTime'] = ['Average tile time:', '%.3g' % float(Data.AverageTileTime)]
+        TimeRows.append(['Avg. tile time:', '<b>%.3g sec</b>' % float(Data.AverageTileTime)])
         
     if hasattr(Data, 'FastestTileTime'): 
-        Rows['FastestTileTime'] = ['Fastest tile time:', str(Data.FastestTileTime)]
+        TimeRows.append(['Fastest tile time:', '%.3g sec' % Data.FastestTileTime])
          
     if hasattr(Data, 'NumTiles'): 
-        Rows['NumTiles'] = ['Number of tiles:', str(Data.NumTiles)]
+        TimeRows.append(['Number of tiles:', str(Data.NumTiles)])
 
     if hasattr(Data, 'TotalTime'):
         dtime = datetime.timedelta(seconds=float(Data.TotalTime))
-        Rows['CaptureTime'] = ['Total capture time:', str(dtime)]
+        TimeRows.append(['Total time:', str(dtime)])
+        
+    if hasattr(Data, 'Startup'):
+        MetaRows.append(['Capture Date:',  '<b>' + str(Data.Startup)+'</b>'])
+        
+    if hasattr(Data, 'Version'):
+        MetaRows.append(['Version:', str(Data.Version)])
 
-    return Rows
+    if not TimeRows is None:
+        Columns.append(TimeRows)
+        
+    if not DriftRows is None:
+        Columns.append(DriftRows)
+        
+    if not MetaRows is None:
+        Columns.append(MetaRows)
+        
+    return Columns
     
 
 def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
@@ -627,6 +651,16 @@ def __ValueToTableCell(value, IndentLevel):
         HTML.Indent()
         HTML.Add(DictToTable(value, HTML.IndentLevel))
         HTML.Dedent() 
+    elif isinstance(value, UnorderedItemList):
+        HTML.Add('<td valign="top">\n ')
+        HTML.Indent()
+        HTML.Add(__ListToUnorderedList(value, HTML.IndentLevel))
+        HTML.Dedent()
+    elif isinstance(value, RowList):
+        HTML.Add('<td valign="top">\n ')
+        HTML.Indent()
+        HTML.Add(__ListToTableRows(value, HTML.IndentLevel))
+        HTML.Dedent()
     elif isinstance(value, list):
         HTML.Add('<td valign="top">\n ')
         HTML.Indent()
@@ -659,6 +693,46 @@ def __ListToTableColumns(listColumns, IndentLevel):
     HTML.Dedent()
     HTML.Add("</table>\n")
     
+    return HTML
+
+
+def __ListToTableRows(listColumns, IndentLevel):
+    '''Convert a list to a set of <tf> columns in a table'''
+    
+    HTML = HTMLBuilder(IndentLevel)
+    
+    HTML.Add("<table>\n")
+    HTML.Indent()
+    
+    for entry in listColumns:
+        HTML.Add("<tr>\n")
+        HTML.Indent()
+    
+        HTML.Add(__ValueToTableCell(entry, HTML.IndentLevel))
+    
+        HTML.Dedent()
+        HTML.Add("</tr>\n")
+        
+    HTML.Dedent()
+    HTML.Add("</table>\n")
+    
+    return HTML
+
+
+
+def __ListToUnorderedList(listEntries, IndentLevel):
+    '''Convert a list to a set of <tf> columns in a table'''
+    
+    HTML = HTMLBuilder(IndentLevel)
+    
+    HTML.Add("<ul>\n")
+    HTML.Indent() 
+    
+    for entry in listEntries:
+        HTML.Add('<li>'+str(entry)+'</li>\n', HTML.IndentLevel)
+    
+    HTML.Dedent()
+    HTML.Add("</ul>\n")
     
     return HTML
         

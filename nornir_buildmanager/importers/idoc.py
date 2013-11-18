@@ -783,11 +783,19 @@ class SerialEMLog():
                 NumTiles = NumTiles + 1
                 
         return NumTiles
-
+    
+    @property
+    def Startup(self):
+        return self._startup
+    
+    @property
+    def Version(self):
+        return self._version
+    
     def __init__(self):
         self.tileData = {}  # The time required to capture each tile
-        self.Startup = None  # SerialEM program Startup time, if known
-        self.Version = None  # SerialEM version, if known
+        self._startup = None # SerialEM program Startup time, if known
+        self._version = None  # SerialEM version, if known
         self.PropertiesVersion = None  # Timestamp of properties file, if known
         self.MontageStart = None  # timestamp when acquire began
         self.MontageEnd = None  # timestamp when acquire ended
@@ -915,13 +923,13 @@ class SerialEMLog():
                     time = time.strip()
                     Data.PropertiesVersion = time
                 elif entry.startswith('SerialEM Version'):
-                    Data.Version = entry
+                    Data._version = entry[len('SerialEM Version')+1:]
                 elif entry.startswith('Montage Start'):
                     Data.MontageStart = timestamp
                 elif entry.startswith('Montage Done'):
                     Data.MontageEnd = timestamp
                 elif entry.startswith('Started'):
-                    Data.Startup = entry
+                    Data._startup = entry[len('Started')+1:]
 
                 line = hLog.readline(512)
 
