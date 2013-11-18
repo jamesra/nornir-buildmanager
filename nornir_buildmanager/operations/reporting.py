@@ -27,7 +27,18 @@ class RowList(list):
 
 class ColumnList(list):
     '''Class used for HTML to place into columns'''
-    pass
+    
+    @property
+    def caption(self):
+        if hasattr(self, '_caption'):
+            return self._caption
+    
+        return None
+    
+    @caption.setter
+    def caption(self, val):
+        self._caption = val  
+     
 
 class UnorderedItemList(list):
     '''Class used for HTML to create unordered list from items'''
@@ -530,7 +541,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     # OK, build the columns
     astr = __anchorStringForHeader(RowLabel)
     ColumnBodyList.append(astr)
-    CaptionHTML = None
+    #CaptionHTML = None
     for ColXPath in ColumnXPaths:
 
         ColXPath = PipelineManager.SubstituteStringVariables(ColXPath, kwargs)
@@ -554,13 +565,13 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
                 HTML = HTMLFromLogDataNode(ColSubElement,  HTMLPaths, Logger=Logger, **kwargs)
 
             elif ColSubElement.tag == "Notes":
-                CaptionHTML = HTMLFromNotesNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
+                ColumnBodyList.caption = '<caption align=bottom>%s</caption>\n' % HTMLFromNotesNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
 
             if not HTML is None:
                 ColumnBodyList.append(HTML)
     
-    if not CaptionHTML is None:
-        ColumnBodyList.append('<caption align=bottom>%s</caption>' % CaptionHTML)
+    #if not CaptionHTML is None:
+    #   ColumnBodyList.caption = '<caption align=bottom>%s</caption>' % CaptionHTML
     
     return ColumnBodyList
 
@@ -690,6 +701,10 @@ def __ListToTableColumns(listColumns, IndentLevel):
     
     HTML.Dedent()
     HTML.Add("</tr>\n")
+    
+    if hasattr(listColumns,'caption'):
+        HTML.Add(listColumns.caption)
+    
     HTML.Dedent()
     HTML.Add("</table>\n")
     
@@ -713,6 +728,9 @@ def __ListToTableRows(listColumns, IndentLevel):
         HTML.Dedent()
         HTML.Add("</tr>\n")
         
+    if hasattr(listColumns,'caption'):
+        HTML.Add(listColumns.caption)
+    
     HTML.Dedent()
     HTML.Add("</table>\n")
     
@@ -762,6 +780,9 @@ def DictToTable(RowDict=None, IndentLevel=None):
         
         HTML.Dedent()
         HTML.Add("</tr>\n")
+        
+    if hasattr(RowDict,'caption'):
+        HTML.Add(RowDict.caption)
     
     HTML.Dedent()    
     HTML.Add("</table>\n")
