@@ -229,6 +229,13 @@ class LogReaderTest(IDocTest):
         cachedLogData = SerialEMLog.Load(logFile, usecache=True)
         self.validateLogEntries(cachedLogData)
 
+        outputGrid = os.path.join(self.TestOutputPath, 'Grid_' + os.path.basename(logFile) + '.png')
+        outputDrift = os.path.join(self.TestOutputPath, 'Drift_' + os.path.basename(logFile) + '.png')
+
+        idoc.PlotDriftGrid(cachedLogData, outputGrid)
+        idoc.PlotDriftSettleTime(cachedLogData, outputDrift)
+
+
         return
 
 

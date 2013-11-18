@@ -718,7 +718,9 @@ class SerialEMLog(object):
     @classmethod
     def __ObjVersion(cls):
         '''Used for knowing when to ignore a pickled file'''
-        return 1
+
+        # Version 2 fixes missing tile drift times for the first tile in a hemisphere
+        return 2
 
     @property
     def TotalTime(self):
@@ -916,6 +918,7 @@ class SerialEMLog(object):
                 if entry.startswith('DoNextPiece'):
 
                     # The very first first stage move is not a capture, so don't save a tile.
+                    # However the drift measurements are done on the first tile before we get a capture message.  We want to save those
                     if entry.find('capture') >= 0:
                         # We acquired the tile, prepare the next capture
                         if not NextTile is None:
@@ -930,7 +933,12 @@ class SerialEMLog(object):
                 elif entry.startswith('Autofocus Start'):
                     LastAutofocusStart = timestamp
                 elif entry.startswith('Measured defocus'):
-                    if not NextTile is None and not NextTile.stageStopTime is None:
+                    if not NextTile is None:
+
+                        # The very first tile does not get a 'finished stage move' message.  Use the start of the autofocus to approximate completion of the stage move
+                        if NextTile.stageStopTime is None:
+                            NextTile.stageStopTime = LastAutofocusStart
+
                         iDrift = entry.find('drift')
                         if iDrift > -1:
                             DriftStr = entry[iDrift:]  # example: drift = 1.57 nm/sec
