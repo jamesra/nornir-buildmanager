@@ -324,18 +324,24 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
         Logger.error("Mapped image missing" + MappedImageNode.FullPath)
         return None
 
-
-
-    files.RemoveOutdatedFile(ControlImageNode.FullPath, OutputFileFullPath)
-    files.RemoveOutdatedFile(MappedImageNode.FullPath, OutputFileFullPath)
-
-    if not ControlMaskImageNode is None:
-        files.RemoveOutdatedFile(ControlMaskImageNode.FullPath, OutputFileFullPath)
-
-    if not MappedMaskImageNode is None:
-        files.RemoveOutdatedFile(MappedMaskImageNode.FullPath, OutputFileFullPath)
-
-
+    if 'ControlImageChecksum' in stosNode.attrib:
+        stosNode = transforms.RemoveOnMismatch(stosNode, 'ControlImageChecksum', ControlImageNode.Checksum)
+        if stosNode is None:
+            stosNode = StosGroup.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType, OutputPath)
+    else:
+        files.RemoveOutdatedFile(ControlImageNode.FullPath, OutputFileFullPath)
+        if not ControlMaskImageNode is None: 
+            files.RemoveOutdatedFile(ControlMaskImageNode.FullPath, OutputFileFullPath)
+    
+    if 'MappedImageChecksum' in stosNode.attrib:
+        stosNode = transforms.RemoveOnMismatch(stosNode, 'MappedImageChecksum', MappedImageNode.Checksum)
+        if stosNode is None:
+            stosNode = StosGroup.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType, OutputPath)
+    else:
+        files.RemoveOutdatedFile(MappedImageNode.FullPath, OutputFileFullPath)
+        if not MappedMaskImageNode is None:
+            files.RemoveOutdatedFile(MappedMaskImageNode.FullPath, OutputFileFullPath)
+     
     # print OutputFileFullPath
     CmdRan = False
     if not os.path.exists(stosNode.FullPath):
