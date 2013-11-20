@@ -1141,8 +1141,11 @@ def AssembleTransform(Parameters, Logger, ChannelNode, PyramidNode, TransformNod
             Logger.warn("Interlacing assembled image")
             subprocess.call(ConvertCmd + " && exit", shell=True)
 
-        shutil.move(tempOutputFullPath, ImageNode.FullPath)
-        shutil.move(tempMaskOutputFullPath, MaskImageNode.FullPath)
+        if os.path.exists(tempOutputFullPath):
+            shutil.move(tempOutputFullPath, ImageNode.FullPath)
+            shutil.move(tempMaskOutputFullPath, MaskImageNode.FullPath)
+        else:
+            Logger.error("Assemble produced no output " + ImageNode.FullPath)
 
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
