@@ -40,8 +40,8 @@ class PipelineError(Exception):
     def __CoreErrorList(self):
         '''return a list of error strings'''
         s = []
-        s.append("Pipeline Element: " + xml.etree.ElementTree.tostring(self.PipelineNode, encoding='utf-8'))
-        s.append("Volume Element: " + xml.etree.ElementTree.tostring(self.VolumeElem, encoding='utf-8'));
+        s.append("Pipeline Element: " + xml.etree.ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
+        s.append("Volume Element: " + xml.etree.ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
         return s
 
     def ErrorList(self):
@@ -246,27 +246,8 @@ class PipelineManager(object):
         defaultDargs.update(args.__dict__)
 
         # dargs = copy.deepcopy(defaultDargs)
-
-        for Stage in PipelineElement:
-            PipelineManager.logger.info(PipelineManager.ToElementString(Stage))
-            prettyoutput.Log(PipelineManager.ToElementString(Stage))
-
-            self.ProcessStageElement(self.VolumeTree, Stage, dargs=defaultDargs)
-
-            # VolumeManagerETree.VolumeManager.Save(args.outputpath, VolumeTree)
-
-#    @classmethod
-#    def PrintFindError(self, PipelineNode, VolumeElem, xpath):
-#        PipelineManager.logger.error("*"*80)
-#        PipelineManager.logger.error("*** No matching nodes found for xpath ***" + xpath)
-#        if not PipelineNode is None:
-#            PipelineManager.logger.error("nornir_buildmanager Element: " + xml.etree.ElementTree.tostring(PipelineNode, encoding = 'utf-8'))
-#
-#        if not VolumeElem is None:
-#            PipelineManager.logger.error("VolumeElement: " + xml.etree.ElementTree.tostring(VolumeElem, encoding = 'utf-8'))
-#            VolumeElemIter = list(VolumeElem.findall(xpath))
-#
-#        PipelineManager.logger.error("*"*80)
+        
+        self.ExecuteChildPipelines(defaultDargs, self.VolumeTree, PipelineElement)
 
 
     def AddVariable(self, PipelineNode, VolumeElem, dargs):
@@ -311,6 +292,48 @@ class PipelineManager(object):
 
 
     IndentLevel = 0
+    
+    def ExecuteChildPipelines(self, dargs, VolumeElem, PipelineNode):
+        '''Run all of the child pipeline elements on the volume element'''
+    
+    
+        PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
+        #prettyoutput.Log(PipelineManager.ToElementString(PipelineNode))
+        
+        PipelinesRun = 0
+        try:
+            self.AddVariable(PipelineNode, VolumeElem, dargs)
+            
+            for ChildNode in PipelineNode:
+                
+                
+                try:
+                    self.ProcessStageElement(VolumeElem, ChildNode, dargs)
+                    PipelinesRun += 1
+                except PipelineSelectFailed as e:
+                    PipelineManager.logger.error(str(e))
+                    PipelineManager.logger.info("Select statement did not match.  Skipping further iteration and continuing")
+                    break
+                except PipelineSearchFailed as e:
+                    PipelineManager.logger.error(str(e))
+                    PipelineManager.logger.info("Search statement did not match.  Skipping further iteration and continuing")
+                    break
+                except PipelineRegExSearchFailed as e:
+                    PipelineManager.logger.info("Regular expression did not match.  Skipping further iteration. " + str(e.attribValue))
+                    break
+                except PipelineError as e:
+                    PipelineManager.logger.error(str(e))
+                    PipelineManager.logger.error("Undexpected error, exiting pipeline")
+                    sys.exit()
+        finally: 
+            self.RemoveVariable(PipelineNode, dargs)
+                
+        # To prevent later calls from being able to access variables from earlier steps be sure to remove the variable from the dargs
+        return PipelinesRun
+        
+     
+    
+    
     def ProcessStageElement(self, VolumeElem, PipelineNode, dargs=None):
 
         outStr = PipelineManager.ToElementString(PipelineNode)
@@ -392,7 +415,9 @@ class PipelineManager(object):
 
         if not SelectedVolumeElem is None:
             self.AddVariable(PipelineNode, SelectedVolumeElem, dargs)
-
+            
+    
+            
     def ProcessIterateNode(self, dargs, VolumeElem, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, dargs)
@@ -411,28 +436,7 @@ class PipelineManager(object):
             if VolumeElemChild.CleanIfInvalid():
                 continue
             
-            try:
-                self.AddVariable(PipelineNode, VolumeElemChild, dargs)
-    
-                for ChildNode in PipelineNode:
-                    self.ProcessStageElement(VolumeElemChild, ChildNode, dargs)
-                     
-                # To prevent later calls from being able to access variables from earlier steps be sure to remove the variable from the dargs
-                NumProcessed = NumProcessed + 1
-                
-            except PipelineSelectFailed as e:
-                PipelineManager.logger.error(str(e))
-                PipelineManager.logger.info("Select statement did not match.  Skipping this iteration and continuing")
-                continue
-            except PipelineRegExSearchFailed as e:
-                PipelineManager.logger.info("Regular expression did not match.  Skipping iteration. " + str(e.attribValue))
-                continue
-            except PipelineError as e:
-                PipelineManager.logger.error(str(e))
-                PipelineManager.logger.error("Undexpected error, exiting pipeline")
-                return
-            finally: 
-                self.RemoveVariable(PipelineNode, dargs)
+            NumProcessed += self.ExecuteChildPipelines(dargs, VolumeElemChild, PipelineNode)
 
         if(NumProcessed == 0):
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
