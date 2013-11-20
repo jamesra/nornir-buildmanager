@@ -19,6 +19,8 @@ from nornir_buildmanager.validation import transforms
 from nornir_imageregistration import assemble
 from nornir_imageregistration.io import stosfile, mosaicfile
 from nornir_imageregistration.transforms import *
+import nornir_imageregistration.stos_brute as stos_brute
+from nornir_imageregistration.alignment_record import AlignmentRecord 
 import nornir_pools as pools
 from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
@@ -295,17 +297,70 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
 
     return None
 
+def __CallNornirStosBrute(stosNode, Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode=None, MappedMaskImageNode=None, argstring=None, Logger=None):
+    '''Call the stos-brute version from nornir-imageregistration'''
+    
+    alignment = None
+    if not (ControlMaskImageNode is None or MappedMaskImageNode is None):
+        alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageNode.FullPath,
+                                                      WarpedImageInput=MappedImageNode.FullPath,
+                                                      FixedImageMaskPath=ControlMaskImageNode.FullPath,
+                                                      WarpedImageMaskPath=MappedMaskImageNode.FullPath)
+        
+        stos =  alignment.ToStos(ControlImageNode.FullPath,
+                         MappedImageNode.FullPath,
+                         ControlMaskImageNode.FullPath,
+                         MappedMaskImageNode.FullPath,
+                         PixelSpacing=Downsample)
+        
+        stos.Save(stosNode.FullPath)
+        
+    else:
+        alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageNode.FullPath,
+                                                      WarpedImageInput=MappedImageNode.FullPath)
+        
+        stos =  alignment.ToStos(ControlImageNode.FullPath,
+                         MappedImageNode.FullPath,
+                         PixelSpacing=Downsample)
+        
+        stos.Save(stosNode.FullPath, AddMasks=False)
+        
+    return
+
+def __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode=None, MappedMaskImageNode=None, argstring=None, Logger=None):
+    if argstring is None:
+        argstring = ""
+        
+    StosBruteTemplate = 'ir-stos-brute ' + argstring + '-save %(OutputFile)s -load %(ControlImage)s %(MovingImage)s -mask %(ControlMask)s %(MovingMask)s'
+    StosBruteTemplateNoMask = 'ir-stos-brute ' + argstring + '-save %(OutputFile)s -load %(ControlImage)s %(MovingImage)s '
+
+    cmd = None
+    if not (ControlMaskImageNode is None or MappedMaskImageNode is None):
+        cmd = StosBruteTemplate % {'OutputFile' : stosNode.FullPath,
+                               'ControlImage' : ControlImageNode.FullPath,
+                               'MovingImage' : MappedImageNode.FullPath,
+                               'ControlMask' : ControlMaskImageNode.FullPath,
+                               'MovingMask' : MappedMaskImageNode.FullPath}
+    else:
+        cmd = StosBruteTemplateNoMask % {'OutputFile' : stosNode.FullPath,
+                               'ControlImage' : ControlImageNode.FullPath,
+                               'MovingImage' : MappedImageNode.FullPath }
+
+    prettyoutput.Log(cmd)
+    subprocess.call(cmd + " && exit", shell=True)
+
+    CmdRan = True
+
+    if not os.path.exists(stosNode.FullPath):
+        Logger.error("Stos brute did not produce useable output\n" + cmd)
+        return None
 
 def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, OutputType, OutputPath, Logger=None, argstring=None):
     '''Create a transform node, populate, and generate the transform'''
-    if argstring is None:
-        argstring = ""
+    
 
     if Logger is None:
         Logger = logging.getLogger("FilterToFilterBruteRegistration")
-
-    StosBruteTemplate = 'ir-stos-brute ' + argstring + '-save %(OutputFile)s -load %(ControlImage)s %(MovingImage)s -mask %(ControlMask)s %(MovingMask)s'
-    StosBruteTemplateNoMask = 'ir-stos-brute ' + argstring + '-save %(OutputFile)s -load %(ControlImage)s %(MovingImage)s '
 
     stosNode = StosGroup.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType, OutputPath)
 
@@ -345,27 +400,10 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     # print OutputFileFullPath
     CmdRan = False
     if not os.path.exists(stosNode.FullPath):
-        cmd = None
-        if not (ControlMaskImageNode is None or MappedMaskImageNode is None):
-            cmd = StosBruteTemplate % {'OutputFile' : stosNode.FullPath,
-                                   'ControlImage' : ControlImageNode.FullPath,
-                                   'MovingImage' : MappedImageNode.FullPath,
-                                   'ControlMask' : ControlMaskImageNode.FullPath,
-                                   'MovingMask' : MappedMaskImageNode.FullPath}
-        else:
-            cmd = StosBruteTemplateNoMask % {'OutputFile' : stosNode.FullPath,
-                                   'ControlImage' : ControlImageNode.FullPath,
-                                   'MovingImage' : MappedImageNode.FullPath }
-
-        prettyoutput.Log(cmd)
-        subprocess.call(cmd + " && exit", shell=True)
-
-        CmdRan = True
-
-        if not os.path.exists(stosNode.FullPath):
-            Logger.error("Stos brute did not produce useable output\n" + cmd)
-            return None
-
+        
+        __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
+        # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
+        
         # Rescale stos file to full-res
         # stosFile = stosfile.StosFile.Load(stosNode.FullPath)
         # stosFile.Scale(StosGroup.Downsample)
