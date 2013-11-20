@@ -402,6 +402,8 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     if not os.path.exists(stosNode.FullPath):
         
         __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
+        
+        CmdRan = True
         # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
         
         # Rescale stos file to full-res
