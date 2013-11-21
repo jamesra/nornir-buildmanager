@@ -6,7 +6,7 @@ import os
 import time
 import argparse
 import nornir_shared.prettyoutput as prettyoutput
-from nornir_shared.misc import SetupLogging
+from nornir_shared.misc import SetupLogging, lowpriority
 from nornir_shared.tasktimer import TaskTimer
 import logging
 from nornir_buildmanager import *
@@ -98,6 +98,13 @@ def ProcessArgs():
                         help='Provide additional output for debugging purposes.',
                         dest='verbose')
 
+    parser.add_argument(['-normalpriority', '-np'],
+                        action='store_true',
+                        required=False,
+                        default=False,
+                        help='Run the build without trying to lower the priority.  Faster builds but the machine may be less responsive.',
+                        dest='normpriority')
+
     # parser.add_argument('args', nargs=argparse.REMAINDER)
     return parser
 
@@ -105,6 +112,9 @@ def Execute(buildArgs=None):
 
     if buildArgs is None:
         buildArgs = sys.argv
+
+    if not buildArgs.normpriority:
+        lowpriority()
 
     vikingURL = ""
 
