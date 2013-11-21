@@ -16,7 +16,7 @@ from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.validation import transforms
 import nornir_imageregistration.core as core
 import nornir_imageregistration.image_stats as image_stats
-from nornir_imageregistration.io import mosaicfile
+from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
@@ -35,7 +35,7 @@ def Shrink(Pool, InFile, OutFile, ShrinkFactor):
     cmd = "Convert " + InFile + " -scale \"" + str(Percentage) + "%\" -quality 106  -colorspace gray " + OutFile
     # prettyoutput.CurseString('Cmd', cmd)
     # NewP = subprocess.Popen(cmd + " && exit", shell=True)
-    return Pool.add_task('Shrink: ' + InFile, cmd)
+    return Pool.add_process('Shrink: ' + InFile, cmd)
 
 
 def VerifyImages(TilePyramidNode, **kwargs):
@@ -363,7 +363,7 @@ def CorrectTiles(Parameters, FilterNode=None, ImageNode=None, OutputFilterName=N
                              'ComposeOperator' : ComposeOperator,
                              'OutputFile' : OutputTileFullPath}
         prettyoutput.Log(Cmd)
-        Pool.add_task(inputTile, Cmd + " && exit", shell=True)
+        Pool.add_process(inputTile, Cmd + " && exit", shell=True)
 
     Pool.wait_completion()
 
@@ -542,7 +542,7 @@ def AutolevelTiles(Parameters, LevelNode=None, TransformNode=None, OutputFilterN
         if not SampleCmdPrinted:
             SampleCmdPrinted = True
             prettyoutput.CurseString('Cmd', cmd)
-        Pool.add_task('AutoLevel: ' + cmd, cmd)
+        Pool.add_process('AutoLevel: ' + cmd, cmd)
 
     if not Pool is None:
         Pool.wait_completion()
@@ -1471,7 +1471,7 @@ def BuildTilesetPyramid(TileSetNode, Pool=None, **kwargs):
 
                 montageBugFixCmd = 'convert ' + OutputFileFullPath + ' -set colorspace RGB -type Grayscale ' + OutputFileFullPath
 
-                task = Pool.add_task(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
+                task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
 
                 if FirstTaskForRow is None:
                     FirstTaskForRow = task

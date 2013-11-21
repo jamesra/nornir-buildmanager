@@ -14,7 +14,7 @@ from nornir_buildmanager.VolumeManagerETree import VolumeManager
 import nornir_buildmanager.build as build
 from nornir_buildmanager.importers.idoc import SerialEMLog
 import nornir_buildmanager.importers.idoc as idoc
-from nornir_imageregistration.io.mosaicfile import MosaicFile
+from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
 import nornir_shared.misc
 import setup_pipeline

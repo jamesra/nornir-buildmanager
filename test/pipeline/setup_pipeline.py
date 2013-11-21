@@ -15,7 +15,7 @@ import test.testbase
 from nornir_buildmanager.VolumeManagerETree import *
 import nornir_buildmanager.build as build
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration.io.mosaicfile import *
+from nornir_imageregistration.files.mosaicfile import *
 import nornir_shared.misc
 
 

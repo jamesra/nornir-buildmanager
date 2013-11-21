@@ -4,13 +4,13 @@ import sys
 import os
 
 import time
-import argparse 
+import argparse
 import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.misc import SetupLogging
 from nornir_shared.tasktimer import TaskTimer
 import logging
 from nornir_buildmanager import *
-from nornir_imageregistration.io import *
+from nornir_imageregistration.files import *
 
 from pkg_resources import resource_filename
 
@@ -111,7 +111,7 @@ def Execute(buildArgs=None):
     dargs = dict()
     # dargs.update(args.__dict__)
 
-    TimingOutput = 'Timing.txt' 
+    TimingOutput = 'Timing.txt'
 
     Timer = TaskTimer()
 
@@ -163,7 +163,7 @@ def Execute(buildArgs=None):
             prettyoutput.Log('Could not write timing.txt')
 
 #
-#def SetupLogging(OutputPath):
+# def SetupLogging(OutputPath):
 #
 #    LogPath = os.path.join(OutputPath, 'Logs')
 #
@@ -199,7 +199,7 @@ def Main():
     parser = ProcessArgs()
 
     (args, extraargs) = parser.parse_known_args()
-    
+
     if args.debug:
         SetupLogging(args.volumepath, level=logging.DEBUG)
     else:
@@ -210,4 +210,4 @@ def Main():
 
 if __name__ == '__main__':
     Main()
-    
+

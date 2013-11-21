@@ -12,7 +12,7 @@ import xml
 from nornir_buildmanager import *
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration.io import mosaicfile
+from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile

@@ -6,7 +6,7 @@ import os.path
 from nornir_buildmanager import VolumeManagerETree
 from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.image_stats import Prune
-from nornir_imageregistration.io import mosaicfile
+from nornir_imageregistration.files import mosaicfile
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import Histogram
 import nornir_shared.misc

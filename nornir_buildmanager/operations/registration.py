@@ -11,7 +11,7 @@ import subprocess
 
 from nornir_buildmanager import *
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration.io import *
+from nornir_imageregistration.files import *
 from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor

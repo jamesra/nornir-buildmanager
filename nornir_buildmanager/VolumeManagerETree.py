@@ -13,7 +13,7 @@ import urllib
 import VolumeManagerHelpers as VMH
 import nornir_buildmanager.Config as Config
 import nornir_buildmanager.operations.versions as versions
-from nornir_imageregistration.io import *
+from nornir_imageregistration.files import *
 import nornir_pools as Pools
 import nornir_shared.checksum
 import nornir_shared.misc as misc
