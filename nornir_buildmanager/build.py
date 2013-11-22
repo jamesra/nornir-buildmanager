@@ -98,7 +98,7 @@ def ProcessArgs():
                         help='Provide additional output for debugging purposes.',
                         dest='verbose')
 
-    parser.add_argument(['-normalpriority', '-np'],
+    parser.add_argument('-normalpriority', '-np',
                         action='store_true',
                         required=False,
                         default=False,
@@ -113,8 +113,7 @@ def Execute(buildArgs=None):
     if buildArgs is None:
         buildArgs = sys.argv
 
-    if not buildArgs.normpriority:
-        lowpriority()
+    
 
     vikingURL = ""
 
@@ -128,6 +127,9 @@ def Execute(buildArgs=None):
     parser = ProcessArgs()
 
     (args, extraargs) = parser.parse_known_args(buildArgs)
+    
+    if not args.normpriority:
+        lowpriority()
 
     # SetupLogging(args.volumepath)
 
