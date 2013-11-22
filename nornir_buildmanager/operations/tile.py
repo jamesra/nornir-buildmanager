@@ -1032,7 +1032,7 @@ def AssembleTransformScipy(Parameters, Logger, ChannelNode, PyramidNode, Transfo
     return FilterNode
 
 
-def AssembleTransform(Parameters, Logger, ChannelNode, PyramidNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransformIrTools(Parameters, Logger, ChannelNode, PyramidNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
     '''Assemble a transform using the ir-tools
        @ChannelNode - TransformNode lives under ChannelNode
        '''
