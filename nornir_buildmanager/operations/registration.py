@@ -76,7 +76,17 @@ def TranslateTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):
             NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
             ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
             OutputTransformNode.cmd = cmd
-            SaveRequired = True
+
+            if os.path.exists(OutputTransformNode.FullPath):
+                stats = os.stat(OutputTransformNode.FullPath)
+                if stats.st_size == 0:
+                    os.remove(OutputTransformNode.FullPath)
+                    errmsg = "ir-refine-translate output zero size translate file.  Output deleted: " + OutputTransformNode.FullPath
+                    Logger.error(errmsg)
+
+                    # raise Exception(errmsg)
+
+            SaveRequired = os.path.exists(OutputTransformNode.FullPath)
         finally:
             if os.path.exists(mosaicFullPath):
                 os.remove(mosaicFullPath)
@@ -162,8 +172,6 @@ def CompressTransforms(Parameters, TransformNode, **kwargs):
         prettyoutput.Log("Input transform file not found: " + TransformNode.FullPath)
         return
 
-
-
     InputFileFullPath = TransformNode.FullPath
     MosaicBaseName = os.path.basename(InputFileFullPath)
     TempMosaicFilename = 'Temp_' + MosaicBaseName
@@ -173,10 +181,10 @@ def CompressTransforms(Parameters, TransformNode, **kwargs):
     mFile.CompressTransforms()
     mFile.Save(TempMosaicFileFullPath)
 
-    shutil.move(TempMosaicFileFullPath, InputFileFullPath)
-
-    TransformNode.Checksum = mFile.Checksum
-    TransformNode.attrib['Compressed'] = 'True'
+    if os.path.exists(TempMosaicFileFullPath):
+        shutil.move(TempMosaicFileFullPath, InputFileFullPath)
+        TransformNode.Checksum = mFile.Checksum
+        TransformNode.attrib['Compressed'] = 'True'
 
     return TransformNode.Parent
 
