@@ -54,6 +54,7 @@
       </PythonCall>
     </Iterate>
  	
+ 	<!--
  	<Select VariableName="ReportingElement" XPath="Block"/>
  	<PythonCall Function="reporting.GenerateTableReport"
      		    OutputFile="HistogramReport.html"
@@ -64,6 +65,7 @@
      		    ColumnXPaths="Channel/Filter[@Name='#InputFilter']/Histogram/Image,Channel/Filter[@Name='#InputFilter']/Prune/Image,Channel/Data[@Name='Log']" />
  	
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Histograms" to="#To" cc="#CC" ImageWidth="256" ImageHeight="256"/>
+    -->
   </Pipeline>
   
   <Pipeline Name="ShadeCorrect" Description="Optional shading correction">
