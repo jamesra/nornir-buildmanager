@@ -302,7 +302,7 @@ class PruneObj:
         StdDev = math.sqrt(total)
         # prettyoutput.Log("StdDev: " + str(StdDev))
 
-        numBins = int(math.ceil((maxVal - minVal) / (StdDev / 10)))
+        numBins = int(math.ceil((maxVal - minVal) / (StdDev / 10.0)))
 
         # prettyoutput.Log("NumBins: " + str(numBins))
 
