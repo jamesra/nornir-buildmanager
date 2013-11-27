@@ -4,8 +4,9 @@ Created on Apr 15, 2013
 @author: u0490822
 '''
 
-import nornir_buildmanager.VolumeManagerETree as VolumeManagerETree
 import os
+
+import nornir_buildmanager.VolumeManagerETree as VolumeManagerETree
 import nornir_shared.misc as misc
 
 

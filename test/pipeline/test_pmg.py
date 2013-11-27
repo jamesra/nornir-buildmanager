@@ -4,49 +4,49 @@ Created on Feb 6, 2013
 @author: u0490822
 '''
 
-import unittest
-import nornir_buildmanager.importers.pmg as pmg
-import os
-import shutil
 import glob
 import logging
-
-from nornir_imageregistration.io.mosaicfile import MosaicFile
-from nornir_buildmanager.importers.pmg import ParsePMGFilename, PMGInfo
+import os
+import shutil
+import unittest
 
 import nornir_buildmanager.VolumeManagerETree
-import nornir_shared.misc
+from nornir_buildmanager.importers.pmg import ParsePMGFilename, PMGInfo
+import nornir_buildmanager.importers.pmg as pmg
+from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
+import nornir_shared.misc
 import setup_pipeline
 
-PMGData = {"6750_10677D_WDF_20x_02_G.pmg" : PMGInfo(Slide = 6750,
-                                                 Block = '10677D',
-                                                 Initials = 'WDF',
-                                                 Mag = '20x',
-                                                 Spot = 2,
-                                                 Probe = 'G',
-                                                 NumberOfImages = 10),
-           "6750_10677D_WDF_20x_03_E.pmg" : PMGInfo(Slide = 6750,
-                                                 Block = '10677D',
-                                                 Initials = 'WDF',
-                                                 Mag = '20x',
-                                                 Spot = 3,
-                                                 Probe = 'E',
-                                                 NumberOfImages = 8),
-           "6259_9778_WDF_40xOil_04_Dapi.pmg" : PMGInfo(Slide = 6259,
-                                                 Block = '9778',
-                                                 Initials = 'WDF',
-                                                 Mag = '40xOil',
-                                                 Spot = 4,
-                                                 Probe = 'G',
-                                                 NumberOfImages = 96),
-           "6259_9778_WDF_40xOil_04_YY.pmg" : PMGInfo(Slide = 6259,
-                                                 Block = '9778',
-                                                 Initials = 'WDF',
-                                                 Mag = '40xOil',
-                                                 Spot = 4,
-                                                 Probe = 'G',
-                                                 NumberOfImages = 96)
+
+PMGData = {"6750_10677D_WDF_20x_02_G.pmg" : PMGInfo(Slide=6750,
+                                                 Block='10677D',
+                                                 Initials='WDF',
+                                                 Mag='20x',
+                                                 Spot=2,
+                                                 Probe='G',
+                                                 NumberOfImages=10),
+           "6750_10677D_WDF_20x_03_E.pmg" : PMGInfo(Slide=6750,
+                                                 Block='10677D',
+                                                 Initials='WDF',
+                                                 Mag='20x',
+                                                 Spot=3,
+                                                 Probe='E',
+                                                 NumberOfImages=8),
+           "6259_9778_WDF_40xOil_04_Dapi.pmg" : PMGInfo(Slide=6259,
+                                                 Block='9778',
+                                                 Initials='WDF',
+                                                 Mag='40xOil',
+                                                 Spot=4,
+                                                 Probe='G',
+                                                 NumberOfImages=96),
+           "6259_9778_WDF_40xOil_04_YY.pmg" : PMGInfo(Slide=6259,
+                                                 Block='9778',
+                                                 Initials='WDF',
+                                                 Mag='40xOil',
+                                                 Spot=4,
+                                                 Probe='G',
+                                                 NumberOfImages=96)
            }
 
 class PMGTest(setup_pipeline.PipelineTest):
@@ -126,7 +126,7 @@ class ImportPMG(PMGTest):
             pmgData = PMGData[pmgFileKey]
             self.assertIsNotNone(pmgData)
 
-            pmg.PMGImport.ToMosaic(VolumeObj, InputPath = pmgDir, OutputPath = self.VolumeDir, debug = True)
+            pmg.PMGImport.ToMosaic(VolumeObj, InputPath=pmgDir, OutputPath=self.VolumeDir, debug=True)
 
             VolumeObj.Save()
             del VolumeObj

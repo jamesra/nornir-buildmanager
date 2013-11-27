@@ -1,7 +1,7 @@
 import sys
 import re
 import cPickle as pickle
-from nornir_imageregistration.io import mosaicfile
+from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration import image_stats
 from nornir_shared.images import *
 import nornir_shared.files as files

@@ -4,9 +4,11 @@ Created on Mar 15, 2013
 @author: u0490822
 '''
 import unittest
-import nornir_buildmanager.build as build
+
 from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager.build as build
 import setup_pipeline
+
 
 class LMBuildTest(setup_pipeline.PipelineTest):
 

@@ -4,13 +4,12 @@ Created on Apr 15, 2013
 @author: u0490822
 '''
 
+from _abcoll import Mapping
 import os
 import types
-from _abcoll import Mapping
+
 
 # import logging
-
-
 class FilenameInfo(object):
 
     def __init__(self, **kwargs):

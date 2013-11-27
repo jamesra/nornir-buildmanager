@@ -54,6 +54,7 @@
       </PythonCall>
     </Iterate>
  	
+ 	<!--
  	<Select VariableName="ReportingElement" XPath="Block"/>
  	<PythonCall Function="reporting.GenerateTableReport"
      		    OutputFile="HistogramReport.html"
@@ -64,6 +65,7 @@
      		    ColumnXPaths="Channel/Filter[@Name='#InputFilter']/Histogram/Image,Channel/Filter[@Name='#InputFilter']/Prune/Image,Channel/Data[@Name='Log']" />
  	
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Histograms" to="#To" cc="#CC" ImageWidth="256" ImageHeight="256"/>
+    -->
   </Pipeline>
   
   <Pipeline Name="ShadeCorrect" Description="Optional shading correction">
@@ -100,8 +102,22 @@
 	  	<Argument flag="-OutputFilter" dest="NewName" help="New Filter name" required="True"/>
 	  </Arguments>
   	<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter[@Name='#InputFilter']">
-  		<PythonCall Function="General.Rename" OldNode="#FilterNode"/>
-  		<PythonCall Function="General.MovePath" Node="#FilterNode" NewPath="#NewName"/>
+  		<PythonCall Function="general.Rename" OldNode="#FilterNode"/>
+  		<PythonCall Function="general.MovePath" Node="#FilterNode" NewPath="#NewName"/>
+  	</Iterate>
+  	
+  	<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter[@Name='#NewName']">
+  		<PythonCall Function="general.MovePath" Node="#FilterNode" NewPath="#NewName"/>
+  	</Iterate>
+  </Pipeline>
+  
+  <Pipeline Name="RemoveDuplicateFilters" Description="Migrate meta-data to latest version">
+	  <Arguments>
+	    <Argument flag="-Attrib" dest="ChildAttrib" default="Name" help="Attrib to check for duplicates" required="False"/>
+	    <Argument flag="-ChildNode" dest="ChildNodeName" default="Filter_Link" help="Child node to check for duplicates" required="False"/> 
+	  </Arguments>
+  	<Iterate VariableName="ParentNode" XPath="Block/Section/Channel">
+  		<PythonCall Function="general.RemoveDuplicateLinks" ChildNodeName="#ChildNodeName" ChildAttrib="#ChildAttrib"/> 
   	</Iterate>
   </Pipeline>
   
@@ -262,7 +278,7 @@
   
   <Pipeline Name="CreateBlobFilter" Description="Create a blob filter for an input filter">
   	<Arguments>
-	  	<Argument flag="-BlobFilters" default="*" dest="BlobFilters" help="Regular expression describing filters to be blobbed" required="False"/>
+	  	<Argument flag="-BlobFilters" default="(?![M|m]ask)" dest="BlobFilters" help="Regular expression describing filters to be blobbed" required="False"/>
 	  	<Argument flag="-BlobLevels" dest="BlobDownsampleLevels" default="1" help="Downsample levels to be blobbed" required="False"/>
 	  	<Argument flag="-BlobRadius" dest="BlobRadius" default="9" help="Radius to calculate variance within" required="False"/>
 	  	<Argument flag="-BlobMedian" dest="BlobMedian" default="7" help="Median filter radius for input" required="False"/>
@@ -450,6 +466,18 @@
 	   	<PythonCall Function="reporting.CopyFiles" OutputDir="#OutputDir"/>
 	   </Iterate>  
   	</Iterate>
+  </Pipeline>
+  
+  <Pipeline Name="ExportMosaics" Description="Copies images of sections to an output directory">   
+     <Arguments>
+      	<Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="8" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
+      	<Argument flag="-Filter" dest="Filter" default="Leveled" help="Filter used to build leveled and mosaic images" required="False"/>
+      	<Argument flag="-Output" dest="OutputDir" help="Directory to move assembled images to" required="False"/>
+    </Arguments>
+	  
+    <Iterate VariableName="DataNode" XPath="Block/Section/Channel/Filter[@Name='#Filter']/ImageSet/Level[@Downsample='#AssembleDownsample']/Image">
+   		<PythonCall Function="reporting.CopyFiles" OutputDir="#OutputDir"/>
+   	</Iterate>
   </Pipeline>
 
   <Pipeline Name="LM">

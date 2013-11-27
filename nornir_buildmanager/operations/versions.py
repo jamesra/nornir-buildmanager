@@ -6,6 +6,7 @@ Created on Jul 2, 2012
 
 from nornir_buildmanager.VolumeManagerETree import *
 
+
 LatestElementVersions = {'PruneData' : 1.2, 'HistogramData' : 1.1};
 
 CompatibleElementVersions = {'PruneData' : 1.2, 'HistogramData' : 1.1};

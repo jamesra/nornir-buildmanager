@@ -4,10 +4,11 @@ Created on May 22, 2013
 @author: u0490822
 '''
 
-import os
-import unittest
-import shutil
 import logging
+import os
+import shutil
+import unittest
+
 from nornir_shared.misc import SetupLogging
 
 

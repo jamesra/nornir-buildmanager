@@ -1,11 +1,13 @@
 # This is to find all the Viking XML paths on a drive and create an HTML page to view statistics and link to volumes.
 
+import glob
 import os
+
 import nornir_shared.files
 import nornir_shared.images
-import glob
 import nornir_shared.prettyoutput as PrettyOutput
 import xml.etree.ElementTree as ElementTree
+
 
 HTMLImageTemplate = '<img src="%(src)s" alt="%(AltText)s" width="%(ImageWidth)s" height="%(ImageHeight)s" />'
 

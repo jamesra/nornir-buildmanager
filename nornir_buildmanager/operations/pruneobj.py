@@ -1,22 +1,18 @@
+import copy
 import logging
-
+import math
 import os.path
 
-import math
-from nornir_shared.histogram import Histogram
-from nornir_imageregistration.io import mosaicfile
 from nornir_buildmanager import VolumeManagerETree
-
-from nornir_imageregistration.image_stats import Prune
-
-import nornir_shared.prettyoutput as prettyoutput
-from nornir_shared.files import RemoveOutdatedFile
-import nornir_shared.misc
-import copy
-import nornir_shared.plot as plot
-
-
 from nornir_buildmanager.validation import transforms
+from nornir_imageregistration.image_stats import Prune
+from nornir_imageregistration.files import mosaicfile
+from nornir_shared.files import RemoveOutdatedFile
+from nornir_shared.histogram import Histogram
+import nornir_shared.misc
+import nornir_shared.plot as plot
+import nornir_shared.prettyoutput as prettyoutput
+
 
 class PruneObj:
     """Executes ir-prune and produces a histogram"""
@@ -306,7 +302,7 @@ class PruneObj:
         StdDev = math.sqrt(total)
         # prettyoutput.Log("StdDev: " + str(StdDev))
 
-        numBins = int(math.ceil((maxVal - minVal) / (StdDev / 10)))
+        numBins = int(math.ceil((maxVal - minVal) / (StdDev / 10.0)))
 
         # prettyoutput.Log("NumBins: " + str(numBins))
 
