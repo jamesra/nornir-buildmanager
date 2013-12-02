@@ -70,10 +70,10 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             InputTransform = tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.InputTransform)
             self.assertIsNotNone(InputTransform)
 
+            # Find a transform that depends on the transform we just deleted, if it exists
             OutputTransform = tNode.Parent.GetChildByAttrib('Transform', 'InputTransform', tNode.Name)
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
-            # Import the files
             buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'TEMMosaic', '-debug']
             build.Execute(buildArgs)
 
@@ -83,7 +83,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             # Make sure the transforms are still consistent
             self.ValidateAllTransforms(self.ChannelData)
 
-            # Translate should have been regenerated, but the checksum should match so grid was left alone
+            # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
             if not OutputTransform is None:
                 self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
 
