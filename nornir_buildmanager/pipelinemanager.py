@@ -158,8 +158,8 @@ class PipelineManager(object):
     def __init__(self, pipelinesRoot, pipelineData):
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
-        self.PipelineRoot = pipelinesRoot 
-        
+        self.PipelineRoot = pipelinesRoot
+
     @classmethod
     def ToElementString(self, element):
         strList = xml.etree.ElementTree.tostringlist(element)
@@ -177,6 +177,21 @@ class PipelineManager(object):
         return outStr
 
     @classmethod
+    def __PrintPipelineEnumeration(cls, PipelineDoc):
+
+        cls.logger.info("Enumerating available pipelines")
+        prettyoutput.Log("Enumerating available pipelines")
+        for pipeline in PipelineDoc.getroot():
+            cls.logger.info('  ' + pipeline.attrib.get('Name', ""))
+            prettyoutput.Log('  ' + pipeline.attrib.get('Name', ""))
+            prettyoutput.Log('    ' + pipeline.attrib.get('Description', "") + '\n')
+
+    @classmethod
+    def __PrintPipelineArguments(cls, PipelineNode):
+
+        pass
+
+    @classmethod
     def Load(cls, PipelineXmlFile, PipelineName=None):
 
         if not os.path.exists(PipelineXmlFile):
@@ -191,26 +206,19 @@ class PipelineManager(object):
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
 
         SelectedPipeline = None
-        cls.logger.info("Enumerating available pipelines")
-        prettyoutput.Log("Enumerating available pipelines")
-        for pipeline in XMLDoc.getroot():
-            cls.logger.info('  ' + pipeline.attrib.get('Name', ""))
-            prettyoutput.Log('  ' + pipeline.attrib.get('Name', ""))
-            prettyoutput.Log('    ' + pipeline.attrib.get('Description', ""))
 
         if PipelineName is None:
-            SelectedPipeline = XMLDoc.getroot()[0]
+            PipelineManager.logger.warning("No pipeline name specified.")
+            prettyoutput.Log("No pipeline name specified")
+            cls.__PrintPipelineUsage(XMLDoc)
+            return None
         else:
             SelectedPipeline = XMLDoc.find("Pipeline[@Name='" + PipelineName + "']")
             if(SelectedPipeline is None):
                 PipelineManager.logger.critical("No pipeline found named " + PipelineName)
                 prettyoutput.LogErr("No pipeline found named " + PipelineName)
+                cls.__PrintPipelineUsage(XMLDoc)
                 return None
-
-        if(PipelineName is None):
-            NodeName = SelectedPipeline.get('Name', None)
-            PipelineManager.logger.warning("No pipeline name specified.  Choosing " + NodeName)
-            prettyoutput.Log("No pipeline name specified.  Choosing " + NodeName)
 
         return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)
 
@@ -246,7 +254,7 @@ class PipelineManager(object):
         defaultDargs.update(args.__dict__)
 
         # dargs = copy.deepcopy(defaultDargs)
-        
+
         self.ExecuteChildPipelines(defaultDargs, self.VolumeTree, PipelineElement)
 
 
@@ -292,21 +300,21 @@ class PipelineManager(object):
 
 
     IndentLevel = 0
-    
+
     def ExecuteChildPipelines(self, dargs, VolumeElem, PipelineNode):
         '''Run all of the child pipeline elements on the volume element'''
-    
-    
+
+
         PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
-        #prettyoutput.Log(PipelineManager.ToElementString(PipelineNode))
-        
+        # prettyoutput.Log(PipelineManager.ToElementString(PipelineNode))
+
         PipelinesRun = 0
         try:
             self.AddVariable(PipelineNode, VolumeElem, dargs)
-            
+
             for ChildNode in PipelineNode:
-                
-                
+
+
                 try:
                     self.ProcessStageElement(VolumeElem, ChildNode, dargs)
                     PipelinesRun += 1
@@ -325,15 +333,15 @@ class PipelineManager(object):
                     PipelineManager.logger.error(str(e))
                     PipelineManager.logger.error("Undexpected error, exiting pipeline")
                     sys.exit()
-        finally: 
+        finally:
             self.RemoveVariable(PipelineNode, dargs)
-                
+
         # To prevent later calls from being able to access variables from earlier steps be sure to remove the variable from the dargs
         return PipelinesRun
-        
-     
-    
-    
+
+
+
+
     def ProcessStageElement(self, VolumeElem, PipelineNode, dargs=None):
 
         outStr = PipelineManager.ToElementString(PipelineNode)
@@ -415,9 +423,9 @@ class PipelineManager(object):
 
         if not SelectedVolumeElem is None:
             self.AddVariable(PipelineNode, SelectedVolumeElem, dargs)
-            
-    
-            
+
+
+
     def ProcessIterateNode(self, dargs, VolumeElem, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, dargs)
@@ -435,7 +443,7 @@ class PipelineManager(object):
 
             if VolumeElemChild.CleanIfInvalid():
                 continue
-            
+
             NumProcessed += self.ExecuteChildPipelines(dargs, VolumeElemChild, PipelineNode)
 
         if(NumProcessed == 0):

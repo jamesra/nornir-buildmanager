@@ -25,7 +25,7 @@ class PrepareThenMosaicTest(PipelineTest):
         for tname in TransformNames:
             TransformNode = ChannelNode.GetChildByAttrib("Transform", "Name", tname)
             self.assertIsNotNone(ChannelNode)
-            
+
 
     def TileFiles(self, tilesetNode, downsample):
         levelNode = tilesetNode.GetLevel(downsample)
@@ -48,8 +48,8 @@ class PrepareThenMosaicTest(PipelineTest):
 
         FullResTiles.sort()
         DSTwoTiles.sort()
-        
-        self.assertEqual(os.path.basename(FullResTiles[0]), 
+
+        self.assertEqual(os.path.basename(FullResTiles[0]),
                          os.path.basename(DSTwoTiles[0]),
                          "Tiles at different downsample levels should use the same naming convention")
 
@@ -57,6 +57,11 @@ class PrepareThenMosaicTest(PipelineTest):
     def runTest(self):
         # Import the files
         buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', '-debug'];
+        build.Execute(buildArgs);
+
+        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+
+        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'AdjustContrast', '-debug'];
         build.Execute(buildArgs);
 
         self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");

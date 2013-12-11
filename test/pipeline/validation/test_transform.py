@@ -74,7 +74,8 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             OutputTransform = tNode.Parent.GetChildByAttrib('Transform', 'InputTransform', tNode.Name)
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
-            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'TEMMosaic', '-debug']
+            # Import the files
+            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'AdjustContrast', 'Mosaic', '-debug']
             build.Execute(buildArgs)
 
             # Load the meta-data from the volumedata.xml file again

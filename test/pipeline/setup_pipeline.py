@@ -201,7 +201,7 @@ class PrepareAndMosaicSetup(PipelineTest):
 
         super(PrepareAndMosaicSetup, self).setUp();
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'TEMMosaic', '-debug'];
+        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'AdjustContrast', 'Mosaic', '-debug'];
         build.Execute(buildArgs);
 
         self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
