@@ -131,6 +131,7 @@
       <Argument flag="-MinCutoff" dest="MinCutoff" default="0.1" help="Min pixel intensity cutoff as a percentage, 0 to 100" required="False"/>
       <Argument flag="-MaxCutoff" dest="MaxCutoff" default="0.5" help="Max pixel intensity cutoff as a percentage, 0 to 100. Specifying '1' puts the cutoff at 99% of the maximum pixel intensity value." required="False"/>
       <Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter used to build leveled and mosaic images" required="False"/>
+      <Argument flag="-UseCluster" dest="UseCluster" action="store_true" default="False" help="Divide task of assembling images to other computers if a cluster is available" required="False"/>
     </Arguments>
     <Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
       <Select VariableName="TransformNode" XPath="Transform[@Name='Prune']"/>
@@ -390,7 +391,7 @@
         </Iterate> -->		
   	</Iterate>
   	
-  	<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
+  	<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName#StovDownsample" StosGroupName="#StovOutputGroupName#StovDownsample"/>
   </Pipeline>
   
   <Pipeline Name="ScaleVolumeTransforms" Description="Changes stos files to use the specified filters and downsample level">
