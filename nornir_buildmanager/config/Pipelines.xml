@@ -319,14 +319,18 @@
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
   </Pipeline>
   
-  <Pipeline Name="EmailStosReport" Description="E-mail the summary for a volume">
-    <Select VariableName="ReportingElement" XPath="Block"/>
+  <Pipeline Name="StosReport" Description="E-mail the summary for a volume">
+  	<Arguments>
+  		<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from" required="True"/>
+  	</Arguments>
+    <Select VariableName="ReportingElement" XPath="Block/StosGroup[@Name='#StosGroup']"/>
     <PythonCall Function="reporting.GenerateTableReport"
      		    OutputFile="StosReport.html"
-     		    RowXPath="StosGroup[@Name='StosGrid16']"
+     		    RowXPath="SectionMappings"
+     		    RowLabelAttrib="MappedSectionNumber"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="SectionMappings/Image" />
+     		    ColumnXPaths="Image" />
 
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
   </Pipeline>
@@ -486,8 +490,8 @@
    
   <Pipeline Name="VolumeImage" Description="Used after TEMStos has produced good quality output.  Aligns all sections to a common space, usually the center section">
   <Arguments>
-      <Argument flag="-VolumeImageGroupName" default="SliceToVolume" dest="VolumeImageGroupName" type="str" required="False" help="Name of stos group to create scaled version of, default = SliceToVolume"/>
-      <Argument flag="-VolumeImageDownsample" default="1" dest="VolumeImageDownsample" type="int" help="Downsample level of input stosgroup, default = 1"/>
+      <Argument flag="-InputGroup" default="SliceToVolume" dest="VolumeImageGroupName" type="str" required="False" help="Name of stos group to create scaled version of, default = SliceToVolume"/>
+      <Argument flag="-GroupDownsample" default="1" dest="VolumeImageDownsample" type="int" help="Downsample level of input stosgroup, default = 1"/>
   </Arguments>
   	<Iterate VariableName="BlockNode" XPath="Block"> 
 	  <!-- <Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#VolumeImageGroupName']">
