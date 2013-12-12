@@ -609,9 +609,9 @@ def SectionToVolumeImage(Parameters, TransformNode, Logger, CropUndefined=True, 
 
     if not os.path.exists(WarpedImageNode.FullPath):
         SaveRequired = True
+        WarpedImageNode.InputTransformChecksum = TransformNode.Checksum
         assemble.TransformStos(TransformNode.FullPath, OutputFilename=WarpedImageNode.FullPath, CropUndefined=CropUndefined)
         prettyoutput.Log("Saving image: " + WarpedImageNode.FullPath)
-        WarpedImageNode.InputTransformChecksum = TransformNode.Checksum
 
     if SaveRequired:
         return GroupNode
@@ -1194,7 +1194,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 
                 if not os.path.exists(OutputTransform.FullPath):
                     shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
-                    OutputTransform.Checksum = MappedToControlTransform.Checksum
+                    #OutputTransform.Checksum = MappedToControlTransform.Checksum
                     OutputTransform.InputTransformChecksum = MappedToControlTransform.Checksum
 
             else:
@@ -1221,6 +1221,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 
                     OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
                     OutputTransform.InputTransformChecksum = MappedToControlTransform.Checksum
+                    OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
 
             SliceToVolumeFromRegistrationTreeNode(rt, mappedNode, InputGroupNode, OutputGroupNode, ControlToVolumeTransform=OutputTransform)
 
