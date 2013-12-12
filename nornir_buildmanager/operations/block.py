@@ -1174,7 +1174,9 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
             OutputTransform = copy.deepcopy(MappedToControlTransform)
 
             (OutputTransformAdded, OutputTransform) = OutputSectionMappingsNode.UpdateOrAddChildByAttrib(OutputTransform, 'MappedSectionNumber')
-            OutputTransform.Path = str(mappedSectionNumber) + '-' + str(ControlSection) + '.stos'
+            OutputTransform.Name = str(mappedSectionNumber) + '-' + str(ControlSection)
+            OutputTransform.Path = OutputTransform.Name + '.stos'
+            
 
             if not ControlToVolumeTransform is None:
                 OutputTransform.Path = str(mappedSectionNumber) + '-' + str(ControlToVolumeTransform.ControlSectionNumber) + '.stos'

@@ -330,7 +330,7 @@
      		    RowLabelAttrib="MappedSectionNumber"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="Image" />
+     		    ColumnXPaths="Image,Transform" />
 
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
   </Pipeline>
