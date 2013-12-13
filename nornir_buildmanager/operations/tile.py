@@ -921,7 +921,7 @@ def AssembleTransform(Parameters, Logger, ChannelNode, PyramidNode, TransformNod
     return AssembleTransformScipy(Parameters, Logger, ChannelNode, PyramidNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs)
 
 
-def AssembleTransformScipy(Parameters, Logger, ChannelNode, PyramidNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransformScipy(Parameters, Logger, ChannelNode, PyramidNode, TransformNode, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     Feathering = Parameters.get('Feathering', 'binary')
 
@@ -989,7 +989,7 @@ def AssembleTransformScipy(Parameters, Logger, ChannelNode, PyramidNode, Transfo
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir)
+        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, usecluster=UseCluster)
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)

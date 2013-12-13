@@ -121,7 +121,81 @@
   	</Iterate>
   </Pipeline>
   
-  <Pipeline Name="TEMMosaic" Description="Used after TEMPrepare, levels the image intensity, aligns tiles into a single mosaic">
+  <Pipeline Name="AdjustContrast" Description="Creates a new filter with adjusted contrast">
+    <Arguments>
+      <Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/>
+      <Argument flag="-MinCutoff" dest="MinCutoff" default="0.1" help="Min pixel intensity cutoff as a percentage, 0 to 100" required="False"/>
+      <Argument flag="-MaxCutoff" dest="MaxCutoff" default="0.5" help="Max pixel intensity cutoff as a percentage, 0 to 100. Specifying '1' puts the cutoff at 99% of the maximum pixel intensity value." required="False"/>
+      <Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to draw images from" required="False"/>
+      <Argument flag="-OutputFilter" dest="OutputFilter" default="Leveled" help="Filter to draw images from" required="False"/>
+    </Arguments>
+    <Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
+      <Select VariableName="TransformNode" XPath="Transform[@Name='Prune']"/>
+      <Select VariableName="LevelNode" Root="ChannelNode" XPath="Filter[@Name='#InputFilter']/TilePyramid/Level[@Downsample='1']"/>
+      <PythonCall Function="tile.AutolevelTiles" OutputFilterName="#OutputFilter">
+        <Parameters>
+          <Entry Name="Gamma" Value="#Gamma"/> 
+          <Entry Name="MinCutoff" Value="#MinCutoff"/> 
+          <Entry Name="MaxCutoff" Value="#MaxCutoff"/> 
+        </Parameters>
+      </PythonCall>
+
+      <Select VariableName="PyramidNode" Root="ChannelNode"  XPath="Filter[@Name='#OutputFilter']/TilePyramid"/>
+      <PythonCall Function="tile.BuildTilePyramids"/>
+    </Iterate>
+  </Pipeline>
+
+  <Pipeline Name="Mosaic" Description="Aligns tiles of a filter into a single mosaic">
+    <Arguments>
+      <Argument flag="-RegistrationDownsample" dest="Downsample" default="4" type="int" help="Downsample level to use for ir-tools" required="False"/>
+      <Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="8,16,32,64" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
+      <Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
+      <Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
+      <Argument flag="-InputFilter" dest="InputFilter" default="Leveled" help="Filter used to build leveled and mosaic images" required="False"/>
+    </Arguments>
+    
+    <Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
+      <Select VariableName="LevelNode" XPath="Filter[@Name='#InputFilter']/TilePyramid/Level[@Downsample='#Downsample']"/>
+      <Select VariableName="TransformNode" XPath="Transform[@Name='Prune']"/>
+
+	  <!-- ir-translate, calculate translation for each tile into the greater mosaic -->
+      <PythonCall Function="registration.TranslateTransform" OutputTransform="Translate">
+        <Parameters>
+          <Entry Name="MaxOffsetX" Value="#MaxOffset"/>
+        </Parameters>
+      </PythonCall>
+
+	  <!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping tiles -->
+      <Select VariableName="TransformNode" Root="ChannelNode"  XPath="Transform[@Name='Translate']"/>
+      <PythonCall Function="registration.CompressTransforms"/>
+      <PythonCall Function="registration.GridTransform" OutputTransform="Grid">
+        <Parameters>
+          <Entry Name="MeshWidth" Value="8"/>
+          <Entry Name="MeshHeight" Value="8"/>
+          <Entry Name="Cell" Value="96"/>
+          <Entry Name="Threshold" Value="0.5"/>
+        </Parameters>
+      </PythonCall>
+      
+      <!-- Move mosaics to have an origin at zero -->
+      <Select VariableName="TransformNode" Root="ChannelNode"  XPath="Transform[@Name='Grid']"/>
+      <PythonCall Function="registration.CompressTransforms"/>
+	  <PythonCall Function="tile.TranslateToZeroOrigin" OutputTransformName="ZeroGrid"/>
+ 
+ 	  <!-- Adjust grid transform to have an origin at 0,0.  -->
+      <Select VariableName="TransformNode" XPath="Transform[@Name='ZeroGrid']"/>
+      
+      <!-- Build a downsampled image of the mosaic -->
+      <Select VariableName="PyramidNode" Root="ChannelNode"  XPath="Filter[@Name='#InputFilter']/TilePyramid"/>
+      <PythonCall Function="tile.AssembleTransform" Interlace="0" Levels="#AssembleDownsample">
+        <Parameters>
+          <Entry Name="feathering" Value="binary"/>
+        </Parameters>
+      </PythonCall>
+    </Iterate>
+  </Pipeline>
+  
+  <Pipeline Name="TEMMosaic" Description="Deprecated by use of AdjustContrast and Mosaic pipeline combo.">
     <Arguments>
       <Argument flag="-RegistrationDownsample" dest="Downsample" default="4" type="int" help="Downsample level to use for ir-tools" required="False"/>
       <Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="8,16,32,64" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
@@ -131,6 +205,7 @@
       <Argument flag="-MinCutoff" dest="MinCutoff" default="0.1" help="Min pixel intensity cutoff as a percentage, 0 to 100" required="False"/>
       <Argument flag="-MaxCutoff" dest="MaxCutoff" default="0.5" help="Max pixel intensity cutoff as a percentage, 0 to 100. Specifying '1' puts the cutoff at 99% of the maximum pixel intensity value." required="False"/>
       <Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter used to build leveled and mosaic images" required="False"/>
+      <Argument flag="-UseCluster" dest="UseCluster" action="store_true" default="False" help="Divide task of assembling images to other computers if a cluster is available" required="False"/>
     </Arguments>
     <Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
       <Select VariableName="TransformNode" XPath="Transform[@Name='Prune']"/>
@@ -186,7 +261,7 @@
         </Parameters>
       </PythonCall>
     </Iterate>
-    
+        
     <Select VariableName="ReportingElement" XPath="Block"/>
     <PythonCall Function="reporting.GenerateTableReport"
      		    OutputFile="ImageReport.html"
@@ -244,14 +319,18 @@
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
   </Pipeline>
   
-  <Pipeline Name="EmailStosReport" Description="E-mail the summary for a volume">
-    <Select VariableName="ReportingElement" XPath="Block"/>
+  <Pipeline Name="StosReport" Description="E-mail the summary for a volume">
+  	<Arguments>
+  		<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from" required="True"/>
+  	</Arguments>
+    <Select VariableName="ReportingElement" XPath="Block/StosGroup[@Name='#StosGroup']"/>
     <PythonCall Function="reporting.GenerateTableReport"
      		    OutputFile="StosReport.html"
-     		    RowXPath="StosGroup[@Name='StosGrid16']"
+     		    RowXPath="SectionMappings"
+     		    RowLabelAttrib="MappedSectionNumber"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="SectionMappings/Image" />
+     		    ColumnXPaths="Image,Transform" />
 
     <PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
   </Pipeline>
@@ -390,7 +469,7 @@
         </Iterate> -->		
   	</Iterate>
   	
-  	<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
+  	<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
   </Pipeline>
   
   <Pipeline Name="ScaleVolumeTransforms" Description="Changes stos files to use the specified filters and downsample level">
@@ -411,8 +490,8 @@
    
   <Pipeline Name="VolumeImage" Description="Used after TEMStos has produced good quality output.  Aligns all sections to a common space, usually the center section">
   <Arguments>
-      <Argument flag="-VolumeImageGroupName" default="SliceToVolume" dest="VolumeImageGroupName" type="str" required="False" help="Name of stos group to create scaled version of, default = SliceToVolume"/>
-      <Argument flag="-VolumeImageDownsample" default="1" dest="VolumeImageDownsample" type="int" help="Downsample level of input stosgroup, default = 1"/>
+      <Argument flag="-InputGroup" default="SliceToVolume" dest="VolumeImageGroupName" type="str" required="False" help="Name of stos group to create scaled version of, default = SliceToVolume"/>
+      <Argument flag="-GroupDownsample" default="1" dest="VolumeImageDownsample" type="int" help="Downsample level of input stosgroup, default = 1"/>
   </Arguments>
   	<Iterate VariableName="BlockNode" XPath="Block"> 
 	  <!-- <Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#VolumeImageGroupName']">

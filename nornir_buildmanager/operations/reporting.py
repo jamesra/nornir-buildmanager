@@ -125,6 +125,14 @@ class HTMLPaths(object):
             self._OutputFile = os.path.basename(OutputFileFullPath)
 
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
+        
+    
+    @classmethod
+    def __StripLeadingPathSeperator(cls, path):
+        while(path[0] == os.sep or path[0] == os.altsep):
+            path = path[1:]
+            
+        return path
 
 
     def GetSubNodeRelativePath(self, subpath):
@@ -135,11 +143,20 @@ class HTMLPaths(object):
 
         RelativePath = fullpath.replace(self.SourceRootDir, '')
         RelativePath = os.path.dirname(RelativePath)
-        if(RelativePath[0] == os.sep or
-           RelativePath[0] == os.altsep):
-            RelativePath = RelativePath[1:]
+        RelativePath = HTMLPaths.__StripLeadingPathSeperator(RelativePath)
 
         return RelativePath
+    
+    def GetSubNodeFullPath(self, subpath):
+        
+        RelPath = self.GetSubNodeRelativePath(subpath)
+        if not RelPath is None:
+            FullPath = os.path.join(RelPath, subpath.Path)
+            FullPath = HTMLPaths.__StripLeadingPathSeperator(FullPath)
+        else:
+            return subpath.FullPath
+
+        return FullPath
 
     def __ThumbnailPaths(self):
         '''Return relative and absolute thumnails for an OutputFile'''
@@ -485,19 +502,12 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
 
     imageFilename = ImageNode.Path
 
-    FullImgSrcPath = ImageNode.FullPath
-    if not os.path.exists(FullImgSrcPath):
-        Logger.error("Missing image file: " + FullImgSrcPath)
+    
+    if not os.path.exists(ImageNode.FullPath):
+        Logger.error("Missing image file: " + ImageNode.FullPath)
         return ""
-
-    RelPath = HtmlPaths.GetSubNodeRelativePath(ImageNode)
-    if not RelPath is None:
-        FullImgSrcPath = os.path.join(RelPath, ImageNode.Path)
-        if(FullImgSrcPath[0] == os.sep or
-           FullImgSrcPath[0] == os.altsep):
-            FullImgSrcPath = FullImgSrcPath[1:]
-
-    ImgSrcPath = FullImgSrcPath
+ 
+    ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
 
     [Width, Height] = nornir_shared.images.GetImageSize(ImageNode.FullPath)
 
@@ -524,7 +534,7 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
         Height = int(Height * Scale)
 
     HTMLImage = HTMLImageTemplate % {'src' : ImgSrcPath, 'AltText' : imageFilename, 'ImageWidth' : Width, 'ImageHeight' : Height}
-    HTMLAnchor = HTMLAnchorTemplate % {'href' : FullImgSrcPath, 'body' : HTMLImage }
+    HTMLAnchor = HTMLAnchorTemplate % {'href' : ImgSrcPath, 'body' : HTMLImage }
 
     return HTMLAnchor
 
@@ -532,7 +542,8 @@ def __anchorStringForHeader(Text):
     return '<a id="%(id)s"><b>%(id)s</b></a>' % {'id' : Text}
 
 
-
+def HTMLFromTransformNode(ColSubElement, HtmlPaths,  **kwargs):
+    return '<a href="%s">%s</a>' % (HtmlPaths.GetSubNodeFullPath(ColSubElement), ColSubElement.Name)
 
 
 def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
@@ -577,6 +588,8 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
                 kwargs['MaxImageWidth'] = 364
                 kwargs['MaxImageHeight'] = 364
                 HTML = HTMLFromLogDataNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
+            elif ColSubElement.tag == "Transform":
+                HTML = HTMLFromTransformNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
 
             elif ColSubElement.tag == "Notes":
                 ColumnBodyList.caption = '<caption align=bottom>%s</caption>\n' % HTMLFromNotesNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
@@ -620,8 +633,10 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     # Build a 2D list to build the table from later
 
+    pool = Pools.GetGlobalThreadPool()
     tableDict = {}
-    RowBodyList = ColumnList()
+    tasks = []
+     
     NumRows = len(RowElements)
     for (iRow, RowElement) in enumerate(RowElements):
 
@@ -631,11 +646,20 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
         if RowLabel is None:
             RowLabel = RowElement
 
-        nornir_shared.prettyoutput.CurseProgress("Adding row", iRow, Total=NumRows)
+        
 
-        result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
-        RowBodyList.append(result)
-        tableDict[RowLabel] = result
+        task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        tasks.append(task)
+        #result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        #tableDict[RowLabel] = result
+        
+    for iRow,t in enumerate(tasks):
+        try:
+            tableDict[t.name] = t.wait_return()
+            nornir_shared.prettyoutput.CurseProgress("Added row", iRow, Total=NumRows)
+        except Exception as e:
+            tableDict[t.name] = str(e)
+            pass
 
     # HTML = MatrixToTable(RowBodyList=RowBodyList)
     HTML = DictToTable(tableDict)
