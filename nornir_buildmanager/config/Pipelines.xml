@@ -469,7 +469,7 @@
         </Iterate> -->		
   	</Iterate>
   	
-  	<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName#StovDownsample" StosGroupName="#StovOutputGroupName#StovDownsample"/>
+  	<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
   </Pipeline>
   
   <Pipeline Name="ScaleVolumeTransforms" Description="Changes stos files to use the specified filters and downsample level">
