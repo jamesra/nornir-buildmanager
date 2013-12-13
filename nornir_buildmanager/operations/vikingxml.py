@@ -14,7 +14,6 @@ from nornir_shared.files import RecurseSubdirectories
 import nornir_shared.prettyoutput as prettyoutput
 import xml.etree.ElementTree as ETree
 
-
 ECLIPSE = 'ECLIPSE' in os.environ;
 
 def CreateXMLIndex(path, server=None):
@@ -53,8 +52,6 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, **kwa
     ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName);
 
     OutputXML = ETree.tostring(OutputVolumeNode).decode('utf-8');
-
-    OutputXML = OutputXML.replace('>', '>\n');
     # prettyoutput.Log(OutputXML);
 
     hFile = open(OutputXMLFilename, 'w');
