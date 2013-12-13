@@ -4,13 +4,15 @@ Created on Jan 4, 2013
 @author: u0490822
 '''
 
-import persistent
-import nornir_shared
 import os
-import versions
 import re
-
 import traceback
+
+import persistent
+
+import nornir_shared
+import versions
+
 
 class EntityData(persistent.Persistent):
     '''

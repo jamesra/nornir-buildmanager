@@ -1,21 +1,20 @@
-import sys
-import os
-import shutil
-import nornir_shared.prettyoutput as prettyoutput
 import glob
 import logging
-from nornir_imageregistration.io import  mosaicfile
-from nornir_imageregistration import image_stats
-from nornir_buildmanager.VolumeManagerETree import *
-from nornir_shared.files import *
-from nornir_shared.images import *
-
-from nornir_buildmanager import  Config
-
-from nornir_buildmanager.operations.tile import VerifyTiles
+import os
+import shutil
+import sys
 
 from filenameparser import ParseFilename, mapping
+from nornir_buildmanager import Config
+from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser
+from nornir_buildmanager.operations.tile import VerifyTiles
+from nornir_imageregistration import image_stats
+from nornir_imageregistration.files import mosaicfile
+from nornir_shared.files import *
+from nornir_shared.images import *
+import nornir_shared.prettyoutput as prettyoutput
+
 
 DEBUG = False
 
@@ -24,13 +23,13 @@ DEBUG = False
        # Only the last two, Spot and Probe, are used as section #
        # and channel name respectively.  The others are appended
        # to the directory name'''
-pmgMappings = [ mapping('Slide', typefunc = int),
-               mapping('Block', typefunc = str),
-               mapping('Section', typefunc = int, default = None),
-               mapping('Initials', typefunc = str),
-               mapping('Mag', typefunc = str),
-               mapping('Spot', typefunc = int),
-               mapping('Probe', typefunc = str)]
+pmgMappings = [ mapping('Slide', typefunc=int),
+               mapping('Block', typefunc=str),
+               mapping('Section', typefunc=int, default=None),
+               mapping('Initials', typefunc=str),
+               mapping('Mag', typefunc=str),
+               mapping('Spot', typefunc=int),
+               mapping('Probe', typefunc=str)]
 
 def ParsePMGFilename(PMGPath):
 
@@ -127,7 +126,7 @@ class PMGInfo(filenameparser.FilenameInfo):
 class PMGImport(object):
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath = None, Extension = None, OutputImageExt = None, TileOverlap = None, TargetBpp = None, debug = None):
+    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None):
 
         '''#Converts a PMG
     #PMG files are created by Objective Imaging's Surveyor. 
@@ -242,9 +241,9 @@ class PMGImport(object):
             SupertileTransform = SupertileName + '.mosaic'
             SupertilePath = os.path.join(channelObj.FullPath, SupertileTransform)
 
-            [addedTransform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name = SupertileName,
-                                                                         Path = SupertileTransform,
-                                                                         Type = 'Stage'),
+            [addedTransform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
+                                                                         Path=SupertileTransform,
+                                                                         Type='Stage'),
                                                                          'Path')
 
             PyramidName = 'TilePyramid'
@@ -293,7 +292,7 @@ class PMGImport(object):
 
         return [PMG.Section, ChannelName]
 
-def ParsePMG(filename, TileOverlapPercent = None):
+def ParsePMG(filename, TileOverlapPercent=None):
 
     if TileOverlapPercent is None:
         TileOverlapPercent = 0.1

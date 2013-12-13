@@ -3,13 +3,16 @@ Created on Apr 25, 2013
 
 @author: u0490822
 '''
-import unittest
-from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, CopySetupTestBase
-import test.pipeline.test_sectionimage as test_sectionimage
-from nornir_imageregistration.transforms import registrationtree
-from nornir_buildmanager.operations.block import *
-import nornir_buildmanager.build as build
 import glob
+import unittest
+
+from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
+    CopySetupTestBase
+
+import nornir_buildmanager.build as build
+from nornir_buildmanager.operations.block import *
+from nornir_imageregistration.transforms import registrationtree
+import test.pipeline.test_sectionimage as test_sectionimage
 
 
 def ValidateStosMap(test, StosMapNode, expectedRT):

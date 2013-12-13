@@ -4,8 +4,9 @@ Created on Feb 11, 2013
 @author: u0490822
 '''
 
-import os
 import logging
+import os
+
 
 def __GetAttribOrDefault(Node, Attribute, Default):
     if hasattr(Node, Attribute):

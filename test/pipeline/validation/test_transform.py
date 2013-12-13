@@ -3,18 +3,19 @@ Created on Feb 11, 2013
 
 @author: u0490822
 '''
-import unittest
+import logging
 import os
 import shutil
 import tempfile
-import nornir_shared.files
-import nornir_shared.misc
-import nornir_buildmanager.build as build
-import logging
-from nornir_buildmanager.validation import transforms
-from nornir_buildmanager.VolumeManagerETree import *
+import unittest
+
 from test.pipeline.setup_pipeline import *
 
+from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager.build as build
+from nornir_buildmanager.validation import transforms
+import nornir_shared.files
+import nornir_shared.misc
 
 
 class TransformIsValidTest(PrepareAndMosaicSetup):
@@ -69,11 +70,12 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             InputTransform = tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.InputTransform)
             self.assertIsNotNone(InputTransform)
 
+            # Find a transform that depends on the transform we just deleted, if it exists
             OutputTransform = tNode.Parent.GetChildByAttrib('Transform', 'InputTransform', tNode.Name)
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
-            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'TEMMosaic', '-debug']
+            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'AdjustContrast', 'Mosaic', '-debug']
             build.Execute(buildArgs)
 
             # Load the meta-data from the volumedata.xml file again
@@ -82,7 +84,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             # Make sure the transforms are still consistent
             self.ValidateAllTransforms(self.ChannelData)
 
-            # Translate should have been regenerated, but the checksum should match so grid was left alone
+            # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
             if not OutputTransform is None:
                 self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
 

@@ -1,14 +1,16 @@
 import sys
 import re
-from nornir_imageregistration.io import mosaicfile
+import cPickle as pickle
+from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration import image_stats
 from nornir_shared.images import *
+import nornir_shared.files as files
 from nornir_shared.histogram import *
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
 import logging
-import nornir_shared.plot as plot 
+import nornir_shared.plot as plot
 
 from nornir_buildmanager.operations.tile import VerifyTiles
 
@@ -46,7 +48,7 @@ class SerialEMIDocImport(object):
         return [SectionNumber, SectionName, Downsample]
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath = None, Extension = None, OutputImageExt = None, TileOverlap = None, TargetBpp = None, debug = None):
+    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -215,7 +217,7 @@ class SerialEMIDocImport(object):
             FilterName = 'Raw'
 
         # Create a channel for the Raw data
-        filterObj = FilterNode(Name = FilterName)
+        filterObj = FilterNode(Name=FilterName)
         [added, filterObj] = channelObj.UpdateOrAddChildByAttrib(filterObj, 'Name')
         filterObj.BitsPerPixel = TargetBpp
 
@@ -226,13 +228,13 @@ class SerialEMIDocImport(object):
         # Check to make sure our supertile mosaic file is valid
         RemoveOutdatedFile(idocFilePath, SupertilePath)
 
-        [added, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name = SupertileName,
-                                                                         Path = SupertileTransform,
-                                                                         Type = 'Stage'),
+        [added, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
+                                                                         Path=SupertileTransform,
+                                                                         Type='Stage'),
                                                                          'Path')
- 
-        [added, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type = 'stage',
-                                                                            NumberOfTiles = IDocData.NumTiles),
+
+        [added, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
+                                                                            NumberOfTiles=IDocData.NumTiles),
                                                                             'Path')
 
         LevelPath = Config.Current.DownsampleFormat % 1
@@ -272,7 +274,7 @@ class SerialEMIDocImport(object):
             SourceImageFullPath = os.path.join(InputPath, tile.Image)
             if not os.path.exists(SourceImageFullPath):
                 prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
-                
+
                 MissingInputImage = True
                 continue
 
@@ -328,13 +330,13 @@ class SerialEMIDocImport(object):
                 andValue = andValue + pow(2, i)
 
             nornir_shared.images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
-            
+
             for inputImage in ImageMap:
                 outputImageFullPath = ImageMap[inputImage]
                 if not os.path.exists(outputImageFullPath):
                     logger.warning("Could not convert: " + str(os.path.basename(inputImage)))
                     del PositionMap[outputImageFullPath]
-            
+
             # nornir_shared.Images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, RightLeftShift=RightLeftShift, Invert=Invert, bDeleteOriginal=False)
             # nornir_shared.Images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, RightLeftShift=None, Invert=Invert, bDeleteOriginal=False, MinMax=[MosaicMin, MosaicMax])
         elif(ImageMoveRequired):
@@ -343,8 +345,8 @@ class SerialEMIDocImport(object):
 
         if len(PositionMap) == 0:
             prettyoutput.Log("No tiles could be mapped to a position, skipping import")
-            return 
-        
+            return
+
         # If we wrote new images replace the .mosaic file
         if ImageConversionRequired or not os.path.exists(SupertilePath) or MissingInputImage:
             # Writing this file indicates import succeeded and we don't need to repeat these steps, writing it will possibly invalidate a lot of downstream data
@@ -352,15 +354,15 @@ class SerialEMIDocImport(object):
             # we flop instead of flip and reverse when writing the coordinates
             mosaicfile.MosaicFile.Write(SupertilePath, Entries=PositionMap, Flip=not Flip, ImageSize=IDocData.ImageSize, Downsample=1);
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
-            
-            #Sometimes files fail to convert, when this occurs remove them from the .mosaic
+
+            # Sometimes files fail to convert, when this occurs remove them from the .mosaic
             if MFile.RemoveInvalidMosaicImages(OutputImagePath):
                 MFile.Save(SupertilePath)
 
             transformObj.Checksum = MFile.Checksum
 
 
-def GetMinMaxCutoffs(listfilenames, histogramFullPath = None):
+def GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
     MinCutoff = 0.00001
     MaxCutoff = 0.0001
     histogramObj = None
@@ -552,7 +554,7 @@ class IDocTileData():
         self.ExposureTime = None
         self.MinMaxMean = None
         self.TargetDefocus = None
-        
+
     def __str__(self):
         return self.Image
 
@@ -684,7 +686,7 @@ class LogTileData():
             return drift
 
         return None
-    
+
 
     def __str__(self):
         text = ""
@@ -711,7 +713,14 @@ class LogTileData():
         self.driftUnits = None  # nm/sec
         self.coordinates = None
 
-class SerialEMLog():
+class SerialEMLog(object):
+
+    @classmethod
+    def __ObjVersion(cls):
+        '''Used for knowing when to ignore a pickled file'''
+
+        # Version 2 fixes missing tile drift times for the first tile in a hemisphere
+        return 2
 
     @property
     def TotalTime(self):
@@ -738,22 +747,22 @@ class SerialEMLog():
             total = total + t.drift
 
         return total / count
-    
-    
+
+
     @property
     def FastestTileTime(self):
         '''Shortest time to capture a tile in seconds'''
-        
+
         fastestTime = None
         for t in self.tileData.values():
-            if not (t.dwellTime is None or t.drift is None): 
+            if not (t.dwellTime is None or t.drift is None):
                 if fastestTime is None:
                     fastestTime = t.totalTime
                 else:
                     fastestTime = min(fastestTime, t.totalTime)
-        
+
         return fastestTime
-               
+
     @property
     def MaxTileDrift(self):
         '''Largest drift for a tile in seconds'''
@@ -761,9 +770,9 @@ class SerialEMLog():
         for t in self.tileData.values():
             if not (t.dwellTime is None or t.drift is None):
                 maxdrift = max(maxdrift, t.driftStamps[-1][1])
-               
+
         return maxdrift
-    
+
     @property
     def MinTileDrift(self):
         '''Largest drift for a tile in seconds'''
@@ -771,30 +780,78 @@ class SerialEMLog():
         for t in self.tileData.values():
             if not (t.dwellTime is None or t.drift is None):
                 mindrift = min(mindrift, t.driftStamps[-1][1])
-               
+
         return mindrift
-    
-    
+
+
     @property
     def NumTiles(self):
         NumTiles = 0
         for t in self.tileData.values():
             if not (t.dwellTime is None or t.drift is None):
                 NumTiles = NumTiles + 1
-                
+
         return NumTiles
+
+    @property
+    def Startup(self):
+        return self._startup
+
+    @property
+    def Version(self):
+        return self._version
 
     def __init__(self):
         self.tileData = {}  # The time required to capture each tile
-        self.Startup = None  # SerialEM program Startup time, if known
-        self.Version = None  # SerialEM version, if known
+        self._startup = None  # SerialEM program Startup time, if known
+        self._version = None  # SerialEM version, if known
         self.PropertiesVersion = None  # Timestamp of properties file, if known
         self.MontageStart = None  # timestamp when acquire began
         self.MontageEnd = None  # timestamp when acquire ended
-        pass
+
+        self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()
 
     @classmethod
-    def Load(cls, logfullPath):
+    def __PickleLoad(cls, logfullPath):
+
+        obj = None
+        picklePath = logfullPath + ".pickle"
+
+        files.RemoveOutdatedFile(logfullPath, picklePath)
+
+        if os.path.exists(picklePath):
+            try:
+                with open(picklePath, 'r') as filehandle:
+                    obj = pickle.load(filehandle)
+
+                    if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+                        raise Exception("Version mismatch in pickled file: " + picklePath)
+            except Exception as e:
+                try:
+                    os.remove(picklePath)
+                except Exception as e:
+                    pass
+
+                obj = None
+
+        return obj
+
+    def __PickleSave(self, logfullPath):
+
+        obj = None
+        picklePath = logfullPath + ".pickle"
+
+        try:
+            with open(picklePath, 'w') as filehandle:
+                pickle.dump(self, filehandle, protocol=0)
+        except:
+            try:
+                os.path.remove(picklePath)
+            except:
+                pass
+
+    @classmethod
+    def Load(cls, logfullPath, usecache=True):
         '''Parses a SerialEM log file and extracts as much information as possible:
         '''
 
@@ -816,6 +873,15 @@ class SerialEMLog():
         # Captures in SerialEM overlap.  Once the stage is in position the exposure is done,
         # then simultaneously the stage moves while the camera is read.  Generally the stage
         # finishes movement before the image is saved, but we should not count on this behaviour
+
+        # Parsing these logs takes quite a while sometimes
+
+        if usecache:
+            obj = cls.__PickleLoad(logfullPath)
+
+            if not obj is None:
+                return obj
+
 
         Data = SerialEMLog()
         NextTile = None  # The tile we are currently moving the stage, focusing on, and setting up an aquisition for.
@@ -840,7 +906,7 @@ class SerialEMLog():
                 if len(line) == 0:
                     line = hLog.readline(512)
                     continue
-                
+
                 if line[0].isdigit():
                     try:
                         (timestamp, entry) = line.split(':', 1)
@@ -852,6 +918,7 @@ class SerialEMLog():
                 if entry.startswith('DoNextPiece'):
 
                     # The very first first stage move is not a capture, so don't save a tile.
+                    # However the drift measurements are done on the first tile before we get a capture message.  We want to save those
                     if entry.find('capture') >= 0:
                         # We acquired the tile, prepare the next capture
                         if not NextTile is None:
@@ -866,7 +933,12 @@ class SerialEMLog():
                 elif entry.startswith('Autofocus Start'):
                     LastAutofocusStart = timestamp
                 elif entry.startswith('Measured defocus'):
-                    if not NextTile is None and not NextTile.stageStopTime is None:
+                    if not NextTile is None:
+
+                        # The very first tile does not get a 'finished stage move' message.  Use the start of the autofocus to approximate completion of the stage move
+                        if NextTile.stageStopTime is None:
+                            NextTile.stageStopTime = LastAutofocusStart
+
                         iDrift = entry.find('drift')
                         if iDrift > -1:
                             DriftStr = entry[iDrift:]  # example: drift = 1.57 nm/sec
@@ -915,13 +987,13 @@ class SerialEMLog():
                     time = time.strip()
                     Data.PropertiesVersion = time
                 elif entry.startswith('SerialEM Version'):
-                    Data.Version = entry
+                    Data._version = entry[len('SerialEM Version') + 1:].strip()
                 elif entry.startswith('Montage Start'):
                     Data.MontageStart = timestamp
                 elif entry.startswith('Montage Done'):
                     Data.MontageEnd = timestamp
                 elif entry.startswith('Started'):
-                    Data.Startup = entry
+                    Data._startup = entry[len('Started') + 1:].strip()
 
                 line = hLog.readline(512)
 
@@ -932,8 +1004,9 @@ class SerialEMLog():
             if Data.MontageEnd is None and not LastValidTimestamp is None:
                 Data.MontageEnd = LastValidTimestamp
 
+        Data.__PickleSave(logfullPath)
         return Data
-    
+
 
 def __argToSerialEMLog(arg):
     Data = None
@@ -941,17 +1014,17 @@ def __argToSerialEMLog(arg):
         Data = SerialEMLog.Load(sys.argv[1])
     elif isinstance(arg, SerialEMLog):
         Data = arg
-    else:        
+    else:
         raise Exception("Invalid argument type to PlotDrifGrid")
-    
+
     return Data
 
 
 def PlotDriftSettleTime(DataSource, OutputImageFile):
     '''Create a poly line plot showing how each tiles drift rate changed over time'''
-    
+
     Data = __argToSerialEMLog(DataSource)
-    
+
     lines = []
     maxdrift = None
     NumTiles = int(0)
@@ -967,19 +1040,19 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
             maxdrift = max(maxdrift, t.driftStamps[-1][1])
             lines.append((time, drift))
             NumTiles = NumTiles + 1
-  
+
     plot.PolyLine(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=OutputImageFile)
 
-    return 
+    return
 
 
 def PlotDriftGrid(DataSource, OutputImageFile):
-    
+
     Data = __argToSerialEMLog(DataSource)
 
-    
 
- 
+
+
     lines = []
     maxdrift = None
     NumTiles = int(0)
@@ -1015,7 +1088,7 @@ def PlotDriftGrid(DataSource, OutputImageFile):
             NumTiles = NumTiles + 1
 
 #    print "Fastest Capture: %g" % fastestTime
-#    
+#
 
    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
 
@@ -1027,27 +1100,27 @@ def PlotDriftGrid(DataSource, OutputImageFile):
         y.append(d[1])
         s.append(d[2])
 
-    title="Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
-    
+    title = "Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
+
     plot.Scatter(x, y, s, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
 
-    return 
+    return
 
 
 if __name__ == "__main__":
-    
+
     datapath = sys.argv[1]
-   
+
     basename = os.path.basename(datapath)
     (outfile, ext) = os.path.splitext(basename)
     outdir = os.path.dirname(datapath)
-    
+
     Data = __argToSerialEMLog(datapath)
-    
+
     dtime = datetime.timedelta(seconds=(Data.MontageEnd - Data.MontageStart))
 
     print "%d tiles" % len(Data.tileData)
-    
+
     print "Average drift: %g nm/sec" % Data.AverageTileDrift
     print "Min drift: %g nm/sec" % Data.MinTileDrift
     print "Max drift: %g nm/sec" % Data.MaxTileDrift
@@ -1055,8 +1128,8 @@ if __name__ == "__main__":
     print "Fastest tile time: %g sec" % Data.FastestTileTime
     print "Total time: %s" % str(dtime)
     print "Total tiles: %d" % Data.NumTiles
-    
+
     PlotDriftGrid(datapath, os.path.join(outdir, outfile + "_driftgrid.svg"))
     PlotDriftSettleTime(datapath, os.path.join(outdir, outfile + "_settletime.svg"))
-     
+
 

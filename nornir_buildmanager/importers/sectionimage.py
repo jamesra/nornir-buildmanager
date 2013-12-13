@@ -4,20 +4,22 @@ Created on Apr 15, 2013
 @author: u0490822
 '''
 
-import sys
-import os
-import shutil
-import nornir_shared.prettyoutput as prettyoutput
-import glob
-import logging
-from nornir_buildmanager.VolumeManagerETree import *
-
-from filenameparser import ParseFilename, mapping
-from nornir_buildmanager.importers import filenameparser
-from nornir_buildmanager import metadatautils
-
 '''Image files are expected to have this naming convention:
     Section#_Channel_Comments'''
+
+import glob
+import logging
+import os
+import shutil
+import sys
+
+from filenameparser import ParseFilename, mapping
+from nornir_buildmanager import metadatautils
+from nornir_buildmanager.VolumeManagerETree import *
+from nornir_buildmanager.importers import filenameparser
+import nornir_shared.prettyoutput as prettyoutput
+
+
 imageNameMappings = [mapping('Section', typefunc=int),
                      mapping('Channel', typefunc=str),
                      mapping('Filter', typefunc=str, default=None),

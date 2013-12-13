@@ -5,9 +5,11 @@ Created on Jun 7, 2012
 '''
 
 
-import sys
 import re
+import sys
+
 import nornir_shared.prettyoutput as prettyoutput
+
 
 class XSubPath(object):
     '''Represents a level of an XPath string, returned by XPathIterator'''

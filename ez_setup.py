@@ -13,7 +13,11 @@ the appropriate options to ``use_setuptools()``.
 
 This file can also be run as a script to install or upgrade setuptools.
 """
+import os
 import sys
+import sys
+
+
 DEFAULT_VERSION = "0.6c5"
 DEFAULT_URL     = "http://cheeseshop.python.org/packages/%s/s/setuptools/" % sys.version[:3]
 
@@ -41,7 +45,6 @@ md5_data = {
     'setuptools-0.6c5-py2.5.egg': 'a8d3f61494ccaa8714dfed37bccd3d5d',
 }
 
-import sys, os
 
 def _validate_md5(egg_name, data):
     if egg_name in md5_data:

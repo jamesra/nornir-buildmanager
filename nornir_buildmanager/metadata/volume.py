@@ -3,12 +3,16 @@ Created on Jan 4, 2013
 
 @author: u0490822
 '''
-import baseobject
+import os
+
+from ZODB import FileStorage, DB
 import persistent
 import transaction
+
+import baseobject
+
+
 from nornir_buildmanager.Config import Current;
-from ZODB import FileStorage, DB
-import os
 
 class Volume(baseobject.PathData):
     '''

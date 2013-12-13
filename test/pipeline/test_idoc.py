@@ -3,25 +3,22 @@ Created on Feb 13, 2013
 
 @author: u0490822
 '''
-import unittest
-
-import unittest
-import nornir_buildmanager.importers.idoc as idoc
-import os
-import shutil
 import glob
 import logging
-
-from nornir_imageregistration.io.mosaicfile import MosaicFile
+import os
+import shutil
+import unittest
+import unittest
 
 from nornir_buildmanager.VolumeManagerETree import VolumeManager
-import nornir_shared.misc
-import nornir_shared.files
-
 import nornir_buildmanager.build as build
+from nornir_buildmanager.importers.idoc import SerialEMLog
+import nornir_buildmanager.importers.idoc as idoc
+from nornir_imageregistration.files.mosaicfile import MosaicFile
+import nornir_shared.files
+import nornir_shared.misc
 import setup_pipeline
 
-from nornir_buildmanager.importers.idoc import SerialEMLog
 
 class IDocTest(setup_pipeline.PipelineTest):
 
@@ -178,22 +175,11 @@ class IdocReaderTest(IDocTest):
 
 class LogReaderTest(IDocTest):
 
-
-    def runTest(self):
+    def validateLogEntries(self, LogData):
         NumLogTiles = 25
 
-        logDir = os.path.join(self.PlatformFullPath, '17/*.log')
-        logFiles = glob.glob(logDir)
-
-        self.assertEqual(len(logFiles), 1)
-
-        logFile = logFiles[0]
-        self.assertTrue(os.path.exists(logFile))
-
-        LogData = SerialEMLog.Load(logFile)
-
-        self.assertEqual(LogData.Version, "SerialEM Version 3.1.1a,  built Nov  9 2011  14:20:16")
-        self.assertEqual(LogData.Startup, "Started  4/22/2012  16:03:59")
+        self.assertEqual(LogData.Version, "3.1.1a,  built Nov  9 2011  14:20:16")
+        self.assertEqual(LogData.Startup, "4/22/2012  16:03:59")
         self.assertEqual(LogData.PropertiesVersion, "Sep 30, 2011")
         self.assertEqual(LogData.MontageStart, 4719.609)
         self.assertEqual(LogData.MontageEnd, 5467.422)
@@ -222,6 +208,30 @@ class LogReaderTest(IDocTest):
 
         self.assertEqual(TileData.startTime, 5402.328)
         self.assertEqual(TileData.endTime, 5433.453)
+
+    def runTest(self):
+
+
+        logDir = os.path.join(self.PlatformFullPath, '17/*.log')
+        logFiles = glob.glob(logDir)
+
+        self.assertEqual(len(logFiles), 1)
+
+        logFile = logFiles[0]
+        self.assertTrue(os.path.exists(logFile))
+
+        LogData = SerialEMLog.Load(logFile, usecache=False)
+        self.validateLogEntries(LogData)
+
+        cachedLogData = SerialEMLog.Load(logFile, usecache=True)
+        self.validateLogEntries(cachedLogData)
+
+        outputGrid = os.path.join(self.TestOutputPath, 'Grid_' + os.path.basename(logFile) + '.png')
+        outputDrift = os.path.join(self.TestOutputPath, 'Drift_' + os.path.basename(logFile) + '.png')
+
+        idoc.PlotDriftGrid(cachedLogData, outputGrid)
+        idoc.PlotDriftSettleTime(cachedLogData, outputDrift)
+
 
         return
 

@@ -3,18 +3,17 @@ Created on Feb 18, 2013
 
 @author: u0490822
 '''
-import unittest
-import unittest
-import nornir_buildmanager.importers.pmg as pmg
-import os
-import shutil
 import glob
 import logging
-
-import nornir_shared.misc
-import nornir_shared.files
+import os
+import shutil
+import unittest
+import unittest
 
 from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager.importers.pmg as pmg
+import nornir_shared.files
+import nornir_shared.misc
 
 
 class VolumeManagerTest(unittest.TestCase):

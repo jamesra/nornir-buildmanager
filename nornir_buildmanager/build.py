@@ -4,12 +4,13 @@ import sys
 import os
 
 import time
-import argparse 
+import argparse
 import nornir_shared.prettyoutput as prettyoutput
+from nornir_shared.misc import SetupLogging, lowpriority
 from nornir_shared.tasktimer import TaskTimer
 import logging
 from nornir_buildmanager import *
-from nornir_imageregistration.io import *
+from nornir_imageregistration.files import *
 
 from pkg_resources import resource_filename
 
@@ -97,6 +98,13 @@ def ProcessArgs():
                         help='Provide additional output for debugging purposes.',
                         dest='verbose')
 
+    parser.add_argument('-normalpriority', '-np',
+                        action='store_true',
+                        required=False,
+                        default=False,
+                        help='Run the build without trying to lower the priority.  Faster builds but the machine may be less responsive.',
+                        dest='normpriority')
+
     # parser.add_argument('args', nargs=argparse.REMAINDER)
     return parser
 
@@ -105,18 +113,23 @@ def Execute(buildArgs=None):
     if buildArgs is None:
         buildArgs = sys.argv
 
+    
+
     vikingURL = ""
 
     dargs = dict()
     # dargs.update(args.__dict__)
 
-    TimingOutput = 'Timing.txt' 
+    TimingOutput = 'Timing.txt'
 
     Timer = TaskTimer()
 
     parser = ProcessArgs()
 
     (args, extraargs) = parser.parse_known_args(buildArgs)
+    
+    if not args.normpriority:
+        lowpriority()
 
     # SetupLogging(args.volumepath)
 
@@ -161,35 +174,35 @@ def Execute(buildArgs=None):
         except:
             prettyoutput.Log('Could not write timing.txt')
 
-
-def SetupLogging(OutputPath):
-
-    LogPath = os.path.join(OutputPath, 'Logs')
-
-    if not os.path.exists(LogPath):
-        os.makedirs(LogPath)
-
-    formatter = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
-
-    logFileName = time.strftime('log-%M.%d.%y_%H.%M.txt', time.localtime())
-    logFileName = os.path.join(LogPath, logFileName)
-    errlogFileName = time.strftime('log-%M.%d.%y_%H.%M-Errors.txt', time.localtime())
-    errlogFileName = os.path.join(LogPath, errlogFileName)
-    logging.basicConfig(filename=logFileName, level='DEBUG', format='%(levelname)s - %(name)s - %(message)s')
-
-    eh = logging.FileHandler(errlogFileName)
-    eh.setLevel(logging.INFO)
-    eh.setFormatter(formatter)
-
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.WARNING)
-    ch.setFormatter(formatter)
-
-    logger = logging.getLogger()
-    logger.addHandler(eh)
-    logger.addHandler(ch)
-
-    eh.setFormatter(formatter)
+#
+# def SetupLogging(OutputPath):
+#
+#    LogPath = os.path.join(OutputPath, 'Logs')
+#
+#    if not os.path.exists(LogPath):
+#        os.makedirs(LogPath)
+#
+#    formatter = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
+#
+#    logFileName = time.strftime('log-%M.%d.%y_%H.%M.txt', time.localtime())
+#    logFileName = os.path.join(LogPath, logFileName)
+#    errlogFileName = time.strftime('log-%M.%d.%y_%H.%M-Errors.txt', time.localtime())
+#    errlogFileName = os.path.join(LogPath, errlogFileName)
+#    logging.basicConfig(filename=logFileName, level='DEBUG', format='%(levelname)s - %(name)s - %(message)s')
+#
+#    eh = logging.FileHandler(errlogFileName)
+#    eh.setLevel(logging.INFO)
+#    eh.setFormatter(formatter)
+#
+#    ch = logging.StreamHandler()
+#    ch.setLevel(logging.WARNING)
+#    ch.setFormatter(formatter)
+#
+#    logger = logging.getLogger()
+#    logger.addHandler(eh)
+#    logger.addHandler(ch)
+#
+#    eh.setFormatter(formatter)
 
 def Main():
 
@@ -199,11 +212,14 @@ def Main():
 
     (args, extraargs) = parser.parse_known_args()
 
-    SetupLogging(args.volumepath)
+    if args.debug:
+        SetupLogging(args.volumepath, level=logging.DEBUG)
+    else:
+        SetupLogging(args.volumepath, Level=logging.WARN)
 
     Execute()
 
 
 if __name__ == '__main__':
     Main()
-    
+

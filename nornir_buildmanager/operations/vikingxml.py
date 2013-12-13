@@ -4,28 +4,29 @@ Created on Jul 3, 2012
 @author: Jamesan
 '''
 
-import nornir_shared.prettyoutput as prettyoutput
-from nornir_shared.files import RecurseSubdirectories
-import os
-import xml.etree.ElementTree as ETree
-import nornir_buildmanager.VolumeManagerETree
-from nornir_imageregistration.io import *
 import copy
 import functools
+import os
+
+import nornir_buildmanager.VolumeManagerETree
+from nornir_imageregistration.files import *
+from nornir_shared.files import RecurseSubdirectories
+import nornir_shared.prettyoutput as prettyoutput
+import xml.etree.ElementTree as ETree
 
 ECLIPSE = 'ECLIPSE' in os.environ;
 
-def CreateXMLIndex(path, server = None):
+def CreateXMLIndex(path, server=None):
 
-    VolumeXMLDirs = RecurseSubdirectories(Path = path, RequiredFiles = 'Volume.xml');
+    VolumeXMLDirs = RecurseSubdirectories(Path=path, RequiredFiles='Volume.xml');
 
     for directory in VolumeXMLDirs:
 
         InputVolumeNode = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(directory, Create=False);
         if not InputVolumeNode is None:
-            CreateVikingXML(VolumeNode = InputVolumeNode);
+            CreateVikingXML(VolumeNode=InputVolumeNode);
 
-def CreateVikingXML(StosMapName = None, StosGroupName = None, OutputFile = None, **kwargs):
+def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, **kwargs):
     '''When passed a volume node, creates a VikingXML file'''
     InputVolumeNode = kwargs.get('VolumeNode');
     path = InputVolumeNode.Path;
@@ -51,8 +52,6 @@ def CreateVikingXML(StosMapName = None, StosGroupName = None, OutputFile = None,
     ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName);
 
     OutputXML = ETree.tostring(OutputVolumeNode).decode('utf-8');
-
-    OutputXML = OutputXML.replace('>', '>\n');
     # prettyoutput.Log(OutputXML);
 
     hFile = open(OutputXMLFilename, 'w');
@@ -71,7 +70,7 @@ def CreateVikingXML(StosMapName = None, StosGroupName = None, OutputFile = None,
     return;
 
 
-def RecursiveMergeAboutXML(path, xmlFileName, sourceXML = "About.xml"):
+def RecursiveMergeAboutXML(path, xmlFileName, sourceXML="About.xml"):
 
     if(path is None or  len(path) == 0):
         return;

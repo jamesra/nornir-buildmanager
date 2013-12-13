@@ -3,18 +3,21 @@ Created on Feb 22, 2013
 
 @author: u0490822
 '''
-import unittest
+import logging
 import os
 import shutil
 import tempfile
-import nornir_shared.files
-import nornir_shared.misc
+import unittest
+
+from test.pipeline.setup_pipeline import *
+
+from nornir_buildmanager.VolumeManagerETree import *
 import nornir_buildmanager.build as build
-import logging
 from nornir_buildmanager.operations.tile import *
 from nornir_buildmanager.validation import transforms
-from nornir_buildmanager.VolumeManagerETree import *
-from test.pipeline.setup_pipeline import *
+import nornir_shared.files
+import nornir_shared.misc
+
 
 class EvaluateFilterTest(ImportOnlySetup):
 
