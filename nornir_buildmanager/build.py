@@ -213,7 +213,7 @@ def Main():
     (args, extraargs) = parser.parse_known_args()
 
     if args.debug:
-        SetupLogging(args.volumepath, level=logging.DEBUG)
+        SetupLogging(args.volumepath, Level=logging.DEBUG)
     else:
         SetupLogging(args.volumepath, Level=logging.WARN)
 

@@ -378,7 +378,7 @@ def GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
             histogramObj.Save(histogramFullPath)
 
             HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
-            PlotHistogram(histogramFullPath, HistogramImageFullPath, Title="Raw Data Pixel Intensity")
+            plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Raw Data Pixel Intensity")
 
     assert(not histogramObj is None)
 
