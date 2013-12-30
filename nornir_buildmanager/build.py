@@ -1,5 +1,16 @@
 #! /Library/Frameworks/Python.framework/Versions/Current/bin python
 
+'''
+
+.. argparse:: 
+   :module: nornir_buildmanager.build
+   :func: ProcessArgs
+   :prog: nornir_build
+   
+
+
+'''
+
 import sys
 import os
 
@@ -113,7 +124,7 @@ def Execute(buildArgs=None):
     if buildArgs is None:
         buildArgs = sys.argv
 
-    
+
 
     vikingURL = ""
 
@@ -127,7 +138,7 @@ def Execute(buildArgs=None):
     parser = ProcessArgs()
 
     (args, extraargs) = parser.parse_known_args(buildArgs)
-    
+
     if not args.normpriority:
         lowpriority()
 
