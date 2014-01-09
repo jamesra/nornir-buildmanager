@@ -21,7 +21,7 @@ if __name__ == '__main__':
                         "nornir_shared>=1.0.1",
                         "nornir_imageregistration>=1.0.2",
                         "numpy>=1.7.1",
-                        "scipy>=0.12",
+                        "scipy>=0.13.2",
                         "matplotlib"]
 
     packages = find_packages()
