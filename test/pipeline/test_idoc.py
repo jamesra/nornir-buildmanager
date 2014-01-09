@@ -114,7 +114,6 @@ class IDocSingleSectionImportTest(IDocTest):
         self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles), "Did not find %d tiles reported by meta-data in %s" % (TilePyramidNode.NumberOfTiles, globpath))
         return
 
-
     def runTest(self):
 
         SingleSectionInputPath = os.path.join(self.PlatformFullPath, '17')

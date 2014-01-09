@@ -125,13 +125,13 @@ class HTMLPaths(object):
             self._OutputFile = os.path.basename(OutputFileFullPath)
 
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
-        
-    
+
+
     @classmethod
     def __StripLeadingPathSeperator(cls, path):
         while(path[0] == os.sep or path[0] == os.altsep):
             path = path[1:]
-            
+
         return path
 
 
@@ -146,9 +146,9 @@ class HTMLPaths(object):
         RelativePath = HTMLPaths.__StripLeadingPathSeperator(RelativePath)
 
         return RelativePath
-    
+
     def GetSubNodeFullPath(self, subpath):
-        
+
         RelPath = self.GetSubNodeRelativePath(subpath)
         if not RelPath is None:
             FullPath = os.path.join(RelPath, subpath.Path)
@@ -180,27 +180,28 @@ def GetTempFileSaltString():
 
     return saltString
 
-def CopyFiles(DataNode, OutputDir, Move=False, **kwargs):
+def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
+
     if OutputDir is None:
         return
-    
+
     logger = kwargs.get('Logger', logging.getLogger('CopyFiles'))
 
     if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)    
+        os.makedirs(OutputDir)
 
     if os.path.exists(DataNode.FullPath):
-        
+
         if os.path.isfile(DataNode.FullPath):
             OutputFileFullPath = os.path.join(OutputDir, DataNode.Path)
             nfiles.RemoveOutdatedFile(DataNode.FullPath, OutputFileFullPath)
-            
+
             if not os.path.exists(OutputFileFullPath):
-                
+
                 logger.info(DataNode.FullPath + " -> " + OutputFileFullPath)
                 shutil.copyfile(DataNode.FullPath, OutputFileFullPath)
         else:
-            #Just copy the directory over, this is an odd case
+            # Just copy the directory over, this is an odd case
             logger.info("Copy directory " + DataNode.FullPath + " -> " + OutputDir)
             shutil.copy(DataNode.FullPath, OutputDir)
 
@@ -502,11 +503,11 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
 
     imageFilename = ImageNode.Path
 
-    
+
     if not os.path.exists(ImageNode.FullPath):
         Logger.error("Missing image file: " + ImageNode.FullPath)
         return ""
- 
+
     ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
 
     [Width, Height] = nornir_shared.images.GetImageSize(ImageNode.FullPath)
@@ -542,7 +543,7 @@ def __anchorStringForHeader(Text):
     return '<a id="%(id)s"><b>%(id)s</b></a>' % {'id' : Text}
 
 
-def HTMLFromTransformNode(ColSubElement, HtmlPaths,  **kwargs):
+def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
     return '<a href="%s">%s</a>' % (HtmlPaths.GetSubNodeFullPath(ColSubElement), ColSubElement.Name)
 
 
@@ -636,7 +637,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
     pool = Pools.GetGlobalThreadPool()
     tableDict = {}
     tasks = []
-     
+
     NumRows = len(RowElements)
     for (iRow, RowElement) in enumerate(RowElements):
 
@@ -646,14 +647,14 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
         if RowLabel is None:
             RowLabel = RowElement
 
-        
+
 
         task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
         tasks.append(task)
-        #result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
-        #tableDict[RowLabel] = result
-        
-    for iRow,t in enumerate(tasks):
+        # result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        # tableDict[RowLabel] = result
+
+    for iRow, t in enumerate(tasks):
         try:
             tableDict[t.name] = t.wait_return()
             nornir_shared.prettyoutput.CurseProgress("Added row", iRow, Total=NumRows)

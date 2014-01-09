@@ -1239,8 +1239,12 @@ class XContainerElementWrapper(XResourceElementWrapper):
         if not os.path.exists(self.FullPath):
             os.makedirs(self.FullPath)
 
+        # prettyoutput.Log("Saving %s" % xmlfilename)
+
         TempXMLFilename = os.path.join(self.FullPath, 'Temp_' + xmlfilename)
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
+
+        prettyoutput.Log("Saving %s" % XMLFilename)
 
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
        # print OutputXML
@@ -1315,6 +1319,7 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
         # if(tabLevel == 0 or recurse==False):
             # pool.wait_completion()
 
+
 class BlockNode(XContainerElementWrapper):
 
     @property
@@ -1324,7 +1329,7 @@ class BlockNode(XContainerElementWrapper):
     def GetSection(self, Number):
         return self.GetChildByAttrib('Section', 'Number', Number)
 
-    def __init__(self, Name, Path, attrib=None, **extra):
+    def __init__(self, Name, Path=None, attrib=None, **extra):
         super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
 
 

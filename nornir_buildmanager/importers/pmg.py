@@ -159,7 +159,7 @@ class PMGImport(object):
         sectionDir = os.path.basename(InputPath)
 
         BlockName = 'TEM'
-        BlockObj = XContainerElementWrapper('Block', 'TEM')
+        BlockObj = BlockNode('TEM')
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
 
         ChannelName = None
@@ -276,8 +276,6 @@ class PMGImport(object):
 
                 OutputTileFullPath = os.path.join(LevelObj.FullPath, pngMosaicTile)
                 InputTileFullPath = os.path.join(PMGDir, inputTile)
-
-
 
                 if not os.path.exists(OutputTileFullPath):
                     InputTileToOutputTile[InputTileFullPath] = OutputTileFullPath

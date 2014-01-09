@@ -1,13 +1,23 @@
-#! /Library/Frameworks/Python.framework/Versions/Current/bin python
-
 '''
+
+--------------------
+Common build options
+--------------------
 
 .. argparse:: 
    :module: nornir_buildmanager.build
    :func: ProcessArgs
    :prog: nornir_build
-   
 
+ 
+------------------
+Pipelines
+------------------
+
+.. automodule:: nornir_buildmanager.config.sphinxdocs
+    :members:
+    :undoc-members:
+    :show-inheritance:
 
 '''
 
@@ -33,30 +43,32 @@ def ConfigDataPath():
 #     except:
 #         path = os.getcwd()
 #
-#     return os.path.join(path, 'config')
+#     return os.path.join(path, 'con fig')
 
 
 def ProcessArgs():
 
     # conflict_handler = 'resolve' replaces old arguments with new if both use the same option flag
-    parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve')
+    parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve', description='Options available to all build commands.  Specific pipelines may extend the argument list.')
 
-    parser.add_argument('-input',
-                        action='store',
-                        required=False,
-                        type=str,
-                        default=None,
-                        help='The path to the data to import',
-                        dest='inputpath'
-                        )
+
 
     parser.add_argument('-volume',
                         action='store',
                         required=True,
                         default=None,
                         type=str,
-                        help='The path to the data to export',
+                        help='The path to the volume',
                         dest='volumepath'
+                        )
+
+    parser.add_argument('-input',
+                        action='store',
+                        required=False,
+                        type=str,
+                        default=None,
+                        help='The path of data to import, if any',
+                        dest='inputpath'
                         )
 
     parser.add_argument('-update',
@@ -99,14 +111,14 @@ def ProcessArgs():
                         action='store_true',
                         required=False,
                         default=False,
-                        help='For debugging purposes exceptions are not handled',
+                        help='If true any exceptions raised by pipelines are not handled.',
                         dest='debug')
 
     parser.add_argument('-verbose',
                         action='store_true',
                         required=False,
                         default=False,
-                        help='Provide additional output for debugging purposes.',
+                        help='Provide additional output',
                         dest='verbose')
 
     parser.add_argument('-normalpriority', '-np',
@@ -123,8 +135,6 @@ def Execute(buildArgs=None):
 
     if buildArgs is None:
         buildArgs = sys.argv
-
-
 
     vikingURL = ""
 

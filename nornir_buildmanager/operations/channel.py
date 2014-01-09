@@ -20,7 +20,7 @@ from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 
 
-def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
+def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, **kwargs):
     '''@FilterNode.  Create  a new filter which has been processed with blob'''
     Radius = Parameters.get('r', '3')
     Median = Parameters.get('median', '3')
@@ -39,7 +39,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
     # STOPPED HERE.  NEED TO CREATE A FILTER  #
     ###########################################
     SaveFilterNode = False
-    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(FilterNode(Name="Blob_" + InputFilter.Name), "Name")
+    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(FilterNode(Name=OutputFilterName), "Name")
 
     # DownsampleSearchTemplate = "Level[@Downsample='%(Level)d']/Image"
 

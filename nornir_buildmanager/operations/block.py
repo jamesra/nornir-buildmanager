@@ -402,7 +402,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     if not os.path.exists(stosNode.FullPath):
 
         __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
-        
+
         CmdRan = True
         # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
 
@@ -736,7 +736,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
     else:
         return GroupNode
 
-def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, Logger, **kwargs):
+def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputStosMapName, Logger, **kwargs):
     '''Figure out which sections should be registered to each other'''
 
     # SectionMappingsNode
@@ -747,8 +747,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, Logger,
     ComparisonImageType = kwargs.get('ComparisonImageType', 'Diff_Brute')
     ImageSearchXPathTemplate = "Image[@InputTransformChecksum='%(InputTransformChecksum)s']"
 
-    InputStosMapName = kwargs.get('InputStosMapName', 'PotentialRegistrationChain')
-    OutputStosMapName = kwargs.get('OutputStosMapName', 'FinalStosMap')
+    # OutputStosMapName = kwargs.get('OutputStosMapName', 'FinalStosMap')
 
     BlockNode = InputGroupNode.FindParent('Block')
 
@@ -1176,7 +1175,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
             (OutputTransformAdded, OutputTransform) = OutputSectionMappingsNode.UpdateOrAddChildByAttrib(OutputTransform, 'MappedSectionNumber')
             OutputTransform.Name = str(mappedSectionNumber) + '-' + str(ControlSection)
             OutputTransform.Path = OutputTransform.Name + '.stos'
-            
+
 
             if not ControlToVolumeTransform is None:
                 OutputTransform.Path = str(mappedSectionNumber) + '-' + str(ControlToVolumeTransform.ControlSectionNumber) + '.stos'
@@ -1196,7 +1195,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 
                 if not os.path.exists(OutputTransform.FullPath):
                     shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
-                    #OutputTransform.Checksum = MappedToControlTransform.Checksum
+                    # OutputTransform.Checksum = MappedToControlTransform.Checksum
                     OutputTransform.InputTransformChecksum = MappedToControlTransform.Checksum
 
             else:
@@ -1313,6 +1312,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                                                                     MappedFilter)
 
                     stosNode.InputTransformChecksum = InputTransformNode.Checksum
+                    stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
 
                 SaveBlockNode = SaveBlockNode or stosGenerated
 

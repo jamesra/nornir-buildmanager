@@ -553,10 +553,10 @@ def AutolevelTiles(Parameters, LevelNode=None, TransformNode=None, OutputFilterN
     return ChannelNode
 
 
-def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransformName, Logger, **kwargs):
+def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, **kwargs):
     ''' @ChannelNode  '''
 
-    outputFilename = OutputTransformName + ".mosaic"
+    outputFilename = OutputTransform + ".mosaic"
     outputFileFullPath = os.path.join(os.path.dirname(TransformNode.FullPath), outputFilename)
 
     OutputTransformNode = TransformNode.Parent.GetChildByAttrib('Transform', 'Path', outputFilename)
@@ -589,12 +589,12 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransformName, Logge
     if OutputTransformNode is None:
         OutputTransformNode = copy.deepcopy(TransformNode)
         OutputTransformNode.Path = outputFilename
-        OutputTransformNode.Name = OutputTransformName
+        OutputTransformNode.Name = OutputTransform
         OutputTransformNode.InputTransform = TransformNode.Name
         [SaveRequired, OutputTransformNode] = TransformNode.Parent.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     else:
         OutputTransformNode.Path = outputFilename
-        OutputTransformNode.Name = OutputTransformName
+        OutputTransformNode.Name = OutputTransform
         OutputTransformNode.InputTransform = TransformNode.Name
 
     OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
@@ -605,7 +605,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransformName, Logge
     for imagename in Transforms.keys():
         transform = Transforms[imagename]
         transform.TranslateFixed((-minY, -minX))
-        mosaic.ImageToTransformString[imagename] = factory.TransformToIRToolsGridString(transform, transform.gridWidth, transform.gridHeight)
+        mosaic.ImageToTransformString[imagename] = factory.TransformToIRToolsString(transform)
 
 
     mosaic.Save(OutputTransformNode.FullPath)
@@ -735,6 +735,9 @@ def HistogramFilter(Parameters, FilterNode, LevelNode, TransformNode, **kwargs):
     return NodeToSave
 
 
+
+
+
 def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
     ''' @PyramidNode
         Build the image pyramid for the specified path.  We expect the "001" level of the pyramid to be pre-populated'''
@@ -759,6 +762,10 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
     InputPyramidFullPath = PyramidNode.FullPath
 
     prettyoutput.Log("Checking path for unbuilt pyramids: " + InputPyramidFullPath)
+
+    # Add a level for source if it doesn't exist in the requested levels
+    if PyramidLevels[0] > PyramidNode.MaxResLevel.Downsample:
+        PyramidLevels.insert(0, PyramidNode.MaxResLevel.Downsample)
 
     for i in range(1, len(PyramidLevels)):
 

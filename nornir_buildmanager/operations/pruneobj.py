@@ -84,7 +84,6 @@ class PruneObj:
             # The meta-data and output exist, do nothing
             return None
 
-
         OutputTransformNode.InputTransform = InputTransformNode.Name
         OutputTransformNode.InputPruneDataType = PruneNode.Type
         OutputTransformNode.InputTransformChecksum = InputTransformNode.Checksum

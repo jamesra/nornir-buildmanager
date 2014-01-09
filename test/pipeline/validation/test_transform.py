@@ -32,9 +32,9 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
         # OK, by default the transforms should be correct
         self.StageTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Stage')
         self.PruneTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Prune')
-        self.TranslateTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Translate')
-        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
-        self.ZeroGridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'ZeroGrid')
+        self.TranslateTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Translated_Prune')
+        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Refined_Prune')
+        self.ZeroGridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
 
         self.assertIsNotNone(self.StageTransform)
         self.assertIsNotNone(self.PruneTransform)
@@ -75,7 +75,10 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
-            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'AdjustContrast', 'Mosaic', '-debug']
+            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'Prune', '-debug']
+            build.Execute(buildArgs)
+
+            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'Mosaic', '-InputFilter', 'Leveled', '-debug']
             build.Execute(buildArgs)
 
             # Load the meta-data from the volumedata.xml file again

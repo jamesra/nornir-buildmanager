@@ -55,6 +55,7 @@ class VolumeEntry(object):
 
         return x
 
+
 class PlatformTest(test.testbase.TestBase):
 
     @property
@@ -108,108 +109,175 @@ class PipelineTest(PlatformTest):
     def Platform(self):
         return "PMG"
 
+    def _CreateBuildArgs(self, pipeline=None, *args):
+        pargs = ['-input', self.TestDataSource, '-volume', self.VolumeDir, '-debug']
 
+        if isinstance(pipeline, str):
+            pargs.append('-pipeline')
+            pargs.append(pipeline)
+
+        pargs.extend(args)
+
+        return pargs
 
     def setUp(self):
         '''Imports a volume and stops, tests call pipeline functions'''
         super(PipelineTest, self).setUp()
 
         self.TestDataSource = os.path.join(self.PlatformFullPath, self.VolumePath)
-        self.assertTrue(os.path.exists(self.TestDataSource), "Test input does not exist:" + self.TestDataSource);
+        self.assertTrue(os.path.exists(self.TestDataSource), "Test input does not exist:" + self.TestDataSource)
 
     def tearDown(self):
         # if os.path.exists(self.VolumeDir):
-        #    shutil.rmtree(self.VolumeDir);
+        #    shutil.rmtree(self.VolumeDir)
         pass
 
 
     def ValidateTransformChecksum(self, Node):
         '''Ensure that the reported checksum and actual file checksum match'''
-        self.assertTrue(hasattr(Node, 'Checksum'));
-        self.assertTrue(os.path.exists(Node.FullPath));
-        FileChecksum = MosaicFile.LoadChecksum(Node.FullPath);
-        self.assertEqual(Node.Checksum, FileChecksum);
+        self.assertTrue(hasattr(Node, 'Checksum'))
+        self.assertTrue(os.path.exists(Node.FullPath))
+        FileChecksum = MosaicFile.LoadChecksum(Node.FullPath)
+        self.assertEqual(Node.Checksum, FileChecksum)
 
     def CheckTransformInputs(self, transformNode):
         '''Walk every transform node, verify that if the inputtransform data matches the recorded data'''
 
         # If the object does not claim to have an input checksum then the test is not valid
         if not 'InputTransformChecksum' in transformNode.attrib:
-            return;
+            return
 
         # The transform should report the name of the input transform if it has a checksum
-        self.assertTrue('InputTransform' in transformNode.attrib);
+        self.assertTrue('InputTransform' in transformNode.attrib, "Missing InputTranform attribute:\n" + transformNode.ToElementString())
 
-        self.ValidateTransformChecksum(transformNode);
-        InputTransform = transformNode.Parent.GetChildByAttrib('Transform', 'Name', transformNode.InputTransform);
-        self.assertIsNotNone(InputTransform);
+        self.ValidateTransformChecksum(transformNode)
+        InputTransform = transformNode.Parent.GetChildByAttrib('Transform', 'Name', transformNode.InputTransform)
+        self.assertIsNotNone(InputTransform)
 
         self.assertFalse(transforms.IsOutdated(transformNode, InputTransform))
 
         # Check that our reported checksum and actual file checksums match
-        self.ValidateTransformChecksum(InputTransform);
+        self.ValidateTransformChecksum(InputTransform)
 
         # Check that
-        self.assertFalse(transforms.IsOutdated(self.PruneTransform, self.StageTransform));
+        self.assertFalse(transforms.IsOutdated(self.PruneTransform, self.StageTransform))
 
 
     def ValidateAllTransforms(self, ParentNode):
         '''Check every transform in the parent node to ensure that if it refers to an input transform the values match'''
 
-        TransformNodes = list(ParentNode.findall('Transform'));
+        TransformNodes = list(ParentNode.findall('Transform'))
         for tNode in TransformNodes:
-            self.CheckTransformInputs(tNode);
+            self.CheckTransformInputs(tNode)
 
+    def RunImportThroughMosaicAssemble(self):
+        self.RunImport()
+        self.RunPrune()
+        self.RunHistogram()
+        self.RunAdjustContrast()
+        self.RunMosaic()
+        self.RunAssemble()
 
+    def RunImport(self):
+        buildArgs = self._CreateBuildArgs(pipeline=None)
+        self.RunBuild(buildArgs)
 
+    def RunPrune(self):
+        # Prune
+        buildArgs = self._CreateBuildArgs('Prune', '-OutputTransform', 'Prune', '-Downsample', '4')
+        volumeNode = self.RunBuild(buildArgs)
+
+        self.assertIsNotNone(volumeNode, "No volume node returned from build")
+
+        PruneNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Prune']")
+        self.assertIsNotNone(PruneNode, "No prune node produced")
+
+        return volumeNode
+
+    def RunHistogram(self):
+         # Adjust Contrast
+        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', 'Raw8', '-Downsample', '4', '-InputTransform', 'Prune')
+        volumeNode = self.RunBuild(buildArgs)
+
+        HistogramNode = volumeNode.find("Block/Section/Channel/Filter[@Name='Raw8']/Histogram")
+        self.assertIsNotNone(HistogramNode, "No histogram node produced for histogram")
+
+        return volumeNode
+
+    def RunAdjustContrast(self):
+
+        # Adjust Contrast
+        buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', 'Raw8', '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+        volumeNode = self.RunBuild(buildArgs)
+
+        FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='Leveled']")
+        self.assertIsNotNone(FilterNode, "No filter node produced for contrast adjustment")
+
+        return volumeNode
+
+    def RunMosaic(self):
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', 'Prune', '-InputFilter', 'Leveled', '-OutputTransform', 'Grid')
+        volumeNode = self.RunBuild(buildArgs)
+
+        TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")
+        self.assertIsNotNone(TransformNode, "No final transform node produced by Mosaic pipeline")
+
+        return volumeNode
+
+    def RunAssemble(self, Level=8):
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', 'Grid', '-Filters', 'Leveled', '-Downsample', str(Level))
+        volumeNode = self.RunBuild(buildArgs)
+
+        AssembledImageNode = volumeNode.find("Block/Section/Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='%d']/Image" % Level)
+        self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
+
+        return volumeNode
 
 
 class ImportOnlySetup(PipelineTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
     def setUp(self):
-        super(ImportOnlySetup, self).setUp();
+        super(ImportOnlySetup, self).setUp()
 
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-debug'];
-        build.Execute(buildArgs);
+        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-debug']
+        build.Execute(buildArgs)
 
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied")
 
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.VolumeDir)
-        self.assertIsNotNone(self.VolumeObj);
+        self.assertIsNotNone(self.VolumeObj)
 
 class PrepareSetup(PipelineTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
     def setUp(self):
-        super(PrepareSetup, self).setUp();
+        super(PrepareSetup, self).setUp()
 
-        # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', '-debug'];
-        build.Execute(buildArgs);
-
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+        self.RunImport()
+        self.RunPrune()
+        self.RunHistogram()
 
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.VolumeDir)
-        self.assertIsNotNone(self.VolumeObj);
+        self.assertIsNotNone(self.VolumeObj)
 
 class PrepareAndMosaicSetup(PipelineTest):
     '''Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests'''
 
     def setUp(self):
 
-        super(PrepareAndMosaicSetup, self).setUp();
+        super(PrepareAndMosaicSetup, self).setUp()
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'AdjustContrast', 'Mosaic', '-debug'];
-        build.Execute(buildArgs);
 
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+        self.RunImportThroughMosaicAssemble()
 
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.VolumeDir)
-        self.assertIsNotNone(self.VolumeObj);
+        self.assertIsNotNone(self.VolumeObj)
 
 if __name__ == "__main__":
-    # import sys;sys.argv = ['', 'Test.testName']
+    # import syssys.argv = ['', 'Test.testName']
     unittest.main()

@@ -1,4 +1,4 @@
-nornir-build -volume %1 -pipeline CreateBlobFilter -BlobFilters Leveled -BlobLevels 16,32
+nornir-build -volume %1 -pipeline CreateBlobFilter -InputFilters Leveled -Levels 16,32
 
 nornir-build -volume %1 -pipeline AlignSections -NumAdjacentSections 1 -AlignFilters Blob_Leveled -StosUseMasks True -AlignDownsample 32
 
