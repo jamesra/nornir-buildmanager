@@ -12,6 +12,7 @@ import traceback
 import xml.etree
 
 from nornir_buildmanager import VolumeManagerETree
+import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
 import argparse
@@ -111,7 +112,11 @@ class ArgumentSet():
 
     def AddArguments(self, args):
         '''Add arguments from the command line'''
-        self._Arguments.update(args.__dict__)
+
+        if isinstance(args, dict):
+            self._Arguments.update(args)
+        else:
+            self._Arguments.update(args.__dict__)
 
     def KeyWordArgs(self):
 
@@ -824,6 +829,65 @@ def _GetVariableName(PipelineNode):
     elif PipelineNode.tag == "Select":
         raise PipelineError(PipelineNode=PipelineNode, message="Variable name attribute required on Select Element")
 
+
+def _ConvertValueToPythonType(val):
+    if val.lower() == 'true':
+        return True
+    elif val.lower() == 'false':
+        return False
+    else:
+        try:
+            return int(val)
+        except:
+            try:
+                return float(val)
+            except:
+                pass
+
+    return val
+
+
+def _AddArgumentNodeToParser(parser, argNode):
+    '''Returns a dictionary that can be added to a parser'''
+
+    attribDictCopy = copy.deepcopy(argNode.attrib)
+    Flag = ""
+
+    for key in attribDictCopy:
+        val = attribDictCopy[key]
+
+        # Starts as a string, try to convert to bool, int, or float
+        if key == 'flag':
+            Flag = nornir_shared.misc.SortedListFromDelimited(val)
+            continue
+
+        elif key == 'type':
+            if not key in __builtins__:
+                logger = logging.getLogger("PipelineManager")
+                logger.error('Type not found in __builtins__ ' + key)
+                prettyoutput.LogErr('Type not found in __builtins__ ' + key)
+                raise Exception(message="%s type specified by argument node is not present in __builtins__ dictionary.  Must use a standard python type." % key)
+                continue
+
+            val = __builtins__[val]
+            attribDictCopy[key] = val
+        elif key == 'default':
+            attribDictCopy[key] = _ConvertValueToPythonType(val)
+        elif key == 'required':
+            attribDictCopy[key] = _ConvertValueToPythonType(val)
+        elif key == 'choices':
+            listOfChoices = nornir_shared.misc.SortedListFromDelimited(val)
+            if len(listOfChoices) < 2:
+                raise Exception(message="Flag %s does not specify multiple choices.  Must use a comma delimited list to provide multiple choice options.\nCurrent choice string is: %s" % (attribDictCopy['flag'], val))
+
+            attribDictCopy[key] = listOfChoices
+
+    if 'flag' in attribDictCopy:
+        del attribDictCopy['flag']
+
+    parser.add_argument(*Flag, **attribDictCopy)
+
+
 def CreateOrExtendParserForArguments(ArgumentNodes, parser=None):
     '''
        Converts a list of <Argument> nodes into an argument parser, or extends an existing argument parser
@@ -837,46 +901,7 @@ def CreateOrExtendParserForArguments(ArgumentNodes, parser=None):
         parser = argparse.ArgumentParser()
 
     for argNode in ArgumentNodes:
-        attribDictCopy = copy.deepcopy(argNode.attrib)
-        Flag = ""
-
-        for key in attribDictCopy:
-            val = attribDictCopy[key]
-            # Starts as a string, try to convert to bool, int, or float
-            if key == 'flag':
-                Flag = val
-                continue
-
-
-            if key == 'type':
-                if not key in __builtins__:
-                    logger = logging.getLogger("PipelineManager")
-                    logger.error('Type not found in __builtins__ ' + key)
-                    prettyoutput.LogErr('Type not found in __builtins__ ' + key)
-                    continue
-
-                val = __builtins__[val]
-                attribDictCopy[key] = val
-            elif val == 'True':
-                attribDictCopy[key] = True
-            elif val == 'False':
-                attribDictCopy[key] = False
-            else:
-                try:
-                    attribDictCopy[key] = int(val)
-                except:
-                    try:
-                        attribDictCopy[key] = float(val)
-                    except:
-                        pass
-
-        if 'flag' in attribDictCopy:
-            del attribDictCopy['flag']
-
-        parser.add_argument(Flag, **attribDictCopy)
-        helpstr = attribDictCopy.get('help', '')
-        typestr = attribDictCopy.get('type', 'string')
-        # prettyoutput.Log('\t' + Flag + " [" + str(typestr) + "], " + helpstr)
+        _AddArgumentNodeToParser(parser, argNode)
 
     return parser
 
