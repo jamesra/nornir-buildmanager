@@ -75,7 +75,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
-            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'Prune', '-debug']
+            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'Prune', '-debug', '-Threshold', '1.0']
             build.Execute(buildArgs)
 
             buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'Mosaic', '-InputFilter', 'Leveled', '-debug']

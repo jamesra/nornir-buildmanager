@@ -9,11 +9,12 @@ Common build options
    :func: ProcessArgs
    :prog: nornir_build
 
- 
 ------------------
 Pipelines
 ------------------
 
+_Note_: Certain arguments support regular expressions.  See the python :py:mod:`re` module for instructions on how to construct appropriate regular expressions.
+ 
 .. automodule:: nornir_buildmanager.config.sphinxdocs
     :members:
     :undoc-members:

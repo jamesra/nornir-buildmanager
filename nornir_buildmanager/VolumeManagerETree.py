@@ -11,10 +11,11 @@ import sys
 import urllib
 
 import VolumeManagerHelpers as VMH
+
 import nornir_buildmanager.Config as Config
 import nornir_buildmanager.operations.versions as versions
+import nornir_buildmanager.operations.tile as tile
 from nornir_imageregistration.files import *
-import nornir_pools as Pools
 import nornir_shared.checksum
 import nornir_shared.misc as misc
 import nornir_shared.prettyoutput as prettyoutput
@@ -1253,7 +1254,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
             hFile.close()
 
         shutil.copy(TempXMLFilename, XMLFilename)
-        os.remove(TempXMLFilename)
+        try:
+            os.remove(TempXMLFilename)
+        except:
+            pass
 
 
 class XLinkedContainerElementWrapper(XContainerElementWrapper):
@@ -1907,7 +1911,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
     def GetOrCreateImage(self, Downsample, Path=None):
         '''Returns image node for the specified downsample or None'''
-        LevelNode = self.GetOrCreateLevel(Downsample)
+        LevelNode = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
         imageNode = LevelNode.find("Image")
         if imageNode is None:
@@ -1943,6 +1947,9 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
             SourceDownsample = SourceDownsample / 2
 
         return (SourceImage, SourceDownsample)
+
+    def GenerateLevels(self, Levels):
+        tile.BuildImagePyramid(self, Levels, Interlace=False)
 
     def __GenerateMissingImageLevel(self, OutputImage, Downsample):
         '''Creates a downsampled image from available high-res images if needed'''
@@ -2098,6 +2105,8 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.attrib['LevelFormat'] = LevelFormat
         self.attrib['ImageFormatExt'] = ImageFormatExt
 
+    def GenerateLevels(self, Levels):
+        tile.BuildTilePyramids(self, Levels)
 
 class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
@@ -2142,6 +2151,9 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.Name = TilesetNode.DefaultName
         if(not 'Path' in self.attrib):
             self.attrib['Path'] = TilesetNode.DefaultPath
+
+    def GenerateLevels(self, Levels):
+        tile.BuildTilesetPyramid(self)
 
 
 class LevelNode(XContainerElementWrapper):
@@ -2242,7 +2254,12 @@ class LevelNode(XContainerElementWrapper):
             attrib = {}
 
         attrib['Path'] = Config.Current.LevelFormat % int(Level)
-        attrib['Downsample'] = '%g' % Level
+
+        if isinstance(Level, str):
+            attrib['Downsample'] = Level
+        else:
+            attrib['Downsample'] = '%g' % Level
+
         super(XContainerElementWrapper, self).__init__(tag='Level', attrib=attrib, **extra)
 
 

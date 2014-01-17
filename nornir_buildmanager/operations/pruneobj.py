@@ -74,7 +74,7 @@ class PruneObj:
 
         OutputTransformNode = TransformParent.GetChildByAttrib('Transform', 'Name', OutputTransformName)
         OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
-        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=3)
+        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:
@@ -88,7 +88,7 @@ class PruneObj:
         OutputTransformNode.InputPruneDataType = PruneNode.Type
         OutputTransformNode.InputTransformChecksum = InputTransformNode.Checksum
         if not Threshold is None:
-            OutputTransformNode.Threshold = str(Threshold)
+            OutputTransformNode.Threshold = Threshold
 
         PruneDataNode = PruneNode.find('Data')
         if(PruneDataNode is None):
@@ -109,7 +109,7 @@ class PruneObj:
 
             HistogramNode = PruneNode.find('Image')
             if not HistogramNode is None:
-                HistogramNode = transforms.RemoveOnMismatch(HistogramNode, 'Threshold', Threshold, Precision=3)
+                HistogramNode = transforms.RemoveOnMismatch(HistogramNode, 'Threshold', Threshold, Precision=2)
 
             if HistogramNode is None or not os.path.exists(PruneObjInstance.HistogramPNGFileFullPath):
                 HistogramNode = VolumeManagerETree.ImageNode(HistogramPNGFile)
@@ -135,12 +135,14 @@ class PruneObj:
 
         OutputTransformNode.Type = MangledName
         OutputTransformNode.Name = OutputTransformName
+
+        # Setting this value automatically converts the double to a string using the %g formatter.  This is a precision of two.  The RemoveOnMismatch value needs to use a matching precision
         OutputTransformNode.Threshold = Threshold
         OutputTransformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)
         return [TransformParent, PruneNodeParent]
 
     @classmethod
-    def CalculatePruneScores(cls, Parameters, FilterNode, LevelNode, TransformNode, OutputFile=None, Logger=None, **kwargs):
+    def CalculatePruneScores(cls, Parameters, FilterNode, Downsample, TransformNode, OutputFile=None, Logger=None, **kwargs):
         '''@FilterNode
             Calculate the prune scores for a filter and level'''
         # VolumeManager.NodeManager.GetParent(Entry.NodeList)
@@ -150,6 +152,10 @@ class PruneObj:
 
         if OutputFile is None:
             OutputFile = 'PruneScores'
+
+        assert(isinstance(Downsample, int) or isinstance(Downsample, float))
+
+        LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
 
         if(LevelNode is None):
             prettyoutput.LogErr("Missing InputPyramidLevelNode attribute on PruneTiles")

@@ -71,9 +71,9 @@
 	<Pipeline Name="Prune" Description="Removes tiles without enough features for proper alignment.">
 		<Arguments>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
-			<Argument flag="-prune" dest="PruneThreshold" default="1.0" type="float" help="Texture complexity threshold" required="False"/>
+			<Argument flag="-Threshold" dest="PruneThreshold" default="0" type="float" help="Texture complexity threshold" required="True"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to calculate complexity upon" required="False"/>
-			<Argument flag="-Downsample" dest="Downsample" default="1" help="Tiles are downsampled by this factor before being scored" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Tiles are downsampled by this factor before being scored" required="False"/>
 			<Argument flag="-InputTransform" dest="InputTransform" default="Stage" help="Mosaic transform to prune.  The transform provides the list of tiles in the mosaic." required="False"/>
 			<Argument flag="-OutputTransform" dest="OutputTransform" default="Prune" help="Name of output transform.  Contains tiles from input transform minus tiles below threshold." required="False"/>
 			<Argument flag="-overlap" dest="Overlap" default="0.1" type="float" help="Percentage overlap between tiles, 0.0 to 1,0" required="False"/>
@@ -81,18 +81,16 @@
 
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
 			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-		
+
 			<Select VariableName="Pyramid" XPath="Filter[@Name='#InputFilter']/TilePyramid"/>
-			<PythonCall Function="tile.VerifyImages" TilePyramidNode="#Pyramid"/>
-			<PythonCall Function="tile.BuildTilePyramids" Levels="#Downsample" PyramidNode="#Pyramid"/>
+			<PythonCall Function="tile.VerifyImages" TilePyramidNode="#Pyramid"/> 
 
 			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
 			<PythonCall Function="registration.CompressTransforms" TransformNode="#TransformNode"/>
 
 			<!-- Assign a number to each tile describing if there are interesting features to the image -->
 			<Select VariableName="FilterNode" Root="ChannelNode" XPath="Filter[@Name='#InputFilter']"/>
-			<Select VariableName="LevelNode" Root="FilterNode" XPath="TilePyramid/Level[@Downsample='#Downsample']"/>
-			<PythonCall Function="pruneobj.PruneObj.CalculatePruneScores" OutputFile="PruneScores">
+			<PythonCall Function="pruneobj.PruneObj.CalculatePruneScores" Downsample="#Downsample" OutputFile="PruneScores">
 				<Parameters>
 					<Entry Name="Overlap" Value="#Overlap"/>
 				</Parameters>
@@ -113,6 +111,7 @@
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/> 
 			<Argument flag="-OutputFilter" dest="OutputFilter" default="ShadingCorrected" help="Prefix added to output filters" required="False"/>
+			<Argument flag="-Correction" dest="Correction" default="brightfield" help="Brightfield images have a light background with darker features.  Darkfield images have a dark background with light features." choices="brightfield,darkfield" required="True"/>
 		</Arguments>
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
 			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
@@ -123,11 +122,7 @@
 					<PythonCall Function="tile.VerifyImages"/>
 				</Iterate>
 
-				<PythonCall Function="tile.Evaluate" EvaluateSequenceArg="max" FilterNode="#FilterNode"/>
-				<PythonCall Function="tile.Evaluate" EvaluateSequenceArg="min" FilterNode="#FilterNode"/>
-
-				<Select VariableName="ImageNode" XPath="Image[@Name='max']"/>
-				<PythonCall Function="tile.CorrectTiles" FilterNode="#FilterNode" ImageNode="#ImageNode" OutputFilterName="#OutputFilter" InvertSource="True"/>
+				<PythonCall Function="tile.CorrectTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter" InvertSource="True" ComposeOperator="#ComposeOperator" CorrectionType="#Correction"/>
 			</Iterate>
 		</Iterate>
 	</Pipeline>
@@ -169,19 +164,18 @@
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/>
 			<Argument flag="-InputTransform" dest="InputTransform" default="Prune" help="The transform provided the list of tiles in the mosaic." required="True"/>
-			<Argument flag="-Downsample" dest="Downsample" default="1" help="Use downsampled tiles for faster histogram calculation" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Use downsampled tiles for faster histogram calculation" required="False"/>
 		</Arguments>
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
 			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-			
+
 			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
-			
+
 			<Iterate VariableName="FilterNode" XPath="Filter">
 				<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
-			
+
 				<!-- Calculate the intensity histogram for the entire mosaic -->
-				<Select VariableName="LevelNode" XPath="TilePyramid/Level[@Downsample='#Downsample']"/>
-				<PythonCall Function="tile.HistogramFilter">
+				<PythonCall Function="tile.HistogramFilter" FilterNode="#FilterNode" Downsample="#Downsample" TransformNode="#TransformNode">
 				</PythonCall>
 			</Iterate>
 		</Iterate>
@@ -197,14 +191,14 @@
 			<Argument flag="-OutputFilter" dest="OutputFilter" default="Leveled" help="Filter to draw images from" required="False"/>
 			<Argument flag="-InputTransform" dest="InputTransform" default="Prune" help="Mosaic transform to prune.  The transform provides the list of tiles in the mosaic." required="True"/>
 		</Arguments>
-		
+
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">		
 			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-			
+
 			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
-			
-			<Select VariableName="LevelNode" Root="ChannelNode" XPath="Filter[@Name='#InputFilter']/TilePyramid/Level[@Downsample='1']"/>
-			<PythonCall Function="tile.AutolevelTiles" OutputFilterName="#OutputFilter">
+		
+			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+			<PythonCall Function="tile.AutolevelTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter">
 				<Parameters>
 					<Entry Name="Gamma" Value="#Gamma"/> 
 					<Entry Name="MinCutoff" Value="#MinCutoff"/> 
@@ -221,9 +215,7 @@
 		<Arguments>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-RegistrationDownsample" dest="Downsample" default="4" type="int" help="Downsample level to use for ir-tools" required="False"/>
-			<Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="8,16,32,64" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
 			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
-			<Argument flag="-NoInterlace" dest="InterlaceVal" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/> 
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to use for registration" required="True"/>
 			<Argument flag="-InputTransform" dest="InputTransformName" default="Prune" help="Name of the input transform" required="False"/>
 			<Argument flag="-OutputTransform" dest="OutputTransformName" default="Grid" help="Name of output transform." required="False"/>
@@ -231,14 +223,14 @@
 
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
 			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-			
+
 			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransformName']"/>
-			
+
 			<Select VariableName="PyramidNode" XPath="Filter[@Name='#InputFilter']/TilePyramid"/>
 			<PythonCall Function="tile.BuildTilePyramids" Levels="#Downsample" PyramidNode="#PyramidNode"/>
-			
+
 			<Select VariableName="LevelNode" Root="PyramidNode" XPath="Level[@Downsample='#Downsample']"/>
-		
+
 			<!-- ir-translate, calculate translation for each tile into the greater mosaic -->
 			<PythonCall Function="registration.TranslateTransform" TransformNode="#TransformNode" OutputTransform="Translated_#InputTransformName" LevelNode="#LevelNode">
 				<Parameters>
@@ -360,7 +352,7 @@
 
 	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter.  Copies images to output directory.">
 		<Arguments>
-			<Argument flag="-Downsample" dest="Levels" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
+			<Argument flag="-Downsample" dest="Levels" type="int" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
 			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
@@ -376,9 +368,7 @@
 			<Iterate VariableName="FilterNode" XPath="Filter">
 				<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 
-				<Select VariableName="PyramidNode" Root="FilterNode"  XPath="TilePyramid"/>
-				<PythonCall Function="tile.BuildTilePyramids" Levels="#Levels" PyramidNode="#PyramidNode"/>
-				<PythonCall Function="tile.AssembleTransform" Interlace="#Interlace" Levels="#Levels">
+				<PythonCall Function="tile.AssembleTransform" FilterNode="#FilterNode" Interlace="#Interlace" Levels="#Levels">
 					<Parameters>
 						<Entry Name="feathering" Value="binary"/>
 					</Parameters>
@@ -397,7 +387,7 @@
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Transform defining images into mosaic" required="False"/>
-			<Argument flag="-Downsample" dest="Downsample" default="1" help="Comma seperated list of downsample levels for assembling output images" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma seperated list of downsample levels for assembling output images" required="False"/>
 		</Arguments>
 
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
@@ -418,38 +408,14 @@
 		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="FinalStosMap" StosGroupName="StosGrid16"/>
 	</Pipeline>
 
-	<Pipeline Name="CreateBlobFilter" Description="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
-		<Arguments>
-			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
-			<Argument flag="-InputFilter" dest="InputFilter" default="Leveled" help="Name of filter to create blob filter for" required="True"/>
-			<Argument flag="-Levels" dest="BlobDownsampleLevels" default="1" help="Downsample levels to be blobbed" required="False"/>
-			<Argument flag="-Radius" dest="BlobRadius" default="9" help="Radius to calculate variance within" required="False"/>
-			<Argument flag="-Median" dest="BlobMedian" default="7" help="Median filter radius for input" required="False"/>
-			<Argument flag="-Max"    dest="BlobMax" default="3" help="Max variance before cropping" required="False"/>
-			<Argument flag="-OutputFilter" dest="OutputFilterName" default="Blob" help="Prefix added to created filters" required="False"/>
-		</Arguments>
-
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
-
-			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
-
-				<PythonCall Function="channel.CreateBlobFilter" Levels="#BlobDownsampleLevels" InputFilter="#FilterNode" OutputFilterName="#OutputFilterName">
-					<Parameters>
-						<Entry Name="r" Value="#BlobRadius"/>
-						<Entry Name="median" Value="#BlobMedian"/>
-						<Entry Name="max" Value="#BlobMax"/>
-					</Parameters>
-				</PythonCall>
-		</Iterate>
-	</Pipeline>
+	
 
 	<Pipeline Name="MosaicReport" Description="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
 		<Arguments>
 			<Argument flag="-PruneFilter" dest="PruneFilter" default="Raw8" help="Input filter passed to Prune pipeline" required="False"/>
 			<Argument flag="-ContrastFilter" dest="ContrastFilter" default="Raw8" help="Input filter passed to Adjust Contrast pipeline" required="False"/>
 			<Argument flag="-AssembleFilter" dest="AssembleFilter" default="Raw8" help="Input filter passed to Assemble or Mosaic pipeline" required="False"/>
-			<Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="1" help="Downsample level to build assembled image thumbnails from" required="False"/>
+			<Argument flag="-AssembleDownsample" dest="AssembleDownsample" type="int" default="1" help="Downsample level to build assembled image thumbnails from" required="False"/>
 		</Arguments>
 		<Select VariableName="ReportingElement" XPath="Block"/>
 		<PythonCall Function="reporting.GenerateTableReport"
@@ -463,6 +429,7 @@
 		<PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
 	</Pipeline>
 
+	
 	<Pipeline Name="StosReport" Description="Generate a web page containing a summary of the alignments between sections in a 3D volume">
 		<Arguments>
 			<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from" required="True"/>
@@ -490,15 +457,40 @@
 		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="SliceToVolume" StosGroupName="SliceToVolume16"/>
 	</Pipeline>
 
+	<Pipeline Name="CreateBlobFilter" Description="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
+		<Arguments>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
+			<Argument flag="-InputFilter" dest="InputFilter" default="Leveled" help="Name of filter to create blob filter for" required="True"/>
+			<Argument flag="-Levels" dest="BlobDownsampleLevels" default="1" help="Downsample levels to be blobbed" required="False"/>
+			<Argument flag="-Radius" dest="BlobRadius" default="9" help="Radius to calculate variance within" required="False"/>
+			<Argument flag="-Median" dest="BlobMedian" default="7" help="Median filter radius for input" required="False"/>
+			<Argument flag="-Max"    dest="BlobMax" default="3" help="Max variance before cropping" required="False"/>
+			<Argument flag="-OutputFilter" dest="OutputFilterName" default="Blob" help="Prefix added to created filters" required="False"/>
+		</Arguments>
 
+		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
+			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+
+			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+
+			<PythonCall Function="channel.CreateBlobFilter" Levels="#BlobDownsampleLevels" InputFilter="#FilterNode" OutputFilterName="#OutputFilterName">
+				<Parameters>
+					<Entry Name="r" Value="#BlobRadius"/>
+					<Entry Name="median" Value="#BlobMedian"/>
+					<Entry Name="max" Value="#BlobMax"/>
+				</Parameters>
+			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	
 	<Pipeline Name="AlignSections" Description="Performs slice to slice alignment from scratch to produce an initial 3D volume.  After alignment the best alignment results are selected to create a final stosmap.">
 		<Arguments>
-			<Argument flag="-Center" dest="Center" type="int" help="Center section of the volume" required="False"/>
+			<Argument flag="-Center" dest="Center" type="int" help="Center section of the volume.  Defaults to center if unspecified.  The first run center is saved in meta-data and re-used on later runs." required="False"/>
 			<Argument flag="-NumAdjacentSections"  default="1" dest="NumAdjacentSections" type="int" help="Number of adjacent sections to attempt registration with." required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to be aligned" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
 			<Argument flag="-StosUseMasks"  default="True" dest="UseMasks" type="bool" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
-			<Argument flag="-Downsample"  default="1" dest="StosBruteDownsample" type="int" help="Amount to downsample input images before attempting alignment.  Images are padded to the next power of two for the FFT.  Large images, roughly greater than 2048x2048, can be very slow." required="True"/>
+ 			<Argument flag="-Downsample"  default="1" dest="StosBruteDownsample" type="int" help="Amount to downsample input images before attempting alignment.  Images are padded to the next power of two for the FFT.  Large images, roughly greater than 2048x2048, can be very slow." required="True"/>
 			<Argument flag="-GeneratedStosMap"  default="PotentialRegistrationChain" dest="GeneratedStosMap" type="str" help="Name assigned to generated stos map." required="False"/>
 			<Argument flag="-OutputStosMap"  default="FinalStosMap" dest="OutputStosMap" type="str" help="Name assigned to generated stos map." required="False"/>
 		</Arguments>
@@ -562,8 +554,24 @@
 
 		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#OutputGroup#OutputDownsample.vikingxml" StosMapName="#StosMap" StosGroupName="#OutputGroup#OutputDownsample"/>
 	</Pipeline>
+	
+	<Pipeline Name="ScaleVolumeTransforms" Description="Scales a stos group to use a different downsample level.  Useful for producing full-resolution output after generating transforms using downsampled images.">
+		<Arguments>
+			<Argument flag="-InputGroup" default="SliceToVolume" dest="ScaleGroupName" type="str" required="False" help="Name of stos group to scale" />
+			<Argument flag="-InputDownsample" dest="ScaleInputDownsample" type="int" help="Downsample level of input stosgroup" required="True"/>
+			<Argument flag="-OutputDownsample"  default="1" dest="ScaleOutputDownsample" type="int" help="Downsample level of output" required="False"/>
+		</Arguments>
 
-	<Pipeline Name="SliceToVolume"  Description="Createsd a group of slice-to-volume transforms from a group of slice-to-slice transforms">
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<Select VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#ScaleGroupName#ScaleInputDownsample']"/> 
+			<PythonCall Function="block.ScaleStosGroup"
+	   			   InputStosGroupNode="#StosGroupNode"
+	               OutputDownsample="#ScaleOutputDownsample"
+	               OutputGroupName="#ScaleGroupName#ScaleOutputDownsample"/>   
+		</Iterate>
+	</Pipeline>
+
+	<Pipeline Name="SliceToVolume"  Description="Created a group of slice-to-volume transforms from a group of slice-to-slice transforms">
 		<Arguments>
 			<Argument flag="-InputDownsample" dest="StovDownsample" default="16" type="int" help="Downsample level to use for SliceToVolume" required="False"/>
 			<Argument flag="-InputGroup"  default="StosGrid" dest="StovInputGroup" type="str" help="Map describing which sections register to each other" required="True"/>
@@ -588,21 +596,6 @@
 		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
 	</Pipeline>
 
-	<Pipeline Name="ScaleVolumeTransforms" Description="Scales a stos group to use a different downsample level.  Useful for producing full-resolution output after generating transforms using downsampled images.">
-		<Arguments>
-			<Argument flag="-InputGroup" default="SliceToVolume" dest="ScaleGroupName" type="str" required="False" help="Name of stos group to scale" />
-			<Argument flag="-InputDownsample" dest="ScaleInputDownsample" type="int" help="Downsample level of input stosgroup" required="True"/>
-			<Argument flag="-OutputDownsample"  default="1" dest="ScaleOutputDownsample" type="int" help="Downsample level of output" required="False"/>
-		</Arguments>
-
-		<Iterate VariableName="BlockNode" XPath="Block">
-			<Select VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#ScaleGroupName#ScaleInputDownsample']"/> 
-			<PythonCall Function="block.ScaleStosGroup"
-	   			   InputStosGroupNode="#StosGroupNode"
-	               OutputDownsample="#ScaleOutputDownsample"
-	               OutputGroupName="#ScaleGroupName#ScaleOutputDownsample"/>   
-		</Iterate>
-	</Pipeline>
 
 	<Pipeline Name="VolumeImage" Description="Produces an assembled image for transforms in a stos group.  If the transforms are slice-to-volume transforms the output should be registered into a volume.  Note that using this function requires assembled images to exist at full resolution.  If these do not exist see the MosaicToVolume pipeline.">
 		<Arguments>
@@ -626,12 +619,11 @@
 
 	<Pipeline Name="MosaicToVolume" Description="Used after slice to volume.  Creates new mosaic transforms that map tiles directly into the volume space.  This is done by passing the mosaic transform through a slice-to-volume transformation.  Assemble can then be used to produce volume registered images.">   
 		<Arguments>
-			<Argument flag="-InputDownsample" dest="StosDownsample" default="16" type="int" help="Downsample level of input stosgroup" required="False"/>
-			<Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="8" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
-			<Argument flag="-Output" dest="OutputPath" help="Directory to move assembled images to" required="False"/>
+			<Argument flag="-InputDownsample" dest="StosDownsample" default="1" type="int" help="Downsample level of input stosgroup" required="False"/>
 			<Argument flag="-InputMap"  default="SliceToVolume" dest="InputMapName" type="str" help="Name of output group" required="False"/>
 			<Argument flag="-InputGroup" default="SliceToVolume" dest="InputStosGroup" type="str" required="False" help="Name of stos group to pass mosaic transforms through"/>
 			<Argument flag="-InputTransform" default="Grid" dest="InputTransform" type="str" required="False" help="Mosaic transform to pass through slice-to-slice transform"/>
+			<Argument flag="-OutputTransform" default="ChannelToVolume" dest="OutputTransform" type="str" required="False" help="Name of output transform mapping a channel to a volume"/>
 		</Arguments>
 
 		<Iterate VariableName="BlockNode" XPath="Block">

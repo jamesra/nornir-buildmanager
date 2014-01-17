@@ -184,7 +184,7 @@ class PipelineTest(PlatformTest):
 
     def RunPrune(self):
         # Prune
-        buildArgs = self._CreateBuildArgs('Prune', '-OutputTransform', 'Prune', '-Downsample', '4')
+        buildArgs = self._CreateBuildArgs('Prune', '-OutputTransform', 'Prune', '-Downsample', '4', '-Threshold', '1.0')
         volumeNode = self.RunBuild(buildArgs)
 
         self.assertIsNotNone(volumeNode, "No volume node returned from build")
@@ -195,7 +195,7 @@ class PipelineTest(PlatformTest):
         return volumeNode
 
     def RunHistogram(self):
-         # Adjust Contrast
+        # Adjust Contrast
         buildArgs = self._CreateBuildArgs('Histogram', '-Filters', 'Raw8', '-Downsample', '4', '-InputTransform', 'Prune')
         volumeNode = self.RunBuild(buildArgs)
 

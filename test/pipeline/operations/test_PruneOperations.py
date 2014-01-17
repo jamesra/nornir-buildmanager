@@ -43,7 +43,7 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
         PruneFileFullPath = os.path.join(self.FilterNode.FullPath, 'PruneData.txt');
 
         # Call calculate prune scores
-        OutputFilterNode = PruneObj.CalculatePruneScores({}, self.FilterNode, self.LevelNode, self.StageTransformNode, OutputFile='PruneData', Logger=self.Logger)
+        OutputFilterNode = PruneObj.CalculatePruneScores({}, self.FilterNode, 2, self.StageTransformNode, OutputFile='PruneData', Logger=self.Logger)
         self.assertIsNotNone(OutputFilterNode);
 
         PruneNode = OutputFilterNode.find('Prune');
@@ -60,7 +60,7 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
         self.assertEqual(len(pruneObj.MapImageToScore), self.TilePyramidNode.NumberOfTiles);
 
         # Call again and make sure it does not regenerate the output
-        OutputFilterNode = PruneObj.CalculatePruneScores({}, self.FilterNode, self.LevelNode, self.StageTransformNode, OutputFile=PruneFileFullPath, Logger=self.Logger)
+        OutputFilterNode = PruneObj.CalculatePruneScores({}, self.FilterNode, 2, self.StageTransformNode, OutputFile=PruneFileFullPath, Logger=self.Logger)
         self.assertIsNone(OutputFilterNode);
 
         # OK, try to see what .mosaic we get with the prune scores

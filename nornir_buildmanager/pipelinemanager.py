@@ -909,5 +909,3 @@ if __name__ == "__main__":
 
     XmlFilename = 'D:\Buildscript\Pipelines.xml'
     PipelineManager.Load(XmlFilename)
-
-

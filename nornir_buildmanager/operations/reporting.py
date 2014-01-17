@@ -13,7 +13,7 @@ import datetime
 import nornir_buildmanager.importers.idoc as idoc
 import nornir_shared.plot
 import nornir_shared.prettyoutput
-from nornir_buildmanager.pipelinemanager import PipelineManager
+from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet
 import nornir_shared.files as nfiles
 # import Pipelines.VolumeManagerETree as VolumeManager
 
@@ -24,6 +24,7 @@ if __name__ == '__main__':
 class RowList(list):
     '''class used for HTML to place into rows'''
     pass
+
 
 class ColumnList(list):
     '''Class used for HTML to place into columns'''
@@ -43,7 +44,6 @@ class ColumnList(list):
 class UnorderedItemList(list):
     '''Class used for HTML to create unordered list from items'''
     pass
-
 
 
 class HTMLBuilder(list):
@@ -567,10 +567,14 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     # OK, build the columns
     astr = __anchorStringForHeader(RowLabel)
     ColumnBodyList.append(astr)
+
+    ArgSet = ArgumentSet()
+
+    ArgSet.AddArguments(kwargs)
     # CaptionHTML = None
     for ColXPath in ColumnXPaths:
 
-        ColXPath = PipelineManager.SubstituteStringVariables(ColXPath, kwargs)
+        # ColXPath = ArgSet.SubstituteStringVariables(ColXPath)
         ColSubElements = RowElement.findall(ColXPath)
         # Create a new table inside if len(ColSubElements) > 1?
         for ColSubElement in ColSubElements:
