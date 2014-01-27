@@ -1050,9 +1050,6 @@ def PlotDriftGrid(DataSource, OutputImageFile):
 
     Data = __argToSerialEMLog(DataSource)
 
-
-
-
     lines = []
     maxdrift = None
     NumTiles = int(0)
