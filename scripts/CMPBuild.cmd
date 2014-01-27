@@ -1,6 +1,6 @@
 nornir-build -volume %1 -input %2 
-nornir-build -volume %1 -pipeline ShadeCorrect -Channel "(?![D|d]api)" -Filters Raw8 -OutputFilter ShadingCorrected -Correction brightfield
-nornir-build -volume %1 -pipeline ShadeCorrect -Channel "(?[D|d]api)" -Filters Raw8 -OutputFilter ShadingCorrected -Correction darkfield
+nornir-build -volume %1 -pipeline ShadeCorrect -Channels "(?![D|d]api)" -Filters Raw8 -OutputFilter ShadingCorrected -Correction brightfield
+nornir-build -volume %1 -pipeline ShadeCorrect -Channels "(?[D|d]api)" -Filters Raw8 -OutputFilter ShadingCorrected -Correction darkfield
 nornir-build -volume %1 -pipeline Prune -InputFilter ShadingCorrected -Downsample 2 -Threshold 1.0
 nornir-build -volume %1 -pipeline Histogram -InputFilter ShadingCorrected -InputTransform Prune -Downsample 2 
 nornir-build -volume %1 -pipeline AdjustContrast -InputFilter ShadingCorrected -OutputFilter LeveledShadingCorrected -InputTransform Prune Leveled -Gamma 1
