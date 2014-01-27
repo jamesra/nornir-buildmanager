@@ -122,7 +122,7 @@
 					<PythonCall Function="tile.VerifyImages"/>
 				</Iterate>
 
-				<PythonCall Function="tile.CorrectTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter" InvertSource="True" ComposeOperator="#ComposeOperator" CorrectionType="#Correction"/>
+				<PythonCall Function="tile.CorrectTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter" InvertSource="True" CorrectionType="#Correction"/>
 			</Iterate>
 		</Iterate>
 	</Pipeline>
@@ -381,6 +381,44 @@
 		</Iterate>
 	</Pipeline>
 
+	<Pipeline Name="AssembleToChannel" Description="Creates an assembled image from a transform and filter. Creates a new channel for output.">
+		<Arguments>
+			<Argument flag="-Downsample" dest="Levels" type="int" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
+			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
+			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" type="str" help="Regular expression describing channels to be assembled" required="True"/>
+			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
+			<Argument flag="-Output" dest="OutputPath" help="Directory to move assembled images to" required="False"/>
+			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Directory to move assembled images to" required="False"/>
+		</Arguments>
+		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
+			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+
+			<!-- Build a downsampled image of the mosaic -->
+			<Select VariableName="TransformNode" XPath="Transform[@Name='#TransformName']"/>
+
+			<Iterate VariableName="FilterNode" XPath="Filter">
+				<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+
+				<PythonCall Function="tile.AssembleTransform" OutputChannelPrefix="#OutputChannelPrefix" FilterNode="#FilterNode" Interlace="#Interlace" Levels="#Levels">
+					<Parameters>
+						<Entry Name="feathering" Value="binary"/>
+					</Parameters>
+				</PythonCall>
+			</Iterate>
+		</Iterate>
+		
+		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
+			<RequireMatch Attribute="Name" RegEx="#OutputChannelPrefix#ChannelRegEx"/>
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+					<!-- This select statement for output only works if there is a single downsample level -->				
+					<Select VariableName="DataNodeObj" XPath="ImageSet/Level[@Downsample='#Levels']/Image"/>
+					<PythonCall Function="reporting.CopyFiles" DataNode="#DataNodeObj" OutputDir="#OutputPath"/>
+				</Iterate>
+		</Iterate>
+	</Pipeline>
+
 
 	<Pipeline Name="AssembleTiles" Description="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded">
 		<Arguments>
@@ -407,9 +445,7 @@
 
 		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="FinalStosMap" StosGroupName="StosGrid16"/>
 	</Pipeline>
-
 	
-
 	<Pipeline Name="MosaicReport" Description="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
 		<Arguments>
 			<Argument flag="-PruneFilter" dest="PruneFilter" default="Raw8" help="Input filter passed to Prune pipeline" required="False"/>
@@ -619,6 +655,7 @@
 
 	<Pipeline Name="MosaicToVolume" Description="Used after slice to volume.  Creates new mosaic transforms that map tiles directly into the volume space.  This is done by passing the mosaic transform through a slice-to-volume transformation.  Assemble can then be used to produce volume registered images.">   
 		<Arguments>
+			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to be processed" required="False"/>
 			<Argument flag="-InputDownsample" dest="StosDownsample" default="1" type="int" help="Downsample level of input stosgroup" required="False"/>
 			<Argument flag="-InputMap"  default="SliceToVolume" dest="InputMapName" type="str" help="Name of output group" required="False"/>
 			<Argument flag="-InputGroup" default="SliceToVolume" dest="InputStosGroup" type="str" required="False" help="Name of stos group to pass mosaic transforms through"/>
@@ -631,13 +668,10 @@
 			<Select VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#InputStosGroup#StosDownsample']"/>
 
 			<Iterate VariableName="ChannelNode" XPath="Section/Channel">
-
-				<Iterate VariableName="TransformNode" Root="ChannelNode" XPath="Transform[@Name='#InputTransform']">
-					<PythonCall Function="tile.TranslateToZeroOrigin" OutputTransformName="Zero#InputTransform"/>
-				</Iterate>
-
-				<Select VariableName="TransformNode" XPath="Transform[@Name='Zero#InputTransform']"/> 
-				<PythonCall Function="block.BuildMosaicToVolumeTransforms"  OutputTransformName="InVolume#InputTransform"/>
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+				
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/> 
+				<PythonCall Function="block.BuildMosaicToVolumeTransforms"  OutputTransformName="#OutputTransform"/>
 			</Iterate>
 		</Iterate>
 	</Pipeline>
