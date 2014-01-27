@@ -39,7 +39,31 @@ def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection
     return Transform
 
 
-class SectionToSectionMapping(test_sectionimage.ImportLMImages):
+#
+# class SliceToSliceRegistrationMosaicToVolume(CopySetupTestBase):
+#
+#     @property
+#     def Platform(self):
+#         '''Input for this test is a cached copy of the SliceToSliceRegistrationSkipBrute test.  If the output
+#         of that test changes the new output must be manually copied to the test platform directory.'''
+#
+#         return "SliceToSliceRegistrationSkipBrute"
+#
+#     def testMosaicToVolume(self):
+#         buildArgs = ['Build.py', '-volume', self.TestOutputPath, \
+#                      '-pipeline', 'MosaicToVolume', \
+#                      '-debug', \
+#                      '-InputTransform', 'Grid', \
+#                      '-OutputTransform', 'ChannelToVolume',
+#                      '-Channels', 'LeveledShading.*']
+#
+#         self.VolumeObj = self.RunBuild(buildArgs)
+#
+#         TransformNode = self.VolumeObj.find("Block/Section/Channel/Transform[@Name='ChannelToVolume']")
+#         self.assertIsNotNone(TransformNode, "Stos pipeline did not complete")
+
+
+class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
     def testCreateSectionToSectionMapping(self):
 
@@ -62,10 +86,11 @@ class SectionToSectionMapping(test_sectionimage.ImportLMImages):
         ValidateStosMap(self, StosMapNode, expectedRT)
 
 
-class SliceToSliceRegistrationBruteOnly(test_sectionimage.ImportLMImages):
+class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
 
     @property
     def VolumePath(self):
+
         return "6872_small"
 
     def testAlignSectionsPipeline(self):
@@ -82,11 +107,18 @@ class SliceToSliceRegistrationBruteOnly(test_sectionimage.ImportLMImages):
         StosMapNode = VolumeObj.find("Block/StosMap")
         self.assertIsNotNone(StosMapNode, "Stos pipeline did not complete")
 
+        StosGroupNode = VolumeObj.find("Block/StosGroup")
+        self.assertIsNotNone(StosGroupNode, "Stos pipeline did not complete")
+
+
+
 
 class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
     @property
     def Platform(self):
+        '''Input for this test is a cached copy of the SliceToSliceRegistrationBruteOnlyTest test.  If the output
+        of that test changes the new output must be manually copied to the test platform directory.'''
         return "SliceToSliceRegistrationBruteOnly"
 
     def InjectManualStosFiles(self, StosGroup, TargetDir):
@@ -348,8 +380,6 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # SliceToVolumeScaleAndVolumeImageGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='SliceToVolume1']")
         # self.assertIsNotNone(SliceToVolumeScaleAndVolumeImageGroupNode, "Could not find StosGroup SliceToVolume1")
 
-
-
     def testBlob(self):
         buildArgs = ['Build.py', '-volume', self.TestOutputPath,
                                  '-pipeline', 'CreateBlobFilter',
@@ -381,6 +411,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         self.assertEqual(oldstat.st_ctime, newstat.st_ctime, "Blob image recreated after second call to build")
         self.assertEqual(oldstatDSFour.st_ctime, newstatDSFour.st_ctime, "Blob image recreated after second call to build")
+
 
 
 if __name__ == "__main__":
