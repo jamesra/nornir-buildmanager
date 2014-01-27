@@ -40,4 +40,3 @@ class TestGeneralOps(PrepareAndMosaicSetup):
 
         self.assertFalse(os.path.exists(originalPath))
         self.assertTrue(os.path.exists(self.NewFilterNode.FullPath))
-

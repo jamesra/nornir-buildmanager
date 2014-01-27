@@ -35,6 +35,21 @@ class IDocTest(setup_pipeline.PipelineTest):
     def Platform(self):
         return "IDoc"
 
+    def EnsureTilePyramidIsFull(self, FilterNode, NumExpectedTiles):
+
+
+        TilePyramidNode = FilterNode.TilePyramid
+        self.assertIsNotNone(TilePyramidNode)
+
+        LevelOneNode = TilePyramidNode.GetLevel(1)
+        self.assertIsNotNone(LevelOneNode)
+
+        globpath = os.path.join(LevelOneNode.FullPath, '*' + TilePyramidNode.ImageFormatExt)
+        tiles = glob.glob(globpath)
+        self.assertEqual(NumExpectedTiles, len(tiles), 'Did not find %d tile in %s' % (NumExpectedTiles, globpath))
+        self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles), "Did not find %d tiles reported by meta-data in %s" % (TilePyramidNode.NumberOfTiles, globpath))
+        return
+
 #    def setUp(self):
 #
 #        '''Imports a PMG volume and stops, tests call pipeline functions'''
@@ -63,8 +78,11 @@ class IDocTest(setup_pipeline.PipelineTest):
 #            shutil.rmtree(self.VolumeFullPath)
 #
 
-
 class IDocSingleSectionImportTest(IDocTest):
+
+    @property
+    def VolumePath(self):
+        return "17"
 
     def LoadMetaData(self):
         '''Updates the object's meta-data variables from disk'''
@@ -79,7 +97,7 @@ class IDocSingleSectionImportTest(IDocTest):
         self.StageTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Stage')
 #        self.PruneTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Prune')
 #        self.TranslateTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Translate')
-#        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
+        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
 #        self.ZeroGridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'ZeroGrid')
 
         self.assertIsNotNone(self.StageTransform)
@@ -88,11 +106,7 @@ class IDocSingleSectionImportTest(IDocTest):
 #        self.assertIsNotNone(self.GridTransform)
 #        self.assertIsNotNone(self.ZeroGridTransform)
 
-    def EnsureTilePyramidIsFull(self, SectionNumber, NumExpectedTiles):
-
-        BlockNode = self.VolumeObj.find('Block')
-        self.assertIsNotNone(BlockNode)
-
+    def _getFilterNode(self, BlockNode, SectionNumber):
         SectionNode = BlockNode.GetSection(SectionNumber)
         self.assertIsNotNone(SectionNode)
 
@@ -102,24 +116,11 @@ class IDocSingleSectionImportTest(IDocTest):
         FilterNode = ChannelNode.GetFilter('Raw8')
         self.assertIsNotNone(FilterNode)
 
-        TilePyramidNode = FilterNode.TilePyramid
-        self.assertIsNotNone(TilePyramidNode)
-
-        LevelOneNode = TilePyramidNode.GetLevel(1)
-        self.assertIsNotNone(LevelOneNode)
-
-        globpath = os.path.join(LevelOneNode.FullPath, '*' + TilePyramidNode.ImageFormatExt)
-        tiles = glob.glob(globpath)
-        self.assertEqual(NumExpectedTiles, len(tiles), 'Did not find %d tile in %s' % (NumExpectedTiles, globpath))
-        self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles), "Did not find %d tiles reported by meta-data in %s" % (TilePyramidNode.NumberOfTiles, globpath))
-        return
+        return FilterNode
 
     def runTest(self):
 
-        SingleSectionInputPath = os.path.join(self.PlatformFullPath, '17')
-        buildArgs = ['Build.py', '-input', SingleSectionInputPath, '-volume', self.TestOutputPath, '-debug']
-        self.RunBuild(buildArgs)
-
+        self.RunImport()
         self.LoadMetaData()
 
         SectionNodes = list(self.VolumeObj.findall("Block/Section"))
@@ -131,8 +132,21 @@ class IDocSingleSectionImportTest(IDocTest):
         LogData = self.ChannelData.GetChildByAttrib('Data', 'Name', 'Log')
         self.assertIsNotNone(LogData)
 
-        self.EnsureTilePyramidIsFull(17, 25)
+        BlockNode = self.VolumeObj.find('Block')
+        self.assertIsNotNone(BlockNode)
 
+        self.EnsureTilePyramidIsFull(self._getFilterNode(BlockNode, int(self.VolumePath)), 25)
+#
+# class IDocBuildTest(IDocTest):
+#
+#     def runTest(self):
+#
+#         self.RunImport()
+#         self.RunPrune()
+#         self.RunHistogram()
+#         self.RunAdjustContrast()
+#         self.RunMosaic()
+#         self.RunAssemble(Level=1)
 
 class IdocReaderTest(IDocTest):
 
@@ -168,9 +182,7 @@ class IdocReaderTest(IDocTest):
         self.assertEqual(TileData.RotationAngle , -178.3)
         self.assertEqual(TileData.Defocus , -6.8902)
         self.assertEqual(TileData.PieceCoordinates, [3590, 7180, 0])
-
         return
-
 
 class LogReaderTest(IDocTest):
 
@@ -209,8 +221,6 @@ class LogReaderTest(IDocTest):
         self.assertEqual(TileData.endTime, 5433.453)
 
     def runTest(self):
-
-
         logDir = os.path.join(self.PlatformFullPath, '17/*.log')
         logFiles = glob.glob(logDir)
 
@@ -230,10 +240,7 @@ class LogReaderTest(IDocTest):
 
         idoc.PlotDriftGrid(cachedLogData, outputGrid)
         idoc.PlotDriftSettleTime(cachedLogData, outputDrift)
-
-
         return
-
 
 if __name__ == "__main__":
     # import syssys.argv = ['', 'Test.testName']

@@ -62,6 +62,10 @@ class PlatformTest(test.testbase.TestBase):
     def Platform(self):
         raise Exception("Platform property not implemented")
 
+    @property
+    def PlatformFullPath(self):
+        return os.path.join(self.TestDataPath, "PlatformRaw", self.Platform)
+
     def RunBuild(self, buildArgs):
         # Run a build, ensure the output directory exists, and return the volume obj
         build.Execute(buildArgs)
@@ -76,8 +80,6 @@ class PlatformTest(test.testbase.TestBase):
     def setUp(self):
         '''Imports a volume and stops, tests call pipeline functions'''
         super(PlatformTest, self).setUp()
-
-        self.PlatformFullPath = os.path.join(self.TestDataPath, "PlatformRaw", self.Platform)
         self.assertTrue(os.path.exists(self.PlatformFullPath), "Test data for platform does not exist:" + self.PlatformFullPath)
 
 
@@ -109,8 +111,17 @@ class PipelineTest(PlatformTest):
     def Platform(self):
         return "PMG"
 
+    @property
+    def ImportedDataPath(self):
+
+        if self.VolumePath and len(self.VolumePath) > 0:
+            return os.path.join(self.PlatformFullPath, self.VolumePath)
+        else:
+            return self.PlatformFullPath
+
+
     def _CreateBuildArgs(self, pipeline=None, *args):
-        pargs = ['-input', self.TestDataSource, '-volume', self.VolumeDir, '-debug']
+        pargs = ['-input', self.ImportedDataPath, '-volume', self.VolumeDir, '-debug']
 
         if isinstance(pipeline, str):
             pargs.append('-pipeline')
@@ -124,8 +135,7 @@ class PipelineTest(PlatformTest):
         '''Imports a volume and stops, tests call pipeline functions'''
         super(PipelineTest, self).setUp()
 
-        self.TestDataSource = os.path.join(self.PlatformFullPath, self.VolumePath)
-        self.assertTrue(os.path.exists(self.TestDataSource), "Test input does not exist:" + self.TestDataSource)
+        self.assertTrue(os.path.exists(self.ImportedDataPath), "Test input does not exist:" + self.ImportedDataPath)
 
     def tearDown(self):
         # if os.path.exists(self.VolumeDir):
@@ -170,12 +180,15 @@ class PipelineTest(PlatformTest):
         for tNode in TransformNodes:
             self.CheckTransformInputs(tNode)
 
-    def RunImportThroughMosaicAssemble(self):
+    def RunImportThroughMosaic(self):
         self.RunImport()
         self.RunPrune()
         self.RunHistogram()
         self.RunAdjustContrast()
         self.RunMosaic()
+
+    def RunImportThroughMosaicAssemble(self):
+        self.RunImportThroughMosaic()
         self.RunAssemble()
 
     def RunImport(self):
@@ -227,10 +240,12 @@ class PipelineTest(PlatformTest):
 
     def RunAssemble(self, Level=8):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', 'Grid', '-Filters', 'Leveled', '-Downsample', str(Level))
+        buildArgs = self._CreateBuildArgs('AssembleToChannel', '-ChannelPrefix', 'Assembled', '-Transform', 'Grid', '-Filters', 'Leveled', '-Downsample', str(Level))
         volumeNode = self.RunBuild(buildArgs)
 
-        AssembledImageNode = volumeNode.find("Block/Section/Channel/Filter[@Name='Leveled']/ImageSet/Level[@Downsample='%d']/Image" % Level)
+        ChannelNode = volumeNode.find("Block/Section/Channel")
+
+        AssembledImageNode = ChannelNode.find("Filter[@Name='Leveled']/ImageSet/Level[@Downsample='%d']/Image" % Level)
         self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
 
         return volumeNode
@@ -242,7 +257,7 @@ class ImportOnlySetup(PipelineTest):
         super(ImportOnlySetup, self).setUp()
 
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-debug']
+        buildArgs = ['Build.py', '-input', self.ImportedDataPath, '-volume', self.VolumeDir, '-debug']
         build.Execute(buildArgs)
 
         self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied")
@@ -264,7 +279,22 @@ class PrepareSetup(PipelineTest):
         self.VolumeObj = VolumeManager.Load(self.VolumeDir)
         self.assertIsNotNone(self.VolumeObj)
 
+
 class PrepareAndMosaicSetup(PipelineTest):
+    '''Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests'''
+
+    def setUp(self):
+
+        super(PrepareAndMosaicSetup, self).setUp()
+        # Import the files
+
+        self.RunImportThroughMosaic()
+
+        # Load the meta-data from the volumedata.xml file
+        self.VolumeObj = VolumeManager.Load(self.VolumeDir)
+        self.assertIsNotNone(self.VolumeObj)
+
+class PrepareThroughAssembleSetup(PipelineTest):
     '''Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests'''
 
     def setUp(self):

@@ -45,6 +45,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
     def setUp(self):
 
         super(TransformIsValidTest, self).setUp()
+
         self.LoadMetaData()
 
     def runTest(self):

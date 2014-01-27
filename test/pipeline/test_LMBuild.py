@@ -25,7 +25,7 @@ class ShadingCorrectionTest(LMBuildTest):
     def testLMBuild(self):
 
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'ShadeCorrect', '-verbose', '-debug', '-Correction', 'brightfield']
+        buildArgs = ['Build.py', '-input', self.ImportedDataPath, '-volume', self.VolumeDir, '-pipeline', 'ShadeCorrect', '-verbose', '-debug', '-Correction', 'brightfield']
         build.Execute(buildArgs)
 
         self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied")
@@ -39,7 +39,7 @@ class ShadingCorrectionTest(LMBuildTest):
         Channels = list(self.VolumeObj.findall("Block/Section/Channel"))
 
         # We expect each folder to be a seperate channel, so make sure each channel has a ShadingCorrectedFilter
-        self.assertEqual(len(ShadingCorrectedFilters), len(os.listdir(self.TestDataSource)))
+        self.assertEqual(len(ShadingCorrectedFilters), len(os.listdir(self.ImportedDataPath)))
         self.assertEqual(len(ShadingCorrectedFilters), len(Channels))
 
 
