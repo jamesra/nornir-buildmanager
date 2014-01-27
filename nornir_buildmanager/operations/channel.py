@@ -12,6 +12,7 @@ import xml
 from nornir_buildmanager import *
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.validation import transforms
+import nornir_buildmanager.operations.tile
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
@@ -65,14 +66,14 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, **kwargs
     # DownsampleSearchString = DownsampleSearchTemplate % {'Level': thisLevel}
     # InputMaskLevelNode = MaskSetNode.find(DownsampleSearchString)
 
-    InputImageNode = InputFilter.GetImage(thisLevel)
+    InputImageNode = InputFilter.GetOrCreateImage(thisLevel)
 
     if InputImageNode is None:
         prettyoutput.Log("Missing input level nodes for blob level: " + str(thisLevel))
         Logger.warning("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
         return
 
-    InputMaskNode = InputFilter.GetMaskImage(thisLevel)
+    InputMaskNode = InputFilter.GetOrCreateMaskImage(thisLevel)
     MaskStr = ""
     if not InputMaskNode is None:
         OutputFilterNode.MaskName = InputMaskNode.Name
@@ -88,7 +89,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, **kwargs
         BlobImageNode = transforms.RemoveOnMismatch(BlobImageNode, "InputImageChecksum", InputImageNode.Checksum)
 
     if BlobImageNode is None:
-        BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName)
+        BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName, GenerateData=False)
 
     if not os.path.exists(BlobImageNode.FullPath):
 
@@ -110,7 +111,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, **kwargs
         BlobImageNode.InputImageChecksum = InputImageNode.Checksum
         SaveFilterNode = True
 
-    BlobPyramidImageSet = operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
+    BlobPyramidImageSet = nornir_buildmanager.operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
     SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
 
     if SaveFilterNode:
