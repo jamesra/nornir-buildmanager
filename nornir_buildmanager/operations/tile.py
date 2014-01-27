@@ -855,17 +855,28 @@ def MigrateMultipleImageSets(FilterNode, Logger, **kwargs):
     # return MigrationOccurred
 
 
-def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
-    return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs)
+def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, ThumbnailSize=256, Interlace=True, **kwargs):
+    return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, ThumbnailSize, Interlace, **kwargs)
 
 
-def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     Feathering = Parameters.get('Feathering', 'binary')
 
     MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
-    ChannelNode = FilterNode.FindParent('Channel')
-    SectionNode = ChannelNode.FindParent('Section')
+    InputChannelNode = FilterNode.FindParent('Channel')
+    SectionNode = InputChannelNode.FindParent('Section')
+
+    OutputChannelNode = InputChannelNode
+
+    if OutputChannelPrefix is None:
+        OutputChannelPrefix = "Assembled"
+
+    [added, OutputChannelNode] = InputChannelNode.Parent.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManager.ChannelNode(OutputChannelPrefix + InputChannelNode.Name,
+                                                            OutputChannelPrefix + InputChannelNode.Name))
+
+    OutputFilterNode = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
+    OutputMaskFilterNode = OutputChannelNode.GetOrCreateFilter(MaskFilterNode.Name)
 
     NodesToSave = []
 
@@ -873,8 +884,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, UseClu
 
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
-    OutputImageNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + FilterNode.Name + ".png"
-    OutputImageMaskNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
+    OutputImageNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + FilterNode.Name + ".png"
+    OutputImageMaskNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
 
     FilterNode.Imageset.SetTransform(TransformNode)
     MaskFilterNode.Imageset.SetTransform(TransformNode)
@@ -887,8 +898,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, UseClu
     thisLevel = PyramidLevels[0]
 
     # Create a node for this level
-    ImageLevelNode = FilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
-    ImageMaskLevelNode = MaskFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
+    ImageLevelNode = OutputFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
+    ImageMaskLevelNode = OutputMaskFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
 
     if not os.path.exists(ImageLevelNode.FullPath):
         os.makedirs(ImageLevelNode.FullPath)
@@ -926,27 +937,26 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, UseClu
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, usecluster=UseCluster)
+        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, usecluster=True)
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)
             return None
 
-
-        if hasattr(TransformNode, 'CropBox'):
-            cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
-            (Xo, Yo, Width, Height) = nornir_shared.misc.ListFromAttribute(TransformNode.CropBox)
-
-            # Figure out the downsample level, adjust the crop box, and crop
-            Xo = Xo / float(thisLevel)
-            Yo = Yo / float(thisLevel)
-            Width = Width / float(thisLevel)
-            Height = Height / float(thisLevel)
-
-            Logger.warn("Cropping assembled image to volume boundary")
-
-            mosaicImage = core.CropImage(mosaicImage, Xo, Yo, Width, Height)
-            maskImage = core.CropImage(maskImage, Xo, Yo, Width, Height)
+#         if hasattr(TransformNode, 'CropBox'):
+#             cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
+#             (Xo, Yo, Width, Height) = nornir_shared.misc.ListFromAttribute(TransformNode.CropBox)
+#
+#             # Figure out the downsample level, adjust the crop box, and crop
+#             Xo = Xo / float(thisLevel)
+#             Yo = Yo / float(thisLevel)
+#             Width = Width / float(thisLevel)
+#             Height = Height / float(thisLevel)
+#
+#             Logger.warn("Cropping assembled image to volume boundary")
+#
+#             mosaicImage = core.CropImage(mosaicImage, Xo, Yo, Width, Height)
+#             maskImage = core.CropImage(maskImage, Xo, Yo, Width, Height)
 
         imsave(tempOutputFullPath, mosaicImage)
         imsave(tempMaskOutputFullPath, maskImage)
@@ -963,10 +973,10 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, UseClu
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
 
-    BuildImagePyramid(FilterNode.Imageset, **kwargs)
-    BuildImagePyramid(MaskFilterNode.Imageset, **kwargs)
+    BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
+    BuildImagePyramid(OutputMaskFilterNode.Imageset, **kwargs)
 
-    return FilterNode
+    return SectionNode
 
 
 def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
@@ -1367,7 +1377,7 @@ def _InsertExistingLevelIfMissing(PyramidNode, Levels):
     if not PyramidNode.HasLevel(Levels[0]):
         MoreDetailedLevel = PyramidNode.MoreDetailedLevel(Levels[0])
         if MoreDetailedLevel is None:
-            raise Exception(message="No pyramid level available with more detail than %d" % Levels[0])
+            raise Exception("No pyramid level available with more detail than %d" % Levels[0])
 
         Levels.insert(0, MoreDetailedLevel.Downsample)
 
