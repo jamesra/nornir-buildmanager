@@ -653,10 +653,13 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
 
 
-        task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
-        tasks.append(task)
-        # result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
-        # tableDict[RowLabel] = result
+        # task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        # tasks.append(task)
+        # task.wait()
+
+        # Threading this caused problems with Matplotlib being called from different threads.  Single threading again for now
+        result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        tableDict[RowLabel] = result
 
     for iRow, t in enumerate(tasks):
         try:
