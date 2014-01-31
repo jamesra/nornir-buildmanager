@@ -16,7 +16,7 @@ import subprocess
 from nornir_buildmanager import VolumeManagerETree, VolumeManagerHelpers
 from nornir_buildmanager.metadatautils import *
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration import assemble, mosaic
+from nornir_imageregistration import assemble, mosaic, volume
 from nornir_imageregistration.files import stosfile, mosaicfile
 from nornir_imageregistration.transforms import *
 import nornir_imageregistration.stos_brute as stos_brute
@@ -24,6 +24,10 @@ from nornir_imageregistration.alignment_record import AlignmentRecord
 import nornir_pools as pools
 from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
+
+
+import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
+import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -983,6 +987,7 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
 
     return InputStosFullPath
 
+
 def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
 
     Logger = kwargs.get('Logger', logging.getLogger('StosGrid'))
@@ -1119,6 +1124,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 
     return None
 
+
 def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
     '''recursively adds registration tree nodes to the stos map'''
 
@@ -1138,7 +1144,20 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
             __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped)
 
 
+def __StosMapToRegistrationTree(StosMapNode):
+    '''Convert a collection of stos mappings into a tree.  The tree describes which transforms must be used to map points between sections'''
+
+    rt = registrationtree.RegistrationTree()
+
+    for mappingNode in StosMapNode.Mappings:
+        for mappedSection in mappingNode.Mapped:
+            rt.AddPair(mappingNode.Control, mappedSection)
+
+    return rt
+
+
 def __RegistrationTreeToStosMap(rt, StosMapName):
+    '''Create a stos map where every mapping transforms to the root of the tree'''
 
     OutputStosMap = VolumeManagerETree.StosMapNode(StosMapName)
 
@@ -1147,6 +1166,54 @@ def __RegistrationTreeToStosMap(rt, StosMapName):
         __AddRegistrationTreeNodeToStosMap(OutputStosMap, rt, rootNode.SectionNumber)
 
     return OutputStosMap
+
+
+def TranslateVolumeToZeroOrigin(StosGroupNode, **kwargs):
+
+    vol = stosgroupvolume.StosGroupVolume.Load(StosGroupNode)
+
+    vol.TranslateToZeroOrigin()
+
+    SavedStosGroupNode = vol.Save()
+
+    return SavedStosGroupNode
+
+
+def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGroup, **kwargs):
+    '''Build a slice-to-volume transform for each section referenced in the StosMap'''
+
+    BlockNode = StosGroupNode.Parent
+    InputStosGroupNode = StosGroupNode
+
+    rt = __StosMapToRegistrationTree(StosMapNode)
+
+    if len(rt.RootNodes) == 0:
+        return
+
+    OutputGroupNode = VolumeManagerETree.StosGroupNode(OutputGroup, InputStosGroupNode.Downsample)
+    (SaveBlockNode, OutputGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputGroupNode)
+
+    # build the stos map again if it exists
+    OldStosMap = BlockNode.GetChildByAttrib('StosMap', 'Name', OutputMap)
+    if not OldStosMap is None:
+        BlockNode.remove(OldStosMap)
+
+    OutputStosMap = __RegistrationTreeToStosMap(rt, OutputMap)
+    (added, OutputStosMap) = BlockNode.UpdateOrAddChildByAttrib(OutputStosMap)
+    OutputStosMap.CenterSection = StosMapNode.CenterSection
+
+    SaveBlockNode = SaveBlockNode or added
+
+    for sectionNumber in rt.RootNodes:
+        Node = rt.Nodes[sectionNumber]
+        SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, ControlToVolumeTransform=None)
+
+    TranslateVolumeToZeroOrigin(OutputGroupNode)
+
+    if SaveBlockNode:
+        return BlockNode
+    else:
+        return OutputGroupNode
 
 
 def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupNode, ControlToVolumeTransform=None):
@@ -1344,44 +1411,6 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
 
     return False
 
-
-def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGroup, **kwargs):
-    '''Build a slice-to-volume transform for each section referenced in the StosMap'''
-
-    BlockNode = StosGroupNode.Parent
-    InputStosGroupNode = StosGroupNode
-    rt = registrationtree.RegistrationTree()
-
-    for mappingNode in StosMapNode.Mappings:
-        for mappedSection in mappingNode.Mapped:
-            rt.AddPair(mappingNode.Control, mappedSection)
-
-    if len(rt.RootNodes) == 0:
-        return
-
-    OutputGroupNode = VolumeManagerETree.StosGroupNode(OutputGroup, InputStosGroupNode.Downsample)
-    (SaveBlockNode, OutputGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputGroupNode)
-
-    # build the stos map again if it exists
-    OldStosMap = BlockNode.GetChildByAttrib('StosMap', 'Name', OutputMap)
-    if not OldStosMap is None:
-        BlockNode.remove(OldStosMap)
-
-    OutputStosMap = __RegistrationTreeToStosMap(rt, OutputMap)
-    (added, OutputStosMap) = BlockNode.UpdateOrAddChildByAttrib(OutputStosMap)
-    OutputStosMap.CenterSection = StosMapNode.CenterSection
-
-    SaveBlockNode = SaveBlockNode or added
-
-    for sectionNumber in rt.RootNodes:
-        Node = rt.Nodes[sectionNumber]
-        SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, ControlToVolumeTransform=None)
-
-    if SaveBlockNode:
-        return BlockNode
-    else:
-        return OutputGroupNode
-
 def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformName, Logger, **kwargs):
 
     MappedFilterNode = TransformNode.FindParent('Filter')
@@ -1404,7 +1433,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
         OutputTransformNode.Checksum = TransformNode.Checksum
         OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
     else:
-        files.RemoveOutdatedFile(StosTransformNode.FullPath, TransformNode.FullPath)
+        files.RemoveOutdatedFile(StosTransformNode.FullPath, OutputTransformNode.FullPath)
 
         StosGroupNode = StosTransformNode.FindParent('StosGroup')
 
@@ -1414,7 +1443,8 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
         StoVTransform = factory.LoadTransform(SToV.Transform)
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        MosaicTransform.TranslateToZeroOrigin()
+        assert(MosaicTransform.FixedBoundingBox[0] == 0 and MosaicTransform.FixedBoundingBox[1] == 0)
+        # MosaicTransform.TranslateToZeroOrigin()
 
         Pool = pools.GetGlobalThreadPool()
 
@@ -1441,9 +1471,8 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
         for task in Tasks:
             MosaicToVolume = task.wait_return()
+            (minX, minY, maxX, maxY) = MosaicToVolume.FixedBoundingBox
             MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
-
-
 
         # Move mosaic to zero origin again
         ControlImageBounds = MosaicTransform.FixedBoundingBox
@@ -1460,7 +1489,33 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
     return OutputTransformNode
 
 
-def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, TransformNode, OutputTransformName, Logger, **kwargs):
+def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, ChannelsRegEx, InputTransformName, OutputTransformName, Logger, **kwargs):
+
+    Channels = BlockNode.findall('Section/Channel')
+
+    MatchingChannelNodes = VolumeManagerHelpers.SearchCollection(Channels, 'Name', ChannelsRegEx)
+
+    StosMosaicTransforms = []
+
+    for channelNode in MatchingChannelNodes:
+        transformNode = channelNode.GetChildByAttrib('Transform', 'Name', InputTransformName)
+
+        if transformNode is None:
+            continue
+
+        BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, transformNode, OutputTransformName, Logger, **kwargs)
+
+        OutputTransformNode = channelNode.GetChildByAttrib('Transform', 'Name', OutputTransformName)
+        StosMosaicTransforms.append(OutputTransformNode)
+
+    mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
+    mosaicToVolume.TranslateToZeroOrigin()
+    mosaicToVolume.Save()
+
+    return BlockNode
+
+
+def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNode, OutputTransformName, Logger, **kwargs):
     '''Build a slice-to-volume transform for each section referenced in the StosMap'''
 
     MosaicTransformParent = TransformNode.Parent
@@ -1479,18 +1534,26 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, TransformNode, Out
         if StosMapNode.CenterSection != MappedSectionNumber:
             Logger.info("No SectionMappings found for section: " + str(MappedSectionNumber))
 
+
+
     SectionMappingNode = StosGroupNode.GetSectionMapping(MappedSectionNumber)
     if SectionMappingNode is None:
         _ApplyStosToMosaicTransform(None, TransformNode, OutputTransformName, Logger, **kwargs)
     else:
         for stostransform in SectionMappingNode.Transforms:
-            if not stostransform.MappedChannelName == MappedChannelNode.Name:
-                continue
+            # if not stostransform.MappedChannelName == MappedChannelNode.Name:
+            #    continue
 
             if not int(stostransform.ControlSectionNumber) == ControlSectionNumber:
                 continue
 
-            _ApplyStosToMosaicTransform(stostransform, TransformNode, OutputTransformName, Logger, **kwargs)
+            stosMosaicTransform = _ApplyStosToMosaicTransform(stostransform, TransformNode, OutputTransformName, Logger, **kwargs)
+
+#         mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
+#         mosaicToVolume.TranslateToZeroOrigin()
+#         mosaicToVolume.Save()
+
+
 
         #
 #     SliceToVolumeTransform = FindTransformForMapping(StosGroupNode, ControlSectionNumber, MappedSectionNumber)

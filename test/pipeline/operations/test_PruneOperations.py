@@ -14,6 +14,14 @@ from nornir_imageregistration.files.mosaicfile import MosaicFile
 
 class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
 
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
+
     def LoadMetaData(self):
         self.ChannelNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel");
         self.assertIsNotNone(self.ChannelNode);

@@ -645,7 +645,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
     for imagename, transform in mosaic.ImageToTransformString.iteritems():
         MosaicToSectionTransform = factory.LoadTransform(transform)
         Transforms[imagename] = MosaicToSectionTransform
-        bbox = MosaicToSectionTransform.ControlPointBoundingBox
+        bbox = MosaicToSectionTransform.FixedBoundingBox
 
         minX = min(minX, bbox[0])
         minY = min(minY, bbox[1])

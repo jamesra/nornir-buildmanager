@@ -12,6 +12,14 @@ import nornir_buildmanager.operations.general as General
 
 class TestGeneralOps(PrepareAndMosaicSetup):
 
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
+
     def testRename(self):
         self.UntouchedFilterNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel/Filter[@Name='Leveled']")
         self.assertIsNotNone(self.UntouchedFilterNode, "Test is missing filter for test, check setup")

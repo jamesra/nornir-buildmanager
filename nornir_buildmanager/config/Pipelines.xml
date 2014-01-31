@@ -196,7 +196,7 @@
 			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
 
 			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
-		
+
 			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
 			<PythonCall Function="tile.AutolevelTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter">
 				<Parameters>
@@ -241,7 +241,7 @@
 			<!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping tiles -->
 			<Select VariableName="TranslatedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='Translated_#InputTransformName']"/>
 			<PythonCall Function="registration.CompressTransforms" TransformNode="#TranslatedTransformNode"/>
-			<PythonCall Function="registration.GridTransform" OutputTransform="Refined_#InputTransformName" TransformNode="#TranslatedTransformNode" LevelNode="#LevelNode">
+			<PythonCall Function="registration.GridTransform" OutputTransform="#OutputTransformName" TransformNode="#TranslatedTransformNode" LevelNode="#LevelNode">
 				<Parameters>
 					<Entry Name="MeshWidth" Value="8"/>
 					<Entry Name="MeshHeight" Value="8"/>
@@ -251,9 +251,10 @@
 			</PythonCall>
 
 			<!-- Move mosaics to have an origin at zero -->
-			<Select VariableName="RefinedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='Refined_#InputTransformName']"/>
+			<Select VariableName="RefinedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='#OutputTransformName']"/>
 			<PythonCall Function="registration.CompressTransforms" TransformNode="#RefinedTransformNode"/>
-			<PythonCall Function="tile.TranslateToZeroOrigin"  TransformNode="#RefinedTransformNode" OutputTransform="#OutputTransformName"/> 
+			<!--<PythonCall Function="tile.TranslateToZeroOrigin"  TransformNode="#RefinedTransformNode" OutputTransform="#OutputTransformName"/> -->
+			
 			<!-- Select grid transform which has origin at 0,0.
 			<Select VariableName="TransformNodeObj" XPath="Transform[@Name='#OutputTransformName']"/>
 			-->
@@ -407,15 +408,15 @@
 				</PythonCall>
 			</Iterate>
 		</Iterate>
-		
+
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
 			<RequireMatch Attribute="Name" RegEx="#OutputChannelPrefix#ChannelRegEx"/>
-				<Iterate VariableName="FilterNode" XPath="Filter">
-					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
-					<!-- This select statement for output only works if there is a single downsample level -->				
-					<Select VariableName="DataNodeObj" XPath="ImageSet/Level[@Downsample='#Levels']/Image"/>
-					<PythonCall Function="reporting.CopyFiles" DataNode="#DataNodeObj" OutputDir="#OutputPath"/>
-				</Iterate>
+			<Iterate VariableName="FilterNode" XPath="Filter">
+				<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+				<!-- This select statement for output only works if there is a single downsample level -->				
+				<Select VariableName="DataNodeObj" XPath="ImageSet/Level[@Downsample='#Levels']/Image"/>
+				<PythonCall Function="reporting.CopyFiles" DataNode="#DataNodeObj" OutputDir="#OutputPath"/>
+			</Iterate>
 		</Iterate>
 	</Pipeline>
 
@@ -445,7 +446,7 @@
 
 		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="FinalStosMap" StosGroupName="StosGrid16"/>
 	</Pipeline>
-	
+
 	<Pipeline Name="MosaicReport" Description="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
 		<Arguments>
 			<Argument flag="-PruneFilter" dest="PruneFilter" default="Raw8" help="Input filter passed to Prune pipeline" required="False"/>
@@ -465,7 +466,7 @@
 		<PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
 	</Pipeline>
 
-	
+
 	<Pipeline Name="StosReport" Description="Generate a web page containing a summary of the alignments between sections in a 3D volume">
 		<Arguments>
 			<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from" required="True"/>
@@ -486,11 +487,10 @@
 		<Arguments>
 			<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from" required="True"/>
 			<Argument flag="-StosMap" dest="StosMap" help="Slice-to-slice mapping of transforms" required="True"/>
+			<Argument flag="-Host" dest="Host" help="Url of volume, overrides the about.xml settings" required="False"/>
 		</Arguments>
 
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="TEMStos32.vikingxml" StosMapName="FinalStosMap" StosGroupName="StosGrid32"/>
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="TEMStos16.vikingxml" StosMapName="FinalStosMap" StosGroupName="StosGrid16"/>
-		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="SliceToVolume" StosGroupName="SliceToVolume16"/>
+		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup" OutputFile="#StosGroup.vikingxml" Host="#Host"/>
 	</Pipeline>
 
 	<Pipeline Name="CreateBlobFilter" Description="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
@@ -518,7 +518,7 @@
 			</PythonCall>
 		</Iterate>
 	</Pipeline>
-	
+
 	<Pipeline Name="AlignSections" Description="Performs slice to slice alignment from scratch to produce an initial 3D volume.  After alignment the best alignment results are selected to create a final stosmap.">
 		<Arguments>
 			<Argument flag="-Center" dest="Center" type="int" help="Center section of the volume.  Defaults to center if unspecified.  The first run center is saved in meta-data and re-used on later runs." required="False"/>
@@ -526,7 +526,7 @@
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to be aligned" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
 			<Argument flag="-StosUseMasks"  default="True" dest="UseMasks" type="bool" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
- 			<Argument flag="-Downsample"  default="1" dest="StosBruteDownsample" type="int" help="Amount to downsample input images before attempting alignment.  Images are padded to the next power of two for the FFT.  Large images, roughly greater than 2048x2048, can be very slow." required="True"/>
+			<Argument flag="-Downsample"  default="1" dest="StosBruteDownsample" type="int" help="Amount to downsample input images before attempting alignment.  Images are padded to the next power of two for the FFT.  Large images, roughly greater than 2048x2048, can be very slow." required="True"/>
 			<Argument flag="-GeneratedStosMap"  default="PotentialRegistrationChain" dest="GeneratedStosMap" type="str" help="Name assigned to generated stos map." required="False"/>
 			<Argument flag="-OutputStosMap"  default="FinalStosMap" dest="OutputStosMap" type="str" help="Name assigned to generated stos map." required="False"/>
 		</Arguments>
@@ -590,7 +590,7 @@
 
 		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#OutputGroup#OutputDownsample.vikingxml" StosMapName="#StosMap" StosGroupName="#OutputGroup#OutputDownsample"/>
 	</Pipeline>
-	
+
 	<Pipeline Name="ScaleVolumeTransforms" Description="Scales a stos group to use a different downsample level.  Useful for producing full-resolution output after generating transforms using downsampled images.">
 		<Arguments>
 			<Argument flag="-InputGroup" default="SliceToVolume" dest="ScaleGroupName" type="str" required="False" help="Name of stos group to scale" />
@@ -632,6 +632,31 @@
 		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
 	</Pipeline>
 
+	<Pipeline Name="SliceToVolumeZeroTest"  Description="Created a group of slice-to-volume transforms from a group of slice-to-slice transforms">
+		<Arguments>
+			<Argument flag="-InputDownsample" dest="StovDownsample" default="16" type="int" help="Downsample level to use for SliceToVolume" required="False"/>
+			<Argument flag="-InputGroup"  default="StosGrid" dest="StovInputGroup" type="str" help="Map describing which sections register to each other" required="True"/>
+			<Argument flag="-OutputGroup"  default="SliceToVolume" dest="StovOutputGroupName" type="str" help="Name of output group" required="False"/>
+			<Argument flag="-InputMap"  default="FinalStosMap" dest="InputMap" type="str" help="Name of output group" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block"> 
+			<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#InputMap']">
+				<Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovOutputGroupName#StovDownsample']">
+					<PythonCall Function="block.TranslateVolumeToZeroOrigin">
+					</PythonCall>
+				</Iterate>
+			</Iterate>
+
+			<!--<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#StovOutputGroupName']">
+  		  <Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovOutputGroupName#StovDownsample']">
+          	<PythonCall Function="block.AssembleStosOverlays" GroupNode="#StosGroupNode"/>
+          </Iterate>
+        </Iterate> -->		
+		</Iterate>
+
+		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
+	</Pipeline>
+
 
 	<Pipeline Name="VolumeImage" Description="Produces an assembled image for transforms in a stos group.  If the transforms are slice-to-volume transforms the output should be registered into a volume.  Note that using this function requires assembled images to exist at full resolution.  If these do not exist see the MosaicToVolume pipeline.">
 		<Arguments>
@@ -659,20 +684,23 @@
 			<Argument flag="-InputDownsample" dest="StosDownsample" default="1" type="int" help="Downsample level of input stosgroup" required="False"/>
 			<Argument flag="-InputMap"  default="SliceToVolume" dest="InputMapName" type="str" help="Name of output group" required="False"/>
 			<Argument flag="-InputGroup" default="SliceToVolume" dest="InputStosGroup" type="str" required="False" help="Name of stos group to pass mosaic transforms through"/>
-			<Argument flag="-InputTransform" default="Grid" dest="InputTransform" type="str" required="False" help="Mosaic transform to pass through slice-to-slice transform"/>
+			<Argument flag="-InputTransform" default="Grid" dest="InputTransformName" type="str" required="False" help="Mosaic transform to pass through slice-to-slice transform"/>
 			<Argument flag="-OutputTransform" default="ChannelToVolume" dest="OutputTransform" type="str" required="False" help="Name of output transform mapping a channel to a volume"/>
 		</Arguments>
 
 		<Iterate VariableName="BlockNode" XPath="Block">
 			<Select VariableName="StosMapNode" XPath="StosMap[@Name='#InputMapName']"/>
 			<Select VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#InputStosGroup#StosDownsample']"/>
+			
+			<PythonCall Function="block.BuildMosaicToVolumeTransforms" BlockNode="#BlockNode" ChannelsRegEx="#ChannelsRegEx" InputTransformName="#InputTransformName" OutputTransformName="#OutputTransform"/>
 
+			<!--
 			<Iterate VariableName="ChannelNode" XPath="Section/Channel">
 				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-				
+
 				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/> 
 				<PythonCall Function="block.BuildMosaicToVolumeTransforms"  OutputTransformName="#OutputTransform"/>
-			</Iterate>
+			</Iterate>-->
 		</Iterate>
 	</Pipeline>
 

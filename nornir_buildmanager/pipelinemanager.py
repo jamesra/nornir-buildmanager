@@ -106,7 +106,12 @@ class ArgumentSet():
 
             # Find the existing entry in the dargs
             key = val[1:]
-            return self.TryGetValueForKey(key)
+
+            try:
+                # If no object found then return None
+                return self.TryGetValueForKey(key)
+            except KeyError as e:
+                return None
 
         return None
 

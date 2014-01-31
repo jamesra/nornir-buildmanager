@@ -9,10 +9,18 @@ import unittest
 from setup_pipeline import *
 
 
-class PrepareThenMosaicTest(PipelineTest):
+class PrepareThenMosaicTest(PlatformTest):
     '''Run the build with prepare, then run again with mosiac'''
 
     TransformNames = ["translate", "grid", "zerogrid", "stage"]
+
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
 
     def CheckTransformsExist(self, VolumeObj, TransformNames=None):
 
@@ -65,7 +73,7 @@ class PrepareThenMosaicTest(PipelineTest):
         build.Execute(buildArgs)
 
         # Load the meta-data from the volumedata.xml file
-        VolumeObj = VolumeManager.Load(self.VolumeDir)
+        VolumeObj = VolumeManager.Load(self.TestOutputPath)
 
         self.CheckTilesetExists(VolumeObj)
 

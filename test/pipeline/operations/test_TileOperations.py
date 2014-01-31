@@ -56,6 +56,14 @@ import numpy as np
 
 class ShadeCorrectionTest(ImportOnlySetup):
 
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
+
     def runTest(self):
         self.FilterNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel/Filter")
         self.assertIsNotNone(self.FilterNode)
@@ -83,7 +91,16 @@ class ShadeCorrectionTest(ImportOnlySetup):
 
         self.assertEqual(np.max(image), 0, "We already corrected shading, the next shading corrected image should be all zeros")
 
+
 class HistogramFilterTest(ImportOnlySetup):
+
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
 
     def runTest(self):
         self.ChannelData = self.VolumeObj.find("Block/Section[@Number='2']/Channel")
@@ -104,7 +121,6 @@ class HistogramFilterTest(ImportOnlySetup):
 
         self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk), "Number of images on disk do not match meta-data")
 
-
         OutputPyramidNode = BuildTilePyramids(PyramidNode=self.InputPyramidNode, Levels=[2, 8, 64])
         self.assertIsNotNone(self.InputLevelNode)
 
@@ -118,7 +134,6 @@ class HistogramFilterTest(ImportOnlySetup):
         self.assertIsNotNone(OutputPyramidNode)
 
         self.CheckThatLevelsExist(OutputPyramidNode, [1, 2, 4, 8, 64])
-
 
     def CheckThatLevelsExist(self, PyramidNode, ExpectedLevels):
         # Make sure the expected levels exist
@@ -134,7 +149,15 @@ class HistogramFilterTest(ImportOnlySetup):
             self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk), "Number of images on disk do not match meta-data")
 
 
-class HistogramFilterTest(ImportOnlySetup):
+class HistogramFilterTest2(ImportOnlySetup):
+
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
 
     def runTest(self):
         self.ChannelData = self.VolumeObj.find("Block/Section[@Number='2']/Channel")
@@ -172,6 +195,14 @@ class HistogramFilterTest(ImportOnlySetup):
 
 
 class AutoLevelHistogramTest(PrepareSetup):
+
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
 
     def LoadInputMetaData(self):
 

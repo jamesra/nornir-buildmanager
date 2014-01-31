@@ -75,7 +75,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : 2}, BlockNode=BlockNode, Logger=self.Logger)
         self.assertIsNotNone(OutputBlockNode)
 
-        VolumeManagerETree.VolumeManager.Save(self.VolumeDir, VolumeObj)
+        VolumeManagerETree.VolumeManager.Save(self.TestOutputPath, VolumeObj)
 
         volumechecklist = [VolumeEntry("StosMap", "Name", "PotentialRegistrationChain")]
 
@@ -96,7 +96,7 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
     def testAlignSectionsPipeline(self):
 
         # Import the files
-        buildArgs = ['Build.py', '-volume', self.VolumeDir, \
+        buildArgs = ['Build.py', '-volume', self.TestOutputPath, \
                      '-pipeline', 'AlignSections', \
                      '-debug', \
                      '-Downsample', '16', \

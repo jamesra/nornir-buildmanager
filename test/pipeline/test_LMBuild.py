@@ -10,7 +10,7 @@ import nornir_buildmanager.build as build
 import setup_pipeline
 
 
-class LMBuildTest(setup_pipeline.PipelineTest):
+class LMBuildTest(setup_pipeline.PlatformTest):
 
     @property
     def VolumePath(self):
@@ -25,13 +25,13 @@ class ShadingCorrectionTest(LMBuildTest):
     def testLMBuild(self):
 
         # Import the files
-        buildArgs = ['Build.py', '-input', self.ImportedDataPath, '-volume', self.VolumeDir, '-pipeline', 'ShadeCorrect', '-verbose', '-debug', '-Correction', 'brightfield']
+        buildArgs = ['Build.py', '-input', self.ImportedDataPath, '-volume', self.TestOutputPath, '-pipeline', 'ShadeCorrect', '-verbose', '-debug', '-Correction', 'brightfield']
         build.Execute(buildArgs)
 
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied")
+        self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
 
         # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.VolumeDir)
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
         self.assertIsNotNone(self.VolumeObj)
 
         # Make sure a shading corrected filter exists
@@ -44,7 +44,7 @@ class ShadingCorrectionTest(LMBuildTest):
 
 
         # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.VolumeDir)
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
 
         # TODO: Much more to do here, but out of time for today...
         pass

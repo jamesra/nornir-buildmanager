@@ -16,6 +16,8 @@ from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
 
+import nornir_imageregistration.mosaic as mosaic
+
 
 def TranslateTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):
     '''@ChannelNode'''
@@ -88,6 +90,8 @@ def TranslateTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):
 
             SaveRequired = os.path.exists(OutputTransformNode.FullPath)
 
+            mosaic.Mosaic.TranslateMosaicFileToZeroOrigin(OutputTransformNode.FullPath)
+
         finally:
             if os.path.exists(mosaicFullPath):
                 os.remove(mosaicFullPath)
@@ -148,6 +152,8 @@ def GridTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):
         ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
         OutputTransformNode.cmd = cmd
         SaveRequired = True
+
+        mosaic.Mosaic.TranslateMosaicFileToZeroOrigin(OutputTransformNode.FullPath)
 
     if SaveRequired:
         return TransformParentNode

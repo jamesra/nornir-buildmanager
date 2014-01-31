@@ -49,7 +49,15 @@ PMGData = {"6750_10677D_WDF_20x_02_G.pmg" : PMGInfo(Slide=6750,
                                                  NumberOfImages=96)
            }
 
-class PMGTest(setup_pipeline.PipelineTest):
+class PMGTest(setup_pipeline.PlatformTest):
+
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
 
     @property
     def classname(self):
@@ -117,7 +125,7 @@ class ImportPMG(PMGTest):
 
         for pmgDir in pmgSectionDirs:
 
-            VolumeObj = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.VolumeDir, Create=True)
+            VolumeObj = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
             pmgFile = glob.glob(os.path.join(pmgDir, "*.pmg"))
             self.assertEqual(len(pmgFile), 1, "Unexpected extra PMG in dir: " + pmgDir)
             pmgFile = pmgFile[0]
@@ -126,7 +134,7 @@ class ImportPMG(PMGTest):
             pmgData = PMGData[pmgFileKey]
             self.assertIsNotNone(pmgData)
 
-            pmg.PMGImport.ToMosaic(VolumeObj, InputPath=pmgDir, OutputPath=self.VolumeDir, debug=True)
+            pmg.PMGImport.ToMosaic(VolumeObj, InputPath=pmgDir, OutputPath=self.TestOutputPath, debug=True)
 
             VolumeObj.Save()
             del VolumeObj
@@ -138,7 +146,7 @@ class ImportPMG(PMGTest):
         self.assertIsNotNone(pmgData)
 
         '''Ensure the import produced valid meta-data'''
-        VolumeObj = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.VolumeDir, Create=True)
+        VolumeObj = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
 
         SectionNumber = pmgData.Section
         if SectionNumber is None:

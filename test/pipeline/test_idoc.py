@@ -20,7 +20,7 @@ import nornir_shared.misc
 import setup_pipeline
 
 
-class IDocTest(setup_pipeline.PipelineTest):
+class IDocTest(setup_pipeline.PlatformTest):
 
     @property
     def classname(self):
@@ -29,7 +29,7 @@ class IDocTest(setup_pipeline.PipelineTest):
 
     @property
     def VolumePath(self):
-        return ""
+        return "RC2_4Square"
 
     @property
     def Platform(self):
@@ -82,7 +82,11 @@ class IDocSingleSectionImportTest(IDocTest):
 
     @property
     def VolumePath(self):
-        return "17"
+        return "RC2_Micro/%d" % self.SectionNumber
+
+    @property
+    def SectionNumber(self):
+        return 17
 
     def LoadMetaData(self):
         '''Updates the object's meta-data variables from disk'''
@@ -135,28 +139,76 @@ class IDocSingleSectionImportTest(IDocTest):
         BlockNode = self.VolumeObj.find('Block')
         self.assertIsNotNone(BlockNode)
 
-        self.EnsureTilePyramidIsFull(self._getFilterNode(BlockNode, int(self.VolumePath)), 25)
-#
-# class IDocBuildTest(IDocTest):
-#
-#     def runTest(self):
-#
-#         self.RunImport()
-#         self.RunPrune()
-#         self.RunHistogram()
-#         self.RunAdjustContrast()
-#         self.RunMosaic()
-#         self.RunAssemble(Level=1)
+        self.EnsureTilePyramidIsFull(self._getFilterNode(BlockNode, self.SectionNumber), 25)
+
+
+class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
+    '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
+
+    @property
+    def VolumePath(self):
+        return "RC2_4Square_Aligned"
+
+    @property
+    def Platform(self):
+        return "IDOC"
+
+    def runTest(self):
+        BruteLevel = 32
+        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+        self.RunSliceToVolume()
+        self.RunMosaicToVolume()
+        self.RunCreateVikingXML()
+        self.RunAssembleMosaicToVolume()
+
+
+class IDocBuildTest(IDocTest):
+
+    def runTest(self):
+        self.RunImport()
+        self.RunPrune()
+        self.RunHistogram()
+        self.RunAdjustContrast()
+        self.RunMosaic()
+        self.RunAssemble(Level=1)
+
+class IDocAlignTest(setup_pipeline.CopySetupTestBase):
+    '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
+
+    @property
+    def VolumePath(self):
+        return "RC2_4Square_Assembled"
+
+    @property
+    def Platform(self):
+        return "IDOC"
+
+    def runTest(self):
+        BruteLevel = 32
+        self.RunCreateBlobFilter(Levels="8,16,%d" % (BruteLevel))
+        self.RunAlignSections(Levels=BruteLevel)
+        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel)
+        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4)
+       # self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+       # self.RunSliceToVolume()
+       # self.RunCreateVikingXML()
+       # self.RunMosaicToVolume()
+       # self.RunAssembleMosaicToVolume()
+
 
 class IdocReaderTest(IDocTest):
+
+    @property
+    def VolumePath(self):
+        return "RC2_Micro"
 
     def runTest(self):
         NumLogTiles = 25
 
-        idocDir = os.path.join(self.PlatformFullPath, '17/*.idoc')
+        idocDir = os.path.join(self.ImportedDataPath, '17/*.idoc')
         idocFiles = glob.glob(idocDir)
 
-        self.assertEqual(len(idocFiles), 1)
+        self.assertEqual(len(idocFiles), 1, "Idoc file not found")
 
         idocFile = idocFiles[0]
         self.assertTrue(os.path.exists(idocFile))
@@ -185,6 +237,10 @@ class IdocReaderTest(IDocTest):
         return
 
 class LogReaderTest(IDocTest):
+
+    @property
+    def VolumePath(self):
+        return "RC2_Micro"
 
     def validateLogEntries(self, LogData):
         NumLogTiles = 25
@@ -221,7 +277,7 @@ class LogReaderTest(IDocTest):
         self.assertEqual(TileData.endTime, 5433.453)
 
     def runTest(self):
-        logDir = os.path.join(self.PlatformFullPath, '17/*.log')
+        logDir = os.path.join(self.ImportedDataPath, '17/*.log')
         logFiles = glob.glob(logDir)
 
         self.assertEqual(len(logFiles), 1)
