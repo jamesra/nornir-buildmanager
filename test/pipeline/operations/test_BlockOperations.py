@@ -111,19 +111,24 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
         self.assertIsNotNone(StosGroupNode, "Stos pipeline did not complete")
 
 
-
-
 class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
     @property
     def Platform(self):
         '''Input for this test is a cached copy of the SliceToSliceRegistrationBruteOnlyTest test.  If the output
         of that test changes the new output must be manually copied to the test platform directory.'''
+        return "PMG"
+
+    @property
+    def VolumePath(self):
         return "SliceToSliceRegistrationBruteOnly"
+
+    def setUp(self):
+        super(SliceToSliceRegistrationSkipBrute, self).setUp()
 
     def InjectManualStosFiles(self, StosGroup, TargetDir):
 
-        stosFiles = glob.glob(os.path.join(self.PlatformFullPath, StosGroup, "Manual", "*.stos"))
+        stosFiles = glob.glob(os.path.join(self.ImportedDataPath, StosGroup, "Manual", "*.stos"))
         self.assertTrue(len(stosFiles) > 0, "Could not locate manual registration stos files for test")
 
         for stosFile in stosFiles:

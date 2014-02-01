@@ -351,7 +351,7 @@
 		<PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
 	</Pipeline>
 
-	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter.  Copies images to output directory.">
+	<Pipeline Name="AssembleDeprecated" Description="Creates an assembled image from a transform and filter.  Copies images to output directory.">
 		<Arguments>
 			<Argument flag="-Downsample" dest="Levels" type="int" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
 			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
@@ -382,12 +382,12 @@
 		</Iterate>
 	</Pipeline>
 
-	<Pipeline Name="AssembleToChannel" Description="Creates an assembled image from a transform and filter. Creates a new channel for output.">
+	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter. Creates a new channel for output.">
 		<Arguments>
 			<Argument flag="-Downsample" dest="Levels" type="int" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
 			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
-			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" type="str" help="Regular expression describing channels to be assembled" required="True"/>
+			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" default="" type="str" help="Create a new channel for the output with this prefix and the name of the input." required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Output" dest="OutputPath" help="Directory to move assembled images to" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Directory to move assembled images to" required="False"/>

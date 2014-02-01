@@ -41,14 +41,14 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
         self.StageTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Stage')
         self.PruneTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Prune')
         self.TranslateTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Translated_Prune')
-        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Refined_Prune')
-        self.ZeroGridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
+        # self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Refined_Prune')
+        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
 
         self.assertIsNotNone(self.StageTransform)
         self.assertIsNotNone(self.PruneTransform)
         self.assertIsNotNone(self.TranslateTransform)
         self.assertIsNotNone(self.GridTransform)
-        self.assertIsNotNone(self.ZeroGridTransform)
+        # self.assertIsNotNone(self.ZeroGridTransform)
 
     def setUp(self):
 
@@ -60,7 +60,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
         self.ValidateAllTransforms(self.ChannelData)
 
-        self.assertFalse(self.ZeroGridTransform.Checksum == self.GridTransform.Checksum)
+        # self.assertFalse(self.ZeroGridTransform.Checksum == self.GridTransform.Checksum)
 
         # Make sure the checksum test is able to fail
         self.assertTrue(transforms.IsOutdated(self.PruneTransform, self.TranslateTransform))

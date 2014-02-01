@@ -57,6 +57,10 @@ class VolumeEntry(object):
 
 
 class PlatformTest(test.testbase.TestBase):
+    '''Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class. 
+       Eventually all platforms should have the same standard tests taking input to a volume under this framework to ensure basic functionality
+       is operating.  At this time the IDOC platform is the only one with a complete test.  PMG has a thorough test not entirely integrated with
+       this class'''
 
     @property
     def VolumeDir(self):
@@ -64,7 +68,7 @@ class PlatformTest(test.testbase.TestBase):
 
     @property
     def VolumePath(self):
-        raise Exception("Platform property not implemented")
+        raise Exception("VolumePath property not implemented")
 
     @property
     def Platform(self):
@@ -207,7 +211,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunAssemble(self, Level=8):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('AssembleToChannel', '-ChannelPrefix', 'Assembled', '-Transform', 'Grid', '-Filters', 'Leveled', '-Downsample', str(Level), '-NoInterlace')
+        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', 'Grid', '-Filters', 'Leveled', '-Downsample', str(Level), '-NoInterlace')
         volumeNode = self.RunBuild(buildArgs)
 
         ChannelNode = volumeNode.find("Block/Section/Channel")
@@ -287,11 +291,22 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunAssembleMosaicToVolume(self, AssembleLevel=8):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('AssembleToChannel', '-ChannelPrefix', 'Registered_', '-Channels', 'TEM', '-Filters', 'Leveled', '-Downsample', str(AssembleLevel), '-Transform', 'ChannelToVolume', '-NoInterlace')
+        imageOutputPath = os.path.join(self.TestOutputPath, 'AssembleOutput')
+
+        buildArgs = self._CreateBuildArgs('Assemble', '-ChannelPrefix', 'Registered_',
+                                                               '-Channels', 'TEM',
+                                                               '-Filters', 'Leveled',
+                                                               '-Downsample', str(AssembleLevel),
+                                                               '-Transform', 'ChannelToVolume',
+                                                               '-NoInterlace',
+                                                               '-Output', imageOutputPath)
         volumeNode = self.RunBuild(buildArgs)
 
         OutputChannelNode = volumeNode.find("Block/Section/Channel[@Name='Registered_TEM']")
         self.assertIsNotNone(OutputChannelNode, "Output channel not created")
+
+        OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))
+        self.assertTrue(len(OutputPngs) > 0)
 
         return volumeNode
 
