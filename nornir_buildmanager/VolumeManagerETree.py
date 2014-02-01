@@ -1907,6 +1907,35 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
 
+    @property
+    def CropBox(self):
+        '''Returns boundaries of transform output if available, otherwise none
+           :rtype tuple:
+           :return (Xo, Yo, Width, Height):
+        '''
+
+        if 'CropBox' in self.attrib:
+            return nornir_shared.misc.ListFromAttribute(self.attrib['CropBox'])
+        else:
+            return None
+
+    @CropBox.setter
+    def CropBox(self, bounds):
+        '''Sets boundaries in fixed space for output from the transform.
+        :param bounds tuple:  (Xo, Yo, Width, Height) or (Width, Height)
+        '''
+        if len(bounds) == 4:
+            self.attrib['CropBox'] = "%g,%g,%g,%g" % bounds
+        elif len(bounds) == 2:
+            self.attrib['CropBox'] = "0,0,%g,%g" % bounds
+        elif bounds is None:
+            if 'CropBox' in self.attrib:
+                del self.attrib['CropBox']
+        else:
+            raise Exception("Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
+
+
+
     def IsValid(self):
         valid = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
