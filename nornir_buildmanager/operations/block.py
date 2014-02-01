@@ -1208,7 +1208,10 @@ def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGr
         Node = rt.Nodes[sectionNumber]
         SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, ControlToVolumeTransform=None)
 
-    TranslateVolumeToZeroOrigin(OutputGroupNode)
+    # TranslateVolumeToZeroOrigin(OutputGroupNode)
+    # Do not use TranslateVolumeToZeroOrigin here because the center of the volume image does not get shifted with the rest of the sections. That is a problem.  We should probably create an identity transform for the root nodes in
+    # the registration tree
+
 
     if SaveBlockNode:
         return BlockNode
@@ -1462,23 +1465,9 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
             Tasks.append(task)
 
-        # Find the bounding box of the original transform in case we want to crop the output from ir-assemble to produce images of identical size
-
-        minX = float('Inf')
-        minY = float('Inf')
-        maxX = -float('Inf')
-        maxY = -float('Inf')
-
         for task in Tasks:
             MosaicToVolume = task.wait_return()
-            (minX, minY, maxX, maxY) = MosaicToVolume.FixedBoundingBox
             MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
-
-        # Move mosaic to zero origin again
-        ControlImageBounds = MosaicTransform.FixedBoundingBox
-
-        CropBoxString = ','.join(str(x) for x in (ControlImageBounds))
-        OutputTransformNode.CropBox = CropBoxString
 
         OutputMosaicFile = MosaicTransform.ToMosaicFile()
         OutputMosaicFile.Save(OutputTransformNode.FullPath)
@@ -1509,7 +1498,20 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
         StosMosaicTransforms.append(OutputTransformNode)
 
     mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
+
+    # Translate needs to accound for the fact that the mosaics need an origin of 0,0 for assemble to work.  We also need to figure out the largest image dimension
+    # and set the CropBox property so each image is the same size after assemble is used.
     mosaicToVolume.TranslateToZeroOrigin()
+
+    (minX, minY, maxX, maxY) = mosaicToVolume.VolumeBounds
+
+    # Failing these asserts means the translate to zero origin function is not actually translating to a zero origin
+    assert(minX >= 0)
+    assert(minY >= 0)
+
+    for transform in StosMosaicTransforms:
+        transform.CropBox = (maxX, maxY)
+
     mosaicToVolume.Save()
 
     return BlockNode

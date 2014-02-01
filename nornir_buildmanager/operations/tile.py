@@ -855,8 +855,23 @@ def MigrateMultipleImageSets(FilterNode, Logger, **kwargs):
     # return MigrationOccurred
 
 
-def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, ThumbnailSize=256, Interlace=True, **kwargs):
-    return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, ThumbnailSize, Interlace, **kwargs)
+def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
+    return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, **kwargs)
+
+
+def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
+    '''If prefix is empty return the input channel.  Otherwise create a new channel with the prefix'''
+
+    OutputName = InputChannelNode.Name
+
+    if not prefix is None and len(prefix) > 0:
+        OutputName = prefix + OutputName
+    else:
+        return InputChannelNode
+
+    [added, OutputChannelNode] = InputChannelNode.Parent.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManager.ChannelNode(OutputName, OutputName))
+
+    return OutputChannelNode
 
 
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
@@ -867,13 +882,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     InputChannelNode = FilterNode.FindParent('Channel')
     SectionNode = InputChannelNode.FindParent('Section')
 
-    OutputChannelNode = InputChannelNode
-
-    if OutputChannelPrefix is None:
-        OutputChannelPrefix = "Assembled"
-
-    [added, OutputChannelNode] = InputChannelNode.Parent.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManager.ChannelNode(OutputChannelPrefix + InputChannelNode.Name,
-                                                            OutputChannelPrefix + InputChannelNode.Name))
+    OutputChannelNode = __GetOrCreateOutputChannelForPrefix(OutputChannelPrefix, InputChannelNode)
 
     OutputFilterNode = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
     OutputMaskFilterNode = OutputChannelNode.GetOrCreateFilter(MaskFilterNode.Name)
@@ -943,20 +952,20 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
             Logger.error("No output produced assembling " + TransformNode.FullPath)
             return None
 
-#         if hasattr(TransformNode, 'CropBox'):
-#             cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
-#             (Xo, Yo, Width, Height) = nornir_shared.misc.ListFromAttribute(TransformNode.CropBox)
-#
-#             # Figure out the downsample level, adjust the crop box, and crop
-#             Xo = Xo / float(thisLevel)
-#             Yo = Yo / float(thisLevel)
-#             Width = Width / float(thisLevel)
-#             Height = Height / float(thisLevel)
-#
-#             Logger.warn("Cropping assembled image to volume boundary")
-#
-#             mosaicImage = core.CropImage(mosaicImage, Xo, Yo, Width, Height)
-#             maskImage = core.CropImage(maskImage, Xo, Yo, Width, Height)
+        if not TransformNode.CropBox is None:
+            cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
+            (Xo, Yo, Width, Height) = TransformNode.CropBox
+
+            # Figure out the downsample level, adjust the crop box, and crop
+            Xo = Xo / float(thisLevel)
+            Yo = Yo / float(thisLevel)
+            Width = Width / float(thisLevel)
+            Height = Height / float(thisLevel)
+
+            Logger.warn("Cropping assembled image to volume boundary")
+
+            mosaicImage = core.CropImage(mosaicImage, Xo, Yo, Width, Height)
+            maskImage = core.CropImage(maskImage, Xo, Yo, Width, Height)
 
         imsave(tempOutputFullPath, mosaicImage)
         imsave(tempMaskOutputFullPath, maskImage)
