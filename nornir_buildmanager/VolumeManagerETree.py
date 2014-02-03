@@ -1245,7 +1245,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         TempXMLFilename = os.path.join(self.FullPath, 'Temp_' + xmlfilename)
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
 
-        prettyoutput.Log("Saving %s" % XMLFilename)
+        # prettyoutput.Log("Saving %s" % XMLFilename)
 
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
        # print OutputXML
