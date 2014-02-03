@@ -1189,7 +1189,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         logger = logging.getLogger('VolumeManager')
         tabs = '\t' * tabLevel
-        logger.info('Saving ' + tabs + str(self))
+        # logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
 
         # Create a copy of ourselves for saving.  If this is not done we have the potential to change a collection during iteration
