@@ -127,6 +127,14 @@ class HTMLPaths(object):
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
 
 
+    def CreateOutputDirs(self):
+
+        if not os.path.exists(self.OutputDir):
+            os.makedirs(self.OutputDir)
+
+        if not os.path.exists(self.ThumbnailDir):
+            os.makedirs(self.ThumbnailDir)
+
     @classmethod
     def __StripLeadingPathSeperator(cls, path):
         while(path[0] == os.sep or path[0] == os.altsep):
@@ -631,6 +639,8 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     Paths = HTMLPaths(RootElement.FullPath, OutputFile)
 
+    Paths.CreateOutputDirs()
+
     # OK, start walking the columns.  Then walk the rows
     RowElements = list(ReportingElement.findall(RowXPath))
     if RowElements is None:
@@ -650,8 +660,6 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
         if RowLabel is None:
             RowLabel = RowElement
-
-
 
         # task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
         # tasks.append(task)
