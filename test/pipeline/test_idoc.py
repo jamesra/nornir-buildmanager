@@ -170,6 +170,7 @@ class IDocBuildTest(IDocTest):
         self.RunHistogram()
         self.RunAdjustContrast()
         self.RunMosaic()
+        self.RunMosaicReport()
         self.RunAssemble(Level=1)
 
 class IDocAlignTest(setup_pipeline.CopySetupTestBase):

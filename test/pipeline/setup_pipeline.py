@@ -221,6 +221,20 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
+    def RunMosaicReport(self, ContrastFilter=None):
+        if ContrastFilter is None:
+            ContrastFilter = "Leveled"
+
+        buildArgs = self._CreateBuildArgs('MosaicReport', '-PruneFilter', 'Raw8', '-ContrastFilter', 'Leveled', '-AssembleFilter', 'Leveled', '-AssembleDownsample', '8')
+        volumeNode = self.RunBuild(buildArgs)
+
+        OutputHtml = glob.glob(os.path.join(self.TestOutputPath, '*.html'))
+        self.assertTrue(len(OutputHtml) > 0)
+
+        return volumeNode
+
+
+
     def RunCreateBlobFilter(self, Levels):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', 'AssembledTEM', '-InputFilter', 'Leveled', '-Levels', Levels, '-OuputFilter', 'Blob')
@@ -230,6 +244,8 @@ class PlatformTest(test.testbase.TestBase):
 
         AssembledImageNode = ChannelNode.find("Filter[@Name='Blob']/ImageSet/Level[@Downsample='%d']/Image" % 8)
         self.assertIsNotNone(AssembledImageNode, "No blob Image node produced from CreateBlobFilter pipeline")
+
+        self.assertTrue(os.path.exists(AssembledImageNode.FullPath), "No file found for assembled image node")
 
         return volumeNode
 
