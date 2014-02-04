@@ -202,7 +202,7 @@ class VolumeManager():
         # cls.__SortNodes__(VolumeObj)
         # cls.__RemoveEmptyElements__(VolumeObj)
 
-        VolumeObj.Save()
+        VolumeObj.Save(tabLevel=None)
 
 #        #Make sure any changes are accounted for by calculating a new checksum
 #        NewChecksum = cls.CalcVolumeChecksum(VolumeObj)
@@ -1189,6 +1189,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         logger = logging.getLogger('VolumeManager')
         tabs = '\t' * tabLevel
+
+        if hasattr(self, 'FullPath'):
+            logger.info("Saving " + self.FullPath)
+
         # logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
 
