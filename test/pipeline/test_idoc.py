@@ -154,6 +154,9 @@ class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
         return "IDOC"
 
     def runTest(self):
+        # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+        return
+
         BruteLevel = 32
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
@@ -173,6 +176,19 @@ class IDocBuildTest(IDocTest):
         self.RunMosaicReport()
         self.RunAssemble(Level=1)
 
+        BruteLevel = 32
+
+        self.RunCreateBlobFilter(Levels="8,16,%d" % (BruteLevel))
+        self.RunAlignSections(Levels=BruteLevel)
+        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel)
+        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4)
+
+        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+        self.RunSliceToVolume()
+        self.RunMosaicToVolume()
+        self.RunCreateVikingXML()
+        self.RunAssembleMosaicToVolume()
+
 class IDocAlignTest(setup_pipeline.CopySetupTestBase):
     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
 
@@ -185,6 +201,10 @@ class IDocAlignTest(setup_pipeline.CopySetupTestBase):
         return "IDOC"
 
     def runTest(self):
+
+         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+        return
+
         BruteLevel = 32
         self.RunCreateBlobFilter(Levels="8,16,%d" % (BruteLevel))
         self.RunAlignSections(Levels=BruteLevel)

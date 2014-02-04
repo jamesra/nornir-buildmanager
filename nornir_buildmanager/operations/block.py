@@ -1034,22 +1034,24 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                                                                       'Name', MappedFilterPattern)[0]
 
             # GetOrCreate the group for these stos files
-            StosGroupNode = VolumeManagerETree.XContainerElementWrapper('StosGroup', OutputStosGroupName, OutputStosGroupName, {'Downsample' : str(OutputDownsample)})
-            (added, StosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(StosGroupNode)
+            OutputStosGroupNode = VolumeManagerETree.XContainerElementWrapper('StosGroup', OutputStosGroupName, OutputStosGroupName, {'Downsample' : str(OutputDownsample)})
+            (added, OutputStosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosGroupNode)
 
             if added:
                 SaveBlockNode = True
 
-            if not os.path.exists(StosGroupNode.FullPath):
-                os.makedirs(StosGroupNode.FullPath)
+            if not os.path.exists(OutputStosGroupNode.FullPath):
+                os.makedirs(OutputStosGroupNode.FullPath)
 
             OutputFile = __StosFilename(ControlFilter, MappedFilter)
-            OutputStosFullPath = os.path.join(StosGroupNode.FullPath, OutputFile)
-            stosNode = StosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType="grid", OutputPath=OutputFile)
+            OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
+            stosNode = OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter)
+            if stosNode is None:
+                stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType="grid", OutputPath=OutputFile)
 
-            ManualStosFileFullPath = __FindManualStosFile(StosGroupNode=StosGroupNode, InputTransformNode=stosNode)
+            ManualStosFileFullPath = __FindManualStosFile(StosGroupNode=OutputStosGroupNode, InputTransformNode=stosNode)
 
-            (InputStosFullPath, InputStosFileChecksum) = __GetInputStosFileForRegistration(StosGroupNode=StosGroupNode,
+            (InputStosFullPath, InputStosFileChecksum) = __GetInputStosFileForRegistration(StosGroupNode=OutputStosGroupNode,
                                                                     InputTransformNode=InputTransformNode,
                                                                     ControlFilter=ControlFilter,
                                                                     MappedFilter=MappedFilter,
@@ -1061,9 +1063,8 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                 InputGroupNode.remove(InputTransformNode)
                 continue
 
-
             OutputSectionMappingNode = VolumeManagerETree.XElementWrapper('SectionMappings', InputSectionMappingNode.attrib)
-            (added, OutputSectionMappingNode) = StosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode, 'MappedSectionNumber')
+            (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode, 'MappedSectionNumber')
             if added:
                 SaveGroupNode = True
 
@@ -1073,12 +1074,17 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 
             # Remove our output if it was generated from an input transform with a different checksum
             if os.path.exists(OutputStosFullPath):
-                stosNode = OutputSectionMappingNode.GetChildByAttrib('Transform', 'ControlSectionNumber', InputTransformNode.ControlSectionNumber)
+                # stosNode = OutputSectionMappingNode.GetChildByAttrib('Transform', 'ControlSectionNumber', InputTransformNode.ControlSectionNumber)
                 if not stosNode is None:
                     if 'InputTransformChecksum' in stosNode.attrib:
                         if(InputStosFileChecksum != stosNode.InputTransformChecksum):
                             os.remove(OutputStosFullPath)
                             SaveGroupNode = True
+
+                            # Remove old stos meta-data and create from scratch to avoid stale data.
+                            OutputSectionMappingNode.remove(stosNode)
+                            stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType="grid", OutputPath=OutputFile)
+
 #                    else:
 #                        os.remove(OutputStosFullPath)
 #                        SaveGroupNode = True
@@ -1089,7 +1095,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
     #        FixStosFilePaths(ControlFilter, MappedFilter, InputTransformNode, OutputDownsample, StosFilePath=InputStosFullPath)
             if not os.path.exists(OutputStosFullPath):
 
-                ManualStosFileFullPath = __FindManualStosFile(StosGroupNode=StosGroupNode, InputTransformNode=stosNode)
+                ManualStosFileFullPath = __FindManualStosFile(StosGroupNode=OutputStosGroupNode, InputTransformNode=stosNode)
                 if ManualStosFileFullPath is None:
                     argstring = misc.ArgumentsFromDict(Parameters)
                     StosGridTemplate = 'ir-stos-grid -save %(OutputStosFullPath)s -load %(InputStosFullPath)s ' + argstring
@@ -1120,7 +1126,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
     if SaveBlockNode:
         return BlockNode
     if SaveGroupNode:
-        return StosGroupNode
+        return OutputStosGroupNode
 
     return None
 
@@ -1543,8 +1549,8 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
         _ApplyStosToMosaicTransform(None, TransformNode, OutputTransformName, Logger, **kwargs)
     else:
         for stostransform in SectionMappingNode.Transforms:
-            # if not stostransform.MappedChannelName == MappedChannelNode.Name:
-            #    continue
+            if not stostransform.MappedChannelName == MappedChannelNode.Name:
+                continue
 
             if not int(stostransform.ControlSectionNumber) == ControlSectionNumber:
                 continue

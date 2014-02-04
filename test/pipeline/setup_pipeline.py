@@ -98,7 +98,7 @@ class PlatformTest(test.testbase.TestBase):
         return VolumeObj
 
     def _CreateBuildArgs(self, pipeline=None, *args):
-        pargs = ['-input', self.ImportedDataPath, '-volume', self.TestOutputPath, '-debug']
+        pargs = ['-volume', self.TestOutputPath, '-debug']
 
         if isinstance(pipeline, str):
             pargs.append('-pipeline')
@@ -163,7 +163,7 @@ class PlatformTest(test.testbase.TestBase):
         self.RunAssemble()
 
     def RunImport(self):
-        buildArgs = self._CreateBuildArgs(pipeline=None)
+        buildArgs = self._CreateBuildArgs(None, '-input', self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
     def RunPrune(self):
@@ -237,10 +237,10 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunCreateBlobFilter(self, Levels):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', 'AssembledTEM', '-InputFilter', 'Leveled', '-Levels', Levels, '-OuputFilter', 'Blob')
+        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', 'TEM', '-InputFilter', 'Leveled', '-Levels', Levels, '-OuputFilter', 'Blob')
         volumeNode = self.RunBuild(buildArgs)
 
-        ChannelNode = volumeNode.find("Block/Section/Channel[@Name='AssembledTEM']")
+        ChannelNode = volumeNode.find("Block/Section/Channel[@Name='TEM']")
 
         AssembledImageNode = ChannelNode.find("Filter[@Name='Blob']/ImageSet/Level[@Downsample='%d']/Image" % 8)
         self.assertIsNotNone(AssembledImageNode, "No blob Image node produced from CreateBlobFilter pipeline")
@@ -251,7 +251,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunAlignSections(self, Levels):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', 'Blob', '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', 'AssembledTEM')
+        buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', 'Blob', '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', 'TEM')
         volumeNode = self.RunBuild(buildArgs)
 
         PotentialStosMap = volumeNode.find("Block/StosMap[@Name='PotentialRegistrationChain']")
