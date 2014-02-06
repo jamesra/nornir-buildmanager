@@ -938,8 +938,11 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
-        LevelFormatStr = LevelFormatTemplate % thisLevel
-        ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
+        # LevelFormatStr = LevelFormatTemplate % thisLevel
+        InputLevelNode = FilterNode.TilePyramid.GetOrCreateLevel(thisLevel)
+
+        ImageDir = InputLevelNode.FullPath
+        # ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
 
         tempOutputFullPath = os.path.join(ImageDir, 'Temp.png')
         tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask.png')
