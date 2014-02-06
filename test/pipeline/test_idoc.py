@@ -35,21 +35,6 @@ class IDocTest(setup_pipeline.PlatformTest):
     def Platform(self):
         return "IDoc"
 
-    def EnsureTilePyramidIsFull(self, FilterNode, NumExpectedTiles):
-
-
-        TilePyramidNode = FilterNode.TilePyramid
-        self.assertIsNotNone(TilePyramidNode)
-
-        LevelOneNode = TilePyramidNode.GetLevel(1)
-        self.assertIsNotNone(LevelOneNode)
-
-        globpath = os.path.join(LevelOneNode.FullPath, '*' + TilePyramidNode.ImageFormatExt)
-        tiles = glob.glob(globpath)
-        self.assertEqual(NumExpectedTiles, len(tiles), 'Did not find %d tile in %s' % (NumExpectedTiles, globpath))
-        self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles), "Did not find %d tiles reported by meta-data in %s" % (TilePyramidNode.NumberOfTiles, globpath))
-        return
-
 #    def setUp(self):
 #
 #        '''Imports a PMG volume and stops, tests call pipeline functions'''
@@ -162,32 +147,34 @@ class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
         self.RunCreateVikingXML()
-        self.RunAssembleMosaicToVolume()
+        self.RunAssembleMosaicToVolume(Channels="TEM")
 
 
 class IDocBuildTest(IDocTest):
 
     def runTest(self):
+
         self.RunImport()
         self.RunPrune()
         self.RunHistogram()
         self.RunAdjustContrast()
-        self.RunMosaic()
+        self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
         self.RunAssemble(Level=1)
+        self.RunMosaicReport()
 
         BruteLevel = 32
 
-        self.RunCreateBlobFilter(Levels="8,16,%d" % (BruteLevel))
-        self.RunAlignSections(Levels=BruteLevel)
-        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel)
-        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4)
+        self.RunCreateBlobFilter(Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+        self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
+        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
 
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
         self.RunCreateVikingXML()
-        self.RunAssembleMosaicToVolume()
+        self.RunAssembleMosaicToVolume(Channels="TEM")
 
 class IDocAlignTest(setup_pipeline.CopySetupTestBase):
     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
@@ -201,20 +188,21 @@ class IDocAlignTest(setup_pipeline.CopySetupTestBase):
         return "IDOC"
 
     def runTest(self):
-
-         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
         return
+         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+        # return
 
         BruteLevel = 32
-        self.RunCreateBlobFilter(Levels="8,16,%d" % (BruteLevel))
-        self.RunAlignSections(Levels=BruteLevel)
-        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel)
-        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4)
-       # self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
-       # self.RunSliceToVolume()
-       # self.RunCreateVikingXML()
-       # self.RunMosaicToVolume()
-       # self.RunAssembleMosaicToVolume()
+        self.RunCreateBlobFilter(Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+        self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
+        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+
+        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+        self.RunSliceToVolume()
+        self.RunMosaicToVolume()
+        self.RunCreateVikingXML()
+        self.RunAssembleMosaicToVolume(Channels="TEM")
 
 
 class IdocReaderTest(IDocTest):

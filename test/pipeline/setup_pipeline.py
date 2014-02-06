@@ -143,6 +143,19 @@ class PlatformTest(test.testbase.TestBase):
         # Check that
         self.assertFalse(transforms.IsOutdated(self.PruneTransform, self.StageTransform))
 
+    def EnsureTilePyramidIsFull(self, FilterNode, NumExpectedTiles):
+
+        TilePyramidNode = FilterNode.TilePyramid
+        self.assertIsNotNone(TilePyramidNode)
+
+        LevelOneNode = TilePyramidNode.GetLevel(1)
+        self.assertIsNotNone(LevelOneNode)
+
+        globpath = os.path.join(LevelOneNode.FullPath, '*' + TilePyramidNode.ImageFormatExt)
+        tiles = glob.glob(globpath)
+        self.assertEqual(NumExpectedTiles, len(tiles), 'Did not find %d tile in %s' % (NumExpectedTiles, globpath))
+        self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles), "Did not find %d tiles reported by meta-data in %s" % (TilePyramidNode.NumberOfTiles, globpath))
+        return
 
     def ValidateAllTransforms(self, ParentNode):
         '''Check every transform in the parent node to ensure that if it refers to an input transform the values match'''
@@ -156,7 +169,7 @@ class PlatformTest(test.testbase.TestBase):
         self.RunPrune()
         self.RunHistogram()
         self.RunAdjustContrast()
-        self.RunMosaic()
+        self.RunMosaic(Filter="Leveled")
 
     def RunImportThroughMosaicAssemble(self):
         self.RunImportThroughMosaic()
@@ -166,9 +179,15 @@ class PlatformTest(test.testbase.TestBase):
         buildArgs = self._CreateBuildArgs(None, '-input', self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
-    def RunPrune(self):
+    def RunPrune(self, Filter=None, Downsample=None):
+        if Filter is None:
+            Filter = "Raw8"
+
+        if Downsample is None:
+            Downsample = 4
+
         # Prune
-        buildArgs = self._CreateBuildArgs('Prune', '-OutputTransform', 'Prune', '-Downsample', '4', '-Threshold', '1.0')
+        buildArgs = self._CreateBuildArgs('Prune', '-InputFilter', Filter, '-OutputTransform', 'Prune', '-Downsample', str(Downsample), '-Threshold', '1.0')
         volumeNode = self.RunBuild(buildArgs)
 
         self.assertIsNotNone(volumeNode, "No volume node returned from build")
@@ -178,30 +197,57 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunHistogram(self):
-        # Adjust Contrast
-        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', 'Raw8', '-Downsample', '4', '-InputTransform', 'Prune')
+    def RunShadingCorrection(self, ChannelPattern, CorrectionType=None, FilterPattern=None):
+        if FilterPattern is None:
+            FilterPattern = '(?![M|m]ask)'
+
+        if CorrectionType is None:
+            CorrectionType = 'brightfield'
+
+        volumeNode = VolumeManager.Load(self.TestOutputPath)
+        StartingFilter = volumeNode.find("Block/Section/Channel/Filter")
+        self.assertIsNotNone(StartingFilter, "No starting filter node for shading correction")
+
+        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Filters', FilterPattern, 'OutputFilter', 'ShadingCorrected', '-InputTransform', 'Raw8', '-Correction', CorrectionType)
         volumeNode = self.RunBuild(buildArgs)
 
-        HistogramNode = volumeNode.find("Block/Section/Channel/Filter[@Name='Raw8']/Histogram")
+        ExpectedOutputFilter = 'ShadingCorrected' + StartingFilter.Name
+
+        FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']" % ExpectedOutputFilter)
+        self.assertIsNotNone(ExpectedOutputFilter, "No filter node produced for contrast adjustment")
+
+
+    def RunHistogram(self, Filter=None):
+        if Filter is None:
+            Filter = 'Raw8'
+
+        # Adjust Contrast
+        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', Filter, '-Downsample', '4', '-InputTransform', 'Prune')
+        volumeNode = self.RunBuild(buildArgs)
+
+        HistogramNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']/Histogram" % Filter)
         self.assertIsNotNone(HistogramNode, "No histogram node produced for histogram")
 
         return volumeNode
 
-    def RunAdjustContrast(self):
+    def RunAdjustContrast(self, Filter=None):
+        if Filter is None:
+            Filter = 'Raw8'
 
         # Adjust Contrast
-        buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', 'Raw8', '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+        buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
         volumeNode = self.RunBuild(buildArgs)
 
-        FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='Leveled']")
+        FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']" % Filter)
         self.assertIsNotNone(FilterNode, "No filter node produced for contrast adjustment")
 
         return volumeNode
 
-    def RunMosaic(self):
+    def RunMosaic(self, Filter):
+        if Filter is None:
+            Filter = 'Leveled'
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', 'Prune', '-InputFilter', 'Leveled', '-OutputTransform', 'Grid')
+        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', 'Prune', '-InputFilter', Filter, '-OutputTransform', 'Grid')
         volumeNode = self.RunBuild(buildArgs)
 
         TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")
@@ -209,9 +255,12 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunAssemble(self, Level=8):
+    def RunAssemble(self, Filter=None, Level=8):
+        if Filter is None:
+            Filter = "Leveled"
+
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', 'Grid', '-Filters', 'Leveled', '-Downsample', str(Level), '-NoInterlace')
+        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', 'Grid', '-Filters', Filter, '-Downsample', str(Level), '-NoInterlace')
         volumeNode = self.RunBuild(buildArgs)
 
         ChannelNode = volumeNode.find("Block/Section/Channel")
@@ -221,11 +270,14 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunMosaicReport(self, ContrastFilter=None):
+    def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8):
         if ContrastFilter is None:
             ContrastFilter = "Leveled"
 
-        buildArgs = self._CreateBuildArgs('MosaicReport', '-PruneFilter', 'Raw8', '-ContrastFilter', 'Leveled', '-AssembleFilter', 'Leveled', '-AssembleDownsample', '8')
+        if AssembleFilter is None:
+            AssembleFilter = "Leveled"
+
+        buildArgs = self._CreateBuildArgs('MosaicReport', '-PruneFilter', 'Raw8', '-ContrastFilter', ContrastFilter, '-AssembleFilter', AssembleFilter, '-AssembleDownsample', str(AssembleDownsample))
         volumeNode = self.RunBuild(buildArgs)
 
         OutputHtml = glob.glob(os.path.join(self.TestOutputPath, '*.html'))
@@ -233,14 +285,18 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
+    def RunCreateBlobFilter(self, Channels, Levels, Filter):
+        if Channels is None:
+            Channels = "*"
 
+        if Filter is None:
+            Filter = 'Leveled'
 
-    def RunCreateBlobFilter(self, Levels):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', 'TEM', '-InputFilter', 'Leveled', '-Levels', Levels, '-OuputFilter', 'Blob')
+        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', Channels, '-InputFilter', Filter, '-Levels', Levels, '-OuputFilter', 'Blob')
         volumeNode = self.RunBuild(buildArgs)
 
-        ChannelNode = volumeNode.find("Block/Section/Channel[@Name='TEM']")
+        ChannelNode = volumeNode.find("Block/Section/Channel")
 
         AssembledImageNode = ChannelNode.find("Filter[@Name='Blob']/ImageSet/Level[@Downsample='%d']/Image" % 8)
         self.assertIsNotNone(AssembledImageNode, "No blob Image node produced from CreateBlobFilter pipeline")
@@ -249,9 +305,9 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunAlignSections(self, Levels):
+    def RunAlignSections(self, Channels, Filters, Levels):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', 'Blob', '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', 'TEM')
+        buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', Channels)
         volumeNode = self.RunBuild(buildArgs)
 
         PotentialStosMap = volumeNode.find("Block/StosMap[@Name='PotentialRegistrationChain']")
@@ -265,7 +321,7 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel):
+    def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('RefineSectionAlignment', '-InputGroup', InputGroup, '-InputDownsample', str(InputLevel), '-OutputGroup', OutputGroup, '-OutputDownsample', str(OutputLevel), '-Filter', 'Leveled', '-StosUseMasks', 'True')
         volumeNode = self.RunBuild(buildArgs)
@@ -297,29 +353,38 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunMosaicToVolume(self):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('MosaicToVolume', '-InputTransform', 'Grid', '-OutputTransform', 'ChannelToVolume', '-Channels', 'TEM')
+        buildArgs = self._CreateBuildArgs('MosaicToVolume', '-InputTransform', 'Grid', '-OutputTransform', 'ChannelToVolume', '-Channels', '*')
         volumeNode = self.RunBuild(buildArgs)
 
-        MosaicToVolumeTransformNode = volumeNode.find("Block/Section/Channel[@Name='TEM']/Transform[@Name='ChannelToVolume']")
+        MosaicToVolumeTransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='ChannelToVolume']")
         self.assertIsNotNone(MosaicToVolumeTransformNode, "No mosaic to volume transform created")
 
         return volumeNode
 
-    def RunAssembleMosaicToVolume(self, AssembleLevel=8):
+    def RunAssembleMosaicToVolume(self, Channels, Filters=None, AssembleLevel=8):
+
+        if Filters is None:
+            Filters = "Leveled"
+
         # Build Mosaics
         imageOutputPath = os.path.join(self.TestOutputPath, 'AssembleOutput')
 
         buildArgs = self._CreateBuildArgs('Assemble', '-ChannelPrefix', 'Registered_',
-                                                               '-Channels', 'TEM',
-                                                               '-Filters', 'Leveled',
+                                                               '-Channels', '*',
+                                                               '-Filters', Filters,
                                                                '-Downsample', str(AssembleLevel),
                                                                '-Transform', 'ChannelToVolume',
                                                                '-NoInterlace',
                                                                '-Output', imageOutputPath)
         volumeNode = self.RunBuild(buildArgs)
 
-        OutputChannelNode = volumeNode.find("Block/Section/Channel[@Name='Registered_TEM']")
-        self.assertIsNotNone(OutputChannelNode, "Output channel not created")
+        FoundOutput = False
+        for channelNode in volumeNode.findall("Block/Section/Channel"):
+            if "Registered" in channelNode.Name:
+                FoundOutput = True
+                break
+
+        self.assertTrue(FoundOutput, "Output channel not created")
 
         OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))
         self.assertTrue(len(OutputPngs) > 0)
