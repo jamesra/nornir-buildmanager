@@ -1492,6 +1492,8 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
 
     StosMosaicTransforms = []
 
+
+
     for channelNode in MatchingChannelNodes:
         transformNode = channelNode.GetChildByAttrib('Transform', 'Name', InputTransformName)
 
@@ -1501,7 +1503,11 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
         BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, transformNode, OutputTransformName, Logger, **kwargs)
 
         OutputTransformNode = channelNode.GetChildByAttrib('Transform', 'Name', OutputTransformName)
-        StosMosaicTransforms.append(OutputTransformNode)
+        if not OutputTransformNode is None:
+            StosMosaicTransforms.append(OutputTransformNode)
+
+    if len(StosMosaicTransforms) == 0:
+        return
 
     mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
 
