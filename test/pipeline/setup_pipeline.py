@@ -316,7 +316,7 @@ class PlatformTest(test.testbase.TestBase):
         FinalStosMap = volumeNode.find("Block/StosMap[@Name='FinalStosMap']")
         self.assertIsNotNone(FinalStosMap)
 
-        StosBruteGroupNode = volumeNode.find("Block/StosGroup[@Name='StosBrute32']")
+        StosBruteGroupNode = volumeNode.find("Block/StosGroup[@Name='StosBrute%d']" % Levels)
         self.assertIsNotNone(StosBruteGroupNode, "No Stos Group node produced")
 
         return volumeNode
