@@ -16,16 +16,20 @@ from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
 
+import nornir_imageregistration.mosaic as mosaic
 
-def TranslateTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):
+
+def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
     '''@ChannelNode'''
     MaxOffsetX = Parameters.get('MaxOffsetX', 0.1)
     MaxOffsetY = Parameters.get('MaxOffsetY', 0.1)
     BlackMaskX = Parameters.get('BlackMaskX', None)
     BlackMaskY = Parameters.get('BlackMaskY', None)
 
-    OutputTransformName = kwargs.get('OutputTransform', 'Translate')
+    OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
     InputTransformNode = TransformNode
+
+    LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
     MangledName = misc.GenNameFromDict(Parameters)
 
@@ -85,8 +89,12 @@ def TranslateTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):
                     Logger.error(errmsg)
 
                     # raise Exception(errmsg)
+                else:
+                    # Thigs are OK, translate to a zero origin.
+                    mosaic.Mosaic.TranslateMosaicFileToZeroOrigin(OutputTransformNode.FullPath)
 
             SaveRequired = os.path.exists(OutputTransformNode.FullPath)
+
         finally:
             if os.path.exists(mosaicFullPath):
                 os.remove(mosaicFullPath)
@@ -96,19 +104,19 @@ def TranslateTransform(Parameters, TransformNode, LevelNode, Logger, **kwargs):
     else:
         return None
 
-def GridTransform(TransformNode, LevelNode, Logger, **kwargs):
+def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
     '''@ChannelNode'''
-    Parameters = kwargs["Parameters"]
-
     Iterations = Parameters.get('it', 10)
     Cell = Parameters.get('Cell', None)
     MeshWidth = Parameters.get('MeshWidth', 6)
     MeshHeight = Parameters.get('MeshHeight', 6)
     Threshold = Parameters.get('Threshold', None)
 
-    Parameters['sp'] = int(LevelNode.Downsample)
+    LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
-    OutputTransformName = 'Grid'
+    Parameters['sp'] = int(RegistrationDownsample)
+
+    OutputTransformName = kwargs.get('OutputTransform', 'Refined_' + TransformNode.Name)
 
     MangledName = misc.GenNameFromDict(Parameters)
 
@@ -149,6 +157,8 @@ def GridTransform(TransformNode, LevelNode, Logger, **kwargs):
         ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
         OutputTransformNode.cmd = cmd
         SaveRequired = True
+
+        mosaic.Mosaic.TranslateMosaicFileToZeroOrigin(OutputTransformNode.FullPath)
 
     if SaveRequired:
         return TransformParentNode

@@ -26,7 +26,7 @@ def CreateXMLIndex(path, server=None):
         if not InputVolumeNode is None:
             CreateVikingXML(VolumeNode=InputVolumeNode);
 
-def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, **kwargs):
+def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=None, **kwargs):
     '''When passed a volume node, creates a VikingXML file'''
     InputVolumeNode = kwargs.get('VolumeNode');
     path = InputVolumeNode.Path;
@@ -45,6 +45,7 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, **kwa
                                                 'num_stos' : '0',
                                                 'num_sections' : '0',
                                                 'InputChecksum' : InputVolumeNode.Checksum});
+
     VikingXMLETree = ETree.ElementTree(OutputVolumeNode);
 
     ParseScale(InputVolumeNode, OutputVolumeNode);
@@ -60,6 +61,9 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, **kwa
 
     # Walk down to the path from the root directory, merging about.xml's as we go
     Url = RecursiveMergeAboutXML(path, OutputXMLFilename);
+
+    if not Host is None and len(Host) > 0:
+        OutputVolumeNode.attrib['host'] = Host
 
     prettyoutput.Log("Launch string:");
     prettyoutput.Log(Url);
@@ -210,6 +214,9 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
             # continue;
 
         StosGroup = BlockNode.GetChildByAttrib("StosGroup", "Name", StosGroupName)
+        if StosGroup is None:
+            print "StosGroup %s not found.  No slice-to-slice transforms are being included" % StosGroupName
+            continue
 
         for Mapping in StosMapNode.findall('Mapping'):
 

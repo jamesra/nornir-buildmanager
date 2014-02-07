@@ -12,6 +12,7 @@ import xml
 from nornir_buildmanager import *
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.validation import transforms
+import nornir_buildmanager.operations.tile
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
@@ -20,7 +21,7 @@ from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 
 
-def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
+def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, **kwargs):
     '''@FilterNode.  Create  a new filter which has been processed with blob'''
     Radius = Parameters.get('r', '3')
     Median = Parameters.get('median', '3')
@@ -39,7 +40,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
     # STOPPED HERE.  NEED TO CREATE A FILTER  #
     ###########################################
     SaveFilterNode = False
-    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(FilterNode(Name="Blob_" + InputFilter.Name), "Name")
+    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(FilterNode(Name=OutputFilterName), "Name")
 
     # DownsampleSearchTemplate = "Level[@Downsample='%(Level)d']/Image"
 
@@ -65,14 +66,14 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
     # DownsampleSearchString = DownsampleSearchTemplate % {'Level': thisLevel}
     # InputMaskLevelNode = MaskSetNode.find(DownsampleSearchString)
 
-    InputImageNode = InputFilter.GetImage(thisLevel)
+    InputImageNode = InputFilter.GetOrCreateImage(thisLevel)
 
     if InputImageNode is None:
         prettyoutput.Log("Missing input level nodes for blob level: " + str(thisLevel))
         Logger.warning("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
         return
 
-    InputMaskNode = InputFilter.GetMaskImage(thisLevel)
+    InputMaskNode = InputFilter.GetOrCreateMaskImage(thisLevel)
     MaskStr = ""
     if not InputMaskNode is None:
         OutputFilterNode.MaskName = InputMaskNode.Name
@@ -88,7 +89,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
         BlobImageNode = transforms.RemoveOnMismatch(BlobImageNode, "InputImageChecksum", InputImageNode.Checksum)
 
     if BlobImageNode is None:
-        BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName)
+        BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName, GenerateData=False)
 
     if not os.path.exists(BlobImageNode.FullPath):
 
@@ -110,7 +111,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, **kwargs):
         BlobImageNode.InputImageChecksum = InputImageNode.Checksum
         SaveFilterNode = True
 
-    BlobPyramidImageSet = operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, Logger, **kwargs)
+    BlobPyramidImageSet = nornir_buildmanager.operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
     SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
 
     if SaveFilterNode:

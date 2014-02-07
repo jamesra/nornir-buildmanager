@@ -13,7 +13,7 @@ from setup_pipeline import VolumeEntry
 import setup_pipeline
 
 
-class ImportLMImages(setup_pipeline.PipelineTest):
+class ImportLMImages(setup_pipeline.PlatformTest):
 
     @property
     def Platform(self):
@@ -24,14 +24,14 @@ class ImportLMImages(setup_pipeline.PipelineTest):
         return "6872"
 
     def LoadVolumeObj(self):
-        return nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.VolumeDir, Create=True)
+        return nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
 
     def setUp(self):
         super(ImportLMImages, self).setUp()
 
         ImportDir = os.path.join(self.PlatformFullPath, self.VolumePath)
         VolumeObj = self.LoadVolumeObj()
-        sectionimage.SectionImage.ToMosaic(VolumeObj, InputPath=ImportDir, OutputPath=self.VolumeDir, debug=True)
+        sectionimage.SectionImage.ToMosaic(VolumeObj, InputPath=ImportDir, OutputPath=self.TestOutputPath, debug=True)
         VolumeObj.Save()
         del VolumeObj
 
@@ -46,18 +46,26 @@ class testImportPNG(ImportLMImages):
                                VolumeEntry("Filter", "Name", "mosaic")]
 
 
-        setup_pipeline.VerifyVolume(self, self.VolumeDir, listExpectedEntries)
+        setup_pipeline.VerifyVolume(self, self.TestOutputPath, listExpectedEntries)
 
-
-class testManipulateImageVolume(setup_pipeline.PipelineTest):
-    '''Imports a set of images and then tests stos operations'''
-
-#    def test(self):
-#        '''OK, run the TEMStos stage on the imported images'''
 #
-
-
-
+# class testManipulateImageVolume(setup_pipeline.PipelineTest):
+#     '''Imports a set of images and then tests stos operations'''
+#
+#     @property
+#     def VolumePath(self):
+#         return "6872"
+#
+#     @property
+#     def Platform(self):
+#         return "PMG"
+#
+# #    def test(self):
+# #        '''OK, run the TEMStos stage on the imported images'''
+# #
+#
+#
+#
 
 
 
