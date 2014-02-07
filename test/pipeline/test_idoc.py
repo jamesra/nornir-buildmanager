@@ -127,27 +127,26 @@ class IDocSingleSectionImportTest(IDocTest):
         self.EnsureTilePyramidIsFull(self._getFilterNode(BlockNode, self.SectionNumber), 25)
 
 
-class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
-    '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
-
-    @property
-    def VolumePath(self):
-        return "RC2_4Square_Aligned"
-
-    @property
-    def Platform(self):
-        return "IDOC"
-
-    def runTest(self):
-        # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
-        return
-
-        BruteLevel = 32
-        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
-        self.RunSliceToVolume()
-        self.RunMosaicToVolume()
-        self.RunCreateVikingXML()
-        self.RunAssembleMosaicToVolume(Channels="TEM")
+# class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
+#     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
+#
+#     @property
+#     def VolumePath(self):
+#         return "RC2_4Square_Aligned"
+#
+#     @property
+#     def Platform(self):
+#         return "IDOC"
+#
+#     def runTest(self):
+#         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+#
+#         BruteLevel = 32
+#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+#         self.RunSliceToVolume()
+#         self.RunMosaicToVolume()
+#         self.RunCreateVikingXML()
+#         self.RunAssembleMosaicToVolume(Channels="TEM")
 
 
 class IDocBuildTest(IDocTest):
@@ -163,12 +162,16 @@ class IDocBuildTest(IDocTest):
         self.RunAssemble(Level=1)
         self.RunMosaicReport()
 
+        # Copy output here to run IDocAlignTest
+
         BruteLevel = 32
 
-        self.RunCreateBlobFilter(Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+        self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
         self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+
+        # Copy output here to run IDocAlignOutputTest
 
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
@@ -176,33 +179,32 @@ class IDocBuildTest(IDocTest):
         self.RunCreateVikingXML()
         self.RunAssembleMosaicToVolume(Channels="TEM")
 
-class IDocAlignTest(setup_pipeline.CopySetupTestBase):
-    '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
-
-    @property
-    def VolumePath(self):
-        return "RC2_4Square_Assembled"
-
-    @property
-    def Platform(self):
-        return "IDOC"
-
-    def runTest(self):
-        return
-         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
-        # return
-
-        BruteLevel = 32
-        self.RunCreateBlobFilter(Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
-        self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
-        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
-        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-
-        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
-        self.RunSliceToVolume()
-        self.RunMosaicToVolume()
-        self.RunCreateVikingXML()
-        self.RunAssembleMosaicToVolume(Channels="TEM")
+# class IDocAlignTest(setup_pipeline.CopySetupTestBase):
+#     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
+#
+#     @property
+#     def VolumePath(self):
+#         return "RC2_4Square_Assembled"
+#
+#     @property
+#     def Platform(self):
+#         return "IDOC"
+#
+#     def runTest(self):
+#          # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+#         # return
+#
+#         BruteLevel = 32
+#         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+#         self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
+#         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+#         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+#
+#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+#         self.RunSliceToVolume()
+#         self.RunMosaicToVolume()
+#         self.RunCreateVikingXML()
+#         self.RunAssembleMosaicToVolume(Channels="TEM")
 
 
 class IdocReaderTest(IDocTest):
