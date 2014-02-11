@@ -182,7 +182,6 @@ class PMGBuildTest(PMGTest):
         return "6263_NoDapi"
 
     def runTest(self):
-        return
 
         self.RunImport()
         self.RunShadingCorrection(ChannelPattern="(?![D|d]api)", CorrectionType='brightfield', FilterPattern="Raw8")

@@ -208,7 +208,7 @@ class PlatformTest(test.testbase.TestBase):
         StartingFilter = volumeNode.find("Block/Section/Channel/Filter")
         self.assertIsNotNone(StartingFilter, "No starting filter node for shading correction")
 
-        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Filters', FilterPattern, 'OutputFilter', 'ShadingCorrected', '-InputTransform', 'Raw8', '-Correction', CorrectionType)
+        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Channels', ChannelPattern, '-Filters', FilterPattern, 'OutputFilter', 'ShadingCorrected', '-InputTransform', 'Raw8', '-Correction', CorrectionType)
         volumeNode = self.RunBuild(buildArgs)
 
         ExpectedOutputFilter = 'ShadingCorrected' + StartingFilter.Name
