@@ -208,7 +208,7 @@ class PlatformTest(test.testbase.TestBase):
         StartingFilter = volumeNode.find("Block/Section/Channel/Filter")
         self.assertIsNotNone(StartingFilter, "No starting filter node for shading correction")
 
-        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Filters', FilterPattern, 'OutputFilter', 'ShadingCorrected', '-InputTransform', 'Raw8', '-Correction', CorrectionType)
+        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Channels', ChannelPattern, '-Filters', FilterPattern, 'OutputFilter', 'ShadingCorrected', '-InputTransform', 'Raw8', '-Correction', CorrectionType)
         volumeNode = self.RunBuild(buildArgs)
 
         ExpectedOutputFilter = 'ShadingCorrected' + StartingFilter.Name
@@ -217,12 +217,12 @@ class PlatformTest(test.testbase.TestBase):
         self.assertIsNotNone(ExpectedOutputFilter, "No filter node produced for contrast adjustment")
 
 
-    def RunHistogram(self, Filter=None):
+    def RunHistogram(self, Filter=None, Downsample=4):
         if Filter is None:
             Filter = 'Raw8'
 
         # Adjust Contrast
-        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', Filter, '-Downsample', '4', '-InputTransform', 'Prune')
+        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', Filter, '-Downsample', str(Downsample), '-InputTransform', 'Prune')
         volumeNode = self.RunBuild(buildArgs)
 
         HistogramNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']/Histogram" % Filter)
@@ -230,12 +230,16 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunAdjustContrast(self, Filter=None):
+    def RunAdjustContrast(self, Filter=None, Gamma=None):
         if Filter is None:
             Filter = 'Raw8'
 
         # Adjust Contrast
         buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+
+        if not Gamma is None:
+            buildArgs.extend(['-Gamma', str(Gamma)])
+
         volumeNode = self.RunBuild(buildArgs)
 
         FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']" % Filter)
@@ -323,7 +327,12 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('RefineSectionAlignment', '-InputGroup', InputGroup, '-InputDownsample', str(InputLevel), '-OutputGroup', OutputGroup, '-OutputDownsample', str(OutputLevel), '-Filter', 'Leveled', '-StosUseMasks', 'True')
+        buildArgs = self._CreateBuildArgs('RefineSectionAlignment', '-InputGroup', InputGroup,
+                                          '-InputDownsample', str(InputLevel),
+                                          '-OutputGroup', OutputGroup,
+                                          '-OutputDownsample', str(OutputLevel),
+                                          '-Filter', 'Leveled',
+                                          '-StosUseMasks', 'True')
         volumeNode = self.RunBuild(buildArgs)
 
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (OutputGroup, OutputLevel))
@@ -367,10 +376,10 @@ class PlatformTest(test.testbase.TestBase):
             Filters = "Leveled"
 
         # Build Mosaics
-        imageOutputPath = os.path.join(self.TestOutputPath, 'AssembleOutput')
+        imageOutputPath = os.path.join(self.TestOutputPath, 'RegisteredOutput')
 
         buildArgs = self._CreateBuildArgs('Assemble', '-ChannelPrefix', 'Registered_',
-                                                               '-Channels', '*',
+                                                               '-Channels', Channels,
                                                                '-Filters', Filters,
                                                                '-Downsample', str(AssembleLevel),
                                                                '-Transform', 'ChannelToVolume',

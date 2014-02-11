@@ -591,8 +591,10 @@ class PipelineManager(object):
                     self.ProcessStageElement(VolumeElem, ChildNode, ArgSet)
                     PipelinesRun += 1
                 except PipelineSelectFailed as e:
-                    PipelineManager.logger.error(str(e))
-                    PipelineManager.logger.info("Select statement did not match.  Skipping further iteration and continuing")
+                    if ArgSet.Arguments["debug"]:
+                        PipelineManager.logger.info(str(e))
+
+                    PipelineManager.logger.info("Select statement did not match.  Skipping further iteration and continuing\n")
                     break
                 except PipelineSearchFailed as e:
                     PipelineManager.logger.error(str(e))

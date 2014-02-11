@@ -944,7 +944,12 @@ def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample
         InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
 
         ControlImage = ControlFilter.GetOrCreateImage(OutputDownsample)
+        if ControlImage is None:
+            raise Exception("No control image available for stos file generation: %s" % InputTransformNode.FullPath)
+
         MappedImage = MappedFilter.GetOrCreateImage(OutputDownsample)
+        if MappedImage is None:
+            raise Exception("No mapped image available for stos file generation: %s" % InputTransformNode.FullPath)
 
         if not (InputStos.ControlImagePath == ControlImage.FullPath and
            InputStos.MappedImagePath == MappedImage.FullPath and
@@ -1112,7 +1117,14 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                         stosNode = None
                         continue
                     else:
-                        SaveGroupNode = True
+                        if stosfile.StosFile.IsValid(OutputStosFullPath):
+                            SaveGroupNode = True
+                        else:
+                            os.remove(OutputStosFullPath)
+                            OutputSectionMappingNode.remove(stosNode)
+                            stosNode = None
+                            continue
+
                 else:
                     prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
                     shutil.copy(ManualStosFileFullPath, OutputStosFullPath)
@@ -1298,12 +1310,18 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                 # Files.RemoveOutdatedFile(ControlToVolumeTransform.FullPath, OutputTransform.FullPath )
 
                 if not os.path.exists(OutputTransform.FullPath):
-                    MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath, ControlToVolumeTransform.FullPath)
-                    MToVStos.Save(OutputTransform.FullPath)
+                    try:
+                        MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath, ControlToVolumeTransform.FullPath)
+                        MToVStos.Save(OutputTransform.FullPath)
 
-                    OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
-                    OutputTransform.InputTransformChecksum = MappedToControlTransform.Checksum
-                    OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
+                        OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
+                        OutputTransform.InputTransformChecksum = MappedToControlTransform.Checksum
+                        OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
+                    except ValueError:
+                        # Probably an invalid transform.  Skip it
+                        OutputSectionMappingsNode.remove(OutputTransform)
+                        OutputTransform = None
+                        pass
 
             SliceToVolumeFromRegistrationTreeNode(rt, mappedNode, InputGroupNode, OutputGroupNode, ControlToVolumeTransform=OutputTransform)
 
@@ -1320,37 +1338,58 @@ def RegistrationTreeFromStosMapNode(StosMapNode):
     return rt
 
 
-def __MappedFiltersForTransform(InputTransformNode, channelPattern=None, filterPattern=None):
-
-    if(filterPattern is None):
-        filterPattern = InputTransformNode.MappedFilterName
-
-    if(channelPattern is None):
-        channelPattern = InputTransformNode.MappedChannelName
-
+def __MappedFilterForTransform(InputTransformNode):
     sectionNumber = InputTransformNode.MappedSectionNumber
     BlockNode = InputTransformNode.FindParent(ParentTag='Block')
     sectionNode = BlockNode.GetSection(sectionNumber)
-    return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
+    channelNode = sectionNode.GetChannel(InputTransformNode.MappedChannelName)
+    filterNode = channelNode.GetFilter(InputTransformNode.MappedFilterName)
+    return filterNode
+    # return sectionNode(channelPattern, filterPattern)
 
 
-def __ControlFiltersForTransform(InputTransformNode, channelPattern=None, filterPattern=None):
-
-    if(filterPattern is None):
-        filterPattern = InputTransformNode.ControlFilterName
-
-    if(channelPattern is None):
-        channelPattern = InputTransformNode.ControlChannelName
-
+def __ControlFilterForTransform(InputTransformNode):
     sectionNumber = InputTransformNode.ControlSectionNumber
     BlockNode = InputTransformNode.FindParent(ParentTag='Block')
     sectionNode = BlockNode.GetSection(sectionNumber)
-    return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
+    channelNode = sectionNode.GetChannel(InputTransformNode.ControlChannelName)
+    filterNode = channelNode.GetFilter(InputTransformNode.ControlFilterName)
+    return filterNode
+
+# def __MatchMappedFiltersForTransform(InputTransformNode, channelPattern=None, filterPattern=None):
+#
+#     if(filterPattern is None):
+#         filterPattern = InputTransformNode.MappedFilterName
+#
+#     if(channelPattern is None):
+#         channelPattern = InputTransformNode.MappedChannelName
+#
+#     sectionNumber = InputTransformNode.MappedSectionNumber
+#     BlockNode = InputTransformNode.FindParent(ParentTag='Block')
+#     sectionNode = BlockNode.GetSection(sectionNumber)
+#     return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
+#
+#
+# def __MatchControlFiltersForTransform(InputTransformNode, channelPattern=None, filterPattern=None):
+#
+#     if(filterPattern is None):
+#         filterPattern = InputTransformNode.ControlFilterName
+#
+#     if(channelPattern is None):
+#         channelPattern = InputTransformNode.ControlChannelName
+#
+#     sectionNumber = InputTransformNode.ControlSectionNumber
+#     BlockNode = InputTransformNode.FindParent(ParentTag='Block')
+#     sectionNode = BlockNode.GetSection(sectionNumber)
+#     return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
 
 
 def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwargs):
 
-    '''Take a stos group node, scale the transforms, and save in new stosgroup'''
+    '''Take a stos group node, scale the transforms, and save in new stosgroup
+    
+       TODO: This function used to create stos transforms between different filters to.  Port that to a seperate function
+    '''
 
     ControlChannelPattern = kwargs.get("ControlChannelPattern", None)
     ControlFilterPattern = kwargs.get("ControlFilterPattern", None)
@@ -1363,7 +1402,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
     (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)
 
     if not os.path.exists(OutputGroupNode.FullPath):
-            os.makedirs(OutputGroupNode.FullPath)
+        os.makedirs(OutputGroupNode.FullPath)
 
     for inputSectionMapping in InputStosGroupNode.SectionMappings:
 
@@ -1373,33 +1412,97 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
 
         for InputTransformNode in InputTransformNodes:
 
-            ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
-            MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
+            if not os.path.exists(InputTransformNode.FullPath):
+                continue
 
-            for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
+            # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
+            # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
+            ControlFilter = __ControlFilterForTransform(InputTransformNode)
+            MappedFilter = __MappedFilterForTransform(InputTransformNode)
 
-                stosNode = OutputGroupNode.CreateStosTransformNode(ControlFilter,
-                                                                 MappedFilter,
-                                                                 OutputType=InputTransformNode.Type,
-                                                                 OutputPath=__StosFilename(ControlFilter, MappedFilter))
+            # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
-                __RemoveStosFileIfOutdated(stosNode, InputTransformNode)
+            stosNode = OutputGroupNode.CreateStosTransformNode(ControlFilter,
+                                                             MappedFilter,
+                                                             OutputType=InputTransformNode.Type,
+                                                             OutputPath=__StosFilename(ControlFilter, MappedFilter))
 
-                if not os.path.exists(stosNode.FullPath):
-                    stosGenerated = __GenerateStosFile(InputTransformNode,
-                                                                    stosNode.FullPath,
-                                                                    OutputDownsample,
-                                                                    ControlFilter,
-                                                                    MappedFilter)
+            __RemoveStosFileIfOutdated(stosNode, InputTransformNode)
+            stosGenerated = False
+            if not os.path.exists(stosNode.FullPath):
+                stosGenerated = __GenerateStosFile(InputTransformNode,
+                                                                stosNode.FullPath,
+                                                                OutputDownsample,
+                                                                ControlFilter,
+                                                                MappedFilter)
 
+                if stosGenerated:
                     stosNode.InputTransformChecksum = InputTransformNode.Checksum
                     stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+                else:
+                    OutputGroupNode.Remove(stosNode)
 
-                SaveBlockNode = SaveBlockNode or stosGenerated
+            SaveBlockNode = SaveBlockNode or stosGenerated
 
     if SaveBlockNode:
         return GroupParent
     return None
+
+# def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwargs):
+#
+#     '''Take a stos group node, scale the transforms, and save in new stosgroup'''
+#
+#     ControlChannelPattern = kwargs.get("ControlChannelPattern", None)
+#     ControlFilterPattern = kwargs.get("ControlFilterPattern", None)
+#     MappedChannelPattern = kwargs.get("MappedChannelPattern", None)
+#     MappedFilterPattern = kwargs.get("MappedFilterPattern", None)
+#
+#     GroupParent = InputStosGroupNode.Parent
+#
+#     OutputGroupNode = VolumeManagerETree.StosGroupNode(OutputGroupName, OutputDownsample)
+#     (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)
+#
+#     if not os.path.exists(OutputGroupNode.FullPath):
+#             os.makedirs(OutputGroupNode.FullPath)
+#
+#     for inputSectionMapping in InputStosGroupNode.SectionMappings:
+#
+#         OutputSectionMapping = OutputGroupNode.GetOrCreateSectionMapping(inputSectionMapping.MappedSectionNumber)
+#
+#         InputTransformNodes = inputSectionMapping.findall('Transform')
+#
+#         for InputTransformNode in InputTransformNodes:
+#
+#             ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
+#             MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
+#
+#             for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
+#
+#                 stosNode = OutputGroupNode.CreateStosTransformNode(ControlFilter,
+#                                                                  MappedFilter,
+#                                                                  OutputType=InputTransformNode.Type,
+#                                                                  OutputPath=__StosFilename(ControlFilter, MappedFilter))
+#
+#                 __RemoveStosFileIfOutdated(stosNode, InputTransformNode)
+#
+#                 if not os.path.exists(stosNode.FullPath):
+#                     stosGenerated = __GenerateStosFile(InputTransformNode,
+#                                                                     stosNode.FullPath,
+#                                                                     OutputDownsample,
+#                                                                     ControlFilter,
+#                                                                     MappedFilter)
+#
+#                     if stosGenerated:
+#                         stosNode.InputTransformChecksum = InputTransformNode.Checksum
+#                         stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+#                     else:
+#                         OutputGroupNode.Remove(stosNode)
+#
+#                 SaveBlockNode = SaveBlockNode or stosGenerated
+#
+#     if SaveBlockNode:
+#         return GroupParent
+#     return None
 
 
 def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
@@ -1407,12 +1510,15 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
        Always removes the file if the meta-data does not have an InputTransformChecksum property'''
 
     if hasattr(OutputStosNode, "InputTransformChecksum"):
-        if transforms.IsValueMatched(OutputNode=OutputStosNode,
+        if not transforms.IsValueMatched(OutputNode=OutputStosNode,
                                     OutputAttribute="InputTransformChecksum",
                                     TargetValue=InputStosNode.Checksum):
             if os.path.exists(OutputStosNode.FullPath):
                 os.remove(OutputStosNode.FullPath)
                 return True
+        else:
+            # InputTransformChecksum is equal
+            return True
 
     elif os.path.exists(OutputStosNode.FullPath):
         os.remove(OutputStosNode.FullPath)
@@ -1472,14 +1578,19 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
             Tasks.append(task)
 
         for task in Tasks:
-            MosaicToVolume = task.wait_return()
-            MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
+            try:
+                MosaicToVolume = task.wait_return()
+                MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
+            except:
+                Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
+                pass
 
-        OutputMosaicFile = MosaicTransform.ToMosaicFile()
-        OutputMosaicFile.Save(OutputTransformNode.FullPath)
-        OutputTransformNode.Checksum = OutputMosaicFile.LoadChecksum(OutputTransformNode.FullPath)
-        OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
-        OutputTransformNode.InputStosTransformChecksum = StosTransformNode.Checksum
+        if len(MosaicTransform.ImageToTransform) > 0:
+            OutputMosaicFile = MosaicTransform.ToMosaicFile()
+            OutputMosaicFile.Save(OutputTransformNode.FullPath)
+            OutputTransformNode.Checksum = OutputMosaicFile.LoadChecksum(OutputTransformNode.FullPath)
+            OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
+            OutputTransformNode.InputStosTransformChecksum = StosTransformNode.Checksum
 
     return OutputTransformNode
 
