@@ -927,14 +927,23 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     ImageNode = ImageLevelNode.find('Image')
     if(ImageNode is None):
         ImageNode = nornir_buildmanager.VolumeManager.ImageNode(OutputImageNameTemplate)
+        ImageNode.InputTransformChecksum = TransformNode.Checksum
         ImageLevelNode.append(ImageNode)
 
     MaskImageNode = ImageMaskLevelNode.find('Image')
     if(MaskImageNode is None):
         MaskImageNode = nornir_buildmanager.VolumeManager.ImageNode(OutputImageMaskNameTemplate)
+        ImageNode.InputTransformChecksum = TransformNode.Checksum
         ImageMaskLevelNode.append(MaskImageNode)
 
     ImageNode.MaskPath = MaskImageNode.FullPath
+
+    if hasattr(ImageNode, 'InputTransformChecksum'):
+        if not transforms.IsValueMatched(ImageNode, 'InputTransformChecksum', TransformNode.Checksum):
+            os.remove(ImageNode.FullPath)
+    else:
+        os.remove(ImageNode.FullPath)
+
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
@@ -970,8 +979,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
             mosaicImage = core.CropImage(mosaicImage, Xo, Yo, Width, Height)
             maskImage = core.CropImage(maskImage, Xo, Yo, Width, Height)
 
-        imsave(tempOutputFullPath, mosaicImage)
-        imsave(tempMaskOutputFullPath, maskImage)
+        core.SaveImage(tempOutputFullPath, mosaicImage)
+        core.SaveImage(tempMaskOutputFullPath, maskImage)
 
         # Run convert on the output to make sure it is interlaced
         if(Interlace):
