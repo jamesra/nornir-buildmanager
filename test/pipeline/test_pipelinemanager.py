@@ -93,7 +93,6 @@ class Test(unittest.TestCase):
         self.assertTrue('MinCutoff' in argset.Parameters)
         self.assertTrue('MaxCutoff' in argset.Parameters)
 
-
         argset.AddVariable(pm._GetVariableName(LoadPipeline(PipelineNode)), "Test Volume Element")
         self.assertTrue('ChannelNode' in argset.Variables)
 
