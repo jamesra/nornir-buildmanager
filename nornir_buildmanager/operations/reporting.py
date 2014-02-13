@@ -213,6 +213,35 @@ def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
             logger.info("Copy directory " + DataNode.FullPath + " -> " + OutputDir)
             shutil.copy(DataNode.FullPath, OutputDir)
 
+
+def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
+
+    if OutputDir is None:
+        return
+
+    logger = kwargs.get('Logger', logging.getLogger('CopyImage'))
+
+    if not os.path.exists(OutputDir):
+        os.makedirs(OutputDir)
+
+    # Find the imageset for the DataNode
+    ImageNode = FilterNode.GetOrCreateImage(Downsample)
+
+    if os.path.exists(ImageNode.FullPath):
+
+        if os.path.isfile(ImageNode.FullPath):
+            OutputFileFullPath = os.path.join(OutputDir, ImageNode.Path)
+            nfiles.RemoveOutdatedFile(ImageNode.FullPath, OutputFileFullPath)
+
+            if not os.path.exists(OutputFileFullPath):
+
+                logger.info(ImageNode.FullPath + " -> " + OutputFileFullPath)
+                shutil.copyfile(ImageNode.FullPath, OutputFileFullPath)
+        else:
+            # Just copy the directory over, this is an odd case
+            logger.info("Copy directory " + ImageNode.FullPath + " -> " + OutputDir)
+            shutil.copy(ImageNode.FullPath, OutputDir)
+
 def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
     if OutputDir is None:
         return

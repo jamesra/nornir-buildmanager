@@ -41,6 +41,14 @@ Assemble
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_Assemble
        :prog: nornir_build -pipeline Assemble
+       
+ExportImages
+----------
+
+    .. argparse:: 
+       :module: nornir_buildmanager.config.sphinxdocs
+       :func: _doc_arguments_ExportImages
+       :prog: nornir_build -pipeline ExportImages
 
 MosaicReport
 --------------------
@@ -122,15 +130,6 @@ MosaicToVolume
        :func: _doc_arguments_MosaicToVolume
        :prog: nornir_build -pipeline MosaicToVolume
 
-ExportMosaics
---------------------
-
-    .. argparse:: 
-       :module: nornir_buildmanager.config.sphinxdocs
-       :func: _doc_arguments_ExportMosaics
-       :prog: nornir_build -pipeline ExportMosaics
-       
-
 RenameFilter
 --------------------
 
@@ -168,6 +167,9 @@ def _doc_arguments_Mosaic():
 def _doc_arguments_Assemble():
     return _doc_arguments('Assemble')
 
+def _doc_arguments_ExportImages():
+    return _doc_arguments('ExportImages')
+
 def _doc_arguments_MosaicReport():
     return _doc_arguments('MosaicReport')
 
@@ -198,8 +200,6 @@ def _doc_arguments_VolumeImage():
 def _doc_arguments_MosaicToVolume():
     return _doc_arguments('MosaicToVolume')
 
-def _doc_arguments_ExportMosaics():
-    return _doc_arguments('ExportMosaics')
 
 if __name__ == '__main__':
     pass

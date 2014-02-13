@@ -363,14 +363,13 @@
 		</Iterate>
 	</Pipeline>
 
-	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter. Creates a new channel for output.">
+	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter. Optionally creates a new channel for output.">
 		<Arguments>
 			<Argument flag="-Downsample" dest="Levels" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
 			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" default="" type="str" help="Create a new channel for the output with this prefix and the name of the input." required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
-			<Argument flag="-Output" dest="OutputPath" help="Directory to move assembled images to" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Directory to move assembled images to" required="False"/>
 		</Arguments>
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
@@ -389,16 +388,7 @@
 				</PythonCall>
 			</Iterate>
 		</Iterate>
-
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#OutputChannelPrefix#ChannelRegEx"/>
-			<Iterate VariableName="FilterNode" XPath="Filter">
-				<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
-				<!-- This select statement for output only works if there is a single downsample level -->				
-				<Select VariableName="DataNodeObj" XPath="ImageSet/Level[@Downsample='#Levels']/Image"/>
-				<PythonCall Function="reporting.CopyFiles" DataNode="#DataNodeObj" OutputDir="#OutputPath"/>
-			</Iterate>
-		</Iterate>
+		
 	</Pipeline>
 
 
@@ -685,15 +675,22 @@
 		</Iterate>
 	</Pipeline>
 
-	<Pipeline Name="ExportMosaics" Description="Copies images of sections to an output directory">   
+	<Pipeline Name="ExportImages" Description="Copies images of sections to an output directory">   
 		<Arguments>
-			<Argument flag="-AssembleDownsample" dest="AssembleDownsample" default="8" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
-			<Argument flag="-Filter" dest="Filter" default="Leveled" help="Filter used to build leveled and mosaic images" required="False"/>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
+			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Downsample output images by this factor" required="False"/>
 			<Argument flag="-Output" dest="OutputPath" help="Directory to move assembled images to" required="False"/>
 		</Arguments>
-
-		<Iterate VariableName="DataNodeObj" XPath="Block/Section/Channel/Filter[@Name='#Filter']/ImageSet/Level[@Downsample='#AssembleDownsample']/Image">
-			<PythonCall Function="reporting.CopyFiles" OutputDir="#OutputPath" DataNode="#DataNodeObj"/>
+		
+		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
+			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+			
+			<Iterate VariableName="FilterNodeObj" XPath="Filter">
+				<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+				
+				<PythonCall Function="reporting.CopyImage" OutputDir="#OutputPath" FilterNode="#FilterNodeObj" Downsample="#Downsample"/>
+			</Iterate>
 		</Iterate>
 	</Pipeline>
 

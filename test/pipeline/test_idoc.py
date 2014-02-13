@@ -178,6 +178,7 @@ class IDocBuildTest(IDocTest):
         self.RunMosaicToVolume()
         self.RunCreateVikingXML()
         self.RunAssembleMosaicToVolume(Channels="TEM")
+        self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
 
 # class IDocAlignTest(setup_pipeline.CopySetupTestBase):
 #     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
