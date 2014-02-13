@@ -365,7 +365,7 @@
 
 	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter. Creates a new channel for output.">
 		<Arguments>
-			<Argument flag="-Downsample" dest="Levels" type="int" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
+			<Argument flag="-Downsample" dest="Levels" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
 			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" default="" type="str" help="Create a new channel for the output with this prefix and the name of the input." required="False"/>

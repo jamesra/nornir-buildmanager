@@ -219,6 +219,8 @@ class PMGBuildTest(PMGTest):
         self.RunCreateVikingXML()
         self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected")
 
+
+
 # class PMGAlignTest(setup_pipeline.CopySetupTestBase):
 #
 #     @property
@@ -246,7 +248,7 @@ class PMGBuildTest(PMGTest):
 #         self.RunMosaicToVolume()
 #         self.RunCreateVikingXML()
 #         self.RunAssembleMosaicToVolume(Channels="(?!Registered_)", Filters="ShadingCorrected")
-
+#
 # class PMGMosicToVolumeTest(setup_pipeline.CopySetupTestBase):
 #
 #     @property
@@ -259,14 +261,12 @@ class PMGBuildTest(PMGTest):
 #
 #     def runTest(self):
 #         BruteLevel = 32
-#         return
 #
-#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
-#         self.RunSliceToVolume()
-#         self.RunMosaicToVolume()
-#         self.RunCreateVikingXML()
+# #         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+# #         self.RunSliceToVolume()
+# #         self.RunMosaicToVolume()
+# #         self.RunCreateVikingXML()
 #         self.RunAssembleMosaicToVolume(Channels="*", Filters="ShadingCorrected")
-
 
 
 class ParsePMG(PMGTest):

@@ -472,6 +472,7 @@ class XElementWrapper(ElementTree.Element):
 
 
         if not Valid[0]:
+
             self.Clean(Valid[1])
 
         return not Valid[0]

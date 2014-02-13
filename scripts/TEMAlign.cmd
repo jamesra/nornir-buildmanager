@@ -5,4 +5,4 @@ nornir-build -volume %1 -pipeline RefineSectionAlignment -InputGroup Grid -Input
 nornir-build -volume %1 -pipeline ScaleVolumeTransforms -InputGroup Grid -InputDownsample 16 -OutputDownsample 1
 nornir-build -volume %1 -pipeline SliceToVolume -InputDownsample 1 -InputGroup Grid -OutputGroup SliceToVolume
 nornir-build -volume %1 -pipeline MosaicToVolume -InputTransform Grid -OutputTransform ChannelToVolume -Channels TEM
-nornir-build -volume %1 -pipeline Assemble -Channels TEM -Filters Leveled -AssembleDownsample 8,16,32 -NoInterlace -Transform ChannelToVolume
+nornir-build -volume %1 -pipeline Assemble -Channels TEM -Filters Leveled -Downsample 16,32 -NoInterlace -Transform ChannelToVolume -ChannelPrefix Registered_ -Output Registered  
