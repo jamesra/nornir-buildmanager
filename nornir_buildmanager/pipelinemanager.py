@@ -542,7 +542,6 @@ class PipelineManager(object):
             RootForSearch = ArgSet.Variables[RootIterNodeName]
         return RootForSearch
 
-
     IndentLevel = 0
 
     def Execute(self, parser, passedArgs):

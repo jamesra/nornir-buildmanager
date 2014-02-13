@@ -876,8 +876,6 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
 
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
-    Feathering = Parameters.get('Feathering', 'binary')
-
     MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
     InputChannelNode = FilterNode.FindParent('Channel')
     SectionNode = InputChannelNode.FindParent('Section')
