@@ -391,19 +391,18 @@ class PlatformTest(test.testbase.TestBase):
                 break
 
         self.assertTrue(FoundOutput, "Output channel not created")
-
-        OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))
-        self.assertTrue(len(OutputPngs) > 0)
-
         return volumeNode
 
-    def RunExportImages(self, Channels, Filters=None, AssembleLevel=1):
+    def RunExportImages(self, Channels, Filters=None, AssembleLevel=1, Output=None):
 
         if Filters is None:
             Filters = "Leveled"
 
+        if Output is None:
+            Output = 'RegisteredOutput'
+
         # Build Mosaics
-        imageOutputPath = os.path.join(self.TestOutputPath, 'RegisteredOutput')
+        imageOutputPath = os.path.join(self.TestOutputPath, Output)
 
         buildArgs = self._CreateBuildArgs('ExportImages', '-Channels', Channels,
                                                           '-Filters', Filters,
