@@ -55,11 +55,36 @@ class VolumeEntry(object):
 
         return x
 
+
 class PlatformTest(test.testbase.TestBase):
+    '''Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class. 
+       Eventually all platforms should have the same standard tests taking input to a volume under this framework to ensure basic functionality
+       is operating.  At this time the IDOC platform is the only one with a complete test.  PMG has a thorough test not entirely integrated with
+       this class'''
+
+    @property
+    def VolumeDir(self):
+        raise Exception("VolumeDir property is deprecated, TestOutputPath instead")
+
+    @property
+    def VolumePath(self):
+        raise Exception("VolumePath property not implemented")
 
     @property
     def Platform(self):
         raise Exception("Platform property not implemented")
+
+    @property
+    def PlatformFullPath(self):
+        return os.path.join(self.TestDataPath, "PlatformRaw", self.Platform)
+
+    @property
+    def ImportedDataPath(self):
+
+        if self.VolumePath and len(self.VolumePath) > 0:
+            return os.path.join(self.PlatformFullPath, self.VolumePath)
+        else:
+            return self.PlatformFullPath
 
     def RunBuild(self, buildArgs):
         # Run a build, ensure the output directory exists, and return the volume obj
@@ -72,12 +97,340 @@ class PlatformTest(test.testbase.TestBase):
 
         return VolumeObj
 
+    def _CreateBuildArgs(self, pipeline=None, *args):
+        pargs = ['-volume', self.TestOutputPath, '-debug']
+
+        if isinstance(pipeline, str):
+            pargs.append('-pipeline')
+            pargs.append(pipeline)
+
+        pargs.extend(args)
+
+        return pargs
+
     def setUp(self):
         '''Imports a volume and stops, tests call pipeline functions'''
         super(PlatformTest, self).setUp()
-
-        self.PlatformFullPath = os.path.join(self.TestDataPath, "PlatformRaw", self.Platform)
         self.assertTrue(os.path.exists(self.PlatformFullPath), "Test data for platform does not exist:" + self.PlatformFullPath)
+
+
+    def ValidateTransformChecksum(self, Node):
+        '''Ensure that the reported checksum and actual file checksum match'''
+        self.assertTrue(hasattr(Node, 'Checksum'))
+        self.assertTrue(os.path.exists(Node.FullPath))
+        FileChecksum = MosaicFile.LoadChecksum(Node.FullPath)
+        self.assertEqual(Node.Checksum, FileChecksum)
+
+    def CheckTransformInputs(self, transformNode):
+        '''Walk every transform node, verify that if the inputtransform data matches the recorded data'''
+
+        # If the object does not claim to have an input checksum then the test is not valid
+        if not 'InputTransformChecksum' in transformNode.attrib:
+            return
+
+        # The transform should report the name of the input transform if it has a checksum
+        self.assertTrue('InputTransform' in transformNode.attrib, "Missing InputTranform attribute:\n" + transformNode.ToElementString())
+
+        self.ValidateTransformChecksum(transformNode)
+        InputTransform = transformNode.Parent.GetChildByAttrib('Transform', 'Name', transformNode.InputTransform)
+        self.assertIsNotNone(InputTransform)
+
+        self.assertFalse(transforms.IsOutdated(transformNode, InputTransform))
+
+        # Check that our reported checksum and actual file checksums match
+        self.ValidateTransformChecksum(InputTransform)
+
+        # Check that
+        self.assertFalse(transforms.IsOutdated(self.PruneTransform, self.StageTransform))
+
+    def EnsureTilePyramidIsFull(self, FilterNode, NumExpectedTiles):
+
+        TilePyramidNode = FilterNode.TilePyramid
+        self.assertIsNotNone(TilePyramidNode)
+
+        LevelOneNode = TilePyramidNode.GetLevel(1)
+        self.assertIsNotNone(LevelOneNode)
+
+        globpath = os.path.join(LevelOneNode.FullPath, '*' + TilePyramidNode.ImageFormatExt)
+        tiles = glob.glob(globpath)
+        self.assertEqual(NumExpectedTiles, len(tiles), 'Did not find %d tile in %s' % (NumExpectedTiles, globpath))
+        self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles), "Did not find %d tiles reported by meta-data in %s" % (TilePyramidNode.NumberOfTiles, globpath))
+        return
+
+    def ValidateAllTransforms(self, ParentNode):
+        '''Check every transform in the parent node to ensure that if it refers to an input transform the values match'''
+
+        TransformNodes = list(ParentNode.findall('Transform'))
+        for tNode in TransformNodes:
+            self.CheckTransformInputs(tNode)
+
+    def RunImportThroughMosaic(self):
+        self.RunImport()
+        self.RunPrune()
+        self.RunHistogram()
+        self.RunAdjustContrast()
+        self.RunMosaic(Filter="Leveled")
+
+    def RunImportThroughMosaicAssemble(self):
+        self.RunImportThroughMosaic()
+        self.RunAssemble()
+
+    def RunImport(self):
+        buildArgs = self._CreateBuildArgs(None, '-input', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+
+    def RunPrune(self, Filter=None, Downsample=None):
+        if Filter is None:
+            Filter = "Raw8"
+
+        if Downsample is None:
+            Downsample = 4
+
+        # Prune
+        buildArgs = self._CreateBuildArgs('Prune', '-InputFilter', Filter, '-OutputTransform', 'Prune', '-Downsample', str(Downsample), '-Threshold', '1.0')
+        volumeNode = self.RunBuild(buildArgs)
+
+        self.assertIsNotNone(volumeNode, "No volume node returned from build")
+
+        PruneNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Prune']")
+        self.assertIsNotNone(PruneNode, "No prune node produced")
+
+        return volumeNode
+
+    def RunShadingCorrection(self, ChannelPattern, CorrectionType=None, FilterPattern=None):
+        if FilterPattern is None:
+            FilterPattern = '(?![M|m]ask)'
+
+        if CorrectionType is None:
+            CorrectionType = 'brightfield'
+
+        volumeNode = VolumeManager.Load(self.TestOutputPath)
+        StartingFilter = volumeNode.find("Block/Section/Channel/Filter")
+        self.assertIsNotNone(StartingFilter, "No starting filter node for shading correction")
+
+        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Channels', ChannelPattern, '-Filters', FilterPattern, 'OutputFilter', 'ShadingCorrected', '-InputTransform', 'Raw8', '-Correction', CorrectionType)
+        volumeNode = self.RunBuild(buildArgs)
+
+        ExpectedOutputFilter = 'ShadingCorrected' + StartingFilter.Name
+
+        FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']" % ExpectedOutputFilter)
+        self.assertIsNotNone(ExpectedOutputFilter, "No filter node produced for contrast adjustment")
+
+
+    def RunHistogram(self, Filter=None, Downsample=4):
+        if Filter is None:
+            Filter = 'Raw8'
+
+        # Adjust Contrast
+        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', Filter, '-Downsample', str(Downsample), '-InputTransform', 'Prune')
+        volumeNode = self.RunBuild(buildArgs)
+
+        HistogramNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']/Histogram" % Filter)
+        self.assertIsNotNone(HistogramNode, "No histogram node produced for histogram")
+
+        return volumeNode
+
+    def RunAdjustContrast(self, Filter=None, Gamma=None):
+        if Filter is None:
+            Filter = 'Raw8'
+
+        # Adjust Contrast
+        buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+
+        if not Gamma is None:
+            buildArgs.extend(['-Gamma', str(Gamma)])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+        FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']" % Filter)
+        self.assertIsNotNone(FilterNode, "No filter node produced for contrast adjustment")
+
+        return volumeNode
+
+    def RunMosaic(self, Filter):
+        if Filter is None:
+            Filter = 'Leveled'
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', 'Prune', '-InputFilter', Filter, '-OutputTransform', 'Grid')
+        volumeNode = self.RunBuild(buildArgs)
+
+        TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")
+        self.assertIsNotNone(TransformNode, "No final transform node produced by Mosaic pipeline")
+
+        return volumeNode
+
+    def RunAssemble(self, Filter=None, Level=8):
+        if Filter is None:
+            Filter = "Leveled"
+
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', 'Grid', '-Filters', Filter, '-Downsample', str(Level), '-NoInterlace')
+        volumeNode = self.RunBuild(buildArgs)
+
+        ChannelNode = volumeNode.find("Block/Section/Channel")
+
+        AssembledImageNode = ChannelNode.find("Filter[@Name='Leveled']/ImageSet/Level[@Downsample='%d']/Image" % Level)
+        self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
+
+        return volumeNode
+
+    def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8):
+        if ContrastFilter is None:
+            ContrastFilter = "Leveled"
+
+        if AssembleFilter is None:
+            AssembleFilter = "Leveled"
+
+        buildArgs = self._CreateBuildArgs('MosaicReport', '-PruneFilter', 'Raw8', '-ContrastFilter', ContrastFilter, '-AssembleFilter', AssembleFilter, '-AssembleDownsample', str(AssembleDownsample))
+        volumeNode = self.RunBuild(buildArgs)
+
+        OutputHtml = glob.glob(os.path.join(self.TestOutputPath, '*.html'))
+        self.assertTrue(len(OutputHtml) > 0)
+
+        return volumeNode
+
+    def RunCreateBlobFilter(self, Channels, Levels, Filter):
+        if Channels is None:
+            Channels = "*"
+
+        if Filter is None:
+            Filter = 'Leveled'
+
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', Channels, '-InputFilter', Filter, '-Levels', Levels, '-OuputFilter', 'Blob')
+        volumeNode = self.RunBuild(buildArgs)
+
+        ChannelNode = volumeNode.find("Block/Section/Channel")
+
+        AssembledImageNode = ChannelNode.find("Filter[@Name='Blob']/ImageSet/Level[@Downsample='%d']/Image" % 8)
+        self.assertIsNotNone(AssembledImageNode, "No blob Image node produced from CreateBlobFilter pipeline")
+
+        self.assertTrue(os.path.exists(AssembledImageNode.FullPath), "No file found for assembled image node")
+
+        return volumeNode
+
+    def RunAlignSections(self, Channels, Filters, Levels):
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', Channels)
+        volumeNode = self.RunBuild(buildArgs)
+
+        PotentialStosMap = volumeNode.find("Block/StosMap[@Name='PotentialRegistrationChain']")
+        self.assertIsNotNone(PotentialStosMap)
+
+        FinalStosMap = volumeNode.find("Block/StosMap[@Name='FinalStosMap']")
+        self.assertIsNotNone(FinalStosMap)
+
+        StosBruteGroupNode = volumeNode.find("Block/StosGroup[@Name='StosBrute%d']" % Levels)
+        self.assertIsNotNone(StosBruteGroupNode, "No Stos Group node produced")
+
+        return volumeNode
+
+    def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter):
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('RefineSectionAlignment', '-InputGroup', InputGroup,
+                                          '-InputDownsample', str(InputLevel),
+                                          '-OutputGroup', OutputGroup,
+                                          '-OutputDownsample', str(OutputLevel),
+                                          '-Filter', 'Leveled',
+                                          '-StosUseMasks', 'True')
+        volumeNode = self.RunBuild(buildArgs)
+
+        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (OutputGroup, OutputLevel))
+        self.assertIsNotNone(StosGroupNode, "No %s%d Stos Group node produced" % (OutputGroup, OutputLevel))
+
+        return volumeNode
+
+    def RunScaleVolumeTransforms(self, InputGroup, InputLevel, OutputLevel=1):
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('ScaleVolumeTransforms', '-InputGroup', InputGroup, '-InputDownsample', str(InputLevel), '-OutputDownsample', str(OutputLevel))
+        volumeNode = self.RunBuild(buildArgs)
+
+        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (InputGroup, OutputLevel))
+        self.assertIsNotNone(StosGroupNode, "No %s%d Stos Group node produced" % (InputGroup, OutputLevel))
+
+        return volumeNode
+
+    def RunSliceToVolume(self, Level=1):
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('SliceToVolume', '-InputDownsample', str(Level), '-InputGroup', 'Grid', '-OutputGroup', 'SliceToVolume')
+        volumeNode = self.RunBuild(buildArgs)
+
+        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='SliceToVolume%d']" % Level)
+        self.assertIsNotNone(StosGroupNode, "No SliceToVolume%d stos group node created" % Level)
+
+        return volumeNode
+
+    def RunMosaicToVolume(self):
+        # Build Mosaics
+        buildArgs = self._CreateBuildArgs('MosaicToVolume', '-InputTransform', 'Grid', '-OutputTransform', 'ChannelToVolume', '-Channels', '*')
+        volumeNode = self.RunBuild(buildArgs)
+
+        MosaicToVolumeTransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='ChannelToVolume']")
+        self.assertIsNotNone(MosaicToVolumeTransformNode, "No mosaic to volume transform created")
+
+        return volumeNode
+
+    def RunAssembleMosaicToVolume(self, Channels, Filters=None, AssembleLevel=8):
+
+        if Filters is None:
+            Filters = "Leveled"
+
+
+        buildArgs = self._CreateBuildArgs('Assemble', '-ChannelPrefix', 'Registered_',
+                                                               '-Channels', Channels,
+                                                               '-Filters', Filters,
+                                                               '-Downsample', str(AssembleLevel),
+                                                               '-Transform', 'ChannelToVolume',
+                                                               '-NoInterlace')
+        volumeNode = self.RunBuild(buildArgs)
+
+        FoundOutput = False
+        for channelNode in volumeNode.findall("Block/Section/Channel"):
+            if "Registered" in channelNode.Name:
+                FoundOutput = True
+                break
+
+        self.assertTrue(FoundOutput, "Output channel not created")
+        return volumeNode
+
+    def RunExportImages(self, Channels, Filters=None, AssembleLevel=1, Output=None):
+
+        if Filters is None:
+            Filters = "Leveled"
+
+        if Output is None:
+            Output = 'RegisteredOutput'
+
+        # Build Mosaics
+        imageOutputPath = os.path.join(self.TestOutputPath, Output)
+
+        buildArgs = self._CreateBuildArgs('ExportImages', '-Channels', Channels,
+                                                          '-Filters', Filters,
+                                                          '-Downsample', str(AssembleLevel),
+                                                          '-Output', imageOutputPath)
+        volumeNode = self.RunBuild(buildArgs)
+
+        OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))
+        self.assertTrue(len(OutputPngs) > 0, "No exported images found in %s" % imageOutputPath)
+
+        return volumeNode
+
+    def RunCreateVikingXML(self, StosGroup=None, StosMap=None):
+
+        if StosGroup is None:
+            StosGroup = 'SliceToVolume1'
+
+        if StosMap is None:
+            StosMap = 'SliceToVolume'
+
+        buildArgs = self._CreateBuildArgs('CreateVikingXML', '-StosGroup', StosGroup, '-StosMap', StosMap)
+
+        if not self.TestOutputURL is None:
+            buildArgs.extend(['-Host', self.TestOutputURL])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+        self.assertTrue(os.path.exists(os.path.join(volumeNode.FullPath, "SliceToVolume1.VikingXML")), "No vikingxml file created")
 
 
 class CopySetupTestBase(PlatformTest):
@@ -91,125 +444,79 @@ class CopySetupTestBase(PlatformTest):
         if os.path.exists(self.TestOutputPath):
             shutil.rmtree(self.TestOutputPath)
 
-        shutil.copytree(self.PlatformFullPath, self.TestOutputPath)
+        shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
 
 
-class PipelineTest(PlatformTest):
-
-    @property
-    def VolumeDir(self):
-        return self.TestOutputPath
-
-    @property
-    def VolumePath(self):
-        return "6750"
-
-    @property
-    def Platform(self):
-        return "PMG"
+# nornir-build -volume %1 -pipeline CreateBlobFilter -Channels AssembledTEM -InputFilter Leveled -Levels 16,32 -OutputFilter Blob
+# nornir-build -volume %1 -pipeline AlignSections -NumAdjacentSections 1 -Filters Blob -StosUseMasks True -Downsample 32 -Channels AssembledTEM
+# nornir-build -volume %1 -pipeline RefineSectionAlignment -InputGroup StosBrute -InputDownsample 32 -OutputGroup Grid -OutputDownsample 32 -Filter Leveled -StosUseMasks True
+# nornir-build -volume %1 -pipeline RefineSectionAlignment -InputGroup Grid -InputDownsample 32 -OutputGroup Grid -OutputDownsample 16 -Filter Leveled -StosUseMasks True
+# nornir-build -volume %1 -pipeline ScaleVolumeTransforms -InputGroup Grid -InputDownsample 16 -OutputDownsample 1
+# nornir-build -volume %1 -pipeline SliceToVolume -InputDownsample 1 -InputGroup Grid -OutputGroup SliceToVolume
+#
+# nornir-build -volume %1 -pipeline MosaicToVolume -InputTransform Grid -OutputTransform ChannelToVolume -Channels TEM
+#
+# nornir-build -volume %1 -pipeline Assemble -Channels TEM -Filters Leveled -AssembleDownsample 8,16,32 -NoInterlace -Transform ChannelToVolume
 
 
-
-    def setUp(self):
-        '''Imports a volume and stops, tests call pipeline functions'''
-        super(PipelineTest, self).setUp()
-
-        self.TestDataSource = os.path.join(self.PlatformFullPath, self.VolumePath)
-        self.assertTrue(os.path.exists(self.TestDataSource), "Test input does not exist:" + self.TestDataSource);
-
-    def tearDown(self):
-        # if os.path.exists(self.VolumeDir):
-        #    shutil.rmtree(self.VolumeDir);
-        pass
-
-
-    def ValidateTransformChecksum(self, Node):
-        '''Ensure that the reported checksum and actual file checksum match'''
-        self.assertTrue(hasattr(Node, 'Checksum'));
-        self.assertTrue(os.path.exists(Node.FullPath));
-        FileChecksum = MosaicFile.LoadChecksum(Node.FullPath);
-        self.assertEqual(Node.Checksum, FileChecksum);
-
-    def CheckTransformInputs(self, transformNode):
-        '''Walk every transform node, verify that if the inputtransform data matches the recorded data'''
-
-        # If the object does not claim to have an input checksum then the test is not valid
-        if not 'InputTransformChecksum' in transformNode.attrib:
-            return;
-
-        # The transform should report the name of the input transform if it has a checksum
-        self.assertTrue('InputTransform' in transformNode.attrib);
-
-        self.ValidateTransformChecksum(transformNode);
-        InputTransform = transformNode.Parent.GetChildByAttrib('Transform', 'Name', transformNode.InputTransform);
-        self.assertIsNotNone(InputTransform);
-
-        self.assertFalse(transforms.IsOutdated(transformNode, InputTransform))
-
-        # Check that our reported checksum and actual file checksums match
-        self.ValidateTransformChecksum(InputTransform);
-
-        # Check that
-        self.assertFalse(transforms.IsOutdated(self.PruneTransform, self.StageTransform));
-
-
-    def ValidateAllTransforms(self, ParentNode):
-        '''Check every transform in the parent node to ensure that if it refers to an input transform the values match'''
-
-        TransformNodes = list(ParentNode.findall('Transform'));
-        for tNode in TransformNodes:
-            self.CheckTransformInputs(tNode);
-
-
-
-
-
-class ImportOnlySetup(PipelineTest):
+class ImportOnlySetup(PlatformTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
+
     def setUp(self):
-        super(ImportOnlySetup, self).setUp();
+        super(ImportOnlySetup, self).setUp()
 
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-debug'];
-        build.Execute(buildArgs);
+        buildArgs = ['Build.py', '-input', self.ImportedDataPath, '-volume', self.TestOutputPath, '-debug']
+        build.Execute(buildArgs)
 
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+        self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
 
         # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.VolumeDir)
-        self.assertIsNotNone(self.VolumeObj);
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
+        self.assertIsNotNone(self.VolumeObj)
 
-class PrepareSetup(PipelineTest):
+class PrepareSetup(PlatformTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
     def setUp(self):
-        super(PrepareSetup, self).setUp();
+        super(PrepareSetup, self).setUp()
 
-        # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', '-debug'];
-        build.Execute(buildArgs);
-
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+        self.RunImport()
+        self.RunPrune()
+        self.RunHistogram()
 
         # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.VolumeDir)
-        self.assertIsNotNone(self.VolumeObj);
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
+        self.assertIsNotNone(self.VolumeObj)
 
-class PrepareAndMosaicSetup(PipelineTest):
+
+class PrepareAndMosaicSetup(PlatformTest):
     '''Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests'''
 
     def setUp(self):
 
-        super(PrepareAndMosaicSetup, self).setUp();
+        super(PrepareAndMosaicSetup, self).setUp()
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'AdjustContrast', 'Mosaic', '-debug'];
-        build.Execute(buildArgs);
 
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+        self.RunImportThroughMosaic()
 
         # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.VolumeDir)
-        self.assertIsNotNone(self.VolumeObj);
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
+        self.assertIsNotNone(self.VolumeObj)
+
+class PrepareThroughAssembleSetup(PlatformTest):
+    '''Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests'''
+
+    def setUp(self):
+
+        super(PrepareAndMosaicSetup, self).setUp()
+        # Import the files
+
+        self.RunImportThroughMosaicAssemble()
+
+        # Load the meta-data from the volumedata.xml file
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
+        self.assertIsNotNone(self.VolumeObj)
 
 if __name__ == "__main__":
-    # import sys;sys.argv = ['', 'Test.testName']
+    # import syssys.argv = ['', 'Test.testName']
     unittest.main()

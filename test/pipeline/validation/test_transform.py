@@ -20,11 +20,19 @@ import nornir_shared.misc
 
 class TransformIsValidTest(PrepareAndMosaicSetup):
 
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
+
     def LoadMetaData(self):
         '''Updates the object's meta-data variables from disk'''
 
         # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.VolumeDir)
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
 
         self.ChannelData = self.VolumeObj.find('Block/Section/Channel')
         self.assertIsNotNone(self.ChannelData, "Could not locate channel meta-data")
@@ -32,26 +40,27 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
         # OK, by default the transforms should be correct
         self.StageTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Stage')
         self.PruneTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Prune')
-        self.TranslateTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Translate')
+        self.TranslateTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Translated_Prune')
+        # self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Refined_Prune')
         self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
-        self.ZeroGridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'ZeroGrid')
 
         self.assertIsNotNone(self.StageTransform)
         self.assertIsNotNone(self.PruneTransform)
         self.assertIsNotNone(self.TranslateTransform)
         self.assertIsNotNone(self.GridTransform)
-        self.assertIsNotNone(self.ZeroGridTransform)
+        # self.assertIsNotNone(self.ZeroGridTransform)
 
     def setUp(self):
 
         super(TransformIsValidTest, self).setUp()
+
         self.LoadMetaData()
 
     def runTest(self):
 
         self.ValidateAllTransforms(self.ChannelData)
 
-        self.assertFalse(self.ZeroGridTransform.Checksum == self.GridTransform.Checksum)
+        # self.assertFalse(self.ZeroGridTransform.Checksum == self.GridTransform.Checksum)
 
         # Make sure the checksum test is able to fail
         self.assertTrue(transforms.IsOutdated(self.PruneTransform, self.TranslateTransform))
@@ -75,7 +84,10 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
-            buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', 'AdjustContrast', 'Mosaic', '-debug']
+            buildArgs = ['Build.py', '-volume', self.TestOutputPath, '-pipeline', 'Prune', '-debug', '-Threshold', '1.0']
+            build.Execute(buildArgs)
+
+            buildArgs = ['Build.py', '-volume', self.TestOutputPath, '-pipeline', 'Mosaic', '-InputFilter', 'Leveled', '-debug']
             build.Execute(buildArgs)
 
             # Load the meta-data from the volumedata.xml file again

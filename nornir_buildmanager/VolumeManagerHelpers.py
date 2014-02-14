@@ -6,7 +6,8 @@ Created on Oct 11, 2012
 
 import re
 
-import VolumeManagerETree as VM
+import VolumeManagerETree as VolumeManager
+from operator import attrgetter
 
 
 def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
@@ -18,11 +19,11 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
         return Objects
 
     Matches = []
-    
+
     flags = None
     if not CaseSensitive:
         flags = re.IGNORECASE
-    
+
     for MatchObj in Objects:
         if not hasattr(MatchObj, AttribName):
             continue
@@ -68,7 +69,7 @@ class InputTransformHandler(object):
 
     def InputTransformIsValid(self):
         # Verify that the input transform matches the checksum we recorded for the input
-        
+
         InputTransformType = self.attrib.get('InputTransformType', None)
         if InputTransformType is None:
             return True
@@ -87,32 +88,76 @@ class InputTransformHandler(object):
 
 class PyramidLevelHandler(object):
 
+    @property
+    def Levels(self):
+        return sorted(list(self.findall('Level')), key=attrgetter('Downsample'))
+
+    @property
+    def MaxResLevel(self):
+        '''Return the level with the highest resolution'''
+        return self.Levels[0]
+
+    @property
+    def MinResLevel(self):
+        '''Return the level with the highest resolution'''
+        return self.Levels[-1]
+
     def GetLevel(self, Downsample):
+        '''
+            :param float Downsample: Level downsample factor from full-res data
+            :return: Level node for downsample node 
+            :rtype LevelNode:
+        '''
         return self.GetChildByAttrib("Level", "Downsample", "%g" % Downsample)
 
-    def GetOrCreateLevel(self, Downsample):
-        [added, lnode] = self.UpdateOrAddChildByAttrib(VM.LevelNode(Downsample), "Downsample")
+    def GetOrCreateLevel(self, Downsample, GenerateData=True):
+        '''
+            :param float Downsample: Level downsample factor from full-res data
+            :param bool Generate: True if missing data should be generated.  Defaults to true.
+            :return: Level node for downsample node 
+            :rtype LevelNode:
+        '''
+        if not self.HasLevel(Downsample) and GenerateData:
+            self.GenerateLevels(Downsample)
+
+        [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode(Downsample), "Downsample")
         return lnode
+
+    def GenerateLevels(self, Levels):
+        '''Creates data to populate a level of a pyramid.  Derived class should override'''
+        raise NotImplementedError('PyramidLevelHandler.GenerateMissingLevel')
+
+    def HasLevel(self, Downsample):
+        return not self.GetLevel(Downsample) is None
 
     def CreateLevels(self, Levels):
         assert(isinstance(Levels, list))
         for l in Levels:
             self.GetOrCreateLevel(l)
 
-    @property
-    def Levels(self):
-        return list(self.findall('Level'))
+    def LevelIndex(self, Downsample):
+        '''Returns the index number into the level nodes.  Levels with a lower index are more detailed, i.e. less downsampling.  Higher indicies are less detailed.'''
+        for i, obj in enumerate(self.Levels):
+            if float(Downsample) == float(obj.Downsample):
+                return i
 
-    @property
-    def MaxResLevel(self):
-        '''Return the level with the highest resolution'''
-        OutputLevel = None
-        for level in self.findall('Level'):
-            if OutputLevel is None:
-                OutputLevel = level
+        raise Exception("Downsample level does not exist in levels")
 
-            if OutputLevel.Downsample > level.Downsample:
-                OutputLevel = level
+    def MoreDetailedLevel(self, Downsample):
+        '''Return an existing level with more detail than the provided downsample level'''
+        BestChoice = None
 
-        return OutputLevel
+        for Level in self.Levels:
+            if Level.Downsample < Downsample:
+                BestChoice = Level
+            else:
+                return BestChoice
 
+        return BestChoice
+
+    def LessDetailedLevel(self, Downsample):
+        '''Return an existing level with less detail than the provided downsample level'''
+
+        for Level in self.Levels:
+            if Level.Downsample > Downsample:
+                return Level

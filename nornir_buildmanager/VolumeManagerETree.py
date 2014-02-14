@@ -11,10 +11,11 @@ import sys
 import urllib
 
 import VolumeManagerHelpers as VMH
+
 import nornir_buildmanager.Config as Config
 import nornir_buildmanager.operations.versions as versions
+import nornir_buildmanager.operations.tile as tile
 from nornir_imageregistration.files import *
-import nornir_pools as Pools
 import nornir_shared.checksum
 import nornir_shared.misc as misc
 import nornir_shared.prettyoutput as prettyoutput
@@ -201,7 +202,7 @@ class VolumeManager():
         # cls.__SortNodes__(VolumeObj)
         # cls.__RemoveEmptyElements__(VolumeObj)
 
-        VolumeObj.Save()
+        VolumeObj.Save(tabLevel=None)
 
 #        #Make sure any changes are accounted for by calculating a new checksum
 #        NewChecksum = cls.CalcVolumeChecksum(VolumeObj)
@@ -471,6 +472,7 @@ class XElementWrapper(ElementTree.Element):
 
 
         if not Valid[0]:
+
             self.Clean(Valid[1])
 
         return not Valid[0]
@@ -1188,7 +1190,11 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         logger = logging.getLogger('VolumeManager')
         tabs = '\t' * tabLevel
-        logger.info('Saving ' + tabs + str(self))
+
+        if hasattr(self, 'FullPath'):
+            logger.info("Saving " + self.FullPath)
+
+        # logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
 
         # Create a copy of ourselves for saving.  If this is not done we have the potential to change a collection during iteration
@@ -1239,8 +1245,12 @@ class XContainerElementWrapper(XResourceElementWrapper):
         if not os.path.exists(self.FullPath):
             os.makedirs(self.FullPath)
 
+        # prettyoutput.Log("Saving %s" % xmlfilename)
+
         TempXMLFilename = os.path.join(self.FullPath, 'Temp_' + xmlfilename)
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
+
+        # prettyoutput.Log("Saving %s" % XMLFilename)
 
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
        # print OutputXML
@@ -1249,7 +1259,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
             hFile.close()
 
         shutil.copy(TempXMLFilename, XMLFilename)
-        os.remove(TempXMLFilename)
+        try:
+            os.remove(TempXMLFilename)
+        except:
+            pass
 
 
 class XLinkedContainerElementWrapper(XContainerElementWrapper):
@@ -1315,6 +1328,7 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
         # if(tabLevel == 0 or recurse==False):
             # pool.wait_completion()
 
+
 class BlockNode(XContainerElementWrapper):
 
     @property
@@ -1324,7 +1338,7 @@ class BlockNode(XContainerElementWrapper):
     def GetSection(self, Number):
         return self.GetChildByAttrib('Section', 'Number', Number)
 
-    def __init__(self, Name, Path, attrib=None, **extra):
+    def __init__(self, Name, Path=None, attrib=None, **extra):
         super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
@@ -1390,7 +1404,7 @@ class FilterNode(XContainerElementWrapper):
         # There should be only one Imageset, so use find
         pyramid = self.find('TilePyramid')
         if pyramid is None:
-            pyramid = TilePyramidNode()
+            pyramid = TilePyramidNode(NumberOfTiles=0)
             self.append(pyramid)
 
         return pyramid
@@ -1577,7 +1591,8 @@ class StosGroupNode(XContainerElementWrapper):
 
         return sectionMapping.TransformsToSection(ControlSectionNumber)
 
-    def CreateStosTransformNode(self, ControlFilter, MappedFilter, OutputType, OutputPath):
+
+    def GetStosTransformNode(self, ControlFilter, MappedFilter):
         MappedSectionNode = MappedFilter.FindParent("Section")
         MappedChannelNode = MappedFilter.FindParent("Channel")
         ControlSectionNode = ControlFilter.FindParent("Section")
@@ -1585,26 +1600,53 @@ class StosGroupNode(XContainerElementWrapper):
 
         SectionMappingsNode = self.GetOrCreateSectionMapping(MappedSectionNode.Number)
 
-        stosNode = TransformNode(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
-                                                                                         'MappedSectionNumber' : str(MappedSectionNode.Number),
-                                                                                         'MappedChannelName' : str(MappedChannelNode.Name),
-                                                                                         'MappedFilterName' : str(MappedFilter.Name),
-                                                                                         'MappedImageChecksum' : str(MappedFilter.Imageset.Checksum),
-                                                                                         'ControlChannelName' : str(ControlChannelNode.Name),
-                                                                                         'ControlFilterName' : str(ControlFilter.Name),
-                                                                                         'ControlImageChecksum' : str(ControlFilter.Imageset.Checksum)})
+        stosNode = SectionMappingsNode.FindStosTransform(ControlSectionNode.Number,
+                                                               ControlChannelNode.Name,
+                                                                ControlFilter.Name,
+                                                                 MappedSectionNode.Number,
+                                                                  MappedChannelNode.Name,
+                                                                   MappedFilter.Name)
 
-#        BUG: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This
-#        search should include the criteria below, instead it is restricted to ControlSectionNumber until a workaround is written.
-#        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber',
-#                                                                                    'ControlChannelName',
-#                                                                                    'ControlFilterName',
-#                                                                                    'MappedSectionNumber',
-#                                                                                    'MappedChannelName',
-#                                                                                    'MappedFilterName'])
-        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber'])
+        return stosNode
+
+
+    def CreateStosTransformNode(self, ControlFilter, MappedFilter, OutputType, OutputPath):
+
+        stosNode = self.GetStosTransformNode(ControlFilter, MappedFilter)
+
+        if stosNode is None:
+            MappedSectionNode = MappedFilter.FindParent("Section")
+            MappedChannelNode = MappedFilter.FindParent("Channel")
+            ControlSectionNode = ControlFilter.FindParent("Section")
+            ControlChannelNode = ControlFilter.FindParent("Channel")
+
+            SectionMappingsNode = self.GetOrCreateSectionMapping(MappedSectionNode.Number)
+
+            stosNode = TransformNode(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
+                                                                                             'MappedSectionNumber' : str(MappedSectionNode.Number),
+                                                                                             'MappedChannelName' : str(MappedChannelNode.Name),
+                                                                                             'MappedFilterName' : str(MappedFilter.Name),
+                                                                                             'MappedImageChecksum' : str(MappedFilter.Imageset.Checksum),
+                                                                                             'ControlChannelName' : str(ControlChannelNode.Name),
+                                                                                             'ControlFilterName' : str(ControlFilter.Name),
+                                                                                             'ControlImageChecksum' : str(ControlFilter.Imageset.Checksum)})
+
+        #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
+        #        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber',
+        #                                                                                    'ControlChannelName',
+        #                                                                                    'ControlFilterName',
+        #                                                                                    'MappedSectionNumber',
+        #                                                                                    'MappedChannelName',
+        #                                                                                    'MappedFilterName'])
+
+
+            SectionMappingsNode.append(stosNode)
 
         if not hasattr(stosNode, "ControlChannelName") or not hasattr(stosNode, "MappedChannelName"):
+
+            MappedChannelNode = MappedFilter.FindParent("Channel")
+            ControlChannelNode = ControlFilter.FindParent("Channel")
+
             renamedPath = os.path.join(os.path.dirname(stosNode.FullPath), stosNode.Path)
             XElementWrapper.logger.warn("Renaming stos transform for backwards compatability")
             XElementWrapper.logger.warn(renamedPath + " -> " + stosNode.FullPath)
@@ -1870,6 +1912,35 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
 
+    @property
+    def CropBox(self):
+        '''Returns boundaries of transform output if available, otherwise none
+           :rtype tuple:
+           :return (Xo, Yo, Width, Height):
+        '''
+
+        if 'CropBox' in self.attrib:
+            return nornir_shared.misc.ListFromAttribute(self.attrib['CropBox'])
+        else:
+            return None
+
+    @CropBox.setter
+    def CropBox(self, bounds):
+        '''Sets boundaries in fixed space for output from the transform.
+        :param bounds tuple:  (Xo, Yo, Width, Height) or (Width, Height)
+        '''
+        if len(bounds) == 4:
+            self.attrib['CropBox'] = "%g,%g,%g,%g" % bounds
+        elif len(bounds) == 2:
+            self.attrib['CropBox'] = "0,0,%g,%g" % bounds
+        elif bounds is None:
+            if 'CropBox' in self.attrib:
+                del self.attrib['CropBox']
+        else:
+            raise Exception("Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
+
+
+
     def IsValid(self):
         valid = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
@@ -1900,9 +1971,9 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
         return image
 
-    def GetOrCreateImage(self, Downsample, Path=None):
-        '''Returns image node for the specified downsample or None'''
-        LevelNode = self.GetOrCreateLevel(Downsample)
+    def GetOrCreateImage(self, Downsample, Path=None, GenerateData=True):
+        '''Returns image node for the specified downsample. Generates image if requested and image is missing.  If unable to generate an image node is returned'''
+        LevelNode = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
         imageNode = LevelNode.find("Image")
         if imageNode is None:
@@ -1915,7 +1986,8 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
                 if not os.path.exists(os.path.dirname(imageNode.FullPath)):
                     os.makedirs(os.path.dirname(imageNode.FullPath))
 
-                self.__GenerateMissingImageLevel(OutputImage=imageNode, Downsample=Downsample)
+                if GenerateData:
+                    self.__GenerateMissingImageLevel(OutputImage=imageNode, Downsample=Downsample)
 
         return imageNode
 
@@ -1935,9 +2007,12 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
                     # Probably a bad node, remove it
                     self.CleanIfInvalid()
 
-            SourceDownsample = SourceDownsample / 2
+            SourceDownsample = SourceDownsample / 2.0
 
         return (SourceImage, SourceDownsample)
+
+    def GenerateLevels(self, Levels):
+        tile.BuildImagePyramid(self, Levels, Interlace=False)
 
     def __GenerateMissingImageLevel(self, OutputImage, Downsample):
         '''Creates a downsampled image from available high-res images if needed'''
@@ -2037,6 +2112,32 @@ class SectionMappingsNode(XElementWrapper):
     def TransformsToSection(self, sectionNumber):
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
 
+    def FindStosTransform(self, ControlSectionNumber, ControlChannelName, ControlFilterName, MappedSectionNumber, MappedChannelName, MappedFilterName):
+        '''WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query'''
+        for t in self.Transforms:
+            if int(t.ControlSectionNumber) != ControlSectionNumber:
+                continue
+
+            if t.ControlChannelName != ControlChannelName:
+                continue
+
+            if t.ControlFilterName != ControlFilterName:
+                continue
+
+            if int(t.MappedSectionNumber) != MappedSectionNumber:
+                continue
+
+            if t.MappedChannelName != MappedChannelName:
+                continue
+
+            if t.MappedFilterName != MappedFilterName:
+                continue
+
+            return t
+
+        return None
+
+
     def __init__(self, MappedSectionNumber=None, attrib=None, **extra):
         super(SectionMappingsNode, self).__init__(tag='SectionMappings', attrib=attrib, **extra)
 
@@ -2076,7 +2177,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.attrib['ImageFormatExt'] = val
 
 
-    def __init__(self, NumberOfTiles, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
+    def __init__(self, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
 
         if LevelFormat is None:
             LevelFormat = Config.Current.LevelFormat
@@ -2093,6 +2194,8 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.attrib['LevelFormat'] = LevelFormat
         self.attrib['ImageFormatExt'] = ImageFormatExt
 
+    def GenerateLevels(self, Levels):
+        tile.BuildTilePyramids(self, Levels)
 
 class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
@@ -2137,6 +2240,9 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.Name = TilesetNode.DefaultName
         if(not 'Path' in self.attrib):
             self.attrib['Path'] = TilesetNode.DefaultPath
+
+    def GenerateLevels(self, Levels):
+        tile.BuildTilesetPyramid(self)
 
 
 class LevelNode(XContainerElementWrapper):
@@ -2237,7 +2343,12 @@ class LevelNode(XContainerElementWrapper):
             attrib = {}
 
         attrib['Path'] = Config.Current.LevelFormat % int(Level)
-        attrib['Downsample'] = '%g' % Level
+
+        if isinstance(Level, str):
+            attrib['Downsample'] = Level
+        else:
+            attrib['Downsample'] = '%g' % Level
+
         super(XContainerElementWrapper, self).__init__(tag='Level', attrib=attrib, **extra)
 
 

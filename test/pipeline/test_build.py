@@ -9,10 +9,18 @@ import unittest
 from setup_pipeline import *
 
 
-class PrepareThenMosaicTest(PipelineTest):
+class PrepareThenMosaicTest(PlatformTest):
     '''Run the build with prepare, then run again with mosiac'''
 
     TransformNames = ["translate", "grid", "zerogrid", "stage"]
+
+    @property
+    def VolumePath(self):
+        return "6750"
+
+    @property
+    def Platform(self):
+        return "PMG"
 
     def CheckTransformsExist(self, VolumeObj, TransformNames=None):
 
@@ -56,30 +64,19 @@ class PrepareThenMosaicTest(PipelineTest):
 
     def runTest(self):
         # Import the files
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'TEMPrepare', '-debug'];
-        build.Execute(buildArgs);
 
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
+        self.RunImportThroughMosaicAssemble()
 
-        buildArgs = ['Build.py', '-input', self.TestDataSource, '-volume', self.VolumeDir, '-pipeline', 'AdjustContrast', '-debug'];
-        build.Execute(buildArgs);
+        # self.CheckTransformsExist(VolumeObj)
 
-        self.assertTrue(os.path.exists(self.VolumeDir), "Test input was not copied");
-
-        buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'TEMMosaic', '-debug'];
-        build.Execute(buildArgs);
-
-        VolumeObj = VolumeManager.Load(self.VolumeDir)
-        self.CheckTransformsExist(VolumeObj)
-
-        buildArgs = ['Build.py', '-volume', self.VolumeDir, '-pipeline', 'AssembleTiles', '-debug'];
-        build.Execute(buildArgs);
+        buildArgs = self._CreateBuildArgs(pipeline='AssembleTiles')
+        build.Execute(buildArgs)
 
         # Load the meta-data from the volumedata.xml file
-        VolumeObj = VolumeManager.Load(self.VolumeDir)
+        VolumeObj = VolumeManager.Load(self.TestOutputPath)
 
         self.CheckTilesetExists(VolumeObj)
 
 if __name__ == "__main__":
-    # import sys;sys.argv = ['', 'Test.testName']
+    # import syssys.argv = ['', 'Test.testName']
     unittest.main()

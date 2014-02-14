@@ -52,6 +52,20 @@ class TestBase(unittest.TestCase):
 
         return None
 
+    @property
+    def TestHost(self):
+        if 'TESTHOST' in os.environ:
+            return os.environ["TESTHOST"]
+
+        return None
+
+    @property
+    def TestOutputURL(self):
+        if self.TestHost is None:
+            return None
+
+        return self.TestHost + "/" + self.classname
+
     def setUp(self):
 
         super(TestBase, self).setUp()

@@ -13,7 +13,7 @@ import datetime
 import nornir_buildmanager.importers.idoc as idoc
 import nornir_shared.plot
 import nornir_shared.prettyoutput
-from nornir_buildmanager.pipelinemanager import PipelineManager
+from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet
 import nornir_shared.files as nfiles
 # import Pipelines.VolumeManagerETree as VolumeManager
 
@@ -24,6 +24,7 @@ if __name__ == '__main__':
 class RowList(list):
     '''class used for HTML to place into rows'''
     pass
+
 
 class ColumnList(list):
     '''Class used for HTML to place into columns'''
@@ -43,7 +44,6 @@ class ColumnList(list):
 class UnorderedItemList(list):
     '''Class used for HTML to create unordered list from items'''
     pass
-
 
 
 class HTMLBuilder(list):
@@ -125,13 +125,21 @@ class HTMLPaths(object):
             self._OutputFile = os.path.basename(OutputFileFullPath)
 
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
-        
-    
+
+
+    def CreateOutputDirs(self):
+
+        if not os.path.exists(self.OutputDir):
+            os.makedirs(self.OutputDir)
+
+        if not os.path.exists(self.ThumbnailDir):
+            os.makedirs(self.ThumbnailDir)
+
     @classmethod
     def __StripLeadingPathSeperator(cls, path):
         while(path[0] == os.sep or path[0] == os.altsep):
             path = path[1:]
-            
+
         return path
 
 
@@ -146,9 +154,9 @@ class HTMLPaths(object):
         RelativePath = HTMLPaths.__StripLeadingPathSeperator(RelativePath)
 
         return RelativePath
-    
+
     def GetSubNodeFullPath(self, subpath):
-        
+
         RelPath = self.GetSubNodeRelativePath(subpath)
         if not RelPath is None:
             FullPath = os.path.join(RelPath, subpath.Path)
@@ -180,29 +188,59 @@ def GetTempFileSaltString():
 
     return saltString
 
-def CopyFiles(DataNode, OutputDir, Move=False, **kwargs):
+def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
+
     if OutputDir is None:
         return
-    
+
     logger = kwargs.get('Logger', logging.getLogger('CopyFiles'))
 
     if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)    
+        os.makedirs(OutputDir)
 
     if os.path.exists(DataNode.FullPath):
-        
+
         if os.path.isfile(DataNode.FullPath):
             OutputFileFullPath = os.path.join(OutputDir, DataNode.Path)
             nfiles.RemoveOutdatedFile(DataNode.FullPath, OutputFileFullPath)
-            
+
             if not os.path.exists(OutputFileFullPath):
-                
+
                 logger.info(DataNode.FullPath + " -> " + OutputFileFullPath)
                 shutil.copyfile(DataNode.FullPath, OutputFileFullPath)
         else:
-            #Just copy the directory over, this is an odd case
+            # Just copy the directory over, this is an odd case
             logger.info("Copy directory " + DataNode.FullPath + " -> " + OutputDir)
             shutil.copy(DataNode.FullPath, OutputDir)
+
+
+def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
+
+    if OutputDir is None:
+        return
+
+    logger = kwargs.get('Logger', logging.getLogger('CopyImage'))
+
+    if not os.path.exists(OutputDir):
+        os.makedirs(OutputDir)
+
+    # Find the imageset for the DataNode
+    ImageNode = FilterNode.GetOrCreateImage(Downsample)
+
+    if os.path.exists(ImageNode.FullPath):
+
+        if os.path.isfile(ImageNode.FullPath):
+            OutputFileFullPath = os.path.join(OutputDir, ImageNode.Path)
+            nfiles.RemoveOutdatedFile(ImageNode.FullPath, OutputFileFullPath)
+
+            if not os.path.exists(OutputFileFullPath):
+
+                logger.info(ImageNode.FullPath + " -> " + OutputFileFullPath)
+                shutil.copyfile(ImageNode.FullPath, OutputFileFullPath)
+        else:
+            # Just copy the directory over, this is an odd case
+            logger.info("Copy directory " + ImageNode.FullPath + " -> " + OutputDir)
+            shutil.copy(ImageNode.FullPath, OutputDir)
 
 def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
     if OutputDir is None:
@@ -502,11 +540,11 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
 
     imageFilename = ImageNode.Path
 
-    
+
     if not os.path.exists(ImageNode.FullPath):
         Logger.error("Missing image file: " + ImageNode.FullPath)
         return ""
- 
+
     ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
 
     [Width, Height] = nornir_shared.images.GetImageSize(ImageNode.FullPath)
@@ -542,7 +580,7 @@ def __anchorStringForHeader(Text):
     return '<a id="%(id)s"><b>%(id)s</b></a>' % {'id' : Text}
 
 
-def HTMLFromTransformNode(ColSubElement, HtmlPaths,  **kwargs):
+def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
     return '<a href="%s">%s</a>' % (HtmlPaths.GetSubNodeFullPath(ColSubElement), ColSubElement.Name)
 
 
@@ -566,10 +604,14 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     # OK, build the columns
     astr = __anchorStringForHeader(RowLabel)
     ColumnBodyList.append(astr)
+
+    ArgSet = ArgumentSet()
+
+    ArgSet.AddArguments(kwargs)
     # CaptionHTML = None
     for ColXPath in ColumnXPaths:
 
-        ColXPath = PipelineManager.SubstituteStringVariables(ColXPath, kwargs)
+        # ColXPath = ArgSet.SubstituteStringVariables(ColXPath)
         ColSubElements = RowElement.findall(ColXPath)
         # Create a new table inside if len(ColSubElements) > 1?
         for ColSubElement in ColSubElements:
@@ -626,6 +668,8 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     Paths = HTMLPaths(RootElement.FullPath, OutputFile)
 
+    Paths.CreateOutputDirs()
+
     # OK, start walking the columns.  Then walk the rows
     RowElements = list(ReportingElement.findall(RowXPath))
     if RowElements is None:
@@ -636,7 +680,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
     pool = Pools.GetGlobalThreadPool()
     tableDict = {}
     tasks = []
-     
+
     NumRows = len(RowElements)
     for (iRow, RowElement) in enumerate(RowElements):
 
@@ -646,14 +690,15 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
         if RowLabel is None:
             RowLabel = RowElement
 
-        
+        # task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        # tasks.append(task)
+        # task.wait()
 
-        task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
-        tasks.append(task)
-        #result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
-        #tableDict[RowLabel] = result
-        
-    for iRow,t in enumerate(tasks):
+        # Threading this caused problems with Matplotlib being called from different threads.  Single threading again for now
+        result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
+        tableDict[RowLabel] = result
+
+    for iRow, t in enumerate(tasks):
         try:
             tableDict[t.name] = t.wait_return()
             nornir_shared.prettyoutput.CurseProgress("Added row", iRow, Total=NumRows)

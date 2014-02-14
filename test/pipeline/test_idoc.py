@@ -20,7 +20,7 @@ import nornir_shared.misc
 import setup_pipeline
 
 
-class IDocTest(setup_pipeline.PipelineTest):
+class IDocTest(setup_pipeline.PlatformTest):
 
     @property
     def classname(self):
@@ -29,7 +29,7 @@ class IDocTest(setup_pipeline.PipelineTest):
 
     @property
     def VolumePath(self):
-        return ""
+        return "RC2_4Square"
 
     @property
     def Platform(self):
@@ -63,8 +63,15 @@ class IDocTest(setup_pipeline.PipelineTest):
 #            shutil.rmtree(self.VolumeFullPath)
 #
 
-
 class IDocSingleSectionImportTest(IDocTest):
+
+    @property
+    def VolumePath(self):
+        return "RC2_Micro/%d" % self.SectionNumber
+
+    @property
+    def SectionNumber(self):
+        return 17
 
     def LoadMetaData(self):
         '''Updates the object's meta-data variables from disk'''
@@ -79,7 +86,7 @@ class IDocSingleSectionImportTest(IDocTest):
         self.StageTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Stage')
 #        self.PruneTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Prune')
 #        self.TranslateTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Translate')
-#        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
+        self.GridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Grid')
 #        self.ZeroGridTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'ZeroGrid')
 
         self.assertIsNotNone(self.StageTransform)
@@ -88,11 +95,7 @@ class IDocSingleSectionImportTest(IDocTest):
 #        self.assertIsNotNone(self.GridTransform)
 #        self.assertIsNotNone(self.ZeroGridTransform)
 
-    def EnsureTilePyramidIsFull(self, SectionNumber, NumExpectedTiles):
-
-        BlockNode = self.VolumeObj.find('Block')
-        self.assertIsNotNone(BlockNode)
-
+    def _getFilterNode(self, BlockNode, SectionNumber):
         SectionNode = BlockNode.GetSection(SectionNumber)
         self.assertIsNotNone(SectionNode)
 
@@ -102,25 +105,11 @@ class IDocSingleSectionImportTest(IDocTest):
         FilterNode = ChannelNode.GetFilter('Raw8')
         self.assertIsNotNone(FilterNode)
 
-        TilePyramidNode = FilterNode.TilePyramid
-        self.assertIsNotNone(TilePyramidNode)
-
-        LevelOneNode = TilePyramidNode.GetLevel(1)
-        self.assertIsNotNone(LevelOneNode)
-
-        globpath = os.path.join(LevelOneNode.FullPath, '*' + TilePyramidNode.ImageFormatExt)
-        tiles = glob.glob(globpath)
-        self.assertEqual(NumExpectedTiles, len(tiles), 'Did not find %d tile in %s' % (NumExpectedTiles, globpath))
-        self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles), "Did not find %d tiles reported by meta-data in %s" % (TilePyramidNode.NumberOfTiles, globpath))
-        return
-
+        return FilterNode
 
     def runTest(self):
 
-        SingleSectionInputPath = os.path.join(self.PlatformFullPath, '17')
-        buildArgs = ['Build.py', '-input', SingleSectionInputPath, '-volume', self.TestOutputPath, '-debug']
-        self.RunBuild(buildArgs)
-
+        self.RunImport()
         self.LoadMetaData()
 
         SectionNodes = list(self.VolumeObj.findall("Block/Section"))
@@ -132,18 +121,106 @@ class IDocSingleSectionImportTest(IDocTest):
         LogData = self.ChannelData.GetChildByAttrib('Data', 'Name', 'Log')
         self.assertIsNotNone(LogData)
 
-        self.EnsureTilePyramidIsFull(17, 25)
+        BlockNode = self.VolumeObj.find('Block')
+        self.assertIsNotNone(BlockNode)
+
+        self.EnsureTilePyramidIsFull(self._getFilterNode(BlockNode, self.SectionNumber), 25)
+
+
+# class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
+#     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
+#
+#     @property
+#     def VolumePath(self):
+#         return "RC2_4Square_Aligned"
+#
+#     @property
+#     def Platform(self):
+#         return "IDOC"
+#
+#     def runTest(self):
+#         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+#
+#         BruteLevel = 32
+#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+#         self.RunSliceToVolume()
+#         self.RunMosaicToVolume()
+#         self.RunCreateVikingXML()
+#         self.RunAssembleMosaicToVolume(Channels="TEM")
+
+
+class IDocBuildTest(IDocTest):
+
+    def runTest(self):
+
+        self.RunImport()
+        self.RunPrune()
+        self.RunHistogram()
+        self.RunAdjustContrast()
+        self.RunMosaic(Filter="Leveled")
+        self.RunMosaicReport()
+        self.RunAssemble(Level=1)
+        self.RunMosaicReport()
+
+        # Copy output here to run IDocAlignTest
+
+        BruteLevel = 32
+
+        self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+        self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
+        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+
+        # Copy output here to run IDocAlignOutputTest
+
+        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+        self.RunSliceToVolume()
+        self.RunMosaicToVolume()
+        self.RunCreateVikingXML()
+        self.RunAssembleMosaicToVolume(Channels="TEM")
+        self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
+
+# class IDocAlignTest(setup_pipeline.CopySetupTestBase):
+#     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
+#
+#     @property
+#     def VolumePath(self):
+#         return "RC2_4Square_Assembled"
+#
+#     @property
+#     def Platform(self):
+#         return "IDOC"
+#
+#     def runTest(self):
+#          # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+#         # return
+#
+#         BruteLevel = 32
+#         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+#         self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
+#         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+#         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+#
+#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+#         self.RunSliceToVolume()
+#         self.RunMosaicToVolume()
+#         self.RunCreateVikingXML()
+#         self.RunAssembleMosaicToVolume(Channels="TEM")
 
 
 class IdocReaderTest(IDocTest):
 
+    @property
+    def VolumePath(self):
+        return "RC2_Micro"
+
     def runTest(self):
         NumLogTiles = 25
 
-        idocDir = os.path.join(self.PlatformFullPath, '17/*.idoc')
+        idocDir = os.path.join(self.ImportedDataPath, '17/*.idoc')
         idocFiles = glob.glob(idocDir)
 
-        self.assertEqual(len(idocFiles), 1)
+        self.assertEqual(len(idocFiles), 1, "Idoc file not found")
 
         idocFile = idocFiles[0]
         self.assertTrue(os.path.exists(idocFile))
@@ -169,11 +246,13 @@ class IdocReaderTest(IDocTest):
         self.assertEqual(TileData.RotationAngle , -178.3)
         self.assertEqual(TileData.Defocus , -6.8902)
         self.assertEqual(TileData.PieceCoordinates, [3590, 7180, 0])
-
         return
 
-
 class LogReaderTest(IDocTest):
+
+    @property
+    def VolumePath(self):
+        return "RC2_Micro"
 
     def validateLogEntries(self, LogData):
         NumLogTiles = 25
@@ -210,9 +289,7 @@ class LogReaderTest(IDocTest):
         self.assertEqual(TileData.endTime, 5433.453)
 
     def runTest(self):
-
-
-        logDir = os.path.join(self.PlatformFullPath, '17/*.log')
+        logDir = os.path.join(self.ImportedDataPath, '17/*.log')
         logFiles = glob.glob(logDir)
 
         self.assertEqual(len(logFiles), 1)
@@ -231,10 +308,7 @@ class LogReaderTest(IDocTest):
 
         idoc.PlotDriftGrid(cachedLogData, outputGrid)
         idoc.PlotDriftSettleTime(cachedLogData, outputDrift)
-
-
         return
-
 
 if __name__ == "__main__":
     # import syssys.argv = ['', 'Test.testName']
