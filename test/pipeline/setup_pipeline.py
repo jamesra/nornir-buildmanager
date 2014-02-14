@@ -411,7 +411,7 @@ class PlatformTest(test.testbase.TestBase):
         volumeNode = self.RunBuild(buildArgs)
 
         OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))
-        self.assertTrue(len(OutputPngs) > 0)
+        self.assertTrue(len(OutputPngs) > 0, "No exported images found in %s" % imageOutputPath)
 
         return volumeNode
 
