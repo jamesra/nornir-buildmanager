@@ -75,12 +75,11 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, **kwargs
 
     InputMaskNode = InputFilter.GetOrCreateMaskImage(thisLevel)
     MaskStr = ""
+    if not os.path.exists(InputMaskNode.FullPath):
+        InputMaskNode = None
+
     if not InputMaskNode is None:
         OutputFilterNode.MaskName = InputMaskNode.Name
-        if not os.path.exists(InputMaskNode.FullPath):
-            prettyoutput.Log("Missing input level nodes for blob level: " + str(thisLevel))
-            Logger.warning("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
-            return
 
         MaskStr = ' -mask %s ' % InputMaskNode.FullPath
 

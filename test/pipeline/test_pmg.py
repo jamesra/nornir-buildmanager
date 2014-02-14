@@ -192,7 +192,7 @@ class PMGBuildTest(PMGTest):
         self.RunMosaic(Filter="Leveled")
         self.RunAssemble(Level=1)
         self.RunAssemble(Filter="ShadingCorrected", Level=1)
-        self.RunExportImages(Channels="(!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
+        self.RunExportImages(Channels="(?!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
 
         self.RunMosaicReport(ContrastFilter="Leveled", AssembleFilter="ShadingCorrected", AssembleDownsample=1)
 
@@ -218,7 +218,7 @@ class PMGBuildTest(PMGTest):
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
         self.RunCreateVikingXML()
-        self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleDownsample=1)
+        self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleLevel=1)
         self.RunExportImages(Channels="Registered", Filters="ShadingCorrected", AssembleLevel=1, Output="Registered")
 
 #
