@@ -542,7 +542,6 @@ class PipelineManager(object):
             RootForSearch = ArgSet.Variables[RootIterNodeName]
         return RootForSearch
 
-
     IndentLevel = 0
 
     def Execute(self, parser, passedArgs):
@@ -609,6 +608,7 @@ class PipelineManager(object):
                     sys.exit()
                 except Exception as e:
                     print str(e)
+                    break
         finally:
             self.RemovePipelineNodeVariable(ArgSet, PipelineNode)
 
@@ -867,7 +867,7 @@ def _AddArgumentNodeToParser(parser, argNode):
 
         # Starts as a string, try to convert to bool, int, or float
         if key == 'flag':
-            Flag = nornir_shared.misc.SortedListFromDelimited(val)
+            Flag = nornir_shared.misc.ListFromDelimited(val)
             continue
 
         elif key == 'type':
@@ -885,7 +885,7 @@ def _AddArgumentNodeToParser(parser, argNode):
         elif key == 'required':
             attribDictCopy[key] = _ConvertValueToPythonType(val)
         elif key == 'choices':
-            listOfChoices = nornir_shared.misc.SortedListFromDelimited(val)
+            listOfChoices = nornir_shared.misc.ListFromDelimited(val)
             if len(listOfChoices) < 2:
                 raise Exception(message="Flag %s does not specify multiple choices.  Must use a comma delimited list to provide multiple choice options.\nCurrent choice string is: %s" % (attribDictCopy['flag'], val))
 

@@ -472,6 +472,7 @@ class XElementWrapper(ElementTree.Element):
 
 
         if not Valid[0]:
+
             self.Clean(Valid[1])
 
         return not Valid[0]
@@ -1971,7 +1972,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         return image
 
     def GetOrCreateImage(self, Downsample, Path=None, GenerateData=True):
-        '''Returns image node for the specified downsample or None'''
+        '''Returns image node for the specified downsample. Generates image if requested and image is missing.  If unable to generate an image node is returned'''
         LevelNode = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
         imageNode = LevelNode.find("Image")
@@ -1986,7 +1987,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
                     os.makedirs(os.path.dirname(imageNode.FullPath))
 
                 if GenerateData:
-                    imageNode = self.__GenerateMissingImageLevel(OutputImage=imageNode, Downsample=Downsample)
+                    self.__GenerateMissingImageLevel(OutputImage=imageNode, Downsample=Downsample)
 
         return imageNode
 

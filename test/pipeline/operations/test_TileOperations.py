@@ -87,9 +87,9 @@ class ShadeCorrectionTest(ImportOnlySetup):
         OutputTiles = glob.glob(os.path.join(LevelNode.FullPath, '*.png'))
         self.assertEqual(len(SourceTiles), len(OutputTiles), "Number of shading corrected tiles does not match number of input tiles")
 
-        image = tiles.CalculateShadeImage(OutputTiles, type=tiles.ShadeCorrectionTypes.BRIGHTFIELD)
+        # image = tiles.CalculateShadeImage(OutputTiles, type=tiles.ShadeCorrectionTypes.BRIGHTFIELD)
 
-        self.assertEqual(np.max(image), 0, "We already corrected shading, the next shading corrected image should be all zeros")
+        # self.assertEqual(np.max(image), 0, "We already corrected shading, the next shading corrected image should be all zeros")
 
 
 class HistogramFilterTest(ImportOnlySetup):

@@ -1603,8 +1603,6 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
 
     StosMosaicTransforms = []
 
-
-
     for channelNode in MatchingChannelNodes:
         transformNode = channelNode.GetChildByAttrib('Transform', 'Name', InputTransformName)
 

@@ -375,16 +375,13 @@ class PlatformTest(test.testbase.TestBase):
         if Filters is None:
             Filters = "Leveled"
 
-        # Build Mosaics
-        imageOutputPath = os.path.join(self.TestOutputPath, 'RegisteredOutput')
 
         buildArgs = self._CreateBuildArgs('Assemble', '-ChannelPrefix', 'Registered_',
                                                                '-Channels', Channels,
                                                                '-Filters', Filters,
                                                                '-Downsample', str(AssembleLevel),
                                                                '-Transform', 'ChannelToVolume',
-                                                               '-NoInterlace',
-                                                               '-Output', imageOutputPath)
+                                                               '-NoInterlace')
         volumeNode = self.RunBuild(buildArgs)
 
         FoundOutput = False
@@ -394,9 +391,27 @@ class PlatformTest(test.testbase.TestBase):
                 break
 
         self.assertTrue(FoundOutput, "Output channel not created")
+        return volumeNode
+
+    def RunExportImages(self, Channels, Filters=None, AssembleLevel=1, Output=None):
+
+        if Filters is None:
+            Filters = "Leveled"
+
+        if Output is None:
+            Output = 'RegisteredOutput'
+
+        # Build Mosaics
+        imageOutputPath = os.path.join(self.TestOutputPath, Output)
+
+        buildArgs = self._CreateBuildArgs('ExportImages', '-Channels', Channels,
+                                                          '-Filters', Filters,
+                                                          '-Downsample', str(AssembleLevel),
+                                                          '-Output', imageOutputPath)
+        volumeNode = self.RunBuild(buildArgs)
 
         OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))
-        self.assertTrue(len(OutputPngs) > 0)
+        self.assertTrue(len(OutputPngs) > 0, "No exported images found in %s" % imageOutputPath)
 
         return volumeNode
 

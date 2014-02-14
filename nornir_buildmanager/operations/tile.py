@@ -876,8 +876,6 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
 
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
-    Feathering = Parameters.get('Feathering', 'binary')
-
     MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
     InputChannelNode = FilterNode.FindParent('Channel')
     SectionNode = InputChannelNode.FindParent('Section')
@@ -940,9 +938,11 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
     if hasattr(ImageNode, 'InputTransformChecksum'):
         if not transforms.IsValueMatched(ImageNode, 'InputTransformChecksum', TransformNode.Checksum):
-            os.remove(ImageNode.FullPath)
+            if os.path.exists(ImageNode.FullPath):
+                os.remove(ImageNode.FullPath)
     else:
-        os.remove(ImageNode.FullPath)
+        if os.path.exists(ImageNode.FullPath):
+            os.remove(ImageNode.FullPath)
 
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
@@ -990,6 +990,9 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         shutil.move(tempOutputFullPath, ImageNode.FullPath)
         shutil.move(tempMaskOutputFullPath, MaskImageNode.FullPath)
+
+        ImageNode.InputTransformChecksum = TransformNode.Checksum
+        MaskImageNode.InputTransformChecksum = TransformNode.Checksum
 
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
