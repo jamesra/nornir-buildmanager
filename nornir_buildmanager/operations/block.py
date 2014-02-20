@@ -12,6 +12,7 @@ import os
 import random
 import shutil
 import subprocess
+import math
 
 from nornir_buildmanager import VolumeManagerETree, VolumeManagerHelpers
 from nornir_buildmanager.metadatautils import *
@@ -1625,6 +1626,9 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
     mosaicToVolume.TranslateToZeroOrigin()
 
     (minX, minY, maxX, maxY) = mosaicToVolume.VolumeBounds
+
+    maxX = int(math.ceil(maxX))
+    maxY = int(math.ceil(maxY))
 
     # Failing these asserts means the translate to zero origin function is not actually translating to a zero origin
     assert(minX >= 0)
