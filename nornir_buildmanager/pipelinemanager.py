@@ -745,58 +745,59 @@ class PipelineManager(object):
             # Update dargs with the attributes
 
             ArgSet.AddAttributes(PipelineNode)
-
             ArgSet.AddParameters(PipelineNode)
-            # PipelineManager.AddAttributes(dargs, PipelineNode)
 
-            # Check for parameters under the function node and load them into the dictionary
-            # PipelineManager.AddParameters(dargs, PipelineNode, dargsKeyname='Parameters')
+            try:
+                # PipelineManager.AddAttributes(dargs, PipelineNode)
 
-            kwargs = ArgSet.KeyWordArgs()
+                # Check for parameters under the function node and load them into the dictionary
+                # PipelineManager.AddParameters(dargs, PipelineNode, dargsKeyname='Parameters')
 
-            kwargs["Logger"] = PipelineManager.logger.getChild(PipelineFunction)
-            # kwargs["CallElement"] = PipelineNode
-            kwargs["VolumeElement"] = VolumeElem
-            kwargs["VolumeNode"] = self.VolumeTree
+                kwargs = ArgSet.KeyWordArgs()
 
-            # Add an empty dictionary if no parameters set
-            if 'Parameters' not in kwargs:
-                kwargs['Parameters'] = {}
+                kwargs["Logger"] = PipelineManager.logger.getChild(PipelineFunction)
+                # kwargs["CallElement"] = PipelineNode
+                kwargs["VolumeElement"] = VolumeElem
+                kwargs["VolumeNode"] = self.VolumeTree
 
-            NodesToSave = None
+                # Add an empty dictionary if no parameters set
+                if 'Parameters' not in kwargs:
+                    kwargs['Parameters'] = {}
 
-            if not ArgSet.Arguments["debug"]:
-                try:
-                    NodesToSave = stageFunc(**kwargs)
-                except:
-                    errorStr = '\n' + '-' * 60 + '\n'
-                    errorStr = errorStr + str(PipelineModule) + '.' + str(PipelineFunction) + " Exception\n"
-                    errorStr = errorStr + '-' * 60 + '\n'
-                    errorStr = errorStr + traceback.format_exc()
-                    errorStr = errorStr + '-' * 60 + '\n'
-                    PipelineManager.logger.error(errorStr)
-                    prettyoutput.LogErr(errorStr)
+                NodesToSave = None
 
-                    self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
+                if not ArgSet.Arguments["debug"]:
+                    try:
+                        NodesToSave = stageFunc(**kwargs)
+                    except:
+                        errorStr = '\n' + '-' * 60 + '\n'
+                        errorStr = errorStr + str(PipelineModule) + '.' + str(PipelineFunction) + " Exception\n"
+                        errorStr = errorStr + '-' * 60 + '\n'
+                        errorStr = errorStr + traceback.format_exc()
+                        errorStr = errorStr + '-' * 60 + '\n'
+                        PipelineManager.logger.error(errorStr)
+                        prettyoutput.LogErr(errorStr)
 
-                    # Continue so we do not write an updated XML file
-                    prettyoutput.DecreaseIndent()
-                    return
-            else:
-                # In debug mode we do not want to catch any exceptions
-                # stage functions can return None,True, or False to indicate they did work.
-                # if they return false we do not need to run the expensive save operation
-                NodesToSave = stageFunc(**kwargs)
+                        self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
 
-            if not NodesToSave is None:
-                if isinstance(NodesToSave, list):
-                    for node in NodesToSave:
-                        VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], node)
+                        # Continue so we do not write an updated XML file
+                        prettyoutput.DecreaseIndent()
+                        return
                 else:
-                    VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], NodesToSave)
+                    # In debug mode we do not want to catch any exceptions
+                    # stage functions can return None,True, or False to indicate they did work.
+                    # if they return false we do not need to run the expensive save operation
+                    NodesToSave = stageFunc(**kwargs)
 
-            ArgSet.ClearAttributes()
-            ArgSet.ClearParameters()
+                if not NodesToSave is None:
+                    if isinstance(NodesToSave, list):
+                        for node in NodesToSave:
+                            VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], node)
+                    else:
+                        VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], NodesToSave)
+            finally:
+                ArgSet.ClearAttributes()
+                ArgSet.ClearParameters()
 
  #           PipelineManager.RemoveParameters(dargs, PipelineNode)
  #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
