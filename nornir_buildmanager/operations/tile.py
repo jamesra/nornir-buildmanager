@@ -21,7 +21,7 @@ from scipy.misc import imsave
 import nornir_buildmanager
 
 import nornir_buildmanager.Config as Config
-from nornir_buildmanager.validation import transforms
+from nornir_buildmanager.validation import transforms, image
 import nornir_imageregistration.core as core
 import nornir_imageregistration.image_stats as image_stats
 import nornir_imageregistration.tiles as tiles
@@ -944,6 +944,10 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         if os.path.exists(ImageNode.FullPath):
             os.remove(ImageNode.FullPath)
 
+    if not TransformNode.CropBox is None:
+        (Xo, Yo, Width, Height) = TransformNode.CropBox
+        image.RemoveOnDimensionMismatch(ImageNode.FullPath, (Width, Height))
+        image.RemoveOnDimensionMismatch(MaskImageNode.FullPath, (Width, Height))
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
