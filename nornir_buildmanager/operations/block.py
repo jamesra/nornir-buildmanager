@@ -447,6 +447,7 @@ def __StosFilename(ControlFilter, MappedFilter):
 
 
 def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
+    '''Create an initial rotation and translation alignment for a pair of unregistered images'''
 
     Downsample = int(Parameters.get('Downsample', 32))
     OutputStosGroupName = kwargs.get('OutputGroup', 'Brute')
