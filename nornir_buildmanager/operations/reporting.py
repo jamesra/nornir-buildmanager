@@ -173,6 +173,26 @@ class HTMLPaths(object):
 
         return (ThumbnailDirectory, ThumbnailDirectoryFullPath)
 
+    def GetFileAnchorHTML(self, Node, text):
+        '''Returns an <A> anchor node pointing at the nodes file.  If the file does not exist an empty string is returned'''
+        # Temp patch
+        FullPath = None
+        patchedPath = _patchupNotesPath(Node)
+        FullPath = os.path.join(Node.Parent.FullPath, patchedPath)
+
+        RelPath = self.GetSubNodeRelativePath(FullPath)
+
+        (junk, ext) = os.path.splitext(patchedPath)
+        ext = ext.lower()
+
+        HTML = ""
+
+        if os.path.exists(FullPath):
+            SrcFullPath = os.path.join(RelPath, patchedPath)
+            HTML += HTMLAnchorTemplate % {'href' : SrcFullPath, 'body' : text}
+
+        return HTML
+
 
 HTMLImageTemplate = '<img src="%(src)s" alt="%(AltText)s" width="%(ImageWidth)s" height="%(ImageHeight)s" />'
 HTMLAnchorTemplate = '<a href="%(href)s">%(body)s</a>'
@@ -187,6 +207,8 @@ def GetTempFileSaltString():
     TempFileSalt = TempFileSalt + 1
 
     return saltString
+
+
 
 def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
 
@@ -255,7 +277,7 @@ def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
     return None
 
 
-def __patchupNotesPath(NotesNode):
+def _patchupNotesPath(NotesNode):
     '''Temp fix for old notes elements without a path attribute'''
     if 'SourceFilename' in NotesNode.attrib:
         return NotesNode.SourceFilename
@@ -351,20 +373,11 @@ def __RTFToHTML(rtfStr):
 def HTMLFromNotesNode(DataNode, htmlPaths, **kwargs):
 
     # Temp patch
-    FullPath = os.path.join(DataNode.Parent.FullPath, __patchupNotesPath(DataNode))
-    RelPath = htmlPaths.GetSubNodeRelativePath(FullPath)
-
-    (junk, ext) = os.path.splitext(__patchupNotesPath(DataNode))
-    ext = ext.lower()
-
-    HTML = ""
-
-    if os.path.exists(FullPath):
-        NotesSrcFullPath = os.path.join(RelPath, __patchupNotesPath(DataNode))
-        HTML += HTMLAnchorTemplate % {'href' : NotesSrcFullPath, 'body' : "<b>Notes</b>"}
-        HTML += ": "
+    HTML = htmlPaths.GetFileAnchorHTML(DataNode, "Notes: ")
 
     if not (DataNode.text is None or len(DataNode.text) == 0):
+        (junk, ext) = os.path.splitext(_patchupNotesPath(DataNode))
+
         if 'rtf' in ext or 'doc' in ext:
             HTML += __RTFToHTML(DataNode.text)
         else:
@@ -424,6 +437,103 @@ def __ExtractLogDataText(Data):
     return Columns
 
 
+
+
+def HTMLFromDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
+
+    if not hasattr(DataNode, 'Name'):
+        return
+
+    if DataNode.Name == 'Log':
+        return HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)
+    elif DataNode.Name == 'IDoc':
+        return HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)
+    else:
+        return HTMLFromUnknownDataNode(DataNode, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)
+
+
+def HTMLFromUnknownDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
+
+    Name = "Data"
+    if hasattr(DataNode, 'Name'):
+        Name = DataNode.Name
+
+    return htmlpaths.GetFileAnchorHTML(DataNode, Name)
+
+
+def __ExtractIDocDataText(DataNode):
+
+    rows = RowList()
+
+    if 'ExposureTime' in DataNode.attrib:
+        rows.append(['Exposure Time:', '%.4g sec' % float(DataNode.ExposureTime)])
+
+    if 'ExposureDose' in DataNode.attrib:
+        rows.append(['Exposure Dose:', '%.4g nm/sec' % float(DataNode.ExposureDose)])
+
+    if 'Magnification' in DataNode.attrib:
+        rows.append(['Magnification:', '%.4g X' % float(DataNode.Magnification)])
+
+    if 'PixelSpacing' in DataNode.attrib:
+        rows.append(['Pixel Spacing:', '%.4g' % float(DataNode.PixelSpacing)])
+
+    if 'SpotSize' in DataNode.attrib:
+        rows.append(['Spot Size:', '%d' % int(DataNode.SpotSize)])
+
+    if 'TargetDefocus' in DataNode.attrib:
+        rows.append(['Target Defocus:', '%.4g' % float(DataNode.TargetDefocus)])
+
+    return rows
+
+#     ExposureList = []
+#     MagList = []
+#     SettingList = []
+#     Columns = ColumnList()
+#
+#     if 'ExposureTime' in DataNode.attrib:
+#         ExposureList.append(['Exposure Time:', '%.4g sec' % float(DataNode.ExposureTime)])
+#
+#     if 'ExposureDose' in DataNode.attrib:
+#         ExposureList.append(['Exposure Dose:', '%.4g nm/sec' % float(DataNode.ExposureDose)])
+#
+#     if 'Magnification' in DataNode.attrib:
+#         MagList.append(['Magnification:', '%.4g X' % float(DataNode.Magnification)])
+#
+#     if 'PixelSpacing' in DataNode.attrib:
+#         MagList.append(['Pixel Spacing:', '%.4g' % float(DataNode.PixelSpacing)])
+#
+#     if 'SpotSize' in DataNode.attrib:
+#         SettingList.append(['Spot Size:', '%d' % int(DataNode.SpotSize)])
+#
+#     if 'TargetDefocus' in DataNode.attrib:
+#         SettingList.append(['Target Defocus:', '%.4g' % float(DataNode.TargetDefocus)])
+#
+#     if len(ExposureList) > 0:
+#         Columns.append(ExposureList)
+#
+#     if len(MagList) > 0:
+#         Columns.append(MagList)
+#
+#     if len(SettingList) > 0:
+#         Columns.append(SettingList)
+#
+#     return Columns
+
+
+def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
+    '''
+    <Data CreationDate="2013-12-16 11:58:15" DataMode="6" ExposureDose="0" ExposureTime="0.5" Image="10000.tif"
+     ImageSeries="1" Intensity="0.52256" Magnification="5000" Montage="1" Name="IDoc" Path="1.idoc" PixelSpacing="21.76" 
+     RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
+    '''
+
+
+    rows = __ExtractIDocDataText(DataNode)
+    rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
+
+    return rows
+
+
 def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
 
     if MaxImageWidth is None:
@@ -436,7 +546,6 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
         return None
 
     TableEntries = {}
-
 
     logFilePath = DataNode.FullPath
     if os.path.exists(logFilePath):
@@ -509,9 +618,6 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
         if 'CaptureTime' in DataNode.attrib:
             dtime = datetime.timedelta(seconds=float(DataNode.CaptureTime))
             TableEntries.append(['Total capture time:', str(dtime)])
-
-
-
 
     if len(TableEntries) == 0:
         return None
@@ -618,18 +724,20 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
 
             HTML = None
             if ColSubElement.tag == "Image":
-                if not 'assemble' in ColXPath:
+                if ColSubElement.FindParent("ImageSet") is None:
                     kwargs['MaxImageWidth'] = 364
                     kwargs['MaxImageHeight'] = 364
                 else:
-                    kwargs['MaxImageWidth'] = 512
-                    kwargs['MaxImageHeight'] = 512
+                    kwargs['MaxImageWidth'] = 448
+                    kwargs['MaxImageHeight'] = 448
 
                 HTML = ImgTagFromImageNode(ImageNode=ColSubElement, HtmlPaths=HTMLPaths, Logger=Logger, **kwargs)
             elif ColSubElement.tag == "Data":
                 kwargs['MaxImageWidth'] = 364
                 kwargs['MaxImageHeight'] = 364
-                HTML = HTMLFromLogDataNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
+
+                HTML = HTMLFromDataNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
+
             elif ColSubElement.tag == "Transform":
                 HTML = HTMLFromTransformNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
 
