@@ -606,9 +606,6 @@ class PipelineManager(object):
                     PipelineManager.logger.error(str(e))
                     PipelineManager.logger.error("Undexpected error, exiting pipeline")
                     sys.exit()
-                except Exception as e:
-                    print str(e)
-                    break
         finally:
             self.RemovePipelineNodeVariable(ArgSet, PipelineNode)
 
