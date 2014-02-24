@@ -16,8 +16,6 @@ import copy
 
 import numpy as np
 
-from scipy.misc import imsave
-
 import nornir_buildmanager
 
 import nornir_buildmanager.Config as Config
