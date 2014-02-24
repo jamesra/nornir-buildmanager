@@ -425,8 +425,8 @@
 
 	<Pipeline Name="CreateVikingXML"  Description="Create a vikingxml file for use in Viking"> 
 		<Arguments>
-			<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from" required="True"/>
-			<Argument flag="-StosMap" dest="StosMap" help="Slice-to-slice mapping of transforms" required="True"/>
+			<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from.  If not specified only unregistered mosaics are included." required="False"/>
+			<Argument flag="-StosMap" dest="StosMap" help="Slice-to-slice mapping of transforms.  If not specified only unregistered mosaics are included." required="False"/>
 			<Argument flag="-Host" dest="Host" help="Url of volume, overrides the about.xml settings" required="False"/>
 		</Arguments>
 

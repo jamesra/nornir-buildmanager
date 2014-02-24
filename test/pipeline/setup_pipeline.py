@@ -269,7 +269,7 @@ class PlatformTest(test.testbase.TestBase):
 
         ChannelNode = volumeNode.find("Block/Section/Channel")
 
-        AssembledImageNode = ChannelNode.find("Filter[@Name='Leveled']/ImageSet/Level[@Downsample='%d']/Image" % Level)
+        AssembledImageNode = ChannelNode.find("Filter[@Name='%s']/ImageSet/Level[@Downsample='%d']/Image" % (Filter, Level))
         self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
 
         return volumeNode

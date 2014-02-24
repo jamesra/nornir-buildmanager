@@ -4,3 +4,4 @@ nornir-build -volume %1 -pipeline AdjustContrast -InputFilter Raw8 -OutputFilter
 nornir-build -volume %1 -pipeline Mosaic -InputFilter Leveled -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM 
 nornir-build -volume %1 -pipeline Assemble -Channels TEM -Filters Leveled -Downsample 8,16,32 -NoInterlace -Transform Grid
 nornir-build -volume %1 -pipeline MosaicReport -PruneFilter Raw8 -ContrastFilter Leveled -AssembleFilter Leveled -AssembleDownsample 16
+nornir-build -volume %1 -pipeline CreateVikingXML

@@ -159,7 +159,8 @@ class IDocBuildTest(IDocTest):
         self.RunAdjustContrast()
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
-        self.RunAssemble(Level=1)
+        self.RunAssemble(Level=8)
+        self.RunCreateVikingXML(StosGroup=None, StosMap=None)
         self.RunMosaicReport()
 
         # Copy output here to run IDocAlignTest
@@ -176,7 +177,7 @@ class IDocBuildTest(IDocTest):
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
-        self.RunCreateVikingXML()
+        self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume')
         self.RunAssembleMosaicToVolume(Channels="TEM")
         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
 
