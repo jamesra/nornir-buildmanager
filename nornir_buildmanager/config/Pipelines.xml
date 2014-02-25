@@ -428,10 +428,61 @@
 			<Argument flag="-StosGroup" dest="StosGroup" help="Stos group to pull images from.  If not specified only unregistered mosaics are included." required="False"/>
 			<Argument flag="-StosMap" dest="StosMap" help="Slice-to-slice mapping of transforms.  If not specified only unregistered mosaics are included." required="False"/>
 			<Argument flag="-Host" dest="Host" help="Url of volume, overrides the about.xml settings" required="False"/>
+			<Argument flag="-OutputFile" dest="OutputFile" help="Name of file to write .VikingXML is appended to name automatically" required="True"/>
 		</Arguments>
 
-		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup" OutputFile="#StosGroup.vikingxml" Host="#Host"/>
+		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"   Host="#Host" OutputFile="#OutputFile"/>
 	</Pipeline>
+	
+	<Pipeline Name="SetPruneCutoff" Description="Set the prune threshold for a filter">
+		<Arguments>
+		    <Argument flag="-Value" dest="PruneVal" type="float" help="Prune threshold to set" required="True" default="0"/>
+			<Argument flag="-Section" dest="Section" help="Section number to edit" required="True"/>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be edited" required="False"/>
+			<Argument flag="-Filters" dest="FilterRegEx" default="*" help="Regular expression describing filters to be edited" required="False"/>
+		</Arguments>
+		
+		<Iterate VariableName="SectionNode" XPath="Block/Section[@Number='#Section']">
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+				
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+					
+					<Select VariableName="PruneNode" XPath="Prune"/>
+					
+					<PythonCall Function="setters.SetPruneThreshold" PruneNode="#PruneNode" Value="#PruneVal"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="SetContrast" Description="Set the contrast parameters for a filter">
+		<Arguments>
+		    <Argument flag="-Min" dest="MinValue" type="float" help="Prune threshold to set" required="False" default="NaN"/>
+			<Argument flag="-Max" dest="MaxValue" type="float" help="Prune threshold to set" required="False" default="NaN"/>
+			<Argument flag="-Gamma" dest="GammaValue" type="float" help="Prune threshold to set" required="False" default="NaN"/>
+			<Argument flag="-Section" dest="Section" help="Section number to edit" required="True"/>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be edited" required="False"/>
+			<Argument flag="-Filters" dest="FilterRegEx" default="*" help="Regular expression describing filters to be edited" required="False"/>
+		</Arguments>
+		
+		<Iterate VariableName="SectionNode" XPath="Block/Section[@Number='#Section']">
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+				
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+					
+					<Select VariableName="HistogramNode" XPath="Histogram"/>
+					
+					<PythonCall Function="setters.SetContrastRange" HistogramElement="#HistogramNode" 
+					            MinValue="#MinValue" MaxValue="#MaxValue" GammaValue="#GammaValue"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
 
 	<Pipeline Name="CreateBlobFilter" Description="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
 		<Arguments>

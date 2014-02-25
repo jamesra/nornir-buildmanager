@@ -9,6 +9,7 @@ import pickle
 import shutil
 import sys
 import urllib
+import math
 
 import VolumeManagerHelpers as VMH
 
@@ -202,7 +203,10 @@ class VolumeManager():
         # cls.__SortNodes__(VolumeObj)
         # cls.__RemoveEmptyElements__(VolumeObj)
 
-        VolumeObj.Save(tabLevel=None)
+        if hasattr(VolumeObj, 'Save'):
+            VolumeObj.Save(tabLevel=None)
+        else:
+            cls.Save(VolumePath, VolumeObj.Parent)
 
 #        #Make sure any changes are accounted for by calculating a new checksum
 #        NewChecksum = cls.CalcVolumeChecksum(VolumeObj)
@@ -1480,6 +1484,9 @@ class FilterNode(XContainerElementWrapper):
         maskFilter = self.GetOrCreateMaskFilter()
         return maskFilter.GetOrCreateImage(Downsample)
 
+    def GetHistogram(self):
+        return self.find('Histogram')
+
     def __init__(self, Name, Path=None, attrib=None, **extra):
         if Path is None:
             Path = Name
@@ -2403,7 +2410,7 @@ class AutoLevelHintNode(XElementWrapper):
     def UserRequestedMinIntensityCutoff(self):
         '''Returns None or a float'''
         val = self.attrib.get('UserRequestedMinIntensityCutoff', None)
-        if val is None or len(val) == 0:
+        if val is None or  len(val) == 0:
             return None
         return float(val)
 
@@ -2412,7 +2419,10 @@ class AutoLevelHintNode(XElementWrapper):
         if val is None:
             self.attrib['UserRequestedMinIntensityCutoff'] = ""
         else:
-            self.attrib['UserRequestedMinIntensityCutoff'] = "%g" % val
+            if math.isnan(val):
+                self.attrib['UserRequestedMinIntensityCutoff'] = ""
+            else:
+                self.attrib['UserRequestedMinIntensityCutoff'] = "%g" % val
 
     @property
     def UserRequestedMaxIntensityCutoff(self):
@@ -2427,7 +2437,10 @@ class AutoLevelHintNode(XElementWrapper):
         if val is None:
             self.attrib['UserRequestedMaxIntensityCutoff'] = ""
         else:
-            self.attrib['UserRequestedMaxIntensityCutoff'] = "%g" % val
+            if math.isnan(val):
+                self.attrib['UserRequestedMaxIntensityCutoff'] = ""
+            else:
+                self.attrib['UserRequestedMaxIntensityCutoff'] = "%g" % val
 
     @property
     def UserRequestedGamma(self):
@@ -2442,7 +2455,10 @@ class AutoLevelHintNode(XElementWrapper):
         if val is None:
             self.attrib['UserRequestedGamma'] = ""
         else:
-            self.attrib['UserRequestedGamma'] = "%g" % val
+            if math.isnan(val):
+                self.attrib['UserRequestedGamma'] = ""
+            else:
+                self.attrib['UserRequestedGamma'] = "%g" % val
 
     def __init__(self, MinIntensityCutoff=None, MaxIntensityCutoff=None):
         attrib = {'UserRequestedMinIntensityCutoff' : "",
@@ -2459,6 +2475,16 @@ class HistogramNode(HistogramBase):
         self.attrib['InputTransformChecksum'] = InputTransformNode.Checksum
         self.attrib['Type'] = Type
 
+    def GetAutoLevelHint(self):
+        return self.find('AutoLevelHint')
+
+    def GetOrCreateAutoLevelHint(self):
+        if not self.GetAutoLevelHint() is None:
+            return self.GetAutoLevelHint()
+        else:
+            # Create a new AutoLevelData node using the calculated values as overrides so users can find and edit it later
+            [added, AutoLevelDataNode] = self.UpdateOrAddChild(AutoLevelHintNode())
+            return self.GetAutoLevelHint()
 
 class PruneNode(HistogramBase):
 

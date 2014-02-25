@@ -717,19 +717,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     DataNode = nornir_buildmanager.VolumeManager.DataNode(OutputHistogramXmlFilename)
     [added, DataNode] = HistogramElement.UpdateOrAddChild(DataNode)
 
-    AutoLevelDataNode = HistogramElement.find('AutoLevelHint')
-    # Create an AutoLevelData node to give hints to other filters regarding how this data should be contrast adjusted
-    if AutoLevelDataNode is None:
-
-        # TEMP, check if this is an element with old formatting
-        AutoLevelDataNode = FilterNode.find('AutoLevelHint')
-        if AutoLevelDataNode is None:
-            # Create a new AutoLevelData node using the calculated values as overrides so users can find and edit it later
-            AutoLevelDataNode = nornir_buildmanager.VolumeManager.AutoLevelHintNode()
-            [added, AutoLevelDataNode] = HistogramElement.UpdateOrAddChild(AutoLevelDataNode)
-        else:
-            FilterNode.remove(AutoLevelDataNode)
-            HistogramElement.append(AutoLevelDataNode)
+    AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
 
     if os.path.exists(HistogramElement.DataFullPath) and os.path.exists(HistogramElement.ImageFullPath) and HistogramElement.InputTransformChecksum == TransformNode.Checksum:
         return NodeToSave
@@ -766,6 +754,15 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         if os.path.exists(ImageNode.FullPath):
             os.remove(ImageNode.FullPath)
 
+    GenerateHistogramImage(HistogramElement)
+
+
+def GenerateHistogramImage(HistogramElement):
+
+    AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
+
+    HistogramImage = HistogramElement.find('Image')
+
     if not os.path.exists(ImageNode.FullPath):
 
         MinCutoffPercent = Parameters.get('MinCutoff', 0.005)
@@ -776,7 +773,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
             LinePositions.append(MinCutoffLine)
             MinCutoffPercent = None
 
-        if not AutoLevelDataNode.UserRequestedMinIntensityCutoff is None:
+        if not AutoLevelDataNode.UserRequestedMaxIntensityCutoff is None:
             MaxCutoffLine = float(AutoLevelDataNode.UserRequestedMaxIntensityCutoff)
             LinePositions.append(MaxCutoffLine)
             MaxCutoffPercent = None
