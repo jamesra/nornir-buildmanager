@@ -352,7 +352,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8):
         if ContrastFilter is None:
-            ContrastFilter = "Leveled"
+            ContrastFilter = "Raw8"
 
         if AssembleFilter is None:
             AssembleFilter = "Leveled"
