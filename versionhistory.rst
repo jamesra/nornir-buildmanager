@@ -2,16 +2,14 @@
 1.1.2
 -----
 
-New
-===
+**New**
 
 * SetPruneCutoff pipeline to save users from editting volumedata.xml files deep in volume
 * SetContrast pipeline to save users from editting volumedata.xml files deep in volume
 * CreateVikingXML calls added to TEMBuild and TEMAlign scripts
 * Histogram images now show manual contrast settings
 
-Fixes
-=====
+**Fixes**
 
 * CreateVikingXML no longer requires volume related parameters.  Allows unregistered mosaic sets to be published to Viking.
 * Histogram image updates if contrast parameters editted
