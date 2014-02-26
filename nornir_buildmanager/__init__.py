@@ -7,4 +7,6 @@
 
 import nornir_buildmanager.VolumeManagerETree as VolumeManager
 
+from exceptions import *
+
 __all__ = ['pipelinemanager', 'ImportManager', 'VolumeManagerETree', 'Config', 'operations']

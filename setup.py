@@ -44,7 +44,7 @@ if __name__ == '__main__':
     entry_points = {'console_scripts': ['nornir-build = nornir_buildmanager.build:Main']}
 
     setup(name='nornir_buildmanager',
-          version='1.1.1',
+          version='1.1.2',
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",

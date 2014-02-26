@@ -148,18 +148,24 @@ class IDocSingleSectionImportTest(IDocTest):
 #         self.RunCreateVikingXML()
 #         self.RunAssembleMosaicToVolume(Channels="TEM")
 
-
 class IDocBuildTest(IDocTest):
 
     def runTest(self):
 
         self.RunImport()
         self.RunPrune()
+
+        self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
+
         self.RunHistogram()
+
+        self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
+
         self.RunAdjustContrast()
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
-        self.RunAssemble(Level=1)
+        self.RunAssemble(Level=8)
+        self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
         self.RunMosaicReport()
 
         # Copy output here to run IDocAlignTest
@@ -176,7 +182,7 @@ class IDocBuildTest(IDocTest):
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
-        self.RunCreateVikingXML()
+        self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
         self.RunAssembleMosaicToVolume(Channels="TEM")
         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
 

@@ -12,6 +12,8 @@ import glob
 
 from test.pipeline.setup_pipeline import *
 
+import nornir_buildmanager as nb
+
 from nornir_buildmanager.VolumeManagerETree import *
 import nornir_buildmanager.build as build
 from nornir_buildmanager.operations.tile import *
@@ -256,17 +258,19 @@ class AutoLevelHistogramTest(PrepareSetup):
         AutoMinCutoff = self.OutputFilterNode.MinIntensityCutoff
 
         self.assertEqual(AutoMaxCutoff, 230.0, "Expected values for histogram have changed")
-        self.assertEqual(AutoMinCutoff, 63.0, "Expected values for histogram have changed")
+        self.assertEqual(AutoMinCutoff, 62.0, "Expected values for histogram have changed")
 
         AutoGamma = self.OutputFilterNode.Gamma
 
         # Test a max < min
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = ManualMinValue
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
-        self.assertIsNone(ChannelOutput)
+        try:
+            ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+            self.fail("Should have raised exception for invalid manual histogram setting")
+        except nb.NornirUserException as e:
+            pass
 
         # Test the Max Cutoff value
-
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = ManualMaxValue
         ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)

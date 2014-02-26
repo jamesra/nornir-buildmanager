@@ -34,11 +34,13 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
     if OutputFile is None:
         OutputFile = "Volume.VikingXML";
 
+    if not OutputFile.lower().endswith('.vikingxml'):
+        OutputFile = OutputFile + ".VikingXML"
+
     # Create our XML File
     OutputXMLFilename = os.path.join(path, OutputFile);
 
     # Load the inputXML file and begin parsing
-
 
     # Create the root output node
     OutputVolumeNode = ETree.Element('Volume', {'name' : InputVolumeNode.Name,

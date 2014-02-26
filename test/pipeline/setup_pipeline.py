@@ -13,6 +13,7 @@ import unittest
 import test.testbase
 
 from nornir_buildmanager.VolumeManagerETree import *
+from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
 import nornir_buildmanager.build as build
 from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files.mosaicfile import *
@@ -36,6 +37,24 @@ def VerifyVolume(test, VolumeObj, listVolumeEntries):
         SearchEntry = NextSearchEntry
 
     return SearchEntry
+
+
+def MatchingFilters(SectionNodes, Channels, Filters):
+    '''Generator which returns a list of matching filters contained under a list of section nodes
+    :param list SectionNodes: List of sections to search
+    :param str Channels: Regular expression for channel names 
+    :param str Filters: Regular expression for channel names
+    :return: Generator of matching filters
+    :rtype: FilterNode'''
+
+    for sectionNode in SectionNodes:
+        ChannelNodes = SearchCollection(sectionNode.Channels, AttribName='Name', RegExStr=Channels)
+
+        for c in ChannelNodes:
+            FilterNodes = SearchCollection(c.Filters, AttribName='Name', RegExStr=Filters)
+
+            for f in FilterNodes:
+                yield f
 
 
 class VolumeEntry(object):
@@ -197,6 +216,63 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
+
+    def RunSetPruneCutoff(self, Value, Section, Channels, Filters):
+
+        buildArgs = self._CreateBuildArgs('SetPruneCutoff', '-Section', Section, '-Channels', Channels, '-Filters', Filters, '-Value', str(Value))
+        volumeNode = self.RunBuild(buildArgs)
+        self.assertIsNotNone(volumeNode, "No volume node returned from build")
+
+        SectionNode = volumeNode.find("Block/Section[@Number='%s']" % str(Section))
+        self.assertIsNotNone(volumeNode, "No section node found")
+
+        Filters = list(MatchingFilters([SectionNode], Channels, Filters))
+
+        for fnode in Filters:
+            pNode = fnode.find("Prune")
+            self.assertEqual(pNode.UserRequestedCutoff, float(Value), "Value on prune node should match the passed value")
+
+        return
+
+
+    def RunSetContrast(self, MinValue, MaxValue, GammaValue, Section, Channels, Filters):
+
+        buildArgs = self._CreateBuildArgs('SetContrast', '-Section', Section, '-Channels',
+                                           Channels, '-Filters', Filters,
+                                            '-Min', str(MinValue),
+                                            '-Max', str(MaxValue),
+                                            '-Gamma', str(GammaValue))
+        volumeNode = self.RunBuild(buildArgs)
+        self.assertIsNotNone(volumeNode, "No volume node returned from build")
+
+        SectionNode = volumeNode.find("Block/Section[@Number='%s']" % str(Section))
+        self.assertIsNotNone(volumeNode, "No section node found")
+
+        Filters = list(MatchingFilters([SectionNode], Channels, Filters))
+
+        for fnode in Filters:
+            hNode = fnode.GetHistogram()
+            self.assertIsNotNone(hNode, "Filter should have histogram")
+
+            ahNode = hNode.GetAutoLevelHint()
+            self.assertIsNotNone(ahNode, "Histogram should have autolevelhint")
+
+            if math.isnan(float(MinValue)):
+                self.assertIsNone(ahNode.UserRequestedMinIntensityCutoff, "Min value should match the passed value")
+            else:
+                self.assertEqual(ahNode.UserRequestedMinIntensityCutoff, float(MinValue), "Min value should match the passed value")
+
+            if math.isnan(float(MaxValue)):
+                self.assertIsNone(ahNode.UserRequestedMaxIntensityCutoff, "Max value should match the passed value")
+            else:
+                self.assertEqual(ahNode.UserRequestedMaxIntensityCutoff, float(MaxValue), "Max value should match the passed value")
+
+            if math.isnan(float(GammaValue)):
+                self.assertIsNone(ahNode.UserRequestedGamma, "Gamma value should match the passed value")
+            else:
+                self.assertEqual(ahNode.UserRequestedGamma, float(GammaValue), "Gamma value should match the passed value")
+
+
     def RunShadingCorrection(self, ChannelPattern, CorrectionType=None, FilterPattern=None):
         if FilterPattern is None:
             FilterPattern = '(?![M|m]ask)'
@@ -269,14 +345,14 @@ class PlatformTest(test.testbase.TestBase):
 
         ChannelNode = volumeNode.find("Block/Section/Channel")
 
-        AssembledImageNode = ChannelNode.find("Filter[@Name='Leveled']/ImageSet/Level[@Downsample='%d']/Image" % Level)
+        AssembledImageNode = ChannelNode.find("Filter[@Name='%s']/ImageSet/Level[@Downsample='%d']/Image" % (Filter, Level))
         self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
 
         return volumeNode
 
     def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8):
         if ContrastFilter is None:
-            ContrastFilter = "Leveled"
+            ContrastFilter = "Raw8"
 
         if AssembleFilter is None:
             AssembleFilter = "Leveled"
@@ -415,7 +491,7 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunCreateVikingXML(self, StosGroup=None, StosMap=None):
+    def RunCreateVikingXML(self, OutputFile, StosGroup=None, StosMap=None):
 
         if StosGroup is None:
             StosGroup = 'SliceToVolume1'
@@ -423,14 +499,14 @@ class PlatformTest(test.testbase.TestBase):
         if StosMap is None:
             StosMap = 'SliceToVolume'
 
-        buildArgs = self._CreateBuildArgs('CreateVikingXML', '-StosGroup', StosGroup, '-StosMap', StosMap)
+        buildArgs = self._CreateBuildArgs('CreateVikingXML', '-StosGroup', StosGroup, '-StosMap', StosMap, '-OutputFile', OutputFile)
 
         if not self.TestOutputURL is None:
             buildArgs.extend(['-Host', self.TestOutputURL])
 
         volumeNode = self.RunBuild(buildArgs)
 
-        self.assertTrue(os.path.exists(os.path.join(volumeNode.FullPath, "SliceToVolume1.VikingXML")), "No vikingxml file created")
+        self.assertTrue(os.path.exists(os.path.join(volumeNode.FullPath, OutputFile + ".VikingXML")), "No vikingxml file created")
 
 
 class CopySetupTestBase(PlatformTest):
