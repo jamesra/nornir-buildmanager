@@ -18,7 +18,8 @@ Fixes
 1.1.1
 -----
 
-* Fixed boundary of volume not refreshing when stos registrations changed  
+* Fixed boundary of volume not refreshing when stos registrations changed
+* Add .idoc data to SerialEM volume reports  
 
 1.1.0
 -----

@@ -16,7 +16,7 @@ import copy
 
 import numpy as np
 
-import nornir_buildmanager
+import nornir_buildmanager as nb
 
 import nornir_buildmanager.Config as Config
 from nornir_buildmanager.validation import transforms, image
@@ -233,7 +233,7 @@ def Evaluate(Parameters, FilterNode, OutputImageName=None, Level=1, PreEvaluateS
             OutputImageNode = None
 
     # Find out if the output image node exists already
-    OutputImageNode = nornir_buildmanager.VolumeManager.ImageNode(Path=FinalTargetPath, attrib={'Name' : OutputImageName})
+    OutputImageNode = nb.VolumeManager.ImageNode(Path=FinalTargetPath, attrib={'Name' : OutputImageName})
     (ImageNodeCreated, OutputImageNode) = FilterNode.UpdateOrAddChildByAttrib(OutputImageNode, 'Name')
 
     prettyoutput.CurseString('Stage', FilterNode.Name + " ImageMagick -Evaluate-Sequence " + EvaluateSequenceArg)
@@ -272,7 +272,7 @@ def _CreateMinCorrectionImage(ImageNode, OutputImageName, **kwargs):
     OutputFile = OutputImageName + ".png"
 
     # Find out if the output image node exists already
-    OutputImageNode = nornir_buildmanager.VolumeManager.ImageNode(Path=OutputFile, attrib={'Name' : OutputImageName})
+    OutputImageNode = nb.VolumeManager.ImageNode(Path=OutputFile, attrib={'Name' : OutputImageName})
     (ImageNodeCreated, OutputImageNode) = ParentNode.UpdateOrAddChildByAttrib(OutputImageNode, 'Name')
 
     nornir_shared.files.RemoveOutdatedFile(ImageNode.FullPath, OutputImageNode.FullPath)
@@ -327,18 +327,18 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
     SaveFilterParent = False
 
     # Find out if the output filter already exists
-    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManager.FilterNode(OutputFilterName, OutputFilterName))
+    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(nb.VolumeManager.FilterNode(OutputFilterName, OutputFilterName))
     OutputFilterNode.BitsPerPixel = FilterNode.BitsPerPixel
 
     # Check if the output node exists
-    OutputPyramidNode = nornir_buildmanager.VolumeManager.TilePyramidNode(Type=InputPyramidNode.Type,
+    OutputPyramidNode = nb.VolumeManager.TilePyramidNode(Type=InputPyramidNode.Type,
                                                            NumberOfTiles=InputPyramidNode.NumberOfTiles,
                                                            LevelFormat=InputPyramidNode.LevelFormat,
                                                            ImageFormatExt=InputPyramidNode.ImageFormatExt)
 
     [added, OutputPyramidNode] = OutputFilterNode.UpdateOrAddChildByAttrib(OutputPyramidNode, 'Path')
 
-    OutputLevelNode = nornir_buildmanager.VolumeManager.LevelNode(Level=InputLevelNode.Downsample)
+    OutputLevelNode = nb.VolumeManager.LevelNode(Level=InputLevelNode.Downsample)
     [OutputLevelAdded, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
 
     # Make sure the destination directory exists
@@ -346,7 +346,7 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
     if not os.path.exists(OutputLevelNode.FullPath):
         os.makedirs(OutputLevelNode.FullPath)
 
-    OutputImageNode = nornir_buildmanager.VolumeManager.ImageNode(Path='Correction.png', attrib={'Name' : 'ShadeCorrection'})
+    OutputImageNode = nb.VolumeManager.ImageNode(Path='Correction.png', attrib={'Name' : 'ShadeCorrection'})
     (ImageNodeCreated, OutputImageNode) = FilterNode.UpdateOrAddChildByAttrib(OutputImageNode, 'Name')
 
     InputTiles = glob.glob(os.path.join(InputLevelNode.FullPath, '*' + InputPyramidNode.ImageFormatExt))
@@ -388,18 +388,18 @@ def _CorrectTilesDeprecated(Parameters, FilterNode=None, ImageNode=None, OutputF
     SaveFilterParent = False
 
     # Find out if the output filter already exists
-    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManager.FilterNode(OutputFilterName, OutputFilterName))
+    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(nb.VolumeManager.FilterNode(OutputFilterName, OutputFilterName))
     OutputFilterNode.BitsPerPixel = FilterNode.BitsPerPixel
 
     # Check if the output node exists
-    OutputPyramidNode = nornir_buildmanager.VolumeManager.TilePyramidNode(Type=InputPyramidNode.Type,
+    OutputPyramidNode = nb.VolumeManager.TilePyramidNode(Type=InputPyramidNode.Type,
                                                            NumberOfTiles=InputPyramidNode.NumberOfTiles,
                                                            LevelFormat=InputPyramidNode.LevelFormat,
                                                            ImageFormatExt=InputPyramidNode.ImageFormatExt)
 
     [added, OutputPyramidNode] = OutputFilterNode.UpdateOrAddChildByAttrib(OutputPyramidNode, 'Path')
 
-    OutputLevelNode = nornir_buildmanager.VolumeManager.LevelNode(Level=InputLevelNode.Downsample)
+    OutputLevelNode = nb.VolumeManager.LevelNode(Level=InputLevelNode.Downsample)
     [OutputLevelAdded, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
 
     # Make sure the destination directory exists
@@ -438,183 +438,6 @@ def _CorrectTilesDeprecated(Parameters, FilterNode=None, ImageNode=None, OutputF
 
     return FilterNode
 
-
-def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, OutputFilterName=None, **kwargs):
-    '''Create a new filter using the histogram of the input filter
-       @ChannelNode'''
-
-    InputLevelNode = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
-    InputTransformNode = TransformNode
-    InputPyramidNode = FilterNode.TilePyramid
-
-    ChannelNode = FilterNode.Parent
-
-    if OutputFilterName is None:
-        OutputFilterName = 'Leveled'
-
-    HistogramElement = FilterNode.find("Histogram[@InputTransformChecksum='" + InputTransformNode.Checksum + "']")
-    assert(not HistogramElement is None)
-
-    AutoLevelDataNode = HistogramElement.find('AutoLevelHint')
-    MinIntensityCutoff = AutoLevelDataNode.UserRequestedMinIntensityCutoff
-    MaxIntensityCutoff = AutoLevelDataNode.UserRequestedMaxIntensityCutoff
-    UserRequestedGamma = AutoLevelDataNode.UserRequestedGamma
-
-    MinCutoffPercent = float(Parameters.get('MinCutoff', 0.1)) / 100.0
-    MaxCutoffPercent = float(Parameters.get('MaxCutoff', 0.5)) / 100.0
-
-    Gamma = Parameters.get('Gamma', None)
-    if not UserRequestedGamma is None:
-        Gamma = UserRequestedGamma
-
-    if isinstance(Gamma, str):
-        if Gamma == 'None':
-            Gamma = None
-
-    if not Gamma is None:
-        try:
-            Gamma = float(Gamma)
-        except:
-            prettyoutput.LogErr("Invalid gamma value passed to AutoLevel function: " + str(Gamma))
-            Gamma = None
-
-    InputMosaicFullPath = InputTransformNode.FullPath
-
-    # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
-    OutputFilterNode = None
-    if FilterIsPopulated(FilterNode, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
-        OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
-
-    # Calculate min or max pixel values if they are needed
-    # The bummer here is we always load the histogram file to check that the filter levels are correct
-    if MinIntensityCutoff is None or MaxIntensityCutoff is None or Gamma is None:
-
-        # Check if we've already created the filter before loading files.  It saves a lot of time
-        histogram = Histogram.Load(HistogramElement.DataFullPath)
-
-        if histogram is None:
-            prettyoutput.LogErr("*** No histogram data found to create filter with: " + HistogramElement.DataFullPath + "***")
-            return
-
-        if MinIntensityCutoff is None or MaxIntensityCutoff is None:
-            [CalculatedMinCutoff, CalculatedMaxCutoff] = histogram.AutoLevel(MinCutoffPercent, MaxCutoffPercent)
-
-            if(int(FilterNode.BitsPerPixel) == 8):
-                if MinIntensityCutoff is None:
-                    MinIntensityCutoff = int(round(CalculatedMinCutoff))
-                if MaxIntensityCutoff is None:
-                    MaxIntensityCutoff = int(round(CalculatedMaxCutoff))
-
-        if MinIntensityCutoff > MaxIntensityCutoff:
-            prettyoutput.LogErr("Max intensity is less than min intensity for histogram correction")
-            return None
-
-        if Gamma is None:
-            Gamma = histogram.GammaAtValue(histogram.Median, minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
-
-    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
-    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
-    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
-
-    if not OutputFilterNode is None:
-        # Nothing to do
-        return None
-
-    # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
-    DictAttributes = {'BitsPerPixel' : 8,
-                                                                                                        'MinIntensityCutoff' : str(MinIntensityCutoff),
-                                                                                                        'MaxIntensityCutoff' : str(MaxIntensityCutoff),
-                                                                                                        'Gamma' : str(Gamma),
-                                                                                                        'HistogramChecksum' : str(HistogramElement.Checksum)}
-
-    [Created, OutputFilterNode] = ChannelNode.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManager.XContainerElementWrapper('Filter',
-                                                                                                                         OutputFilterName,
-                                                                                                                         OutputFilterName,
-                                                                                                                         DictAttributes))
-
-#    if not (int(float(OutputFilterNode.MinIntensityCutoff)) == int(AutoLevelDataNode.UserRequestedMinIntensityCutoff) and
-#           int(float(OutputFilterNode.MaxIntensityCutoff)) == int(AutoLevelDataNode.UserRequestedMaxIntensityCutoff) ):
-#        shutil.rmtree(OutputFilterNode.FullPath)
-#        OutputFilterNode.MinIntensityCutoff = AutoLevelDataNode.UserRequestedMinIntensityCutoff
-#        OutputFilterNode.MaxIntensityCutoff = AutoLevelDataNode.UserRequestedMaxIntensityCutoff
-
-    if not os.path.exists(OutputFilterNode.FullPath):
-        os.makedirs(OutputFilterNode.FullPath)
-
-    Input = mosaicfile.MosaicFile.Load(InputMosaicFullPath)
-    ImageFiles = Input.ImageToTransformString.keys()
-
-    InputImagePath = InputLevelNode.FullPath
-
-    OutputPyramidNode = nornir_buildmanager.VolumeManager.TilePyramidNode(Type=InputPyramidNode.Type,
-                                                           NumberOfTiles=InputPyramidNode.NumberOfTiles,
-                                                           LevelFormat=InputPyramidNode.LevelFormat,
-                                                           ImageFormatExt=InputPyramidNode.ImageFormatExt)
-    [added, OutputPyramidNode] = OutputFilterNode.UpdateOrAddChildByAttrib(OutputPyramidNode, 'Path')
-
-    OutputLevelNode = nornir_buildmanager.VolumeManager.LevelNode(Level=InputLevelNode.Downsample)
-    [added, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
-
-    OutputImagePath = OutputLevelNode.FullPath
-
-    TilesToBuild = list()
-
-    # Make sure output isn't outdated
-    OutputDirIsEmpty = False
-    if(not os.path.exists(OutputImagePath)):
-        os.makedirs(OutputImagePath)
-        OutputDirIsEmpty = True
-
-    for tile in ImageFiles:
-        InputTile = os.path.join(InputImagePath, tile)
-        if OutputDirIsEmpty:
-            TilesToBuild.append(InputTile)
-            continue
-        else:
-            PredictedOutput = os.path.join(OutputImagePath, os.path.basename(tile))
-            RemoveOutdatedFile(InputTile, PredictedOutput)
-            if not os.path.exists(PredictedOutput):
-                TilesToBuild.append(InputTile)
-
-    Pool = None
-    if len(TilesToBuild) > 0:
-        Pool = Pools.GetGlobalClusterPool()
-
-    MinIntensityCutoff16bpp = MinIntensityCutoff * 256
-    MaxIntensityCutoff16bpp = MaxIntensityCutoff * 256
-
-    # In case the user swaps min/max cutoffs swap these values if needed
-    if MaxIntensityCutoff16bpp < MinIntensityCutoff16bpp:
-        temp = MaxIntensityCutoff16bpp
-        MaxIntensityCutoff16bpp = MinIntensityCutoff16bpp
-        MinIntensityCutoff16bpp = temp
-
-    SampleCmdPrinted = False
-
-    for imageFile in TilesToBuild:
-        InputImageFullPath = os.path.join(InputLevelNode.FullPath, imageFile)
-        ImageSaveFilename = os.path.join(OutputImagePath, os.path.basename(imageFile))
-
-        cmd = 'convert \"' + InputImageFullPath + '\" ' + \
-               '-level ' + str(MinIntensityCutoff16bpp) + \
-               ',' + str(MaxIntensityCutoff16bpp) + \
-               ' -gamma ' + str(Gamma) + \
-               ' -colorspace Gray -depth 8 -type optimize ' + \
-               ' \"' + ImageSaveFilename + '\"'
-
-
-        if not SampleCmdPrinted:
-            SampleCmdPrinted = True
-            prettyoutput.CurseString('Cmd', cmd)
-        Pool.add_process('AutoLevel: ' + cmd, cmd)
-
-    if not Pool is None:
-        Pool.wait_completion()
-
-    OutputPyramidNode.NumberOfTiles = len(ImageFiles)
-
-    # Save the channel node so the new filter is recorded
-    return ChannelNode
 
 
 def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, **kwargs):
@@ -678,13 +501,205 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
     return ChannelNode
 
 
+
+def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=8):
+    '''Returns the (Min, Max, Gamma) values for a histogram.  If an AutoLevelHint node is available those values are used.
+    
+    :param HistogramElement HistogramElement: Histogram data node
+    :param float MinCutoffPercent: Percent of low intensity pixels to remove
+    :param float MaxCutoffPercent: Percent of high intensity pixels to remove
+    :param float Gamma: Desired Gamma value
+    :param int Bpp: Bits per pixel
+    :return: (Min, Max, Gamma) Contrast values based on passed values and user overrides in HistogramElement
+    :rtype: tuple
+    '''
+
+    AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
+    MinIntensityCutoff = AutoLevelDataNode.UserRequestedMinIntensityCutoff
+    MaxIntensityCutoff = AutoLevelDataNode.UserRequestedMaxIntensityCutoff
+    UserRequestedGamma = AutoLevelDataNode.UserRequestedGamma
+
+    if not UserRequestedGamma is None:
+        Gamma = UserRequestedGamma
+
+    if isinstance(Gamma, str):
+        if Gamma == 'None':
+            Gamma = None
+
+    if not Gamma is None:
+        try:
+            Gamma = float(Gamma)
+        except:
+            prettyoutput.LogErr("Invalid gamma value passed to AutoLevel function: " + str(Gamma))
+            Gamma = None
+
+    # Calculate min or max pixel values if they are needed
+    # The bummer here is we always load the histogram file to check that the filter levels are correct
+    if MinIntensityCutoff is None or MaxIntensityCutoff is None or Gamma is None:
+
+        # Check if we've already created the filter before loading files.  It saves a lot of time
+        histogram = Histogram.Load(HistogramElement.DataFullPath)
+
+        if histogram is None:
+            prettyoutput.LogErr("*** No histogram data found to create filter with: " + HistogramElement.DataFullPath + "***")
+            raise Exception("*** No histogram data found to create filter with: " + HistogramElement.DataFullPath + "***")
+
+        if MinIntensityCutoff is None or MaxIntensityCutoff is None:
+            [CalculatedMinCutoff, CalculatedMaxCutoff] = histogram.AutoLevel(MinCutoffPercent, MaxCutoffPercent)
+
+            if(Bpp == 8):
+                if MinIntensityCutoff is None:
+                    MinIntensityCutoff = int(math.floor(CalculatedMinCutoff))
+                if MaxIntensityCutoff is None:
+                    MaxIntensityCutoff = int(math.ceil(CalculatedMaxCutoff))
+
+        if MinIntensityCutoff > MaxIntensityCutoff:
+            raise nb.NornirUserException("%g > %g Max intensity is less than min intensity for histogram correction. %s" % (MinIntensityCutoff, MaxIntensityCutoff, HistogramElement.DataFullPath))
+
+        if Gamma is None:
+            Gamma = histogram.GammaAtValue(histogram.Median, minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
+
+    return (MinIntensityCutoff, MaxIntensityCutoff, Gamma)
+
+
+def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, OutputFilterName=None, **kwargs):
+    '''Create a new filter using the histogram of the input filter
+       @ChannelNode'''
+
+    InputLevelNode = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
+    InputTransformNode = TransformNode
+    InputPyramidNode = FilterNode.TilePyramid
+
+    ChannelNode = FilterNode.Parent
+
+    if OutputFilterName is None:
+        OutputFilterName = 'Leveled'
+
+    HistogramElement = FilterNode.find("Histogram[@InputTransformChecksum='" + InputTransformNode.Checksum + "']")
+    assert(not HistogramElement is None)
+
+    MinCutoffPercent = float(Parameters.get('MinCutoff', 0.1)) / 100.0
+    MaxCutoffPercent = float(Parameters.get('MaxCutoff', 0.5)) / 100.0
+    Gamma = Parameters.get('Gamma', None)
+
+    (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=FilterNode.BitsPerPixel)
+
+    # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
+    OutputFilterNode = None
+    if FilterIsPopulated(FilterNode, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
+        OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
+
+    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
+    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
+    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
+
+    if not OutputFilterNode is None:
+        # Nothing to do
+        return None
+
+    # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
+    DictAttributes = {'BitsPerPixel' : 8,
+                                                                                                        'MinIntensityCutoff' : str(MinIntensityCutoff),
+                                                                                                        'MaxIntensityCutoff' : str(MaxIntensityCutoff),
+                                                                                                        'Gamma' : str(Gamma),
+                                                                                                        'HistogramChecksum' : str(HistogramElement.Checksum)}
+
+    [Created, OutputFilterNode] = ChannelNode.UpdateOrAddChildByAttrib(nb.VolumeManager.XContainerElementWrapper('Filter',
+                                                                                                                         OutputFilterName,
+                                                                                                                         OutputFilterName,
+                                                                                                                         DictAttributes))
+
+#    if not (int(float(OutputFilterNode.MinIntensityCutoff)) == int(AutoLevelDataNode.UserRequestedMinIntensityCutoff) and
+#           int(float(OutputFilterNode.MaxIntensityCutoff)) == int(AutoLevelDataNode.UserRequestedMaxIntensityCutoff) ):
+#        shutil.rmtree(OutputFilterNode.FullPath)
+#        OutputFilterNode.MinIntensityCutoff = AutoLevelDataNode.UserRequestedMinIntensityCutoff
+#        OutputFilterNode.MaxIntensityCutoff = AutoLevelDataNode.UserRequestedMaxIntensityCutoff
+
+    if not os.path.exists(OutputFilterNode.FullPath):
+        os.makedirs(OutputFilterNode.FullPath)
+
+    Input = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
+    ImageFiles = Input.ImageToTransformString.keys()
+
+    InputImagePath = InputLevelNode.FullPath
+
+    OutputPyramidNode = nb.VolumeManager.TilePyramidNode(Type=InputPyramidNode.Type,
+                                                           NumberOfTiles=InputPyramidNode.NumberOfTiles,
+                                                           LevelFormat=InputPyramidNode.LevelFormat,
+                                                           ImageFormatExt=InputPyramidNode.ImageFormatExt)
+    [added, OutputPyramidNode] = OutputFilterNode.UpdateOrAddChildByAttrib(OutputPyramidNode, 'Path')
+
+    OutputLevelNode = nb.VolumeManager.LevelNode(Level=InputLevelNode.Downsample)
+    [added, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
+
+    OutputImagePath = OutputLevelNode.FullPath
+
+    TilesToBuild = list()
+
+    # Make sure output isn't outdated
+    OutputDirIsEmpty = False
+    if(not os.path.exists(OutputImagePath)):
+        os.makedirs(OutputImagePath)
+        OutputDirIsEmpty = True
+
+    for tile in ImageFiles:
+        InputTile = os.path.join(InputImagePath, tile)
+        if OutputDirIsEmpty:
+            TilesToBuild.append(InputTile)
+            continue
+        else:
+            PredictedOutput = os.path.join(OutputImagePath, os.path.basename(tile))
+            RemoveOutdatedFile(InputTile, PredictedOutput)
+            if not os.path.exists(PredictedOutput):
+                TilesToBuild.append(InputTile)
+
+    Pool = None
+    if len(TilesToBuild) > 0:
+        Pool = Pools.GetGlobalClusterPool()
+
+    MinIntensityCutoff16bpp = MinIntensityCutoff * 256
+    MaxIntensityCutoff16bpp = MaxIntensityCutoff * 256
+
+    # In case the user swaps min/max cutoffs swap these values if needed
+    if MaxIntensityCutoff16bpp < MinIntensityCutoff16bpp:
+        temp = MaxIntensityCutoff16bpp
+        MaxIntensityCutoff16bpp = MinIntensityCutoff16bpp
+        MinIntensityCutoff16bpp = temp
+
+    SampleCmdPrinted = False
+
+    for imageFile in TilesToBuild:
+        InputImageFullPath = os.path.join(InputLevelNode.FullPath, imageFile)
+        ImageSaveFilename = os.path.join(OutputImagePath, os.path.basename(imageFile))
+
+        cmd = 'convert \"' + InputImageFullPath + '\" ' + \
+               '-level ' + str(MinIntensityCutoff16bpp) + \
+               ',' + str(MaxIntensityCutoff16bpp) + \
+               ' -gamma ' + str(Gamma) + \
+               ' -colorspace Gray -depth 8 -type optimize ' + \
+               ' \"' + ImageSaveFilename + '\"'
+
+
+        if not SampleCmdPrinted:
+            SampleCmdPrinted = True
+            prettyoutput.CurseString('Cmd', cmd)
+        Pool.add_process('AutoLevel: ' + cmd, cmd)
+
+    GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
+
+    if not Pool is None:
+        Pool.wait_completion()
+
+    OutputPyramidNode.NumberOfTiles = len(ImageFiles)
+
+    # Save the channel node so the new filter is recorded
+    return ChannelNode
+
+
 def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs):
     '''Construct the intensity histogram for a filter
        @FilterNode'''
     NodeToSave = None
-
-    InputOverlap = Parameters.get('Overlap', 0.1)
-    InputLevel = Parameters.get('Level', 1)
 
     LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
 
@@ -697,24 +712,20 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     MangledName = nornir_shared.misc.GenNameFromDict(Parameters) + TransformNode.Type
     HistogramBaseName = "Histogram" + MangledName
     OutputHistogramXmlFilename = HistogramBaseName + ".xml"
-    OutputHistogramPngFilename = HistogramBaseName + ".png"
 
-    HistogramElement = nornir_buildmanager.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
+    HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
     [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
     if not HistogramElementCreated and HistogramElement.InputTransformChecksum != TransformNode.Checksum:
         logging.info("Cleaned outdated element: " + str(HistogramElement))
         HistogramElement.Clean()
-        HistogramElement = nornir_buildmanager.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
+        HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
         [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
     if HistogramElementCreated:
         NodeToSave = FilterNode
 
-    ImageNode = nornir_buildmanager.VolumeManager.ImageNode(OutputHistogramPngFilename)
-    [added, ImageNode] = HistogramElement.UpdateOrAddChild(ImageNode)
-#
-    DataNode = nornir_buildmanager.VolumeManager.DataNode(OutputHistogramXmlFilename)
+    DataNode = nb.VolumeManager.DataNode(OutputHistogramXmlFilename)
     [added, DataNode] = HistogramElement.UpdateOrAddChild(DataNode)
 
     AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
@@ -722,7 +733,6 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     if os.path.exists(HistogramElement.DataFullPath) and os.path.exists(HistogramElement.ImageFullPath) and HistogramElement.InputTransformChecksum == TransformNode.Checksum:
         return NodeToSave
 
-    NodeToSave = FilterNode
     # Check the folder for changes, not the .mosaic file
     # RemoveOutdatedFile(TransformNode.FullPath, OutputHistogramXmlFullPath)
     # RemoveOutdatedFile(TransformNode.FullPath, OutputHistogramPngFilename)
@@ -751,22 +761,56 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         # Create a data node for the histogram
         # DataObj = VolumeManager.DataNode(Path=)
 
-        if os.path.exists(ImageNode.FullPath):
-            os.remove(ImageNode.FullPath)
+        added = (GenerateHistogramImage(HistogramElement) is not None) or added
 
-    GenerateHistogramImage(HistogramElement)
+    HistogramElement.InputTransformChecksum = TransformNode.Checksum
+
+    if added:
+        return FilterNode
+    else:
+        return None
 
 
-def GenerateHistogramImage(HistogramElement):
+def GenerateHistogramImage(HistogramElement, MinCutoffPercent=0.0, MaxCutoffPercent=0.0, Gamma=1):
 
     AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
 
     HistogramImage = HistogramElement.find('Image')
 
-    if not os.path.exists(ImageNode.FullPath):
+    (MinValue, MaxValue, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma)
+    added = False
 
-        MinCutoffPercent = Parameters.get('MinCutoff', 0.005)
-        MaxCutoffPercent = Parameters.get('MaxCutoff', 0.005)
+    if not HistogramImage is None:
+        HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MinIntensityCutoff', MinValue)
+        HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MaxIntensityCutoff', MaxValue)
+        HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'Gamma', Gamma)
+
+#         if not hasattr(HistogramImage, 'MinValue'):
+#             HistogramImage.Clean("No MinValue attribute on histogram image node.  Presumed outdated.")
+#             HistogramImage = None
+#         elif not hasattr(HistogramImage, 'MaxValue'):
+#             HistogramImage.Clean("No MaxValue attribute on histogram image node.  Presumed outdated.")
+#             HistogramImage = None
+#         elif not hasattr(HistogramImage, 'Gamma'):
+#             HistogramImage.Clean("No Gamma attribute on histogram image node.  Presumed outdated.")
+#             HistogramImage = None
+#         elif float(HistogramImage.MinValue) != MinValue:
+#             HistogramImage.Clean("MinValue does not match histogram min cutoff.")
+#             HistogramImage = None
+#         elif float(HistogramImage.MaxValue) != MaxValue:
+#             HistogramImage.Clean("MaxValue does not match histogram max cutoff.")
+#             HistogramImage = None
+#         elif float(HistogramImage.Gamma) != Gamma:
+#             HistogramImage.Clean("Gamma does not match histogram gamma cutoff.")
+#             HistogramImage = None
+
+    if HistogramImage is None:
+        OutputHistogramPngFilename = "Histogram" + HistogramElement.Type + ".png"
+        HistogramImage = nb.VolumeManager.ImageNode(OutputHistogramPngFilename)
+        [added, HistogramImage] = HistogramElement.UpdateOrAddChild(HistogramImage)
+
+    if not os.path.exists(HistogramImage.FullPath):
+        added = True
         LinePositions = []
         if not AutoLevelDataNode.UserRequestedMinIntensityCutoff is None:
             MinCutoffLine = float(AutoLevelDataNode.UserRequestedMinIntensityCutoff)
@@ -778,17 +822,24 @@ def GenerateHistogramImage(HistogramElement):
             LinePositions.append(MaxCutoffLine)
             MaxCutoffPercent = None
 
-        ChannelNode = FilterNode.FindParent('Channel')
+        FilterNode = HistogramElement.FindParent('Filter')
+        ChannelNode = HistogramElement.FindParent('Channel')
         SectionNode = ChannelNode.FindParent('Section')
+        DataNode = HistogramElement.find('Data')
 
         TitleStr = str(SectionNode.Number) + " " + ChannelNode.Name + " " + FilterNode.Name + " histogram"
 
         prettyoutput.Log("Creating Section Autoleveled Histogram Image: " + DataNode.FullPath)
-        nornir_shared.plot.Histogram(DataNode.FullPath, ImageNode.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, Title=TitleStr)
+        nornir_shared.plot.Histogram(DataNode.FullPath, HistogramImage.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, Title=TitleStr)
 
-    HistogramElement.InputTransformChecksum = TransformNode.Checksum
+        HistogramImage.MinIntensityCutoff = str(MinValue)
+        HistogramImage.MaxIntensityCutoff = str(MaxValue)
+        HistogramImage.Gamma = str(Gamma)
 
-    return NodeToSave
+    if added:
+        return HistogramElement
+    else:
+        return None
 
 
 def MigrateMultipleImageSets(FilterNode, Logger, **kwargs):
@@ -864,7 +915,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     else:
         return InputChannelNode
 
-    [added, OutputChannelNode] = InputChannelNode.Parent.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManager.ChannelNode(OutputName, OutputName))
+    [added, OutputChannelNode] = InputChannelNode.Parent.UpdateOrAddChildByAttrib(nb.VolumeManager.ChannelNode(OutputName, OutputName))
 
     return OutputChannelNode
 
@@ -919,13 +970,13 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     # Should Replace any child elements
     ImageNode = ImageLevelNode.find('Image')
     if(ImageNode is None):
-        ImageNode = nornir_buildmanager.VolumeManager.ImageNode(OutputImageNameTemplate)
+        ImageNode = nb.VolumeManager.ImageNode(OutputImageNameTemplate)
         ImageNode.InputTransformChecksum = TransformNode.Checksum
         ImageLevelNode.append(ImageNode)
 
     MaskImageNode = ImageMaskLevelNode.find('Image')
     if(MaskImageNode is None):
-        MaskImageNode = nornir_buildmanager.VolumeManager.ImageNode(OutputImageMaskNameTemplate)
+        MaskImageNode = nb.VolumeManager.ImageNode(OutputImageMaskNameTemplate)
         ImageNode.InputTransformChecksum = TransformNode.Checksum
         ImageMaskLevelNode.append(MaskImageNode)
 
@@ -1051,12 +1102,12 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
     # Should Replace any child elements
     ImageNode = ImageLevelNode.find('Image')
     if(ImageNode is None):
-        ImageNode = nornir_buildmanager.VolumeManager.ImageNode(OutputImageNameTemplate)
+        ImageNode = nb.VolumeManager.ImageNode(OutputImageNameTemplate)
         ImageLevelNode.append(ImageNode)
 
     MaskImageNode = ImageMaskLevelNode.find('Image')
     if(MaskImageNode is None):
-        MaskImageNode = nornir_buildmanager.VolumeManager.ImageNode(OutputImageMaskNameTemplate)
+        MaskImageNode = nb.VolumeManager.ImageNode(OutputImageMaskNameTemplate)
         ImageMaskLevelNode.append(MaskImageNode)
 
     ImageNode.MaskPath = MaskImageNode.FullPath
@@ -1147,7 +1198,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetN
     MangledName = misc.GenNameFromDict(Parameters) + InputTransformNode.Type
     CmdCount = 0
 
-    TileSetNode = nornir_buildmanager.VolumeManager.TilesetNode()
+    TileSetNode = nb.VolumeManager.TilesetNode()
     [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode)
 
     TileSetNode.TileXDim = str(TileWidth)
@@ -1167,7 +1218,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetN
         MFile = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
 
         # Need to call ir-assemble
-        LevelOne = nornir_buildmanager.VolumeManager.LevelNode(Level=1)
+        LevelOne = nb.VolumeManager.LevelNode(Level=1)
         [added, LevelOne] = TileSetNode.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
 
         if not os.path.exists(LevelOne.FullPath):
@@ -1313,12 +1364,12 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
 
         shrinkFactor = float(thisLevel) / float(upLevel)
 
-        upLevelNode = nornir_buildmanager.VolumeManager.LevelNode(upLevel)
+        upLevelNode = nb.VolumeManager.LevelNode(upLevel)
         [LevelNodeCreated, upLevelNode] = PyramidNode.UpdateOrAddChildByAttrib(upLevelNode, "Downsample")
         if LevelNodeCreated:
             SavePyramidNode = True
 
-        thisLevelNode = nornir_buildmanager.VolumeManager.LevelNode(thisLevel)
+        thisLevelNode = nb.VolumeManager.LevelNode(thisLevel)
         [LevelNodeCreated, thisLevelNode] = PyramidNode.UpdateOrAddChildByAttrib(thisLevelNode, "Downsample")
         if LevelNodeCreated:
             SavePyramidNode = True
@@ -1481,7 +1532,7 @@ def BuildTilesetPyramid(TileSetNode, Levels=None, Pool=None, **kwargs):
         return
 
     # Need to call ir-assemble
-    NextLevelNode = nornir_buildmanager.VolumeManager.LevelNode(LevelNode.Downsample * 2)
+    NextLevelNode = nb.VolumeManager.LevelNode(LevelNode.Downsample * 2)
     [added, NextLevelNode] = TileSetNode.UpdateOrAddChildByAttrib(NextLevelNode, 'Downsample')
 
     NextLevelNode.GridDimX = str(newXDim)
