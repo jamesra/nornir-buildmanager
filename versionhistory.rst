@@ -8,6 +8,7 @@ New
 * SetPruneCutoff pipeline to save users from editting volumedata.xml files deep in volume
 * SetContrast pipeline to save users from editting volumedata.xml files deep in volume
 * CreateVikingXML calls added to TEMBuild and TEMAlign scripts
+* Histogram images now show manual contrast settings
 
 Fixes
 =====
