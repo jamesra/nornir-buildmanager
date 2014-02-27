@@ -783,7 +783,7 @@ def GenerateHistogramImage(HistogramElement, MinCutoffPercent=0.0, MaxCutoffPerc
     if not HistogramImage is None:
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MinIntensityCutoff', MinValue)
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MaxIntensityCutoff', MaxValue)
-        HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'Gamma', Gamma)
+        HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'Gamma', Gamma, Precision=3)
 
 #         if not hasattr(HistogramImage, 'MinValue'):
 #             HistogramImage.Clean("No MinValue attribute on histogram image node.  Presumed outdated.")
