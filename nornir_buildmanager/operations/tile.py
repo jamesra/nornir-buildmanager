@@ -575,8 +575,16 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
     if OutputFilterName is None:
         OutputFilterName = 'Leveled'
 
-    HistogramElement = FilterNode.find("Histogram[@InputTransformChecksum='" + InputTransformNode.Checksum + "']")
-    assert(not HistogramElement is None)
+    HistogramElement = None
+    while HistogramElement is None:
+        HistogramElement = FilterNode.find("Histogram[@InputTransformChecksum='" + InputTransformNode.Checksum + "']")
+        assert(not HistogramElement is None)
+
+        if HistogramElement.CleanIfInvalid():
+            HistogramElement = None
+
+    if HistogramElement is None:
+        raise NornirUserException("No histograms available for autoleveling of section: %s" % FilterNode.FullPath)
 
     MinCutoffPercent = float(Parameters.get('MinCutoff', 0.1)) / 100.0
     MaxCutoffPercent = float(Parameters.get('MaxCutoff', 0.5)) / 100.0
@@ -716,9 +724,14 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
     [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
-    if not HistogramElementCreated and HistogramElement.InputTransformChecksum != TransformNode.Checksum:
-        logging.info("Cleaned outdated element: " + str(HistogramElement))
-        HistogramElement.Clean()
+    if not HistogramElementCreated:
+        if HistogramElement.CleanIfInvalid():
+            HistogramElement = None
+        elif HistogramElement.InputTransformChecksum != TransformNode.Checksum:
+            HistogramElement.Clean(reason="Checksum mismatch with requested transform")
+            HistogramElement = None
+
+    if HistogramElement is None:
         HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
         [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
