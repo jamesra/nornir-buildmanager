@@ -725,12 +725,16 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
     [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
+    ElementCleaned = False
+
     if not HistogramElementCreated:
         if HistogramElement.CleanIfInvalid():
             HistogramElement = None
+            ElementCleaned = True
         elif HistogramElement.InputTransformChecksum != TransformNode.Checksum:
             HistogramElement.Clean(reason="Checksum mismatch with requested transform")
             HistogramElement = None
+            ElementCleaned = True
 
     if HistogramElement is None:
         HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
@@ -740,7 +744,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         NodeToSave = FilterNode
 
     DataNode = nb.VolumeManager.DataNode(OutputHistogramXmlFilename)
-    [added, DataNode] = HistogramElement.UpdateOrAddChild(DataNode)
+    [DataElementCreated, DataNode] = HistogramElement.UpdateOrAddChild(DataNode)
 
     AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
 
@@ -775,11 +779,11 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         # Create a data node for the histogram
         # DataObj = VolumeManager.DataNode(Path=)
 
-        added = (GenerateHistogramImage(HistogramElement) is not None) or added
+        ImageCreated = (GenerateHistogramImage(HistogramElement) is not None)
 
     HistogramElement.InputTransformChecksum = TransformNode.Checksum
 
-    if added:
+    if ElementCleaned or HistogramElementCreated or DataElementCreated or ImageCreated:
         return FilterNode
     else:
         return None

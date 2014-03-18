@@ -1,4 +1,13 @@
 
+
+1.1.5
+-----
+
+** Fixes **
+ 
+* Duplicate histogram nodes could be created if changing the prune threshold did not change the tiles present in the mosaic.  Contrast settings could be applied incorrectly to the duplicate and ignored.
+
+
 1.1.2
 -----
 
