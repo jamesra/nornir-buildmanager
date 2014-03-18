@@ -246,32 +246,32 @@ class PMGBuildTest(PMGTest):
 #         # self.RunAssemble(Level=1)
 #         # self.RunAssemble(Filter="ShadingCorrected", Level=1)
 #         #=======================================================================
-#         self.RunExportImages(Channels="(?!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
-#
-#         self.RunMosaicReport(ContrastFilter="Leveled", AssembleFilter="ShadingCorrected", AssembleDownsample=1)
-#
+# #         self.RunExportImages(Channels="(?!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
+# #
+# #         self.RunMosaicReport(ContrastFilter="Leveled", AssembleFilter="ShadingCorrected", AssembleDownsample=1)
+# #
 #         BruteLevel = 8
-#
-#         self.RunCreateBlobFilter(Channels="*", Levels="8,16,%d" % (BruteLevel), Filter="Leveled")
-#         self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
-#
-#         volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
-#
-#         ManualStosInput = os.path.join(self.PlatformFullPath, '6263_ManualStos')
-#         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % ('Grid', BruteLevel))
-#         ManualStosDir = os.path.join(StosGroupNode.FullPath, 'Manual')
-#
-#         # os.remove(ManualStosDir)
-#         for f in glob.glob(os.path.join(ManualStosInput, '*.stos')):
-#             shutil.copy(f, ManualStosDir)
-#
+# #
+# #         self.RunCreateBlobFilter(Channels="*", Levels="8,16,%d" % (BruteLevel), Filter="Leveled")
+# #         self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
+# #
+# #         volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+# #
+# #         ManualStosInput = os.path.join(self.PlatformFullPath, '6263_ManualStos')
+# #         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % ('Grid', BruteLevel))
+# #         ManualStosDir = os.path.join(StosGroupNode.FullPath, 'Manual')
+# #
+# #         # os.remove(ManualStosDir)
+# #         for f in glob.glob(os.path.join(ManualStosInput, '*.stos')):
+# #             shutil.copy(f, ManualStosDir)
+# #
 #         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
 #         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
 #
 #         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
 #         self.RunSliceToVolume()
 #         self.RunMosaicToVolume()
-#         self.RunCreateVikingXML()
+#         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
 #         self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleLevel=1)
 #         self.RunExportImages(Channels="Registered", Filters="ShadingCorrected", AssembleLevel=1, Output="Registered")
 

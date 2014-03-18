@@ -45,6 +45,7 @@ from nornir_buildmanager.importers import filenameparser
 from nornir_buildmanager.operations.tile import VerifyTiles
 from nornir_imageregistration import image_stats
 from nornir_imageregistration.files import mosaicfile
+import nornir_imageregistration.core
 from nornir_shared.files import *
 from nornir_shared.images import *
 import nornir_shared.prettyoutput as prettyoutput
@@ -315,7 +316,8 @@ class PMGImport(object):
                     InputTileToOutputTile[InputTileFullPath] = OutputTileFullPath
 
                 PngTiles[pngMosaicTile] = Tiles[inputTile]
-                imageSize.append(nornir_shared.images.GetImageSize(InputTileFullPath))
+                (Height, Width) = nornir_imageregistration.core.GetImageSize(InputTileFullPath)
+                imageSize.append((Width, Height))
 
             ConvertImagesInDict(InputTileToOutputTile, Flip=False, Bpp=TargetBpp)
 
@@ -407,7 +409,7 @@ def ParsePMG(filename, TileOverlapPercent=None):
 
         if(TileWidth == 0):
             try:
-                [TileWidth, TileHeight] = GetImageSize(TileFullPath)
+                [TileHeight, TileWidth] = nornir_imageregistration.core.GetImageSize(TileFullPath)
                 if(DEBUG):
                     prettyoutput.Log(str(TileWidth) + ',' + str(TileHeight) + " " + TileFilename)
             except:

@@ -26,6 +26,7 @@ import nornir_imageregistration.tiles as tiles
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.transforms import *
+import nornir_imageregistration.spatial as spatial
 from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import Histogram
@@ -468,10 +469,10 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
         Transforms[imagename] = MosaicToSectionTransform
         bbox = MosaicToSectionTransform.FixedBoundingBox
 
-        minX = min(minX, bbox[0])
-        minY = min(minY, bbox[1])
-        maxX = max(maxX, bbox[2])
-        maxY = max(maxY, bbox[3])
+        minX = min(minX, bbox[spatial.iRect.MinX])
+        minY = min(minY, bbox[spatial.iRect.MinY])
+        maxX = max(maxX, bbox[spatial.iRect.MaxX])
+        maxY = max(maxY, bbox[spatial.iRect.MaxY])
 
     if OutputTransformNode is None:
         OutputTransformNode = copy.deepcopy(TransformNode)
