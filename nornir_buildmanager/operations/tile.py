@@ -740,16 +740,14 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
         [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
-    if HistogramElementCreated:
-        NodeToSave = FilterNode
-
     DataNode = nb.VolumeManager.DataNode(OutputHistogramXmlFilename)
     [DataElementCreated, DataNode] = HistogramElement.UpdateOrAddChild(DataNode)
 
     AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
 
     if os.path.exists(HistogramElement.DataFullPath) and os.path.exists(HistogramElement.ImageFullPath) and HistogramElement.InputTransformChecksum == TransformNode.Checksum:
-        return NodeToSave
+        if HistogramElementCreated or ElementCleaned or DataElementCreated:
+            return FilterNode
 
     # Check the folder for changes, not the .mosaic file
     # RemoveOutdatedFile(TransformNode.FullPath, OutputHistogramXmlFullPath)
@@ -765,6 +763,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
 
         HistogramElement.append(AutoLevelDataNode)
 
+    ImageCreated = False
     if not os.path.exists(DataNode.FullPath):
         mosaic = mosaicfile.MosaicFile.Load(InputMosaicFullPath)
 
