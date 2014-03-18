@@ -26,6 +26,7 @@ import nornir_imageregistration.tiles as tiles
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.transforms import *
+import nornir_imageregistration.spatial as spatial
 from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import Histogram
@@ -468,10 +469,10 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
         Transforms[imagename] = MosaicToSectionTransform
         bbox = MosaicToSectionTransform.FixedBoundingBox
 
-        minX = min(minX, bbox[0])
-        minY = min(minY, bbox[1])
-        maxX = max(maxX, bbox[2])
-        maxY = max(maxY, bbox[3])
+        minX = min(minX, bbox[spatial.iRect.MinX])
+        minY = min(minY, bbox[spatial.iRect.MinY])
+        maxX = max(maxX, bbox[spatial.iRect.MaxX])
+        maxY = max(maxY, bbox[spatial.iRect.MaxY])
 
     if OutputTransformNode is None:
         OutputTransformNode = copy.deepcopy(TransformNode)
@@ -575,8 +576,16 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
     if OutputFilterName is None:
         OutputFilterName = 'Leveled'
 
-    HistogramElement = FilterNode.find("Histogram[@InputTransformChecksum='" + InputTransformNode.Checksum + "']")
-    assert(not HistogramElement is None)
+    HistogramElement = None
+    while HistogramElement is None:
+        HistogramElement = FilterNode.find("Histogram[@InputTransformChecksum='" + InputTransformNode.Checksum + "']")
+        assert(not HistogramElement is None)
+
+        if HistogramElement.CleanIfInvalid():
+            HistogramElement = None
+
+    if HistogramElement is None:
+        raise NornirUserException("No histograms available for autoleveling of section: %s" % FilterNode.FullPath)
 
     MinCutoffPercent = float(Parameters.get('MinCutoff', 0.1)) / 100.0
     MaxCutoffPercent = float(Parameters.get('MaxCutoff', 0.5)) / 100.0
@@ -716,9 +725,14 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
     [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
-    if not HistogramElementCreated and HistogramElement.InputTransformChecksum != TransformNode.Checksum:
-        logging.info("Cleaned outdated element: " + str(HistogramElement))
-        HistogramElement.Clean()
+    if not HistogramElementCreated:
+        if HistogramElement.CleanIfInvalid():
+            HistogramElement = None
+        elif HistogramElement.InputTransformChecksum != TransformNode.Checksum:
+            HistogramElement.Clean(reason="Checksum mismatch with requested transform")
+            HistogramElement = None
+
+    if HistogramElement is None:
         HistogramElement = nb.VolumeManager.HistogramNode(TransformNode, Type=MangledName, attrib=Parameters)
         [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
@@ -783,7 +797,7 @@ def GenerateHistogramImage(HistogramElement, MinCutoffPercent=0.0, MaxCutoffPerc
     if not HistogramImage is None:
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MinIntensityCutoff', MinValue)
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MaxIntensityCutoff', MaxValue)
-        HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'Gamma', Gamma)
+        HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'Gamma', Gamma, Precision=3)
 
 #         if not hasattr(HistogramImage, 'MinValue'):
 #             HistogramImage.Clean("No MinValue attribute on histogram image node.  Presumed outdated.")
