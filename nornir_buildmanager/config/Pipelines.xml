@@ -459,9 +459,9 @@
 	
 	<Pipeline Name="SetContrast" Description="Set the contrast parameters for a filter">
 		<Arguments>
-		    <Argument flag="-Min" dest="MinValue" type="float" help="Prune threshold to set" required="False" default="NaN"/>
-			<Argument flag="-Max" dest="MaxValue" type="float" help="Prune threshold to set" required="False" default="NaN"/>
-			<Argument flag="-Gamma" dest="GammaValue" type="float" help="Prune threshold to set" required="False" default="NaN"/>
+		    <Argument flag="-Min" dest="MinValue" type="float" help="Min intensity value, set to 0 in output" required="False" default="NaN"/>
+			<Argument flag="-Max" dest="MaxValue" type="float" help="Max intensity value, set to 1 in output" required="False" default="NaN"/>
+			<Argument flag="-Gamma" dest="GammaValue" type="float" help="Gamma adjustment" required="False" default="NaN"/>
 			<Argument flag="-Section" dest="Section" help="Section number to edit" required="True"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be edited" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="*" help="Regular expression describing filters to be edited" required="False"/>

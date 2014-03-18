@@ -9,6 +9,7 @@ import shutil
 import os
 import nornir_shared.images
 import nornir_pools as Pools
+import nornir_imageregistration.core
 import datetime
 import nornir_buildmanager.importers.idoc as idoc
 import nornir_shared.plot
@@ -653,7 +654,7 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
 
     ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
 
-    [Width, Height] = nornir_shared.images.GetImageSize(ImageNode.FullPath)
+    [Height, Width] = nornir_imageregistration.core.GetImageSize(ImageNode.FullPath)
 
     # Create a thumbnail if needed
     if Width > MaxImageWidth or Height > MaxImageHeight:

@@ -7,6 +7,14 @@ Prune
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_Prune
        :prog: nornir_build -pipeline TEMPrepare
+       
+SetPruneCutoff
+--------------
+
+    .. argparse::
+       :module: nornir_buildmanager.config.sphinxdocs
+       :func: _doc_arguments_SetPruneCutoff
+       :prog: nornir_build -pipeline SetPruneCutoff
 
 
 ShadeCorrect
@@ -24,6 +32,14 @@ AdjustContrast
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_AdjustContrast
        :prog: nornir_build -pipeline AdjustContrast
+       
+SetContrast
+--------------
+
+    .. argparse::
+       :module: nornir_buildmanager.config.sphinxdocs
+       :func: _doc_arguments_SetContrast
+       :prog: nornir_build -pipeline SetContrast
  
 Mosaic
 ----------
@@ -152,11 +168,17 @@ def _doc_arguments(pipelinename):
 def _doc_arguments_Prune():
     return _doc_arguments('Prune')
 
+def _doc_arguments_SetPruneCutoff():
+    return _doc_arguments('SetPruneCutoff')
+
 def _doc_arguments_ShadeCorrect():
     return _doc_arguments('ShadeCorrect')
 
 def _doc_arguments_AdjustContrast():
     return _doc_arguments('AdjustContrast')
+
+def _doc_arguments_SetContrast():
+    return _doc_arguments('SetContrast')
 
 def _doc_arguments_RenameFilter():
     return _doc_arguments('RenameFilter')

@@ -2394,6 +2394,9 @@ class HistogramBase(XElementWrapper):
         '''Remove this node if our output does not exist'''
         if self.DataNode is None:
             return [False, "No data node found"]
+        else:
+            if not os.path.exists(self.DataNode.FullPath):
+                return [False, "No file to match data node"]
 
         '''Check for the transform node and ensure the checksums match'''
         # TransformNode = self.Parent.find('Transform')
