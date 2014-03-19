@@ -558,7 +558,7 @@ def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercen
             raise nb.NornirUserException("%g > %g Max intensity is less than min intensity for histogram correction. %s" % (MinIntensityCutoff, MaxIntensityCutoff, HistogramElement.DataFullPath))
 
         if Gamma is None:
-            Gamma = histogram.GammaAtValue(histogram.PeakValue, minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
+            Gamma = histogram.GammaAtValue(histogram.PeakValue(MinIntensityCutoff, MaxIntensityCutoff), minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
 
     return (MinIntensityCutoff, MaxIntensityCutoff, Gamma)
 
