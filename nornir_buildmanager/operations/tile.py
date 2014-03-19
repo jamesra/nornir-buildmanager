@@ -558,7 +558,7 @@ def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercen
             raise nb.NornirUserException("%g > %g Max intensity is less than min intensity for histogram correction. %s" % (MinIntensityCutoff, MaxIntensityCutoff, HistogramElement.DataFullPath))
 
         if Gamma is None:
-            Gamma = histogram.GammaAtValue(histogram.Median, minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
+            Gamma = histogram.GammaAtValue(histogram.PeakValue, minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
 
     return (MinIntensityCutoff, MaxIntensityCutoff, Gamma)
 
@@ -577,12 +577,14 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
         OutputFilterName = 'Leveled'
 
     HistogramElement = None
+    HistogramElementRemoved = False
     while HistogramElement is None:
         HistogramElement = FilterNode.find("Histogram[@InputTransformChecksum='" + InputTransformNode.Checksum + "']")
         assert(not HistogramElement is None)
 
         if HistogramElement.CleanIfInvalid():
             HistogramElement = None
+            HistogramElementRemoved = True
 
     if HistogramElement is None:
         raise NornirUserException("No histograms available for autoleveling of section: %s" % FilterNode.FullPath)
@@ -604,7 +606,10 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
 
     if not OutputFilterNode is None:
         # Nothing to do
-        return None
+        if HistogramElementRemoved:
+            return FilterNode
+        else:
+            return None
 
     # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
     DictAttributes = {'BitsPerPixel' : 8,
