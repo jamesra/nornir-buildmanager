@@ -311,7 +311,7 @@ def __CallNornirStosBrute(stosNode, Downsample, ControlImageNode, MappedImageNod
                                                       WarpedImageInput=MappedImageNode.FullPath,
                                                       FixedImageMaskPath=ControlMaskImageNode.FullPath,
                                                       WarpedImageMaskPath=MappedMaskImageNode.FullPath,
-                                                      Cluster=True)
+                                                      Cluster=False)
 
         stos = alignment.ToStos(ControlImageNode.FullPath,
                          MappedImageNode.FullPath,
@@ -324,7 +324,7 @@ def __CallNornirStosBrute(stosNode, Downsample, ControlImageNode, MappedImageNod
     else:
         alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageNode.FullPath,
                                                       WarpedImageInput=MappedImageNode.FullPath,
-                                                      Cluster=True)
+                                                      Cluster=False)
 
         stos = alignment.ToStos(ControlImageNode.FullPath,
                          MappedImageNode.FullPath,
