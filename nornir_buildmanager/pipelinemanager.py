@@ -15,7 +15,7 @@ from nornir_buildmanager import VolumeManagerETree
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
-import argparse
+import argparsexml
 
 
 class ArgumentSet():
@@ -356,6 +356,24 @@ class PipelineRegExSearchFailed(PipelineError):
         return s
 
 
+class PipelineListIntersectionFailed(PipelineError):
+    '''A regular expression search could not match any nodes'''
+
+    def __init__(self, listOfValid, attribValue, **kwargs):
+        super(PipelineListIntersectionFailed, self).__init__(**kwargs)
+
+        self.listOfValid = listOfValid
+        self.attribValue = attribValue
+
+    def __CoreErrorList(self):
+        s = []
+        s.append("An attribute was not in the list of valid values.")
+        s.append("List: " + str(self.listOfValid))
+        s.append("Attrib value: " + self.attribValue)
+        s.extend(super(PipelineError, self).__CoreErrorList())
+        return s
+
+
 class PipelineSearchFailed(PipelineError):
     '''A find statement could not match any nodes'''
 
@@ -494,22 +512,21 @@ class PipelineManager(object):
 
         return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)
 
+
     def GetArgParser(self, parser=None, IncludeGlobals=True):
         '''Create the complete argument parser for the pipeline
-        
-        :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation'''
-
-        if parser is None:
-            parser = argparse.ArgumentParser()
+        :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation
+        '''
 
         if IncludeGlobals:
-            CreateOrExtendParserForArguments(self.PipelineRoot.findall('Arguments/Argument'), parser)
+            parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineRoot.findall('Arguments/Argument'), parser)
 
-        CreateOrExtendParserForArguments(self.PipelineData.findall('Arguments/Argument'), parser)
+        parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineData.findall('Arguments/Argument'), parser)
 
         PipelineManager._AddParserDescription(self.PipelineData, parser)
 
         return parser
+
 
     @classmethod
     def _AddParserDescription(cls, PipelineNode, parser):
@@ -592,15 +609,17 @@ class PipelineManager(object):
                 except PipelineSelectFailed as e:
                     if ArgSet.Arguments["debug"]:
                         PipelineManager.logger.info(str(e))
-
-                    PipelineManager.logger.info("Select statement did not match.  Skipping further iteration and continuing\n")
+                    PipelineManager.logger.info("Select statement did not match.  Skipping to next iteration\n")
                     break
                 except PipelineSearchFailed as e:
                     PipelineManager.logger.error(str(e))
-                    PipelineManager.logger.info("Search statement did not match.  Skipping further iteration and continuing")
+                    PipelineManager.logger.info("Search statement did not match.  Skipping to next iteration\n")
+                    break
+                except PipelineListIntersectionFailed as e:
+                    PipelineManager.logger.info("Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + str(e))
                     break
                 except PipelineRegExSearchFailed as e:
-                    PipelineManager.logger.info("Regular expression did not match.  Skipping further iteration. " + str(e.attribValue))
+                    PipelineManager.logger.info("Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
                     break
                 except PipelineError as e:
                     PipelineManager.logger.error(str(e))
@@ -629,6 +648,9 @@ class PipelineManager(object):
         elif(PipelineNode.tag == 'Iterate'):
             self.ProcessIterateNode(ArgSet, VolumeElem, PipelineNode)
 
+        elif(PipelineNode.tag == 'RequireSetMembership'):
+            self.RequireSetMembership(ArgSet, VolumeElem, PipelineNode)
+
         elif(PipelineNode.tag == 'RequireMatch'):
             self.ProcessRequireMatchNode(ArgSet, VolumeElem, PipelineNode)
 
@@ -642,6 +664,31 @@ class PipelineManager(object):
             raise Exception("Unexpected element name in Pipeline.XML: " + PipelineNode.tag)
 
         prettyoutput.DecreaseIndent()
+
+
+    def RequireSetMembership(self, ArgSet, VolumeElem, PipelineNode):
+        '''If the attribute value is not present in the provided list the element is skipped'''
+
+        RootForMatch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
+
+        AttribName = PipelineNode.attrib.get("Attribute", "Name")
+        AttribName = ArgSet.SubstituteStringVariables(AttribName)
+
+        listVariable = PipelineNode.attrib.get("List", None)
+        listOfValid = ArgSet.SubstituteStringVariables(listVariable)
+
+        Attrib = RootForMatch.attrib.get(AttribName, None)
+        if Attrib is None:
+            raise PipelineArgumentNotFound(VolumeElem=VolumeElem,
+                                           PipelineNode=PipelineNode,
+                                           argname=AttribName)
+
+        if not Attrib in listOfValid:
+             raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, listOfValid=listOfValid, attribValue=Attrib)
+
+        return
+
+
 
     def ProcessRequireMatchNode(self, ArgSet, VolumeElem, PipelineNode):
         '''If the regular expression does not match the attribute an exception is raised.
@@ -837,80 +884,6 @@ def _GetVariableName(PipelineNode):
         raise PipelineError(PipelineNode=PipelineNode, message="Variable name attribute required on Select Element")
 
 
-def _ConvertValueToPythonType(val):
-    if val.lower() == 'true':
-        return True
-    elif val.lower() == 'false':
-        return False
-    else:
-        try:
-            return int(val)
-        except:
-            try:
-                return float(val)
-            except:
-                pass
-
-    return val
-
-
-def _AddArgumentNodeToParser(parser, argNode):
-    '''Returns a dictionary that can be added to a parser'''
-
-    attribDictCopy = copy.deepcopy(argNode.attrib)
-    Flag = ""
-
-    for key in attribDictCopy:
-        val = attribDictCopy[key]
-
-        # Starts as a string, try to convert to bool, int, or float
-        if key == 'flag':
-            Flag = nornir_shared.misc.ListFromDelimited(val)
-            continue
-
-        elif key == 'type':
-            if not key in __builtins__:
-                logger = logging.getLogger("PipelineManager")
-                logger.error('Type not found in __builtins__ ' + key)
-                prettyoutput.LogErr('Type not found in __builtins__ ' + key)
-                raise Exception(message="%s type specified by argument node is not present in __builtins__ dictionary.  Must use a standard python type." % key)
-                continue
-
-            val = __builtins__[val]
-            attribDictCopy[key] = val
-        elif key == 'default':
-            attribDictCopy[key] = _ConvertValueToPythonType(val)
-        elif key == 'required':
-            attribDictCopy[key] = _ConvertValueToPythonType(val)
-        elif key == 'choices':
-            listOfChoices = nornir_shared.misc.ListFromDelimited(val)
-            if len(listOfChoices) < 2:
-                raise Exception(message="Flag %s does not specify multiple choices.  Must use a comma delimited list to provide multiple choice options.\nCurrent choice string is: %s" % (attribDictCopy['flag'], val))
-
-            attribDictCopy[key] = listOfChoices
-
-    if 'flag' in attribDictCopy:
-        del attribDictCopy['flag']
-
-    parser.add_argument(*Flag, **attribDictCopy)
-
-
-def CreateOrExtendParserForArguments(ArgumentNodes, parser=None):
-    '''
-       Converts a list of <Argument> nodes into an argument parser, or extends an existing argument parser
-       :param XElement ArgumentNodes: Argument nodes.  Usually found with the xquery "Arguments/Argument" on the pipeline node
-       :param argparse.ArgumentParser parser: Existing Argument parser to extend, otherwise a new parser is created
-       :returns: An argument parser
-       :rtype: argparse.ArgumentParser
-    '''
-
-    if parser is None:
-        parser = argparse.ArgumentParser()
-
-    for argNode in ArgumentNodes:
-        _AddArgumentNodeToParser(parser, argNode)
-
-    return parser
 
 if __name__ == "__main__":
 

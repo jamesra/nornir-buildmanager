@@ -8,15 +8,23 @@ import logging
 import math
 
 
+def SetFilterLock(Node, Locked):
+    ParentFilter = Node.FindParent('Filter')
+    if not ParentFilter is None:
+        ParentFilter.Locked = Locked
+
+
 def SetPruneThreshold(PruneNode, Value, **kwargs):
 
     logger = kwargs.get('Logger', logging.getLogger('setters'))
 
     PruneNode.UserRequestedCutoff = str(Value)
 
+    SetFilterLock(PruneNode, False)
+
     logger.info("Set Prune Threshold to %g on %s" % (Value, PruneNode.Parent.FullPath))
 
-    return PruneNode.Parent
+    return PruneNode.FindParent('Filter')
 
 
 def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs):
@@ -44,10 +52,22 @@ def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs)
     AutoLevelHint.UserRequestedMaxIntensityCutoff = MaxValue
     AutoLevelHint.UserRequestedGamma = GammaValue
 
+    SetFilterLock(AutoLevelHint, False)
+
     logger.info("Set contrast min: %s max: %s, gamma: %s on %s" % (minStr, maxStr, gammaStr, HistogramElement.Parent.FullPath))
 
-    return HistogramElement
+    return HistogramElement.FindParent('Filter')
 
+
+def SetFilterContrastLocked(FilterNode, Locked, **kwargs):
+
+    logger = kwargs.get('Logger', logging.getLogger('setters'))
+
+    FilterNode.Locked = bool(int(Locked))
+
+    logger.info("Setting filter to locked = " + str(Locked) + "  " + FilterNode.FullPath)
+
+    return FilterNode
 
 if __name__ == '__main__':
     pass
