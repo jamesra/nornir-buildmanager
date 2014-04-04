@@ -126,6 +126,9 @@ class IDocSingleSectionImportTest(IDocTest):
 
         self.EnsureTilePyramidIsFull(self._getFilterNode(BlockNode, self.SectionNumber), 25)
 
+        self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="1")
+        self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="0")
+
 
 # class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
 #     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
@@ -162,6 +165,10 @@ class IDocBuildTest(IDocTest):
         self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
 
         self.RunAdjustContrast()
+
+        self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
+        self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
+
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
         self.RunAssemble(Level=8)
