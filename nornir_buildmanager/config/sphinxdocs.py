@@ -40,6 +40,14 @@ SetContrast
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_SetContrast
        :prog: nornir_build -pipeline SetContrast
+       
+SetFilterLock
+-------------
+
+    .. argparse::
+        :module: nornir_buildmanager.config.sphinxdocs
+        :func: _doc_arguments_SetFilterLock
+        :prog: nornir_build -pipeline SetFilterLock
  
 Mosaic
 ----------
@@ -179,6 +187,9 @@ def _doc_arguments_AdjustContrast():
 
 def _doc_arguments_SetContrast():
     return _doc_arguments('SetContrast')
+
+def _doc_arguments_SetFilterLock():
+    return _doc_arguments('SetFilterLock')
 
 def _doc_arguments_RenameFilter():
     return _doc_arguments('RenameFilter')
