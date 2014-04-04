@@ -558,7 +558,7 @@ def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercen
             raise nb.NornirUserException("%g > %g Max intensity is less than min intensity for histogram correction. %s" % (MinIntensityCutoff, MaxIntensityCutoff, HistogramElement.DataFullPath))
 
         if Gamma is None:
-            Gamma = histogram.GammaAtValue(histogram.PeakValue, minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
+            Gamma = histogram.GammaAtValue(histogram.PeakValue(MinIntensityCutoff, MaxIntensityCutoff), minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
 
     return (MinIntensityCutoff, MaxIntensityCutoff, Gamma)
 
@@ -600,9 +600,11 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
     if FilterIsPopulated(FilterNode, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
         OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
 
-    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
-    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
-    OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
+    if(OutputFilterNode):
+        if(not OutputFilterNode.Locked):
+            OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
+            OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
+            OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
 
     if not OutputFilterNode is None:
         # Nothing to do

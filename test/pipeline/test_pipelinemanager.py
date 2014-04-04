@@ -5,6 +5,7 @@ Created on Jan 6, 2014
 '''
 import unittest
 import nornir_buildmanager.pipelinemanager as pm
+import nornir_buildmanager.argparsexml as argparsexml
 import xml.etree.ElementTree as etree
 
 
@@ -83,7 +84,7 @@ class Test(unittest.TestCase):
     def test_Arg(self):
         argset = pm.ArgumentSet()
 
-        parser = pm.CreateOrExtendParserForArguments(LoadArguments(ArgumentXML).findall('Argument'))
+        parser = argparsexml.CreateOrExtendParserForArguments(LoadArguments(ArgumentXML).findall('Argument'))
 
         args = parser.parse_args(['-Gamma', '1.0', '-MinCutoff', '0.1', '-MaxCutoff', '0.5'])
         argset.AddArguments(args)

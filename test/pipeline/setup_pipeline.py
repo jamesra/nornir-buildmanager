@@ -17,6 +17,7 @@ from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
 import nornir_buildmanager.build as build
 from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files.mosaicfile import *
+from nornir_buildmanager.argparsexml import NumberList
 import nornir_shared.misc
 
 
@@ -37,6 +38,13 @@ def VerifyVolume(test, VolumeObj, listVolumeEntries):
         SearchEntry = NextSearchEntry
 
     return SearchEntry
+
+
+def MatchingSections(SectionNodes, sectionNumberList):
+    '''Return section nodes with numbers existing in the string representing a list of integers'''
+    for sectionNode in SectionNodes:
+        if sectionNode.Number in sectionNumberList:
+            yield sectionNode
 
 
 def MatchingFilters(SectionNodes, Channels, Filters):
@@ -219,7 +227,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunSetPruneCutoff(self, Value, Section, Channels, Filters):
 
-        buildArgs = self._CreateBuildArgs('SetPruneCutoff', '-Section', Section, '-Channels', Channels, '-Filters', Filters, '-Value', str(Value))
+        buildArgs = self._CreateBuildArgs('SetPruneCutoff', '-Sections', Section, '-Channels', Channels, '-Filters', Filters, '-Value', str(Value))
         volumeNode = self.RunBuild(buildArgs)
         self.assertIsNotNone(volumeNode, "No volume node returned from build")
 
@@ -237,7 +245,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunSetContrast(self, MinValue, MaxValue, GammaValue, Section, Channels, Filters):
 
-        buildArgs = self._CreateBuildArgs('SetContrast', '-Section', Section, '-Channels',
+        buildArgs = self._CreateBuildArgs('SetContrast', '-Sections', Section, '-Channels',
                                            Channels, '-Filters', Filters,
                                             '-Min', str(MinValue),
                                             '-Max', str(MaxValue),
@@ -246,7 +254,7 @@ class PlatformTest(test.testbase.TestBase):
         self.assertIsNotNone(volumeNode, "No volume node returned from build")
 
         SectionNode = volumeNode.find("Block/Section[@Number='%s']" % str(Section))
-        self.assertIsNotNone(volumeNode, "No section node found")
+        self.assertIsNotNone(SectionNode, "No section node found")
 
         Filters = list(MatchingFilters([SectionNode], Channels, Filters))
 
@@ -271,6 +279,25 @@ class PlatformTest(test.testbase.TestBase):
                 self.assertIsNone(ahNode.UserRequestedGamma, "Gamma value should match the passed value")
             else:
                 self.assertEqual(ahNode.UserRequestedGamma, float(GammaValue), "Gamma value should match the passed value")
+
+
+    def RunSetFilterLocked(self, sectionListStr, Channels, Filters, Locked):
+
+        buildArgs = self._CreateBuildArgs('SetFilterLock', '-Sections', sectionListStr, '-Channels',
+                                           Channels, '-Filters', Filters,
+                                            '-Locked', str(Locked))
+        LockedVal = bool(int(Locked))
+        volumeNode = self.RunBuild(buildArgs)
+
+        sectionNumbers = NumberList(sectionListStr)
+        Sections = list(MatchingSections(volumeNode.findall("Block/Section"), sectionNumbers))
+
+        self.assertEqual(len(Sections), len(sectionNumbers), "Did not find all of the expected sections")
+
+        Filters = list(MatchingFilters(Sections, Channels, Filters))
+
+        for fnode in Filters:
+            self.assertEqual(fnode.Locked, LockedVal, "Filter did not lock as expected")
 
 
     def RunShadingCorrection(self, ChannelPattern, CorrectionType=None, FilterPattern=None):

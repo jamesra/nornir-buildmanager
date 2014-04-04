@@ -18,10 +18,12 @@ from nornir_buildmanager.VolumeManagerETree import *
 import nornir_buildmanager.build as build
 from nornir_buildmanager.operations.tile import *
 from nornir_buildmanager.validation import transforms
+import nornir_buildmanager.operations.setters as setters
 import nornir_imageregistration.tiles as tiles
 import nornir_shared.files
 import nornir_shared.misc
 import numpy as np
+
 
 
 # class EvaluateFilterTest(ImportOnlySetup):
@@ -272,8 +274,12 @@ class AutoLevelHistogramTest(PrepareSetup):
 
         # Test the Max Cutoff value
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = ManualMaxValue
+
         ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)
+
+        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        self.assertIsNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.MaxIntensityCutoff, ManualMaxValue)
@@ -281,9 +287,17 @@ class AutoLevelHistogramTest(PrepareSetup):
         ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
+        # Calling again with new parameters but the filter locked should not regenerate tiles
+        setters.SetFilterContrastLocked(self.OutputFilterNode, Locked=True)
+
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = None
         ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
-        self.assertIsNotNone(ChannelOutput)
+        self.assertIsNone(ChannelOutput, "Locked filter should not regenerate")
+
+        # Calling again with new parameters but the filter locked should not regenerate tiles
+        setters.SetFilterContrastLocked(self.OutputFilterNode, Locked=False)
+        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        self.assertIsNotNone(ChannelOutput, "Unlocked filter should regenerate")
 
         self.LoadOutputMetaData(OutputFilterName)
 
