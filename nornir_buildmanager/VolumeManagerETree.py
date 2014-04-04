@@ -1403,6 +1403,22 @@ class FilterNode(XContainerElementWrapper):
         self.attrib['BitsPerPixel'] = '%d' % val
 
     @property
+    def Locked(self):
+        if 'Locked' in self.attrib:
+            return bool(int(self.attrib['Locked']))
+
+        return False;
+
+    @Locked.setter
+    def Locked(self, val):
+        if not val:
+            if 'Locked' in self.attrib:
+                del self.attrib['Locked']
+                return
+
+        self.attrib['Locked'] = '%d' % val
+
+    @property
     def TilePyramid(self):
         # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
         # There should be only one Imageset, so use find
