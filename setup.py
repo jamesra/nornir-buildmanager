@@ -17,9 +17,9 @@ if __name__ == '__main__':
 
     use_setuptools()
 
-    install_requires = ["nornir_pools>=1.1.6",
-                        "nornir_shared>=1.1.6",
-                        "nornir_imageregistration>=1.1.6",
+    install_requires = ["nornir_pools>=1.1.7",
+                        "nornir_shared>=1.1.7",
+                        "nornir_imageregistration>=1.1.7",
                         "numpy>=1.8.0",
                         "scipy>=0.13.2",
                         "matplotlib"]
@@ -28,9 +28,9 @@ if __name__ == '__main__':
 
     provides = ["nornir_buildmanager"]
 
-    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.1.6",
-                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.1.6",
-                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.1.6"]
+    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.1.7",
+                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.1.7",
+                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.1.7"]
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
