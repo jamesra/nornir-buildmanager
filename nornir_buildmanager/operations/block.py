@@ -1273,7 +1273,7 @@ def __RegistrationTreeToStosMap(rt, StosMapName):
 
     OutputStosMap = VolumeManagerETree.StosMapNode(StosMapName)
 
-    for sectionNumber in rt.RootNodes:
+    for sectionNumber in rt.RootNodes.keys():
         rootNode = rt.RootNodes[sectionNumber]
         __AddRegistrationTreeNodeToStosMap(OutputStosMap, rt, rootNode.SectionNumber)
 
@@ -1343,7 +1343,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 #            Logger.error("No transform found to origin of volume: " + str(ControlSection) + ' -> ' + str(VolumeOriginSectionNumber))
 #            return
 
-    for mappedSectionNumber in Node.Children:
+    for MappedSecitionNode in Node.Children:
+        mappedSectionNumber = MappedSecitionNode.SectionNumber
         mappedNode = rt.Nodes[mappedSectionNumber]
 
         print str(ControlSection) + " <- " + str(mappedSectionNumber)

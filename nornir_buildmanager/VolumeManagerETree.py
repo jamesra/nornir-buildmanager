@@ -16,6 +16,7 @@ import VolumeManagerHelpers as VMH
 import nornir_buildmanager.Config as Config
 import nornir_buildmanager.operations.versions as versions
 import nornir_buildmanager.operations.tile as tile
+import nornir_imageregistration.transforms.registrationtree
 from nornir_imageregistration.files import *
 import nornir_shared.checksum
 import nornir_shared.misc as misc
@@ -1752,13 +1753,22 @@ class StosMapNode(XElementWrapper):
 
     def AddMapping(self, Control, Mapped):
         '''Create a mapping to a control section'''
+
+        val = None
+        if isinstance(Mapped, nornir_imageregistration.transforms.registrationtree.RegistrationTreeNode):
+            val = Mapped.SectionNumber
+        elif isinstance(Mapped, int):
+            val = Mapped
+        else:
+            raise TypeError("Mapped should be an int or RegistrationTreeNode")
+
         childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
         if childMapping is None:
-            childMapping = MappingNode(Control, Mapped)
+            childMapping = MappingNode(Control, val)
             self.append(childMapping)
         else:
-            if not Mapped in childMapping.Mapped:
-                childMapping.AddMapping(Mapped)
+            if not val in childMapping.Mapped:
+                childMapping.AddMapping(val)
         return
 
     def FindAllControlsForMapped(self, MappedSection):
@@ -1868,6 +1878,7 @@ class MappingNode(XElementWrapper):
             value.sort()
             AdjacentSectionString = ','.join(str(x) for x in value)
         else:
+            assert(isinstance(value, int))
             AdjacentSectionString = str(value)
 
         self.attrib['Mapped'] = AdjacentSectionString
