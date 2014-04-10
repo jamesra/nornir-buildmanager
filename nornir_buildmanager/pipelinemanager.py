@@ -420,11 +420,34 @@ class ExtensionData:
 class PipelineManager(object):
     logger = logging.getLogger('PipelineManager')
 
+
+
     '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
     def __init__(self, pipelinesRoot, pipelineData):
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
         self.PipelineRoot = pipelinesRoot
+
+        if 'Description' in pipelineData.attrib:
+            self._description = pipelineData.attrib['Description']
+
+        if 'Epilog' in pipelineData.attrib:
+            self._epilog = pipelineData.attrib['Epilog']
+
+
+    @property
+    def Description(self):
+        if hasattr(self, '_description'):
+            return self._description
+
+        return None
+
+    @property
+    def Epilog(self):
+        if hasattr(self, '_epilog'):
+            return self._epilog
+
+        return None
 
     @classmethod
     def ToElementString(self, element):
@@ -443,11 +466,12 @@ class PipelineManager(object):
         return outStr
 
     @classmethod
-    def __PrintPipelineEnumeration(cls, PipelineDoc):
+    def PrintPipelineEnumeration(cls, PipelineXML):
+        PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
         cls.logger.info("Enumerating available pipelines")
         prettyoutput.Log("Enumerating available pipelines")
-        for pipeline in PipelineDoc.getroot():
+        for pipeline in PipelineXML.getroot():
             cls.logger.info('  ' + pipeline.attrib.get('Name', ""))
             prettyoutput.Log('  ' + pipeline.attrib.get('Name', ""))
             prettyoutput.Log('    ' + pipeline.attrib.get('Description', "") + '\n')
@@ -463,19 +487,21 @@ class PipelineManager(object):
         return True
 
     @classmethod
-    def _LoadPipelineXML(cls, PipelineXMLFile):
-        if cls._CheckPipelineXMLExists(PipelineXMLFile):
-            return xml.etree.ElementTree.parse(PipelineXMLFile)
+    def LoadPipelineXML(cls, PipelineXML):
+        if isinstance(PipelineXML, str):
+            if cls._CheckPipelineXMLExists(PipelineXML):
+                return xml.etree.ElementTree.parse(PipelineXML)
+        elif isinstance(PipelineXML, xml.etree.ElementTree.ElementTree):
+                return PipelineXML
 
-        return None
+        raise Exception("Invalid argument: " + str(PipelineXML))
 
     @classmethod
     def ListPipelines(cls, PipelineXML):
 
-        if isinstance(PipelineXML, str):
-            PipelineXML = cls._LoadPipelineXML(PipelineXML)
+        PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
-        assert(isinstance(PipelineXML, xml.etree.ElementTree))
+        assert(isinstance(PipelineXML, xml.etree.ElementTree.ElementTree))
 
         PipelineNodes = PipelineXML.findall("Pipeline")
 
@@ -490,27 +516,36 @@ class PipelineManager(object):
         pass
 
     @classmethod
-    def Load(cls, PipelineXmlFile, PipelineName=None):
+    def Load(cls, PipelineXml, PipelineName=None):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
 
         SelectedPipeline = None
-        XMLDoc = cls._LoadPipelineXML(PipelineXmlFile)
+        XMLDoc = cls.LoadPipelineXML(PipelineXml)
 
         if PipelineName is None:
             PipelineManager.logger.warning("No pipeline name specified.")
             prettyoutput.Log("No pipeline name specified")
-            cls.__PrintPipelineEnumeration(XMLDoc)
+            cls.PrintPipelineEnumeration(XMLDoc)
             return None
         else:
             SelectedPipeline = XMLDoc.find("Pipeline[@Name='" + PipelineName + "']")
             if(SelectedPipeline is None):
                 PipelineManager.logger.critical("No pipeline found named " + PipelineName)
                 prettyoutput.LogErr("No pipeline found named " + PipelineName)
-                cls.__PrintPipelineEnumeration(XMLDoc)
+                cls.PrintPipelineEnumeration(XMLDoc)
                 return None
 
         return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)
+
+
+    @classmethod
+    def RunPipeline(cls, PipelineXmlFile, PipelineName):
+
+        # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
+        Pipeline = cls.Load(PipelineXmlFile, PipelineName)
+
+        Pipeline.Execute()
 
 
     def GetArgParser(self, parser=None, IncludeGlobals=True):
@@ -528,13 +563,17 @@ class PipelineManager(object):
         return parser
 
 
+
+
     @classmethod
     def _AddParserDescription(cls, PipelineNode, parser):
 
         if PipelineNode is None:
             return
 
-        print str(PipelineNode.attrib)
+        # print str(PipelineNode.attrib)
+
+        # parser.prog = PipelineNode.attrib['Name'];
 
         if 'Description' in PipelineNode.attrib:
             parser.description = PipelineNode.attrib['Description']
@@ -561,7 +600,7 @@ class PipelineManager(object):
 
     IndentLevel = 0
 
-    def Execute(self, parser, passedArgs):
+    def Execute(self, args):
         '''This executes the loaded pipeline on the specified volume of data.
            parser is an instance of the argparser class which should be 
            extended with any pipeline specific arguments args are the parameters from the command line'''
@@ -573,8 +612,8 @@ class PipelineManager(object):
         PipelineElement = self.PipelineData
 
         prettyoutput.Log("Adding pipeline arguments")
-        parser = self.GetArgParser(parser)
-        (args, unused) = parser.parse_known_args(passedArgs)
+        # parser = self.GetArgParser(parser)
+        # (args, unused) = parser.parse_known_args(passedArgs)
 
         ArgSet.AddArguments(args)
 
