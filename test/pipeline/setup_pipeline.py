@@ -90,10 +90,6 @@ class PlatformTest(test.testbase.TestBase):
        this class'''
 
     @property
-    def VolumeDir(self):
-        raise Exception("VolumeDir property is deprecated, TestOutputPath instead")
-
-    @property
     def VolumePath(self):
         raise Exception("VolumePath property not implemented")
 
