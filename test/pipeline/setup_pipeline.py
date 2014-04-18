@@ -409,7 +409,7 @@ class PlatformTest(test.testbase.TestBase):
             Filter = 'Leveled'
 
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', Channels, '-InputFilter', Filter, '-Levels', Levels, '-OuputFilter', 'Blob')
+        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', Channels, '-InputFilter', Filter, '-Levels', Levels, '-OutputFilter', 'Blob')
         volumeNode = self.RunBuild(buildArgs)
 
         ChannelNode = volumeNode.find("Block/Section/Channel")
