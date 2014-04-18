@@ -540,12 +540,12 @@ class PipelineManager(object):
 
 
     @classmethod
-    def RunPipeline(cls, PipelineXmlFile, PipelineName):
+    def RunPipeline(cls, PipelineXmlFile, PipelineName, args):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
         Pipeline = cls.Load(PipelineXmlFile, PipelineName)
 
-        Pipeline.Execute()
+        Pipeline.Execute(args)
 
 
     def GetArgParser(self, parser=None, IncludeGlobals=True):

@@ -72,14 +72,15 @@ def ConfigDataPath():
 #                         )
 
 def _BuildImportParser(parser):
-    parser.add_argument('-input', '-import', '-i',
+    parser.add_argument('inputpath',
+                        metavar='import',
                         action='store',
-                        required=False,
                         type=str,
                         default=None,
                         help='The path of data to import, if any',
-                        dest='inputpath'
                         )
+
+    parser.set_defaults(func=call_importer)
 
 
 def AddVolumeArgumentToParser(parser):
@@ -147,7 +148,7 @@ def BuildParserRoot():
     # conflict_handler = 'resolve' replaces old arguments with new if both use the same option flag
     parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve', description='Options available to all build commands.  Specific pipelines may extend the argument list.')
 
-    _AddParserRootArguments(parser)
+
 
     subparsers = parser.add_subparsers(title='help')
     help_parser = subparsers.add_parser('help', help='Print help information')
@@ -175,6 +176,7 @@ def BuildParserRoot():
     # pipeline_parser = subparsers.add_parser('pipeline', dest='pipeline')
     # _BuildPipelineParser(pipeline_parser)
 
+    _AddParserRootArguments(parser)
 
     # parser.add_argument('args', nargs=argparse.REMAINDER)
     return parser
@@ -192,7 +194,7 @@ def _AddPipelineParsers(subparsers):
 
         pipeline.GetArgParser(pipeline_parser, IncludeGlobals=True)
 
-        pipeline_parser.set_defaults(func=pipelinemanager.PipelineManager.RunPipeline, PipelineXmlFile=_GetPipelineXMLPath(), PipelineName=pipeline_name)
+        pipeline_parser.set_defaults(func=call_pipeline, PipelineXmlFile=_GetPipelineXMLPath(), PipelineName=pipeline_name)
 
         CommandParserDict[pipeline_name] = pipeline_parser
 
@@ -222,6 +224,9 @@ def call_importer(args):
         sys.exit()
 
     Importer.ConvertAll(args.inputpath, args.volumepath)
+
+def call_pipeline(args):
+    pipelinemanager.PipelineManager.RunPipeline(PipelineXmlFile=args.PipelineXmlFile, PipelineName=args.PipelineName, args=args)
 
 def Execute(buildArgs=None):
 

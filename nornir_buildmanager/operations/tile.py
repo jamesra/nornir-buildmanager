@@ -22,7 +22,7 @@ import nornir_buildmanager.Config as Config
 from nornir_buildmanager.validation import transforms, image
 import nornir_imageregistration.core as core
 import nornir_imageregistration.image_stats as image_stats
-import nornir_imageregistration.tiles as tiles
+import nornir_imageregistration.tileset as tiles
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.transforms import *
@@ -35,7 +35,7 @@ import nornir_shared.plot
 
 import nornir_pools as Pools
 
-from nornir_imageregistration.tiles import ShadeCorrectionTypes
+from nornir_imageregistration.tileset import ShadeCorrectionTypes
 
 HistogramTagStr = "HistogramData"
 

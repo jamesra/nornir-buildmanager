@@ -19,7 +19,7 @@ import nornir_buildmanager.build as build
 from nornir_buildmanager.operations.tile import *
 from nornir_buildmanager.validation import transforms
 import nornir_buildmanager.operations.setters as setters
-import nornir_imageregistration.tiles as tiles
+import nornir_imageregistration.tileset as tiles
 import nornir_shared.files
 import nornir_shared.misc
 import numpy as np

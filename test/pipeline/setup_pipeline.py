@@ -121,11 +121,24 @@ class PlatformTest(test.testbase.TestBase):
         return VolumeObj
 
     def _CreateBuildArgs(self, pipeline=None, *args):
-        pargs = ['-volume', self.TestOutputPath, '-debug']
+
+        pargs = ['-debug']
 
         if isinstance(pipeline, str):
-            pargs.append('-pipeline')
+            # pargs.append('-pipeline')
             pargs.append(pipeline)
+
+        pargs.extend(['-volume', self.TestOutputPath])
+
+        pargs.extend(args)
+
+        return pargs
+
+    def _CreateImportArgs(self, importpath, *args):
+
+        pargs = [ '-debug', 'import', importpath, ]
+
+        pargs.extend(['-volume', self.TestOutputPath])
 
         pargs.extend(args)
 
@@ -199,7 +212,7 @@ class PlatformTest(test.testbase.TestBase):
         self.RunAssemble()
 
     def RunImport(self):
-        buildArgs = self._CreateBuildArgs(None, '-input', self.ImportedDataPath)
+        buildArgs = self._CreateImportArgs(self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
     def RunPrune(self, Filter=None, Downsample=None):
@@ -565,7 +578,7 @@ class ImportOnlySetup(PlatformTest):
         super(ImportOnlySetup, self).setUp()
 
         # Import the files
-        buildArgs = ['Build.py', '-input', self.ImportedDataPath, '-volume', self.TestOutputPath, '-debug']
+        buildArgs = ['-debug', 'import', self.ImportedDataPath, '-volume', self.TestOutputPath]
         build.Execute(buildArgs)
 
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
