@@ -1242,6 +1242,8 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
 
     if mappedSectionNumber is None:
         mappedSectionNumber = controlSectionNumber
+    elif isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
+        mappedSectionNumber = mappedSectionNumber.SectionNumber
 
     rtNode = None
     if mappedSectionNumber in rt.Nodes:
@@ -1250,10 +1252,10 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
         return
 
     for mapped in rtNode.Children:
-        StosMapNode.AddMapping(controlSectionNumber, mapped)
+        StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
 
-        if mapped in rt.Nodes:
-            __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped)
+        if mapped.SectionNumber in rt.Nodes:
+            __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped.SectionNumber)
 
 
 def __StosMapToRegistrationTree(StosMapNode):
