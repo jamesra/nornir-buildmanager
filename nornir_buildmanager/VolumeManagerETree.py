@@ -1849,9 +1849,10 @@ class StosMapNode(XElementWrapper):
         return super(StosMapNode, self).IsValid()
 
     def __init__(self, Name, attrib=None, **extra):
+
         super(StosMapNode, self).__init__(tag='StosMap', Name=Name, attrib=attrib, **extra)
 
-        self.attrib['CenterSection'] = ""
+
 
 
 class MappingNode(XElementWrapper):
