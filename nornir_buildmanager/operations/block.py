@@ -184,18 +184,105 @@ def GetOrCreateNonStosSectionList(BlockNode, **kwargs):
     return NonStosSectionNumbers
 
 
+
+
+def _GetCenterSection(Parameters, MappingNode=None):
+    '''Returns the number of the center section from the Block Node if possible, otherwise it checks the parameters.  Returns None if unspecified'''
+
+    CenterSection = MappingNode.CenterSection
+    if not CenterSection is None:
+        return MappingNode.CenterSection
+
+    CenterSection = Parameters.get('CenterSection', None)
+    try:
+        CenterSection = int(CenterSection)
+    except:
+        CenterSection = None
+
+    return CenterSection
+
+
+def _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSections, Logger=None):
+    '''Return a list of integers containing known good sections
+    :param BlockNode BlockNode: Block meta-data
+    :param int CenterSectionNumber: Section number to place root of registration tree at
+    :param int NumAdjacentSections: Number of adjacent sections to attempt registration with'''
+
+    SectionNodeList = list(BlockNode.findall('Section'))
+    SectionNodeList.sort(key=SectionNumberKey)
+
+    # Fetch the list of known bad sections, if it exists
+    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
+
+    SectionNumberList = [SectionNumberKey(s) for s in SectionNodeList]
+
+    StosSectionNumbers = []
+    for sectionNumber in SectionNumberList:
+        if not sectionNumber in NonStosSectionNumbers:
+            StosSectionNumbers.append(sectionNumber)
+
+    # Fetch the list of known bad sections, if it exists
+    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
+
+    RT = registrationtree.RegistrationTree.CreateRegistrationTree(StosSectionNumbers, adjacentThreshold=NumAdjacentSections, center=CenterSectionNumber)
+    RT.AddNonControlSections(NonStosSectionNumbers)
+
+    return RT
+
+
+def UpdateStosMapWithRegistrationTree(StosMap, RT, Logger):
+    '''Adds any mappings missing in the StosMap with those from the registration tree'''
+
+    # Part one, add all RT mappings to the existing nodes
+    Modified = False
+    mappings = list(StosMap.Mappings)
+    for mapping in mappings:
+        control = mapping.Control
+
+        rt_node = RT.Nodes.get(control, None)
+        if not rt_node:
+            Logger.info("Removing mapping missing from registration tree: " + str(mapping))
+            StosMap.remove(mapping)
+            Modified = True
+            continue
+
+        known_mappings = mapping.Mapped
+        for rt_mapped in rt_node.Children:
+
+            if not rt_mapped.SectionNumber in known_mappings:
+                Modified = True
+                mapping.AddMapping(rt_mapped.SectionNumber)
+
+    # Part two, create nodes existing in the RT but not the StosMap
+    for rt_node in RT.Nodes.values():
+
+        if len(rt_node.Children) == 0:
+            continue
+
+        known_mappings = StosMap.GetMappingsForControl(rt_node.SectionNumber)
+        mappingNode = None
+        if len(known_mappings) == 0:
+            # Create a mapping
+            mappingNode = VolumeManagerETree.MappingNode(rt_node.SectionNumber, None)
+            StosMap.append(mappingNode)
+            Modified = True
+        else:
+            mappingNode = known_mappings[0]
+
+        for rt_mapped in rt_node.Children:
+            if not rt_mapped.SectionNumber in mappingNode.Mapped:
+                mappingNode.AddMapping(rt_mapped.SectionNumber)
+                Logger.info("\tAdded %d <- %d" % (rt_node.SectionNumber, rt_mapped.SectionNumber))
+                Modified = True
+
+    return Modified
+
+
 def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
     '''Figure out which sections should be registered to each other
         @BlockNode'''
     NumAdjacentSections = int(Parameters.get('NumAdjacentSections', '1'))
     StosMapName = Parameters.get('OutputStosMapName', 'PotentialRegistrationChain')
-
-    BlockMiddle = Parameters.get('CenterSection', None)
-
-    try:
-        BlockMiddle = int(BlockMiddle)
-    except:
-        BlockMiddle = None
 
     StosMapType = StosMapName + misc.GenNameFromDict(Parameters)
 
@@ -205,94 +292,96 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
     OutputMappingNode = VolumeManagerETree.XElementWrapper(tag='StosMap', Name=StosMapName, Type=StosMapType)
     (SaveBlock, OutputMappingNode) = BlockNode.UpdateOrAddChildByAttrib(OutputMappingNode)
 
-    if not SaveBlock and BlockMiddle is None:
-        BlockMiddle = OutputMappingNode.CenterSection
-
     SectionNodeList = list(BlockNode.findall('Section'))
     SectionNodeList.sort(key=SectionNumberKey)
 
+    CenterSectionNumber = _GetCenterSection(Parameters, OutputMappingNode)
+    DefaultRT = _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSections, Logger)
+
+    if(DefaultRT.IsEmpty):
+        return None
+
+    if OutputMappingNode.CenterSection is None:
+        OutputMappingNode.CenterSection = DefaultRT.RootNodes.values()[0].SectionNumber
+
     NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
+    if OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbers):
+        SaveOutputMapping = True
 
-    # Fetch the list of known bad sections, if it exists
+    if UpdateStosMapWithRegistrationTree(OutputMappingNode, DefaultRT, Logger):
+        SaveOutputMapping = True
 
-    if BlockMiddle is None:
-        MaxSectionNumber = int(SectionNodeList[-1].Number)
-        MinSectionNumber = int(SectionNodeList[0].Number)
-        SectionNumberRange = MaxSectionNumber - MinSectionNumber
-        BlockMiddle = (SectionNumberRange / 2) + MinSectionNumber
-
-    OutputMappingNode.attrib['CenterSection'] = str(BlockMiddle)
-
-    for iSectionNode, SectionNode  in enumerate(SectionNodeList):
-        iStartingAdjacent = iSectionNode - NumAdjacentSections
-        iEndingAdjacent = iSectionNode + NumAdjacentSections
-
-        if(iStartingAdjacent < 0):
-            iStartingAdjacent = 0
-
-        if iEndingAdjacent >= len(SectionNodeList):
-            iEndingAdjacent = len(SectionNodeList) - 1
-
-        iAdjacentSections = list(range(iStartingAdjacent, iSectionNode))
-        iAdjacentSections.extend(range(iSectionNode + 1, iEndingAdjacent + 1))
-
-        AdjacentSections = list()
-
-        Logger.warn("Finding maps for " + str(SectionNode.Number))
-        SectionNumber = int(SectionNode.Number)
-
-        StosMapEntry = OutputMappingNode.find("Mapping[@Control='" + str(SectionNumber) + "']")
-
-        if SectionNumber in NonStosSectionNumbers:
-            Logger.warn("Skipping Banned Section: " + str(SectionNumber))
-            if not StosMapEntry is None:
-                OutputMappingNode.remove(StosMapEntry)
-                SaveOutputMapping = True
-        else:
-
-            for i in iAdjacentSections:
-
-                AdjNodeNumber = int(SectionNodeList[i].Number)
-
-                if SectionNumber - BlockMiddle == 0:
-                    ControlNumber = SectionNumber
-                    MappingNumber = AdjNodeNumber
-                elif SectionNumber - BlockMiddle < 0:
-                    ControlNumber = max(SectionNumber, AdjNodeNumber)
-                    MappingNumber = min(SectionNumber, AdjNodeNumber)
-                else:
-                    MappingNumber = max(SectionNumber, AdjNodeNumber)
-                    ControlNumber = min(SectionNumber, AdjNodeNumber)
-
-                # Don't map the center section
-                if MappingNumber == BlockMiddle:
-                    Logger.warn("Skipping Center Section: " + str(MappingNumber))
-                    continue
-
-                # Figure out which section should be the control and which should be mapped
-                if(SectionNumber - BlockMiddle == 0):
-                    AdjacentSections.append(MappingNumber)
-                    Logger.warn("Adding " + str(MappingNumber))
-                elif(SectionNumber == ControlNumber):
-                    AdjacentSections.append(MappingNumber)
-                    Logger.warn("Adding " + str(MappingNumber))
-                else:
-                    Logger.warn("Skipping " + str(MappingNumber))
-
-            # Create a node to store the stos mappings
-            if len(AdjacentSections) > 0:
-    #            AdjacentSectionString = ''.join(str(AdjacentSections))
-    #            AdjacentSectionString = AdjacentSectionString.strip('[')
-    #            AdjacentSectionString = AdjacentSectionString.strip(']')
-                if StosMapEntry is None:
-                    StosMapEntry = VolumeManagerETree.MappingNode(SectionNode.Number, AdjacentSections)
-                    OutputMappingNode.append(StosMapEntry)
-                    SaveOutputMapping = True
-                else:
-                    for a in AdjacentSections:
-                        if not a in StosMapEntry.Mapped:
-                            StosMapEntry.Mapped.append(a)
-                            SaveOutputMapping = True
+#
+#     for iSectionNode, SectionNode  in enumerate(SectionNodeList):
+#         iStartingAdjacent = iSectionNode - NumAdjacentSections
+#         iEndingAdjacent = iSectionNode + NumAdjacentSections
+#
+#         if(iStartingAdjacent < 0):
+#             iStartingAdjacent = 0
+#
+#         if iEndingAdjacent >= len(SectionNodeList):
+#             iEndingAdjacent = len(SectionNodeList) - 1
+#
+#         iAdjacentSections = list(range(iStartingAdjacent, iSectionNode))
+#         iAdjacentSections.extend(range(iSectionNode + 1, iEndingAdjacent + 1))
+#
+#         AdjacentSections = list()
+#
+#         Logger.warn("Finding maps for " + str(SectionNode.Number))
+#         SectionNumber = int(SectionNode.Number)
+#
+#         StosMapEntry = OutputMappingNode.find("Mapping[@Control='" + str(SectionNumber) + "']")
+#
+#         if SectionNumber in NonStosSectionNumbers:
+#             Logger.warn("Skipping Banned Section: " + str(SectionNumber))
+#             if not StosMapEntry is None:
+#                 OutputMappingNode.remove(StosMapEntry)
+#                 SaveOutputMapping = True
+#         else:
+#
+#             for i in iAdjacentSections:
+#
+#                 AdjNodeNumber = int(SectionNodeList[i].Number)
+#
+#                 if SectionNumber - BlockMiddle == 0:
+#                     ControlNumber = SectionNumber
+#                     MappingNumber = AdjNodeNumber
+#                 elif SectionNumber - BlockMiddle < 0:
+#                     ControlNumber = max(SectionNumber, AdjNodeNumber)
+#                     MappingNumber = min(SectionNumber, AdjNodeNumber)
+#                 else:
+#                     MappingNumber = max(SectionNumber, AdjNodeNumber)
+#                     ControlNumber = min(SectionNumber, AdjNodeNumber)
+#
+#                 # Don't map the center section
+#                 if MappingNumber == BlockMiddle:
+#                     Logger.warn("Skipping Center Section: " + str(MappingNumber))
+#                     continue
+#
+#                 # Figure out which section should be the control and which should be mapped
+#                 if(SectionNumber - BlockMiddle == 0):
+#                     AdjacentSections.append(MappingNumber)
+#                     Logger.warn("Adding " + str(MappingNumber))
+#                 elif(SectionNumber == ControlNumber):
+#                     AdjacentSections.append(MappingNumber)
+#                     Logger.warn("Adding " + str(MappingNumber))
+#                 else:
+#                     Logger.warn("Skipping " + str(MappingNumber))
+#
+#             # Create a node to store the stos mappings
+#             if len(AdjacentSections) > 0:
+#     #            AdjacentSectionString = ''.join(str(AdjacentSections))
+#     #            AdjacentSectionString = AdjacentSectionString.strip('[')
+#     #            AdjacentSectionString = AdjacentSectionString.strip(']')
+#                 if StosMapEntry is None:
+#                     StosMapEntry = VolumeManagerETree.MappingNode(SectionNode.Number, AdjacentSections)
+#                     OutputMappingNode.append(StosMapEntry)
+#                     SaveOutputMapping = True
+#                 else:
+#                     for a in AdjacentSections:
+#                         if not a in StosMapEntry.Mapped:
+#                             StosMapEntry.Mapped.append(a)
+#                             SaveOutputMapping = True
 
     if SaveBlock:
         return BlockNode
@@ -792,9 +881,15 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
     # If a section is used as a control, then prefer it when generat
     for mappedSection in mappedSectionNumbers:
 
-        knownControlSection = OutputStosMapNode.FindControlForMapped(mappedSection)
-        if not knownControlSection is None:
-            Logger.info(str(mappedSection) + " -> " + str(knownControlSection) + " was previously mapped, skipping")
+        potentialControls = MappedToControlCandidateList[mappedSection]
+        if len(potentialControls) == 0:
+            # No need to test, copy over the transform
+            Logger.error(str(mappedSection) + " -> ? No control section candidates found")
+            continue
+
+        knownControlSections = list(OutputStosMapNode.FindAllControlsForMapped(mappedSection))
+        if len(knownControlSections) == len(potentialControls):
+            Logger.info(str(mappedSection) + " -> " + str(knownControlSections) + " was previously mapped, skipping")
             continue
 
         # Examine each stos image if it exists and determine the best match
@@ -803,12 +898,6 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
         InputSectionMappingNode = InputGroupNode.GetSectionMapping(mappedSection)
         if InputSectionMappingNode is None:
             Logger.error(str(mappedSection) + " -> ? No SectionMapping data found")
-            continue
-
-        potentialControls = MappedToControlCandidateList[mappedSection]
-        if len(potentialControls) == 0:
-            # No need to test, copy over the transform
-            Logger.error(str(mappedSection) + " -> ? No control section candidates found")
             continue
 
         PotentialTransforms = []
@@ -1153,6 +1242,8 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
 
     if mappedSectionNumber is None:
         mappedSectionNumber = controlSectionNumber
+    elif isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
+        mappedSectionNumber = mappedSectionNumber.SectionNumber
 
     rtNode = None
     if mappedSectionNumber in rt.Nodes:
@@ -1161,10 +1252,10 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
         return
 
     for mapped in rtNode.Children:
-        StosMapNode.AddMapping(controlSectionNumber, mapped)
+        StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
 
-        if mapped in rt.Nodes:
-            __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped)
+        if mapped.SectionNumber in rt.Nodes:
+            __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped.SectionNumber)
 
 
 def __StosMapToRegistrationTree(StosMapNode):
@@ -1184,7 +1275,7 @@ def __RegistrationTreeToStosMap(rt, StosMapName):
 
     OutputStosMap = VolumeManagerETree.StosMapNode(StosMapName)
 
-    for sectionNumber in rt.RootNodes:
+    for sectionNumber in rt.RootNodes.keys():
         rootNode = rt.RootNodes[sectionNumber]
         __AddRegistrationTreeNodeToStosMap(OutputStosMap, rt, rootNode.SectionNumber)
 
@@ -1254,7 +1345,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 #            Logger.error("No transform found to origin of volume: " + str(ControlSection) + ' -> ' + str(VolumeOriginSectionNumber))
 #            return
 
-    for mappedSectionNumber in Node.Children:
+    for MappedSecitionNode in Node.Children:
+        mappedSectionNumber = MappedSecitionNode.SectionNumber
         mappedNode = rt.Nodes[mappedSectionNumber]
 
         print str(ControlSection) + " <- " + str(mappedSectionNumber)
@@ -1660,12 +1752,10 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
 
     MappedSectionNumber = SectionNode.Number
 
-    ControlSectionNumber = StosMapNode.FindControlForMapped(MappedSectionNumber)
-    if ControlSectionNumber is None:
+    ControlSectionNumbers = list(StosMapNode.FindAllControlsForMapped(MappedSectionNumber))
+    if len(ControlSectionNumbers) == 0:
         if StosMapNode.CenterSection != MappedSectionNumber:
             Logger.info("No SectionMappings found for section: " + str(MappedSectionNumber))
-
-
 
     SectionMappingNode = StosGroupNode.GetSectionMapping(MappedSectionNumber)
     if SectionMappingNode is None:
@@ -1675,7 +1765,7 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
             if not stostransform.MappedChannelName == MappedChannelNode.Name:
                 continue
 
-            if not int(stostransform.ControlSectionNumber) == ControlSectionNumber:
+            if not int(stostransform.ControlSectionNumber) in ControlSectionNumbers:
                 continue
 
             stosMosaicTransform = _ApplyStosToMosaicTransform(stostransform, TransformNode, OutputTransformName, Logger, **kwargs)
