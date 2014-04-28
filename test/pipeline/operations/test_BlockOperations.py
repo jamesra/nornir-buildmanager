@@ -394,11 +394,11 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                              '-OutputDownsample', '1']
         self.VolumeObj = self.RunBuild(ScaleArgs)
 
-        ScaleArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \
+        VolumeImageArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \
                      '-InputGroup', 'StosGrid', \
-                             '-InputDownsample', '16', \
-                             '-OutputDownsample', '1']
-        self.VolumeObj = self.RunBuild(ScaleArgs)
+                     '-InputDownsample', '16']
+        self.VolumeObj = self.RunBuild(VolumeImageArgs)
+
         ScaleAndVolumeImageGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='StosGrid1']")
         self.assertIsNotNone(ScaleAndVolumeImageGroupNode, "Could not find StosGroup " + groupNames[1])
 
@@ -438,8 +438,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # Try to refine the of stos-grid
         SliceToVolumeBuildArgs = ['-debug', 'SliceToVolume', '-volume', self.TestOutputPath, \
                      '-InputGroup', 'StosGrid', \
-                     '-InputDownsample', '8', \
-                     '-OutputDownsample', '8']
+                     '-InputDownsample', '8']
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
 
         SixToFiveAutomaticSliceToVolumeTransform = FetchStosTransform(self, self.VolumeObj, 'SliceToVolume8', 5, 7)
@@ -542,10 +541,9 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveRebuiltFromManualSliceToVolumeTransform,
                                 AutoOutputTransform=SliceToVolumeScaleTransformFromEight)
 
-        SliceToVolumeImagesArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \
-                              \
-                             '-InputGroup', 'SliceToVolume', \
-                             '-InputDownsample', '1']
+        SliceToVolumeImagesArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \ 
+                                 '-InputGroup', 'SliceToVolume', \
+                                 '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(SliceToVolumeImagesArgs)
         # SliceToVolumeScaleAndVolumeImageGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='SliceToVolume1']")
         # self.assertIsNotNone(SliceToVolumeScaleAndVolumeImageGroupNode, "Could not find StosGroup SliceToVolume1")
