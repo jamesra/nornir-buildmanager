@@ -20,7 +20,7 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
 
     Matches = []
 
-    flags = None
+    flags = 0
     if not CaseSensitive:
         flags = re.IGNORECASE
 
