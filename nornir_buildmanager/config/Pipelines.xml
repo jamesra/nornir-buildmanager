@@ -140,7 +140,7 @@
 			<Argument flag="-OutputFilter" dest="NewName" help="New Filter name" required="True"/>
 		</Arguments>
 		<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter[@Name='#InputFilter']">
-			<PythonCall Function="general.Rename" OldNode="#FilterNode"/>
+			<PythonCall Function="general.Rename" OldNode="#FilterNode" NewName="#NewName"/>
 			<PythonCall Function="general.MovePath" Node="#FilterNode" NewPath="#NewName"/>
 		</Iterate>
 
