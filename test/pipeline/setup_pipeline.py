@@ -90,10 +90,6 @@ class PlatformTest(test.testbase.TestBase):
        this class'''
 
     @property
-    def VolumeDir(self):
-        raise Exception("VolumeDir property is deprecated, TestOutputPath instead")
-
-    @property
     def VolumePath(self):
         raise Exception("VolumePath property not implemented")
 
@@ -125,11 +121,24 @@ class PlatformTest(test.testbase.TestBase):
         return VolumeObj
 
     def _CreateBuildArgs(self, pipeline=None, *args):
-        pargs = ['-volume', self.TestOutputPath, '-debug']
+
+        pargs = ['-debug']
 
         if isinstance(pipeline, str):
-            pargs.append('-pipeline')
+            # pargs.append('-pipeline')
             pargs.append(pipeline)
+
+        pargs.extend(['-volume', self.TestOutputPath])
+
+        pargs.extend(args)
+
+        return pargs
+
+    def _CreateImportArgs(self, importpath, *args):
+
+        pargs = [ '-debug', 'import', importpath, ]
+
+        pargs.extend(['-volume', self.TestOutputPath])
 
         pargs.extend(args)
 
@@ -203,7 +212,7 @@ class PlatformTest(test.testbase.TestBase):
         self.RunAssemble()
 
     def RunImport(self):
-        buildArgs = self._CreateBuildArgs(None, '-input', self.ImportedDataPath)
+        buildArgs = self._CreateImportArgs(self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
     def RunPrune(self, Filter=None, Downsample=None):
@@ -311,7 +320,7 @@ class PlatformTest(test.testbase.TestBase):
         StartingFilter = volumeNode.find("Block/Section/Channel/Filter")
         self.assertIsNotNone(StartingFilter, "No starting filter node for shading correction")
 
-        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Channels', ChannelPattern, '-Filters', FilterPattern, 'OutputFilter', 'ShadingCorrected', '-InputTransform', 'Raw8', '-Correction', CorrectionType)
+        buildArgs = self._CreateBuildArgs('ShadeCorrect', '-Channels', ChannelPattern, '-Filters', FilterPattern, '-OutputFilter', 'ShadingCorrected', '-Correction', CorrectionType)
         volumeNode = self.RunBuild(buildArgs)
 
         ExpectedOutputFilter = 'ShadingCorrected' + StartingFilter.Name
@@ -400,7 +409,7 @@ class PlatformTest(test.testbase.TestBase):
             Filter = 'Leveled'
 
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', Channels, '-InputFilter', Filter, '-Levels', Levels, '-OuputFilter', 'Blob')
+        buildArgs = self._CreateBuildArgs('CreateBlobFilter', '-Channels', Channels, '-InputFilter', Filter, '-Levels', Levels, '-OutputFilter', 'Blob')
         volumeNode = self.RunBuild(buildArgs)
 
         ChannelNode = volumeNode.find("Block/Section/Channel")
@@ -569,7 +578,7 @@ class ImportOnlySetup(PlatformTest):
         super(ImportOnlySetup, self).setUp()
 
         # Import the files
-        buildArgs = ['Build.py', '-input', self.ImportedDataPath, '-volume', self.TestOutputPath, '-debug']
+        buildArgs = ['-debug', 'import', self.ImportedDataPath, '-volume', self.TestOutputPath]
         build.Execute(buildArgs)
 
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")

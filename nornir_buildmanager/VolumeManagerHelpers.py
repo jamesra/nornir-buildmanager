@@ -10,6 +10,21 @@ import VolumeManagerETree as VolumeManager
 from operator import attrgetter
 
 
+def IsMatch(in_string, RegExStr, CaseSensitive=False):
+    if RegExStr == '*':
+        return True
+
+    flags = 0
+    if not CaseSensitive:
+        flags = re.IGNORECASE
+
+    match = re.match(RegExStr, in_string, flags)
+    if not match is None:
+        return True
+
+    return False
+
+
 def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
     '''Search a list of object's attributes using a regular express.
        Returns list of objects with matching attributes.
@@ -20,7 +35,7 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
 
     Matches = []
 
-    flags = None
+    flags = 0
     if not CaseSensitive:
         flags = re.IGNORECASE
 
@@ -147,11 +162,14 @@ class PyramidLevelHandler(object):
         '''Return an existing level with more detail than the provided downsample level'''
         BestChoice = None
 
-        for Level in self.Levels:
+        LevelList = self.Levels
+        LevelList.reverse()
+
+        for Level in LevelList:
             if Level.Downsample < Downsample:
-                BestChoice = Level
+                return Level
             else:
-                return BestChoice
+                continue
 
         return BestChoice
 

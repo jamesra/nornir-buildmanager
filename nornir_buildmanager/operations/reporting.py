@@ -237,12 +237,25 @@ def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
             shutil.copy(DataNode.FullPath, OutputDir)
 
 
+def _AbsoluePathFromRelativePath(node, path):
+    '''If path is relative then make it relative from the directory containing the volume_node'''
+
+    if not os.path.isabs(path):
+        volume_dir = node.Root.FullPath
+        return os.path.join(volume_dir, '..', path)
+    else:
+        return path
+
+
 def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
 
     if OutputDir is None:
         return
 
+    OutputDir = _AbsoluePathFromRelativePath(FilterNode, OutputDir)
     logger = kwargs.get('Logger', logging.getLogger('CopyImage'))
+
+
 
     if not os.path.exists(OutputDir):
         os.makedirs(OutputDir)
