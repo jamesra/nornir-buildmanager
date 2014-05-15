@@ -1,4 +1,4 @@
-nornir-build Assemble -volume %1 -Filter LeveledShadingCorrected -AssembleDownsample 2 -NoInterlace -Transform Grid 
+nornir-build Assemble -volume %1 -Filters LeveledShadingCorrected -Downsample 2 -NoInterlace -Transform Grid 
 nornir-build CreateBlobFilter -volume %1  -InputFilter LeveledShadingCorrected -OutputFilter Blob -Levels 2,4,8 -Radius 7 -Median 5 -Max 3
 nornir-build AlignSections -volume %1  -Downsample 8 -Filters Blob
 nornir-build RefineSectionAlignment -volume %1  -Filters LeveledShadingCorrected -InputGroup StosBrute -InputDownsample 8 -OutputGroup Grid -OutputDownsample 8

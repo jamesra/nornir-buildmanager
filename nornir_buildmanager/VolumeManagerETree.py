@@ -392,6 +392,17 @@ class XElementWrapper(ElementTree.Element):
     def Version(self, Value):
         self.attrib['Version'] = str(Value)
 
+
+    @property
+    def Root(self):
+        '''The root of the element tree'''
+        node = self
+        while not node.Parent is None:
+            node = node.Parent
+
+        return node
+
+
     @property
     def Parent(self):
         return self._Parent
