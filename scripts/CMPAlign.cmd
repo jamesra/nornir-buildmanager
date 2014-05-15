@@ -6,5 +6,5 @@ nornir-build RefineSectionAlignment -volume %1  -Filters LeveledShadingCorrected
 nornir-build ScaleVolumeTransforms -volume %1  -InputGroup Grid -InputDownsample 2 -OutputDownsample 1
 nornir-build SliceToVolume -volume %1  -InputDownsample 1 -InputGroup Grid -OutputGroup SliceToVolume
 nornir-build MosaicToVolume -volume %1  -InputTransform Grid -OutputTransform ChannelToVolume
-nornir-build Assemble -volume %1  -ChannelPrefix Registered_ -Filter ShadingCorrected -Downsample 1 -Output %1_Registered -NoInterlace -Transform ChannelToVolume -Channels (?!Registered)
+nornir-build Assemble -volume %1  -ChannelPrefix Registered_ -Filter ShadingCorrected -Downsample 1 -NoInterlace -Transform ChannelToVolume -Channels (?!Registered)
 nornir-build ExportImages -volume %1  -Channels Registered -Filters ShadingCorrected -Downsample 1 -Output %1_Registered
