@@ -21,8 +21,11 @@ from nornir_shared.misc import SortedListFromDelimited
 
 
 def Rename(OldNode, NewName, **kwargs):
-    OldNode.Name = NewName
-    return OldNode.Parent
+    if OldNode.Name != NewName:
+        OldNode.Name = NewName
+        return OldNode.Parent
+    
+    return None
 
 def MovePath(Node, NewPath, **kwargs):
 

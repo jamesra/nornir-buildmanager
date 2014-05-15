@@ -1129,6 +1129,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
             ControlNumber = InputTransformNode.ControlSectionNumber
             MappedNumber = InputSectionMappingNode.MappedSectionNumber
 
+            #TODO: Skip transforms using filters which no longer exist.  Should live in a seperate function.
             ControlFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(ControlNumber).GetChannel(InputTransformNode.ControlChannelName).Filters,
                                                                       'Name', ControlFilterPattern, CaseSensitive=True)[0]
             MappedFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(MappedNumber).GetChannel(InputTransformNode.MappedChannelName).Filters,
@@ -1243,10 +1244,14 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
     '''recursively adds registration tree nodes to the stos map'''
 
+
+    
     if mappedSectionNumber is None:
         mappedSectionNumber = controlSectionNumber
     elif isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
         mappedSectionNumber = mappedSectionNumber.SectionNumber
+        
+    print("Adding " + str(mappedSectionNumber))
 
     rtNode = None
     if mappedSectionNumber in rt.Nodes:
@@ -1254,6 +1259,7 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
     else:
         return
 
+    #Can loop forever here if a section is mapped twice*/
     for mapped in rtNode.Children:
         StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
 
