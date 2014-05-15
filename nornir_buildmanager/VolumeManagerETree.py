@@ -651,8 +651,6 @@ class XElementWrapper(ElementTree.Element):
         XPathStr = ""
         if isinstance(AttribValue, float):
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
-        elif isinstance(AttribValue, int):
-            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)d']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
         else:
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
 
@@ -1614,8 +1612,6 @@ class StosGroupNode(XContainerElementWrapper):
         sectionMapping = self.GetSectionMapping(MappedSectionNumber)
         if sectionMapping is None:
             return []
-        
-        sectionMapping.CleanTransformsIfInvalid()
 
         return sectionMapping.TransformsToSection(ControlSectionNumber)
 
@@ -1627,8 +1623,6 @@ class StosGroupNode(XContainerElementWrapper):
         ControlChannelNode = ControlFilter.FindParent("Channel")
 
         SectionMappingsNode = self.GetOrCreateSectionMapping(MappedSectionNode.Number)
-        
-        SectionMappingsNode.CleanTransformsIfInvalid()
 
         stosNode = SectionMappingsNode.FindStosTransform(ControlSectionNode.Number,
                                                                ControlChannelNode.Name,
@@ -1874,12 +1868,9 @@ class MappingNode(XElementWrapper):
 
     @property
     def Mapped(self):
-        if not hasattr(self, '_mappedList') or self._mappedList is None:
-            mappedList = misc.ListFromAttribute(self.get('Mapped', []))
-            mappedList.sort()
-            self._mappedList = mappedList
-            
-        return self._mappedList
+        mappedList = misc.ListFromAttribute(self.get('Mapped', []))
+        mappedList.sort()
+        return mappedList
 
     @Mapped.setter
     def Mapped(self, value):
@@ -1887,11 +1878,9 @@ class MappingNode(XElementWrapper):
         if isinstance(value, list):
             value.sort()
             AdjacentSectionString = ','.join(str(x) for x in value)
-            self._mappedList = value
         else:
             assert(isinstance(value, int))
             AdjacentSectionString = str(value)
-            self._mappedList = [value]
 
         self.attrib['Mapped'] = AdjacentSectionString
 
@@ -2244,51 +2233,6 @@ class SectionMappingsNode(XElementWrapper):
             return t
 
         return None
-    
-    
-    @classmethod
-    def _CheckForFilterExistence(self, block, section_number, channel_name, filter_name):
-        
-        if not isinstance(section_number, int):
-            section_number = int(section_number)
-        
-        section_node = block.GetSection(section_number)
-        if section_node is None:
-            return (False, "Transform section not found %d.%s.%s" % (section_number, channel_name, filter_name))
-
-        channel_node = section_node.GetChannel(channel_name)
-        if channel_node is None:
-            return (False, "Transform channel not found %d.%s.%s" % (section_number, channel_name, filter_name))
-
-        filter_node = channel_node.GetFilter(filter_name)
-        if filter_node is None:
-            return (False, "Transform filter not found %d.%s.%s" % (section_number, channel_name, filter_name))
-
-        return (True, None)
-    
-
-    def CleanIfInvalid(self):
-        self.CleanTransformsIfInvalid(self)
-        XElementWrapper.CleanIfInvalid(self)
-
-
-    def CleanTransformsIfInvalid(self):
-        block = self.FindParent('Block')
-
-        # Check the transforms and make sure the input data still exists
-        for t in self.Transforms:
-            ControlResult = SectionMappingsNode._CheckForFilterExistence(block, t.ControlSectionNumber, t.ControlChannelName, t.ControlFilterName)
-            if ControlResult[0] == False:
-                prettyoutput.Log("Cleaning transform " + t.Path + " control input did not exist: " + ControlResult[1])
-                t.Clean()
-                continue
-
-            MappedResult = SectionMappingsNode._CheckForFilterExistence(block, t.MappedSectionNumber, t.MappedChannelName, t.MappedFilterName)
-            if MappedResult[0] == False:
-                prettyoutput.Log("Cleaning transform " + t.Path + " mapped input did not exist: " + MappedResult[1])
-                t.Clean()
-                continue
-
 
 
     def __init__(self, MappedSectionNumber=None, attrib=None, **extra):
