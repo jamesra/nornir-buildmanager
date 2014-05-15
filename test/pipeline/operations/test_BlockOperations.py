@@ -541,7 +541,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveRebuiltFromManualSliceToVolumeTransform,
                                 AutoOutputTransform=SliceToVolumeScaleTransformFromEight)
 
-        SliceToVolumeImagesArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \ 
+        SliceToVolumeImagesArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \
                                  '-InputGroup', 'SliceToVolume', \
                                  '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(SliceToVolumeImagesArgs)
