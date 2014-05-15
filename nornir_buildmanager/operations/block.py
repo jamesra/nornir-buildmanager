@@ -1086,6 +1086,9 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
     return InputStosFullPath
 
 
+
+
+
 def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
 
     Logger = kwargs.get('Logger', logging.getLogger('StosGrid'))
@@ -1127,9 +1130,9 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
             MappedNumber = InputSectionMappingNode.MappedSectionNumber
 
             ControlFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(ControlNumber).GetChannel(InputTransformNode.ControlChannelName).Filters,
-                                                                      'Name', ControlFilterPattern)[0]
+                                                                      'Name', ControlFilterPattern, CaseSensitive=True)[0]
             MappedFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(MappedNumber).GetChannel(InputTransformNode.MappedChannelName).Filters,
-                                                                      'Name', MappedFilterPattern)[0]
+                                                                      'Name', MappedFilterPattern, CaseSensitive=True)[0]
 
             # GetOrCreate the group for these stos files
             OutputStosGroupNode = VolumeManagerETree.XContainerElementWrapper('StosGroup', OutputStosGroupName, OutputStosGroupName, {'Downsample' : str(OutputDownsample)})
