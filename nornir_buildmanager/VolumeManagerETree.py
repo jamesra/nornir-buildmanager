@@ -2044,6 +2044,9 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
             return super(TransformNode, self).IsValid()
 
 
+
+
+
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
 
     def __init__(self, Name, Type, Path, attrib=None, **extra):
@@ -2233,6 +2236,46 @@ class SectionMappingsNode(XElementWrapper):
             return t
 
         return None
+
+    @classmethod
+    def _CheckForFilterExistence(self, block, section_number, channel_name, filter_name):
+
+        section_node = block.GetSection(section_number)
+        if section_node is None:
+            return (False, "Transform section not found %d.%s.%s" % (section_number, channel_name, filter_name))
+
+        channel_node = section_node.GetChannel(channel_name)
+        if channel_node is None:
+            return (False, "Transform channel not found %d.%s.%s" % (section_number, channel_name, filter_name))
+
+        filter_node = channel_node.GetFilter(filter_name)
+        if filter_node is None:
+            return (False, "Transform filter not found %d.%s.%s" % (section_number, channel_name, filter_name))
+
+        return (True, None)
+
+
+    def CleanIfInvalid(self):
+        self.CleanTransformsIfInvalid(self)
+        XElementWrapper.CleanIfInvalid(self)
+
+
+    def CleanTransformsIfInvalid(self):
+        block = self.FindParent('Block')
+
+        # Check the transforms and make sure the input data still exists
+        for t in self.Transforms:
+            ControlResult = SectionMappingsNode._CheckForFilterExistence(block, t.ControlSectionNumber, t.ControlChannelName, t.ControlFilterName)
+            if ControlResult[0] == False:
+                prettyoutput.Log("Cleaning transform " + t.Path + " control input did not exist: " + ControlResult[1])
+                t.Clean()
+                continue
+
+            MappedResult = SectionMappingsNode._CheckForFilterExistence(block, t.MappedSectionNumber, t.MappedChannelName, t.MappedFilterName)
+            if MappedResult[0] == False:
+                prettyoutput.Log("Cleaning transform " + t.Path + " mapped input did not exist: " + MappedResult[1])
+                t.Clean()
+                continue
 
 
     def __init__(self, MappedSectionNumber=None, attrib=None, **extra):
