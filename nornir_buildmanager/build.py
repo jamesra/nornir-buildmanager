@@ -1,24 +1,15 @@
 '''
 
 --------------------
-Common build options
+Command line usage
 --------------------
+
+Note: Certain arguments support regular expressions.  See the python :py:mod:`re` module for instructions on how to construct appropriate regular expressions.
 
 .. argparse:: 
    :module: nornir_buildmanager.build
-   :func: ProcessArgs
+   :func: BuildParserRoot
    :prog: nornir_build
-
-------------------
-Pipelines
-------------------
-
-_Note_: Certain arguments support regular expressions.  See the python :py:mod:`re` module for instructions on how to construct appropriate regular expressions.
- 
-.. automodule:: nornir_buildmanager.config.sphinxdocs
-    :members:
-    :undoc-members:
-    :show-inheritance:
 
 '''
 
@@ -35,7 +26,6 @@ from nornir_buildmanager import *
 from nornir_imageregistration.files import *
 
 from pkg_resources import resource_filename
-
 
 CommandParserDict = {}
 
@@ -188,7 +178,7 @@ def _AddPipelineParsers(subparsers):
     for pipeline_name in pipelinemanager.PipelineManager.ListPipelines(PipelineXML):
         pipeline = pipelinemanager.PipelineManager.Load(PipelineXML, pipeline_name)
 
-        pipeline_parser = subparsers.add_parser(pipeline_name, description=pipeline.Description, epilog=pipeline.Epilog)
+        pipeline_parser = subparsers.add_parser(pipeline_name, help=pipeline.Description, description=pipeline.Description, epilog=pipeline.Epilog)
 
         AddVolumeArgumentToParser(pipeline_parser)
 

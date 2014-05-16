@@ -1,4 +1,11 @@
 
+1.2.0
+-----
+
+* The command line has been rewritten to use subcommands.  The -pipeline and -import arguments are no longer used.  In the near future the -volume command may be removed.  Users should now specify the pipeline name after nornir-build:
+* Revamped the generation of slice-to-slice registration maps.  New sections are detected and holes are skipped
+* Bug fixes related to case-sensitive filter names
+
 
 1.1.5
 -----
