@@ -10,6 +10,7 @@ import re
 import sys
 import traceback
 import xml.etree
+import collections
 
 from nornir_buildmanager import VolumeManagerETree
 import nornir_shared.misc
@@ -802,6 +803,15 @@ class PipelineManager(object):
         if(NumProcessed == 0):
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
+    @classmethod
+    def _SaveNodes(cls, NodesToSave, VolumePath):
+        if not NodesToSave is None:
+            if isinstance(NodesToSave, collections.Iterable):
+                for node in NodesToSave:
+                    VolumeManagerETree.VolumeManager.Save(VolumePath, node)
+            else:
+                VolumeManagerETree.VolumeManager.Save(VolumePath, NodesToSave)
+
     def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
         PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
@@ -872,12 +882,8 @@ class PipelineManager(object):
                     # if they return false we do not need to run the expensive save operation
                     NodesToSave = stageFunc(**kwargs)
 
-                if not NodesToSave is None:
-                    if isinstance(NodesToSave, list):
-                        for node in NodesToSave:
-                            VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], node)
-                    else:
-                        VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], NodesToSave)
+                PipelineManager._SaveNodes(NodesToSave, VolumePath=ArgSet.Arguments["volumepath"])
+
             finally:
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
@@ -921,7 +927,6 @@ def _GetVariableName(PipelineNode):
         # PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
     elif PipelineNode.tag == "Select":
         raise PipelineError(PipelineNode=PipelineNode, message="Variable name attribute required on Select Element")
-
 
 
 if __name__ == "__main__":

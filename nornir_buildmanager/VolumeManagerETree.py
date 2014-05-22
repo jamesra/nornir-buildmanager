@@ -1376,6 +1376,8 @@ class ChannelNode(XContainerElementWrapper):
                                    'Name',
                                     filterPattern)
 
+    def GetTransform(self, transform_name):
+        return self.GetChildByAttrib('Transform', 'Name', transform_name)
 
     def __init__(self, Name, Path, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)

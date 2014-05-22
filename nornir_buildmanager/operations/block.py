@@ -1129,6 +1129,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
             ControlNumber = InputTransformNode.ControlSectionNumber
             MappedNumber = InputSectionMappingNode.MappedSectionNumber
 
+            # TODO: Skip transforms using filters which no longer exist.  Should live in a seperate function.
             ControlFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(ControlNumber).GetChannel(InputTransformNode.ControlChannelName).Filters,
                                                                       'Name', ControlFilterPattern, CaseSensitive=True)[0]
             MappedFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(MappedNumber).GetChannel(InputTransformNode.MappedChannelName).Filters,
@@ -1243,10 +1244,14 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
     '''recursively adds registration tree nodes to the stos map'''
 
+
+
     if mappedSectionNumber is None:
         mappedSectionNumber = controlSectionNumber
     elif isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
         mappedSectionNumber = mappedSectionNumber.SectionNumber
+
+    print("Adding " + str(mappedSectionNumber))
 
     rtNode = None
     if mappedSectionNumber in rt.Nodes:
@@ -1254,6 +1259,7 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
     else:
         return
 
+    # Can loop forever here if a section is mapped twice*/
     for mapped in rtNode.Children:
         StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
 
@@ -1626,19 +1632,52 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
 
     return False
 
+
+def _RemoveOutdatedStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformNode):
+    # files.RemoveOutdatedFile(TransformNode.FullPath, OutputTransformNode.FullPath)
+    # files.RemoveOutdatedFile(StosTransformNode.FullPath, OutputTransformNode.FullPath)
+    OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, "InputTransformChecksum", TransformNode.checksum)
+
+    if not StosTransformNode is None:
+        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, "InputStosTransformChecksum", StosTransformNode.checksum)
+
+    return OutputTransformNode
+
+
+def _CreateStosToMosaicTransformIfNotCurrent(StosTransformNode, TransformNode, OutputTransformName):
+    '''Returns an OutputTransformNode when there is an outdated existing node or no node at all
+    :returns: A transform node whose data should be generated
+    '''
+
+    OutputTransformNode = TransformNode.Parent.GetTransform(OutputTransformName)
+    if not OutputTransformNode is None:
+        OutputTransformNode = _RemoveOutdatedStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformNode)
+
+    if OutputTransformNode is None:
+        # Create transform node for the output
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type="MosaicToVolume", Path=OutputTransformName + '.mosaic')
+        (added, OutputTransformNode) = TransformNode.Parent.UpdateOrAddChildByAttrib(OutputTransformNode)
+
+        return OutputTransformNode
+    else:
+        return None
+
+
 def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformName, Logger, **kwargs):
 
     MappedFilterNode = TransformNode.FindParent('Filter')
 
-    # Create transform node for the output
-    OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type="MosaicToVolume", Path=OutputTransformName + '.mosaic')
-    (added, OutputTransformNode) = TransformNode.Parent.UpdateOrAddChildByAttrib(OutputTransformNode)
+    OutputTransformNode = _CreateStosToMosaicTransformIfNotCurrent(StosTransformNode, TransformNode, OutputTransformName)
+    if OutputTransformNode is None:
+        # The node is current, so do no work
+        return None
 
     OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
     OutputTransformNode.OutputTransformName = OutputTransformName
     OutputTransformNode.InputTransform = TransformNode.Name
 
-    files.RemoveOutdatedFile(TransformNode.FullPath, OutputTransformNode.FullPath)
+    if not StosTransformNode is None:
+        OutputTransformNode.InputStosTransformChecksum = StosTransformNode.Checksum
 
     if StosTransformNode is None:
         # No transform, copy transform directly
@@ -1688,6 +1727,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
         if len(MosaicTransform.ImageToTransform) > 0:
             OutputMosaicFile = MosaicTransform.ToMosaicFile()
             OutputMosaicFile.Save(OutputTransformNode.FullPath)
+
             OutputTransformNode.Checksum = OutputMosaicFile.LoadChecksum(OutputTransformNode.FullPath)
             OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
             OutputTransformNode.InputStosTransformChecksum = StosTransformNode.Checksum
@@ -1709,7 +1749,9 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
         if transformNode is None:
             continue
 
-        BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, transformNode, OutputTransformName, Logger, **kwargs)
+        NodeToSave = BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, transformNode, OutputTransformName, Logger, **kwargs)
+        if not NodeToSave is None:
+            yield NodeToSave
 
         OutputTransformNode = channelNode.GetChildByAttrib('Transform', 'Name', OutputTransformName)
         if not OutputTransformNode is None:
@@ -1738,7 +1780,7 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
 
     mosaicToVolume.Save()
 
-    return BlockNode
+    yield BlockNode
 
 
 def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNode, OutputTransformName, Logger, **kwargs):
@@ -1746,12 +1788,14 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
 
     MosaicTransformParent = TransformNode.Parent
 
+    SaveTransformParent = False
+
     MappedChannelNode = TransformNode.FindParent('Channel')
 
     SectionNode = TransformNode.FindParent('Section')
     if SectionNode is None:
         Logger.error("No section found for transform: " + str(TransformNode))
-        return
+        return None
 
     MappedSectionNumber = SectionNode.Number
 
@@ -1762,7 +1806,8 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
 
     SectionMappingNode = StosGroupNode.GetSectionMapping(MappedSectionNumber)
     if SectionMappingNode is None:
-        _ApplyStosToMosaicTransform(None, TransformNode, OutputTransformName, Logger, **kwargs)
+        stosMosaicTransform = _ApplyStosToMosaicTransform(None, TransformNode, OutputTransformName, Logger, **kwargs)
+        SaveTransformParent = True
     else:
         for stostransform in SectionMappingNode.Transforms:
             if not stostransform.MappedChannelName == MappedChannelNode.Name:
@@ -1772,6 +1817,7 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
                 continue
 
             stosMosaicTransform = _ApplyStosToMosaicTransform(stostransform, TransformNode, OutputTransformName, Logger, **kwargs)
+            SaveTransformParent = True
 
 #         mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
 #         mosaicToVolume.TranslateToZeroOrigin()
@@ -1789,8 +1835,10 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
 #
 #     if os.path.exists(OutputTransformNode.FullPath):
 #         return
+    if SaveTransformParent:
+        return MosaicTransformParent
 
-    return MosaicTransformParent
+    return None
 
 if __name__ == '__main__':
     pass
