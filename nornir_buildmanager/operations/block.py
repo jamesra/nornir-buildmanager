@@ -1804,6 +1804,8 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
         if StosMapNode.CenterSection != MappedSectionNumber:
             Logger.info("No SectionMappings found for section: " + str(MappedSectionNumber))
 
+    Logger.info("%d -> %s" % (MappedSectionNumber, str(ControlSectionNumbers)))
+
     SectionMappingNode = StosGroupNode.GetSectionMapping(MappedSectionNumber)
     if SectionMappingNode is None:
         stosMosaicTransform = _ApplyStosToMosaicTransform(None, TransformNode, OutputTransformName, Logger, **kwargs)
