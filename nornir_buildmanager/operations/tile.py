@@ -925,7 +925,7 @@ def MigrateMultipleImageSets(FilterNode, Logger, **kwargs):
     # return MigrationOccurred
 
 
-def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, **kwargs)
 
 
@@ -944,7 +944,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     return OutputChannelNode
 
 
-def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
     InputChannelNode = FilterNode.FindParent('Channel')
