@@ -1014,10 +1014,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         if os.path.exists(ImageNode.FullPath):
             os.remove(ImageNode.FullPath)
 
-    if not TransformNode.CropBox is None:
-        (Xo, Yo, Width, Height) = TransformNode.CropBox
-        image.RemoveOnDimensionMismatch(ImageNode.FullPath, (Width, Height))
-        image.RemoveOnDimensionMismatch(MaskImageNode.FullPath, (Width, Height))
+    image.RemoveOnTransformCropboxMismatched(TransformNode, ImageNode, thisLevel)
+    image.RemoveOnTransformCropboxMismatched(TransformNode, MaskImageNode, thisLevel) 
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 

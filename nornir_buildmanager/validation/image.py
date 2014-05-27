@@ -36,5 +36,16 @@ def RemoveOnDimensionMismatch(imageFullPath, area):
 
     return True
 
+
+def RemoveOnTransformCropboxMismatched(transform_node, image_node, image_level):
+    if not transform_node.CropBox is None:
+        (Xo, Yo, Width, Height) = transform_node.CropBox
+        AdjustedWidth = Width // image_level
+        AdjustedHeight = Height // image_level 
+        return RemoveOnDimensionMismatch(image_node.FullPath, (AdjustedWidth, AdjustedHeight))
+
+    return False
+
+
 if __name__ == '__main__':
     pass
