@@ -337,6 +337,8 @@ def Main():
             SetupLogging(args.volumepath, Level=logging.DEBUG)
         else:
             SetupLogging(args.volumepath, Level=logging.WARN)
+    else:
+        SetupLogging(os.curdir, Level=logging.WARN)
 
     Execute()
 
