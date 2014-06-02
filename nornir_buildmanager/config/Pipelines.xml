@@ -127,9 +127,17 @@
 		</Iterate>
 	</Pipeline>
 
-	<Pipeline Name="Migrate" Description="Migrate meta-data to latest version">
+	<Pipeline Name="MigrateMultipleImageSets" Description="Migrate meta-data to latest version">
 		<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter">
 			<PythonCall Function="tile.MigrateMultipleImageSets">
+			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="MigrateToZeroOrigin" Description="Migrate mosaic transforms to zero origins">
+		<Iterate VariableName="TransformNode" XPath="Block/Section/Channel/Transform">
+			<RequireMatch Attribute="Name" RegEx="Grid"/>
+			<PythonCall Function="registration.TransformNodeToZeroOrigin" transform_node="#TransformNode">
 			</PythonCall>
 		</Iterate>
 	</Pipeline>
