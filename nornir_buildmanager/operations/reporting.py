@@ -706,6 +706,9 @@ def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
 
 def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
     '''Create HTML to describe an element'''
+    if Logger is None:
+        Logger = logging.getLogger("RowReport")
+        
     if not isinstance(ColumnXPaths, list):
         xpathStrings = str(ColumnXPaths).strip().split(',')
         ColumnXPaths = xpathStrings
