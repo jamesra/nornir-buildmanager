@@ -728,7 +728,7 @@ class PipelineManager(object):
             # No set to compare with.  We allow it.
             return
 
-        Attrib = RootForMatch.attrib.get(AttribName, None)
+        Attrib = getattr(RootForMatch, AttribName, None)
         if Attrib is None:
             raise PipelineArgumentNotFound(VolumeElem=VolumeElem,
                                            PipelineNode=PipelineNode,
