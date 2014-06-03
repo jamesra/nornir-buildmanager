@@ -391,7 +391,8 @@ class SerialEMIDocImport(object):
             if MFile.RemoveInvalidMosaicImages(OutputImagePath):
                 MFile.Save(SupertilePath)
 
-            transformObj.Checksum = MFile.Checksum
+            transformObj.ResetChecksum()
+            # transformObj.Checksum = MFile.Checksum
 
 
 def GetMinMaxCutoffs(listfilenames, histogramFullPath=None):

@@ -516,7 +516,8 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
         # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
         # have identical values but different checksums from the Python stos file objects %g representation
 
-        stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+        # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+        stosNode.ResetChecksum()
         stosNode.ControlImageChecksum = ControlImageNode.Checksum
         stosNode.MappedImageChecksum = MappedImageNode.Checksum
 
@@ -1230,7 +1231,8 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                 stosNode.Path = OutputFile
 
             if os.path.exists(OutputStosFullPath):
-                stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+                stosNode.ResetChecksum()
+                # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
                 stosNode.InputTransformChecksum = InputStosFileChecksum
 
     if SaveBlockNode:
@@ -1422,7 +1424,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 
                         OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
                         OutputTransform.InputTransformChecksum = MappedToControlTransform.Checksum
-                        OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
+                        # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
+                        OutputTransform.ResetChecksum()
                     except ValueError:
                         # Probably an invalid transform.  Skip it
                         OutputSectionMappingsNode.remove(OutputTransform)
@@ -1544,7 +1547,8 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
 
                 if stosGenerated:
                     stosNode.InputTransformChecksum = InputTransformNode.Checksum
-                    stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+                    stosNode.ResetChecksum()
+                    # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
                 else:
                     OutputGroupNode.Remove(stosNode)
 
@@ -1684,7 +1688,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
         # Create transform node for the output
         shutil.copyfile(TransformNode.FullPath, OutputTransformNode.FullPath)
-        OutputTransformNode.Checksum = TransformNode.Checksum
+        # OutputTransformNode.Checksum = TransformNode.Checksum
         OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
     else:
         files.RemoveOutdatedFile(StosTransformNode.FullPath, OutputTransformNode.FullPath)
@@ -1728,7 +1732,8 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
             OutputMosaicFile = MosaicTransform.ToMosaicFile()
             OutputMosaicFile.Save(OutputTransformNode.FullPath)
 
-            OutputTransformNode.Checksum = OutputMosaicFile.LoadChecksum(OutputTransformNode.FullPath)
+            # OutputTransformNode.Checksum = OutputMosaicFile.LoadChecksum(OutputTransformNode.FullPath)
+            OutputTransformNode.ResetChecksum()
             OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
             OutputTransformNode.InputStosTransformChecksum = StosTransformNode.Checksum
 

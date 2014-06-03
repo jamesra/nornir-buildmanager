@@ -1948,17 +1948,22 @@ class MosaicBaseNode(XFileElementWrapper):
             raise Exception("Cannot compute checksum for unknown transform type")
 
         return None
-    
+
     def ResetChecksum(self):
         '''Recalculate the checksum for the element'''
-        self._CalcChecksum()
+        if 'Checksum' in self.attrib:
+            del self.attrib['Checksum']
+
+        self.attrib['Checksum'] = self._CalcChecksum()
 
     @property
     def Checksum(self):
         '''Checksum of the file resource when the node was last updated'''
         checksum = self.attrib.get('Checksum', None)
         if checksum is None:
-            return self._CalcChecksum()
+            checksum = self._CalcChecksum()
+            self.attrib['Checksum'] = checksum
+            return checksum
 
         return checksum
 

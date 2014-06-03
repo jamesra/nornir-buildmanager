@@ -19,16 +19,16 @@ from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
 import nornir_imageregistration.mosaic as mosaic
 
 def TransformNodeToZeroOrigin(transform_node, **kwargs):
-    ''':return: transform_node if the mosaic was adjusted.  None if the transform_node already had a zero origin''' 
+    ''':return: transform_node if the mosaic was adjusted.  None if the transform_node already had a zero origin'''
     if mosaic.Mosaic.TranslateMosaicFileToZeroOrigin(transform_node.FullPath):
         transform_node.ResetChecksum()
 
         logger = kwargs.get("Logger", None)
         if not logger is None:
             logger.info("Moved %s to zero origin" % transform_node.FullPath)
-            
+
         return transform_node
-    
+
     return None
 
 
@@ -206,7 +206,7 @@ def CompressTransforms(Parameters, TransformNode, **kwargs):
 
     if os.path.exists(TempMosaicFileFullPath):
         shutil.move(TempMosaicFileFullPath, InputFileFullPath)
-        TransformNode.Checksum = mFile.Checksum
+        TransformNode.ResetChecksum()
         TransformNode.attrib['Compressed'] = 'True'
 
     return TransformNode.Parent
