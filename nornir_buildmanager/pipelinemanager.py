@@ -66,6 +66,8 @@ class ArgumentSet():
         raise KeyError(str(key) + " not found")
 
     def ReplaceVariable(self, xpath, iStart):
+        '''Replace # variable names in an xpath with variable string values'''
+
         # Find the next # if it exists
         iStart = iStart + 1  # Skip the # symbol
         iEndVar = xpath[iStart + 1:].find('#')
@@ -707,7 +709,8 @@ class PipelineManager(object):
 
 
     def RequireSetMembership(self, ArgSet, VolumeElem, PipelineNode):
-        '''If the attribute value is not present in the provided list the element is skipped'''
+        '''If the attribute value is not present in the provided list the element is skipped.
+           If the provided list is none we do not skip.'''
 
         RootForMatch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
 
@@ -715,7 +718,15 @@ class PipelineManager(object):
         AttribName = ArgSet.SubstituteStringVariables(AttribName)
 
         listVariable = PipelineNode.attrib.get("List", None)
-        listOfValid = ArgSet.SubstituteStringVariables(listVariable)
+        if listVariable is None:
+            raise PipelineError(VolumeElem=VolumeElem,
+                                PipelineNode=PipelineNode,
+                                message="List attribute missing on <RequireSetMembership> node")
+
+        listOfValid = ArgSet.TryGetSubstituteObject(listVariable)
+        if listOfValid is None:
+            # No set to compare with.  We allow it.
+            return
 
         Attrib = RootForMatch.attrib.get(AttribName, None)
         if Attrib is None:
@@ -724,7 +735,7 @@ class PipelineManager(object):
                                            argname=AttribName)
 
         if not Attrib in listOfValid:
-             raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, listOfValid=listOfValid, attribValue=Attrib)
+            raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, listOfValid=listOfValid, attribValue=Attrib)
 
         return
 

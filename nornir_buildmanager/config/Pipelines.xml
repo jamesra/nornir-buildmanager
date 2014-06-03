@@ -10,6 +10,7 @@
 
 	<Pipeline Name="Prune" Description="Removes tiles without enough features for proper alignment.">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Threshold" dest="PruneThreshold" default="0" type="float" help="Texture complexity threshold" required="True"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to calculate complexity upon" required="False"/>
@@ -17,52 +18,62 @@
 			<Argument flag="-InputTransform" dest="InputTransform" default="Stage" help="Mosaic transform to prune.  The transform provides the list of tiles in the mosaic." required="False"/>
 			<Argument flag="-OutputTransform" dest="OutputTransform" default="Prune" help="Name of output transform.  Contains tiles from input transform minus tiles below threshold." required="False"/>
 			<Argument flag="-overlap" dest="Overlap" default="0.1" type="float" help="Percentage overlap between tiles, 0.0 to 1,0" required="False"/>
+			
 		</Arguments>
+		
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
 
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-
-			<Select VariableName="Pyramid" XPath="Filter[@Name='#InputFilter']/TilePyramid"/>
-			<PythonCall Function="tile.VerifyImages" TilePyramidNode="#Pyramid"/> 
-
-			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
-			<PythonCall Function="registration.CompressTransforms" TransformNode="#TransformNode"/>
-
-			<!-- Assign a number to each tile describing if there are interesting features to the image -->
-			<Select VariableName="FilterNode" Root="ChannelNode" XPath="Filter[@Name='#InputFilter']"/>
-			<PythonCall Function="pruneobj.PruneObj.CalculatePruneScores" Downsample="#Downsample" OutputFile="PruneScores">
-				<Parameters>
-					<Entry Name="Overlap" Value="#Overlap"/>
-				</Parameters>
-			</PythonCall>
-
-			<!-- Remove tiles that are featureless from the mosaic -->
-			<Select VariableName="PruneNode" Root="FilterNode" XPath="Prune[@Overlap='#Overlap']"/>
-			<PythonCall Function="pruneobj.PruneObj.PruneMosaic" OutputTransformName="#OutputTransform">
-				<Parameters>
-					<Entry Name="Threshold" Value="#PruneThreshold"/>
-				</Parameters>
-			</PythonCall>
-		</Iterate> 
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+	
+				<Select VariableName="Pyramid" XPath="Filter[@Name='#InputFilter']/TilePyramid"/>
+				<PythonCall Function="tile.VerifyImages" TilePyramidNode="#Pyramid"/> 
+	
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
+				<PythonCall Function="registration.CompressTransforms" TransformNode="#TransformNode"/>
+	
+				<!-- Assign a number to each tile describing if there are interesting features to the image -->
+				<Select VariableName="FilterNode" Root="ChannelNode" XPath="Filter[@Name='#InputFilter']"/>
+				<PythonCall Function="pruneobj.PruneObj.CalculatePruneScores" Downsample="#Downsample" OutputFile="PruneScores">
+					<Parameters>
+						<Entry Name="Overlap" Value="#Overlap"/>
+					</Parameters>
+				</PythonCall>
+	
+				<!-- Remove tiles that are featureless from the mosaic -->
+				<Select VariableName="PruneNode" Root="FilterNode" XPath="Prune[@Overlap='#Overlap']"/>
+				<PythonCall Function="pruneobj.PruneObj.PruneMosaic" OutputTransformName="#OutputTransform">
+					<Parameters>
+						<Entry Name="Threshold" Value="#PruneThreshold"/>
+					</Parameters>
+				</PythonCall>
+			</Iterate>
+		</Iterate>  
 	</Pipeline>
 
 	<Pipeline Name="ShadeCorrect" Description="Brightfield microscopy shading correction.  Uses the max tile intensity across all tiles to determine the shading gradient.  Produces an inverted output filter with the shading subtracted.">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>			
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/> 
 			<Argument flag="-OutputFilter" dest="OutputFilter" default="ShadingCorrected" help="Prefix added to output filters" required="False"/>
 			<Argument flag="-Correction" dest="Correction" default="brightfield" help="Brightfield images have a light background with darker features.  Darkfield images have a dark background with light features." choices="brightfield,darkfield" required="True"/>
 		</Arguments>
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-			<Iterate VariableName="FilterNode" XPath="Filter">
-				<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
-
-				<Iterate VariableName="TilePyramidNode" XPath="TilePyramid">
-					<PythonCall Function="tile.VerifyImages"/>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
+	
+					<Iterate VariableName="TilePyramidNode" XPath="TilePyramid">
+						<PythonCall Function="tile.VerifyImages"/>
+					</Iterate>
+	
+					<PythonCall Function="tile.CorrectTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter" InvertSource="True" CorrectionType="#Correction"/>
 				</Iterate>
-
-				<PythonCall Function="tile.CorrectTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter" InvertSource="True" CorrectionType="#Correction"/>
 			</Iterate>
 		</Iterate>
 	</Pipeline>
@@ -109,28 +120,34 @@
 
 	<Pipeline Name="Histogram" Description="Calculates the histogram from all tiles in a mosaic">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/>
 			<Argument flag="-InputTransform" dest="InputTransform" default="Prune" help="The transform provided the list of tiles in the mosaic." required="True"/>
 			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Use downsampled tiles for faster histogram calculation" required="False"/>
 		</Arguments>
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-
-			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
-
-			<Iterate VariableName="FilterNode" XPath="Filter">
-				<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
-
-				<!-- Calculate the intensity histogram for the entire mosaic -->
-				<PythonCall Function="tile.HistogramFilter" FilterNode="#FilterNode" Downsample="#Downsample" TransformNode="#TransformNode">
-				</PythonCall>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+	
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
+	
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
+	
+					<!-- Calculate the intensity histogram for the entire mosaic -->
+					<PythonCall Function="tile.HistogramFilter" FilterNode="#FilterNode" Downsample="#Downsample" TransformNode="#TransformNode">
+					</PythonCall>
+				</Iterate>
 			</Iterate>
 		</Iterate>
 	</Pipeline>
 
 	<Pipeline Name="AdjustContrast" Description="Creates a new filter with adjusted contrast.  The cutoffs can be adjusted within the meta-data by altering the AutoLevelHint element of the input filters volume.xml meta-data file.">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/>
 			<Argument flag="-MinCutoff" dest="MinCutoff" default="0.1" help="Min pixel intensity cutoff as a percentage, 0 to 100" required="False"/>
@@ -140,27 +157,33 @@
 			<Argument flag="-InputTransform" dest="InputTransform" default="Prune" help="Mosaic transform to prune.  The transform provides the list of tiles in the mosaic." required="True"/>
 		</Arguments>
 
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">		
-			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-
-			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
-
-			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
-			<PythonCall Function="tile.AutolevelTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter">
-				<Parameters>
-					<Entry Name="Gamma" Value="#Gamma"/> 
-					<Entry Name="MinCutoff" Value="#MinCutoff"/> 
-					<Entry Name="MaxCutoff" Value="#MaxCutoff"/> 
-				</Parameters>
-			</PythonCall>
-
-			<Select VariableName="PyramidNode" Root="ChannelNode"  XPath="Filter[@Name='#OutputFilter']/TilePyramid"/>
-			<PythonCall Function="tile.BuildTilePyramids"/>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+					
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+	
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
+	
+				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+				<PythonCall Function="tile.AutolevelTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter">
+					<Parameters>
+						<Entry Name="Gamma" Value="#Gamma"/> 
+						<Entry Name="MinCutoff" Value="#MinCutoff"/> 
+						<Entry Name="MaxCutoff" Value="#MaxCutoff"/> 
+					</Parameters>
+				</PythonCall>
+	
+				<Select VariableName="PyramidNode" Root="ChannelNode"  XPath="Filter[@Name='#OutputFilter']/TilePyramid"/>
+				<PythonCall Function="tile.BuildTilePyramids"/>
+			</Iterate>
 		</Iterate>
 	</Pipeline>
 
 	<Pipeline Name="Mosaic" Description="Aligns tiles of a filter into a single mosaic.  Produces an assembled mosaic image.">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-RegistrationDownsample" dest="Downsample" default="4" type="int" help="Downsample level to use for ir-tools" required="False"/>
 			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
@@ -169,38 +192,44 @@
 			<Argument flag="-OutputTransform" dest="OutputTransformName" default="Grid" help="Name of output transform." required="False"/>
 		</Arguments>
 
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-
-			<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransformName']"/>
-			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
 			
-			<!-- ir-translate, calculate translation for each tile into the greater mosaic -->
-			<PythonCall Function="registration.TranslateTransform" TransformNode="#TransformNode" OutputTransform="Translated_#InputTransformName" FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
-				<Parameters>
-					<Entry Name="MaxOffsetX" Value="#MaxOffset"/>
-				</Parameters>
-			</PythonCall>
-
-			<!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping tiles -->
-			<Select VariableName="TranslatedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='Translated_#InputTransformName']"/>
-			<PythonCall Function="registration.CompressTransforms" TransformNode="#TranslatedTransformNode"/>
-			<PythonCall Function="registration.GridTransform" OutputTransform="#OutputTransformName" TransformNode="#TranslatedTransformNode" FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
-				<Parameters>
-					<Entry Name="MeshWidth" Value="8"/>
-					<Entry Name="MeshHeight" Value="8"/>
-					<Entry Name="Cell" Value="96"/>
-					<Entry Name="Threshold" Value="0.5"/>
-				</Parameters>
-			</PythonCall>
- 
-			<Select VariableName="RefinedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='#OutputTransformName']"/>
-			<PythonCall Function="registration.CompressTransforms" TransformNode="#RefinedTransformNode"/>
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+	
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransformName']"/>
+				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+				
+				<!-- ir-translate, calculate translation for each tile into the greater mosaic -->
+				<PythonCall Function="registration.TranslateTransform" TransformNode="#TransformNode" OutputTransform="Translated_#InputTransformName" FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
+					<Parameters>
+						<Entry Name="MaxOffsetX" Value="#MaxOffset"/>
+					</Parameters>
+				</PythonCall>
+	
+				<!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping tiles -->
+				<Select VariableName="TranslatedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='Translated_#InputTransformName']"/>
+				<PythonCall Function="registration.CompressTransforms" TransformNode="#TranslatedTransformNode"/>
+				<PythonCall Function="registration.GridTransform" OutputTransform="#OutputTransformName" TransformNode="#TranslatedTransformNode" FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
+					<Parameters>
+						<Entry Name="MeshWidth" Value="8"/>
+						<Entry Name="MeshHeight" Value="8"/>
+						<Entry Name="Cell" Value="96"/>
+						<Entry Name="Threshold" Value="0.5"/>
+					</Parameters>
+				</PythonCall>
+	 
+				<Select VariableName="RefinedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='#OutputTransformName']"/>
+				<PythonCall Function="registration.CompressTransforms" TransformNode="#RefinedTransformNode"/>
+			</Iterate>
 		</Iterate>
 	</Pipeline>
 
 	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter. Optionally creates a new channel for output.">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Downsample" dest="Levels" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
 			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
@@ -208,20 +237,25 @@
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Directory to move assembled images to" required="False"/>
 		</Arguments>
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
-
-			<!-- Build a downsampled image of the mosaic -->
-			<Select VariableName="TransformNode" XPath="Transform[@Name='#TransformName']"/>
-
-			<Iterate VariableName="FilterNode" XPath="Filter">
-				<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
-
-				<PythonCall Function="tile.AssembleTransform" OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace" Levels="#Levels">
-					<Parameters>
-						<Entry Name="feathering" Value="binary"/>
-					</Parameters>
-				</PythonCall>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+	
+				<!-- Build a downsampled image of the mosaic -->
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#TransformName']"/>
+	
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+	
+					<PythonCall Function="tile.AssembleTransform" OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace" Levels="#Levels">
+						<Parameters>
+							<Entry Name="feathering" Value="binary"/>
+						</Parameters>
+					</PythonCall>
+				</Iterate>
 			</Iterate>
 		</Iterate>
 		
@@ -229,24 +263,30 @@
 
 	<Pipeline Name="AssembleTiles" Description="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Transform defining images into mosaic" required="False"/>
 			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma seperated list of downsample levels for assembling output images" required="False"/>
 		</Arguments>
 
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
-
-			<Select VariableName="TransformNode" XPath="Transform[@Name='#TransformName']"/>
-			<Iterate VariableName="FilterNode" XPath="Filter">
-				<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>			
-
-				<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid"/>
-				<PythonCall Function="tile.AssembleTileset"/>
-
-				<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
-				<PythonCall Function="tile.BuildTilesetPyramid"/>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+	
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#TransformName']"/>
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>			
+	
+					<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid"/>
+					<PythonCall Function="tile.AssembleTileset"/>
+	
+					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
+					<PythonCall Function="tile.BuildTilesetPyramid"/>
+				</Iterate>
 			</Iterate>
 		</Iterate>
 
