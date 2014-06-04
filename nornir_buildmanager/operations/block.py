@@ -1447,22 +1447,23 @@ def RegistrationTreeFromStosMapNode(StosMapNode):
     return rt
 
 
-def __MappedFilterForTransform(InputTransformNode):
-    sectionNumber = InputTransformNode.MappedSectionNumber
-    BlockNode = InputTransformNode.FindParent(ParentTag='Block')
-    sectionNode = BlockNode.GetSection(sectionNumber)
-    channelNode = sectionNode.GetChannel(InputTransformNode.MappedChannelName)
-    filterNode = channelNode.GetFilter(InputTransformNode.MappedFilterName)
-    return filterNode
-    # return sectionNode(channelPattern, filterPattern)
+def __MappedFilterForTransform(transform_node):
+    return __GetFilter(transform_node,
+                                transform_node.MappedSectionNumber,
+                                transform_node.MappedChannelName, 
+                                transform_node.MappedFilterName)
+    
+def __ControlFilterForTransform(transform_node):
+    return __GetFilter(transform_node,
+                                transform_node.ControlSectionNumber,
+                                transform_node.ControlChannelName,
+                                transform_node.ControlFilterName)
 
-
-def __ControlFilterForTransform(InputTransformNode):
-    sectionNumber = InputTransformNode.ControlSectionNumber
-    BlockNode = InputTransformNode.FindParent(ParentTag='Block')
-    sectionNode = BlockNode.GetSection(sectionNumber)
-    channelNode = sectionNode.GetChannel(InputTransformNode.ControlChannelName)
-    filterNode = channelNode.GetFilter(InputTransformNode.ControlFilterName)
+def __GetFilter(transform_node, section, channel, filter):
+    BlockNode = transform_node.FindParent(ParentTag='Block')
+    sectionNode = BlockNode.GetSection(section)
+    channelNode = sectionNode.GetChannel(channel)
+    filterNode = channelNode.GetFilter(filter)
     return filterNode
 
 # def __MatchMappedFiltersForTransform(InputTransformNode, channelPattern=None, filterPattern=None):
@@ -1526,8 +1527,13 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
 
             # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
             # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
-            ControlFilter = __ControlFilterForTransform(InputTransformNode)
-            MappedFilter = __MappedFilterForTransform(InputTransformNode)
+            try:
+                ControlFilter = __ControlFilterForTransform(InputTransformNode)
+                MappedFilter = __MappedFilterForTransform(InputTransformNode)
+            except AttributeError as e:
+                logger = logging.getLogger("ScaleStosGroup")
+                logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath) 
+                continue
 
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
