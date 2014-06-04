@@ -753,7 +753,6 @@ class PipelineManager(object):
         return
 
 
-
     def ProcessRequireMatchNode(self, ArgSet, VolumeElem, PipelineNode):
         '''If the regular expression does not match the attribute an exception is raised.
            This skips the current iteration of an enclosing <iterate> element'''
