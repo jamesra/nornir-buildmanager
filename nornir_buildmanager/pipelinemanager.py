@@ -270,6 +270,7 @@ class ArgumentSet():
 # from nornir_buildmanager.Data import Pipelines
 class PipelineError(Exception):
     '''An expected node did not exist'''
+     
 
     def __init__(self, VolumeElem=None, PipelineNode=None, message=None, **kwargs):
         super(PipelineError, self).__init__(**kwargs)
@@ -363,16 +364,27 @@ class PipelineListIntersectionFailed(PipelineError):
     '''A regular expression search could not match any nodes'''
 
     def __init__(self, listOfValid, attribValue, **kwargs):
+
+        if not "message" in kwargs:
+            kwargs['message'] = '\n'.join(PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=listOfValid, value=attribValue))
+        
         super(PipelineListIntersectionFailed, self).__init__(**kwargs)
 
         self.listOfValid = listOfValid
         self.attribValue = attribValue
+        
+        
+    @classmethod
+    def GenErrorMessage(cls, list_of_valid, value):
+        s = []
+        s.append("Value was not in list")
+        s.append("  List: " + str(list_of_valid))
+        s.append("  Value: " + str(value))
+        return s
 
     def __CoreErrorList(self):
-        s = []
-        s.append("An attribute was not in the list of valid values.")
-        s.append("List: " + str(self.listOfValid))
-        s.append("Attrib value: " + self.attribValue)
+        
+        s = PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=self.listOfValid, value=self.attribValue)
         s.extend(super(PipelineError, self).__CoreErrorList())
         return s
 
@@ -658,7 +670,7 @@ class PipelineManager(object):
                     PipelineManager.logger.info("Search statement did not match.  Skipping to next iteration\n")
                     break
                 except PipelineListIntersectionFailed as e:
-                    PipelineManager.logger.info("Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + str(e))
+                    PipelineManager.logger.info("Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + e.message)
                     break
                 except PipelineRegExSearchFailed as e:
                     PipelineManager.logger.info("Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
@@ -667,6 +679,7 @@ class PipelineManager(object):
                     PipelineManager.logger.error(str(e))
                     PipelineManager.logger.error("Undexpected error, exiting pipeline")
                     sys.exit()
+                    
         finally:
             self.RemovePipelineNodeVariable(ArgSet, PipelineNode)
 
