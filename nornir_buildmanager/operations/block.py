@@ -1532,7 +1532,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                 MappedFilter = __MappedFilterForTransform(InputTransformNode)
             except AttributeError as e:
                 logger = logging.getLogger("ScaleStosGroup")
-                logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath) 
+                logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
 
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
@@ -1634,7 +1634,7 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
                 return True
         else:
             # InputTransformChecksum is equal
-            return True
+            return False
 
     elif os.path.exists(OutputStosNode.FullPath):
         os.remove(OutputStosNode.FullPath)
@@ -1646,10 +1646,10 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
 def _RemoveOutdatedStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformNode):
     # files.RemoveOutdatedFile(TransformNode.FullPath, OutputTransformNode.FullPath)
     # files.RemoveOutdatedFile(StosTransformNode.FullPath, OutputTransformNode.FullPath)
-    OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, "InputTransformChecksum", TransformNode.checksum)
+    OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, "InputTransformChecksum", TransformNode.Checksum)
 
     if not StosTransformNode is None:
-        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, "InputStosTransformChecksum", StosTransformNode.checksum)
+        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, "InputStosTransformChecksum", StosTransformNode.Checksum)
 
     return OutputTransformNode
 
