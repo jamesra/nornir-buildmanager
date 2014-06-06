@@ -216,7 +216,7 @@ def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
     if OutputDir is None:
         return
 
-    logger = kwargs.get('Logger', logging.getLogger('CopyFiles'))
+    logger = logging.getLogger(__name__ + '.CopyFiles')
 
     if not os.path.exists(OutputDir):
         os.makedirs(OutputDir)
@@ -253,7 +253,7 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
         return
 
     OutputDir = _AbsoluePathFromRelativePath(FilterNode, OutputDir)
-    logger = kwargs.get('Logger', logging.getLogger('CopyImage'))
+    logger = logging.getLogger(__name__ + '.CopyImage')
 
 
 
@@ -707,8 +707,8 @@ def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
 def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
     '''Create HTML to describe an element'''
     if Logger is None:
-        Logger = logging.getLogger("RowReport")
-        
+        Logger = logging.getLogger(__name__ + ".RowReport")
+
     if not isinstance(ColumnXPaths, list):
         xpathStrings = str(ColumnXPaths).strip().split(',')
         ColumnXPaths = xpathStrings

@@ -100,7 +100,7 @@ class SerialEMIDocImport(object):
         if not os.path.exists(OutputPath):
             os.makedirs(OutputPath)
 
-        logger = logging.getLogger("IDOC Import")
+        logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
 
         # VolumeObj = VolumeManager.Load(OutputPath, Create=True)
 

@@ -36,7 +36,7 @@ class VolumeManagerAppendTest(VolumeManagerTest):
 
     def runTest(self):
 
-        logger = logging.getLogger("VMAppendTest")
+        logger = logging.getLogger(__name__ + "VolumeManagerAppendTest")
         self.assertEqual(self.VolumeObj.tag, "Volume")
 
         # Try adding a block, first as a

@@ -456,7 +456,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
 
 
     if Logger is None:
-        Logger = logging.getLogger("FilterToFilterBruteRegistration")
+        Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
 
     stosNode = StosGroup.GetStosTransformNode(ControlFilter, MappedFilter)
 
@@ -1092,7 +1092,7 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
 
 def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
 
-    Logger = kwargs.get('Logger', logging.getLogger('StosGrid'))
+    Logger = logging.getLogger(__name__ + '.StosGrid')
 
     BlockNode = InputGroupNode.FindParent('Block')
 
@@ -1347,7 +1347,7 @@ def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGr
 def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupNode, ControlToVolumeTransform=None):
     ControlSection = Node.SectionNumber
 
-    Logger = logging.getLogger('SliceToVolume')
+    Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
 #    ControlToVolumeTransform = None:
 #    if VolumeOriginSectionNumber is None or VolumeOriginSectionNumber != ControlSection:
@@ -1450,9 +1450,9 @@ def RegistrationTreeFromStosMapNode(StosMapNode):
 def __MappedFilterForTransform(transform_node):
     return __GetFilter(transform_node,
                                 transform_node.MappedSectionNumber,
-                                transform_node.MappedChannelName, 
+                                transform_node.MappedChannelName,
                                 transform_node.MappedFilterName)
-    
+
 def __ControlFilterForTransform(transform_node):
     return __GetFilter(transform_node,
                                 transform_node.ControlSectionNumber,

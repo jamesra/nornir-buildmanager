@@ -35,7 +35,7 @@ __LoadedVolumeXMLDict__ = dict()
 def ValidateAttributesAreStrings(Element, logger=None):
 
     if logger is None:
-        logger = logging.getLogger('VolumeManager')
+        logger = logging.getLogger(__name__ + '.' + 'ValidateAttributesAreStrings')
 
     # Make sure each attribute is a string
     for k, v in enumerate(Element.attrib):
@@ -329,7 +329,7 @@ class XPropertiesElementWrapper(ElementTree.Element):
 
 class XElementWrapper(ElementTree.Element):
 
-    logger = logging.getLogger('VolumeManager')
+    logger = logging.getLogger(__name__ + '.' + 'XElementWrapper')
 
     def sort(self):
         '''Order child elements'''
@@ -844,7 +844,7 @@ class XElementWrapper(ElementTree.Element):
         # OK, check if we have a linked element to load.
 
         if '\\' in xpath:
-            Logger = logging.getLogger('Volume Manager')
+            Logger = logging.getLogger(__name__ + '.' + '__ElementLinkNameFromXPath')
             Logger.warn("Backslash found in xpath query, is this intentional or should it be a forward slash?")
             Logger.warn("XPath: " + xpath)
 
@@ -995,7 +995,7 @@ class XResourceElementWrapper(XElementWrapper):
                 else:
                     os.remove(self.FullPath)
             except:
-                Logger = logging.getLogger('Volume Manager')
+                Logger = logging.getLogger(__name__ + '.' + 'Clean')
                 Logger.warning('Could not delete cleaned directory: ' + self.FullPath)
                 pass
 
@@ -1149,7 +1149,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         self.Save(recurse=False)
 
     def LoadSubElement(self, Path):
-        logger = logging.getLogger('VolumeManager')
+        logger = logging.getLogger(__name__ + '.' + 'LoadSubElement')
         Filename = os.path.join(Path, "VolumeData.xml")
         if not os.path.exists(Filename):
             logger.error(Filename + " does not exist")
@@ -1204,7 +1204,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # pool = Pools.GetGlobalThreadPool()
 
-        logger = logging.getLogger('VolumeManager')
+        logger = logging.getLogger(__name__ + '.' + 'Save')
         tabs = '\t' * tabLevel
 
         if hasattr(self, 'FullPath'):
@@ -1299,7 +1299,7 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
 
         # pool = Pools.GetGlobalThreadPool()
 
-        logger = logging.getLogger('VolumeManager')
+        logger = logging.getLogger(__name__ + '.' + 'XLinkedContainerElementWrapper')
         tabs = '\t' * tabLevel
         logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'

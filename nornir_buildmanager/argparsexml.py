@@ -100,7 +100,7 @@ def _AddArgumentNodeToParser(parser, argNode):
             elif val in globals():
                 val = globals()[val]
             else:
-                logger = logging.getLogger("PipelineManager")
+                logger = logging.getLogger(__name__ + "._AddArgumentNodeToParser")
                 logger.error('Type not found in __builtins__ or module __dict__' + val)
                 prettyoutput.LogErr('Type not found in __builtins__ or module __dict__ ' + val)
                 raise Exception(message="%s type specified by argument node is not present in __builtins__ or module dictionary.  Must use a standard python type." % val)

@@ -77,7 +77,7 @@ def IsOutdated(OutputNode, InputNode, Logger=None):
     assert(hasattr(InputNode, 'Checksum'))
 
     if Logger is None:
-        Logger = logging.getLogger("RegistrationOperations")
+        Logger = logging.getLogger(__name__ + ".IsOutdated")
 
     if not os.path.exists(OutputNode.FullPath):
         Logger.info("Output transform did not exist: " + OutputNode.FullPath)

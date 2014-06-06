@@ -81,7 +81,7 @@ def VerifyTiles(LevelNode=None, **kwargs):
     ''' @LevelNode
     Eliminate any image files which cannot be parsed by Image Magick's identify command
     '''
-    logger = kwargs.get('Logger', logging.getLogger('VerifyTiles'))
+    logger = logging.getLogger(__name__ + '.VerifyTiles')
 
     InputLevelNode = LevelNode
     TilesValidated = int(InputLevelNode.attrib.get('TilesValidated', 0))
@@ -1015,7 +1015,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
             os.remove(ImageNode.FullPath)
 
     image.RemoveOnTransformCropboxMismatched(TransformNode, ImageNode, thisLevel)
-    image.RemoveOnTransformCropboxMismatched(TransformNode, MaskImageNode, thisLevel) 
+    image.RemoveOnTransformCropboxMismatched(TransformNode, MaskImageNode, thisLevel)
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 

@@ -41,7 +41,7 @@ class PruneObj:
            Uses a PruneData node to prune the specified mosaic file'''
 
         if(Logger is None):
-            Logger = logging.getLogger('PruneMosaic')
+            Logger = logging.getLogger(__name__ + '.PruneMosaic')
 
         Threshold = Parameters.get('Threshold', 0.0)
         if Threshold is None:

@@ -16,7 +16,7 @@ def SetFilterLock(Node, Locked):
 
 def SetPruneThreshold(PruneNode, Value, **kwargs):
 
-    logger = kwargs.get('Logger', logging.getLogger('setters'))
+    logger = logging.getLogger(__name__ + '.SetPruneThreshold')
 
     PruneNode.UserRequestedCutoff = str(Value)
 
@@ -29,7 +29,7 @@ def SetPruneThreshold(PruneNode, Value, **kwargs):
 
 def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs):
 
-    logger = kwargs.get('Logger', logging.getLogger('setters'))
+    logger = logging.getLogger(__name__ + '.SetContrastRange')
 
     if math.isnan(MinValue):
         minStr = "Default"
@@ -61,7 +61,7 @@ def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs)
 
 def SetFilterContrastLocked(FilterNode, Locked, **kwargs):
 
-    logger = kwargs.get('Logger', logging.getLogger('setters'))
+    logger = logging.getLogger(__name__ + '.SetFilterContrastLocked')
 
     FilterNode.Locked = bool(int(Locked))
 

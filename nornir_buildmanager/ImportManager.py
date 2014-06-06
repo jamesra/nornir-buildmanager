@@ -166,7 +166,7 @@ class ImportManager(object):
 
         VolumeObj = VM.VolumeManager.Load(OutPath, Create=True)
 
-        logger = logging.getLogger('ImportManager')
+        logger = logging.getLogger(__name__ + '.ConvertAll')
 
         # Get all of the directories we should consider running PMGToMosaic on.
         for extension in self.ImporterDict.keys():

@@ -89,7 +89,7 @@ class ArgumentSet():
 
             iEndVar = iEndVar - 1
 
-        logger = logging.getLogger("PipelineManager")
+        logger = logging.getLogger(__name__ + ".ReplaceVariable")
         logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         prettyoutput.LogErr("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         sys.exit()
@@ -270,7 +270,7 @@ class ArgumentSet():
 # from nornir_buildmanager.Data import Pipelines
 class PipelineError(Exception):
     '''An expected node did not exist'''
-     
+
 
     def __init__(self, VolumeElem=None, PipelineNode=None, message=None, **kwargs):
         super(PipelineError, self).__init__(**kwargs)
@@ -367,13 +367,13 @@ class PipelineListIntersectionFailed(PipelineError):
 
         if not "message" in kwargs:
             kwargs['message'] = '\n'.join(PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=listOfValid, value=attribValue))
-        
+
         super(PipelineListIntersectionFailed, self).__init__(**kwargs)
 
         self.listOfValid = listOfValid
         self.attribValue = attribValue
-        
-        
+
+
     @classmethod
     def GenErrorMessage(cls, list_of_valid, value):
         s = []
@@ -383,7 +383,7 @@ class PipelineListIntersectionFailed(PipelineError):
         return s
 
     def __CoreErrorList(self):
-        
+
         s = PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=self.listOfValid, value=self.attribValue)
         s.extend(super(PipelineError, self).__CoreErrorList())
         return s
@@ -679,7 +679,7 @@ class PipelineManager(object):
                     PipelineManager.logger.error(str(e))
                     PipelineManager.logger.error("Undexpected error, exiting pipeline")
                     sys.exit()
-                    
+
         finally:
             self.RemovePipelineNodeVariable(ArgSet, PipelineNode)
 
