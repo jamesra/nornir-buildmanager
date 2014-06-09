@@ -2044,6 +2044,15 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         else:
             return None
 
+    def CropBoxDownsampled(self, downsample):
+        (Xo, Yo, Width, Height) = self.CropBox
+        Xo = Xo // float(downsample)
+        Yo = Yo // float(downsample)
+        Width = math.ceil(Width / float(downsample))
+        Height = math.ceil(Height / float(downsample))
+
+        return (Xo, Yo, Width, Height)
+
     @CropBox.setter
     def CropBox(self, bounds):
         '''Sets boundaries in fixed space for output from the transform.

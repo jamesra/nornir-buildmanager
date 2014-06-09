@@ -5,6 +5,7 @@ Created on Feb 19, 2014
 '''
 
 import os
+import math
 import nornir_imageregistration.core as core
 
 
@@ -39,10 +40,8 @@ def RemoveOnDimensionMismatch(imageFullPath, area):
 
 def RemoveOnTransformCropboxMismatched(transform_node, image_node, image_level):
     if not transform_node.CropBox is None:
-        (Xo, Yo, Width, Height) = transform_node.CropBox
-        AdjustedWidth = Width // image_level
-        AdjustedHeight = Height // image_level 
-        return RemoveOnDimensionMismatch(image_node.FullPath, (AdjustedWidth, AdjustedHeight))
+        (Xo, Yo, Width, Height) = transform_node.CropBoxDownsampled(image_level)
+        return RemoveOnDimensionMismatch(image_node.FullPath, (Width, Height))
 
     return False
 
