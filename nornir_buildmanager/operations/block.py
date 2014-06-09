@@ -1769,7 +1769,7 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
             StosMosaicTransforms.append(OutputTransformNode)
 
     if len(StosMosaicTransforms) == 0:
-        return None
+        return
 
     __MoveMosaicsToZeroOrigin(StosMosaicTransforms)
 
