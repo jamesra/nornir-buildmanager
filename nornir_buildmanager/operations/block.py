@@ -1769,12 +1769,21 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
             StosMosaicTransforms.append(OutputTransformNode)
 
     if len(StosMosaicTransforms) == 0:
-        return
+        return None
+
+    __MoveMosaicsToZeroOrigin(StosMosaicTransforms):
+
+    yield BlockNode
+
+def __MoveMosaicsToZeroOrigin(StosMosaicTransforms):
 
     mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
 
     # Translate needs to accound for the fact that the mosaics need an origin of 0,0 for assemble to work.  We also need to figure out the largest image dimension
     # and set the CropBox property so each image is the same size after assemble is used.
+    if mosaicToVolume.IsOriginAtZero():
+        return None
+
     mosaicToVolume.TranslateToZeroOrigin()
 
     (minY, minX, maxY, maxX) = mosaicToVolume.VolumeBounds
@@ -1791,7 +1800,7 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
 
     mosaicToVolume.Save()
 
-    yield BlockNode
+    return
 
 
 def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNode, OutputTransformName, Logger, **kwargs):
