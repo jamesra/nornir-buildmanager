@@ -1771,7 +1771,7 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
     if len(StosMosaicTransforms) == 0:
         return None
 
-    __MoveMosaicsToZeroOrigin(StosMosaicTransforms):
+    __MoveMosaicsToZeroOrigin(StosMosaicTransforms)
 
     yield BlockNode
 
