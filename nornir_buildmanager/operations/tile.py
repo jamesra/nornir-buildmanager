@@ -1043,8 +1043,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
             # Figure out the downsample level, adjust the crop box, and crop
             Xo = Xo / float(thisLevel)
             Yo = Yo / float(thisLevel)
-            Width = Width / float(thisLevel)
-            Height = Height / float(thisLevel)
+            Width = math.ceil(Width / float(thisLevel))
+            Height = math.ceil(Height / float(thisLevel))
 
             Logger.warn("Cropping assembled image to volume boundary")
 
