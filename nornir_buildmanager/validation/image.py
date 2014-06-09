@@ -11,7 +11,8 @@ import nornir_imageregistration.core as core
 
 def DimensionsMatch(imageFullPath, area):
     '''Return true if the area matches the area of the image.
-    
+       :param str imageFullPath: Path to image file on disk
+       :param tuple area: (Width, Height)
     '''
 
     if area is None:
