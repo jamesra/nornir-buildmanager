@@ -1829,7 +1829,9 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
     SectionMappingNode = StosGroupNode.GetSectionMapping(MappedSectionNumber)
     if SectionMappingNode is None:
         stosMosaicTransform = _ApplyStosToMosaicTransform(None, TransformNode, OutputTransformName, Logger, **kwargs)
-        SaveTransformParent = True
+        if not stosMosaicTransform is None:
+            SaveTransformParent = True
+        
     else:
         for stostransform in SectionMappingNode.Transforms:
             if not stostransform.MappedChannelName == MappedChannelNode.Name:
@@ -1839,7 +1841,8 @@ def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNod
                 continue
 
             stosMosaicTransform = _ApplyStosToMosaicTransform(stostransform, TransformNode, OutputTransformName, Logger, **kwargs)
-            SaveTransformParent = True
+            if not stosMosaicTransform is None:
+                SaveTransformParent = True
 
 #         mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
 #         mosaicToVolume.TranslateToZeroOrigin()
