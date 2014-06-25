@@ -615,10 +615,15 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
 def GetImage(BlockNode, SectionNumber, Channel, Filter, Downsample):
 
     sectionNode = BlockNode.GetSection(SectionNumber)
+    if sectionNode is None:
+        return (None, None)
+    
     channelNode = sectionNode.GetChannel(Channel)
+    if channelNode is None:
+        return (None, None)
+    
     filterNode = channelNode.GetFilter(Filter)
-
-    if sectionNode is None or channelNode is None or filterNode is None:
+    if filterNode is None:
         return (None, None)
 
     return (filterNode.GetOrCreateImage(Downsample), filterNode.GetMaskImage(Downsample))
@@ -1671,16 +1676,31 @@ def _CreateStosToMosaicTransformIfNotCurrent(StosTransformNode, TransformNode, O
         return OutputTransformNode
     else:
         return None
+    
+
+def _GetStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformName):
+    OutputTransformNode = TransformNode.Parent.GetTransform(OutputTransformName)
+    if OutputTransformNode is None:
+        # Create transform node for the output
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type="MosaicToVolume", Path=OutputTransformName + '.mosaic')
+        (added, OutputTransformNode) = TransformNode.Parent.UpdateOrAddChildByAttrib(OutputTransformNode)
+        
+    return OutputTransformNode
 
 
 def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformName, Logger, **kwargs):
 
     MappedFilterNode = TransformNode.FindParent('Filter')
 
-    OutputTransformNode = _CreateStosToMosaicTransformIfNotCurrent(StosTransformNode, TransformNode, OutputTransformName)
-    if OutputTransformNode is None:
+    OutputTransformNode = _GetStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformName)
+    
+    
+    #NOt regenerating is a good idea, but the problem is that we adjust the transform every time.  This moves the fixed space repeatedly further and further from the origin.
+    #OutputTransformNode = _CreateStosToMosaicTransformIfNotCurrent(StosTransformNode, TransformNode, OutputTransformName)  
+    #if OutputTransformNode is None:
+        
         # The node is current, so do no work
-        return None
+        #return None
 
     OutputTransformNode.InputTransformChecksum = TransformNode.Checksum
     OutputTransformNode.OutputTransformName = OutputTransformName
