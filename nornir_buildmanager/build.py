@@ -240,9 +240,9 @@ def InitLogging(buildArgs):
         if 'debug' in args:
             SetupLogging(args.volumepath, Level=logging.DEBUG)
         else:
-            SetupLogging(args.volumepath, Level=logging.WARN)
+            SetupLogging(Level=logging.WARN)
     else:
-        SetupLogging(os.curdir, Level=logging.WARN)
+        SetupLogging(Level=logging.WARN)
 
 def Execute(buildArgs=None):
 
