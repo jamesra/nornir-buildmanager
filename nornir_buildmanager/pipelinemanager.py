@@ -9,7 +9,8 @@ import os
 import re
 import sys
 import traceback
-import xml.etree
+# import xml.etree
+from xml.etree import cElementTree as ElementTree
 import collections
 
 from nornir_buildmanager import VolumeManagerETree
@@ -291,9 +292,9 @@ class PipelineError(Exception):
         '''return a list of error strings'''
         s = []
         if not self.PipelineNode is None:
-            s.append("Pipeline Element: " + xml.etree.ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
+            s.append("Pipeline Element: " + ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
         if not self.VolumeElem is None:
-            s.append("Volume Element: " + xml.etree.ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
+            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
         return s
 
     def ErrorList(self):
@@ -466,7 +467,7 @@ class PipelineManager(object):
 
     @classmethod
     def ToElementString(self, element):
-        strList = xml.etree.ElementTree.tostringlist(element)
+        strList = ElementTree.tostringlist(element)
 
         if element.tag == 'IterateVolumeElements':
             outStr = element.attrib['XPath']
@@ -505,8 +506,8 @@ class PipelineManager(object):
     def LoadPipelineXML(cls, PipelineXML):
         if isinstance(PipelineXML, str):
             if cls._CheckPipelineXMLExists(PipelineXML):
-                return xml.etree.ElementTree.parse(PipelineXML)
-        elif isinstance(PipelineXML, xml.etree.ElementTree.ElementTree):
+                return ElementTree.parse(PipelineXML)
+        elif isinstance(PipelineXML, ElementTree.ElementTree):
                 return PipelineXML
 
         raise Exception("Invalid argument: " + str(PipelineXML))
@@ -516,7 +517,7 @@ class PipelineManager(object):
 
         PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
-        assert(isinstance(PipelineXML, xml.etree.ElementTree.ElementTree))
+        assert(isinstance(PipelineXML, ElementTree.ElementTree))
 
         PipelineNodes = PipelineXML.findall("Pipeline")
 
@@ -851,7 +852,7 @@ class PipelineManager(object):
 
         if stageFunc is None:
             errorStr = "Stage implementation not found: " + str(PipelineModule) + "." + str(PipelineFunction)
-            PipelineManager.logger.error(errorStr + xml.etree.ElementTree.tostring(PipelineNode, encoding='utf-8'))
+            PipelineManager.logger.error(errorStr + ElementTree.tostring(PipelineNode, encoding='utf-8'))
             raise PipelineError(VolumeElem=VolumeElem, PipelineNode=PipelineNode, message=errorStr)
         else:
             prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
