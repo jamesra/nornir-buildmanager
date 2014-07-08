@@ -90,7 +90,7 @@ class TestBase(unittest.TestCase):
 
         os.makedirs(self.TestOutputPath)
 
-        SetupLogging(self.TestLogPath)
+        SetupLogging()
         self.Logger = logging.getLogger(self.classname)
 
     def tearDown(self):
