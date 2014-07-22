@@ -613,6 +613,8 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
         TableEntries["1"] = HTMLAnchorTemplate % {'href' : LogSrcFullPath, 'body' : "Log File" }
         TableEntries["3"] = ColumnList([HTMLDriftSettleAnchor, HTMLDriftGridAnchor])
     else:
+        TableEntries = []
+        
         if 'AverageTileDrift' in DataNode.attrib:
             TableEntries.append(['Average tile drift:', '%.3g nm/sec' % float(DataNode.AverageTileDrift)])
 
