@@ -580,7 +580,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftSettleThumbnailOutputFullPath)
         # if not os.path.exists(DriftSettleThumbnailOutputFullPath):
-        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime(Data, DriftSettleThumbnailOutputFullPath))
+        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime, Data, DriftSettleThumbnailOutputFullPath)
 
         DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
         DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
@@ -588,7 +588,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftGridThumbnailFilename)
         # if not os.path.exists(DriftGridThumbnailFilename):
-        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid(Data, DriftGridThumbnailOutputFullPath))
+        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid, Data, DriftGridThumbnailOutputFullPath)
 
         # Build a histogram of drift settings
 #        x = []
