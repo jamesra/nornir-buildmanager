@@ -216,7 +216,7 @@ def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
     if OutputDir is None:
         return
 
-    logger = kwargs.get('Logger', logging.getLogger('CopyFiles'))
+    logger = logging.getLogger(__name__ + '.CopyFiles')
 
     if not os.path.exists(OutputDir):
         os.makedirs(OutputDir)
@@ -253,7 +253,7 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
         return
 
     OutputDir = _AbsoluePathFromRelativePath(FilterNode, OutputDir)
-    logger = kwargs.get('Logger', logging.getLogger('CopyImage'))
+    logger = logging.getLogger(__name__ + '.CopyImage')
 
     if not os.path.exists(OutputDir):
         os.makedirs(OutputDir)
@@ -578,7 +578,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftSettleThumbnailOutputFullPath)
         # if not os.path.exists(DriftSettleThumbnailOutputFullPath):
-        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime(Data, DriftSettleThumbnailOutputFullPath))
+        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime, Data, DriftSettleThumbnailOutputFullPath)
 
         DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
         DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
@@ -586,7 +586,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftGridThumbnailFilename)
         # if not os.path.exists(DriftGridThumbnailFilename):
-        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid(Data, DriftGridThumbnailOutputFullPath))
+        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid, Data, DriftGridThumbnailOutputFullPath)
 
         # Build a histogram of drift settings
 #        x = []
@@ -611,6 +611,8 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
         TableEntries["1"] = HTMLAnchorTemplate % {'href' : LogSrcFullPath, 'body' : "Log File" }
         TableEntries["3"] = ColumnList([HTMLDriftSettleAnchor, HTMLDriftGridAnchor])
     else:
+        TableEntries = []
+        
         if 'AverageTileDrift' in DataNode.attrib:
             TableEntries.append(['Average tile drift:', '%.3g nm/sec' % float(DataNode.AverageTileDrift)])
 
@@ -704,6 +706,9 @@ def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
 
 def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
     '''Create HTML to describe an element'''
+    if Logger is None:
+        Logger = logging.getLogger(__name__ + ".RowReport")
+
     if not isinstance(ColumnXPaths, list):
         xpathStrings = str(ColumnXPaths).strip().split(',')
         ColumnXPaths = xpathStrings

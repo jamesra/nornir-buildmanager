@@ -40,4 +40,5 @@ class MosaicVolume(volume.Volume):
 
             mosaicObj.SaveToMosaicFile(transformNode.FullPath)
 
-            transformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(transformNode.FullPath)
+            transformNode.ResetChecksum()
+            # transformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(transformNode.FullPath)

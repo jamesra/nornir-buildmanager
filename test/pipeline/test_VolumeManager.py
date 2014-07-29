@@ -8,20 +8,19 @@ import logging
 import os
 import shutil
 import unittest
-import unittest
 
 from nornir_buildmanager.VolumeManagerETree import *
 import nornir_buildmanager.importers.pmg as pmg
 import nornir_shared.files
 import nornir_shared.misc
+import test.testbase
 
-
-class VolumeManagerTest(unittest.TestCase):
+class VolumeManagerTest(test.testbase.TestBase):
 
     def setUp(self):
-        nornir_shared.misc.SetupLogging(os.path.join(os.getcwd(), "test_volumemanager"))
+        super(VolumeManagerTest, self).setUp()
 
-        self.VolumeFullPath = os.path.join(os.getcwd(), "test/data/TestOutput/test_volumemanager")
+        self.VolumeFullPath = self.TestOutputPath
 
         if os.path.exists(self.VolumeFullPath):
             shutil.rmtree(self.VolumeFullPath)
@@ -37,7 +36,7 @@ class VolumeManagerAppendTest(VolumeManagerTest):
 
     def runTest(self):
 
-        logger = logging.getLogger("VMAppendTest")
+        logger = logging.getLogger(__name__ + "VolumeManagerAppendTest")
         self.assertEqual(self.VolumeObj.tag, "Volume")
 
         # Try adding a block, first as a

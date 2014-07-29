@@ -36,7 +36,7 @@ def MovePath(Node, NewPath, **kwargs):
         oldFullPath = Node.FullPath
         Node.Path = NewPath
 
-        logger = kwargs.get('Logger', logging.getLogger('MovePath'))
+        logger = logging.getLogger(__name__ + '.MovePath')
 
         logger.info("Moving " + oldFullPath + "\n  to " + Node.FullPath)
 

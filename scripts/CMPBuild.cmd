@@ -7,4 +7,4 @@ nornir-build AdjustContrast -volume %1  -InputFilter ShadingCorrected -OutputFil
 nornir-build Mosaic -volume %1  -InputFilter LeveledShadingCorrected -RegistrationDownsample 2 -InputTransform Prune -OutputTransform Grid
 nornir-build Assemble -volume %1  -Filters ShadingCorrected -Downsample 1 -NoInterlace -Transform Grid
 nornir-build ExportImages -volume %1  -Filters ShadingCorrected -Downsample 1 -Output %1_Mosaic
-nornir-build MosaicReport -volume %1  -PruneFilter ShadingCorrected -ContrastFilter ShadingCorrected -AssembleFilter ShadingCorrected -AssembleDownsample 1
+nornir-build MosaicReport -volume %1  -PruneFilter ShadingCorrected -ContrastFilter Raw8 -AssembleFilter ShadingCorrected -AssembleDownsample 1

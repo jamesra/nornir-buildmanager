@@ -81,7 +81,7 @@ def VerifyTiles(LevelNode=None, **kwargs):
     ''' @LevelNode
     Eliminate any image files which cannot be parsed by Image Magick's identify command
     '''
-    logger = kwargs.get('Logger', logging.getLogger('VerifyTiles'))
+    logger = logging.getLogger(__name__ + '.VerifyTiles')
 
     InputLevelNode = LevelNode
     TilesValidated = int(InputLevelNode.attrib.get('TilesValidated', 0))
@@ -925,7 +925,7 @@ def MigrateMultipleImageSets(FilterNode, Logger, **kwargs):
     # return MigrationOccurred
 
 
-def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, **kwargs)
 
 
@@ -944,7 +944,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     return OutputChannelNode
 
 
-def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=False, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
     InputChannelNode = FilterNode.FindParent('Channel')
@@ -1014,10 +1014,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         if os.path.exists(ImageNode.FullPath):
             os.remove(ImageNode.FullPath)
 
-    if not TransformNode.CropBox is None:
-        (Xo, Yo, Width, Height) = TransformNode.CropBox
-        image.RemoveOnDimensionMismatch(ImageNode.FullPath, (Width, Height))
-        image.RemoveOnDimensionMismatch(MaskImageNode.FullPath, (Width, Height))
+    image.RemoveOnTransformCropboxMismatched(TransformNode, ImageNode, thisLevel)
+    image.RemoveOnTransformCropboxMismatched(TransformNode, MaskImageNode, thisLevel)
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
@@ -1040,13 +1038,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         if not TransformNode.CropBox is None:
             cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
-            (Xo, Yo, Width, Height) = TransformNode.CropBox
-
-            # Figure out the downsample level, adjust the crop box, and crop
-            Xo = Xo / float(thisLevel)
-            Yo = Yo / float(thisLevel)
-            Width = Width / float(thisLevel)
-            Height = Height / float(thisLevel)
+            (Xo, Yo, Width, Height) = TransformNode.CropBoxDownsampled(thisLevel)
 
             Logger.warn("Cropping assembled image to volume boundary")
 

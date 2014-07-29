@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import unittest
+import cProfile
 
 from nornir_shared.misc import SetupLogging
 
@@ -66,9 +67,20 @@ class TestBase(unittest.TestCase):
 
         return self.TestHost + "/" + self.classname
 
+    @property
+    def TestProfilerOutputPath(self):
+        return os.path.join(self.TestOutputPath, self.classname + '.profile')
+
+
     def setUp(self):
 
         super(TestBase, self).setUp()
+
+        self.profiler = None
+
+        if 'PROFILE' in os.environ:
+            self.profiler = cProfile.Profile()
+            self.profiler.enable()
 
         self.TestDataPath = self.TestInputPath
 
@@ -78,6 +90,14 @@ class TestBase(unittest.TestCase):
 
         os.makedirs(self.TestOutputPath)
 
-        SetupLogging(self.TestLogPath)
+        SetupLogging()
         self.Logger = logging.getLogger(self.classname)
+
+    def tearDown(self):
+
+        if not self.profiler is None:
+            self.profiler.dump_stats(self.TestProfilerOutputPath)
+
+        unittest.TestCase.tearDown(self)
+
 

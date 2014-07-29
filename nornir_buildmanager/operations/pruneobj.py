@@ -41,7 +41,7 @@ class PruneObj:
            Uses a PruneData node to prune the specified mosaic file'''
 
         if(Logger is None):
-            Logger = logging.getLogger('PruneMosaic')
+            Logger = logging.getLogger(__name__ + '.PruneMosaic')
 
         Threshold = Parameters.get('Threshold', 0.0)
         if Threshold is None:
@@ -138,7 +138,9 @@ class PruneObj:
 
         # Setting this value automatically converts the double to a string using the %g formatter.  This is a precision of two.  The RemoveOnMismatch value needs to use a matching precision
         OutputTransformNode.Threshold = Threshold
-        OutputTransformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)
+        OutputTransformNode.ResetChecksum()
+
+        # OutputTransformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)
         return [TransformParent, PruneNodeParent]
 
     @classmethod

@@ -9,7 +9,9 @@ import os
 import re
 import sys
 import traceback
-import xml.etree
+# import xml.etree
+from xml.etree import cElementTree as ElementTree
+import collections
 
 from nornir_buildmanager import VolumeManagerETree
 import nornir_shared.misc
@@ -65,6 +67,8 @@ class ArgumentSet():
         raise KeyError(str(key) + " not found")
 
     def ReplaceVariable(self, xpath, iStart):
+        '''Replace # variable names in an xpath with variable string values'''
+
         # Find the next # if it exists
         iStart = iStart + 1  # Skip the # symbol
         iEndVar = xpath[iStart + 1:].find('#')
@@ -86,7 +90,7 @@ class ArgumentSet():
 
             iEndVar = iEndVar - 1
 
-        logger = logging.getLogger("PipelineManager")
+        logger = logging.getLogger(__name__ + ".ReplaceVariable")
         logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         prettyoutput.LogErr("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         sys.exit()
@@ -268,6 +272,7 @@ class ArgumentSet():
 class PipelineError(Exception):
     '''An expected node did not exist'''
 
+
     def __init__(self, VolumeElem=None, PipelineNode=None, message=None, **kwargs):
         super(PipelineError, self).__init__(**kwargs)
 
@@ -287,9 +292,9 @@ class PipelineError(Exception):
         '''return a list of error strings'''
         s = []
         if not self.PipelineNode is None:
-            s.append("Pipeline Element: " + xml.etree.ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
+            s.append("Pipeline Element: " + ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
         if not self.VolumeElem is None:
-            s.append("Volume Element: " + xml.etree.ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
+            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
         return s
 
     def ErrorList(self):
@@ -360,16 +365,27 @@ class PipelineListIntersectionFailed(PipelineError):
     '''A regular expression search could not match any nodes'''
 
     def __init__(self, listOfValid, attribValue, **kwargs):
+
+        if not "message" in kwargs:
+            kwargs['message'] = '\n'.join(PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=listOfValid, value=attribValue))
+
         super(PipelineListIntersectionFailed, self).__init__(**kwargs)
 
         self.listOfValid = listOfValid
         self.attribValue = attribValue
 
-    def __CoreErrorList(self):
+
+    @classmethod
+    def GenErrorMessage(cls, list_of_valid, value):
         s = []
-        s.append("An attribute was not in the list of valid values.")
-        s.append("List: " + str(self.listOfValid))
-        s.append("Attrib value: " + self.attribValue)
+        s.append("Value was not in list")
+        s.append("  List: " + str(list_of_valid))
+        s.append("  Value: " + str(value))
+        return s
+
+    def __CoreErrorList(self):
+
+        s = PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=self.listOfValid, value=self.attribValue)
         s.extend(super(PipelineError, self).__CoreErrorList())
         return s
 
@@ -451,7 +467,7 @@ class PipelineManager(object):
 
     @classmethod
     def ToElementString(self, element):
-        strList = xml.etree.ElementTree.tostringlist(element)
+        strList = ElementTree.tostringlist(element)
 
         if element.tag == 'IterateVolumeElements':
             outStr = element.attrib['XPath']
@@ -490,8 +506,8 @@ class PipelineManager(object):
     def LoadPipelineXML(cls, PipelineXML):
         if isinstance(PipelineXML, str):
             if cls._CheckPipelineXMLExists(PipelineXML):
-                return xml.etree.ElementTree.parse(PipelineXML)
-        elif isinstance(PipelineXML, xml.etree.ElementTree.ElementTree):
+                return ElementTree.parse(PipelineXML)
+        elif isinstance(PipelineXML, ElementTree.ElementTree):
                 return PipelineXML
 
         raise Exception("Invalid argument: " + str(PipelineXML))
@@ -501,7 +517,7 @@ class PipelineManager(object):
 
         PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
-        assert(isinstance(PipelineXML, xml.etree.ElementTree.ElementTree))
+        assert(isinstance(PipelineXML, ElementTree.ElementTree))
 
         PipelineNodes = PipelineXML.findall("Pipeline")
 
@@ -655,7 +671,7 @@ class PipelineManager(object):
                     PipelineManager.logger.info("Search statement did not match.  Skipping to next iteration\n")
                     break
                 except PipelineListIntersectionFailed as e:
-                    PipelineManager.logger.info("Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + str(e))
+                    PipelineManager.logger.info("Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + e.message)
                     break
                 except PipelineRegExSearchFailed as e:
                     PipelineManager.logger.info("Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
@@ -664,6 +680,7 @@ class PipelineManager(object):
                     PipelineManager.logger.error(str(e))
                     PipelineManager.logger.error("Undexpected error, exiting pipeline")
                     sys.exit()
+
         finally:
             self.RemovePipelineNodeVariable(ArgSet, PipelineNode)
 
@@ -706,7 +723,8 @@ class PipelineManager(object):
 
 
     def RequireSetMembership(self, ArgSet, VolumeElem, PipelineNode):
-        '''If the attribute value is not present in the provided list the element is skipped'''
+        '''If the attribute value is not present in the provided list the element is skipped.
+           If the provided list is none we do not skip.'''
 
         RootForMatch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
 
@@ -714,19 +732,26 @@ class PipelineManager(object):
         AttribName = ArgSet.SubstituteStringVariables(AttribName)
 
         listVariable = PipelineNode.attrib.get("List", None)
-        listOfValid = ArgSet.SubstituteStringVariables(listVariable)
+        if listVariable is None:
+            raise PipelineError(VolumeElem=VolumeElem,
+                                PipelineNode=PipelineNode,
+                                message="List attribute missing on <RequireSetMembership> node")
 
-        Attrib = RootForMatch.attrib.get(AttribName, None)
+        listOfValid = ArgSet.TryGetSubstituteObject(listVariable)
+        if listOfValid is None:
+            # No set to compare with.  We allow it.
+            return
+
+        Attrib = getattr(RootForMatch, AttribName, None)
         if Attrib is None:
             raise PipelineArgumentNotFound(VolumeElem=VolumeElem,
                                            PipelineNode=PipelineNode,
                                            argname=AttribName)
 
         if not Attrib in listOfValid:
-             raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, listOfValid=listOfValid, attribValue=Attrib)
+            raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, listOfValid=listOfValid, attribValue=Attrib)
 
         return
-
 
 
     def ProcessRequireMatchNode(self, ArgSet, VolumeElem, PipelineNode):
@@ -802,6 +827,15 @@ class PipelineManager(object):
         if(NumProcessed == 0):
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
+    @classmethod
+    def _SaveNodes(cls, NodesToSave, VolumePath):
+        if not NodesToSave is None:
+            if isinstance(NodesToSave, collections.Iterable):
+                for node in NodesToSave:
+                    VolumeManagerETree.VolumeManager.Save(VolumePath, node)
+            else:
+                VolumeManagerETree.VolumeManager.Save(VolumePath, NodesToSave)
+
     def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
         PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
@@ -818,7 +852,7 @@ class PipelineManager(object):
 
         if stageFunc is None:
             errorStr = "Stage implementation not found: " + str(PipelineModule) + "." + str(PipelineFunction)
-            PipelineManager.logger.error(errorStr + xml.etree.ElementTree.tostring(PipelineNode, encoding='utf-8'))
+            PipelineManager.logger.error(errorStr + ElementTree.tostring(PipelineNode, encoding='utf-8'))
             raise PipelineError(VolumeElem=VolumeElem, PipelineNode=PipelineNode, message=errorStr)
         else:
             prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
@@ -872,12 +906,8 @@ class PipelineManager(object):
                     # if they return false we do not need to run the expensive save operation
                     NodesToSave = stageFunc(**kwargs)
 
-                if not NodesToSave is None:
-                    if isinstance(NodesToSave, list):
-                        for node in NodesToSave:
-                            VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], node)
-                    else:
-                        VolumeManagerETree.VolumeManager.Save(ArgSet.Arguments["volumepath"], NodesToSave)
+                PipelineManager._SaveNodes(NodesToSave, VolumePath=ArgSet.Arguments["volumepath"])
+
             finally:
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
@@ -921,7 +951,6 @@ def _GetVariableName(PipelineNode):
         # PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
     elif PipelineNode.tag == "Select":
         raise PipelineError(PipelineNode=PipelineNode, message="Variable name attribute required on Select Element")
-
 
 
 if __name__ == "__main__":

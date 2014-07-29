@@ -218,10 +218,28 @@ def call_importer(args):
 def call_pipeline(args):
     pipelinemanager.PipelineManager.RunPipeline(PipelineXmlFile=args.PipelineXmlFile, PipelineName=args.PipelineName, args=args)
 
+def InitLogging(buildArgs):
+
+#    nornir_shared.Misc.RunWithProfiler('Execute()', "C:/Temp/profile.pr")
+
+    parser = BuildParserRoot()
+
+    (args, extraargs) = parser.parse_known_args(buildArgs)
+
+    if 'volumepath' in args:
+        if 'debug' in args:
+            SetupLogging(args.volumepath, Level=logging.DEBUG)
+        else:
+            SetupLogging(Level=logging.WARN)
+    else:
+        SetupLogging(Level=logging.WARN)
+
 def Execute(buildArgs=None):
 
     if buildArgs is None:
         buildArgs = sys.argv[1:]
+
+    InitLogging(buildArgs)
 
     # print "Current Working Directory: " + os.getcwd()
 
@@ -314,23 +332,8 @@ def Execute(buildArgs=None):
 #
 #    eh.setFormatter(formatter)
 
-def Main():
-
-#    nornir_shared.Misc.RunWithProfiler('Execute()', "C:/Temp/profile.pr")
-
-    parser = BuildParserRoot()
-
-    (args, extraargs) = parser.parse_known_args()
-
-    if 'volumepath' in args:
-        if 'debug' in args:
-            SetupLogging(args.volumepath, Level=logging.DEBUG)
-        else:
-            SetupLogging(args.volumepath, Level=logging.WARN)
-
-    Execute()
 
 
 if __name__ == '__main__':
-    Main()
+    Execute()
 

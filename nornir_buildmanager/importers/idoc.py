@@ -100,7 +100,7 @@ class SerialEMIDocImport(object):
         if not os.path.exists(OutputPath):
             os.makedirs(OutputPath)
 
-        logger = logging.getLogger("IDOC Import")
+        logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
 
         # VolumeObj = VolumeManager.Load(OutputPath, Create=True)
 
@@ -391,7 +391,8 @@ class SerialEMIDocImport(object):
             if MFile.RemoveInvalidMosaicImages(OutputImagePath):
                 MFile.Save(SupertilePath)
 
-            transformObj.Checksum = MFile.Checksum
+            transformObj.ResetChecksum()
+            # transformObj.Checksum = MFile.Checksum
 
 
 def GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
