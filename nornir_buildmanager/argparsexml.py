@@ -18,14 +18,16 @@ def _ConvertValueToPythonType(val):
         return True
     elif val.lower() == 'false':
         return False
+    elif '.' in val:
+        try:
+            return float(val)
+        except:
+            pass
     else:
         try:
             return int(val)
         except:
-            try:
-                return float(val)
-            except:
-                pass
+            pass
 
     return val
 
@@ -33,7 +35,7 @@ def _ConvertValueToPythonType(val):
 def _AddArgumentNodeToParser(parser, argNode):
     '''Returns a dictionary that can be added to a parser'''
 
-    attribDictCopy = copy.deepcopy(argNode.attrib)
+    attribDictCopy = copy.copy(argNode.attrib)
     Flag = ""
 
     for key in attribDictCopy:
