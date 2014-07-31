@@ -36,3 +36,6 @@ nosetests.xml
 /Logs/
 /test_volumemanager/
 /StosBrute16/
+/.externalToolBuilders/
+/StosBrute8/
+/StosBrute32/
