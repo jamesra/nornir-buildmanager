@@ -600,17 +600,19 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
     if FilterIsPopulated(FilterNode, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
         OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
 
-    if(OutputFilterNode):
+    if(OutputFilterNode is not None):
         if(not OutputFilterNode.Locked):
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
 
     if not OutputFilterNode is None:
-        # Nothing to do
+        
         if HistogramElementRemoved:
             return FilterNode
         else:
+            # Check that there are the correct number of leveled tiles in the output directory
+            
             return None
 
     # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
