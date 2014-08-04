@@ -1730,29 +1730,39 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
         assert(MosaicTransform.FixedBoundingBox[0] == 0 and MosaicTransform.FixedBoundingBox[1] == 0)
         # MosaicTransform.TranslateToZeroOrigin()
 
-        Pool = pools.GetGlobalThreadPool()
+        
 
         Tasks = []
 
         ControlImageBounds = SToV.ControlImageDim
-
-        for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
-            task = Pool.add_task(imagename, StoVTransform.AddTransform, MosaicToSectionTransform)
-            task.imagename = imagename
-            if hasattr(MosaicToSectionTransform, 'gridWidth'):
-                task.dimX = MosaicToSectionTransform.gridWidth
-            if hasattr(MosaicToSectionTransform, 'gridHeight'):
-                task.dimY = MosaicToSectionTransform.gridHeight
-
-            Tasks.append(task)
-
-        for task in Tasks:
-            try:
-                MosaicToVolume = task.wait_return()
-                MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
-            except:
-                Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
-                pass
+        
+        UsePool = False
+        if UsePool:
+            #This is a parallel operation, but the Python GIL is so slow using threads is slower.
+            Pool = pools.GetGlobalMultithreadingPool()
+    
+            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
+                task = Pool.add_task(imagename, StoVTransform.AddTransform, MosaicToSectionTransform)
+                task.imagename = imagename
+                if hasattr(MosaicToSectionTransform, 'gridWidth'):
+                    task.dimX = MosaicToSectionTransform.gridWidth
+                if hasattr(MosaicToSectionTransform, 'gridHeight'):
+                    task.dimY = MosaicToSectionTransform.gridHeight
+    
+                Tasks.append(task)
+    
+            for task in Tasks:
+                try:
+                    MosaicToVolume = task.wait_return()
+                    MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
+                except:
+                    Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
+                    pass
+        else:
+            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
+                MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)
+                MosaicTransform.ImageToTransform[imagename] = MosaicToVolume
+                
 
         if len(MosaicTransform.ImageToTransform) > 0:
             OutputMosaicFile = MosaicTransform.ToMosaicFile()
