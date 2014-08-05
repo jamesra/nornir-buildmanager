@@ -1723,7 +1723,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
         SToV = stosfile.StosFile.Load(StosTransformNode.FullPath)
         # Make sure we are not using a downsampled transform
-        SToV = SToV.ChangeStosGridPixelSpacing(StosGroupNode.Downsample, 1.0)
+        SToV = SToV.ChangeStosGridPixelSpacing(StosGroupNode.Downsample, 1.0, create_copy=False)
         StoVTransform = factory.LoadTransform(SToV.Transform)
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
@@ -1736,13 +1736,13 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
         ControlImageBounds = SToV.ControlImageDim
         
-        UsePool = False
+        UsePool = True
         if UsePool:
             #This is a parallel operation, but the Python GIL is so slow using threads is slower.
-            Pool = pools.GetGlobalMultithreadingPool()
+            Pool = pools.GetLocalMachinePool()
     
             for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
-                task = Pool.add_task(imagename, StoVTransform.AddTransform, MosaicToSectionTransform)
+                task = Pool.add_task(imagename, triangulation.AddTransforms, StoVTransform, MosaicToSectionTransform)
                 task.imagename = imagename
                 if hasattr(MosaicToSectionTransform, 'gridWidth'):
                     task.dimX = MosaicToSectionTransform.gridWidth
