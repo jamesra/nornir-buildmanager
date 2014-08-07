@@ -502,24 +502,29 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     # print OutputFileFullPath
     CmdRan = False
     if not os.path.exists(stosNode.FullPath):
-
-        __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
-
-        CmdRan = True
-        # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
-
-        # Rescale stos file to full-res
-        # stosFile = stosfile.StosFile.Load(stosNode.FullPath)
-        # stosFile.Scale(StosGroup.Downsample)
-        # stosFile.Save(stosNode.FullPath)
-
-        # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
-        # have identical values but different checksums from the Python stos file objects %g representation
-
-        # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
-        stosNode.ResetChecksum()
-        stosNode.ControlImageChecksum = ControlImageNode.Checksum
-        stosNode.MappedImageChecksum = MappedImageNode.Checksum
+        
+        ManualStosFileFullPath = __FindManualStosFile(StosGroup, InputTransformNode=stosNode)
+        if not ManualStosFileFullPath is None:
+            prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
+            shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
+        else: 
+            __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
+    
+            CmdRan = True
+            # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
+    
+            # Rescale stos file to full-res
+            # stosFile = stosfile.StosFile.Load(stosNode.FullPath)
+            # stosFile.Scale(StosGroup.Downsample)
+            # stosFile.Save(stosNode.FullPath)
+    
+            # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
+            # have identical values but different checksums from the Python stos file objects %g representation
+    
+            # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+            stosNode.ResetChecksum()
+            stosNode.ControlImageChecksum = ControlImageNode.Checksum
+            stosNode.MappedImageChecksum = MappedImageNode.Checksum
 
     if CmdRan:
         return stosNode
@@ -1728,10 +1733,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
         assert(MosaicTransform.FixedBoundingBox[0] == 0 and MosaicTransform.FixedBoundingBox[1] == 0)
-        # MosaicTransform.TranslateToZeroOrigin()
-
-        
-
+        # MosaicTransform.TranslateToZeroOrigin() 
         Tasks = []
 
         ControlImageBounds = SToV.ControlImageDim
