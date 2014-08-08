@@ -34,13 +34,12 @@ __LoadedVolumeXMLDict__ = dict()
 
 def ValidateAttributesAreStrings(Element, logger=None):
 
-    if logger is None:
-        logger = logging.getLogger(__name__ + '.' + 'ValidateAttributesAreStrings')
-
     # Make sure each attribute is a string
     for k, v in enumerate(Element.attrib):
         assert isinstance(v, str)
         if not isinstance(v, str):
+            if logger is None:
+                logger = logging.getLogger(__name__ + '.' + 'ValidateAttributesAreStrings')
             logger.warning("Attribute is not a string")
             Element.attrib[k] = str(v)
 
@@ -1196,19 +1195,21 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     def Save(self, tabLevel=None, recurse=True):
         '''If recurse = False we only save this element, no child elements are saved'''
-
+        
         if tabLevel is None:
             tabLevel = 0
+            if hasattr(self, 'FullPath'):
+                logger = logging.getLogger(__name__ + '.' + 'Save')
+                logger.info("Saving " + self.FullPath)
 
         self.sort()
 
         # pool = Pools.GetGlobalThreadPool()
+         
+        #tabs = '\t' * tabLevel
 
-        logger = logging.getLogger(__name__ + '.' + 'Save')
-        tabs = '\t' * tabLevel
-
-        if hasattr(self, 'FullPath'):
-            logger.info("Saving " + self.FullPath)
+        #if hasattr(self, 'FullPath'):
+        #    logger.info("Saving " + self.FullPath)
 
         # logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
@@ -1219,7 +1220,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         if(not self.text is None):
             SaveElement.text = self.text
 
-        ValidateAttributesAreStrings(self, logger)
+        ValidateAttributesAreStrings(self)
 
         # SaveTree = ElementTree.ElementTree(SaveElement)
 
@@ -1243,7 +1244,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 # self.append(LinkElement)
             else:
                 if isinstance(SaveElement, XElementWrapper):
-                    ValidateAttributesAreStrings(SaveElement, logger)
+                    ValidateAttributesAreStrings(SaveElement)
                     SaveElement.sort()
 
                 SaveElement.append(child)
@@ -1301,7 +1302,7 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
 
         logger = logging.getLogger(__name__ + '.' + 'XLinkedContainerElementWrapper')
         tabs = '\t' * tabLevel
-        logger.info('Saving ' + tabs + str(self))
+        #logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
         # Create a copy of ourselves for saving
         SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
