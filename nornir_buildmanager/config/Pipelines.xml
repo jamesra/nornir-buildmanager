@@ -299,10 +299,11 @@
 			<Argument flag="-ContrastFilter" dest="ContrastFilter" default="Raw8" help="Input filter passed to Adjust Contrast pipeline" required="False"/>
 			<Argument flag="-AssembleFilter" dest="AssembleFilter" default="Raw8" help="Input filter passed to Assemble or Mosaic pipeline" required="False"/>
 			<Argument flag="-AssembleDownsample" dest="AssembleDownsample" type="int" default="1" help="Downsample level to build assembled image thumbnails from" required="False"/>
+			<Argument flag="-Output" dest="OutputPath" type="str" default="ImageReport" help="Name of report html file" required="False"/>
 		</Arguments>
 		<Select VariableName="ReportingElement" XPath="Block"/>
 		<PythonCall Function="reporting.GenerateTableReport"
-     		    OutputFile="ImageReport.html"
+     		    OutputFile="#OutputPath"
      		    RowXPath="Section"
      		    RowLabelAttrib="Number"
      		    MaxImageWidth="512"
