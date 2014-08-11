@@ -361,7 +361,12 @@
 					
 					<PythonCall Function="setters.SetPruneThreshold" PruneNode="#PruneNode" Value="#PruneVal"/>
 				</Iterate>
-			</Iterate>
+				
+				<Iterate VariableName="FilterNode" XPath="Filter">
+			    	<!-- This should be more refined to only unlock filters built upon the filter whose contrast has been changed -->
+					<PythonCall Function="setters.SetFilterContrastLocked" FilterNode="#FilterNode" Locked="0"/>
+				</Iterate>
+			</Iterate>			
 		</Iterate>
 	</Pipeline>
 	
