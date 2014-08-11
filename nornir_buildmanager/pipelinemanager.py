@@ -667,7 +667,7 @@ class PipelineManager(object):
                     PipelineManager.logger.info("Select statement did not match.  Skipping to next iteration\n")
                     break
                 except PipelineSearchFailed as e:
-                    PipelineManager.logger.error(str(e))
+                    PipelineManager.logger.debug(str(e))
                     PipelineManager.logger.info("Search statement did not match.  Skipping to next iteration\n")
                     break
                 except PipelineListIntersectionFailed as e:
