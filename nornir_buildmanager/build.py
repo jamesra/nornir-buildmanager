@@ -227,6 +227,12 @@ def call_importer(args):
 
 def call_pipeline(args):
     pipelinemanager.PipelineManager.RunPipeline(PipelineXmlFile=args.PipelineXmlFile, PipelineName=args.PipelineName, args=args)
+    
+def _GetFromNamespace(ns, attribname, default=None):
+    if attribname in ns:
+        return getattr(ns,attribname)
+    else:
+        return default
 
 def InitLogging(buildArgs):
 
@@ -237,7 +243,7 @@ def InitLogging(buildArgs):
     (args, extraargs) = parser.parse_known_args(buildArgs)
 
     if 'volumepath' in args:
-        if 'debug' in args:
+        if _GetFromNamespace(args, 'debug', False):
             SetupLogging(args.volumepath, Level=logging.DEBUG)
         else:
             SetupLogging(Level=logging.WARN)
