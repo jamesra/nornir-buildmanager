@@ -599,18 +599,21 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
 
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=FilterNode.BitsPerPixel)
 
-    UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
-    
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
     OutputFilterNode = None
     if FilterIsPopulated(FilterNode, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
         OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
 
+    UpdatedHistogramElement = None
     if(OutputFilterNode is not None):
         if(not OutputFilterNode.Locked):
+            
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
+            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
+    else:
+        UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
 
     if not OutputFilterNode is None:
         
