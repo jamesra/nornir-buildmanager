@@ -28,7 +28,7 @@ from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.transforms import *
 import nornir_imageregistration.spatial as spatial
 from nornir_shared import *
-from nornir_shared.files import RemoveOutdatedFile
+from nornir_shared.files import RemoveOutdatedFile, OutdatedFile
 from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 import nornir_shared.plot
@@ -38,6 +38,10 @@ import nornir_pools as Pools
 from nornir_imageregistration.tileset import ShadeCorrectionTypes
 
 HistogramTagStr = "HistogramData"
+
+ContrastMinCutoffDefault = 0.1
+ContrastMaxCutoffDefault = 0.5
+
 
 
 # Shrinks the passed image file, return procedure handle of invoked command
@@ -589,12 +593,14 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
     if HistogramElement is None:
         raise NornirUserException("No histograms available for autoleveling of section: %s" % FilterNode.FullPath)
 
-    MinCutoffPercent = float(Parameters.get('MinCutoff', 0.1)) / 100.0
-    MaxCutoffPercent = float(Parameters.get('MaxCutoff', 0.5)) / 100.0
+    MinCutoffPercent = float(Parameters.get('MinCutoff', ContrastMinCutoffDefault)) / 100.0
+    MaxCutoffPercent = float(Parameters.get('MaxCutoff', ContrastMaxCutoffDefault)) / 100.0
     Gamma = Parameters.get('Gamma', None)
 
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=FilterNode.BitsPerPixel)
 
+    UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
+    
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
     OutputFilterNode = None
     if FilterIsPopulated(FilterNode, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
@@ -612,8 +618,7 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
             return FilterNode
         else:
             # Check that there are the correct number of leveled tiles in the output directory
-            
-            return None
+            return UpdatedHistogramElement
 
     # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
     DictAttributes = {'BitsPerPixel' : 8,
@@ -703,7 +708,7 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
             prettyoutput.CurseString('Cmd', cmd)
         Pool.add_process('AutoLevel: ' + cmd, cmd)
 
-    GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
+    
 
     if not Pool is None:
         Pool.wait_completion()
@@ -838,15 +843,23 @@ def GenerateHistogramImage(HistogramElement, MinCutoffPercent=0.0, MaxCutoffPerc
     if not os.path.exists(HistogramImage.FullPath):
         added = True
         LinePositions = []
+        LineColors = ['green', 'green']
+        MinCutoffPercent = None
+        MaxCutoffPercent = None
         if not AutoLevelDataNode.UserRequestedMinIntensityCutoff is None:
             MinCutoffLine = float(AutoLevelDataNode.UserRequestedMinIntensityCutoff)
-            LinePositions.append(MinCutoffLine)
-            MinCutoffPercent = None
+            MinValue = MinCutoffLine
+
+            LineColors[0] = 'red'
 
         if not AutoLevelDataNode.UserRequestedMaxIntensityCutoff is None:
             MaxCutoffLine = float(AutoLevelDataNode.UserRequestedMaxIntensityCutoff)
-            LinePositions.append(MaxCutoffLine)
-            MaxCutoffPercent = None
+            MaxValue = MaxCutoffLine
+            
+            LineColors[1] = 'red'
+
+        LinePositions.append(MinValue)
+        LinePositions.append(MaxValue)
 
         FilterNode = HistogramElement.FindParent('Filter')
         ChannelNode = HistogramElement.FindParent('Channel')
@@ -856,7 +869,7 @@ def GenerateHistogramImage(HistogramElement, MinCutoffPercent=0.0, MaxCutoffPerc
         TitleStr = str(SectionNode.Number) + " " + ChannelNode.Name + " " + FilterNode.Name + " histogram"
 
         prettyoutput.Log("Creating Section Autoleveled Histogram Image: " + DataNode.FullPath)
-        nornir_shared.plot.Histogram(DataNode.FullPath, HistogramImage.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, Title=TitleStr)
+        nornir_shared.plot.Histogram(DataNode.FullPath, HistogramImage.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, LineColorList=LineColors, Title=TitleStr)
 
         HistogramImage.MinIntensityCutoff = str(MinValue)
         HistogramImage.MaxIntensityCutoff = str(MaxValue)
@@ -1411,7 +1424,10 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
         DestFiles = glob.glob(OutputGlobPattern)
         if(len(DestFiles) == PyramidNode.NumberOfTiles and
            len(SourceFiles) == len(DestFiles)):
-            continue
+            
+            #Double check that the files aren't out of date
+            if not OutdatedFile(SourceFiles[0], DestFiles[0]):
+                continue
 
         DestFiles = [os.path.basename(x) for x in DestFiles ]
 
