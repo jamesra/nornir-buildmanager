@@ -659,6 +659,7 @@ class PipelineManager(object):
 
             for ChildNode in PipelineNode:
                 try:
+                    prettyoutput.IncreaseIndent()
                     self.ProcessStageElement(VolumeElem, ChildNode, ArgSet)
                     PipelinesRun += 1
                 except PipelineSelectFailed as e:
@@ -680,6 +681,8 @@ class PipelineManager(object):
                     PipelineManager.logger.error(str(e))
                     PipelineManager.logger.error("Undexpected error, exiting pipeline")
                     sys.exit()
+                finally:
+                    prettyoutput.DecreaseIndent()
 
         finally:
             self.RemovePipelineNodeVariable(ArgSet, PipelineNode)
@@ -692,7 +695,7 @@ class PipelineManager(object):
         outStr = PipelineManager.ToElementString(PipelineNode)
         prettyoutput.CurseString('Section', outStr)
 
-        prettyoutput.IncreaseIndent()
+        
         # prettyoutput.Log("Processing Stage Element: " + outStr)
 
         # Copy dargs so we do not modify what the parent passed us
@@ -719,7 +722,7 @@ class PipelineManager(object):
         else:
             raise Exception("Unexpected element name in Pipeline.XML: " + PipelineNode.tag)
 
-        prettyoutput.DecreaseIndent()
+        
 
 
     def RequireSetMembership(self, ArgSet, VolumeElem, PipelineNode):
@@ -896,10 +899,9 @@ class PipelineManager(object):
                         prettyoutput.LogErr(errorStr)
 
                         self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
-
-                        # Continue so we do not write an updated XML file
-                        prettyoutput.DecreaseIndent()
                         return
+                         
+                        
                 else:
                     # In debug mode we do not want to catch any exceptions
                     # stage functions can return None,True, or False to indicate they did work.
