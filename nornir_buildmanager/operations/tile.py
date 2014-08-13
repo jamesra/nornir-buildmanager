@@ -607,13 +607,15 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
     UpdatedHistogramElement = None
     if(OutputFilterNode is not None):
         if(not OutputFilterNode.Locked):
-            
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
-            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
+            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma)
+        else:
+            #Rebuild the histogram image if it is missing
+            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, OutputFilterNode.MinIntensityCutoff, OutputFilterNode.MaxIntensityCutoff, OutputFilterNode.Gamma)
     else:
-        UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma=Gamma)
+        UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma)
 
     if not OutputFilterNode is None:
         
@@ -795,7 +797,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         # Create a data node for the histogram
         # DataObj = VolumeManager.DataNode(Path=)
 
-        ImageCreated = (GenerateHistogramImage(HistogramElement) is not None)
+        ImageCreated = (GenerateHistogramImageFromPercentage(HistogramElement) is not None)
 
     HistogramElement.InputTransformChecksum = TransformNode.Checksum
 
@@ -805,15 +807,40 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         return None
 
 
-def GenerateHistogramImage(HistogramElement, MinCutoffPercent=0.0, MaxCutoffPercent=0.0, Gamma=1):
-
+def GenerateHistogramImageFromPercentage(HistogramElement, MinCutoffPercent=None, MaxCutoffPercent=None, Gamma=1):
+    if MinCutoffPercent is None:
+        MinCutoffPercent = ContrastMinCutoffDefault
+    if MaxCutoffPercent is None:
+        MaxCutoffPercent = ContrastMaxCutoffDefault
+        
+    LineColors = ['green', 'green']
     AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
+     
+    if not AutoLevelDataNode.UserRequestedMinIntensityCutoff is None:
+        MinCutoffLine = float(AutoLevelDataNode.UserRequestedMinIntensityCutoff)
+        MinValue = MinCutoffLine 
+        LineColors[0] = 'red'
 
-    HistogramImage = HistogramElement.find('Image')
-
+    if not AutoLevelDataNode.UserRequestedMaxIntensityCutoff is None:
+        MaxCutoffLine = float(AutoLevelDataNode.UserRequestedMaxIntensityCutoff)
+        MaxValue = MaxCutoffLine 
+        LineColors[1] = 'red'
+        
     (MinValue, MaxValue, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma)
-    added = False
-
+    return GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColors=LineColors)
+     
+    
+def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColors=None):
+    '''
+    :param object HistogramElement: Histogram element to pull histogram data from
+    :param float MinValue: Minimum value line
+    :param float MinValue: Maximum value line
+    :param float Gamma: Gamma value for use in title
+    :param list LineColors: List of color strings to assign to MinValue and MaxValue lines
+    '''    
+    added = False 
+    HistogramImage = HistogramElement.find('Image')
+    
     if not HistogramImage is None:
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MinIntensityCutoff', MinValue)
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MaxIntensityCutoff', MaxValue)
@@ -846,21 +873,12 @@ def GenerateHistogramImage(HistogramElement, MinCutoffPercent=0.0, MaxCutoffPerc
     if not os.path.exists(HistogramImage.FullPath):
         added = True
         LinePositions = []
-        LineColors = ['green', 'green']
+        if LineColors is None:
+            LineColors = ['blue', 'blue']
+         
         MinCutoffPercent = None
-        MaxCutoffPercent = None
-        if not AutoLevelDataNode.UserRequestedMinIntensityCutoff is None:
-            MinCutoffLine = float(AutoLevelDataNode.UserRequestedMinIntensityCutoff)
-            MinValue = MinCutoffLine
-
-            LineColors[0] = 'red'
-
-        if not AutoLevelDataNode.UserRequestedMaxIntensityCutoff is None:
-            MaxCutoffLine = float(AutoLevelDataNode.UserRequestedMaxIntensityCutoff)
-            MaxValue = MaxCutoffLine
-            
-            LineColors[1] = 'red'
-
+        MaxCutoffPercent = None 
+        
         LinePositions.append(MinValue)
         LinePositions.append(MaxValue)
 
