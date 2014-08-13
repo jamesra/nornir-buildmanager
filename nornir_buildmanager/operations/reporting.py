@@ -776,6 +776,9 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     if RowLabelAttrib is None:
         RowLabelAttrib = "Name"
+        
+    if not OutputFile.endswith('.html'):
+        OutputFile += '.html'
 
     if not isinstance(ColumnXPaths, list):
         xpathStrings = str(ColumnXPaths).strip().split(',')

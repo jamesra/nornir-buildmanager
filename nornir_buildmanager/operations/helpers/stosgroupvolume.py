@@ -31,7 +31,7 @@ class StosGroupVolume(volume.Volume):
                 stosTransform.transformNode = transformNode
                 stosTransform.stosObj = stosObj
 
-                vol.AddSection(sectionKey, stosTransform)
+                vol.AddOrUpdateSection(sectionKey, stosTransform)
 
         return vol
 

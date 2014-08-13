@@ -502,24 +502,29 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     # print OutputFileFullPath
     CmdRan = False
     if not os.path.exists(stosNode.FullPath):
-
-        __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
-
-        CmdRan = True
-        # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
-
-        # Rescale stos file to full-res
-        # stosFile = stosfile.StosFile.Load(stosNode.FullPath)
-        # stosFile.Scale(StosGroup.Downsample)
-        # stosFile.Save(stosNode.FullPath)
-
-        # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
-        # have identical values but different checksums from the Python stos file objects %g representation
-
-        # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
-        stosNode.ResetChecksum()
-        stosNode.ControlImageChecksum = ControlImageNode.Checksum
-        stosNode.MappedImageChecksum = MappedImageNode.Checksum
+        
+        ManualStosFileFullPath = __FindManualStosFile(StosGroup, InputTransformNode=stosNode)
+        if not ManualStosFileFullPath is None:
+            prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
+            shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
+        else: 
+            __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
+    
+            CmdRan = True
+            # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
+    
+            # Rescale stos file to full-res
+            # stosFile = stosfile.StosFile.Load(stosNode.FullPath)
+            # stosFile.Scale(StosGroup.Downsample)
+            # stosFile.Save(stosNode.FullPath)
+    
+            # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
+            # have identical values but different checksums from the Python stos file objects %g representation
+    
+            # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+            stosNode.ResetChecksum()
+            stosNode.ControlImageChecksum = ControlImageNode.Checksum
+            stosNode.MappedImageChecksum = MappedImageNode.Checksum
 
     if CmdRan:
         return stosNode
@@ -1723,36 +1728,43 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
         SToV = stosfile.StosFile.Load(StosTransformNode.FullPath)
         # Make sure we are not using a downsampled transform
-        SToV = SToV.ChangeStosGridPixelSpacing(StosGroupNode.Downsample, 1.0)
+        SToV = SToV.ChangeStosGridPixelSpacing(StosGroupNode.Downsample, 1.0, create_copy=False)
         StoVTransform = factory.LoadTransform(SToV.Transform)
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
         assert(MosaicTransform.FixedBoundingBox[0] == 0 and MosaicTransform.FixedBoundingBox[1] == 0)
-        # MosaicTransform.TranslateToZeroOrigin()
-
-        Pool = pools.GetGlobalThreadPool()
-
+        # MosaicTransform.TranslateToZeroOrigin() 
         Tasks = []
 
         ControlImageBounds = SToV.ControlImageDim
-
-        for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
-            task = Pool.add_task(imagename, StoVTransform.AddTransform, MosaicToSectionTransform)
-            task.imagename = imagename
-            if hasattr(MosaicToSectionTransform, 'gridWidth'):
-                task.dimX = MosaicToSectionTransform.gridWidth
-            if hasattr(MosaicToSectionTransform, 'gridHeight'):
-                task.dimY = MosaicToSectionTransform.gridHeight
-
-            Tasks.append(task)
-
-        for task in Tasks:
-            try:
-                MosaicToVolume = task.wait_return()
-                MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
-            except:
-                Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
-                pass
+        
+        UsePool = True
+        if UsePool:
+            #This is a parallel operation, but the Python GIL is so slow using threads is slower.
+            Pool = pools.GetLocalMachinePool()
+    
+            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
+                task = Pool.add_task(imagename, triangulation.AddTransforms, StoVTransform, MosaicToSectionTransform)
+                task.imagename = imagename
+                if hasattr(MosaicToSectionTransform, 'gridWidth'):
+                    task.dimX = MosaicToSectionTransform.gridWidth
+                if hasattr(MosaicToSectionTransform, 'gridHeight'):
+                    task.dimY = MosaicToSectionTransform.gridHeight
+    
+                Tasks.append(task)
+    
+            for task in Tasks:
+                try:
+                    MosaicToVolume = task.wait_return()
+                    MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
+                except:
+                    Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
+                    pass
+        else:
+            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
+                MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)
+                MosaicTransform.ImageToTransform[imagename] = MosaicToVolume
+                
 
         if len(MosaicTransform.ImageToTransform) > 0:
             OutputMosaicFile = MosaicTransform.ToMosaicFile()

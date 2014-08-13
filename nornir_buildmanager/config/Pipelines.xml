@@ -298,10 +298,11 @@
 			<Argument flag="-ContrastFilter" dest="ContrastFilter" default="Raw8" help="Input filter passed to Adjust Contrast pipeline" required="False"/>
 			<Argument flag="-AssembleFilter" dest="AssembleFilter" default="Raw8" help="Input filter passed to Assemble or Mosaic pipeline" required="False"/>
 			<Argument flag="-AssembleDownsample" dest="AssembleDownsample" type="int" default="1" help="Downsample level to build assembled image thumbnails from" required="False"/>
+			<Argument flag="-Output" dest="OutputPath" type="str" default="ImageReport" help="Name of report html file" required="False"/>
 		</Arguments>
 		<Select VariableName="ReportingElement" XPath="Block"/>
 		<PythonCall Function="reporting.GenerateTableReport"
-     		    OutputFile="ImageReport.html"
+     		    OutputFile="#OutputPath"
      		    RowXPath="Section"
      		    RowLabelAttrib="Number"
      		    MaxImageWidth="512"
@@ -363,7 +364,12 @@
 					
 					<PythonCall Function="setters.SetPruneThreshold" PruneNode="#PruneNode" Value="#PruneVal"/>
 				</Iterate>
-			</Iterate>
+				
+				<Iterate VariableName="FilterNode" XPath="Filter">
+			    	<!-- This should be more refined to only unlock filters built upon the filter whose contrast has been changed -->
+					<PythonCall Function="setters.SetFilterContrastLocked" FilterNode="#FilterNode" Locked="0"/>
+				</Iterate>
+			</Iterate>			
 		</Iterate>
 	</Pipeline>
 	
@@ -390,6 +396,12 @@
 					
 					<PythonCall Function="setters.SetContrastRange" HistogramElement="#HistogramNode" 
 					            MinValue="#MinValue" MaxValue="#MaxValue" GammaValue="#GammaValue"/>
+					
+				</Iterate>
+				
+				<Iterate VariableName="FilterNode" XPath="Filter">
+				    <!-- This should be more refined to only unlock filters built upon the filter whose contrast has been changed -->
+					<PythonCall Function="setters.SetFilterContrastLocked" FilterNode="#FilterNode" Locked="0"/>
 				</Iterate>
 			</Iterate>
 		</Iterate>
