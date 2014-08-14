@@ -371,20 +371,46 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunAssemble(self, Filter=None, Level=8):
+    def RunAssemble(self, Filter=None, Transform=None, Level=8):
         if Filter is None:
             Filter = "Leveled"
+            
+        if Transform is None:
+            Transform = 'Grid'
 
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', 'Grid', '-Filters', Filter, '-Downsample', str(Level), '-NoInterlace')
+        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', Transform, '-Filters', Filter, '-Downsample', str(Level), '-NoInterlace')
         volumeNode = self.RunBuild(buildArgs)
 
-        ChannelNode = volumeNode.find("Block/Section/Channel")
-
-        AssembledImageNode = ChannelNode.find("Filter[@Name='%s']/ImageSet/Level[@Downsample='%d']/Image" % (Filter, Level))
-        self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
+        #ChannelNode = volumeNode.find("Block/Section/Channel")
+        
+        ImageSetNodes = list(volumeNode.findall("Block/Section/Channel/Filter[@Name='%s']/ImageSet" % (Filter)))
+        self.assertIsNotNone(ImageSetNodes, "ImageSet nodes not found")
+        self.assertGreater(len(ImageSetNodes),0, "ImageSet nodes should be created by assemble unless this is a negative test of some sort")
+        
+        for ImageSetNode in ImageSetNodes:
+            self.assertEqual(ImageSetNode.InputTransform, Transform, "InputTransform for ImageSet does not match transform used for assemble")
+            self._CheckInputTransformChecksumCorrect(ImageSetNode, InputTransformName=Transform)
+            #Check that the InputTransform name and type match the requested transform
+    
+            AssembledImageNode = ImageSetNode.find("Level[@Downsample='%d']/Image" % (Level))
+            self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
 
         return volumeNode
+    
+    def _CheckInputTransformChecksumCorrect(self, InputTransformChecksumNode, InputTransformName):
+        '''Check that the checksum for a transform matches the recorded input transform checksum for a node under a channel'''
+        
+        ChannelNode = InputTransformChecksumNode.FindParent('Channel')
+        self.assertIsNotNone(ChannelNode, "Test requires the node be under a channel element")
+        
+        TransformNode = ChannelNode.GetTransform(InputTransformName)
+        self.assertIsNotNone(TransformNode, "Could not locate transform with the correct name: %s" % (InputTransformName))
+        
+        self.assertEqual(InputTransformChecksumNode.InputTransform, TransformNode.Name, "Transform name does not match the transform.")
+        self.assertEqual(InputTransformChecksumNode.InputTransformChecksum, TransformNode.Checksum, "Checksum does not match the transform")
+        self.assertEqual(InputTransformChecksumNode.InputTransformType, TransformNode.Type, "Type does not match the transform")
+        
 
     def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8):
         if ContrastFilter is None:

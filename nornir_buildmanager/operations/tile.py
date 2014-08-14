@@ -1000,8 +1000,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     OutputImageNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + FilterNode.Name + ".png"
     OutputImageMaskNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
 
-    FilterNode.Imageset.SetTransform(TransformNode)
-    MaskFilterNode.Imageset.SetTransform(TransformNode)
+    OutputFilterNode.Imageset.SetTransform(TransformNode)
+    OutputMaskFilterNode.Imageset.SetTransform(TransformNode)
 
     argstring = misc.ArgumentsFromDict(Parameters)
     irassembletemplate = 'ir-assemble ' + argstring + ' -sh 1 -sp %(pixelspacing)i -save %(OutputImageFile)s -load %(InputFile)s -mask %(OutputMaskFile)s -image_dir %(ImageDir)s '
