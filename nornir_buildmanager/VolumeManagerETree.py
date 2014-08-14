@@ -1975,15 +1975,18 @@ class MosaicBaseNode(XFileElementWrapper):
         raise DeprecationWarning("Checksums for mosaic elements will not be directly settable soon.  Use ResetChecksum instead")
 
     def IsValid(self):
+        
+        result = super(MosaicBaseNode, self).IsValid()
+        
+        if result[0]:
+            knownChecksum = self.attrib.get('Checksum', None)
+            if not knownChecksum is None:
+                fileChecksum = self._CalcChecksum()
+    
+                if not knownChecksum == fileChecksum:
+                    return [False, "File checksum does not match meta-data"]
 
-        knownChecksum = self.attrib.get('Checksum', None)
-        if not knownChecksum is None:
-            fileChecksum = self._CalcChecksum()
-
-            if not knownChecksum == fileChecksum:
-                return [False, "File checksum does not match meta-data"]
-
-        return super(MosaicBaseNode, self).IsValid()
+        return result 
 
     def __init__(self, tag, Name, Type, Path=None, attrib=None, **extra):
 
