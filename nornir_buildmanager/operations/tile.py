@@ -1056,6 +1056,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
     #image.RemoveOnTransformCropboxMismatched(TransformNode, ImageNode, thisLevel)
     #image.RemoveOnTransformCropboxMismatched(TransformNode, MaskImageNode, thisLevel)
+     
+    image.RemoveOnDimensionMismatch(MaskImageNode.FullPath, core.GetImageSize(ImageNode.FullPath))
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
@@ -1100,8 +1102,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
 
-    BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
-    BuildImagePyramid(OutputMaskFilterNode.Imageset, **kwargs)
+    BuildImagePyramid(OutputFilterNode.Imageset, Interlace=Interlace, **kwargs)
+    BuildImagePyramid(OutputMaskFilterNode.Imageset, Interlace=Interlace, **kwargs)
 
     return SectionNode
 
@@ -1338,7 +1340,9 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
         TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel, SourceImageNode.Path)
         if not os.path.exists(TargetImageNode.Parent.FullPath):
             os.makedirs(TargetImageNode.Parent.FullPath)
-
+        
+        RemoveOutdatedFile(SourceImageNode.FullPath, TargetImageNode.FullPath)
+        
         buildLevel = False
         if os.path.exists(TargetImageNode.FullPath):
             if 'InputImageChecksum' in SourceImageNode.attrib:
@@ -1352,6 +1356,8 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
     #            RemoveOnMismatch()
     #            if(TargetImageNode.attrib["InputImageChecksum"] != SourceImageNode.InputImageChecksum):
     #                os.remove(TargetImageNode.FullPath)
+             
+            
         else:
             buildLevel = True
 
