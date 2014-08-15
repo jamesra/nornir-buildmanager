@@ -1,4 +1,29 @@
 
+
+1.2.1
+-----
+
+* Many optimizations
+* Improved the histogram generation to show the actual cutoff values for a section and not percentages when a manual value is not specified. 
+* Profile data is saved for tests if the PROFILE environment variable is set
+* Faster parsing of pipelines via use of cElementTree package
+* Multithreading pool is used when adding stos transforms
+* Added support for manual folder in stosbrute folders.  This allows users to bypass the expensive automatic initial alignment step if a manual registration is known.
+* Report web pages now can be renamed to prevent overwriting the default ImageReport.html page
+ 
+
+** Fixed **
+
+* Take image downsample into account before regenerating images warped into the volume.  Previously downsampled images were always regenerated even when current
+* Logging level set correctly.  Normal runs only display warnings or higher level entries to the console
+* Sections without a log file now have reports generated correctly
+* Fixed exception thrown when image dimensions could not be read and compared because a file could not be read
+* Filter locks for all filters in a channel are released when contrast or prune thresholds are manually adjusted.  Allowing the filters to regenerate with the updated values
+* debug flag was always active during builds
+* Check the timestamp on the first tile of every pyramid level to ensure they regenerate if they are outdated.
+* Histograms are correctly refreshed when they are out of date.
+
+
 1.2.0
 -----
 
