@@ -3,6 +3,8 @@
 1.2.1
 -----
 
+**New**
+
 * Many optimizations
 * Improved the histogram generation to show the actual cutoff values for a section and not percentages when a manual value is not specified. 
 * Profile data is saved for tests if the PROFILE environment variable is set
@@ -12,7 +14,7 @@
 * Report web pages now can be renamed to prevent overwriting the default ImageReport.html page
  
 
-** Fixed **
+**Fixes**
 
 * Take image downsample into account before regenerating images warped into the volume.  Previously downsampled images were always regenerated even when current
 * Logging level set correctly.  Normal runs only display warnings or higher level entries to the console
@@ -35,7 +37,7 @@
 1.1.5
 -----
 
-** Fixes **
+**Fixes**
  
 * Duplicate histogram nodes could be created if changing the prune threshold did not change the tiles present in the mosaic.  Contrast settings could be applied incorrectly to the duplicate and ignored.
 
