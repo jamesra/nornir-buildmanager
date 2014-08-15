@@ -391,7 +391,7 @@ class PlatformTest(test.testbase.TestBase):
         
         if not isinstance(Levels,str):
             if isinstance(Levels, list):
-                LevelStr = ','.join(Levels)
+                LevelStr = ",".join(str(l) for l in Levels)
             else:
                 LevelStr = str(Levels)
                 Levels = [Levels]
