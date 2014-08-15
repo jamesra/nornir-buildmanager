@@ -24,7 +24,9 @@ import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection as reflection
 import xml.etree.ElementTree as ElementTree
 
+ 
 
+    
 # import
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
@@ -494,6 +496,7 @@ class XElementWrapper(ElementTree.Element):
 
 
     def Clean(self, reason=None):
+        '''Remove node from element tree and remove any external resources such as files'''
 
         DisplayStr = ' --- Cleaning ' + self.ToElementString() + ". "
 
@@ -1443,6 +1446,10 @@ class FilterNode(XContainerElementWrapper):
             self.append(pyramid)
 
         return pyramid
+    
+    @property
+    def HasImageset(self):
+        return not self.find('Imageset') is None 
 
     @property
     def Imageset(self):
@@ -1517,6 +1524,8 @@ class FilterNode(XContainerElementWrapper):
 
     def GetHistogram(self):
         return self.find('Histogram')
+        
+        pass
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         if Path is None:
@@ -2190,7 +2199,7 @@ class ImageSetNode(ImageSetBaseNode):
         super(ImageSetNode, self).__init__(Name=ImageSetNode.DefaultName, Type=Type, Path=ImageSetNode.DefaultPath, attrib=attrib, **extra)
 
 
-class ImageNode(XFileElementWrapper):
+class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
 
     DefaultName = "image.png"
 
