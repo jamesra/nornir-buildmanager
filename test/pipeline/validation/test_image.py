@@ -36,7 +36,6 @@ class ImageValidationTest(CopySetupTestBase):
 
         if not path is None:
             self.assertIsNotNone(ActualArea, "Actual area should be not be none if image path is valid")
-            ActualArea = (ActualArea[1], ActualArea[0])
         else:
             # GetImageSize returns Height,Width, so we need to flip
             self.assertIsNone(ActualArea, "Actual area should be none if image path is none")
