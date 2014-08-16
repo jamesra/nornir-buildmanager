@@ -19,6 +19,7 @@ from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files.mosaicfile import *
 from nornir_buildmanager.argparsexml import NumberList
 import nornir_shared.misc
+ 
 
 
 def VerifyVolume(test, VolumeObj, listVolumeEntries):
@@ -370,16 +371,36 @@ class PlatformTest(test.testbase.TestBase):
         self.assertIsNotNone(TransformNode, "No final transform node produced by Mosaic pipeline")
 
         return volumeNode
+    
+    def _VerifyImageSetMatchesTransform(self, image_set_node, transform_name):
+        self.assertEqual(ImageSetNode.InputTransform, transform_name, "InputTransform for ImageSet does not match transform used for assemble")
+        self._CheckInputTransformChecksumCorrect(ImageSetNode, InputTransformName=transform_name)
+        #Check that the InputTransform name and type match the requested transform
 
-    def RunAssemble(self, Filter=None, Transform=None, Level=8):
+        AssembledImageNode = ImageSetNode.find("Level[@Downsample='%d']/Image" % (Level))
+        self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
+        
+        self._CheckInputTransformChecksumCorrect(AssembledImageNode, InputTransformName=Transform)
+
+    def RunAssemble(self, Filter=None, Transform=None, Levels=8):
         if Filter is None:
             Filter = "Leveled"
             
         if Transform is None:
             Transform = 'Grid'
+        
+        if not isinstance(Levels,str):
+            if isinstance(Levels, list):
+                LevelStr = ",".join(str(l) for l in Levels)
+            else:
+                LevelStr = str(Levels)
+                Levels = [Levels]
+        else:
+            LevelStr = Levels
+            Levels = NumberList(LevelStr)
 
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', Transform, '-Filters', Filter, '-Downsample', str(Level), '-NoInterlace')
+        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', Transform, '-Filters', Filter, '-Downsample', LevelStr, '-NoInterlace')
         volumeNode = self.RunBuild(buildArgs)
 
         #ChannelNode = volumeNode.find("Block/Section/Channel")
@@ -388,17 +409,27 @@ class PlatformTest(test.testbase.TestBase):
         self.assertIsNotNone(ImageSetNodes, "ImageSet nodes not found")
         self.assertGreater(len(ImageSetNodes),0, "ImageSet nodes should be created by assemble unless this is a negative test of some sort")
         
-        for ImageSetNode in ImageSetNodes:
-            self.assertEqual(ImageSetNode.InputTransform, Transform, "InputTransform for ImageSet does not match transform used for assemble")
-            self._CheckInputTransformChecksumCorrect(ImageSetNode, InputTransformName=Transform)
-            #Check that the InputTransform name and type match the requested transform
-    
-            AssembledImageNode = ImageSetNode.find("Level[@Downsample='%d']/Image" % (Level))
-            self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
+        for ImageSetNode in ImageSetNodes: 
+            self._CheckImageSetIsCorrect(ImageSetNode, Transform, Levels)
 
         return volumeNode
     
-    def _CheckInputTransformChecksumCorrect(self, InputTransformChecksumNode, InputTransformName):
+    
+    def _CheckImageSetIsCorrect(self, image_set_node, transform, Levels):
+        ''':param list Levels: Integer list of downsample levels expected'''
+        
+        self._CheckInputTransformIsCorrect(image_set_node, InputTransformName=transform)
+        #Check that the InputTransform name and type match the requested transform
+
+        for level in Levels:
+            AssembledImageNode = image_set_node.find("Level[@Downsample='%d']/Image" % (level))
+            self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
+        
+            self.assertTrue(os.path.exists(AssembledImageNode.FullPath), "Output file expected for image node after assemble runs, level %d" % (level))
+        
+        #self._CheckInputTransformIsCorrect(AssembledImageNode, InputTransformName=Transform)
+    
+    def _CheckInputTransformIsCorrect(self, InputTransformChecksumNode, InputTransformName):
         '''Check that the checksum for a transform matches the recorded input transform checksum for a node under a channel'''
         
         ChannelNode = InputTransformChecksumNode.FindParent('Channel')
@@ -410,6 +441,9 @@ class PlatformTest(test.testbase.TestBase):
         self.assertEqual(InputTransformChecksumNode.InputTransform, TransformNode.Name, "Transform name does not match the transform.")
         self.assertEqual(InputTransformChecksumNode.InputTransformChecksum, TransformNode.Checksum, "Checksum does not match the transform")
         self.assertEqual(InputTransformChecksumNode.InputTransformType, TransformNode.Type, "Type does not match the transform")
+        self.assertEqual(InputTransformChecksumNode.InputTransformCropBox, TransformNode.CropBox, "CropBox does not match the transform")
+        
+        self.assertTrue(InputTransformChecksumNode.IsInputTransformMatched(TransformNode), "IsInputTransformMatched should return true when the earlier tests in this function have passed")
         
 
     def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8):
@@ -512,6 +546,8 @@ class PlatformTest(test.testbase.TestBase):
 
         if Filters is None:
             Filters = "Leveled"
+            
+        Transform = 'ChannelToVolume'
 
 
         buildArgs = self._CreateBuildArgs('Assemble', '-ChannelPrefix', 'Registered_',
@@ -526,7 +562,6 @@ class PlatformTest(test.testbase.TestBase):
         for channelNode in volumeNode.findall("Block/Section/Channel"):
             if "Registered" in channelNode.Name:
                 FoundOutput = True
-                break
 
         self.assertTrue(FoundOutput, "Output channel not created")
         return volumeNode

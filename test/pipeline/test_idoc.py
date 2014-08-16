@@ -171,7 +171,7 @@ class IDocBuildTest(IDocTest):
 
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
-        self.RunAssemble(Level=8)
+        self.RunAssemble(Levels=[8,16])
         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
         self.RunMosaicReport()
 

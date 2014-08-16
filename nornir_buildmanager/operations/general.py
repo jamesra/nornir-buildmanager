@@ -54,6 +54,15 @@ def MovePath(Node, NewPath, **kwargs):
 
     return Node.Parent
 
+
+def CleanNodeIfInvalid(node, **kwargs):
+    parent = node.Parent
+    if node.CleanIfInvalid(): 
+        logger = logging.getLogger(__name__ + '.CleanNodeIfInvalid')
+        logger.info("Removing node %s" % (str(node)))
+        return parent
+    return None
+
 def RemoveDuplicateLinks(ParentNode, ChildNodeName, ChildAttrib=None, **kwargs):
     '''Find all child nodes with duplicate entries for the ChildAttrib and remove the duplicates'''
 

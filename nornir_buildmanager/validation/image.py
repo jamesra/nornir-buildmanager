@@ -29,7 +29,7 @@ def DimensionsMatch(imageFullPath, area):
     if size is None:
         return False
     else:
-        return size[0] == area[1] and size[1] == area[0]
+        return size[1] == area[1] and size[0] == area[0]
 
 def RemoveOnDimensionMismatch(imageFullPath, area):
     '''Remove the image file if the area does not match.  Return True if removed '''
@@ -49,7 +49,7 @@ def RemoveOnDimensionMismatch(imageFullPath, area):
 def RemoveOnTransformCropboxMismatched(transform_node, image_node, image_level):
     if not transform_node.CropBox is None:
         (Xo, Yo, Width, Height) = transform_node.CropBoxDownsampled(image_level)
-        return RemoveOnDimensionMismatch(image_node.FullPath, (Width, Height))
+        return RemoveOnDimensionMismatch(image_node.FullPath, (Height, Width))
 
     return False
 

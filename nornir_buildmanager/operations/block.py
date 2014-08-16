@@ -789,16 +789,22 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                         continue
 
                     # Compare the .stos file creation date to the output
-                    if hasattr(OverlayImageNode, 'InputTransformChecksum'):
-                        transforms.RemoveOnMismatch(OverlayImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
-                    if hasattr(DiffImageNode, 'InputTransformChecksum'):
-                        transforms.RemoveOnMismatch(DiffImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
-                    if hasattr(WarpedImageNode, 'InputTransformChecksum'):
-                        transforms.RemoveOnMismatch(WarpedImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
-
-                    files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
-                    files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
-                    files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
+                    if not OverlayImageNode.RemoveIfTransformMismatched(StosTransformNode):
+                        files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
+                        files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
+                        files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
+                        
+                    DiffImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                    WarpedImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                    
+                    #===========================================================
+                    # if hasattr(OverlayImageNode, 'InputTransformChecksum'):
+                    #     transforms.RemoveOnMismatch(OverlayImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
+                    # if hasattr(DiffImageNode, 'InputTransformChecksum'):
+                    #     transforms.RemoveOnMismatch(DiffImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
+                    # if hasattr(WarpedImageNode, 'InputTransformChecksum'):
+                    #     transforms.RemoveOnMismatch(WarpedImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
+                    #===========================================================                   
 
                     if not (os.path.exists(OverlayImageNode.FullPath) and os.path.exists(DiffImageNode.FullPath)):
 
@@ -820,15 +826,15 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
 
                         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
                         processoutputinterceptor.ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
-                                                                                                                                          OverlayFilename=OverlayImageNode.FullPath,
-                                                                                                                                           DiffFilename=DiffImageNode.FullPath,
-                                                                                                                                           WarpedFilename=WarpedImageNode.FullPath))
+                                                                                                                  OverlayFilename=OverlayImageNode.FullPath,
+                                                                                                                   DiffFilename=DiffImageNode.FullPath,
+                                                                                                                   WarpedFilename=WarpedImageNode.FullPath))
 
                         SaveRequired = True
 
-                    OverlayImageNode.InputTransformChecksum = StosTransformNode.Checksum
-                    DiffImageNode.InputTransformChecksum = StosTransformNode.Checksum
-                    WarpedImageNode.InputTransformChecksum = StosTransformNode.Checksum
+                    OverlayImageNode.SetTransform(StosTransformNode)
+                    DiffImageNode.SetTransform(StosTransformNode)
+                    WarpedImageNode.SetTransform(StosTransformNode)
 
             # Figure out where our output should live...
 

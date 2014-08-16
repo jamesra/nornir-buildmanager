@@ -5,10 +5,11 @@ Created on Oct 11, 2012
 '''
 
 import re
+import math
 
 import VolumeManagerETree as VolumeManager
 from operator import attrgetter
-
+import nornir_shared.misc
 
 def IsMatch(in_string, RegExStr, CaseSensitive=False):
     if RegExStr == '*':
@@ -56,31 +57,113 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
             Matches.append(MatchObj)
 
     return Matches
+ 
 
 
 class InputTransformHandler(object):
 
-    def SetTransform(self, TransformNode):
-        assert(not TransformNode is None)
-        self.InputTransformChecksum = TransformNode.Checksum
-        self.InputTransformType = TransformNode.Type
-        self.InputTransform = TransformNode.Name
+    def SetTransform(self, transform_node):
+        assert(not transform_node is None)
+        self.InputTransformChecksum = transform_node.Checksum
+        self.InputTransformType = transform_node.Type
+        self.InputTransform = transform_node.Name
+        
+        if not transform_node.CropBox is None:
+            self.InputTransformCropbox = transform_node.CropBox            
+        
+    
+    def IsInputTransformMatched(self, transform_node):
+        '''Return true if the transform node matches our input transform'''
+        return self.InputTransform == transform_node.Name and \
+                self.InputTransformType == transform_node.Type and \
+                self.InputTransformChecksum == transform_node.Checksum and \
+                self.InputTransformCropBox == transform_node.CropBox
+      
+    
+    def RemoveIfTransformMismatched(self, transform_node):
+        '''Remove this element from its parent if the transform node does not match our input transform attributes
+        :return: True if element removed from parent, otherwise false
+        :rtype: bool
+        '''
+        if not self.IsInputTransformMatched(transform_node):
+            self.Clean() 
+            return True
+        
+        return False
+    
+    @property
+    def InputTransform(self):
+        if 'InputTransform' in self.attrib:
+            return self.attrib['InputTransform']
+        
+        return None 
+    
+    @InputTransform.setter
+    def InputTransform(self, value):
+        assert(isinstance(value,str))
+        if value is None and 'InputTransform' in self.attrib:
+            del self.attrib['InputTransform']
+        else:
+            self.attrib['InputTransform'] = value
+
 
     @property
     def InputTransformChecksum(self):
-        return self.attrib['InputTransformChecksum']
+        if 'InputTransformChecksum' in self.attrib:
+            return self.attrib['InputTransformChecksum']
+        
+        return None
 
     @InputTransformChecksum.setter
     def InputTransformChecksum(self, value):
-        self.attrib['InputTransformChecksum'] = value
+        if value is None and 'InputTransformChecksum' in self.attrib:
+            del self.attrib['InputTransformChecksum']
+        else:
+            self.attrib['InputTransformChecksum'] = value
+             
 
     @property
     def InputTransformType(self):
-        return self.attrib['InputTransformType']
+        if 'InputTransformType' in self.attrib:
+            return self.attrib['InputTransformType']
+        
+        return None 
 
     @InputTransformType.setter
     def InputTransformType(self, value):
-        self.attrib['InputTransformType'] = value
+        assert(isinstance(value,str))
+        if value is None and 'InputTransformType' in self.attrib:
+            del self.attrib['InputTransformType']
+        else:
+            self.attrib['InputTransformType'] = value
+            
+    
+    @property
+    def InputTransformCropBox(self):
+        '''Returns boundaries of transform output if available, otherwise none
+           :rtype tuple:
+           :return (Xo, Yo, Width, Height):
+        '''
+
+        if 'InputTransformCropBox' in self.attrib:
+            return nornir_shared.misc.ListFromAttribute(self.attrib['InputTransformCropBox'])
+        else:
+            return None
+        
+    @InputTransformCropBox.setter
+    def InputTransformCropBox(self, bounds):
+        '''Sets boundaries in fixed space for output from the transform.
+        :param bounds tuple:  (Xo, Yo, Width, Height) or (Width, Height)
+        '''
+        if len(bounds) == 4:
+            self.attrib['InputTransformCropBox'] = "%g,%g,%g,%g" % bounds
+        elif len(bounds) == 2:
+            self.attrib['InputTransformCropBox'] = "0,0,%g,%g" % bounds
+        elif bounds is None:
+            if 'InputTransformCropBox' in self.attrib:
+                del self.attrib['InputTransformCropBox']
+        else:
+            raise Exception("Invalid argument passed to InputTransformCropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
     def InputTransformIsValid(self):
         # Verify that the input transform matches the checksum we recorded for the input

@@ -259,10 +259,13 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
         os.makedirs(OutputDir)
 
     # Find the imageset for the DataNode
-    ImageNode = FilterNode.GetOrCreateImage(Downsample)
-
-    if os.path.exists(ImageNode.FullPath):
-
+    saveImageSet = False
+    ImageNode = FilterNode.GetImage(Downsample)
+    if ImageNode is None:
+        ImageNode = FilterNode.GetOrCreateImage(Downsample)
+        saveImageSet = True
+         
+    if os.path.exists(ImageNode.FullPath): 
         if os.path.isfile(ImageNode.FullPath):
             OutputFileFullPath = os.path.join(OutputDir, ImageNode.Path)
             nfiles.RemoveOutdatedFile(ImageNode.FullPath, OutputFileFullPath)
@@ -275,6 +278,11 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
             # Just copy the directory over, this is an odd case
             logger.info("Copy directory " + ImageNode.FullPath + " -> " + OutputDir)
             shutil.copy(ImageNode.FullPath, OutputDir)
+        
+    if saveImageSet:
+        return FilterNode.Imageset
+    
+    return None
 
 def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
     if OutputDir is None:

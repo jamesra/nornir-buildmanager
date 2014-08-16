@@ -980,6 +980,27 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     return OutputChannelNode
 
 
+def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name):
+    image_level_node = imageset_node.GetOrCreateLevel(level, GenerateData=False)
+
+    if not os.path.exists(image_level_node.FullPath):
+        os.makedirs(image_level_node.FullPath)
+        
+    image_node = image_level_node.find('Image')
+    #===========================================================================
+    # if not image_node is None:
+    #     if image_node.RemoveIfTransformMismatched(transform_node):
+    #         image_node = None
+    #===========================================================================
+            
+    if(image_node is None):
+        image_node = nb.VolumeManager.ImageNode(image_name)
+        image_level_node.append(image_node)
+        
+    return image_node
+        
+    
+        
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
@@ -991,22 +1012,20 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     OutputFilterNode = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
     OutputMaskFilterNode = OutputChannelNode.GetOrCreateFilter(MaskFilterNode.Name)
 
-    NodesToSave = []
-
-    MangledName = misc.GenNameFromDict(Parameters) + TransformNode.Type
-
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
     OutputImageNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + FilterNode.Name + ".png"
     OutputImageMaskNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
+    
+    if OutputFilterNode.HasImageset:
+        OutputFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
+    if OutputMaskFilterNode.HasImageset:
+        OutputMaskFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
 
     OutputFilterNode.Imageset.SetTransform(TransformNode)
     OutputMaskFilterNode.Imageset.SetTransform(TransformNode)
 
     argstring = misc.ArgumentsFromDict(Parameters)
-    irassembletemplate = 'ir-assemble ' + argstring + ' -sh 1 -sp %(pixelspacing)i -save %(OutputImageFile)s -load %(InputFile)s -mask %(OutputMaskFile)s -image_dir %(ImageDir)s '
-
-    LevelFormatTemplate = FilterNode.TilePyramid.attrib.get('LevelFormat', Config.Current.LevelFormat)
 
     thisLevel = PyramidLevels[0]
 
@@ -1019,39 +1038,27 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
     if not os.path.exists(ImageMaskLevelNode.FullPath):
         os.makedirs(ImageMaskLevelNode.FullPath)
-
-    thisLevelPathStr = OutputImageNameTemplate % {'level' : thisLevel,
-                                                  'transform' : TransformNode.Name}
-    thisLevelMaskPathStr = OutputImageMaskNameTemplate % {'level' : thisLevel,
-                                                  'transform' : TransformNode.Name}
-
-    ImageName = Config.Current.SectionTemplate % SectionNode.Number + "_" + kwargs.get('ImageName', 'assemble')
-
-    # Should Replace any child elements
-    ImageNode = ImageLevelNode.find('Image')
-    if(ImageNode is None):
-        ImageNode = nb.VolumeManager.ImageNode(OutputImageNameTemplate)
-        ImageNode.InputTransformChecksum = TransformNode.Checksum
-        ImageLevelNode.append(ImageNode)
-
-    MaskImageNode = ImageMaskLevelNode.find('Image')
-    if(MaskImageNode is None):
-        MaskImageNode = nb.VolumeManager.ImageNode(OutputImageMaskNameTemplate)
-        ImageNode.InputTransformChecksum = TransformNode.Checksum
-        ImageMaskLevelNode.append(MaskImageNode)
-
+ 
+    ImageNode = GetOrCreateCleanedImageNode(OutputFilterNode.Imageset, TransformNode, thisLevel, OutputImageNameTemplate)
+    MaskImageNode = GetOrCreateCleanedImageNode(OutputMaskFilterNode.Imageset, TransformNode, thisLevel, OutputImageMaskNameTemplate)
+     
     ImageNode.MaskPath = MaskImageNode.FullPath
+  
+    #===========================================================================
+    # if hasattr(ImageNode, 'InputTransformChecksum'):
+    #     if not transforms.IsValueMatched(ImageNode, 'InputTransformChecksum', TransformNode.Checksum):
+    #         if os.path.exists(ImageNode.FullPath):
+    #             os.remove(ImageNode.FullPath)
+    # else:
+    #     if os.path.exists(ImageNode.FullPath):
+    #         os.remove(ImageNode.FullPath)
+    #===========================================================================
 
-    if hasattr(ImageNode, 'InputTransformChecksum'):
-        if not transforms.IsValueMatched(ImageNode, 'InputTransformChecksum', TransformNode.Checksum):
-            if os.path.exists(ImageNode.FullPath):
-                os.remove(ImageNode.FullPath)
-    else:
-        if os.path.exists(ImageNode.FullPath):
-            os.remove(ImageNode.FullPath)
-
-    image.RemoveOnTransformCropboxMismatched(TransformNode, ImageNode, thisLevel)
-    image.RemoveOnTransformCropboxMismatched(TransformNode, MaskImageNode, thisLevel)
+    #image.RemoveOnTransformCropboxMismatched(TransformNode, ImageNode, thisLevel)
+    #image.RemoveOnTransformCropboxMismatched(TransformNode, MaskImageNode, thisLevel)
+    
+    if os.path.exists(ImageNode.FullPath):
+        image.RemoveOnDimensionMismatch(MaskImageNode.FullPath, core.GetImageSize(ImageNode.FullPath))
 
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
@@ -1093,14 +1100,11 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         shutil.move(tempOutputFullPath, ImageNode.FullPath)
         shutil.move(tempMaskOutputFullPath, MaskImageNode.FullPath)
 
-        ImageNode.InputTransformChecksum = TransformNode.Checksum
-        MaskImageNode.InputTransformChecksum = TransformNode.Checksum
-
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
 
-    BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
-    BuildImagePyramid(OutputMaskFilterNode.Imageset, **kwargs)
+    BuildImagePyramid(OutputFilterNode.Imageset, Interlace=Interlace, **kwargs)
+    BuildImagePyramid(OutputMaskFilterNode.Imageset, Interlace=Interlace, **kwargs)
 
     return SectionNode
 
@@ -1337,7 +1341,9 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
         TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel, SourceImageNode.Path)
         if not os.path.exists(TargetImageNode.Parent.FullPath):
             os.makedirs(TargetImageNode.Parent.FullPath)
-
+        
+        RemoveOutdatedFile(SourceImageNode.FullPath, TargetImageNode.FullPath)
+        
         buildLevel = False
         if os.path.exists(TargetImageNode.FullPath):
             if 'InputImageChecksum' in SourceImageNode.attrib:
@@ -1351,6 +1357,8 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
     #            RemoveOnMismatch()
     #            if(TargetImageNode.attrib["InputImageChecksum"] != SourceImageNode.InputImageChecksum):
     #                os.remove(TargetImageNode.FullPath)
+             
+            
         else:
             buildLevel = True
 

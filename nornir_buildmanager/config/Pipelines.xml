@@ -343,6 +343,18 @@
 		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"   Host="#Host" OutputFile="#OutputFile"/>
 	</Pipeline>
 	
+	
+	<Pipeline Name="Cleanup"  Description="Clean common errors from the volume meta-data"> 
+		<Arguments> 
+		</Arguments>
+			<Iterate VariableName="TransformNode" XPath="Block/Section/Channel/Transform">
+				<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+			</Iterate>
+			<Iterate VariableName="ImageNode" XPath="Block/Section/Channel/Filter/ImageSet/Level/Image">
+				<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
+			</Iterate>
+	</Pipeline>
+	
 	<Pipeline Name="SetPruneCutoff" Description="Set the prune threshold for a filter">
 		<Arguments>
 		    <Argument flag="-Value" dest="PruneVal" type="float" help="Prune threshold to set" required="True" default="0"/>
