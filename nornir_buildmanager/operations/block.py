@@ -522,9 +522,9 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
             # have identical values but different checksums from the Python stos file objects %g representation
     
             # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
-            stosNode.ResetChecksum()
-            stosNode.ControlImageChecksum = ControlImageNode.Checksum
-            stosNode.MappedImageChecksum = MappedImageNode.Checksum
+        stosNode.ResetChecksum()
+        stosNode.ControlImageChecksum = ControlImageNode.Checksum
+        stosNode.MappedImageChecksum = MappedImageNode.Checksum
 
     if CmdRan:
         return stosNode
@@ -581,7 +581,7 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
 
         if(MappedSectionNode is None):
             prettyoutput.LogErr("Could not find expected section for StosBrute: " + str(MappedSection))
-
+            continue
 
         # Figure out all the combinations of assembled images between the two section and test them
         MappedFilterList = MappedSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
