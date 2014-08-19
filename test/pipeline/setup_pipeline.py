@@ -111,10 +111,13 @@ class PlatformTest(test.testbase.TestBase):
             return self.PlatformFullPath
 
     def RunBuild(self, buildArgs):
-        # Run a build, ensure the output directory exists, and return the volume obj
+        '''Run a build, ensure the output directory exists, and return the volume obj'''
         build.Execute(buildArgs)
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
-
+        return self.LoadVolume()
+        
+    def LoadVolume(self):
+        '''Load the volume meta data from disk''' 
         VolumeObj = VolumeManager.Load(self.TestOutputPath)
         self.assertIsNotNone(VolumeObj)
         self.assertTrue(os.path.exists(VolumeObj.FullPath))
@@ -308,7 +311,7 @@ class PlatformTest(test.testbase.TestBase):
 
         for fnode in Filters:
             self.assertEqual(fnode.Locked, LockedVal, "Filter did not lock as expected")
-
+            
 
     def RunShadingCorrection(self, ChannelPattern, CorrectionType=None, FilterPattern=None):
         if FilterPattern is None:
@@ -343,12 +346,15 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunAdjustContrast(self, Filter=None, Gamma=None):
+    def RunAdjustContrast(self, Sections=None, Filter=None, Gamma=None):
         if Filter is None:
             Filter = 'Raw8'
 
         # Adjust Contrast
-        buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+        if Sections is None:
+            buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+        else:
+            buildArgs = self._CreateBuildArgs('AdjustContrast', '-Sections', str(Sections), '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
 
         if not Gamma is None:
             buildArgs.extend(['-Gamma', str(Gamma)])
@@ -604,7 +610,46 @@ class PlatformTest(test.testbase.TestBase):
         volumeNode = self.RunBuild(buildArgs)
 
         self.assertTrue(os.path.exists(os.path.join(volumeNode.FullPath, OutputFile + ".VikingXML")), "No vikingxml file created")
-
+        
+    
+    def __GetLevelNode(self, section_number=691, channel='TEM', filter='Leveled', level=1):
+        
+        volumeNode = self.LoadVolume()
+        self.assertIsNotNone(volumeNode, "Missing filter node")
+        
+        filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (section_number,channel,filter))                                     
+        self.assertIsNotNone(filterNode, "Missing filter node")
+        
+        levelNode = filterNode.TilePyramid.GetLevel(level)
+        self.assertIsNotNone(levelNode, "Missing level %d" % (level))
+        
+        return levelNode
+        
+    def RemoveTileFromPyramid(self, section_number=691, channel='TEM', filter='Leveled', level=1):
+        '''Remove a single image from an image pyramid
+        :return: Filename that was deleted
+        '''
+        
+        levelNode = self.__GetLevelNode(section_number, channel, filter, level)
+        self.assertIsNotNone(levelNode, "Missing level %d" % (level))
+        
+        #Choose a random tile and remove it
+        pngFiles = glob.glob(os.path.join(levelNode.FullPath, '*.png'))
+        
+        chosenPngFile = pngFiles[0]
+        
+        os.remove(chosenPngFile)
+        
+        return chosenPngFile
+    
+    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter='Leveled', level=1, ):
+        '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
+        removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter, level)
+        
+        RegenFunction(**RegenKwargs)
+        
+        self.assertTrue(os.path.exists(removedTileFullPath), "Deleted tile was not regenerated %s" % removedTileFullPath)
+                 
 
 class CopySetupTestBase(PlatformTest):
     '''Copies data from Platform data directory to test output directory at setup'''

@@ -188,7 +188,7 @@ class PMGBuildTest(PMGTest):
         self.RunShadingCorrection(ChannelPattern="([D|d]api)", CorrectionType='darkfield', FilterPattern="Raw8")
         self.RunPrune(Filter="ShadingCorrected", Downsample=2)
         self.RunHistogram(Filter="ShadingCorrected", Downsample=4)
-        self.RunAdjustContrast(Filter="ShadingCorrected", Gamma=1.0)
+        self.RunAdjustContrast(Sections=None, Filter="ShadingCorrected", Gamma=1.0)
         self.RunMosaic(Filter="Leveled")
         self.RunAssemble(Levels=[1])
         self.RunAssemble(Filter="ShadingCorrected", Level=1)
