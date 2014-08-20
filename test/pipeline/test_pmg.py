@@ -191,7 +191,7 @@ class PMGBuildTest(PMGTest):
         self.RunAdjustContrast(Sections=None, Filter="ShadingCorrected", Gamma=1.0)
         self.RunMosaic(Filter="Leveled")
         self.RunAssemble(Levels=[1])
-        self.RunAssemble(Filter="ShadingCorrected", Level=1)
+        self.RunAssemble(Filter="ShadingCorrected", Levels=1)
         self.RunExportImages(Channels="(?!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
 
         self.RunMosaicReport(ContrastFilter="Leveled", AssembleFilter="ShadingCorrected", AssembleDownsample=1)
