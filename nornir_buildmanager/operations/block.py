@@ -1115,9 +1115,6 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
     return InputStosFullPath
 
 
-
-
-
 def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
 
     Logger = logging.getLogger(__name__ + '.StosGrid')
@@ -1157,11 +1154,22 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 
             ControlNumber = InputTransformNode.ControlSectionNumber
             MappedNumber = InputSectionMappingNode.MappedSectionNumber
-
+            
+            control_section = BlockNode.GetSection(ControlNumber)
+            mapped_section = BlockNode.GetSection(MappedNumber)
+            
+            if control_section is None:
+                Logger.warning("Control section %s is missing, skipping grid refinement" % (ControlNumber))
+                continue
+            
+            if mapped_section is None:
+                Logger.warning("Mapped section %s is missing, skipping grid refinement" % (MappedNumber))                
+                continue
+             
             # TODO: Skip transforms using filters which no longer exist.  Should live in a seperate function.
-            ControlFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(ControlNumber).GetChannel(InputTransformNode.ControlChannelName).Filters,
+            ControlFilter = VolumeManagerHelpers.SearchCollection(control_section.GetChannel(InputTransformNode.ControlChannelName).Filters,
                                                                       'Name', ControlFilterPattern, CaseSensitive=True)[0]
-            MappedFilter = VolumeManagerHelpers.SearchCollection(BlockNode.GetSection(MappedNumber).GetChannel(InputTransformNode.MappedChannelName).Filters,
+            MappedFilter = VolumeManagerHelpers.SearchCollection(mapped_section.GetChannel(InputTransformNode.MappedChannelName).Filters,
                                                                       'Name', MappedFilterPattern, CaseSensitive=True)[0]
 
             # GetOrCreate the group for these stos files
