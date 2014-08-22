@@ -200,6 +200,9 @@ class PMGBuildTest(PMGTest):
 
         self.RunCreateBlobFilter(Channels="*", Levels="8,16,%d" % (BruteLevel), Filter="Leveled")
         self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
+        
+        self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+        self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
 
         volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
 
