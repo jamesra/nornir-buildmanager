@@ -21,6 +21,7 @@ class PruneObj:
 
     HistogramXMLFileTemplate = 'PruneScores%s.xml'
     HistogramPNGFileTemplate = 'PruneScores%s.png'
+    HistogramSVGFileTemplate = 'PruneScores%s.svg'
 
     ElementVersion = 1
 
@@ -88,7 +89,7 @@ class PruneObj:
         OutputTransformNode.InputPruneDataType = PruneNode.Type
         OutputTransformNode.InputTransformChecksum = InputTransformNode.Checksum
         if not Threshold is None:
-            OutputTransformNode.Threshold = Threshold
+            OutputTransformNode.Threshold = '%g' % Threshold
 
         PruneDataNode = PruneNode.find('Data')
         if(PruneDataNode is None):
@@ -298,7 +299,7 @@ class PruneObj:
 
         # prettyoutput.Log("Mean: " + str(mean))
 
-        StdDevScalar = 1 / float(numScores - 1)
+        StdDevScalar = 1.0 / float(numScores - 1.0)
         total = 0
         # Calc the std deviation
         for score in scores:
