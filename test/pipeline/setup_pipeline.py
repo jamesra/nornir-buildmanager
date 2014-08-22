@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import time
 
 import test.testbase
 
@@ -46,6 +47,33 @@ def MatchingSections(SectionNodes, sectionNumberList):
     for sectionNode in SectionNodes:
         if sectionNode.Number in sectionNumberList:
             yield sectionNode
+            
+            
+def SectionNumberList(SectionNodes=None):
+    '''List of section numbers'''
+    numbers = []
+    for n in SectionNodes:
+        numbers.append(n.Number) 
+    
+    return numbers
+
+
+def FullPathsForNodes(node_list):
+    list_full_paths = []
+    for n in node_list:
+        list_full_paths.append(n.FullPath)
+        
+    return list_full_paths
+
+
+def BuildPathToModifiedDateMap(path_list):
+    '''Given a list of paths, construct a dictionary which maps to a cached last modified date'''
+    file_to_modified_time= {}
+    for file_path in path_list:
+        mtime = time.ctime(os.path.getmtime(file_path))
+        file_to_modified_time[file_path] = mtime
+        
+    return  file_to_modified_time
 
 
 def MatchingFilters(SectionNodes, Channels, Filters):
@@ -381,7 +409,7 @@ class PlatformTest(test.testbase.TestBase):
     def _VerifyImageSetMatchesTransform(self, image_set_node, transform_name):
         self.assertEqual(ImageSetNode.InputTransform, transform_name, "InputTransform for ImageSet does not match transform used for assemble")
         self._CheckInputTransformChecksumCorrect(ImageSetNode, InputTransformName=transform_name)
-        #Check that the InputTransform name and type match the requested transform
+        # Check that the InputTransform name and type match the requested transform
 
         AssembledImageNode = ImageSetNode.find("Level[@Downsample='%d']/Image" % (Level))
         self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
@@ -395,7 +423,7 @@ class PlatformTest(test.testbase.TestBase):
         if Transform is None:
             Transform = 'Grid'
         
-        if not isinstance(Levels,str):
+        if not isinstance(Levels, str):
             if isinstance(Levels, list):
                 LevelStr = ",".join(str(l) for l in Levels)
             else:
@@ -409,11 +437,11 @@ class PlatformTest(test.testbase.TestBase):
         buildArgs = self._CreateBuildArgs('Assemble', '-Transform', Transform, '-Filters', Filter, '-Downsample', LevelStr, '-NoInterlace')
         volumeNode = self.RunBuild(buildArgs)
 
-        #ChannelNode = volumeNode.find("Block/Section/Channel")
+        # ChannelNode = volumeNode.find("Block/Section/Channel")
         
         ImageSetNodes = list(volumeNode.findall("Block/Section/Channel/Filter[@Name='%s']/ImageSet" % (Filter)))
         self.assertIsNotNone(ImageSetNodes, "ImageSet nodes not found")
-        self.assertGreater(len(ImageSetNodes),0, "ImageSet nodes should be created by assemble unless this is a negative test of some sort")
+        self.assertGreater(len(ImageSetNodes), 0, "ImageSet nodes should be created by assemble unless this is a negative test of some sort")
         
         for ImageSetNode in ImageSetNodes: 
             self._CheckImageSetIsCorrect(ImageSetNode, Transform, Levels)
@@ -425,7 +453,7 @@ class PlatformTest(test.testbase.TestBase):
         ''':param list Levels: Integer list of downsample levels expected'''
         
         self._CheckInputTransformIsCorrect(image_set_node, InputTransformName=transform)
-        #Check that the InputTransform name and type match the requested transform
+        # Check that the InputTransform name and type match the requested transform
 
         for level in Levels:
             AssembledImageNode = image_set_node.find("Level[@Downsample='%d']/Image" % (level))
@@ -433,7 +461,7 @@ class PlatformTest(test.testbase.TestBase):
         
             self.assertTrue(os.path.exists(AssembledImageNode.FullPath), "Output file expected for image node after assemble runs, level %d" % (level))
         
-        #self._CheckInputTransformIsCorrect(AssembledImageNode, InputTransformName=Transform)
+        # self._CheckInputTransformIsCorrect(AssembledImageNode, InputTransformName=Transform)
     
     def _CheckInputTransformIsCorrect(self, InputTransformChecksumNode, InputTransformName):
         '''Check that the checksum for a transform matches the recorded input transform checksum for a node under a channel'''
@@ -486,22 +514,105 @@ class PlatformTest(test.testbase.TestBase):
         self.assertTrue(os.path.exists(AssembledImageNode.FullPath), "No file found for assembled image node")
 
         return volumeNode
+    
+    
+    def VerifyStosTransformPipelineSharedTests(self, volumeNode, stos_map_name, stos_group_name, buildArgs):
+        '''Ensure every section has a transform and that the transform is not regenerated if the pipeline is run twice.'''
+        stos_map_node = volumeNode.find("Block/StosMap[@Name='%s']" % (stos_map_name))
+        self.assertIsNotNone(stos_map_node)
+        
+        stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s']" % (stos_group_name))
+        self.assertIsNotNone(stos_group_node)
+        
+        sectionNodes = volumeNode.findall('Block/Section')
+        self.assertIsNotNone(sectionNodes)
+        self.VerifySectionsHaveStosTransform(stos_group_node, stos_map_node.CenterSection, sectionNodes)
+        
+        #Run align again, make sure the last modified date is unchanged
+        full_paths = FullPathsForNodes(stos_group_node.findall("SectionMappings/Transform"))
+        transform_last_modified = BuildPathToModifiedDateMap(full_paths)
+        
+        volumeNode = self.RunBuild(buildArgs)
+        self.VerifyFilesLastModifiedDateUnchanged(transform_last_modified)
+        
 
     def RunAlignSections(self, Channels, Filters, Levels):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', Channels)
         volumeNode = self.RunBuild(buildArgs)
+        self.assertIsNotNone(volumeNode)
 
-        PotentialStosMap = volumeNode.find("Block/StosMap[@Name='PotentialRegistrationChain']")
-        self.assertIsNotNone(PotentialStosMap)
-
-        FinalStosMap = volumeNode.find("Block/StosMap[@Name='FinalStosMap']")
-        self.assertIsNotNone(FinalStosMap)
-
-        StosBruteGroupNode = volumeNode.find("Block/StosGroup[@Name='StosBrute%d']" % Levels)
-        self.assertIsNotNone(StosBruteGroupNode, "No Stos Group node produced")
-
+        self.VerifyStosTransformPipelineSharedTests(volumeNode, stos_map_name='PotentialRegistrationChain', stos_group_name='%s%d' % ('StosBrute', Levels), buildArgs=buildArgs)
+    
         return volumeNode
+    
+    
+    def VerifySectionsHaveStosTransform(self, stos_group_node, center_section, sectionNodes):
+        '''Ensure that each section in the list is mapped by a transform in the stos group'''
+        # Check that there are transforms 
+        sectionNumbers = SectionNumberList(sectionNodes)
+        self.assertGreater(len(sectionNumbers), 0)
+        
+        # Remove the center section
+        sectionNumbers.remove(center_section)
+        
+        for section_number in sectionNumbers:
+            transform = stos_group_node.find("SectionMappings/Transform[@MappedSectionNumber='%d']" % (section_number))
+            self.assertIsNotNone(transform, "Missing transform mapping section %d" % (section_number))
+            
+    
+    def VerifyFilesLastModifiedDateUnchanged(self, file_last_modified_map):
+        '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
+        
+        for (file_path, last_modified_reference) in file_last_modified_map.items():
+            disk_modified_time = time.ctime(os.path.getmtime(file_path))
+            self.assertEqual(last_modified_reference, disk_modified_time, "Last modified date for %s should not be different" % (file_path))
+            
+    
+    def RunAssembleStosOverlays(self, Group, Downsample, StosMap):
+        
+        buildArgs = self._CreateBuildArgs('AssembleStosOverlays', '-Group', Group, '-Downsample', str(Downsample), '-StosMap', StosMap)
+        volumeNode = self.RunBuild(buildArgs)
+                
+        InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (StosMap))
+        self.assertIsNotNone(InputStosMap)
+        
+        stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (Group, Downsample))
+        self.assertIsNotNone(stos_group_node)
+        
+        # Run the pipeline again and ensure that the overlay images are not recreated
+        sectionNodes = volumeNode.findall('Block/Section')
+        self.assertIsNotNone(sectionNodes)
+        
+        image_nodes = list(stos_group_node.findall('SectionMappings/Image'))
+        self.assertGreater(len(image_nodes), 0, "Images should be produced by RunAssembleStosOverlays")
+        
+        #Check that the overlays are not regenerated on a rebuild
+        full_paths = FullPathsForNodes(image_nodes)
+        image_last_modified = BuildPathToModifiedDateMap(full_paths)
+        
+        volumeNode = self.RunBuild(buildArgs)
+        self.VerifyFilesLastModifiedDateUnchanged(image_last_modified) 
+         
+        return volumeNode
+    
+    
+    
+    def RunSelectBestRegistrationChain(self, Group, Downsample, InputStosMap, OutputStosMap):
+        
+        buildArgs = self._CreateBuildArgs('SelectBestRegistrationChain', '-Group', Group, '-Downsample', str(Downsample), '-InputStosMap', InputStosMap, '-OutputStosMap', OutputStosMap)
+        volumeNode = self.RunBuild(buildArgs)
+        
+        InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (InputStosMap))
+        self.assertIsNotNone(InputStosMap)
+
+        OutputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (OutputStosMap))
+        self.assertIsNotNone(OutputStosMap)
+        
+        self.assertEqual(InputStosMap.CenterSection, OutputStosMap.CenterSection, "Center section should not change when selecting the best registration chain")
+        
+        return volumeNode
+    
 
     def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter):
         # Build Mosaics
@@ -513,9 +624,11 @@ class PlatformTest(test.testbase.TestBase):
                                           '-StosUseMasks', 'True')
         volumeNode = self.RunBuild(buildArgs)
 
-        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (OutputGroup, OutputLevel))
-        self.assertIsNotNone(StosGroupNode, "No %s%d Stos Group node produced" % (OutputGroup, OutputLevel))
-
+        stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (OutputGroup, OutputLevel))
+        self.assertIsNotNone(stos_group_node, "No %s%d Stos Group node produced" % (OutputGroup, OutputLevel))
+          
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (OutputGroup, OutputLevel), stos_map_name='FinalStosMap', buildArgs=buildArgs)
+         
         return volumeNode
 
     def RunScaleVolumeTransforms(self, InputGroup, InputLevel, OutputLevel=1):
@@ -525,17 +638,20 @@ class PlatformTest(test.testbase.TestBase):
 
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (InputGroup, OutputLevel))
         self.assertIsNotNone(StosGroupNode, "No %s%d Stos Group node produced" % (InputGroup, OutputLevel))
-
+        
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (InputGroup, OutputLevel), stos_map_name='FinalStosMap', buildArgs=buildArgs)
         return volumeNode
 
     def RunSliceToVolume(self, Level=1):
         # Build Mosaics
+        group_name = 'SliceToVolume'
         buildArgs = self._CreateBuildArgs('SliceToVolume', '-InputDownsample', str(Level), '-InputGroup', 'Grid', '-OutputGroup', 'SliceToVolume')
         volumeNode = self.RunBuild(buildArgs)
 
-        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='SliceToVolume%d']" % Level)
+        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (group_name,Level))
         self.assertIsNotNone(StosGroupNode, "No SliceToVolume%d stos group node created" % Level)
-
+        
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (group_name, Level), stos_map_name='FinalStosMap', buildArgs=buildArgs)
         return volumeNode
 
     def RunMosaicToVolume(self):
@@ -615,9 +731,8 @@ class PlatformTest(test.testbase.TestBase):
     def __GetLevelNode(self, section_number=691, channel='TEM', filter='Leveled', level=1):
         
         volumeNode = self.LoadVolume()
-        self.assertIsNotNone(volumeNode, "Missing filter node")
         
-        filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (section_number,channel,filter))                                     
+        filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (section_number, channel, filter))                                     
         self.assertIsNotNone(filterNode, "Missing filter node")
         
         levelNode = filterNode.TilePyramid.GetLevel(level)
@@ -633,7 +748,7 @@ class PlatformTest(test.testbase.TestBase):
         levelNode = self.__GetLevelNode(section_number, channel, filter, level)
         self.assertIsNotNone(levelNode, "Missing level %d" % (level))
         
-        #Choose a random tile and remove it
+        # Choose a random tile and remove it
         pngFiles = glob.glob(os.path.join(levelNode.FullPath, '*.png'))
         
         chosenPngFile = pngFiles[0]
@@ -642,7 +757,7 @@ class PlatformTest(test.testbase.TestBase):
         
         return chosenPngFile
     
-    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter='Leveled', level=1, ):
+    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter='Leveled', level=1,):
         '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
         removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter, level)
         

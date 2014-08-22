@@ -705,7 +705,7 @@ def SectionToVolumeImage(Parameters, TransformNode, Logger, CropUndefined=True, 
 
     # Create a node in the XML records
 
-    WarpedImageNode = CreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
+    (created, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
     WarpedImageNode.Type = 'Warped_' + TransformNode.Type
 
     stosImages = StosImageNodes(TransformNode, GroupNode.Downsample)
@@ -718,7 +718,7 @@ def SectionToVolumeImage(Parameters, TransformNode, Logger, CropUndefined=True, 
         files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, WarpedImageNode.FullPath)
         files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, WarpedImageNode.FullPath)
     else:
-        WarpedImageNode = CreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
+        (created, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
         WarpedImageNode.Type = 'Warped_' + TransformNode.Type
 
     if not os.path.exists(WarpedImageNode.FullPath):
@@ -774,11 +774,11 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                         os.makedirs('Temp')
 
                     # Create a node in the XML records
-                    OverlayImageNode = CreateImageNodeHelper(SectionMappingNode, OverlayOutputFileFullPath)
+                    (created_overlay, OverlayImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, OverlayOutputFileFullPath)
                     OverlayImageNode.Type = 'Overlay_' + StosTransformNode.Type
-                    DiffImageNode = CreateImageNodeHelper(SectionMappingNode, DiffOutputFileFullPath)
+                    (created_diff, DiffImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, DiffOutputFileFullPath)
                     DiffImageNode.Type = 'Diff_' + StosTransformNode.Type
-                    WarpedImageNode = CreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
+                    (created_warped, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
                     WarpedImageNode.Type = 'Warped_' + StosTransformNode.Type
 
                     FilePrefix = str(SectionMappingNode.MappedSectionNumber) + '-' + StosTransformNode.ControlSectionNumber + '_'
@@ -787,15 +787,27 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
 
                     if stosImages.ControlImageNode is None or stosImages.MappedImageNode is None:
                         continue
+                    
+                    if created_overlay:
+                        OverlayImageNode.SetTransform(StosTransformNode)
+                    else:
+                        if not OverlayImageNode.RemoveIfTransformMismatched(StosTransformNode):
+                            files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
+                            files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
+                            files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
+                        
+                    if created_diff:
+                        DiffImageNode.SetTransform(StosTransformNode)
+                    else:
+                        DiffImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                        
+                    if created_warped:
+                        WarpedImageNode.SetTransform(StosTransformNode)
+                    else:
+                        WarpedImageNode.RemoveIfTransformMismatched(StosTransformNode)
 
                     # Compare the .stos file creation date to the output
-                    if not OverlayImageNode.RemoveIfTransformMismatched(StosTransformNode):
-                        files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
-                        files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
-                        files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
-                        
-                    DiffImageNode.RemoveIfTransformMismatched(StosTransformNode)
-                    WarpedImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                     
                     
                     #===========================================================
                     # if hasattr(OverlayImageNode, 'InputTransformChecksum'):
@@ -832,9 +844,9 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
 
                         SaveRequired = True
 
-                    OverlayImageNode.SetTransform(StosTransformNode)
-                    DiffImageNode.SetTransform(StosTransformNode)
-                    WarpedImageNode.SetTransform(StosTransformNode)
+                        OverlayImageNode.SetTransform(StosTransformNode)
+                        DiffImageNode.SetTransform(StosTransformNode)
+                        WarpedImageNode.SetTransform(StosTransformNode)
 
             # Figure out where our output should live...
 
