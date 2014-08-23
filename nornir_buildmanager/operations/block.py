@@ -1265,7 +1265,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 
                 if os.path.exists(OutputStosFullPath):
                     stosNode.ResetChecksum()
-                    # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+                    stosNode.SetTransform(InputTransformNode)
                     stosNode.InputTransformChecksum = InputStosFileChecksum
                 
                 yield OutputSectionMappingNode
