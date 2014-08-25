@@ -288,9 +288,7 @@
 					<PythonCall Function="tile.BuildTilesetPyramid"/>
 				</Iterate>
 			</Iterate>
-		</Iterate>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="FinalStosMap" StosGroupName="StosGrid16"/>
+		</Iterate> 
 	</Pipeline>
 
 	<Pipeline Name="MosaicReport" Description="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
@@ -338,7 +336,7 @@
 			<Argument flag="-OutputFile" dest="OutputFile" help="Name of file to write .VikingXML is appended to name automatically" required="True"/>
 		</Arguments>
 
-		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"   Host="#Host" OutputFile="#OutputFile"/>
+		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"  Host="#Host" OutputFile="#OutputFile"/>
 	</Pipeline>
 	
 	
@@ -500,7 +498,7 @@
 	
 	<Pipeline Name="AssembleStosOverlays" Description="Performs slice to slice alignment from scratch to produce an initial 3D volume.  After alignment the best alignment results are selected to create a final stosmap.">
 		<Arguments>
-			<Argument flag="-Group"  default="StosBrute" dest="StosGroup" type="str" help="Stos group to assemble" required="True"/>
+			<Argument flag="-StosGroup"  default="StosBrute" dest="StosGroup" type="str" help="Stos group to assemble" required="True"/>
 			<Argument flag="-Downsample" dest="InputDownsample" type="int" help="Downsample level to assemble" required="True"/>
 			<Argument flag="-StosMap"  default="FinalStosMap" dest="StosMap" type="str" help="Name assigned to generated stos map." required="True"/>
 		</Arguments>
@@ -553,11 +551,6 @@
 				</Parameters>
 			</PythonCall>
 		</Iterate>
-
-		<Select VariableName="InputGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#OutputGroup#OutputDownsample']"/>
-		<PythonCall Function="block.AssembleStosOverlays" GroupNode="#InputGroupNode" StosMapNode="#StosMapNodeObj"/>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#OutputGroup#OutputDownsample.vikingxml" StosMapName="#StosMap" StosGroupName="#OutputGroup#OutputDownsample"/>
 	</Pipeline>
 
 	<Pipeline Name="ScaleVolumeTransforms" Description="Scales a stos group to use a different downsample level.  Useful for producing full-resolution output after generating transforms using downsampled images.">
@@ -589,18 +582,11 @@
 					<PythonCall Function="block.BuildSliceToVolumeTransforms"  OutputMap="#StovOutputGroupName" OutputGroup="#StovOutputGroupName#StovDownsample">
 					</PythonCall>
 				</Iterate>
-			</Iterate>
-
-			<!--<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#StovOutputGroupName']">
-  		  <Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovOutputGroupName#StovDownsample']">
-          	<PythonCall Function="block.AssembleStosOverlays" GroupNode="#StosGroupNode"/>
-          </Iterate>
-        </Iterate> -->		
+			</Iterate> 
 		</Iterate>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
 	</Pipeline>
 
+	<!--
 	<Pipeline Name="SliceToVolumeZeroTest"  Description="Created a group of slice-to-volume transforms from a group of slice-to-slice transforms">
 		<Arguments>
 			<Argument flag="-InputDownsample" dest="StovDownsample" default="16" type="int" help="Downsample level to use for SliceToVolume" required="False"/>
@@ -615,16 +601,10 @@
 					</PythonCall>
 				</Iterate>
 			</Iterate>
-
-			<!--<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#StovOutputGroupName']">
-  		  <Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovOutputGroupName#StovDownsample']">
-          	<PythonCall Function="block.AssembleStosOverlays" GroupNode="#StosGroupNode"/>
-          </Iterate>
-        </Iterate> -->		
+		
 		</Iterate>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
 	</Pipeline>
+	-->
 
 
 	<Pipeline Name="VolumeImage" Description="Produces an assembled image for transforms in a stos group.  If the transforms are slice-to-volume transforms the output should be registered into a volume.  Note that using this function requires assembled images to exist at full resolution.  If these do not exist see the MosaicToVolume pipeline.">
