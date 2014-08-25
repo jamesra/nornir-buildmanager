@@ -1099,13 +1099,13 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
     if section_node is None:
         Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
         Logger.warning("Section %s is missing" % (section_number))
-        continue
+        return None
     
     channel_node = section_node.GetChannel(channel_name)
     if channel_node is None:
         Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
         Logger.warning("Channel %s.%s is missing, skipping grid refinement" % (section_number, channel_node))
-        continue
+        return None
         
      
     # TODO: Skip transforms using filters which no longer exist.  Should live in a seperate function.
