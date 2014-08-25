@@ -1648,10 +1648,10 @@ class StosGroupNode(XContainerElementWrapper):
     def CreateDirectories(self):
         '''Ensures the manual input directory exists'''
         if not os.path.exists(self.FullPath):
-            os.makedirs(os.path.join(self.FullPath))
+            os.makedirs(self.FullPath)
             
         if not os.path.exists(self.ManualInputDirectory):
-            os.makedirs(os.path.join(self.FullPath, 'Manual'))
+            os.makedirs(self.ManualInputDirectory)
             
     def PathToManualTransform(self, InputTransformFullPath):
         '''Check the manual directory for the existence of a user-supplied file we should use.
