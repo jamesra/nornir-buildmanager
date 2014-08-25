@@ -511,7 +511,7 @@
 	
 	<Pipeline Name="SelectBestRegistrationChain" Description="Create a new registration chain by examining the stos overlays produced by AssembleStosOverlays.  If two registrations are possible for a section the overlay with the most overlap is chosen.">
 		<Arguments>
-			<Argument flag="-Group"  default="StosBrute" dest="StosGroup" type="str" help="Stos group to assemble" required="True"/>
+			<Argument flag="-StosGroup"  default="StosBrute" dest="StosGroup" type="str" help="Stos group to assemble" required="True"/>
 			<Argument flag="-Downsample" dest="InputDownsample" type="int" help="Downsample level to assemble" required="True"/>
 			<Argument flag="-InputStosMap"  default="PotentialRegistrationChain" dest="InputStosMap" type="str" help="Name assigned to generated stos map." required="True"/>
 			<Argument flag="-OutputStosMap"  default="FinalStosMap" dest="OutputStosMap" type="str" help="Name assigned to generated stos map." required="False"/>

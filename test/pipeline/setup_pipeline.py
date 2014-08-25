@@ -571,7 +571,7 @@ class PlatformTest(test.testbase.TestBase):
     
     def RunAssembleStosOverlays(self, Group, Downsample, StosMap):
         
-        buildArgs = self._CreateBuildArgs('AssembleStosOverlays', '-Group', Group, '-Downsample', str(Downsample), '-StosMap', StosMap)
+        buildArgs = self._CreateBuildArgs('AssembleStosOverlays', '-StosGroup', Group, '-Downsample', str(Downsample), '-StosMap', StosMap)
         volumeNode = self.RunBuild(buildArgs)
                 
         InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (StosMap))
@@ -600,7 +600,7 @@ class PlatformTest(test.testbase.TestBase):
     
     def RunSelectBestRegistrationChain(self, Group, Downsample, InputStosMap, OutputStosMap):
         
-        buildArgs = self._CreateBuildArgs('SelectBestRegistrationChain', '-Group', Group, '-Downsample', str(Downsample), '-InputStosMap', InputStosMap, '-OutputStosMap', OutputStosMap)
+        buildArgs = self._CreateBuildArgs('SelectBestRegistrationChain', '-StosGroup', Group, '-Downsample', str(Downsample), '-InputStosMap', InputStosMap, '-OutputStosMap', OutputStosMap)
         volumeNode = self.RunBuild(buildArgs)
         
         InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (InputStosMap))
