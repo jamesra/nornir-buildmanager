@@ -686,6 +686,8 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
 
         Width = int(Width * Scale)
         Height = int(Height * Scale)
+    else:
+        ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
         
     return (ImgSrcPath, Height, Width)
     
