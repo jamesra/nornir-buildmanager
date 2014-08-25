@@ -503,13 +503,13 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     CmdRan = False
     if not os.path.exists(stosNode.FullPath):
         
-        ManualStosFileFullPath = __FindManualStosFile(StosGroup, InputTransformNode=stosNode)
+        ManualStosFileFullPath = StosGroup.PathToManualTransform(stosNode.FullPath)
         if not ManualStosFileFullPath is None:
             prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
+            CmdRan = True
         else: 
             __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
-    
             CmdRan = True
             # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
     
@@ -564,14 +564,12 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
 
     if not os.path.exists(OutputStosGroupName):
         os.makedirs(OutputStosGroupName)
-
-    SaveGroup = False
-
-    # GetOrCreate the group for these stos files
-    StosGroupNode = VolumeManagerETree.StosGroupNode(OutputStosGroupName, Downsample=Downsample)
-    (SaveBlock, StosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(StosGroupNode)
-
-    StosGroupNode.Downsample = Downsample
+ 
+    (added, StosGroupNode) = BlockNode.GetOrCreateStosGroup(OutputStosGroupName, Downsample=Downsample) 
+    StosGroupNode.CreateDirectories()
+    if added:
+        yield BlockNode
+     
 
     if not os.path.exists(StosGroupNode.FullPath):
         os.makedirs(StosGroupNode.FullPath)
@@ -591,15 +589,15 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
 
         for MappedFilter in MappedFilterList:
             print "\tMap - " + MappedFilter.Parent.Name + "_" + MappedFilter.Name
-            MappedImageNode = MappedFilter.GetImage(Downsample)
-            MappedMaskImageNode = MappedFilter.GetMaskImage(Downsample)
-
+             
             ControlFilterList = ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
             for ControlFilter in ControlFilterList:
                 print "\tCtrl - " + ControlFilter.Parent.Name + "_" + ControlFilter.Name
 
-               # ControlImageSetNode = VolumeManagerETree.ImageNode.wrap(ControlImageSetNode)
+                # ControlImageSetNode = VolumeManagerETree.ImageNode.wrap(ControlImageSetNode)
                 OutputFile = __StosFilename(ControlFilter, MappedFilter)
+                
+                
 
                 stosNode = FilterToFilterBruteRegistration(StosGroup=StosGroupNode,
                                                 ControlFilter=ControlFilter,
@@ -608,14 +606,8 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
                                                 OutputPath=OutputFile)
 
                 if not stosNode is None:
-                    SaveGroup = True
-
-    if SaveBlock:
-        return BlockNode
-    elif SaveGroup:
-        return StosGroupNode
-    else:
-        return None
+                    yield stosNode.Parent
+ 
 
 def GetImage(BlockNode, SectionNumber, Channel, Filter, Downsample):
 
@@ -1007,22 +999,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
 #
 #    InputTransformNode = GroupNode.find(TransformXPath)
 #    return InputTransformNode
-
-def __FindManualStosFile(StosGroupNode, InputTransformNode):
-    '''Check the manual directory for the existence of a manually created file we should insert into this group.
-       Returns the path to the file if it exists, otherwise None'''
-
-    ManualInputDir = os.path.join(StosGroupNode.FullPath, 'Manual')
-    if not os.path.exists(ManualInputDir):
-        os.makedirs(ManualInputDir)
-
-    # Copy the input stos or converted stos to the input directory
-    ManualInputStosFullPath = os.path.join(ManualInputDir, InputTransformNode.Path)
-
-    if os.path.exists(ManualInputStosFullPath):
-        return ManualInputStosFullPath
-
-    return None
+ 
 
 def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputDownsample, ControlFilter, MappedFilter):
 
@@ -1115,6 +1092,35 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
     return InputStosFullPath
 
 
+def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pattern):
+    '''Return the first filter in the section matching the pattern, or None if no filter exists'''
+    section_node = block_node.GetSection(section_number)
+     
+    if section_node is None:
+        Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
+        Logger.warning("Section %s is missing" % (section_number))
+        continue
+    
+    channel_node = section_node.GetChannel(channel_name)
+    if channel_node is None:
+        Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
+        Logger.warning("Channel %s.%s is missing, skipping grid refinement" % (section_number, channel_node))
+        continue
+        
+     
+    # TODO: Skip transforms using filters which no longer exist.  Should live in a seperate function.
+    filter_matches = VolumeManagerHelpers.SearchCollection(channel_node.Filters,
+                                                          'Name', filter_pattern,
+                                                          CaseSensitive=True)
+    
+    if filter_matches is None or len(filter_matches) == 0:
+        Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
+        Logger.warning("No %s.%s filters match pattern %s" % (section_number, channel_node, filter_pattern))
+        return None
+                                                          
+    return filter_matches[0]
+                                                                              
+
 def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
 
     Logger = logging.getLogger(__name__ + '.StosGrid')
@@ -1123,6 +1129,8 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 
     if(OutputStosGroup is None):
         OutputStosGroup = 'Grid'
+        
+    OutputStosGroupName = OutputStosGroup
 
     if(Type is None):
         Type = 'Grid'
@@ -1133,6 +1141,12 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 
     SaveBlockNode = False
     SaveGroupNode = False
+    
+    (added, OutputStosGroupNode) = BlockNode.GetOrCreateStosGroup(OutputStosGroupName, Downsample)
+    OutputStosGroupNode.CreateDirectories()
+
+    if added:
+        yield BlockNode
 
     for MappedSection in MappedSectionList:
         # Find the inputTransformNode in the InputGroupNode
@@ -1148,47 +1162,31 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
 
             InputStosGroupNode = InputSectionMappingNode.FindParent('StosGroup')
             InputDownsample = int(InputStosGroupNode.Downsample)
-
-            OutputStosGroupName = OutputStosGroup
             InputImageXPathTemplate = "Channel/Filter/Image[@Name='%(ImageName)s']/Level[@Downsample='%(OutputDownsample)d']"
-
-            ControlNumber = InputTransformNode.ControlSectionNumber
-            MappedNumber = InputSectionMappingNode.MappedSectionNumber
             
-            control_section = BlockNode.GetSection(ControlNumber)
-            mapped_section = BlockNode.GetSection(MappedNumber)
+            ControlFilter = __GetFirstMatchingFilter(BlockNode,
+                                                     InputTransformNode.ControlSectionNumber, 
+                                                     InputTransformNode.ControlChannelName,
+                                                     ControlFilterPattern)
             
-            if control_section is None:
-                Logger.warning("Control section %s is missing, skipping grid refinement" % (ControlNumber))
+            MappedFilter = __GetFirstMatchingFilter(BlockNode,
+                                                     InputTransformNode.MappedSectionNumber, 
+                                                     InputTransformNode.MappedChannelName,
+                                                     MappedFilterPattern)
+            
+            if ControlFilter is None:
+                Logger.warning("No control filter, skipping refinement")
                 continue
             
-            if mapped_section is None:
-                Logger.warning("Mapped section %s is missing, skipping grid refinement" % (MappedNumber))                
+            if MappedFilter is None:
+                Logger.warning("No mapped filter, skipping refinement")
                 continue
-             
-            # TODO: Skip transforms using filters which no longer exist.  Should live in a seperate function.
-            ControlFilter = VolumeManagerHelpers.SearchCollection(control_section.GetChannel(InputTransformNode.ControlChannelName).Filters,
-                                                                      'Name', ControlFilterPattern, CaseSensitive=True)[0]
-            MappedFilter = VolumeManagerHelpers.SearchCollection(mapped_section.GetChannel(InputTransformNode.MappedChannelName).Filters,
-                                                                      'Name', MappedFilterPattern, CaseSensitive=True)[0]
-
-            # GetOrCreate the group for these stos files
-            OutputStosGroupNode = VolumeManagerETree.XContainerElementWrapper('StosGroup', OutputStosGroupName, OutputStosGroupName, {'Downsample' : str(OutputDownsample)})
-            (added, OutputStosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosGroupNode)
-
-            if added:
-                yield BlockNode
-
-            if not os.path.exists(OutputStosGroupNode.FullPath):
-                os.makedirs(OutputStosGroupNode.FullPath)
 
             OutputFile = __StosFilename(ControlFilter, MappedFilter)
             OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
             stosNode = OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter)
             if stosNode is None:
                 stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType="grid", OutputPath=OutputFile)
-
-            ManualStosFileFullPath = __FindManualStosFile(StosGroupNode=OutputStosGroupNode, InputTransformNode=stosNode)
 
             (InputStosFullPath, InputStosFileChecksum) = __GetInputStosFileForRegistration(StosGroupNode=OutputStosGroupNode,
                                                                     InputTransformNode=InputTransformNode,
@@ -1231,7 +1229,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
     #        FixStosFilePaths(ControlFilter, MappedFilter, InputTransformNode, OutputDownsample, StosFilePath=InputStosFullPath)
             if not os.path.exists(OutputStosFullPath):
 
-                ManualStosFileFullPath = __FindManualStosFile(StosGroupNode=OutputStosGroupNode, InputTransformNode=stosNode)
+                ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(InputTransformNode=stosNode)
                 if ManualStosFileFullPath is None:
                     argstring = misc.ArgumentsFromDict(Parameters)
                     StosGridTemplate = 'ir-stos-grid -save %(OutputStosFullPath)s -load %(InputStosFullPath)s ' + argstring
@@ -1256,7 +1254,6 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                             prettyoutput.Log("Transform generated by refine was unable to be loaded. Deleting.  Check input transform: " + OutputStosFullPath)
                             yield OutputSectionMappingNode
                             continue
-
                 else:
                     prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
                     shutil.copy(ManualStosFileFullPath, OutputStosFullPath)
@@ -1270,7 +1267,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                 
                 yield OutputSectionMappingNode
                  
-
+                 
 def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
     '''recursively adds registration tree nodes to the stos map'''
 

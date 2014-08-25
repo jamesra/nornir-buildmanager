@@ -1357,6 +1357,26 @@ class BlockNode(XContainerElementWrapper):
 
     def GetSection(self, Number):
         return self.GetChildByAttrib('Section', 'Number', Number)
+    
+    
+    def GetStosGroup(self, group_name, downsample):
+        for stos_group in self.findall('StosGroup', 'Name', group_name):
+            if stos_group.Downsample == downsample:
+                return stos_group
+            
+        return None
+    
+    def GetOrCreateStosGroup(self, group_name, downsample):
+        ''':Return: Tuple of (stos_group, created)'''
+        
+        existing_stos_group = self.GetStosGroup(group_name, downsample)
+        if not existing_stos_group is None:
+            return (False, existing_stos_group)
+        
+        OutputStosGroupNode = XContainerElementWrapper('StosGroup', group_name, group_name, {'Downsample' : str(downsample)})
+        (added, OutputStosGroupNode) = self.UpdateOrAddChildByAttrib(OutputStosGroupNode)
+            
+        return (added, OutputStosGroupNode)
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
@@ -1619,6 +1639,31 @@ class StosGroupNode(XContainerElementWrapper):
     def Downsample(self, val):
         '''The default key used for sorting elements'''
         self.attrib['Downsample'] = '%g' % val
+        
+    @property
+    def ManualInputDirectory(self):
+        '''Directory that manual override stos files are placed in'''
+        return os.path.join(self.FullPath, 'Manual')
+        
+    def CreateDirectories(self):
+        '''Ensures the manual input directory exists'''
+        if not os.path.exists(self.FullPath):
+            os.makedirs(os.path.join(self.FullPath))
+            
+        if not os.path.exists(self.ManualInputDirectory):
+            os.makedirs(os.path.join(self.FullPath, 'Manual'))
+            
+    def PathToManualTransform(self, InputTransformFullPath):
+        '''Check the manual directory for the existence of a user-supplied file we should use.
+           Returns the path to the file if it exists, otherwise None'''
+        
+        transform_filename = os.path.basename(InputTransformFullPath)
+        # Copy the input stos or converted stos to the input directory
+        ManualInputStosFullPath = os.path.join(self.ManualInputDirectory, transform_filename)
+        if os.path.exists(ManualInputStosFullPath):
+            return ManualInputStosFullPath
+    
+        return None
 
     @property
     def SectionMappings(self):
