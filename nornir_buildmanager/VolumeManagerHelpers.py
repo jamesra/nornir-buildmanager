@@ -175,7 +175,7 @@ class InputTransformHandler(object):
         if len(self.InputTransformType) > 0:
             InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
             if InputTransformNode is None:
-                self.logger.warning('Expected input transform not found.  Leaving node alone: ' + self.ToElementString())
+                self.logger.warning('Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
                 return True
 
             if not (InputTransformNode.Checksum == self.InputTransformChecksum):
