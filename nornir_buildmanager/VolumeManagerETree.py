@@ -1360,7 +1360,7 @@ class BlockNode(XContainerElementWrapper):
     
     
     def GetStosGroup(self, group_name, downsample):
-        for stos_group in self.findall('StosGroup', 'Name', group_name):
+        for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):
             if stos_group.Downsample == downsample:
                 return stos_group
             

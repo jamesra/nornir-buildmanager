@@ -565,7 +565,7 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
     if not os.path.exists(OutputStosGroupName):
         os.makedirs(OutputStosGroupName)
  
-    (added, StosGroupNode) = BlockNode.GetOrCreateStosGroup(OutputStosGroupName, Downsample=Downsample) 
+    (added, StosGroupNode) = BlockNode.GetOrCreateStosGroup(OutputStosGroupName, downsample=Downsample) 
     StosGroupNode.CreateDirectories()
     if added:
         yield BlockNode
@@ -1229,7 +1229,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
     #        FixStosFilePaths(ControlFilter, MappedFilter, InputTransformNode, OutputDownsample, StosFilePath=InputStosFullPath)
             if not os.path.exists(OutputStosFullPath):
 
-                ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(InputTransformNode=stosNode)
+                ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
                 if ManualStosFileFullPath is None:
                     argstring = misc.ArgumentsFromDict(Parameters)
                     StosGridTemplate = 'ir-stos-grid -save %(OutputStosFullPath)s -load %(InputStosFullPath)s ' + argstring
