@@ -747,6 +747,9 @@ class XElementWrapper(ElementTree.Element):
         Child.Parent = self
 
         return (NewNodeCreated, Child)
+    
+    def AddChild(self, new_child_element):
+        return self.append(new_child_element)
 
     def append(self, Child):
         assert(not self == Child)
@@ -1373,10 +1376,29 @@ class BlockNode(XContainerElementWrapper):
         if not existing_stos_group is None:
             return (False, existing_stos_group)
         
-        OutputStosGroupNode = XContainerElementWrapper('StosGroup', group_name, group_name, {'Downsample' : str(downsample)})
-        (added, OutputStosGroupNode) = self.UpdateOrAddChildByAttrib(OutputStosGroupNode)
+        OutputStosGroupNode = StosGroupNode(group_name, Downsample=downsample)
+        self.AddChild(OutputStosGroupNode)
             
-        return (added, OutputStosGroupNode)
+        return (True, OutputStosGroupNode)
+    
+    def GetStosMap(self, map_name):
+        return self.GetChildByAttrib('StosMap', 'Name', map_name)
+    
+    def GetOrCreateStosMap(self, map_name):
+        stos_map_node = self.GetStosMap(map_name)
+        if stos_map_node is None:
+            stos_map_node = self.AddChild(StosMapNode(map_name))
+        else:
+            return stos_map_node
+        
+    def RemoveStosMap(self, map_name):
+        ''':return: True if a map was found and removed'''
+        stos_map_node = self.GetStosMap(map_name)
+        if not stos_map_node is None:
+            self.remove(stos_map_node)
+            return True
+        
+        return False
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
@@ -1674,7 +1696,7 @@ class StosGroupNode(XContainerElementWrapper):
 
     def GetOrCreateSectionMapping(self, MappedSectionNumber):
         (added, sectionMappings) = self.UpdateOrAddChildByAttrib(SectionMappingsNode(MappedSectionNumber=MappedSectionNumber), 'MappedSectionNumber')
-        return sectionMappings
+        return (added, sectionMappings)
 
     def TransformsForMapping(self, MappedSectionNumber, ControlSectionNumber):
         sectionMapping = self.GetSectionMapping(MappedSectionNumber)
@@ -1690,7 +1712,8 @@ class StosGroupNode(XContainerElementWrapper):
         ControlSectionNode = ControlFilter.FindParent("Section")
         ControlChannelNode = ControlFilter.FindParent("Channel")
 
-        SectionMappingsNode = self.GetOrCreateSectionMapping(MappedSectionNode.Number)
+        SectionMappingsNode = self.GetSectionMapping(MappedSectionNode.Number)
+        assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
 
         stosNode = SectionMappingsNode.FindStosTransform(ControlSectionNode.Number,
                                                                ControlChannelNode.Name,
@@ -1698,42 +1721,62 @@ class StosGroupNode(XContainerElementWrapper):
                                                                  MappedSectionNode.Number,
                                                                   MappedChannelNode.Name,
                                                                    MappedFilter.Name)
+        
+        
 
         return stosNode
 
-
-    def CreateStosTransformNode(self, ControlFilter, MappedFilter, OutputType, OutputPath):
-
+    def GetOrCreateStosTransformNode(self, ControlFilter, MappedFilter, OutputType, OutputPath):
+        added = False
         stosNode = self.GetStosTransformNode(ControlFilter, MappedFilter)
 
         if stosNode is None:
-            MappedSectionNode = MappedFilter.FindParent("Section")
-            MappedChannelNode = MappedFilter.FindParent("Channel")
-            ControlSectionNode = ControlFilter.FindParent("Section")
-            ControlChannelNode = ControlFilter.FindParent("Channel")
+            added = True
+            stosNode = self.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType, OutputPath)
+        else:
+            self.__LegacyUpdateStosNode(stosNode, ControlFilter, MappedFilter, OutputPath)   
 
-            SectionMappingsNode = self.GetOrCreateSectionMapping(MappedSectionNode.Number)
+        return (added, stosNode)
 
-            stosNode = TransformNode(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
-                                                                                             'MappedSectionNumber' : str(MappedSectionNode.Number),
-                                                                                             'MappedChannelName' : str(MappedChannelNode.Name),
-                                                                                             'MappedFilterName' : str(MappedFilter.Name),
-                                                                                             'MappedImageChecksum' : str(MappedFilter.Imageset.Checksum),
-                                                                                             'ControlChannelName' : str(ControlChannelNode.Name),
-                                                                                             'ControlFilterName' : str(ControlFilter.Name),
-                                                                                             'ControlImageChecksum' : str(ControlFilter.Imageset.Checksum)})
+    def CreateStosTransformNode(self, ControlFilter, MappedFilter, OutputType, OutputPath):
 
-        #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
-        #        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber',
-        #                                                                                    'ControlChannelName',
-        #                                                                                    'ControlFilterName',
-        #                                                                                    'MappedSectionNumber',
-        #                                                                                    'MappedChannelName',
-        #                                                                                    'MappedFilterName'])
+       MappedSectionNode = MappedFilter.FindParent("Section")
+       MappedChannelNode = MappedFilter.FindParent("Channel")
+       ControlSectionNode = ControlFilter.FindParent("Section")
+       ControlChannelNode = ControlFilter.FindParent("Channel")
+
+       SectionMappingsNode = self.GetSectionMapping(MappedSectionNode.Number)
+       assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
+
+       stosNode = TransformNode(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
+                                                                                        'MappedSectionNumber' : str(MappedSectionNode.Number),
+                                                                                        'MappedChannelName' : str(MappedChannelNode.Name),
+                                                                                        'MappedFilterName' : str(MappedFilter.Name),
+                                                                                        'MappedImageChecksum' : str(MappedFilter.Imageset.Checksum),
+                                                                                        'ControlChannelName' : str(ControlChannelNode.Name),
+                                                                                        'ControlFilterName' : str(ControlFilter.Name),
+                                                                                        'ControlImageChecksum' : str(ControlFilter.Imageset.Checksum)})
+
+   #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
+   #        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber',
+   #                                                                                    'ControlChannelName',
+   #                                                                                    'ControlFilterName',
+   #                                                                                    'MappedSectionNumber',
+   #                                                                                    'MappedChannelName',
+   #                                                                                    'MappedFilterName'])
 
 
-            SectionMappingsNode.append(stosNode)
+       SectionMappingsNode.append(stosNode)   
+       
+       
 
+       return stosNode
+   
+    def __LegacyUpdateStosNode(self, stosNode, ControlFilter, MappedFilter, OutputPath):
+        
+        if stosNode is None:
+            return 
+        
         if not hasattr(stosNode, "ControlChannelName") or not hasattr(stosNode, "MappedChannelName"):
 
             MappedChannelNode = MappedFilter.FindParent("Channel")
@@ -1750,8 +1793,6 @@ class StosGroupNode(XContainerElementWrapper):
             stosNode.ControlFilterName = ControlFilter.Name
             stosNode.ControlImageChecksum = str(ControlFilter.Imageset.Checksum)
             stosNode.MappedImageChecksum = str(MappedFilter.Imageset.Checksum)
-
-        return stosNode
 
     def __init__(self, Name, Downsample, attrib=None, **extra):
 
