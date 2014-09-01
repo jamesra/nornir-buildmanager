@@ -1863,7 +1863,7 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms, OutputStosMosaicTransformNam
     assert(minX >= 0)
     assert(minY >= 0)
 
-    for transform in StosMosaicTransforms:
+    for transform in output_transform_list:
         transform.CropBox = (maxX, maxY)
     
     #Create a new node for the translated mosaic if needed and save it
