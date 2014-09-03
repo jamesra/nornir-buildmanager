@@ -480,18 +480,29 @@ class PlatformTest(test.testbase.TestBase):
         self.assertTrue(InputTransformChecksumNode.IsInputTransformMatched(TransformNode), "IsInputTransformMatched should return true when the earlier tests in this function have passed")
         
 
-    def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8):
+    def RunMosaicReport(self, ContrastFilter=None, AssembleFilter=None, AssembleDownsample=8, OutputFile=None):
         if ContrastFilter is None:
             ContrastFilter = "Raw8"
 
         if AssembleFilter is None:
             AssembleFilter = "Leveled"
-
-        buildArgs = self._CreateBuildArgs('MosaicReport', '-PruneFilter', 'Raw8', '-ContrastFilter', ContrastFilter, '-AssembleFilter', AssembleFilter, '-AssembleDownsample', str(AssembleDownsample))
+        
+        if OutputFile is None:
+            OutputFile = 'MosaicReport'
+         
+        buildArgs = self._CreateBuildArgs('MosaicReport', '-PruneFilter', 'Raw8',
+                                                          '-ContrastFilter', ContrastFilter,
+                                                          '-AssembleFilter', AssembleFilter,
+                                                          '-AssembleDownsample', str(AssembleDownsample),
+                                                          '-Output', OutputFile)
         volumeNode = self.RunBuild(buildArgs)
 
-        OutputHtml = glob.glob(os.path.join(self.TestOutputPath, '*.html'))
-        self.assertTrue(len(OutputHtml) > 0)
+        if OutputFile.endswith('.html'):
+            OutputHtml = os.path.join(self.TestOutputPath, OutputFile)
+        else:
+            OutputHtml = os.path.join(self.TestOutputPath, OutputFile + '.html')
+        
+        self.assertTrue(os.path.exists(OutputHtml))
 
         return volumeNode
 
