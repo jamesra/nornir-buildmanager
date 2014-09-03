@@ -1362,24 +1362,39 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
         if MappedToControlTransforms is None or len(MappedToControlTransforms) == 0:
             Logger.error("No transform found: " + str(ControlSection) + ' -> ' + str(mappedSectionNumber))
             continue
-
+         
         for MappedToControlTransform in MappedToControlTransforms:
+            
+            ControlSectionNumber = None
+            ControlChannelName = None
+            ControlFilterName = None
+            
+            if ControlToVolumeTransform is None:
+                ControlSectionNumber = MappedToControlTransform.ControlSectionNumber
+                ControlChannelName = MappedToControlTransform.ControlChannelName
+                ControlFilterName = MappedToControlTransform.ControlFilterName
+            else:
+                ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
+                ControlChannelName = ControlToVolumeTransform.ControlChannelName
+                ControlFilterName = ControlToVolumeTransform.ControlFilterName
 
-            OutputTransform_node = OutputSectionMappingsNode.FindStosTransform(ControlSectionNumber=MappedToControlTransform.ControlSectionNumber,
-                                                                               ControlChannelName=MappedToControlTransform.ControlChannelName,
-                                                                               ControlFilterName=MappedToControlTransform.ControlFilterName,
+            OutputTransform = OutputSectionMappingsNode.FindStosTransform(ControlSectionNumber=ControlSectionNumber,
+                                                                               ControlChannelName=ControlChannelName,
+                                                                               ControlFilterName=ControlFilterName,
                                                                                MappedSectionNumber=MappedToControlTransform.MappedSectionNumber,
                                                                                MappedChannelName=MappedToControlTransform.MappedChannelName,
                                                                                MappedFilterName=MappedToControlTransform.MappedFilterName)
             
-            if OutputTransform_node is None:
+            if OutputTransform is None:
                 OutputTransform = copy.deepcopy(MappedToControlTransform)
                 (OutputTransformAdded, OutputTransform) = OutputSectionMappingsNode.UpdateOrAddChildByAttrib(OutputTransform, 'MappedSectionNumber')
                 OutputTransform.Name = str(mappedSectionNumber) + '-' + str(ControlSection)
                 OutputTransform.Path = OutputTransform.Name + '.stos'
-            
                 OutputTransform.SetTransform(MappedToControlTransform)
                 
+                #Remove any residual transform file just in case
+                if os.path.exists(OutputTransform.FullPath):
+                    os.remove(OutputTransform.FullPath)
 
             if not ControlToVolumeTransform is None:
                 OutputTransform.Path = str(mappedSectionNumber) + '-' + str(ControlToVolumeTransform.ControlSectionNumber) + '.stos'
