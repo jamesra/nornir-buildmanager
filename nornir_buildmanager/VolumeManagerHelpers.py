@@ -72,9 +72,7 @@ class InputTransformHandler(object):
             self.InputTransformChecksum = transform_node.Checksum
             self.InputTransformType = transform_node.Type
             self.InputTransform = transform_node.Name
-            
-            if not transform_node.CropBox is None:
-                self.InputTransformCropbox = transform_node.CropBox            
+            self.InputTransformCropbox = transform_node.CropBox            
         
     
     def IsInputTransformMatched(self, transform_node):
