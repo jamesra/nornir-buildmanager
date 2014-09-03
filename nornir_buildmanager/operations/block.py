@@ -1042,8 +1042,11 @@ def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample
     if not os.path.exists(OutputTransformPath):
         StosGroupNode = InputTransformNode.FindParent('StosGroup')
         InputDownsample = StosGroupNode.Downsample
-        InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
-
+        try:
+            InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+        except ValueError:
+            return False
+             
         ControlImage = ControlFilter.GetOrCreateImage(OutputDownsample)
         if ControlImage is None:
             raise Exception("No control image available for stos file generation: %s" % InputTransformNode.FullPath)
@@ -1604,7 +1607,11 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                 if not stosNode.IsInputTransformMatched(InputTransformNode):
                     if os.path.exists(stosNode.FullPath):
                         os.remove(stosNode.FullPath)
-            
+            else:
+                #Remove an old file if we had to generate the meta-data
+                if os.path.exists(stosNode.FullPath):
+                    os.remove(stosNode.FullPath)
+                    
             if not os.path.exists(stosNode.FullPath):
                 stosGenerated = __GenerateStosFile(InputTransformNode,
                                                                 stosNode.FullPath,
@@ -1618,7 +1625,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                 else:
                     OutputGroupNode.Remove(stosNode)
 
-                yield OutputGroupNode
+                yield OutputGroupNode 
  
 
 # def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwargs):
