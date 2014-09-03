@@ -2349,7 +2349,7 @@ class SectionMappingsNode(XElementWrapper):
     def FindStosTransform(self, ControlSectionNumber, ControlChannelName, ControlFilterName, MappedSectionNumber, MappedChannelName, MappedFilterName):
         '''WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query'''
         for t in self.Transforms:
-            if int(t.ControlSectionNumber) != ControlSectionNumber:
+            if int(t.ControlSectionNumber) != int(ControlSectionNumber):
                 continue
 
             if t.ControlChannelName != ControlChannelName:
@@ -2358,7 +2358,7 @@ class SectionMappingsNode(XElementWrapper):
             if t.ControlFilterName != ControlFilterName:
                 continue
 
-            if int(t.MappedSectionNumber) != MappedSectionNumber:
+            if int(t.MappedSectionNumber) != int(MappedSectionNumber):
                 continue
 
             if t.MappedChannelName != MappedChannelName:
