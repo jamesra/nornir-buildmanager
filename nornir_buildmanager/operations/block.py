@@ -457,7 +457,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
 
     if Logger is None:
         Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
-
+        
     stosNode = StosGroup.GetStosTransformNode(ControlFilter, MappedFilter)
 
     ControlImageNode = ControlFilter.GetOrCreateImage(StosGroup.Downsample)
@@ -597,7 +597,9 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
                 # ControlImageSetNode = VolumeManagerETree.ImageNode.wrap(ControlImageSetNode)
                 OutputFile = __StosFilename(ControlFilter, MappedFilter)
                 
-                
+                (added, stos_mapping_node) = StosGroupNode.GetOrCreateSectionMapping(MappedSection)
+                if added:
+                    yield stos_mapping_node.Parent
 
                 stosNode = FilterToFilterBruteRegistration(StosGroup=StosGroupNode,
                                                 ControlFilter=ControlFilter,
