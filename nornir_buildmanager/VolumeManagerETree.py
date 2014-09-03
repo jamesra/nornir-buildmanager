@@ -1713,7 +1713,10 @@ class StosGroupNode(XContainerElementWrapper):
         ControlChannelNode = ControlFilter.FindParent("Channel")
 
         SectionMappingsNode = self.GetSectionMapping(MappedSectionNode.Number)
-        assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
+        if SectionMappingsNode is None:
+            return None
+        
+        #assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
 
         stosNode = SectionMappingsNode.FindStosTransform(ControlSectionNode.Number,
                                                                ControlChannelNode.Name,
