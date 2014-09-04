@@ -1856,17 +1856,18 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms, OutputStosMosaicTransformNam
             output_transform_node = copy.deepcopy(input_transform_node)
             output_transform_node.Name = OutputStosMosaicTransformName
             output_transform_node.Path = OutputStosMosaicTransformName + '.mosaic'
-            output_transform_node.SetTransform(output_transform_node)
+            
             
             channel_node.AddChild(output_transform_node)
         else:
             if not output_transform_node.IsInputTransformMatched(input_transform_node):
                 if os.path.exists(output_transform_node.FullPath):
                     os.remove(output_transform_node.FullPath)    
-                    
+         
         output_transform_list.append(output_transform_node)
         
         #Always copy so our offset calculation is based on untranslated transforms
+        output_transform_node.SetTransform(input_transform_node)
         shutil.copy(input_transform_node.FullPath, output_transform_node.FullPath)              
             
     mosaicToVolume = mosaicvolume.MosaicVolume.Load(output_transform_list)
