@@ -1491,7 +1491,7 @@ class FilterNode(XContainerElementWrapper):
     
     @property
     def HasImageset(self):
-        return not self.find('Imageset') is None 
+        return not self.find('ImageSet') is None
 
     @property
     def Imageset(self):
