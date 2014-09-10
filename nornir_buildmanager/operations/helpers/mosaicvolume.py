@@ -8,6 +8,7 @@ import nornir_imageregistration.volume as volume
 import nornir_imageregistration.mosaic as mosaic
 import nornir_imageregistration.files.mosaicfile as mosaicfile
 import nornir_imageregistration.transforms.factory as factory
+import nornir_pools
 
 class MosaicVolume(volume.Volume):
     '''
@@ -18,17 +19,27 @@ class MosaicVolume(volume.Volume):
     def Load(cls, TransformNodes):
 
         vol = MosaicVolume()
-
+        
+        pool = nornir_pools.GetThreadPool("MosaicVolumeReader", num_threads=2)        
+        tasks = []
         for transform in TransformNodes:
-            mosaicObj = mosaic.Mosaic.LoadFromMosaicFile(transform.FullPath)
+            task = pool.add_task("Load %s" % transform.FullPath, mosaic.Mosaic.LoadFromMosaicFile, transform.FullPath)
+            
             Channel = transform.FindParent('Channel')
             Section = transform.FindParent('Section')
+            task.transformNode = transform
+            task.sectionKey = "%d_%s" % (Section.Number, Channel.Name) 
+            #mosaicObj.transformNode = transform
+            #sectionKey = "%d_%s" % (Section.Number, Channel.Name)
+            
+            tasks.append(task)
 
-            mosaicObj.transformNode = transform
+        for task in tasks:
+            #mosaicObj = #mosaic.Mosaic.LoadFromMosaicFile(transform.FullPath)
+            mosaicObj = task.wait_return()
+            mosaicObj.transformNode = task.transformNode
 
-            sectionKey = "%d_%s" % (Section.Number, Channel.Name)
-
-            vol.AddSection(sectionKey, mosaicObj)
+            vol.AddSection(task.sectionKey, mosaicObj)
 
         return vol
 
