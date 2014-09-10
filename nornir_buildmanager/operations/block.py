@@ -1248,32 +1248,6 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                 
                 yield OutputSectionMappingNode
                  
-                 
-def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
-    '''recursively adds registration tree nodes to the stos map'''
-
-
-
-    if mappedSectionNumber is None:
-        mappedSectionNumber = controlSectionNumber
-    elif isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
-        mappedSectionNumber = mappedSectionNumber.SectionNumber
-
-    print("Adding " + str(mappedSectionNumber))
-
-    rtNode = None
-    if mappedSectionNumber in rt.Nodes:
-        rtNode = rt.Nodes[mappedSectionNumber]
-    else:
-        return
-
-    # Can loop forever here if a section is mapped twice*/
-    for mapped in rtNode.Children:
-        StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
-
-        if mapped.SectionNumber in rt.Nodes:
-            __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped.SectionNumber)
-
 
 def __StosMapToRegistrationTree(StosMapNode):
     '''Convert a collection of stos mappings into a tree.  The tree describes which transforms must be used to map points between sections'''
@@ -1297,6 +1271,30 @@ def __RegistrationTreeToStosMap(rt, StosMapName):
         __AddRegistrationTreeNodeToStosMap(OutputStosMap, rt, rootNode.SectionNumber)
 
     return OutputStosMap
+
+      
+def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
+    '''recursively adds registration tree nodes to the stos map'''
+ 
+    if mappedSectionNumber is None:
+        mappedSectionNumber = controlSectionNumber
+    elif isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
+        mappedSectionNumber = mappedSectionNumber.SectionNumber
+
+    print("Adding " + str(mappedSectionNumber))
+
+    rtNode = None
+    if mappedSectionNumber in rt.Nodes:
+        rtNode = rt.Nodes[mappedSectionNumber]
+    else:
+        return
+
+    # Can loop forever here if a section is mapped twice*/
+    for mapped in rtNode.Children:
+        StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
+
+        if mapped.SectionNumber in rt.Nodes:
+            __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped.SectionNumber)
 
 
 def TranslateVolumeToZeroOrigin(StosGroupNode, **kwargs):
