@@ -1350,11 +1350,11 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
-    for MappedSecitionNode in Node.Children:
-        mappedSectionNumber = MappedSecitionNode.SectionNumber
+    for MappedSectionNode in Node.Children:
+        mappedSectionNumber = MappedSectionNode.SectionNumber
         mappedNode = rt.Nodes[mappedSectionNumber]
 
-        Logger.info(str(ControlSection) + " <- " + str(mappedSectionNumber))
+        logStr = "%s <- %s" % (str(ControlSection),  str(mappedSectionNumber))
 
         (MappingAdded, OutputSectionMappingsNode) = OutputGroupNode.GetOrCreateSectionMapping(mappedSectionNumber)
         if MappingAdded:
@@ -1363,7 +1363,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
         MappedToControlTransforms = InputGroupNode.TransformsForMapping(mappedSectionNumber, ControlSection)
         
         if MappedToControlTransforms is None or len(MappedToControlTransforms) == 0:
-            Logger.error("No transform found: " + str(ControlSection) + ' -> ' + str(mappedSectionNumber))
+            Logger.error(" %s : No transform found:" % (logStr))
             continue
          
         for MappedToControlTransform in MappedToControlTransforms:
@@ -1403,7 +1403,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                 OutputTransform.Path = str(mappedSectionNumber) + '-' + str(ControlToVolumeTransform.ControlSectionNumber) + '.stos'
 
             if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
-                Logger.info("Removed outdated transform %s" % (OutputTransform.Path))
+                Logger.info(" %s: Removed outdated transform %s" % (logStr, OutputTransform.Path))
                 if os.path.exists(OutputTransform.FullPath):
                     os.remove(OutputTransform.FullPath)
                     
@@ -1425,7 +1425,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                 # Files.RemoveOutdatedFile(MappedToControlTransform.FullPath, OutputTransform.FullPath )
 
                 if not os.path.exists(OutputTransform.FullPath):
-                    Logger.warn("Copy mapped to volume center stos transform %s" % (OutputTransform.Path))
+                    Logger.info(" %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
                     shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
                     # OutputTransform.Checksum = MappedToControlTransform.Checksum
                     OutputTransform.SetTransform(MappedToControlTransform)
@@ -1439,6 +1439,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
 
                 if hasattr(OutputTransform, "ControlToVolumeTransformChecksum"):
                     if not OutputTransform.ControlToVolumeTransformChecksum == ControlToVolumeTransform.Checksum:
+                        Logger.info(" %s: ControlToVolumeTransformChecksum mismatch, removing" % (logStr))
                         if os.path.exists(OutputTransform.FullPath):
                             os.remove(OutputTransform.FullPath)
                 elif os.path.exists(OutputTransform.FullPath):
@@ -1446,6 +1447,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
  
                 if not os.path.exists(OutputTransform.FullPath):
                     try:
+                        Logger.info(" %s: Adding transforms" % (logStr))
                         MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath, ControlToVolumeTransform.FullPath)
                         MToVStos.Save(OutputTransform.FullPath)
 
@@ -1459,6 +1461,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                         OutputTransform = None
                         pass
                     yield OutputSectionMappingsNode
+                else:
+                    Logger.info(" %s: is still valid" % (logStr))
 
             for retval in SliceToVolumeFromRegistrationTreeNode(rt, mappedNode, InputGroupNode, OutputGroupNode, ControlToVolumeTransform=OutputTransform):
                 yield retval
