@@ -129,7 +129,7 @@ class PlatformTest(test.testbase.TestBase):
     @property
     def PlatformFullPath(self):
         return os.path.join(self.TestDataPath, "PlatformRaw", self.Platform)
-
+     
     @property
     def ImportedDataPath(self):
 
@@ -547,9 +547,12 @@ class PlatformTest(test.testbase.TestBase):
         self.VerifyFilesLastModifiedDateUnchanged(transform_last_modified)
         
 
-    def RunAlignSections(self, Channels, Filters, Levels):
+    def RunAlignSections(self, Channels, Filters, Levels, Center=None):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', Channels)
+        if not Center is None:
+            buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', Channels, '-Center', str(Center))             
+        
         volumeNode = self.RunBuild(buildArgs)
         self.assertIsNotNone(volumeNode)
 
@@ -578,6 +581,14 @@ class PlatformTest(test.testbase.TestBase):
         for (file_path, last_modified_reference) in file_last_modified_map.items():
             disk_modified_time = time.ctime(os.path.getmtime(file_path))
             self.assertEqual(last_modified_reference, disk_modified_time, "Last modified date for %s should not be different" % (file_path))
+            
+    
+    def VerifyFilesLastModifiedDateChanged(self, file_last_modified_map):
+        '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
+        
+        for (file_path, last_modified_reference) in file_last_modified_map.items():
+            disk_modified_time = time.ctime(os.path.getmtime(file_path))
+            self.assertGreater(disk_modified_time, last_modified_reference, "Last modified date for %s is %s, should be later than %s" % (file_path, str(disk_modified_time), str(last_modified_reference)))
             
     
     def RunAssembleStosOverlays(self, Group, Downsample, StosMap):
@@ -775,7 +786,34 @@ class PlatformTest(test.testbase.TestBase):
         RegenFunction(**RegenKwargs)
         
         self.assertTrue(os.path.exists(removedTileFullPath), "Deleted tile was not regenerated %s" % removedTileFullPath)
-                 
+        
+    def CopyManualStosFiles(self, ManualStosFullPath, StosGroupName):
+        '''Copy all stos files from the manual stos directory into the StosGroup's manual directory.
+        :param str ManualStosFullPath: Directory containing .stos files
+        :param str StosGroupName: Stos group to add manual files to
+        :return: list of transform nodes targeted by copied manual files
+        '''
+        
+        volumeNode = self.LoadVolume()
+        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s']" % StosGroupName)
+        self.assertIsNotNone(StosGroupNode)
+        ManualStosDir = os.path.join(StosGroupNode.FullPath, 'Manual')
+
+        # os.remove(ManualStosDir)
+        stosTransformList = []
+        for f in glob.glob(os.path.join(ManualStosFullPath, '*.stos')):
+            shutil.copy(f, ManualStosDir)
+            
+            stosFilePath = os.path.basename(f)
+            
+            #Find the TransformNode in the stos group we expect to be replaced by this manual file
+            stosTransform = StosGroupNode.find("SectionMappings/Transform[@Path='%s']" % stosFilePath)
+            self.assertIsNotNone(stosTransform, "Stos transform file that is overriden by manual files does not exist: %s" % stosFilePath)
+            
+            stosTransformList.append(stosTransform)
+            
+        return stosTransformList
+
 
 class CopySetupTestBase(PlatformTest):
     '''Copies data from Platform data directory to test output directory at setup'''

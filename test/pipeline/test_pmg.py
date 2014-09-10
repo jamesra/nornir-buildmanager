@@ -180,6 +180,11 @@ class PMGBuildTest(PMGTest):
     @property
     def VolumePath(self):
         return "6263_NoDapi"
+    
+    @property
+    def Grid32ManualStosFullPath(self):
+        return os.path.join(self.PlatformPath, '6263_ManualStos')
+     
 
     def runTest(self):
 
@@ -206,23 +211,22 @@ class PMGBuildTest(PMGTest):
 
         volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
 
-        ManualStosInput = os.path.join(self.PlatformFullPath, '6263_ManualStos')
-        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % ('Grid', BruteLevel))
-        ManualStosDir = os.path.join(StosGroupNode.FullPath, 'Manual')
-
-        # os.remove(ManualStosDir)
-        for f in glob.glob(os.path.join(ManualStosInput, '*.stos')):
-            shutil.copy(f, ManualStosDir)
-
+        listReplacedTransformNodes = self.CopyManualStosFiles(ManualStosPath=self.Grid32ManualStosFullPath, StosGroupName='%s%d' % ('Grid', BruteLevel))
+        
         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+        
         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
         self.RunMosaicToVolume()
         self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleLevel=1)
         self.RunExportImages(Channels="Registered", Filters="ShadingCorrected", AssembleLevel=1, Output="Registered")
+        
+    
+            
+    
+ 
 
 #
 # class PMGBuildTest(setup_pipeline.CopySetupTestBase):
