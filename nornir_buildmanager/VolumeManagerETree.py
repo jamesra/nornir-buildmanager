@@ -1274,6 +1274,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
 
         # prettyoutput.Log("Saving %s" % XMLFilename)
+        
+        if not os.path.exists(self.FullPath):
+            os.makedirs(self.FullPath)
 
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
        # print OutputXML
@@ -2150,8 +2153,8 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         (Xo, Yo, Width, Height) = self.CropBox
         Xo = Xo // float(downsample)
         Yo = Yo // float(downsample)
-        Width = math.ceil(Width / float(downsample))
-        Height = math.ceil(Height / float(downsample))
+        Width = int(math.ceil(Width / float(downsample)))
+        Height = int(math.ceil(Height / float(downsample)))
 
         return (Xo, Yo, Width, Height)
 
