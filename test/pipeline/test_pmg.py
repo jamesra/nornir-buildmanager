@@ -183,7 +183,7 @@ class PMGBuildTest(PMGTest):
     
     @property
     def Grid32ManualStosFullPath(self):
-        return os.path.join(self.PlatformPath, '6263_ManualStos')
+        return os.path.join(self.PlatformFullPath, '6263_ManualStos')
      
 
     def runTest(self):
@@ -211,7 +211,7 @@ class PMGBuildTest(PMGTest):
 
         volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
 
-        listReplacedTransformNodes = self.CopyManualStosFiles(ManualStosPath=self.Grid32ManualStosFullPath, StosGroupName='%s%d' % ('Grid', BruteLevel))
+        listReplacedTransformNodes = self.CopyManualStosFiles(self.Grid32ManualStosFullPath, StosGroupName='%s%d' % ('Grid', BruteLevel))
         
         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
         
