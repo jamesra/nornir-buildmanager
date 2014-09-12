@@ -8,9 +8,9 @@ import logging
 import os
 import shutil
 import unittest
-import unittest
+import time
 
-from nornir_buildmanager.VolumeManagerETree import VolumeManager
+from nornir_buildmanager.VolumeManagerETree import VolumeManager 
 import nornir_buildmanager.build as build
 from nornir_buildmanager.importers.idoc import SerialEMLog
 import nornir_buildmanager.importers.idoc as idoc
@@ -34,6 +34,10 @@ class IDocTest(setup_pipeline.PlatformTest):
     @property
     def Platform(self):
         return "IDoc"
+    
+    @property
+    def Grid32ManualStosFullPath(self):
+        return os.path.join(self.PlatformFullPath, "IDocBuildTest_Grid32Manual")
 
 #    def setUp(self):
 #
@@ -62,6 +66,218 @@ class IDocTest(setup_pipeline.PlatformTest):
 #        if os.path.exists(self.VolumeFullPath):
 #            shutil.rmtree(self.VolumeFullPath)
 #
+
+
+class StosRebuildHelper(object):
+    
+    @property
+    def Grid32ManualStosFullPath(self):
+        return os.path.join(self.PlatformFullPath, "IDocBuildTest_Grid32Manual")
+      
+    def FetchStosTransformsByInputTransformChecksum(self, input_transform_list, stos_group_name):
+        '''Find all of the transforms from a stos group with a matching path'''
+          
+        volumeObj = self.LoadVolume()
+        stosGroup = volumeObj.find("Block/StosGroup[@Name='%s']" % stos_group_name)
+        self.assertIsNotNone(stosGroup, "Stos group not found %s" % (stos_group_name))
+          
+        outputTransformList = []
+        for originalTransform in input_transform_list:
+            updatedTransform = stosGroup.find("SectionMappings/Transform[@InputTransformChecksum='%s']" % (originalTransform.Checksum))
+            self.assertIsNotNone(updatedTransform, "No transform found with input transform checksum %s" % originalTransform.Checksum)
+              
+            outputTransformList.append(updatedTransform)
+          
+        return outputTransformList
+    
+    
+    def FetchMosaicToVolumeTransformsByInputTransformChecksum(self, input_transform_list):
+        '''Find all of the transforms from a stos group with a matching path'''
+          
+        volumeObj = self.LoadVolume()
+        stosBlock = volumeObj.find("Block")
+        self.assertIsNotNone(stosBlock, "Stos block not found %s")
+          
+        outputTransformList = []
+        for originalTransform in input_transform_list:
+            updatedTransform = stosBlock.find("Section/Channel/Transform[@InputTransformChecksum='%s']" % (originalTransform.Checksum))
+            self.assertIsNotNone(updatedTransform, "No transform found with input transform checksum %s" % originalTransform.Checksum)
+              
+            outputTransformList.append(updatedTransform)
+          
+        return outputTransformList
+    
+    
+    def FetchMosaicToVolumeTransforms(self, input_transform_list):
+        '''Find all of the transforms from a stos group with a matching path'''
+          
+        volume_obj = self.LoadVolume() 
+          
+        outputTransformList = []
+        for originalTransform in input_transform_list:
+            updatedTransform = self._FetchMosaicToVolumeTransform(volume_obj, originalTransform)
+            outputTransformList.append(updatedTransform)
+          
+        return outputTransformList
+    
+    def _FetchMosaicToVolumeTransform(self, volume_obj, input_transform):
+ 
+        stosBlock = volume_obj.find("Block")
+        self.assertIsNotNone(stosBlock, "Stos block not found %s")
+        
+        section_number = input_transform.FindParent('Section').Number
+        channel_name = input_transform.FindParent('Channel').Name
+         
+        updatedTransform = stosBlock.find("Section[@Number='%d']/Channel[@Name='%s']/Transform[@Name='%s']" % (int(section_number), channel_name, input_transform.Name))
+        self.assertIsNotNone(updatedTransform, "No transform found with input transform checksum %s" % input_transform.InputTransform)
+        
+        return updatedTransform
+      
+      
+    def ForceStosRebuild(self, Grid32ManualStosFullPath, BruteLevel):
+        '''Add a manual transform to the grid32 level.  Ensure the entire stack is regenerated'''
+          
+        StosGroupName = 'Grid32'
+        
+          
+        #OK, part two is to change a mosaic, and ensure that every file downstream is updated
+        transformList = self.CopyManualStosFiles(Grid32ManualStosFullPath, StosGroupName=StosGroupName)
+        self.assertGreater(len(transformList), 0, "Transform list should not be empty")
+          
+        grid32TransformList = self.RunPipelineToRefreshStosGroupTransforms(transformList,
+                                                     stos_group_name='Grid32', 
+                                                     func=self.RunRefineSectionAlignment, 
+                                                     func_args_dict={
+                                                     'InputGroup':"StosBrute",
+                                                     'InputLevel':BruteLevel,
+                                                     'OutputGroup':"Grid",
+                                                     'OutputLevel':BruteLevel,
+                                                     'Filter':"Leveled"}
+                                                     ) 
+          
+        originalGrid8TransformList = self.FetchStosTransformsByInputTransformChecksum(transformList, stos_group_name="Grid8")
+        self.assertGreater(len(originalGrid8TransformList), 0, "Transform list should not be empty")
+          
+        grid8TransformList = self.RunPipelineToRefreshStosGroupTransforms(originalGrid8TransformList,
+                                                     stos_group_name='Grid8', 
+                                                     func=self.RunRefineSectionAlignment,
+                                                     func_args_dict={
+                                                     'InputGroup':"Grid",
+                                                     'InputLevel':BruteLevel,
+                                                     'OutputGroup':"Grid",
+                                                     'OutputLevel':BruteLevel / 4,
+                                                     'Filter':"Leveled"}
+                                                     )
+          
+        originalGrid1TransformList = self.FetchStosTransformsByInputTransformChecksum(originalGrid8TransformList, stos_group_name="Grid1")
+        self.assertGreater(len(originalGrid1TransformList), 0, "Transform list should not be empty")
+           
+        grid1TransformList = self.RunPipelineToRefreshStosGroupTransforms(originalGrid1TransformList,
+                                                     stos_group_name='Grid1', 
+                                                     func=self.RunScaleVolumeTransforms, 
+                                                     func_args_dict={
+                                                     'InputGroup':"Grid",
+                                                     'InputLevel':BruteLevel / 4,
+                                                     'OutputLevel': 1}
+                                                     )
+          
+        originalsliceToVolume1TransformList = self.FetchStosTransformsByInputTransformChecksum(originalGrid1TransformList, stos_group_name="SliceToVolume1")
+        self.assertGreater(len(originalsliceToVolume1TransformList), 0, "Transform list should not be empty")
+          
+        sliceToVolume1 = self.RunPipelineToRefreshStosGroupTransforms(originalsliceToVolume1TransformList,
+                                                     stos_group_name='SliceToVolume1', 
+                                                     func=self.RunSliceToVolume, 
+                                                     func_args_dict={} )
+        
+        originalChannelToMosaicUntranslatedTransformList = self.FetchMosaicToVolumeTransformsByInputTransformChecksum(originalsliceToVolume1TransformList)
+        self.assertGreater(len(originalChannelToMosaicUntranslatedTransformList), 0, "Transform list should not be empty")
+        
+        originalChannelToMosaicTransformList = self.FetchMosaicToVolumeTransformsByInputTransformChecksum(originalChannelToMosaicUntranslatedTransformList)
+        self.assertGreater(len(originalChannelToMosaicTransformList), 0, "Transform list should not be empty")
+        
+        
+                   
+        sliceToVolume1 = self.RunPipelineToRefreshChannelToMosaicTransforms(originalChannelToMosaicUntranslatedTransformList,
+                                                                            originalChannelToMosaicTransformList,
+                                                                            func=self.RunMosaicToVolume, 
+                                                                            func_args_dict={} )
+        
+         
+          
+    def RunPipelineToRefreshStosGroupTransforms(self, transformList, stos_group_name, func, func_args_dict):
+        '''Run a pipeline that should update every transform in the transform list.
+           Returns the updated transforms'''
+          
+        full_transform_paths = setup_pipeline.FullPathsForNodes(transformList)
+        last_modified_dict = setup_pipeline.BuildPathToModifiedDateMap(full_transform_paths)
+           
+        updatedVolumeObj = func(**func_args_dict)
+          
+        return self._EnsureStosGroupTransformsRefreshed(volumeObj=updatedVolumeObj, 
+                                               stos_group_name=stos_group_name,
+                                               originalTransformList=transformList,
+                                               last_modified_dict=last_modified_dict)
+          
+    def _EnsureStosGroupTransformsRefreshed(self, volumeObj, stos_group_name, originalTransformList, last_modified_dict):
+        '''Given a list of transforms, ensure that each transform has been updated'''
+                  
+        stosGroup = volumeObj.find("Block/StosGroup[@Name='%s']" % stos_group_name)
+        self.assertIsNotNone(stosGroup, "Stos group not found %s" % (stos_group_name))
+          
+        updatedTransforms = []
+        for originalTransform in originalTransformList:
+            updatedTransform = stosGroup.find("SectionMappings/Transform[@Path='%s']" % (originalTransform.Path))
+            self.assertIsNotNone(updatedTransform, "Updated transform is None, should match manual transform info")
+              
+            #All files should be replaced with the manual stos files
+            self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
+              
+            self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum, "Checksums should not match after being replaced by a manual stos file")
+              
+            updatedTransforms.append(updatedTransform)
+              
+        return updatedTransforms
+    
+    def RunPipelineToRefreshChannelToMosaicTransforms(self, transform_untranslated_list, transform_translated_list, func, func_args_dict):
+        '''Run a pipeline that should update every transform in the transform list.
+           Returns the updated transforms'''
+          
+        full_untranslated_transform_paths = setup_pipeline.FullPathsForNodes(transform_untranslated_list)
+        last_untranslated_modified_dict = setup_pipeline.BuildPathToModifiedDateMap(full_untranslated_transform_paths)
+        
+        full_translated_transform_paths = setup_pipeline.FullPathsForNodes(transform_translated_list)
+        last_translated_modified_dict = setup_pipeline.BuildPathToModifiedDateMap(full_translated_transform_paths)
+           
+        updatedVolumeObj = func(**func_args_dict)
+        
+        self._EnsureChannelToMosaicTransformsRefreshed(volumeObj=updatedVolumeObj,  
+                                                              originalTransformList=transform_untranslated_list,
+                                                              last_modified_dict=last_untranslated_modified_dict)
+        
+        return self._EnsureChannelToMosaicTransformsRefreshed(volumeObj=updatedVolumeObj,  
+                                                              originalTransformList=transform_translated_list,
+                                                              last_modified_dict=last_translated_modified_dict)
+          
+         
+        
+    def _EnsureChannelToMosaicTransformsRefreshed(self, volumeObj, originalTransformList, last_modified_dict):
+         
+          
+        updatedTransforms = []
+        for originalTransform in originalTransformList:
+            updatedTransform = self._FetchMosaicToVolumeTransform(volumeObj, originalTransform)
+              
+            #All files should be replaced with the manual stos files
+            self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
+              
+            self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum, "Checksums should not match after being replaced by a manual stos file")
+              
+            updatedTransforms.append(updatedTransform)
+              
+        return updatedTransforms
+      
+          
+          
 
 class IDocSingleSectionImportTest(IDocTest):
 
@@ -149,77 +365,161 @@ class IDocSingleSectionImportTest(IDocTest):
 #         self.RunSliceToVolume()
 #         self.RunMosaicToVolume()
 #         self.RunCreateVikingXML()
-#         self.RunAssembleMosaicToVolume(Channels="TEM")
-
-class IDocBuildTest(IDocTest):
-
+#        self.RunAssembleMosaicToVolume(Channels="TEM")
+#===============================================================================
+     
+class IDocBuildTest(IDocTest, StosRebuildHelper):
+     
     def runTest(self):
-
+     
         self.RunImport()
         self.RunPrune()
-
+     
         self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
-
+     
         self.RunHistogram()
-
+     
         self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
-
+     
         self.RunAdjustContrast()
-
+     
+        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
+        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)       
+             
         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
-
+     
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
         self.RunAssemble(Levels=[8,16])
+             
         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
         self.RunMosaicReport()
-
+     
         # Copy output here to run IDocAlignTest
-
+     
         BruteLevel = 32
-
+     
         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
-        self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
+        self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
+             
+        self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+        self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+             
         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-
+     
         # Copy output here to run IDocAlignOutputTest
-
+     
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
         self.RunAssembleMosaicToVolume(Channels="TEM")
-        self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
-
-# class IDocAlignTest(setup_pipeline.CopySetupTestBase):
+        self.RunMosaicReport(OutputFile='VolumeReport')
+        self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16) 
+ 
+        self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)
+#      
+# class IDocBuildTest(setup_pipeline.CopySetupTestBase, StosRebuildHelper):
 #     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
-#
+#    
 #     @property
 #     def VolumePath(self):
-#         return "RC2_4Square_Assembled"
-#
+#         return "IDocBuildTest"
+#    
 #     @property
 #     def Platform(self):
 #         return "IDOC"
-#
+#       
+#     
+#       
+#     @property
+#     def BruteLevel(self):
+#         return 32
+#       
 #     def runTest(self):
-#          # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
+#      
+#    #============================================================================
+#    #      self.RunImport()
+#    #      self.RunPrune()
+#    # 
+#    #      self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
+#    # 
+#    #      self.RunHistogram()
+#    # 
+#    #      self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
+#    # 
+#    #      self.RunAdjustContrast()
+#    # 
+#    #      self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
+#    #      self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)       
+#    #         
+#    #      self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
+#    #      self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
+#    # 
+#    #      self.RunMosaic(Filter="Leveled")
+#    #      self.RunMosaicReport()
+#    #      self.RunAssemble(Levels=[8,16])
+#    #         
+#    #      self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
+#    #      self.RunMosaicReport()
+#    #============================================================================
+#      
+#         # Copy output here to run IDocAlignTest
+# #    
+# #         BruteLevel = self.BruteLevel
+# #            
+# #    #     self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+# #         self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
+# #            
+# #         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+# #         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+# #            
+# #         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+# #         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+# #    
+# #         # Copy output here to run IDocAlignOutputTest
+# #    
+# #         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+# #         self.RunSliceToVolume()
+# #         self.RunMosaicToVolume()
+# #         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
+# #         self.RunAssembleMosaicToVolume(Channels="TEM")
+# #         self.RunMosaicReport(OutputFile='VolumeReport')
+# #         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16) 
+# #         
+#         self.ForceStosRebuild(self.Grid32ManualStosFullPath)
+#         
+         
+#         
+#===============================================================================
+#  
+# class IDocAlignTest(setup_pipeline.CopySetupTestBase):
+#     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
+#  
+#     @property
+#     def VolumePath(self):
+#         return "IDocAlignTest"
+#  
+#     @property
+#     def Platform(self):
+#         return "IDOC"
+#  
+#     def runTest(self):
+#         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
 #         # return
-#
 #         BruteLevel = 32
-#         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
-#         self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel)
-#         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+#           
 #         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-#
 #         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
 #         self.RunSliceToVolume()
-#         self.RunMosaicToVolume()
-#         self.RunCreateVikingXML()
+#         self.RunMosaicToVolume() 
+#         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
 #         self.RunAssembleMosaicToVolume(Channels="TEM")
-
+#         self.RunMosaicReport(OutputFile='VolumeReport')
+#         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16) 
+#===============================================================================
 
 class IdocReaderTest(IDocTest):
 

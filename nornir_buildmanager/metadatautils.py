@@ -10,8 +10,9 @@ import nornir_buildmanager.VolumeManagerETree as VolumeManagerETree
 import nornir_shared.misc as misc
 
 
-def CreateImageNodeHelper(ParentNode, OutputImageName):
+def GetOrCreateImageNodeHelper(ParentNode, OutputImageName):
     # Create a node in the XML records
+    Created = False
     OverlayImageNode = ParentNode.GetChildByAttrib('Image', 'Path', os.path.basename(OutputImageName))
     if not OverlayImageNode is None:
         cleaned = OverlayImageNode.CleanIfInvalid()
@@ -21,8 +22,9 @@ def CreateImageNodeHelper(ParentNode, OutputImageName):
     if OverlayImageNode is None:
         OverlayImageNode = VolumeManagerETree.ImageNode(os.path.basename(OutputImageName))
         ParentNode.append(OverlayImageNode)
+        Created = True
 
-    return OverlayImageNode
+    return (Created, OverlayImageNode)
 
 def CreateLevelNodes(ParentNode, DownsampleLevels):
     DownsampleLevels = misc.SortedListFromDelimited(DownsampleLevels)

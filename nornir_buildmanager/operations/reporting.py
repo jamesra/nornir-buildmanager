@@ -652,30 +652,18 @@ def AddImageToTable(TableEntries, htmlPaths, DriftSettleThumbnailFilename):
     DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.png"
     DriftSettleImgSrcPath = os.path.join(htmlPaths.ThumbnailRelative, DriftSettleThumbnailFilename)
     DriftSettleThumbnailOutputFullPath = os.path.join(htmlPaths.ThumbnailDir, DriftSettleThumbnailFilename)
+    
 
-
-def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
-    '''Create the HTML to display an image with an anchor to the full image.
-       If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute'''
-
-    assert(not ImageNode is None)
-    assert(not Logger is None)
-    if MaxImageWidth is None:
-        MaxImageWidth = 1024
-
-    if MaxImageHeight is None:
-        MaxImageHeight = 1024
-
-    imageFilename = ImageNode.Path
-
-
-    if not os.path.exists(ImageNode.FullPath):
-        Logger.error("Missing image file: " + ImageNode.FullPath)
-        return ""
-
-    ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
-
-    [Height, Width] = nornir_imageregistration.core.GetImageSize(ImageNode.FullPath)
+def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
+    '''Scale an image to be smaller than the maximum dimensions.  Vector based images such as SVG will not be scaled
+    :return: (Image_source_path, Width, Height) Image source path may refer to a copy or the original.
+    '''
+    Height = MaxImageHeight
+    Width = MaxImageWidth
+    try:
+        [Height, Width] = nornir_imageregistration.core.GetImageSize(ImageNode.FullPath)
+    except IOError:
+        return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
 
     # Create a thumbnail if needed
     if Width > MaxImageWidth or Height > MaxImageHeight:
@@ -698,6 +686,32 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
 
         Width = int(Width * Scale)
         Height = int(Height * Scale)
+    else:
+        ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
+        
+    return (ImgSrcPath, Height, Width)
+    
+
+
+def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
+    '''Create the HTML to display an image with an anchor to the full image.
+       If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute'''
+
+    assert(not ImageNode is None)
+    assert(not Logger is None)
+    if MaxImageWidth is None:
+        MaxImageWidth = 1024
+
+    if MaxImageHeight is None:
+        MaxImageHeight = 1024
+
+    imageFilename = ImageNode.Path
+ 
+    if not os.path.exists(ImageNode.FullPath):
+        Logger.error("Missing image file: " + ImageNode.FullPath)
+        return ""
+
+    (ImgSrcPath, Height, Width) = __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth, MaxImageHeight)
 
     HTMLImage = HTMLImageTemplate % {'src' : ImgSrcPath, 'AltText' : imageFilename, 'ImageWidth' : Width, 'ImageHeight' : Height}
     HTMLAnchor = HTMLAnchorTemplate % {'href' : ImgSrcPath, 'body' : HTMLImage }

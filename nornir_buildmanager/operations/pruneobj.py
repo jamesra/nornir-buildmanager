@@ -21,6 +21,7 @@ class PruneObj:
 
     HistogramXMLFileTemplate = 'PruneScores%s.xml'
     HistogramPNGFileTemplate = 'PruneScores%s.png'
+    HistogramSVGFileTemplate = 'PruneScores%s.svg'
 
     ElementVersion = 1
 
@@ -62,7 +63,7 @@ class PruneObj:
         ImageMapFile = PruneObj.ImageMapFileTemplate % MangledName
 
         HistogramXMLFile = PruneObj.HistogramXMLFileTemplate % PruneNode.Type
-        HistogramPNGFile = PruneObj.HistogramPNGFileTemplate % PruneNode.Type
+        HistogramImageFile = PruneObj.HistogramSVGFileTemplate % PruneNode.Type
 
         MosaicDir = os.path.dirname(InputTransformNode.FullPath)
         OutputMosaicFullPath = os.path.join(MosaicDir, OutputMosaicName)
@@ -88,7 +89,7 @@ class PruneObj:
         OutputTransformNode.InputPruneDataType = PruneNode.Type
         OutputTransformNode.InputTransformChecksum = InputTransformNode.Checksum
         if not Threshold is None:
-            OutputTransformNode.Threshold = Threshold
+            OutputTransformNode.Threshold = '%g' % Threshold
 
         PruneDataNode = PruneNode.find('Data')
         if(PruneDataNode is None):
@@ -101,7 +102,7 @@ class PruneObj:
         assert(not PruneObjInstance is None)
 
         PruneObjInstance.HistogramXMLFileFullPath = os.path.join(PruneNodeParent.FullPath, HistogramXMLFile)
-        PruneObjInstance.HistogramPNGFileFullPath = os.path.join(PruneNodeParent.FullPath, HistogramPNGFile)
+        PruneObjInstance.HistogramPNGFileFullPath = os.path.join(PruneNodeParent.FullPath, HistogramImageFile)
 
         try:
             RemoveOutdatedFile(PruneDataNode.FullPath, PruneObjInstance.HistogramPNGFileFullPath)
@@ -112,7 +113,7 @@ class PruneObj:
                 HistogramNode = transforms.RemoveOnMismatch(HistogramNode, 'Threshold', Threshold, Precision=2)
 
             if HistogramNode is None or not os.path.exists(PruneObjInstance.HistogramPNGFileFullPath):
-                HistogramNode = VolumeManagerETree.ImageNode(HistogramPNGFile)
+                HistogramNode = VolumeManagerETree.ImageNode(HistogramImageFile)
                 (added, HistogramNode) = PruneNode.UpdateOrAddChild(HistogramNode)
                 HistogramNode.Threshold = '%g' % Threshold
                 PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath,
@@ -298,7 +299,7 @@ class PruneObj:
 
         # prettyoutput.Log("Mean: " + str(mean))
 
-        StdDevScalar = 1 / float(numScores - 1)
+        StdDevScalar = 1.0 / float(numScores - 1.0)
         total = 0
         # Calc the std deviation
         for score in scores:

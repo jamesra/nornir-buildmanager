@@ -63,12 +63,15 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
 class InputTransformHandler(object):
 
     def SetTransform(self, transform_node):
-        assert(not transform_node is None)
-        self.InputTransformChecksum = transform_node.Checksum
-        self.InputTransformType = transform_node.Type
-        self.InputTransform = transform_node.Name
-        
-        if not transform_node.CropBox is None:
+        if transform_node is None:
+            self.InputTransformChecksum = None
+            self.InputTransformType = None
+            self.InputTransform = None
+            self.InputTransformCropbox = None
+        else:
+            self.InputTransformChecksum = transform_node.Checksum
+            self.InputTransformType = transform_node.Type
+            self.InputTransform = transform_node.Name
             self.InputTransformCropbox = transform_node.CropBox            
         
     
@@ -100,10 +103,11 @@ class InputTransformHandler(object):
     
     @InputTransform.setter
     def InputTransform(self, value):
-        assert(isinstance(value,str))
-        if value is None and 'InputTransform' in self.attrib:
-            del self.attrib['InputTransform']
+        if value is None:
+            if 'InputTransform' in self.attrib:
+                del self.attrib['InputTransform']
         else:
+            assert(isinstance(value,str))
             self.attrib['InputTransform'] = value
 
 
@@ -116,8 +120,9 @@ class InputTransformHandler(object):
 
     @InputTransformChecksum.setter
     def InputTransformChecksum(self, value):
-        if value is None and 'InputTransformChecksum' in self.attrib:
-            del self.attrib['InputTransformChecksum']
+        if value is None:
+            if 'InputTransformChecksum' in self.attrib:
+                del self.attrib['InputTransformChecksum']
         else:
             self.attrib['InputTransformChecksum'] = value
              
@@ -131,10 +136,11 @@ class InputTransformHandler(object):
 
     @InputTransformType.setter
     def InputTransformType(self, value):
-        assert(isinstance(value,str))
-        if value is None and 'InputTransformType' in self.attrib:
-            del self.attrib['InputTransformType']
+        if value is None:
+            if 'InputTransformType' in self.attrib:
+                del self.attrib['InputTransformType']
         else:
+            assert(isinstance(value,str))
             self.attrib['InputTransformType'] = value
             
     
@@ -175,7 +181,7 @@ class InputTransformHandler(object):
         if len(self.InputTransformType) > 0:
             InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
             if InputTransformNode is None:
-                self.logger.warning('Expected input transform not found.  Leaving node alone: ' + self.ToElementString())
+                self.logger.warning('Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
                 return True
 
             if not (InputTransformNode.Checksum == self.InputTransformChecksum):

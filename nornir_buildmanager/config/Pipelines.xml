@@ -287,9 +287,7 @@
 					<PythonCall Function="tile.BuildTilesetPyramid"/>
 				</Iterate>
 			</Iterate>
-		</Iterate>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="FinalStosMap" StosGroupName="StosGrid16"/>
+		</Iterate> 
 	</Pipeline>
 
 	<Pipeline Name="MosaicReport" Description="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
@@ -340,7 +338,7 @@
 			<Argument flag="-OutputFile" dest="OutputFile" help="Name of file to write .VikingXML is appended to name automatically" required="True"/>
 		</Arguments>
 
-		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"   Host="#Host" OutputFile="#OutputFile"/>
+		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"  Host="#Host" OutputFile="#OutputFile"/>
 	</Pipeline>
 	
 	
@@ -477,19 +475,18 @@
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
 			<Argument flag="-StosUseMasks"  default="True" dest="UseMasks" type="bool" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
 			<Argument flag="-Downsample"  default="1" dest="StosBruteDownsample" type="int" help="Amount to downsample input images before attempting alignment.  Images are padded to the next power of two for the FFT.  Large images, roughly greater than 2048x2048, can be very slow." required="True"/>
-			<Argument flag="-GeneratedStosMap"  default="PotentialRegistrationChain" dest="GeneratedStosMap" type="str" help="Name assigned to generated stos map." required="False"/>
-			<Argument flag="-OutputStosMap"  default="FinalStosMap" dest="OutputStosMap" type="str" help="Name assigned to generated stos map." required="False"/>
+			<Argument flag="-OutputStosMap"  default="PotentialRegistrationChain" dest="OutputStosMap" type="str" help="Name assigned to generated stos map." required="False"/>		
 		</Arguments>
 
 		<Select VariableName="BlockNode" XPath="Block"/>
-		<PythonCall Function="block.CreateSectionToSectionMapping" OutputStosMapName="#GeneratedStosMap" >
+		<PythonCall Function="block.CreateSectionToSectionMapping" OutputStosMapName="#OutputStosMap" >
 			<Parameters>
 				<Entry Name="NumAdjacentSections" Value="#NumAdjacentSections"/>
 				<Entry Name="CenterSection" Value="#Center"/>
 			</Parameters>
 		</PythonCall>
 
-		<Select Root="BlockNode" VariableName="StosMapNodeObj" XPath="StosMap[@Name='#GeneratedStosMap']"/>
+		<Select Root="BlockNode" VariableName="StosMapNodeObj" XPath="StosMap[@Name='#OutputStosMap']"/>
 		<Iterate Root="StosMapNodeObj" VariableName="MappingNode" XPath="Mapping">
 			<PythonCall Function="block.StosBrute" Root="BlockNode" OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx" FiltersRegEx="#FiltersRegEx">
 				<Parameters>
@@ -499,14 +496,36 @@
 				</Parameters>
 			</PythonCall>
 		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="AssembleStosOverlays" Description="Performs slice to slice alignment from scratch to produce an initial 3D volume.  After alignment the best alignment results are selected to create a final stosmap.">
+		<Arguments>
+			<Argument flag="-StosGroup"  default="StosBrute" dest="StosGroup" type="str" help="Stos group to assemble" required="True"/>
+			<Argument flag="-Downsample" dest="InputDownsample" type="int" help="Downsample level to assemble" required="True"/>
+			<Argument flag="-StosMap"  default="FinalStosMap" dest="StosMap" type="str" help="Name assigned to generated stos map." required="True"/>
+		</Arguments>
 
-		<Select VariableName="GroupNodeObj" Root="BlockNode" XPath="StosGroup[@Name='StosBrute#StosBruteDownsample']"/>
+		<Select VariableName="BlockNode" XPath="Block"/>
+		<Select VariableName="GroupNodeObj" Root="BlockNode" XPath="StosGroup[@Name='#StosGroup#InputDownsample']"/>
+		<Select Root="BlockNode" VariableName="StosMapNodeObj" XPath="StosMap[@Name='#StosMap']"/>
 		<PythonCall Function="block.AssembleStosOverlays" GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj"/>
+	</Pipeline>
+	
+	<Pipeline Name="SelectBestRegistrationChain" Description="Create a new registration chain by examining the stos overlays produced by AssembleStosOverlays.  If two registrations are possible for a section the overlay with the most overlap is chosen.">
+		<Arguments>
+			<Argument flag="-StosGroup"  default="StosBrute" dest="StosGroup" type="str" help="Stos group to assemble" required="True"/>
+			<Argument flag="-Downsample" dest="InputDownsample" type="int" help="Downsample level to assemble" required="True"/>
+			<Argument flag="-InputStosMap"  default="PotentialRegistrationChain" dest="InputStosMap" type="str" help="Name assigned to generated stos map." required="True"/>
+			<Argument flag="-OutputStosMap"  default="FinalStosMap" dest="OutputStosMap" type="str" help="Name assigned to generated stos map." required="False"/>
+		</Arguments>
 
-		<Select Root="BlockNode" VariableName="StosMapNodeObj" XPath="StosMap[@Name='#GeneratedStosMap']"/>
+		<Select VariableName="BlockNode" XPath="Block"/>
+		<Select VariableName="GroupNodeObj" Root="BlockNode" XPath="StosGroup[@Name='#StosGroup#InputDownsample']"/>
+		<Select Root="BlockNode" VariableName="StosMapNodeObj" XPath="StosMap[@Name='#InputStosMap']"/>
 		<PythonCall Function="block.SelectBestRegistrationChain" InputGroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" OutputStosMapName="#OutputStosMap"/>
 	</Pipeline>
-
+	
+	
 	<Pipeline Name="RefineSectionAlignment" Description="Refines slice-to-slice alignment at the given downsample level.  This pipeline is often used iteratively at higher and higher resolutions to improve registration quality.">
 		<Arguments>
 			<Argument flag="-SectionMap"  default="FinalStosMap" dest="StosMap" type="str" help="Map describing which sections register to each other" required="False"/>
@@ -534,11 +553,6 @@
 				</Parameters>
 			</PythonCall>
 		</Iterate>
-
-		<Select VariableName="InputGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#OutputGroup#OutputDownsample']"/>
-		<PythonCall Function="block.AssembleStosOverlays" GroupNode="#InputGroupNode" StosMapNode="#StosMapNodeObj"/>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#OutputGroup#OutputDownsample.vikingxml" StosMapName="#StosMap" StosGroupName="#OutputGroup#OutputDownsample"/>
 	</Pipeline>
 
 	<Pipeline Name="ScaleVolumeTransforms" Description="Scales a stos group to use a different downsample level.  Useful for producing full-resolution output after generating transforms using downsampled images.">
@@ -570,16 +584,8 @@
 					<PythonCall Function="block.BuildSliceToVolumeTransforms"  OutputMap="#StovOutputGroupName" OutputGroup="#StovOutputGroupName#StovDownsample">
 					</PythonCall>
 				</Iterate>
-			</Iterate>
-
-			<!--<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#StovOutputGroupName']">
-  		  <Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovOutputGroupName#StovDownsample']">
-          	<PythonCall Function="block.AssembleStosOverlays" GroupNode="#StosGroupNode"/>
-          </Iterate>
-        </Iterate> -->		
+			</Iterate> 
 		</Iterate>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
 	</Pipeline>
 
 	<!--
@@ -598,16 +604,10 @@
 					</PythonCall>
 				</Iterate>
 			</Iterate>
-
-		<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#StovOutputGroupName']">
-  		  <Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovOutputGroupName#StovDownsample']">
-          	<PythonCall Function="block.AssembleStosOverlays" GroupNode="#StosGroupNode"/>
-          </Iterate>
-        </Iterate>	
+		
 		</Iterate>
-
-		<PythonCall Function="vikingxml.CreateVikingXML" OutputFile="#StovOutputGroupName#StovDownsample.vikingxml" StosMapName="#StovOutputGroupName" StosGroupName="#StovOutputGroupName#StovDownsample"/>
 	</Pipeline>
+	-->
 
 	-->
 
