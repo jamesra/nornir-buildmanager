@@ -44,6 +44,7 @@ if __name__ == '__main__':
     entry_points = {'console_scripts': ['nornir-build = nornir_buildmanager.build:Execute']}
 
     setup(name='nornir_buildmanager',
+          zip_safe=True,
           version='1.2.2',
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",

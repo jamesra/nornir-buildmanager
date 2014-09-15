@@ -6,6 +6,7 @@ A bugfix release
 
 **New**
 
+* Added .cmd files to scripts directory for upgrading and uninstalling all nornir packages.
 * Included build scripts now update title of console window with name of active pipeline 
 * Fixed several cases where slice-to-slice alignment pipeline was not updating correctly due to upstream changes
 * Fixed several cases where slice-to-slice alignment pipeline was updating needlessly
