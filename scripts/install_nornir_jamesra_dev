@@ -1,0 +1,4 @@
+pip install git+https://github.com/jamesra/nornir-shared.git@dev --upgrade
+pip install git+https://github.com/jamesra/nornir-pools.git@dev --upgrade
+pip install git+https://github.com/jamesra/nornir-imageregistration.git@dev --upgrade
+pip install git+https://github.com/jamesra/nornir-buildmanager.git@dev --upgrade
