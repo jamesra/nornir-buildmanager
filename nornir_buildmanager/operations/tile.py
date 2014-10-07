@@ -1008,7 +1008,7 @@ def UpdateImageName(imageNode, ExpectedImageName):
     if imageNode.Path == ExpectedImageName:
         return False
     
-    if not os.path.exists(imageNode.Path):
+    if not os.path.exists(imageNode.FullPath):
         return False
     
     (root,ext) = os.path.splitext(imageNode.Path)
@@ -1050,7 +1050,7 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
     
     InputChannelNode = FilterNode.FindParent('Channel')
     SectionNode = InputChannelNode.FindParent('Section')
-    ExpectedImageName = GetImageName(SectionNode.Number, InputChannelNode.Name, FilterNode.Name, image_ext)
+    ExpectedImageName = GetImageName(SectionNode.Number, InputChannelNode.Name, FilterNode.Name, extension)
      
     imageSet = FilterNode.Imageset
     for imageNode in imageSet.Images:
