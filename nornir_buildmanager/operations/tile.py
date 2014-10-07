@@ -42,7 +42,7 @@ HistogramTagStr = "HistogramData"
 ContrastMinCutoffDefault = 0.1
 ContrastMaxCutoffDefault = 0.5
 
-
+DefaultImageExtension = '.png'
 
 # Shrinks the passed image file, return procedure handle of invoked command
 def Shrink(Pool, InFile, OutFile, ShrinkFactor):
@@ -999,14 +999,76 @@ def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name
         
     return image_node
         
+ 
+def UpdateImageName(imageNode, ExpectedImageName):
+    '''Rename the image file on disk to match our expected image file name
+    :param ImageNode ImageNode: Filter node to update to the expected name
+    :param str ExpectedImageName: The image name we expect to see'''
+    
+    if imageNode.Path == ExpectedImageName:
+        return False
+    
+    if not os.path.exists(imageNode.Path):
+        return False
+    
+    (root,ext) = os.path.splitext(imageNode.Path)
+    (root,new_ext) = os.path.splitext(ExpectedImageName)
+    #We can't change image types with a simple rename'
+    if ext != new_ext:
+        return False 
+    
+    dirname = os.path.dirname(imageNode.FullPath)
+    
+    SourceImageFullPath = imageNode.FullPath; 
+    DestImageFullPath = os.path.join(dirname, ExpectedImageName)
+    
+    shutil.move(SourceImageFullPath, DestImageFullPath)
+    imageNode.Path = ExpectedImageName
+    
+    return True
+
+def AddDotToExtension(Extension=None):
+    '''Ensure that the extension has a . prefix'''
+    if not Extension[0] == '.':
+        return '.' + Extension
+    
+    return Extension 
+        
+def GetImageName(SectionNumber, ChannelName, FilterName, Extension=None):
+    
+    Extension = AddDotToExtension(Extension)
+    return Config.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
+
+def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=None, **kwargs):
+    '''Updates the names of image files, these can be incorrect if the sections are re-ordered'''
+    
+    if not FilterNode.HasImageset:
+        return 
+    
+    if extension is None:
+        extension = DefaultImageExtension
+    
+    InputChannelNode = FilterNode.FindParent('Channel')
+    SectionNode = InputChannelNode.FindParent('Section')
+    ExpectedImageName = GetImageName(SectionNode.Number, InputChannelNode.Name, FilterNode.Name, image_ext)
+     
+    imageSet = FilterNode.Imageset
+    for imageNode in imageSet.Images:
+        original_image_name = imageNode.Path
+        if UpdateImageName(imageNode, ExpectedImageName):
+            Logger.info("Renamed image file: %s -> %s " % (original_image_name, ExpectedImageName))
+            yield imageSet
     
         
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
+    
+    image_ext = DefaultImageExtension
+    
     MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
     InputChannelNode = FilterNode.FindParent('Channel')
     SectionNode = InputChannelNode.FindParent('Section')
-
+    
     OutputChannelNode = __GetOrCreateOutputChannelForPrefix(OutputChannelPrefix, InputChannelNode)
 
     OutputFilterNode = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
@@ -1014,8 +1076,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
-    OutputImageNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + FilterNode.Name + ".png"
-    OutputImageMaskNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + OutputChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
+    OutputImageNameTemplate = GetImageName(SectionNode.Number, OutputChannelNode.Name, FilterNode.Name, image_ext)
+    OutputImageMaskNameTemplate = GetImageName(SectionNode.Number, OutputChannelNode.Name, MaskFilterNode.Name, image_ext)  
     
     if OutputFilterNode.HasImageset:
         OutputFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
@@ -1068,8 +1130,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         ImageDir = InputLevelNode.FullPath
         # ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
 
-        tempOutputFullPath = os.path.join(ImageDir, 'Temp.png')
-        tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask.png')
+        tempOutputFullPath = os.path.join(ImageDir, 'Temp' + image_ext)
+        tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask' + image_ext)
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
@@ -1077,7 +1139,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)
-            return None
+            return
 
         if not TransformNode.CropBox is None:
             cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
@@ -1102,12 +1164,17 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
+        
+    yield SectionNode
 
-    BuildImagePyramid(OutputFilterNode.Imageset, Interlace=Interlace, **kwargs)
-    BuildImagePyramid(OutputMaskFilterNode.Imageset, Interlace=Interlace, **kwargs)
-
-    return SectionNode
-
+    ImageSet = BuildImagePyramid(OutputFilterNode.Imageset, Interlace=Interlace, **kwargs)
+    if not ImageSet is None:
+        yield ImageSet 
+        
+    MaskImageSet = BuildImagePyramid(OutputMaskFilterNode.Imageset, Interlace=Interlace, **kwargs)
+    if not MaskImageSet is None:
+        yield MaskImageSet
+ 
 
 def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
     '''Assemble a transform using the ir-tools
@@ -1147,13 +1214,6 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
 
     if not os.path.exists(ImageMaskLevelNode.FullPath):
         os.makedirs(ImageMaskLevelNode.FullPath)
-
-    thisLevelPathStr = OutputImageNameTemplate % {'level' : thisLevel,
-                                                  'transform' : TransformNode.Name}
-    thisLevelMaskPathStr = OutputImageMaskNameTemplate % {'level' : thisLevel,
-                                                  'transform' : TransformNode.Name}
-
-    ImageName = Config.Current.SectionTemplate % SectionNode.Number + "_" + kwargs.get('ImageName', 'assemble')
 
     # Should Replace any child elements
     ImageNode = ImageLevelNode.find('Image')
@@ -1225,12 +1285,16 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
 
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
+    
+    yield FilterNode
 
-    BuildImagePyramid(FilterNode.Imageset, Logger, **kwargs)
-    BuildImagePyramid(MaskFilterNode.Imageset, Logger, **kwargs)
-
-    return FilterNode
-
+    ImageSet = BuildImagePyramid(FilterNode.Imageset, Logger, **kwargs)
+    if not ImageSet is None:
+        yield ImageSet 
+        
+    MaskImageSet = BuildImagePyramid(MaskFilterNode.Imageset, Logger, **kwargs)
+    if not MaskImageSet is None:
+        yield MaskImageSet
 
 def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetName=None, TileWidth=256, TileHeight=256, Logger=None, **kwargs):
     '''Create full resolution tiles of specfied size for the mosaics

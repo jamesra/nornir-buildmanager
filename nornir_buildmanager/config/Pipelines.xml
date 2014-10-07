@@ -349,6 +349,9 @@
 			<Iterate VariableName="ImageNode" XPath="Block/Section/Channel/Filter/ImageSet/Level/Image">
 				<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
 			</Iterate>
+			<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter">
+				<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
+			</Iterate>
 	</Pipeline>
 	
 	<Pipeline Name="SetPruneCutoff" Description="Set the prune threshold for a filter">
