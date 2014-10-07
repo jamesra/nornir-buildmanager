@@ -1549,8 +1549,10 @@ class FilterNode(XContainerElementWrapper):
         return self.Parent.GetOrCreateFilter(maskname)
 
     def GetImage(self, Downsample):
-        imageset = self.Imageset
-        return imageset.GetImage(Downsample)
+        if not self.HasImageset:
+            return None
+        
+        return self.imageset.GetImage(Downsample)
 
     def GetOrCreateImage(self, Downsample):
         imageset = self.Imageset
@@ -2191,6 +2193,16 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         self.attrib['Name'] = Name
         self.attrib['Type'] = Type
         self.attrib['Path'] = Path
+        
+    def Images(self):
+        '''Iterate over images in the ImageSet, highest to lowest res'''
+        for levelNode in self.Levels:
+            image = levelNode.find('Image')
+            if image is None:
+                continue
+            yield image
+            
+        return 
 
     def GetImage(self, Downsample):
         '''Returns image node for the specified downsample or None'''
