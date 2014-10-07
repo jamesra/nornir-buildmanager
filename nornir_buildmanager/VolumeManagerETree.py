@@ -2194,6 +2194,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         self.attrib['Type'] = Type
         self.attrib['Path'] = Path
         
+    @property
     def Images(self):
         '''Iterate over images in the ImageSet, highest to lowest res'''
         for levelNode in self.Levels:
