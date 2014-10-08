@@ -1432,9 +1432,18 @@ class ChannelNode(XContainerElementWrapper):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
+def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
+    return Config.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
+
 class FilterNode(XContainerElementWrapper):
 
     DefaultMaskName = "Mask"
+    
+    def DefaultImageName(self, extension):
+        '''Default name for an image in this filters imageset'''
+        InputChannelNode = self.FindParent('Channel')
+        SectionNode = InputChannelNode.FindParent('Section')
+        return BuildFilterImageName(SectionNode.Number, InputChannelNode.Name, self.Name, extension)
 
     @property
     def MaxIntensityCutoff(self):
@@ -1552,7 +1561,7 @@ class FilterNode(XContainerElementWrapper):
         if not self.HasImageset:
             return None
         
-        return self.imageset.GetImage(Downsample)
+        return self.Imageset.GetImage(Downsample)
 
     def GetOrCreateImage(self, Downsample):
         imageset = self.Imageset
@@ -2213,6 +2222,9 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
             return None
 
         image = levelNode.find('Image')
+        if image is None:
+            return None 
+        
         if not os.path.exists(image.FullPath):
             if image in self:
                 self.remove(image)

@@ -1047,16 +1047,14 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
     
     if extension is None:
         extension = DefaultImageExtension
-    
-    InputChannelNode = FilterNode.FindParent('Channel')
-    SectionNode = InputChannelNode.FindParent('Section')
-    ExpectedImageName = GetImageName(SectionNode.Number, InputChannelNode.Name, FilterNode.Name, extension)
+     
+    ExpectedImageName = FilterNode.DefaultImageName(extension)
      
     imageSet = FilterNode.Imageset
     for imageNode in imageSet.Images:
         original_image_name = imageNode.Path
         if UpdateImageName(imageNode, ExpectedImageName):
-            Logger.info("Renamed image file: %s -> %s " % (original_image_name, ExpectedImageName))
+            Logger.warn("Renamed image file: %s -> %s " % (original_image_name, ExpectedImageName))
             yield imageSet
     
         
@@ -1076,8 +1074,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
-    OutputImageNameTemplate = GetImageName(SectionNode.Number, OutputChannelNode.Name, FilterNode.Name, image_ext)
-    OutputImageMaskNameTemplate = GetImageName(SectionNode.Number, OutputChannelNode.Name, MaskFilterNode.Name, image_ext)  
+    OutputImageNameTemplate = FilterNode.DefaultImageName(image_ext)
+    OutputImageMaskNameTemplate = MaskFilterNode.DefaultImageName(image_ext)  
     
     if OutputFilterNode.HasImageset:
         OutputFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
