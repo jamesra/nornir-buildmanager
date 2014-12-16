@@ -21,7 +21,7 @@ from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 
 
-def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExtension, **kwargs):
+def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExtension=None, **kwargs):
     '''@FilterNode.  Create  a new filter which has been processed with blob'''
     Radius = Parameters.get('r', '3')
     Median = Parameters.get('median', '3')
