@@ -1,4 +1,18 @@
 
+1.2.3
+-----
+
+A bugfix release
+
+**Fixes**
+
+* In manual .stos files, replace the image paths with pointers to the images from image nodes for the appropriate filter.  Useful in cases where sections are re-ordered or other images were used for manual registration. 
+
+**Tweak**
+
+* Don't build an empty imageset for a filter if there is no data to populate the imageset and we ask for images
+* Added cleanup function to Cleanup pipeline to remove empty imagesets
+
 1.2.2
 -----
 
