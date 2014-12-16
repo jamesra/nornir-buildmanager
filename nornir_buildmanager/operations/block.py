@@ -1666,7 +1666,11 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                 logger = logging.getLogger("ScaleStosGroup")
                 logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
-
+            
+            if ControlFilter is None or MappedFilter is None:
+                logger = logging.getLogger("ScaleStosGroup")
+                logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+                continue
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
             (stosNode_added, stosNode) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
