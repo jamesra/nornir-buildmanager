@@ -20,7 +20,7 @@ if __name__ == '__main__':
     install_requires = ["nornir_pools>=1.2.2",
                         "nornir_shared>=1.2.3",
                         "nornir_imageregistration>=1.2.3",
-                        "numpy>=1.8.0",
+                        "numpy>=1.9.1",
                         "scipy>=0.13.2",
                         "matplotlib"]
 
