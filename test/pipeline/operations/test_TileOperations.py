@@ -258,7 +258,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         OutputFilterName = 'LeveledTest'
 
         ManualMinValue = 40.0
-        ManualMaxValue = 100.0
+        ManualMaxValue = 250.0
 
         self.LoadInputMetaData()
 
