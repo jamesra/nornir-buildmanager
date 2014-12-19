@@ -6,7 +6,7 @@ Created on Feb 19, 2014
 
 import os
 import math
-import nornir_imageregistration.core as core
+import nornir_imageregistration
 import logging
 
 
@@ -20,7 +20,7 @@ def DimensionsMatch(imageFullPath, area):
         raise TypeError("RemoveOnDimensionMismatch area parameter should be a (Width,Height) tuple instead of None")
 
     try:
-        size = core.GetImageSize(imageFullPath)
+        size = nornir_imageregistration.GetImageSize(imageFullPath)
     except IOError as e:
         #Unable to read the size, assume the dimensions do not Match
         logging.error("IOError reading dimensions of file: %s\n%s" % (imageFullPath, str(e)))
