@@ -457,7 +457,7 @@ class PlatformTest(test.testbase.TestBase):
 
         for level in Levels:
             AssembledImageNode = image_set_node.find("Level[@Downsample='%d']/Image" % (level))
-            self.assertIsNotNone(AssembledImageNode, "No Image node produced from assemble pipeline")
+            self.assertIsNotNone(AssembledImageNode, "No Image node at level %d produced from assemble pipeline" % (level))
         
             self.assertTrue(os.path.exists(AssembledImageNode.FullPath), "Output file expected for image node after assemble runs, level %d" % (level))
         

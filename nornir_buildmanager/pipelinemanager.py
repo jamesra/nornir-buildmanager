@@ -896,7 +896,7 @@ class PipelineManager(object):
                         errorStr = errorStr + traceback.format_exc()
                         errorStr = errorStr + '-' * 60 + '\n'
                         PipelineManager.logger.error(errorStr)
-                        prettyoutput.LogErr(errorStr)
+                        #prettyoutput.LogErr(errorStr)
 
                         self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
                         return

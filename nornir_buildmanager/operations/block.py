@@ -651,38 +651,80 @@ def StosImageNodes(StosTransformNode, Downsample):
     return output
 
 
+def ValidateSectionMappingTransformPipeline(Parameters, Logger, stos_transform_node, **kwargs):
+    ValidateSectionMappingTransform(stos_transform_node, Logger)
+        
+def ValidateSectionMappingTransform(stos_transform_node, Logger):
+    
+    parent = stos_transform_node.Parent 
+    stos_group = stos_transform_node.FindParent('StosGroup')
+    downsample = int(stos_group.Downsample)
+    (mapped_filter, mapped_mask_filter) = __MappedFilterForTransform(stos_transform_node)
+    (control_filter, control_mask_filter) = __ControlFilterForTransform(stos_transform_node)
+    
+    if mapped_filter is None or control_filter is None:
+        Logger.warn("Removed stos file for missing filters: %s" % stos_transform_node.FullPath ) 
+        parent.remove(stos_transform_node)
+        return parent
+    
+    #Could be a generated transform not pointing at actual images, move on if the input image does not exist at that level 
+    if control_filter.GetImage(downsample) is None:
+        return None
+    if mapped_filter.GetImage(downsample) is None:
+        return None
+    
+    if FixStosFilePaths(control_filter, mapped_filter, stos_transform_node, downsample):
+        Logger.warn("Updated stos images: %s" % stos_transform_node.FullPath )
+        return parent
+    
+    return None
+
+
 def UpdateStosImagePaths(StosTransformPath, ControlImageFullPath, MappedImageFullPath, ControlImageMaskFullPath=None, MappedImageMaskFullPath=None):
+    '''
+    Replace the paths of the stos file with the passed parameters
+    :return: True if the stos file was updated
+    '''
 
     # ir-stom's -slice_dirs argument is broken for masks, so we have to patch the stos file before use
     InputStos = stosfile.StosFile.Load(StosTransformPath)
+    
+    NeedsUpdate = InputStos.ControlImageFullPath != ControlImageFullPath or \
+                  InputStos.MappedImageFullPath != MappedImageFullPath or \
+                  InputStos.ControlMaskFullPath != ControlImageMaskFullPath or \
+                  InputStos.MappedMaskFullPath != MappedImageMaskFullPath
+    
+    if NeedsUpdate:
+        InputStos.ControlImageFullPath = ControlImageFullPath
+        InputStos.MappedImageFullPath = MappedImageFullPath
+    
+        if not InputStos.ControlMaskName is None:
+            InputStos.ControlMaskFullPath = ControlImageMaskFullPath
+    
+        if not InputStos.MappedMaskName is None:
+            InputStos.MappedMaskFullPath = MappedImageMaskFullPath
 
-    InputStos.ControlImageFullPath = ControlImageFullPath
-    InputStos.MappedImageFullPath = MappedImageFullPath
-
-    if not InputStos.ControlMaskName is None:
-        InputStos.ControlMaskFullPath = ControlImageMaskFullPath
-
-    if not InputStos.MappedMaskName is None:
-        InputStos.MappedMaskFullPath = MappedImageMaskFullPath
-
-    InputStos.Save(StosTransformPath)
+        InputStos.Save(StosTransformPath)
+        
+    return NeedsUpdate
 
 
 def FixStosFilePaths(ControlFilter, MappedFilter, StosTransformNode, Downsample, StosFilePath=None):
+    '''Check if the stos file uses appropriate images for the passed filters'''
 
     if StosFilePath is None:
         StosFilePath = StosTransformNode.FullPath
 
-    if ControlFilter.GetImageMask(Downsample) is None or MappedFilter.GetImageMask(Downsample) is None:
-        UpdateStosImagePaths(StosFilePath,
+    if ControlFilter.GetMaskImage(Downsample) is None or MappedFilter.GetMaskImage(Downsample) is None:
+        return UpdateStosImagePaths(StosFilePath,
                          ControlFilter.GetImage(Downsample).FullPath,
                          MappedFilter.GetImage(Downsample).FullPath)
     else:
-        UpdateStosImagePaths(StosFilePath,
+        return UpdateStosImagePaths(StosFilePath,
                          ControlFilter.GetImage(Downsample).FullPath,
                          MappedFilter.GetImage(Downsample).FullPath,
-                         ControlFilter.GetImageMask(Downsample).FullPath,
-                         MappedFilter.GetImageMask(Downsample).FullPath)
+                         ControlFilter.GetMaskImage(Downsample).FullPath,
+                         MappedFilter.GetMaskImage(Downsample).FullPath)
 
 
 def SectionToVolumeImage(Parameters, TransformNode, Logger, CropUndefined=True, **kwargs):
@@ -1477,23 +1519,50 @@ def RegistrationTreeFromStosMapNode(StosMapNode):
 
 
 def __MappedFilterForTransform(transform_node):
-    return __GetFilter(transform_node,
+    return __GetFilterAndMaskFilter(transform_node,
                                 transform_node.MappedSectionNumber,
                                 transform_node.MappedChannelName,
                                 transform_node.MappedFilterName)
 
 def __ControlFilterForTransform(transform_node):
-    return __GetFilter(transform_node,
+    return __GetFilterAndMaskFilter(transform_node,
                                 transform_node.ControlSectionNumber,
                                 transform_node.ControlChannelName,
                                 transform_node.ControlFilterName)
 
 def __GetFilter(transform_node, section, channel, filter):
     BlockNode = transform_node.FindParent(ParentTag='Block')
+    if BlockNode is None:
+        return None
     sectionNode = BlockNode.GetSection(section)
+    if sectionNode is None:
+        return None
     channelNode = sectionNode.GetChannel(channel)
+    if channelNode is None:
+        return None
+    
     filterNode = channelNode.GetFilter(filter)
     return filterNode
+
+def __GetFilterAndMaskFilter(transform_node, section, channel, filter):
+    BlockNode = transform_node.FindParent(ParentTag='Block')
+    if BlockNode is None:
+        return None
+    
+    sectionNode = BlockNode.GetSection(section)
+    if(sectionNode is None):
+        return (None, None)
+    
+    channelNode = sectionNode.GetChannel(channel)
+    if channelNode is None:
+        return (None, None)
+    
+    filterNode = channelNode.GetFilter(filter)
+    if filterNode is None:
+        return (None, None)
+    
+    mask_filterNode = filterNode.DefaultMaskFilter
+    return (filterNode, mask_filterNode)
 
 
 def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pattern):
@@ -1591,13 +1660,17 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
             # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
             # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
             try:
-                ControlFilter = __ControlFilterForTransform(InputTransformNode)
-                MappedFilter = __MappedFilterForTransform(InputTransformNode)
+                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)
+                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)
             except AttributeError as e:
                 logger = logging.getLogger("ScaleStosGroup")
                 logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
-
+            
+            if ControlFilter is None or MappedFilter is None:
+                logger = logging.getLogger("ScaleStosGroup")
+                logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+                continue
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
             (stosNode_added, stosNode) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,

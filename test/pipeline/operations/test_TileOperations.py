@@ -153,6 +153,7 @@ class HistogramFilterTest(ImportOnlySetup):
             self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk), "Number of images on disk do not match meta-data")
 
 
+
 class HistogramFilterTest2(ImportOnlySetup):
 
     @property
@@ -198,6 +199,22 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertIsNotNone(HistogramNode.ImageNode)
 
 
+class BuildTilePyramidTest(PrepareSetup):
+    
+    @property
+    def VolumePath(self):
+        return "RC2_4Square"
+
+    @property
+    def Platform(self):
+        return "IDOC"
+    
+    def runTest(self):
+        volumeNode = self.RunAdjustContrast(Sections=690)
+        
+        #Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
+        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter='Leveled', level=4)       
+
 class AutoLevelHistogramTest(PrepareSetup):
 
     @property
@@ -241,7 +258,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         OutputFilterName = 'LeveledTest'
 
         ManualMinValue = 40.0
-        ManualMaxValue = 100.0
+        ManualMaxValue = 250.0
 
         self.LoadInputMetaData()
 
@@ -250,6 +267,9 @@ class AutoLevelHistogramTest(PrepareSetup):
         self.assertIsNotNone(ChannelOutput)
 
         self.VolumeObj.Save()
+        self.LoadOutputMetaData(OutputFilterName)
+        OriginalMaxIntensity = self.OutputFilterNode.MaxIntensityCutoff
+        OriginalMinIntensity = self.OutputFilterNode.MinIntensityCutoff
 
         # Calling again with the same output should not regenerate the tiles
         ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
@@ -259,8 +279,8 @@ class AutoLevelHistogramTest(PrepareSetup):
         AutoMaxCutoff = self.OutputFilterNode.MaxIntensityCutoff
         AutoMinCutoff = self.OutputFilterNode.MinIntensityCutoff
 
-        self.assertEqual(AutoMaxCutoff, 230.0, "Expected values for histogram have changed")
-        self.assertEqual(AutoMinCutoff, 62.0, "Expected values for histogram have changed")
+        self.assertEqual(AutoMaxCutoff, OriginalMaxIntensity, "Expected values for histogram have changed")
+        self.assertEqual(AutoMinCutoff, OriginalMinIntensity, "Expected values for histogram have changed")
 
         AutoGamma = self.OutputFilterNode.Gamma
 

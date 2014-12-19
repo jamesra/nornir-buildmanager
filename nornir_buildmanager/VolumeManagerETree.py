@@ -1432,9 +1432,18 @@ class ChannelNode(XContainerElementWrapper):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
+def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
+    return Config.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
+
 class FilterNode(XContainerElementWrapper):
 
     DefaultMaskName = "Mask"
+    
+    def DefaultImageName(self, extension):
+        '''Default name for an image in this filters imageset'''
+        InputChannelNode = self.FindParent('Channel')
+        SectionNode = InputChannelNode.FindParent('Section')
+        return BuildFilterImageName(SectionNode.Number, InputChannelNode.Name, self.Name, extension)
 
     @property
     def MaxIntensityCutoff(self):
@@ -1549,8 +1558,10 @@ class FilterNode(XContainerElementWrapper):
         return self.Parent.GetOrCreateFilter(maskname)
 
     def GetImage(self, Downsample):
-        imageset = self.Imageset
-        return imageset.GetImage(Downsample)
+        if not self.HasImageset:
+            return None
+        
+        return self.Imageset.GetImage(Downsample)
 
     def GetOrCreateImage(self, Downsample):
         imageset = self.Imageset
@@ -2191,6 +2202,17 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         self.attrib['Name'] = Name
         self.attrib['Type'] = Type
         self.attrib['Path'] = Path
+        
+    @property
+    def Images(self):
+        '''Iterate over images in the ImageSet, highest to lowest res'''
+        for levelNode in self.Levels:
+            image = levelNode.find('Image')
+            if image is None:
+                continue
+            yield image
+            
+        return 
 
     def GetImage(self, Downsample):
         '''Returns image node for the specified downsample or None'''
@@ -2200,6 +2222,9 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
             return None
 
         image = levelNode.find('Image')
+        if image is None:
+            return None 
+        
         if not os.path.exists(image.FullPath):
             if image in self:
                 self.remove(image)
