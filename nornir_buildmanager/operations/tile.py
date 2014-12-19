@@ -962,7 +962,8 @@ def MigrateMultipleImageSets(FilterNode, Logger, **kwargs):
 
 
 def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
-    return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, **kwargs)
+    for yieldval in AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, **kwargs):
+        yield yieldval
 
 
 def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
@@ -1400,7 +1401,7 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
             return None
 
         thisLevel = PyramidLevels[i]
-        TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel, SourceImageNode.Path)
+        TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel, SourceImageNode.Path, GenerateData=False)
         if not os.path.exists(TargetImageNode.Parent.FullPath):
             os.makedirs(TargetImageNode.Parent.FullPath)
         
@@ -1428,7 +1429,8 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
             scale = thisLevel / SourceLevel
             NewP = images.Shrink(SourceImageNode.FullPath, TargetImageNode.FullPath, scale)
             NewP.wait()
-
+            SaveImageSet = True
+            
             if 'InputImageChecksum' in SourceImageNode.attrib:
                 TargetImageNode.attrib['InputImageChecksum'] = str(SourceImageNode.InputImageChecksum)
 
@@ -1439,7 +1441,7 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
                 Logger.info('Interlacing start ' + TargetImageNode.FullPath)
                 prettyoutput.Log(ConvertCmd)
                 subprocess.call(ConvertCmd + " && exit", shell=True)
-                SaveImageSet = True
+                
 
             # TargetImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(TargetImageNode.FullPath)
 
