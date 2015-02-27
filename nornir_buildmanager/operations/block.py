@@ -1838,7 +1838,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
         StoVTransform = factory.LoadTransform(SToV.Transform)
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        assert(MosaicTransform.FixedBoundingBox[0] == 0 and MosaicTransform.FixedBoundingBox[1] == 0)
+        assert(MosaicTransform.FixedBoundingBox.BottomLeft[0] == 0 and MosaicTransform.FixedBoundingBox.BottomLeft[1] == 0)
         # MosaicTransform.TranslateToZeroOrigin() 
         Tasks = []
          

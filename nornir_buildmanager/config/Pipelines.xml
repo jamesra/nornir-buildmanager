@@ -226,6 +226,53 @@
 			</Iterate>
 		</Iterate>
 	</Pipeline>
+	
+	<Pipeline Name="MosaicNoTranslate" Description="Aligns tiles of a filter into a single mosaic.  Produces an assembled mosaic image.  Assumes stage coordinates are correct and refines distortions only without translating tiles.">
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
+			<Argument flag="-RegistrationDownsample" dest="Downsample" default="4" type="int" help="Downsample level to use for ir-tools" required="False"/>
+			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
+			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to use for registration" required="True"/>
+			<Argument flag="-InputTransform" dest="InputTransformName" default="Prune" help="Name of the input transform" required="False"/>
+			<Argument flag="-OutputTransform" dest="OutputTransformName" default="Grid" help="Name of output transform." required="False"/>
+		</Arguments>
+
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+	
+				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransformName']"/>
+				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+				
+				<!-- ir-translate, calculate translation for each tile into the greater mosaic
+				<PythonCall Function="registration.TranslateTransform" TransformNode="#TransformNode" OutputTransform="Translated_#InputTransformName" FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
+					<Parameters>
+						<Entry Name="MaxOffsetX" Value="#MaxOffset"/>
+					</Parameters>
+				</PythonCall>
+				-->
+	
+				<!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping tiles -->
+				<!-- <Select VariableName="TranslatedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='Translated_#InputTransformName']"/> -->
+				<!-- <PythonCall Function="registration.CompressTransforms" TransformNode="#TransformNode"/> -->
+				<PythonCall Function="registration.GridTransform" OutputTransform="#OutputTransformName" TransformNode="#TransformNode" FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
+					<Parameters>
+						<Entry Name="MeshWidth" Value="8"/>
+						<Entry Name="MeshHeight" Value="8"/>
+						<Entry Name="Cell" Value="128"/>
+						<Entry Name="Threshold" Value="0.5"/>
+					</Parameters>
+				</PythonCall>
+	 
+				<Select VariableName="RefinedTransformNode" Root="ChannelNode"  XPath="Transform[@Name='#OutputTransformName']"/>
+				<PythonCall Function="registration.CompressTransforms" TransformNode="#RefinedTransformNode"/>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
 
 	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter. Optionally creates a new channel for output.">
 		<Arguments>

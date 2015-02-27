@@ -16,9 +16,9 @@ import copy
 
 import numpy as np
 
-import nornir_buildmanager as nb
+import nornir_buildmanager as nb 
 
-import nornir_buildmanager.Config as Config
+
 from nornir_buildmanager.validation import transforms, image
 import nornir_imageregistration.core as core
 import nornir_imageregistration.image_stats as image_stats
@@ -32,6 +32,7 @@ from nornir_shared.files import RemoveOutdatedFile, OutdatedFile
 from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 import nornir_shared.plot
+import nornir_buildmanager.templates
 
 import nornir_pools as Pools
 
@@ -471,7 +472,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
     for imagename, transform in mosaic.ImageToTransformString.iteritems():
         MosaicToSectionTransform = factory.LoadTransform(transform)
         Transforms[imagename] = MosaicToSectionTransform
-        bbox = MosaicToSectionTransform.FixedBoundingBox
+        bbox = MosaicToSectionTransform.FixedBoundingBox.ToArray()
 
         minX = min(minX, bbox[spatial.iRect.MinX])
         minY = min(minY, bbox[spatial.iRect.MinY])
@@ -1038,7 +1039,7 @@ def AddDotToExtension(Extension=None):
 def GetImageName(SectionNumber, ChannelName, FilterName, Extension=None):
     
     Extension = AddDotToExtension(Extension)
-    return Config.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
+    return nornir_buildmanager.templates.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
 
 def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=None, **kwargs):
     '''Updates the names of image files, these can be incorrect if the sections are re-ordered'''
@@ -1191,8 +1192,8 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
 
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
-    OutputImageNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + FilterNode.Name + ".png"
-    OutputImageMaskNameTemplate = Config.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
+    OutputImageNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + FilterNode.Name + ".png"
+    OutputImageMaskNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
 
     FilterNode.Imageset.SetTransform(TransformNode)
     MaskFilterNode.Imageset.SetTransform(TransformNode)
@@ -1200,7 +1201,7 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
     argstring = misc.ArgumentsFromDict(Parameters)
     irassembletemplate = 'ir-assemble ' + argstring + ' -sh 1 -sp %(pixelspacing)i -save %(OutputImageFile)s -load %(InputFile)s -mask %(OutputMaskFile)s -image_dir %(ImageDir)s '
 
-    LevelFormatTemplate = FilterNode.TilePyramid.attrib.get('LevelFormat', Config.Current.LevelFormat)
+    LevelFormatTemplate = FilterNode.TilePyramid.attrib.get('LevelFormat', nornir_buildmanager.templates.Current.LevelFormat)
 
     thisLevel = PyramidLevels[0]
 
@@ -1324,7 +1325,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetN
     TileSetNode.TileYDim = str(TileHeight)
     TileSetNode.FilePostfix = '.png'
     TileSetNode.FilePrefix = FilterNode.Name + '_'
-    TileSetNode.CoordFormat = Config.Current.GridTileCoordFormat
+    TileSetNode.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
 
     if not os.path.exists(TileSetNode.FullPath):
         Logger.info("Creating Directory: " + TileSetNode.FullPath)
@@ -1468,7 +1469,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
         prettyoutput.LogErr("No volume element available for BuildTilePyramids")
         return
 
-    LevelFormatStr = PyramidNode.attrib.get('LevelFormat', Config.Current.LevelFormat)
+    LevelFormatStr = PyramidNode.attrib.get('LevelFormat', nornir_buildmanager.templates.Current.LevelFormat)
 
     InputPyramidFullPath = PyramidNode.FullPath
 
@@ -1689,8 +1690,8 @@ def BuildTilesetPyramid(TileSetNode, Levels=None, Pool=None, **kwargs):
                 Y1 = iY * 2
                 Y2 = Y1 + 1
 
-                # OutputFile = FilePrefix + 'X' + Config.GridTileCoordFormat % iX + '_Y' + Config.GridTileCoordFormat % iY + FilePostfix
-                OutputFile = Config.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                # OutputFile = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % iX + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY + FilePostfix
+                OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
                                                      'X' : iX,
                                                      'Y' : iY,
                                                      'postfix' : FilePostfix }
@@ -1701,23 +1702,23 @@ def BuildTilesetPyramid(TileSetNode, Levels=None, Pool=None, **kwargs):
                 # if(os.path.exists(OutputFileFullPath)):
                 #    continue
 
-                # TopLeft = FilePrefix + 'X' + Config.GridTileCoordFormat % X1 + '_Y' + Config.GridTileCoordFormat % Y1 + FilePostfix
-                # TopRight = FilePrefix + 'X' + Config.GridTileCoordFormat % X2 + '_Y' + Config.GridTileCoordFormat % Y1 + FilePostfix
-                # BottomLeft = FilePrefix + 'X' + Config.GridTileCoordFormat % X1 + '_Y' + Config.GridTileCoordFormat % Y2 + FilePostfix
-                # BottomRight = FilePrefix + 'X' + Config.GridTileCoordFormat % X2 + '_Y' + Config.GridTileCoordFormat % Y2 + FilePostfix
-                TopLeft = Config.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                # TopLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
+                # TopRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
+                # BottomLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
+                # BottomRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
+                TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
                                                      'X' : X1,
                                                      'Y' : Y1,
                                                      'postfix' : FilePostfix }
-                TopRight = Config.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
                                                      'X' : X2,
                                                      'Y' : Y1,
                                                      'postfix' : FilePostfix }
-                BottomLeft = Config.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
                                                      'X' : X1,
                                                      'Y' : Y2,
                                                      'postfix' : FilePostfix }
-                BottomRight = Config.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
                                                      'X' : X2,
                                                      'Y' : Y2,
                                                      'postfix' : FilePostfix }

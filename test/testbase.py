@@ -9,6 +9,8 @@ import os
 import shutil
 import unittest
 import cProfile
+import nornir_pools
+import pstats
 
 from nornir_shared.misc import SetupLogging
 
@@ -96,7 +98,13 @@ class TestBase(unittest.TestCase):
     def tearDown(self):
 
         if not self.profiler is None:
+#             pools_profiles_fullpath = os.path.join(self.TestOutputPath, 'pools.profile')
+#             nornir_pools.aggregate_profiler_data(pools_profiles_fullpath)
             self.profiler.dump_stats(self.TestProfilerOutputPath)
+#             stats = pstats.Stats()
+#             stats.add(self.TestProfilerOutputPath)
+#             stats.add(pools_profiles_fullpath)
+#             stats.dump_stats(os.path.join(self.TestOutputPath, self.classname + 'complete.profile'))
 
         unittest.TestCase.tearDown(self)
 

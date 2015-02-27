@@ -33,6 +33,7 @@ Example:
 import sys
 import re
 import cPickle as pickle
+import nornir_buildmanager.templates
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration import image_stats
 from nornir_shared.images import *
@@ -136,7 +137,7 @@ class SerialEMIDocImport(object):
         if(ExistingSectionInfo[0] < 0):
             i = 5
 #            SectionNumber = SectionNumber + 1
-#            newPathName = ('%' + Config.Current.SectionFormat) % SectionNumber + '_' + sectionDir
+#            newPathName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber + '_' + sectionDir
 #            newPath = os.path.join(ParentDir, newPathName)
 #            prettyoutput.Log('Moving: ' + InputPath + ' -> ' + newPath)
 #            shutil.move(InputPath, newPath)
@@ -153,8 +154,8 @@ class SerialEMIDocImport(object):
         idocFilePath = idocFiles[0]
 
         # Check for underscores.  If there is an underscore and the first part is the sectionNumber, then use everything after as the section name
-        SectionName = ('%' + Config.Current.SectionFormat) % SectionNumber
-        SectionPath = ('%' + Config.Current.SectionFormat) % SectionNumber
+        SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber
+        SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber
         try:
             parts = sectionDir.partition("_")
             if not parts is None:
@@ -189,7 +190,7 @@ class SerialEMIDocImport(object):
         # if(os.path.exists(SupertilePath)):
         #    continue
 
-        FlipList = Config.GetFlipList(ParentDir);
+        FlipList = nornir_buildmanager.GetFlipList(ParentDir);
         Flip = SectionNumber in FlipList;
 
         if(Flip):
@@ -269,7 +270,7 @@ class SerialEMIDocImport(object):
                                                                             NumberOfTiles=IDocData.NumTiles),
                                                                             'Path')
 
-        LevelPath = Config.Current.DownsampleFormat % 1
+        LevelPath = nornir_buildmanager.templates.Current.DownsampleFormat % 1
 
         [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode(Level=1), 'Downsample')
 
@@ -299,7 +300,7 @@ class SerialEMIDocImport(object):
             ImageExt = ImageExt.lower()
 
             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
-            ConvertedImageName = (Config.Current.TileCoordFormat % ImageNumber) + '.' + OutputImageExt
+            ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + '.' + OutputImageExt
 
             ImageNumber = ImageNumber + 1
 
