@@ -1,4 +1,10 @@
 
+1.2.4
+-----
+
+Added compatability with 1.2.4 version of nornir_imageregistration package 
+
+
 1.2.3
 -----
 

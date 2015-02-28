@@ -2,22 +2,6 @@ import multiprocessing
 import os
 
 
-def GetFlipList(path):
-    FlippedSections = list();
-
-    flipFileName = os.path.join(path, 'FlipList.txt');
-    if os.path.exists(flipFileName) == False:
-        return FlippedSections;
-
-    flipFile = open(flipFileName, 'r');
-    lines = flipFile.readlines();
-    flipFile.close();
-
-    for line in lines:
-        sectionNumber = int(line);
-        FlippedSections.append(sectionNumber);
-
-    return FlippedSections;
 
 class __Config:
     '''A place to store hardcoded values used throughout the buildscripts'''

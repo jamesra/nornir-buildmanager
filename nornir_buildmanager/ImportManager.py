@@ -8,8 +8,7 @@ import logging
 import os
 import sys
 import xml.etree.ElementTree
-
-from nornir_buildmanager import Config
+ 
 import nornir_buildmanager.VolumeManagerETree as VM
 from nornir_shared.files import *
 from nornir_shared.reflection import *

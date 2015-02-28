@@ -10,23 +10,20 @@ import shutil
 import sys
 import urllib
 import math
-
-import VolumeManagerHelpers as VMH
-
-import nornir_buildmanager.Config as Config
-import nornir_buildmanager.operations.versions as versions
-import nornir_buildmanager.operations.tile as tile
-import nornir_imageregistration.transforms.registrationtree
-from nornir_imageregistration.files import *
+ 
 import nornir_shared.checksum
 import nornir_shared.misc as misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection as reflection
-import xml.etree.ElementTree as ElementTree
 
- 
+import nornir_buildmanager
+import nornir_buildmanager.operations.versions as versions
+import nornir_buildmanager.operations.tile as tile
+import nornir_imageregistration.transforms.registrationtree
+from nornir_imageregistration.files import *
+import xml.etree.ElementTree as ElementTree 
+import VolumeManagerHelpers as VMH
 
-    
 # import
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
@@ -1433,7 +1430,7 @@ class ChannelNode(XContainerElementWrapper):
 
 
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
-    return Config.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
+    return nornir_buildmanager.templates.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
 
 class FilterNode(XContainerElementWrapper):
 
@@ -1616,7 +1613,7 @@ class SectionNode(XContainerElementWrapper):
     @classmethod
     def ClassSortKey(cls, self):
         '''Required for objects derived from XContainerElementWrapper'''
-        return "Section " + (Config.Current.SectionTemplate % int(self.Number))
+        return "Section " + (nornir_buildmanager.templates.Current.SectionTemplate % int(self.Number))
 
     @property
     def SortKey(self):
@@ -1659,7 +1656,7 @@ class SectionNode(XContainerElementWrapper):
             Name = str(Number)
 
         if Path is None:
-            Path = Config.Current.SectionTemplate % Number
+            Path = nornir_buildmanager.templates.Current.SectionTemplate % Number
 
         super(SectionNode, self).__init__(tag='Section', Name=Name, Path=Path, attrib=attrib, **extra)
         self.Number = Number
@@ -1986,7 +1983,7 @@ class MappingNode(XElementWrapper):
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.tag + ' ' + (Config.Current.SectionTemplate % self.Control)
+        return self.tag + ' ' + (nornir_buildmanager.templates.Current.SectionTemplate % self.Control)
 
     @property
     def Control(self):
@@ -2357,7 +2354,7 @@ class SectionMappingsNode(XElementWrapper):
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.tag + ' ' + (Config.Current.SectionTemplate % self.MappedSectionNumber)
+        return self.tag + ' ' + (nornir_buildmanager.templates.Current.SectionTemplate % self.MappedSectionNumber)
 
     @property
     def MappedSectionNumber(self):
@@ -2482,7 +2479,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
     def __init__(self, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
 
         if LevelFormat is None:
-            LevelFormat = Config.Current.LevelFormat
+            LevelFormat = nornir_buildmanager.templates.Current.LevelFormat
 
         if ImageFormatExt is None:
             ImageFormatExt = '.png'
@@ -2552,7 +2549,7 @@ class LevelNode(XContainerElementWrapper):
     @classmethod
     def ClassSortKey(cls, self):
         '''Required for objects derived from XContainerElementWrapper'''
-        return "Level" + ' ' + Config.Current.DownsampleFormat % float(self.Downsample)
+        return "Level" + ' ' + nornir_buildmanager.templates.Current.DownsampleFormat % float(self.Downsample)
 
     @property
     def SortKey(self):
@@ -2603,9 +2600,9 @@ class LevelNode(XContainerElementWrapper):
             GridXDim = int(self.GridDimX) - 1
             GridYDim = int(self.GridDimY) - 1
 
-            GridXString = Config.Current.GridTileCoordTemplate % GridXDim
-            # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + Config.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
-            MatchString = os.path.join(self.FullPath, Config.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
+            GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
+            # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
+            MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
                                                                                         'X' :  GridXString,
                                                                                         'Y' : '*',
                                                                                         'postfix' :  FilePostfix})
@@ -2615,17 +2612,17 @@ class LevelNode(XContainerElementWrapper):
             TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
             for iY in TestIndicies:
                 # MatchString = os.path.join(OutputDir, FilePrefix +
-                #                           'X' + Config.GridTileCoordFormat % GridXDim +
-                #                           '_Y' + Config.GridTileCoordFormat % iY +
+                #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +
+                #                           '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY +
                 #                           FilePostfix)
-                MatchString = os.path.join(self.FullPath, Config.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
+                MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
                                                                                         'X' : GridXString,
-                                                                                        'Y' : Config.Current.GridTileCoordTemplate % iY,
+                                                                                        'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
                                                                                         'postfix' : FilePostfix})
                 if(os.path.exists(MatchString)):
                     return [True, "Last column found"]
 
-                MatchString = os.path.join(self.FullPath, Config.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
+                MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
                                                                                         'X' : str(GridXDim),
                                                                                         'Y' : str(iY),
                                                                                         'postfix' : FilePostfix})
@@ -2644,7 +2641,7 @@ class LevelNode(XContainerElementWrapper):
         if(attrib is None):
             attrib = {}
 
-        attrib['Path'] = Config.Current.LevelFormat % int(Level)
+        attrib['Path'] = nornir_buildmanager.templates.Current.LevelFormat % int(Level)
 
         if isinstance(Level, str):
             attrib['Downsample'] = Level

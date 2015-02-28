@@ -38,8 +38,9 @@ import os
 import shutil
 import sys
 
+import nornir_buildmanager
 from filenameparser import ParseFilename, mapping
-from nornir_buildmanager import Config
+from nornir_buildmanager import templates
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser
 from nornir_buildmanager.operations.tile import VerifyTiles
@@ -230,7 +231,7 @@ class PMGImport(object):
             channelObj.Slide = PMG.Slide
             channelObj.Block = PMG.Block
 
-            FlipList = Config.GetFlipList(ParentDir)
+            FlipList = nornir_buildmanager.GetFlipList(ParentDir)
             Flip = PMG.Section in FlipList
 
             if(Flip):
@@ -286,7 +287,7 @@ class PMGImport(object):
                                                                                          NumberOfTiles=NumImages),
                                                                                          'Path')
 
-            LevelPath = Config.Current.DownsampleFormat % 1
+            LevelPath = templates.Current.DownsampleFormat % 1
 
             [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode(Level=1), 'Downsample')
 
