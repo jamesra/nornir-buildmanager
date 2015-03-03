@@ -129,7 +129,7 @@ class PlatformTest(test.testbase.TestBase):
 
     @property
     def PlatformFullPath(self):
-        return os.path.join(self.TestDataPath, "PlatformRaw", self.Platform)
+        return os.path.join(self.TestInputPath, "PlatformRaw", self.Platform)
      
     @property
     def ImportedDataPath(self):
