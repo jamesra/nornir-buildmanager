@@ -90,6 +90,13 @@ class TestBase(unittest.TestCase):
             self.fail("TESTOUTPUTPATH environment variable should specfify input data directory")
 
         return None
+    
+    @property
+    def TestOutputURL(self):
+        if 'TESTOUTPUTURL' in os.environ:
+            return os.environ["TESTOUTPUTURL"]
+        else:
+            return "http://localhost/"
 
     @property
     def TestLogPath(self):
