@@ -827,7 +827,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     # Build a 2D list to build the table from later
 
-    pool = Pools.GetGlobalThreadPool()
+    #pool = Pools.GetGlobalThreadPool()
     tableDict = {}
     tasks = []
 
