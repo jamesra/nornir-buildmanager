@@ -18,6 +18,7 @@ import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
 import argparsexml
+import nornir_pools
 
 
 class ArgumentSet():
@@ -646,6 +647,8 @@ class PipelineManager(object):
         # dargs = copy.deepcopy(defaultDargs)
 
         self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
+        
+        nornir_pools.ClosePools()
 
     def ExecuteChildPipelines(self, ArgSet, VolumeElem, PipelineNode):
         '''Run all of the child pipeline elements on the volume element'''
@@ -913,6 +916,8 @@ class PipelineManager(object):
             finally:
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
+                
+            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
  #           PipelineManager.RemoveParameters(dargs, PipelineNode)
  #           PipelineManager.RemoveAttributes(dargs, PipelineNode)

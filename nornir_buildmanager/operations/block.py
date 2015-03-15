@@ -1856,6 +1856,8 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
                     task.dimY = MosaicToSectionTransform.gridHeight
     
                 Tasks.append(task)
+                
+            Pool.wait_completion()
     
             for task in Tasks:
                 try:

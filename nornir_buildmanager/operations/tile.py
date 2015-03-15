@@ -611,12 +611,12 @@ def AutolevelTiles(Parameters, FilterNode, Downsample=1, TransformNode=None, Out
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MinIntensityCutoff', MinIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'MaxIntensityCutoff', MaxIntensityCutoff)
             OutputFilterNode = transforms.RemoveOnMismatch(OutputFilterNode, 'Gamma', Gamma, 3)
-            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma)
+            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
         else:
             #Rebuild the histogram image if it is missing
-            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, OutputFilterNode.MinIntensityCutoff, OutputFilterNode.MaxIntensityCutoff, OutputFilterNode.Gamma)
+            UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, OutputFilterNode.MinIntensityCutoff, OutputFilterNode.MaxIntensityCutoff, OutputFilterNode.Gamma, Async=True)
     else:
-        UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma)
+        UpdatedHistogramElement = GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma,Async=True)
 
     if not OutputFilterNode is None:
         
@@ -831,7 +831,7 @@ def GenerateHistogramImageFromPercentage(HistogramElement, MinCutoffPercent=None
     return GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColors=LineColors)
      
     
-def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColors=None):
+def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColors=None, Async=True):
     '''
     :param object HistogramElement: Histogram element to pull histogram data from
     :param float MinValue: Minimum value line
@@ -846,26 +846,7 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MinIntensityCutoff', MinValue)
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'MaxIntensityCutoff', MaxValue)
         HistogramImage = transforms.RemoveOnMismatch(HistogramImage, 'Gamma', Gamma, Precision=3)
-
-#         if not hasattr(HistogramImage, 'MinValue'):
-#             HistogramImage.Clean("No MinValue attribute on histogram image node.  Presumed outdated.")
-#             HistogramImage = None
-#         elif not hasattr(HistogramImage, 'MaxValue'):
-#             HistogramImage.Clean("No MaxValue attribute on histogram image node.  Presumed outdated.")
-#             HistogramImage = None
-#         elif not hasattr(HistogramImage, 'Gamma'):
-#             HistogramImage.Clean("No Gamma attribute on histogram image node.  Presumed outdated.")
-#             HistogramImage = None
-#         elif float(HistogramImage.MinValue) != MinValue:
-#             HistogramImage.Clean("MinValue does not match histogram min cutoff.")
-#             HistogramImage = None
-#         elif float(HistogramImage.MaxValue) != MaxValue:
-#             HistogramImage.Clean("MaxValue does not match histogram max cutoff.")
-#             HistogramImage = None
-#         elif float(HistogramImage.Gamma) != Gamma:
-#             HistogramImage.Clean("Gamma does not match histogram gamma cutoff.")
-#             HistogramImage = None
-
+ 
     if HistogramImage is None:
         OutputHistogramPngFilename = "Histogram" + HistogramElement.Type + ".png"
         HistogramImage = nb.VolumeManager.ImageNode(OutputHistogramPngFilename)
@@ -891,6 +872,11 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
         TitleStr = str(SectionNode.Number) + " " + ChannelNode.Name + " " + FilterNode.Name + " histogram"
 
         prettyoutput.Log("Creating Section Autoleveled Histogram Image: " + DataNode.FullPath)
+        
+        #if Async:
+            #pool = Pools.GetThreadPool("Histograms")
+            #pool.add_task("Create Histogram %s" % DataNode.FullPath, nornir_shared.plot.Histogram, DataNode.FullPath, HistogramImage.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, LineColorList=LineColors, Title=TitleStr)
+        #else:
         nornir_shared.plot.Histogram(DataNode.FullPath, HistogramImage.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, LineColorList=LineColors, Title=TitleStr)
 
         HistogramImage.MinIntensityCutoff = str(MinValue)

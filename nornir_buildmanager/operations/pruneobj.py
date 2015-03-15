@@ -12,6 +12,7 @@ from nornir_shared.histogram import Histogram
 import nornir_shared.misc
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
+import nornir_pools as pools
 
 
 class PruneObj:
@@ -60,8 +61,7 @@ class PruneObj:
         OutputMosaicName = OutputTransformName + nornir_shared.misc.GenNameFromDict(Parameters) + '.mosaic'
 
         MangledName = nornir_shared.misc.GenNameFromDict(Parameters)
-        ImageMapFile = PruneObj.ImageMapFileTemplate % MangledName
-
+        
         HistogramXMLFile = PruneObj.HistogramXMLFileTemplate % PruneNode.Type
         HistogramImageFile = PruneObj.HistogramSVGFileTemplate % PruneNode.Type
 
@@ -265,7 +265,7 @@ class PruneObj:
 
         return PruneObj(MapImageToScore)
 
-    def CreateHistogram(self, HistogramXMLFile, HistogramImageFile, MapImageToScoreFile=None, Title=None):
+    def CreateHistogram(self, HistogramXMLFile, HistogramImageFile, MapImageToScoreFile=None, Title=None, Async=True):
         if(len(self.MapImageToScore.items()) == 0 and MapImageToScoreFile is not None):
    #         prettyoutput.Log( "Reading scores, MapImageToScore Empty " + MapImageToScoreFile)
             PruneObj.ReadPruneMap(self, MapImageToScoreFile)
@@ -326,7 +326,11 @@ class PruneObj:
         H.Add(scores)
         H.Save(HistogramXMLFile)
 
-        plot.Histogram(HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title)
+        if Async:
+            pool = pools.GetMultithreadingPool("Histograms")
+            pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title) 
+        else:
+            plot.Histogram(HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title)
 
 
     def WritePruneMosaic(self, path, SourceMosaic, TargetMosaic='prune.mosaic', Tolerance='5'):
@@ -373,9 +377,4 @@ class PruneObj:
         mosaic.Save(TargetMosaicFullPath)
 
         return numRemoved
-
-if __name__ == "__main__":
-
-    XmlFilename = 'D:\Buildscript\Pipelines.xml'
-    PipelineManager.Load(XmlFilename)
-
+ 
