@@ -62,19 +62,25 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
     
-        mosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
+        tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
         mfileObj = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
         invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
+        
+        mosaicToLoadPath = InputTransformNode.FullPath
         if invalidFiles:
-            mfileObj.Save(mosaicFullPath)
-        else:
-            shutil.copy(InputTransformNode.FullPath, mosaicFullPath)
+            mfileObj.Save(tempMosaicFullPath)
+            mosaicToLoadPath = tempMosaicFullPath
             
-        mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicFullPath)
+        mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
         translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(LevelNode.FullPath, usecluster=True)
         translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
 
         SaveRequired = os.path.exists(OutputTransformNode.FullPath)
+        
+        print("%s -> %s" % (OutputTransformNode.FullPath, mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
+        
+        if os.path.exists(tempMosaicFullPath):
+            os.remove(tempMosaicFullPath)
  
     if SaveRequired:
         return TransformParentNode
