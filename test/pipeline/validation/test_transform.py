@@ -72,6 +72,8 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
         for tNode in TransformNodes:
             if not 'InputTransform' in tNode.attrib:
                 continue
+            
+            prechecksum = tNode.Checksum
 
             os.remove(tNode.FullPath)
             self.Logger.info("Removing transform to see if it regenerates: " + tNode.FullPath)
@@ -95,10 +97,17 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Make sure the transforms are still consistent
             self.ValidateAllTransforms(self.ChannelData)
+            
+            RefreshedTransform = tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.InputTransform)
+            self.assertIsNotNone(RefreshedTransform)
 
             # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
             if not OutputTransform is None:
-                self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
+                if prechecksum == RefreshedTransform.Checksum:
+                    self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
+                else:
+                    #This is for translate results, so we'll special case this
+                    self.assertTrue('translate' in RefreshedTransform.Name, "Translate should be the only transform with a different checksum after regeneration")
 
             self.Logger.info("Transform regenerates successfully: " + tNode.FullPath)
 

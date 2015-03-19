@@ -25,7 +25,7 @@ class ShadingCorrectionTest(LMBuildTest):
     def testLMBuild(self):
 
         # Import the files
-        buildArgs = ['-debug', '-verbose', 'import', self.ImportedDataPath, '-volume', self.TestOutputPath]
+        buildArgs = ['-debug', '-verbose', 'ImportPMG', self.ImportedDataPath, '-volume', self.TestOutputPath]
         build.Execute(buildArgs)
 
         buildArgs = ['-debug', '-verbose', 'ShadeCorrect', '-volume', self.TestOutputPath, '-Correction', 'brightfield']

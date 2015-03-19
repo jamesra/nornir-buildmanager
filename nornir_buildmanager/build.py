@@ -69,18 +69,7 @@ def ConfigDataPath():
 #                         type=str,
 #                         help='The names of the pipeline to use',
 #                         dest='pipelinenames'
-#                         )
-
-def _BuildImportParser(parser):
-    parser.add_argument('inputpath',
-                        metavar='import',
-                        action='store',
-                        type=str,
-                        default=None,
-                        help='The path of data to import, if any',
-                        )
-
-    parser.set_defaults(func=call_importer)
+#                         ) 
 
 
 def AddVolumeArgumentToParser(parser):
@@ -162,11 +151,11 @@ def BuildParserRoot():
 
     CommandParserDict['help'] = help_parser
 
-    import_parser = subparsers.add_parser('import', help='Import new data into a volume')
-    AddVolumeArgumentToParser(import_parser)
-    _BuildImportParser(import_parser)
-
-    CommandParserDict['import'] = import_parser
+#     import_parser = subparsers.add_parser('import', help='Import new data into a volume')
+#     AddVolumeArgumentToParser(import_parser)
+#     _BuildImportParser(import_parser)
+# 
+#     CommandParserDict['import'] = import_parser
 
     update_parser = subparsers.add_parser('update', help='If directories have been copied directly into the volume this flag is required to detect them')
     AddVolumeArgumentToParser(update_parser)

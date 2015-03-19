@@ -7,6 +7,36 @@
 		<Argument flag="-to" action="store" dest="To" default="" help="E-Mail addresses for reports" nargs="*"/>
 		<Argument flag="-cc" action="store" dest="CC" default="" help="E-Mail addresses for reports" nargs="*"/>
 	</Arguments>
+	
+	<Pipeline Name="ImportIDoc" Description="Import SerialEM IDOC into a volume">
+		<Arguments>
+			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="-ext" dest="extension" default="idoc" help="Extension of idoc files, default is idoc"/>
+		</Arguments>
+ 
+		<PythonCall Module="nornir_buildmanager.importers.idoc" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
+		
+	</Pipeline>
+	
+	<Pipeline Name="ImportPMG" Description="Import PMG file into a volume">
+		<Arguments>
+			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="-ext" dest="extension" default="pmg" help="Extension of pmg files, default is pmg"/>
+		</Arguments>
+ 
+		<PythonCall Module="nornir_buildmanager.importers.pmg" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
+		
+	</Pipeline>
+	
+	<Pipeline Name="ImportSectionsImages" Description="Import single images that represent an entire section in a volume">
+		<Arguments>
+			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="-ext" dest="extension" default="png" help="Extension of image files, default is png"/>
+		</Arguments>
+ 
+		<PythonCall Module="nornir_buildmanager.importers.sectionimage" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
+		
+	</Pipeline>
 
 	<Pipeline Name="Prune" Description="Removes tiles without enough features for proper alignment.">
 		<Arguments>

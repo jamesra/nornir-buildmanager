@@ -1,12 +1,30 @@
 '''
 
+Import
+----------
+
+    .. argparse::
+       :module: nornir_buildmanager.config.sphinxdocs
+       :func: _doc_arguments_ImportIDoc
+       :prog: nornir_build ImportIDoc
+       
+    .. argparse::
+       :module: nornir_buildmanager.config.sphinxdocs
+       :func: _doc_arguments_ImportPMG
+       :prog: nornir_build ImportPMG
+       
+    .. argparse::
+       :module: nornir_buildmanager.config.sphinxdocs
+       :func: _doc_arguments_ImportSI
+       :prog: nornir_build ImportSectionsImages
+       
 Prune
 ----------
 
     .. argparse::
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_Prune
-       :prog: nornir_build -pipeline TEMPrepare
+       :prog: nornir_build  TEMPrepare
        
 SetPruneCutoff
 --------------
@@ -14,7 +32,7 @@ SetPruneCutoff
     .. argparse::
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_SetPruneCutoff
-       :prog: nornir_build -pipeline SetPruneCutoff
+       :prog: nornir_build  SetPruneCutoff
 
 
 ShadeCorrect
@@ -23,7 +41,7 @@ ShadeCorrect
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_ShadeCorrect
-       :prog: nornir_build -pipeline ShadeCorrect
+       :prog: nornir_build  ShadeCorrect
 
 AdjustContrast
 --------------------
@@ -31,7 +49,7 @@ AdjustContrast
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_AdjustContrast
-       :prog: nornir_build -pipeline AdjustContrast
+       :prog: nornir_build  AdjustContrast
        
 SetContrast
 --------------
@@ -39,7 +57,7 @@ SetContrast
     .. argparse::
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_SetContrast
-       :prog: nornir_build -pipeline SetContrast
+       :prog: nornir_build  SetContrast
        
 SetFilterLock
 -------------
@@ -47,7 +65,7 @@ SetFilterLock
     .. argparse::
         :module: nornir_buildmanager.config.sphinxdocs
         :func: _doc_arguments_SetFilterLock
-        :prog: nornir_build -pipeline SetFilterLock
+        :prog: nornir_build  SetFilterLock
  
 Mosaic
 ----------
@@ -55,7 +73,7 @@ Mosaic
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_Mosaic
-       :prog: nornir_build -pipeline Mosaic
+       :prog: nornir_build  Mosaic
 
 
 Assemble
@@ -64,7 +82,7 @@ Assemble
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_Assemble
-       :prog: nornir_build -pipeline Assemble
+       :prog: nornir_build  Assemble
        
 ExportImages
 ------------
@@ -72,7 +90,7 @@ ExportImages
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_ExportImages
-       :prog: nornir_build -pipeline ExportImages
+       :prog: nornir_build  ExportImages
 
 MosaicReport
 --------------------
@@ -80,7 +98,7 @@ MosaicReport
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_MosaicReport
-       :prog: nornir_build -pipeline MosaicReport
+       :prog: nornir_build  MosaicReport
 
 StosReport
 ----------
@@ -88,7 +106,7 @@ StosReport
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_StosReport
-       :prog: nornir_build -pipeline StosReport
+       :prog: nornir_build  StosReport
 
 CreateVikingXML
 --------------------
@@ -96,7 +114,7 @@ CreateVikingXML
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_CreateVikingXML
-       :prog: nornir_build -pipeline CreateVikingXML
+       :prog: nornir_build  CreateVikingXML
 
 CreateBlobFilter
 --------------------
@@ -104,7 +122,7 @@ CreateBlobFilter
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_CreateBlobFilter
-       :prog: nornir_build -pipeline CreateBlobFilter
+       :prog: nornir_build  CreateBlobFilter
        
 AlignSections
 --------------------
@@ -112,7 +130,7 @@ AlignSections
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_AlignSections
-       :prog: nornir_build -pipeline AlignSections
+       :prog: nornir_build  AlignSections
 
 RefineSectionAlignment
 ------------------------------
@@ -120,7 +138,7 @@ RefineSectionAlignment
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_RefineSectionAlignment
-       :prog: nornir_build -pipeline RefineSectionAlignment
+       :prog: nornir_build  RefineSectionAlignment
 
 SliceToVolume
 --------------------
@@ -128,7 +146,7 @@ SliceToVolume
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_SliceToVolume
-       :prog: nornir_build -pipeline SliceToVolume
+       :prog: nornir_build  SliceToVolume
 
 ScaleVolumeTransforms
 ------------------------------
@@ -136,7 +154,7 @@ ScaleVolumeTransforms
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_ScaleVolumeTransforms
-       :prog: nornir_build -pipeline ScaleVolumeTransforms
+       :prog: nornir_build  ScaleVolumeTransforms
 
 VolumeImage
 --------------------
@@ -144,7 +162,7 @@ VolumeImage
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_VolumeImage
-       :prog: nornir_build -pipeline VolumeImage
+       :prog: nornir_build  VolumeImage
 
 MosaicToVolume
 --------------------
@@ -152,7 +170,7 @@ MosaicToVolume
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_MosaicToVolume
-       :prog: nornir_build -pipeline MosaicToVolume
+       :prog: nornir_build  MosaicToVolume
 
 RenameFilter
 --------------------
@@ -160,7 +178,7 @@ RenameFilter
     .. argparse:: 
        :module: nornir_buildmanager.config.sphinxdocs
        :func: _doc_arguments_RenameFilter
-       :prog: nornir_build -pipeline RenameFilter
+       :prog: nornir_build  RenameFilter
 
 '''
 
@@ -172,6 +190,15 @@ def _doc_arguments(pipelinename):
     configpath = nornir_buildmanager.build.ConfigDataPath()
     manager = nornir_buildmanager.pipelinemanager.PipelineManager.Load(os.path.join(configpath, 'Pipelines.xml'), pipelinename)
     return manager.GetArgParser(parser=None, IncludeGlobals=False)
+
+def _doc_arguments_ImportIDoc():
+    return _doc_arguments('ImportIDoc')
+
+def _doc_arguments_ImportPMG():
+    return _doc_arguments('ImportPMG')
+
+def _doc_arguments_ImportSI():
+    return _doc_arguments('ImportSI')
 
 def _doc_arguments_Prune():
     return _doc_arguments('Prune')

@@ -141,6 +141,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunBuild(self, buildArgs):
         '''Run a build, ensure the output directory exists, and return the volume obj'''
+        print("Run build : %s" % str(buildArgs))
         build.Execute(buildArgs)
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
         return self.LoadVolume()
@@ -167,9 +168,9 @@ class PlatformTest(test.testbase.TestBase):
 
         return pargs
 
-    def _CreateImportArgs(self, importpath, *args):
+    def _CreateImportArgs(self, importer, importpath, *args):
 
-        pargs = [ '-debug', 'import', importpath, ]
+        pargs = [ '-debug', importer, importpath]
 
         pargs.extend(['-volume', self.TestOutputPath])
 
@@ -243,9 +244,21 @@ class PlatformTest(test.testbase.TestBase):
     def RunImportThroughMosaicAssemble(self):
         self.RunImportThroughMosaic()
         self.RunAssemble()
-
+        
     def RunImport(self):
-        buildArgs = self._CreateImportArgs(self.ImportedDataPath)
+        if 'idoc' in self.Platform.lower():
+            return self.RunIDocImport()
+        elif 'pmg' in self.Platform.lower():
+            return self.RunPMGImport()
+            
+        raise NotImplemented("Derived classes should point RunImport at a specific importer")
+
+    def RunIDocImport(self):
+        buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+        
+    def RunPMGImport(self):
+        buildArgs = self._CreateImportArgs('ImportPMG', self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
     def RunPrune(self, Filter=None, Downsample=None):
@@ -849,9 +862,7 @@ class ImportOnlySetup(PlatformTest):
         super(ImportOnlySetup, self).setUp()
 
         # Import the files
-        buildArgs = ['-debug', 'import', self.ImportedDataPath, '-volume', self.TestOutputPath]
-        build.Execute(buildArgs)
-
+        self.RunImport()
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
 
         # Load the meta-data from the volumedata.xml file

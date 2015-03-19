@@ -1272,8 +1272,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # prettyoutput.Log("Saving %s" % XMLFilename)
         
-        if not os.path.exists(self.FullPath):
-            os.makedirs(self.FullPath)
+        saveDir = os.path.dirname(TempXMLFilename)
+        if not os.path.exists(saveDir):
+            os.makedirs(saveDir)
 
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
        # print OutputXML

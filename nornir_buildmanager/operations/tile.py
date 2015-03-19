@@ -882,6 +882,8 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
         HistogramImage.MinIntensityCutoff = str(MinValue)
         HistogramImage.MaxIntensityCutoff = str(MaxValue)
         HistogramImage.Gamma = str(Gamma)
+        
+        prettyoutput.Log("Done!")
 
     if added:
         return HistogramElement
@@ -1616,8 +1618,7 @@ def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
 # OK, now build/check the remaining levels of the tile pyramids
 def BuildTilesetPyramid(TileSetNode, Levels=None, Pool=None, **kwargs):
     '''@TileSetNode'''
-    if Pool is None:
-        Pool = Pools.GetGlobalClusterPool()
+    
 
     FilterNode = TileSetNode.FindParent('Filter')
 
@@ -1662,6 +1663,9 @@ def BuildTilesetPyramid(TileSetNode, Levels=None, Pool=None, **kwargs):
             os.makedirs(NextLevelNode.FullPath)
         except:
             e = 1  # Just a garbage statement, not sure how to swallow an exception
+            
+        if Pool is None:
+            Pool = Pools.GetGlobalClusterPool()
 
         # Merge all the tiles we can find into tiles of the same size
         for iY in range(0, newYDim):
@@ -1774,6 +1778,9 @@ def BuildTilesetPyramid(TileSetNode, Levels=None, Pool=None, **kwargs):
     else:
         logging.info("Level was already generated " + str(TileSetNode))
 
+    if Pool is not None:
+        Pool.wait_completion()
+        
     # This was a lot of work, make sure it is saved before queueing the next level
     TileSetNode.Save()
     prettyoutput.Log("\nTileset level completed")

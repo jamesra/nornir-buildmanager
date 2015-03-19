@@ -47,8 +47,62 @@ import nornir_shared.plot as plot
 
 from nornir_buildmanager.operations.tile import VerifyTiles
 
+def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
+    '''Import the specified directory into the volume'''
+    
+    if extension is None:
+        extension = 'idoc'
+        
+    DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
+    for path in DirList:
+        for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
+            SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath)
+            
+    return VolumeElement
+
+def try_remove_spaces_from_dirname(sectionDir):
+    ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
+    sectionDirNoSpaces = sectionDir.replace(' ', '_')
+    ParentDir = os.path.dirname(sectionDir)
+    if(sectionDirNoSpaces != sectionDir):
+        sectionDirNoSpacesFullPath = os.path.join(ParentDir, sectionDirNoSpaces)
+        shutil.move(sectionDir, sectionDirNoSpacesFullPath)
+
+        sectionDir = sectionDirNoSpaces
+        return sectionDir 
+    
+    
+    return None
 
 class SerialEMIDocImport(object):
+    
+    @classmethod 
+    def _Update_idoc_path_on_rename(cls, idocFileFullPath, new_section_dir):
+        '''Return the correct paths if we move the directory a section lives in'''
+        
+        idocFilename = os.path.basename(idocFileFullPath)
+        (ParentDir, sectionDir) = cls.GetDirectories(idocFileFullPath)
+        
+        sectionDir = os.path.join(ParentDir, new_section_dir)
+        idocFileFullPath = os.path.join(sectionDir, idocFilename)
+        
+        return idocFileFullPath
+        
+    
+    @classmethod
+    def GetDirectories(cls, idocFileFullPath):
+        sectionDir = os.path.dirname(idocFileFullPath)
+        ParentDir = os.path.dirname(sectionDir)
+        return (ParentDir, sectionDir)
+    
+    @classmethod
+    def GetIDocPathWithoutSpaces(cls, idocFileFullPath):
+        sectionDir = os.path.dirname(idocFileFullPath)
+        fixed_sectionDir = try_remove_spaces_from_dirname(sectionDir)
+        if fixed_sectionDir is None:
+            return idocFileFullPath
+        else:
+            return cls._Update_idoc_path_on_rename(idocFileFullPath, fixed_sectionDir)
 
     @classmethod
     def GetSectionInfo(cls, fileName):
@@ -81,7 +135,7 @@ class SerialEMIDocImport(object):
         return [SectionNumber, SectionName, Downsample]
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, idocFileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -93,10 +147,15 @@ class SerialEMIDocImport(object):
 
         if(Extension is None):
             Extension = 'idoc'
+            
+        if TargetBpp is None:
+            TargetBpp = 8
+            
+        idocFilePath = cls.GetIDocPathWithoutSpaces(idocFileFullPath)
 
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:
-            OutputPath = os.path.join(InputPath, "..")
+            OutputPath = os.path.join(idocFilePath, "..")
 
         if not os.path.exists(OutputPath):
             os.makedirs(OutputPath)
@@ -106,31 +165,25 @@ class SerialEMIDocImport(object):
         # VolumeObj = VolumeManager.Load(OutputPath, Create=True)
 
         # Report the current stage to the user
-        prettyoutput.CurseString('Stage', "SerialEM to Mosaic " + str(InputPath))
+        prettyoutput.CurseString('Stage', "SerialEM to Mosaic " + str(idocFileFullPath))
 
         SectionNumber = 0
+# 
+#         idocFiles = glob.glob(os.path.join(InputPath, '*.' + Extension))
+#         if(len(idocFiles) == 0):
+#             # This shouldn't happen, but just in case
+#             assert len(idocFiles) > 0, "ToMosaic called without proper target file present in the path: " + str(InputPath)
+#             return [None, None]
 
-        idocFiles = glob.glob(os.path.join(InputPath, '*.' + Extension))
-        if(len(idocFiles) == 0):
-            # This shouldn't happen, but just in case
-            assert len(idocFiles) > 0, "ToMosaic called without proper target file present in the path: " + str(InputPath)
-            return [None, None]
-
-        ParentDir = os.path.dirname(InputPath)
-        sectionDir = os.path.basename(InputPath)
-
+        
+        (ParentDir, sectionDir) = cls.GetDirectories(idocFileFullPath)
+         
         BlockName = 'TEM'
         BlockObj = XContainerElementWrapper('Block', BlockName)
-        [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
-
+        [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
+         
         # If the directory has spaces in the name, remove them
-        sectionDirNoSpaces = sectionDir.replace(' ', '_')
-        if(sectionDirNoSpaces != sectionDir):
-            sectionDirNoSpacesFullPath = os.path.join(ParentDir, sectionDirNoSpaces)
-            shutil.move(InputPath, sectionDirNoSpacesFullPath)
-
-            sectionDir = sectionDirNoSpaces
-            InputPath = sectionDirNoSpacesFullPath
+        
 
         # If the parent directory doesn't have the section number in the name, change it
         ExistingSectionInfo = cls.GetSectionInfo(sectionDir)
@@ -150,8 +203,7 @@ class SerialEMIDocImport(object):
             SectionNumber = ExistingSectionInfo[0]
 
         prettyoutput.CurseString('Section', str(SectionNumber))
-
-        idocFilePath = idocFiles[0]
+ 
 
         # Check for underscores.  If there is an underscore and the first part is the sectionNumber, then use everything after as the section name
         SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber
@@ -178,8 +230,8 @@ class SerialEMIDocImport(object):
 
         # See if we can find a notes file...
 
-        TryAddNotes(channelObj, InputPath, logger)
-        TryAddLogs(channelObj, InputPath, logger)
+        TryAddNotes(channelObj, sectionDir, logger)
+        TryAddLogs(channelObj, sectionDir, logger)
 
         ChannelPath = channelObj.FullPath
         OutputSectionPath = os.path.join(OutputPath, ChannelPath)
@@ -197,8 +249,6 @@ class SerialEMIDocImport(object):
             prettyoutput.Log("Found in FlipList.txt, flopping images")
 
         ImageExt = None
-
-        ImageSize = [0, 0]
         ImageMap = dict()  # Maps the idoc image name to the converted image name
 
         IDocData = IDoc.Load(idocFilePath)
@@ -277,7 +327,7 @@ class SerialEMIDocImport(object):
         # Make sure the target LevelObj is verified
         VerifyTiles(LevelNode=LevelObj)
 
-        InputImagePath = InputPath
+        InputImagePath = sectionDir
         OutputImagePath = os.path.join(OutputSectionPath, filterObj.Path, PyramidNodeObj.Path, LevelObj.Path)
 
         if not os.path.exists(OutputImagePath):
@@ -304,7 +354,7 @@ class SerialEMIDocImport(object):
 
             ImageNumber = ImageNumber + 1
 
-            SourceImageFullPath = os.path.join(InputPath, tile.Image)
+            SourceImageFullPath = os.path.join(sectionDir, tile.Image)
             if not os.path.exists(SourceImageFullPath):
                 prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
 
@@ -336,11 +386,20 @@ class SerialEMIDocImport(object):
 
             prettyoutput.Log("Collecting mosaic min/max data")
 
-            histogramFullPath = os.path.join(InputPath, 'Histogram.xml')
+            histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
+            
+            
             (ActualMosaicMin, ActualMosaicMax) = GetMinMaxCutoffs(SourceFiles, histogramFullPath)
-
-            filterObj.attrib['MaxIntensityCutoff'] = str(ActualMosaicMax)
-            filterObj.attrib['MinIntensityCutoff'] = str(ActualMosaicMin)
+            
+            if not filterObj.MaxIntensityCutoff is None:
+                ActualMosaicMax = filterObj.MaxIntensityCutoff
+            else:  
+                filterObj.attrib['MaxIntensityCutoff'] = "%g" % ActualMosaicMax                
+                
+            if not filterObj.MinIntensityCutoff is None:
+                ActualMosaicMin = filterObj.MinIntensityCutoff
+            else:
+                filterObj.attrib['MinIntensityCutoff'] = "%g" % ActualMosaicMin
 
             PyramidNodeObj.NumberOfTiles = IDocData.NumTiles
 
@@ -378,7 +437,7 @@ class SerialEMIDocImport(object):
 
         if len(PositionMap) == 0:
             prettyoutput.Log("No tiles could be mapped to a position, skipping import")
-            return
+            return None
 
         # If we wrote new images replace the .mosaic file
         if ImageConversionRequired or not os.path.exists(SupertilePath) or MissingInputImage:
@@ -394,6 +453,8 @@ class SerialEMIDocImport(object):
 
             transformObj.ResetChecksum()
             # transformObj.Checksum = MFile.Checksum
+            
+        return 
 
 
 def GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
@@ -468,13 +529,6 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
             continue
 
         setattr(IDocNodeObj, k, v)
-
-#        if isinstance(v,str):
-#            IDocNodeObj.attrib[k] = v
-#        elif isinstance(v,list):
-#            continue
-#        else:
-#            IDocNodeObj.attrib[k] = '%g' % v
 
     return added
 

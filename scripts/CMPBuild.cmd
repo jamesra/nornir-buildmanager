@@ -1,5 +1,5 @@
 title Import
-nornir-build import %2 -volume %1
+nornir-build ImportPMG %2 -volume %1
 title ShadeCorrect 
 nornir-build ShadeCorrect -volume %1 -Channels "(?![D|d]api)" -Filters Raw8 -OutputFilter ShadingCorrected -Correction brightfield
 title ShadeCorrect

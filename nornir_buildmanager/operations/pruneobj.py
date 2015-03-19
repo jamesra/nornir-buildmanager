@@ -63,7 +63,7 @@ class PruneObj:
         MangledName = nornir_shared.misc.GenNameFromDict(Parameters)
         
         HistogramXMLFile = PruneObj.HistogramXMLFileTemplate % PruneNode.Type
-        HistogramImageFile = PruneObj.HistogramSVGFileTemplate % PruneNode.Type
+        HistogramImageFile = PruneObj.HistogramPNGFileTemplate % PruneNode.Type
 
         MosaicDir = os.path.dirname(InputTransformNode.FullPath)
         OutputMosaicFullPath = os.path.join(MosaicDir, OutputMosaicName)
@@ -116,9 +116,14 @@ class PruneObj:
                 HistogramNode = VolumeManagerETree.ImageNode(HistogramImageFile)
                 (added, HistogramNode) = PruneNode.UpdateOrAddChild(HistogramNode)
                 HistogramNode.Threshold = '%g' % Threshold
-                PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath,
-                                                 PruneObjInstance.HistogramPNGFileFullPath,
-                                                 Title="Threshold " + str(Threshold))
+                PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath)
+                #if Async:
+                    #pool = pools.GetMultithreadingPool("Histograms")
+                    #pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title) 
+                #else:
+                plot.Histogram(PruneObjInstance.HistogramXMLFileFullPath, HistogramImageFile, LinePosList=PruneObjInstance.Tolerance, Title="Threshold " + str(Threshold))
+                
+                print("Done!")
         except Exception as E:
             prettyoutput.LogErr("Exception creating prunemap histogram:" + str(E))
             pass
@@ -265,20 +270,15 @@ class PruneObj:
 
         return PruneObj(MapImageToScore)
 
-    def CreateHistogram(self, HistogramXMLFile, HistogramImageFile, MapImageToScoreFile=None, Title=None, Async=True):
+    def CreateHistogram(self, HistogramXMLFile, MapImageToScoreFile=None):
         if(len(self.MapImageToScore.items()) == 0 and MapImageToScoreFile is not None):
    #         prettyoutput.Log( "Reading scores, MapImageToScore Empty " + MapImageToScoreFile)
             PruneObj.ReadPruneMap(self, MapImageToScoreFile)
    #         prettyoutput.Log( "Read scores complete: " + str(self.MapImageToScore))
-
-        if Title is None:
-            Title = "Prune Map"
-
+ 
         if(len(self.MapImageToScore.items()) == 0):
             prettyoutput.Log("No prune scores to create histogram with")
-            return
-
-
+            return 
 
         scores = [None] * len(self.MapImageToScore.items())
         numScores = len(scores)
@@ -326,11 +326,8 @@ class PruneObj:
         H.Add(scores)
         H.Save(HistogramXMLFile)
 
-        if Async:
-            pool = pools.GetMultithreadingPool("Histograms")
-            pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title) 
-        else:
-            plot.Histogram(HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title)
+        print("Created Histogram %s" % HistogramXMLFile)
+        
 
 
     def WritePruneMosaic(self, path, SourceMosaic, TargetMosaic='prune.mosaic', Tolerance='5'):

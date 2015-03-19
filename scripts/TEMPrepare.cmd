@@ -1,5 +1,5 @@
 title Import %1
-nornir-build import %2 -volume %1
+nornir-build ImportIDoc %2 -volume %1
 title Prune
 nornir-build Prune -volume %1 -InputFilter Raw8 -Downsample 4 -Channels TEM -Threshold 10.0
 title Histogram
