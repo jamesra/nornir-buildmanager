@@ -44,6 +44,7 @@ from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
 import logging
 import nornir_shared.plot as plot
+import collections
 
 from nornir_buildmanager.operations.tile import VerifyTiles
 
@@ -242,14 +243,21 @@ class SerialEMIDocImport(object):
         # if(os.path.exists(SupertilePath)):
         #    continue
 
-        FlipList = nornir_buildmanager.GetFlipList(ParentDir);
+        FlipList = nornir_buildmanager.importers.GetFlipList(ParentDir);
         Flip = SectionNumber in FlipList;
-
+        
+        histogramFilename = os.path.join(ParentDir, "ContrastOverrides.txt")
+        ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
+        if len(ContrastMap) == 0:
+            with open(histogramFilename, 'w+') as histogramFilehandle:
+                histogramFilehandle.write("#Section Min Max Gamma")
+                histogramFilehandle.close()
+                
+        
         if(Flip):
             prettyoutput.Log("Found in FlipList.txt, flopping images")
 
         ImageExt = None
-        ImageMap = dict()  # Maps the idoc image name to the converted image name
 
         IDocData = IDoc.Load(idocFilePath)
 
@@ -337,49 +345,54 @@ class SerialEMIDocImport(object):
         ImageNumber = 0
         ImageMoveRequired = False
         ImageConversionRequired = not ImageBpp == TargetBpp
-
-        SourceFiles = []
-        PositionMap = dict()
         MissingInputImage = False
+        
+        Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=OutputImagePath, OutputImageExt=OutputImageExt)
 
-        for tile in IDocData.tiles:
-
-            [ImageRoot, ImageExt] = os.path.splitext(tile.Image)
-
-            ImageExt = ImageExt.strip('.')
-            ImageExt = ImageExt.lower()
-
-            # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
-            ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + '.' + OutputImageExt
-
-            ImageNumber = ImageNumber + 1
-
-            SourceImageFullPath = os.path.join(sectionDir, tile.Image)
-            if not os.path.exists(SourceImageFullPath):
-                prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
-
-                MissingInputImage = True
-                continue
-
-            SourceFiles.append(SourceImageFullPath)
-
-            TargetImageFullPath = os.path.join(OutputImagePath, ConvertedImageName)
-
-            ImageMoveRequired = ImageMoveRequired | (SourceImageFullPath != TargetImageFullPath)
-            ImageConversionRequired = ImageConversionRequired | (ImageExt != OutputImageExt)
-
-            # Check to make sure our supertile mosaic file is valid
-            RemoveOutdatedFile(SourceImageFullPath, SupertilePath)
-            RemoveOutdatedFile(SourceImageFullPath, TargetImageFullPath)
-
-            PositionMap[TargetImageFullPath] = tile.PieceCoordinates[0:2]
-            TargetImageExists = os.path.exists(TargetImageFullPath)
-            if not TargetImageExists:
-                ImageMap[SourceImageFullPath] = TargetImageFullPath
+        Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
+        SourceToMissingTargetMap = Tileset.GetSourceToMissingTargetMap()
+        
+        
+#         for tile in IDocData.tiles:
+# 
+#             [ImageRoot, ImageExt] = os.path.splitext(tile.Image)
+# 
+#             ImageExt = ImageExt.strip('.')
+#             ImageExt = ImageExt.lower()
+# 
+#             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
+#             ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + '.' + OutputImageExt
+# 
+#             ImageNumber = ImageNumber + 1
+# 
+#             SourceImageFullPath = os.path.join(sectionDir, tile.Image)
+#             if not os.path.exists(SourceImageFullPath):
+#                 prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
+# 
+#             TilesMissingInOutputDirmage = True
+#                 continue
+# 
+#             SourceFiles.append(SourceImageFullPath)
+# 
+#             TargetImageFullPath = os.path.join(OutputImagePath, ConvertedImageName)
+# 
+#             ImageMoveRequired = ImageMoveRequired | (SourceImageFullPath != TargetImageFullPath)
+#             ImageConversionRequired = ImageConversionRequired | (ImageExt != OutputImageExt)
+# 
+#             # Check to make sure our supertile mosaic file is valid
+#             RemoveOutdatedFile(SourceImageFullPath, SupertilePath)
+#             RemoveOutdatedFile(SourceImageFullPath, TargetImageFullPath)
+# 
+#             PositionMap[TargetImageFullPath] = tile.PieceCoordinates[0:2]
+#             TargetImageExists = os.path.exists(TargetImageFullPath)
+#             if not TargetImageExists:
+#                 TilesMissingInOutputDir[SourceImageFullPath] = TargetImageFullPath
 
         # Figure out if we have to move or convert images
-        if len(ImageMap) == 0:
+        if len(SourceToMissingTargetMap) == 0:
             ImageConversionRequired = False
+        else:
+            ImageConversionRequired = ImageConversionRequired | Tileset.ImageConversionRequired
 
         if(ImageConversionRequired):
             Invert = False
@@ -388,63 +401,34 @@ class SerialEMIDocImport(object):
 
             histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
             
-            
-            (ActualMosaicMin, ActualMosaicMax) = GetMinMaxCutoffs(SourceFiles, histogramFullPath)
-            
-            if not filterObj.MaxIntensityCutoff is None:
-                ActualMosaicMax = filterObj.MaxIntensityCutoff
-            else:  
-                filterObj.attrib['MaxIntensityCutoff'] = "%g" % ActualMosaicMax                
-                
-            if not filterObj.MinIntensityCutoff is None:
-                ActualMosaicMin = filterObj.MinIntensityCutoff
+            ActualMosaicMin = None
+            ActualMosaicMax = None
+            if SectionNumber in ContrastMap:
+                ActualMosaicMin = ContrastMap[SectionNumber].Min
+                ActualMosaicMax = ContrastMap[SectionNumber].Max
             else:
-                filterObj.attrib['MinIntensityCutoff'] = "%g" % ActualMosaicMin
+                (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(Tileset.SourceImagesFullPaths, histogramFullPath)
+            
+            _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+            
+            filterObj.attrib['MaxIntensityCutoff'] = "%g" % ActualMosaicMax                
+            filterObj.attrib['MinIntensityCutoff'] = "%g" % ActualMosaicMin
 
             PyramidNodeObj.NumberOfTiles = IDocData.NumTiles
 
-            # Figure out how many bits are required to encode the values between min and max
-            ValueRange = ActualMosaicMax - ActualMosaicMin
-
-            if(TargetBpp > 8):
-                TargetBpp = int(math.ceil(math.log(ValueRange, 2)))
-
-            # Figure out the left shift required to erase the top bits
-            MaxUsefulHighBit = int(math.ceil(math.log(ActualMosaicMax, 2)))  # Floor because bits are numbered 0-N
-            MinUsefulLowBit = (MaxUsefulHighBit - TargetBpp)
-
-            if MinUsefulLowBit < 0:
-                MinUsefulLowBit = 0
-
-            # Build a value to AND with
-            andValue = 0
-            for i in range(MinUsefulLowBit, MaxUsefulHighBit):
-                andValue = andValue + pow(2, i)
-
-            nornir_shared.images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
-
-            for inputImage in ImageMap:
-                outputImageFullPath = ImageMap[inputImage]
-                if not os.path.exists(outputImageFullPath):
-                    logger.warning("Could not convert: " + str(os.path.basename(inputImage)))
-                    del PositionMap[outputImageFullPath]
-
-            # nornir_shared.Images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, RightLeftShift=RightLeftShift, Invert=Invert, bDeleteOriginal=False)
-            # nornir_shared.Images.ConvertImagesInDict(ImageMap, Flip=Flip, Bpp=TargetBpp, RightLeftShift=None, Invert=Invert, bDeleteOriginal=False, MinMax=[MosaicMin, MosaicMax])
-        elif(ImageMoveRequired):
-            for f in ImageMap:
-                shutil.copy(f, ImageMap[f])
-
-        if len(PositionMap) == 0:
-            prettyoutput.Log("No tiles could be mapped to a position, skipping import")
-            return None
+            #andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
+            nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
+            
+        elif(Tileset.ImageMoveRequired):
+            for f in SourceToMissingTargetMap:
+                shutil.copy(f, SourceToMissingTargetMap[f])
 
         # If we wrote new images replace the .mosaic file
-        if ImageConversionRequired or not os.path.exists(SupertilePath) or MissingInputImage:
+        if len(SourceToMissingTargetMap) > 0 or not os.path.exists(SupertilePath):
             # Writing this file indicates import succeeded and we don't need to repeat these steps, writing it will possibly invalidate a lot of downstream data
             # We need to flip the images.  This may be a Utah scope issue, our Y coordinates are inverted relative to the images.  To fix this
             # we flop instead of flip and reverse when writing the coordinates
-            mosaicfile.MosaicFile.Write(SupertilePath, Entries=PositionMap, Flip=not Flip, ImageSize=IDocData.ImageSize, Downsample=1);
+            mosaicfile.MosaicFile.Write(SupertilePath, Entries=Tileset.GetPositionsForTargets(), Flip=not Flip, ImageSize=IDocData.ImageSize, Downsample=1);
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
 
             # Sometimes files fail to convert, when this occurs remove them from the .mosaic
@@ -453,11 +437,37 @@ class SerialEMIDocImport(object):
 
             transformObj.ResetChecksum()
             # transformObj.Checksum = MFile.Checksum
+        return
+    
+    @classmethod
+    def GetBitmask(cls, ImageMin, ImageMax, TargetBpp):
+        '''
+        :param int ImageMin: Minimum value
+        :param int ImageMax: Maximum value
+        :param int TargetBpp: Desired bits-per-pixel after applying the bitmask,i.e. length of the bitmask
+        :return: A bitmask which removes bits which do not contain information for integer values between min and max.'''
+        
+        # Figure out how many bits are required to encode the values between min and max
+        ValueRange = ImageMax - ImageMin
+
+        if(TargetBpp > 8):
+            TargetBpp = int(math.ceil(math.log(ValueRange, 2)))
+
+        # Figure out the left shift required to erase the top bits
+        MaxUsefulHighBit = int(math.ceil(math.log(ImageMax, 2)))  # Floor because bits are numbered 0-N
+        MinUsefulLowBit = (MaxUsefulHighBit - TargetBpp)
+
+        if MinUsefulLowBit < 0:
+            MinUsefulLowBit = 0
+
+        # Build a value to AND with
+        andValue = 0
+        for i in range(MinUsefulLowBit, MaxUsefulHighBit):
+            andValue = andValue + pow(2, i)
             
-        return 
-
-
-def GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
+        return andValue
+    
+def _GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
     MinCutoff = 0.00001
     MaxCutoff = 0.0001
     histogramObj = None
@@ -472,13 +482,141 @@ def GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
         if not histogramFullPath is None:
             histogramObj.Save(histogramFullPath)
 
-            HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
-            plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Raw Data Pixel Intensity")
-
     assert(not histogramObj is None)
 
     # I am willing to clip 1 pixel every hundred thousand on the dark side, and one every ten thousand on the light
     return histogramObj.AutoLevel(MinCutoff, MaxCutoff)
+    
+def _PlotHistogram(histogramFullPath, sectionNumber, minCutoff, maxCutoff):    
+    HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
+    ImageRemoved = RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
+    if ImageRemoved or not os.path.exists(HistogramImageFullPath):
+        plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        
+
+
+class NornirTileset():
+    
+    Tile = collections.namedtuple("NornirTile", ('SourceImageFullPath', 'TargetImageFullPath', 'Position'))
+    
+    @property
+    def MissingInputImages(self):
+        return self._MissingInputImages
+    
+    @MissingInputImages.setter
+    def MissingInputImages(self, value):
+        self._MissingInputImages = value
+    
+    @property
+    def ImageMoveRequired(self):
+        if self._ImageMoveRequired is None:
+            self._ImageMoveRequired = self._IsImageMoveRequired()
+        return self._ImageMoveRequired
+    
+    def _IsImageMoveRequired(self):
+        for t in self._tiles:
+            if t.SourceImageFullPath != t.TargetImageFullPath:
+                return True
+            
+        return False
+    
+    @property
+    def ImageConversionRequired(self):
+        if self._ImageConversionRequired is None:
+            self._ImageConversionRequired = self._IsImageConversionRequired()
+            
+        return self._ImageConversionRequired
+    
+    def _IsImageConversionRequired(self):
+        '''True if the extensions do not match'''
+        for t in self._tiles:
+            [Unused, SourceImageExt] = os.path.splitext(t.SourceImageFullPath)
+            [Unused, TargetImageExt] = os.path.splitext(t.TargetImageFullPath) 
+            if SourceImageExt.lower() != TargetImageExt.lower():
+                return True
+    
+    def AddTile(self, tile):
+        self._tiles.append(tile)
+        self._ImageMoveRequired = None
+        self._ImageConversionRequired = None
+    
+    @property
+    def SourceImagesFullPaths(self):
+        imagePaths = []
+        for t in self._tiles:
+            imagePaths.append(t.SourceImageFullPath)
+            
+        return imagePaths
+    
+    
+    @property 
+    def Tiles(self):
+        return self._tiles
+    
+    def GetSourceToMissingTargetMap(self):
+        ''':return: A dictionary mapping source image paths to missing target image paths'''
+        
+        SourceToTargetMap = {}
+        for t in self._tiles:
+            if os.path.exists(t.SourceImageFullPath) and not os.path.exists(t.TargetImageFullPath):
+                SourceToTargetMap[t.SourceImageFullPath] = t.TargetImageFullPath
+                
+        return SourceToTargetMap
+                
+    def RemoveStaleTilesFromOutputDir(self, SupertilePath):
+        for t in self._tiles:
+            if not os.path.exists(t.SourceImageFullPath):
+                RemoveOutdatedFile(t.SourceImageFullPath, SupertilePath)
+                RemoveOutdatedFile(t.SourceImageFullPath, t.TargetImageFullPath)
+    
+    def GetPositionsForTargets(self):
+        positionMap = {}
+        for t in self._tiles:
+            if os.path.exists(t.TargetImageFullPath):
+                positionMap[t.TargetImageFullPath] = t.Position
+            
+        return positionMap
+        
+    def __init__(self, OutputImageExt):
+        self._tiles = []
+        self._MissingInputImages = False #True if some of the IDocImages are missing from the disk
+        self._ImageMoveRequired = False #True if there are images that can be moved
+        self._ImageConversionRequired = False #True if there are images that need to be converted
+        self._OutputImageExt = OutputImageExt
+                
+        
+    @classmethod
+    def CreateTilesFromIDocTileData(cls, tiles, InputTileDir, OutputTileDir, OutputImageExt):
+        ''' 
+        :param tiles IDocTileData: List of tiles to build dictionaries from
+        '''
+        ImageNumber = 0
+        
+        obj = NornirTileset(OutputImageExt)
+        
+        for tile in tiles:
+
+            [ImageRoot, ImageExt] = os.path.splitext(tile.Image)
+
+            ImageExt = ImageExt.strip('.')
+            ImageExt = ImageExt.lower()
+            ImageNumber = ImageNumber + 1
+
+            SourceImageFullPath = os.path.join(InputTileDir, tile.Image)
+            if not os.path.exists(SourceImageFullPath):
+                prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
+                obj.MissingInputImage = True
+                continue
+            
+            # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
+            ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + '.' + OutputImageExt
+            TargetImageFullPath = os.path.join(OutputTileDir, ConvertedImageName)
+            
+            obj.AddTile(NornirTileset.Tile(SourceImageFullPath, TargetImageFullPath, Position=tile.PieceCoordinates[0:2]))
+        
+        return obj
+
+
 
 def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
 
@@ -622,6 +760,8 @@ def TryAddLogs(containerObj, InputPath, logger):
                 prettyoutput.Log(str(etraceback))
 
     return LogsAdded
+
+
 
 class IDocTileData():
 

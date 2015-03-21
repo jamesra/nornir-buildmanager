@@ -42,7 +42,7 @@ import nornir_buildmanager
 from filenameparser import ParseFilename, mapping
 from nornir_buildmanager import templates
 from nornir_buildmanager.VolumeManagerETree import *
-from nornir_buildmanager.importers import filenameparser
+from nornir_buildmanager.importers import filenameparser, GetFlipList
 from nornir_buildmanager.operations.tile import VerifyTiles
 from nornir_imageregistration import image_stats
 from nornir_imageregistration.files import mosaicfile
@@ -160,7 +160,7 @@ class PMGImport(object):
         channelObj.Slide = PMG.Slide
         channelObj.Block = PMG.Block
     
-        FlipList = nornir_buildmanager.GetFlipList(ParentDir)
+        FlipList = GetFlipList(ParentDir)
         Flip = PMG.Section in FlipList
     
         if(Flip):

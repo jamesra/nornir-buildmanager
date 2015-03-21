@@ -23,8 +23,7 @@ import nornir_imageregistration.transforms.registrationtree
 from nornir_imageregistration.files import *
 import xml.etree.ElementTree as ElementTree 
 import VolumeManagerHelpers as VMH
-
-# import
+ 
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
 
