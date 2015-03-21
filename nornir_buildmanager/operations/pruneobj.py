@@ -108,20 +108,21 @@ class PruneObj:
             RemoveOutdatedFile(PruneDataNode.FullPath, PruneObjInstance.HistogramPNGFileFullPath)
             RemoveOutdatedFile(PruneDataNode.FullPath, PruneObjInstance.HistogramXMLFileFullPath)
 
-            HistogramNode = PruneNode.find('Image')
-            if not HistogramNode is None:
-                HistogramNode = transforms.RemoveOnMismatch(HistogramNode, 'Threshold', Threshold, Precision=2)
+            HistogramImageNode = PruneNode.find('Image')
+            if not HistogramImageNode is None:
+                HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=2)
 
-            if HistogramNode is None or not os.path.exists(PruneObjInstance.HistogramPNGFileFullPath):
-                HistogramNode = VolumeManagerETree.ImageNode(HistogramImageFile)
-                (added, HistogramNode) = PruneNode.UpdateOrAddChild(HistogramNode)
-                HistogramNode.Threshold = '%g' % Threshold
+            if HistogramImageNode is None or not os.path.exists(PruneObjInstance.HistogramPNGFileFullPath):
+                HistogramImageNode = VolumeManagerETree.ImageNode(HistogramImageFile)
+                (added, HistogramImageNode) = PruneNode.UpdateOrAddChild(HistogramImageNode)
+                HistogramImageNode.Threshold = '%g' % Threshold
                 PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath)
+                assert(HistogramImageNode.FullPath == PruneObjInstance.HistogramPNGFileFullPath)
                 #if Async:
                     #pool = pools.GetMultithreadingPool("Histograms")
                     #pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title) 
                 #else:
-                plot.Histogram(PruneObjInstance.HistogramXMLFileFullPath, HistogramImageFile, LinePosList=PruneObjInstance.Tolerance, Title="Threshold " + str(Threshold))
+                plot.Histogram(PruneObjInstance.HistogramXMLFileFullPath, HistogramImageNode.FullPath, LinePosList=PruneObjInstance.Tolerance, Title="Threshold " + str(Threshold))
                 
                 print("Done!")
         except Exception as E:
