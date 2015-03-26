@@ -263,7 +263,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         self.LoadInputMetaData()
 
         # Calling the first time should generate tiles
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)
 
         self.VolumeObj.Save()
@@ -272,7 +272,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         OriginalMinIntensity = self.OutputFilterNode.MinIntensityCutoff
 
         # Calling again with the same output should not regenerate the tiles
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
@@ -287,7 +287,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         # Test a max < min
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = ManualMinValue
         try:
-            ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+            ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
             self.fail("Should have raised exception for invalid manual histogram setting")
         except nb.NornirUserException as e:
             pass
@@ -295,33 +295,33 @@ class AutoLevelHistogramTest(PrepareSetup):
         # Test the Max Cutoff value
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = ManualMaxValue
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.MaxIntensityCutoff, ManualMaxValue)
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         # Calling again with new parameters but the filter locked should not regenerate tiles
         setters.SetFilterContrastLocked(self.OutputFilterNode, Locked=True)
 
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = None
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput, "Locked filter should not regenerate")
 
         # Calling again with new parameters but the filter locked should not regenerate tiles
         setters.SetFilterContrastLocked(self.OutputFilterNode, Locked=False)
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput, "Unlocked filter should regenerate")
 
         self.LoadOutputMetaData(OutputFilterName)
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         self.assertEqual(self.OutputFilterNode.MaxIntensityCutoff, AutoMaxCutoff)
@@ -329,45 +329,45 @@ class AutoLevelHistogramTest(PrepareSetup):
         # Test the Min Cutoff value
 
         self.AutoLevelHintNode.UserRequestedMinIntensityCutoff = ManualMinValue
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.MinIntensityCutoff, ManualMinValue)
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         self.AutoLevelHintNode.UserRequestedMinIntensityCutoff = None
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.MinIntensityCutoff, AutoMinCutoff)
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         # Test the gamma value
 
         self.AutoLevelHintNode.UserRequestedGamma = 1.2
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.Gamma, self.AutoLevelHintNode.UserRequestedGamma)
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         self.AutoLevelHintNode.UserRequestedGamma = None
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.Gamma, AutoGamma)
 
-        ChannelOutput = AutolevelTiles(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
+        ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)
 
         self.VolumeObj.Save()

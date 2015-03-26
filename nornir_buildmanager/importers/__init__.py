@@ -4,6 +4,11 @@ import csv
 
 ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
 
+def CreateDefaultHistogramCutoffFile(histogramFilename):
+    with open(histogramFilename, 'w+') as histogramFilehandle:
+        histogramFilehandle.write("#Section Min Max Gamma")
+        histogramFilehandle.close()
+        
 def LoadHistogramCutoffs(filename):
     '''Return a dictionary of section numbers containing named tuples of min,max,gamma values for raw data import
     :param filename str: Filename of histogram values to open
@@ -16,6 +21,9 @@ def LoadHistogramCutoffs(filename):
     with open(filename, 'rb') as contrastFile:
         csvReader = csv.reader(contrastFile, delimiter=' ', skipinitialspace=True, )
         for line in csvReader:
+            if line[0].startswith("#"):
+                continue
+            
             try: 
                 sectionNumber = int(line[0])
                 MinCutoff = float(line[1])

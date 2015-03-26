@@ -197,7 +197,7 @@
 				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
 	
 				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
-				<PythonCall Function="tile.AutolevelTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter">
+				<PythonCall Function="tile.AutolevelTiles" InputFilter="#FilterNode" OutputFilterName="#OutputFilter">
 					<Parameters>
 						<Entry Name="Gamma" Value="#Gamma"/> 
 						<Entry Name="MinCutoff" Value="#MinCutoff"/> 

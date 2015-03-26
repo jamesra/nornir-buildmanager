@@ -45,6 +45,7 @@ from nornir_shared.files import RemoveOutdatedFile
 import logging
 import nornir_shared.plot as plot
 import collections
+import nornir_pools
 
 from nornir_buildmanager.operations.tile import VerifyTiles
 
@@ -54,10 +55,16 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if extension is None:
         extension = 'idoc'
         
+    FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
+    histogramFilename = os.path.join(ImportPath, "ContrastOverrides.txt")
+    ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
+    if len(ContrastMap) == 0:
+        nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
+        
     DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
-            SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath)
+            SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
             
     return VolumeElement
 
@@ -136,12 +143,14 @@ class SerialEMIDocImport(object):
         return [SectionNumber, SectionName, Downsample]
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, idocFileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
         TargetBpp is calculated based on the number of bits required to encode the values
-        between the median min and max values 
+        between the median min and max values
+        :param list FlipList: List of section numbers which should have images flipped
+        :param dict ContrastMap: Dictionary mapping section number to (Min, Max, Gamma) tuples 
         '''
         if(OutputImageExt is None):
             OutputImageExt = 'png'
@@ -151,6 +160,12 @@ class SerialEMIDocImport(object):
             
         if TargetBpp is None:
             TargetBpp = 8
+            
+        if FlipList is None:
+            FlipList = []
+            
+        if ContrastMap is None:
+            ContrastMap = {}
             
         idocFilePath = cls.GetIDocPathWithoutSpaces(idocFileFullPath)
 
@@ -169,23 +184,11 @@ class SerialEMIDocImport(object):
         prettyoutput.CurseString('Stage', "SerialEM to Mosaic " + str(idocFileFullPath))
 
         SectionNumber = 0
-# 
-#         idocFiles = glob.glob(os.path.join(InputPath, '*.' + Extension))
-#         if(len(idocFiles) == 0):
-#             # This shouldn't happen, but just in case
-#             assert len(idocFiles) > 0, "ToMosaic called without proper target file present in the path: " + str(InputPath)
-#             return [None, None]
-
-        
         (ParentDir, sectionDir) = cls.GetDirectories(idocFileFullPath)
-         
-        BlockName = 'TEM'
-        BlockObj = XContainerElementWrapper('Block', BlockName)
+          
+        BlockObj = XContainerElementWrapper('Block', 'TEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
          
-        # If the directory has spaces in the name, remove them
-        
-
         # If the parent directory doesn't have the section number in the name, change it
         ExistingSectionInfo = cls.GetSectionInfo(sectionDir)
         if(ExistingSectionInfo[0] < 0):
@@ -224,16 +227,9 @@ class SerialEMIDocImport(object):
         [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
         sectionObj.Name = SectionName
 
-        # Create a channel group
-        ChannelName = 'TEM'
-        channelObj = XContainerElementWrapper('Channel', ChannelName)
-        [added, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
-
-        # See if we can find a notes file...
-
-        TryAddNotes(channelObj, sectionDir, logger)
-        TryAddLogs(channelObj, sectionDir, logger)
-
+        # Create a channel group 
+        [added, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode('TEM'), 'Name')
+  
         ChannelPath = channelObj.FullPath
         OutputSectionPath = os.path.join(OutputPath, ChannelPath)
         # Create a channel group for the section
@@ -243,21 +239,9 @@ class SerialEMIDocImport(object):
         # if(os.path.exists(SupertilePath)):
         #    continue
 
-        FlipList = nornir_buildmanager.importers.GetFlipList(ParentDir);
         Flip = SectionNumber in FlipList;
-        
-        histogramFilename = os.path.join(ParentDir, "ContrastOverrides.txt")
-        ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
-        if len(ContrastMap) == 0:
-            with open(histogramFilename, 'w+') as histogramFilehandle:
-                histogramFilehandle.write("#Section Min Max Gamma")
-                histogramFilehandle.close()
-                
-        
         if(Flip):
             prettyoutput.Log("Found in FlipList.txt, flopping images")
-
-        ImageExt = None
 
         IDocData = IDoc.Load(idocFilePath)
 
@@ -269,48 +253,26 @@ class SerialEMIDocImport(object):
         if IDocData.NumTiles == 0:
             prettyoutput.Log("No tiles found in IDoc: " + idocFilePath)
             return
+        
+        # See if we can find a notes file...
+        TryAddNotes(channelObj, sectionDir, logger)
+        TryAddLogs(channelObj, sectionDir, logger)
 
         AddIdocNode(channelObj, idocFilePath, IDocData, logger)
 
         # Set the scale
-        scaleValueInNm = float(IDocData.PixelSpacing) / 10.0
-        [added, ScaleObj] = channelObj.UpdateOrAddChild(XElementWrapper('Scale'))
+        [added, ScaleObj] = cls.CreateScaleNode(IDocData, channelObj) 
 
-        ScaleObj.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
-                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
-        ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
-                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
-
-        ImageBpp = None
-        if (hasattr(IDocData, 'DataMode')):
-            if IDocData.DataMode == 0:
-                ImageBpp = 8
-            elif IDocData.DataMode == 1:
-                ImageBpp = 16
-            elif IDocData.DataMode == 6:
-                ImageBpp = 16
-
-        if ImageBpp is None:
-            # Figure out the bit depth of the input
-            tile = IDocData.tiles[0]
-
-            SourceImageFullPath = os.path.join(InputPath, tile.Image)
-            ImageBpp = GetImageBpp(SourceImageFullPath)
-
-        if(not ImageBpp is None):
-            prettyoutput.Log("Source images are " + str(ImageBpp) + " bits per pixel")
-        else:
-            prettyoutput.Log("Could not determine source image BPP")
-            return
-
+       
         FilterName = 'Raw' + str(TargetBpp)
         if(TargetBpp is None):
             FilterName = 'Raw'
 
-        # Create a channel for the Raw data
-        filterObj = FilterNode(Name=FilterName)
-        [added, filterObj] = channelObj.UpdateOrAddChildByAttrib(filterObj, 'Name')
+        # Create a channel for the Raw data 
+        [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode(Name=FilterName), 'Name')
         filterObj.BitsPerPixel = TargetBpp
+        
+        
 
         SupertileName = 'Stage'
         SupertileTransform = SupertileName + '.mosaic'
@@ -328,94 +290,46 @@ class SerialEMIDocImport(object):
                                                                             NumberOfTiles=IDocData.NumTiles),
                                                                             'Path')
 
-        LevelPath = nornir_buildmanager.templates.Current.DownsampleFormat % 1
-
         [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode(Level=1), 'Downsample')
-
-        # Make sure the target LevelObj is verified
-        VerifyTiles(LevelNode=LevelObj)
-
-        InputImagePath = sectionDir
-        OutputImagePath = os.path.join(OutputSectionPath, filterObj.Path, PyramidNodeObj.Path, LevelObj.Path)
-
-        if not os.path.exists(OutputImagePath):
-            os.makedirs(OutputImagePath)
-
+            
         # Parse the images
-        ImageNumber = 0
-        ImageMoveRequired = False
-        ImageConversionRequired = not ImageBpp == TargetBpp
-        MissingInputImage = False
+        ImageBpp = cls.GetImageBpp(IDocData, sectionDir)
         
-        Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=OutputImagePath, OutputImageExt=OutputImageExt)
-
-        Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
+        
+        Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
+        
+        histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
+        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, Tileset, histogramFullPath)
+        _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+        
+        ImageConversionRequired = False
+        if not added_filter:
+            filterObj.RemoveTilePyramidOnContrastMismatch(ActualMosaicMin, ActualMosaicMax, Gamma)
+            ImageConversionRequired = True
+        
+        filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
+            
+        LevelObj = filterObj.TilePyramid.GetOrCreateLevel(1, GenerateData=False)
+                
+        # Make sure the target LevelObj is verified        
+        if not os.path.exists(LevelObj.FullPath):
+            os.makedirs(LevelObj.FullPath)
+        else:
+            VerifyTiles(filterObj.TilePyramid.GetLevel(1))
+            Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
+            
         SourceToMissingTargetMap = Tileset.GetSourceToMissingTargetMap()
-        
-        
-#         for tile in IDocData.tiles:
-# 
-#             [ImageRoot, ImageExt] = os.path.splitext(tile.Image)
-# 
-#             ImageExt = ImageExt.strip('.')
-#             ImageExt = ImageExt.lower()
-# 
-#             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
-#             ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + '.' + OutputImageExt
-# 
-#             ImageNumber = ImageNumber + 1
-# 
-#             SourceImageFullPath = os.path.join(sectionDir, tile.Image)
-#             if not os.path.exists(SourceImageFullPath):
-#                 prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
-# 
-#             TilesMissingInOutputDirmage = True
-#                 continue
-# 
-#             SourceFiles.append(SourceImageFullPath)
-# 
-#             TargetImageFullPath = os.path.join(OutputImagePath, ConvertedImageName)
-# 
-#             ImageMoveRequired = ImageMoveRequired | (SourceImageFullPath != TargetImageFullPath)
-#             ImageConversionRequired = ImageConversionRequired | (ImageExt != OutputImageExt)
-# 
-#             # Check to make sure our supertile mosaic file is valid
-#             RemoveOutdatedFile(SourceImageFullPath, SupertilePath)
-#             RemoveOutdatedFile(SourceImageFullPath, TargetImageFullPath)
-# 
-#             PositionMap[TargetImageFullPath] = tile.PieceCoordinates[0:2]
-#             TargetImageExists = os.path.exists(TargetImageFullPath)
-#             if not TargetImageExists:
-#                 TilesMissingInOutputDir[SourceImageFullPath] = TargetImageFullPath
-
+         
         # Figure out if we have to move or convert images
         if len(SourceToMissingTargetMap) == 0:
             ImageConversionRequired = False
         else:
-            ImageConversionRequired = ImageConversionRequired | Tileset.ImageConversionRequired
+            ImageConversionRequired = (not ImageBpp == TargetBpp) or (ImageConversionRequired | Tileset.ImageConversionRequired)
 
         if(ImageConversionRequired):
-            Invert = False
-
-            prettyoutput.Log("Collecting mosaic min/max data")
-
-            histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
-            
-            ActualMosaicMin = None
-            ActualMosaicMax = None
-            if SectionNumber in ContrastMap:
-                ActualMosaicMin = ContrastMap[SectionNumber].Min
-                ActualMosaicMax = ContrastMap[SectionNumber].Max
-            else:
-                (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(Tileset.SourceImagesFullPaths, histogramFullPath)
-            
-            _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-            
-            filterObj.attrib['MaxIntensityCutoff'] = "%g" % ActualMosaicMax                
-            filterObj.attrib['MinIntensityCutoff'] = "%g" % ActualMosaicMin
-
-            PyramidNodeObj.NumberOfTiles = IDocData.NumTiles
-
+            Invert = False 
+            filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
+            filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             #andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
             nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
             
@@ -432,12 +346,58 @@ class SerialEMIDocImport(object):
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
 
             # Sometimes files fail to convert, when this occurs remove them from the .mosaic
-            if MFile.RemoveInvalidMosaicImages(OutputImagePath):
+            if MFile.RemoveInvalidMosaicImages(LevelObj.FullPath):
                 MFile.Save(SupertilePath)
 
             transformObj.ResetChecksum()
             # transformObj.Checksum = MFile.Checksum
         return
+    
+    
+    @classmethod
+    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, Tileset, histogramFullPath):
+        '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
+        ActualMosaicMin = None
+        ActualMosaicMax = None
+        Gamma = 1.0
+        if SectionNumber in ContrastMap:
+            ActualMosaicMin = ContrastMap[SectionNumber].Min
+            ActualMosaicMax = ContrastMap[SectionNumber].Max
+            Gamma = ContrastMap[SectionNumber].Gamma
+        else:
+            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(Tileset.SourceImagesFullPaths, histogramFullPath)
+        
+        return (ActualMosaicMin, ActualMosaicMax, Gamma)
+        
+    
+    @classmethod
+    def GetImageBpp(cls, IDocData, sectionDir):
+        ImageBpp = IDocData.GetImageBpp()
+        if ImageBpp is None:
+            # Figure out the bit depth of the input
+            tile = IDocData.tiles[0] 
+            SourceImageFullPath = os.path.join(sectionDir, tile.Image)
+            ImageBpp = GetImageBpp(SourceImageFullPath)
+        if(not ImageBpp is None):
+            prettyoutput.Log("Source images are " + str(ImageBpp) + " bits per pixel")
+        else:
+            prettyoutput.Log("Could not determine source image BPP")
+            raise ValueError("Could not determine source image BPP")
+        
+        return ImageBpp
+    
+    @classmethod
+    def CreateScaleNode(cls, IDocData, channelObj):
+        '''Create a scale node for the channel
+        :return: ScaleNode object that was created'''
+        scaleValueInNm = float(IDocData.PixelSpacing) / 10.0
+        [added, ScaleObj] = channelObj.UpdateOrAddChild(XElementWrapper('Scale'))
+
+        ScaleObj.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
+                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
+        ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
+                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
+        return (added, ScaleObj)
     
     @classmethod
     def GetBitmask(cls, ImageMin, ImageMax, TargetBpp):
@@ -476,6 +436,7 @@ def _GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
             histogramObj = Histogram.Load(histogramFullPath)
 
     if histogramObj is None:
+        prettyoutput.Log("Collecting mosaic min/max data")
         Bpp = nornir_shared.images.GetImageBpp(listfilenames[0])
         histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, Scale=.125, numBins=2048)
 
@@ -491,8 +452,9 @@ def _PlotHistogram(histogramFullPath, sectionNumber, minCutoff, maxCutoff):
     HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
     ImageRemoved = RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
     if ImageRemoved or not os.path.exists(HistogramImageFullPath):
-        plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
-        
+        pool = nornir_pools.GetGlobalMultithreadingPool()
+        pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        #plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
 
 
 class NornirTileset():
@@ -800,6 +762,19 @@ class IDoc():
         self.ImageSize = None
         self.tiles = []
         pass
+    
+    def GetImageBpp(self):
+        ''':return: Bits per pixel if specified in the IDoc, otherwise None'''
+        ImageBpp = None
+        if (hasattr(self, 'DataMode')):
+            if self.DataMode == 0:
+                ImageBpp = 8
+            elif self.DataMode == 1:
+                ImageBpp = 16
+            elif self.DataMode == 6:
+                ImageBpp = 16
+        
+        return ImageBpp
 
     @classmethod
     def Load(cls, idocfullPath):

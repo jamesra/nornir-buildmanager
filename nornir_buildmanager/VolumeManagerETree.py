@@ -23,6 +23,7 @@ import nornir_imageregistration.transforms.registrationtree
 from nornir_imageregistration.files import *
 import xml.etree.ElementTree as ElementTree 
 import VolumeManagerHelpers as VMH
+import nornir_buildmanager.validation.transforms
  
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
@@ -1425,7 +1426,7 @@ class ChannelNode(XContainerElementWrapper):
     def GetTransform(self, transform_name):
         return self.GetChildByAttrib('Transform', 'Name', transform_name)
 
-    def __init__(self, Name, Path, attrib=None, **extra):
+    def __init__(self, Name, Path=None, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
@@ -1448,17 +1449,32 @@ class FilterNode(XContainerElementWrapper):
             return float(self.attrib['MaxIntensityCutoff'])
 
         return None
+    
+    @MaxIntensityCutoff.setter
+    def MaxIntensityCutoff(self, value):
+        self.attrib['MaxIntensityCutoff'] = "%g" % value
+        return None
 
     @property
     def MinIntensityCutoff(self):
         if 'MinIntensityCutoff' in self.attrib:
             return float(self.attrib['MinIntensityCutoff'])
         return None
+    
+    @MinIntensityCutoff.setter
+    def MinIntensityCutoff(self, value):
+        self.attrib['MinIntensityCutoff'] = "%g" % value
+        return None
 
     @property
     def Gamma(self):
         if 'Gamma' in self.attrib:
             return float(self.attrib['Gamma'])
+        return None
+    
+    @Gamma.setter
+    def Gamma(self, value):
+        self.attrib['Gamma'] = "%g" % value
         return None
 
     @property
@@ -1585,6 +1601,28 @@ class FilterNode(XContainerElementWrapper):
             Path = Name
 
         super(FilterNode, self).__init__(tag='Filter', Name=Name, Path=Path, attrib=attrib, **extra)
+        
+    def SetContrastValues(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+        self.attrib['MinIntensityCutoff'] = "%g" % MinIntensityCutoff
+        self.attrib['MaxIntensityCutoff'] = "%g" % MaxIntensityCutoff
+        self.attrib['Gamma'] = "%g" % Gamma
+        
+    def RemoveTilePyramidOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+        '''Remove the Filter node if the Contrast values do not match the passed parameters
+        :return: TilePyramid node if the node was preserved.  None if the node was removed'''
+        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, NodeToRemove=self.TilePyramid)
+        if OutputNode is None:
+            return True
+        
+        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MaxIntensityCutoff', MaxIntensityCutoff, NodeToRemove=self.TilePyramid)
+        if OutputNode is None:
+            return True
+        
+        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'Gamma', Gamma, 3, NodeToRemove=self.TilePyramid)
+        if OutputNode is None:
+            return True
+        
+        return False
 
 
 class NotesNode(XResourceElementWrapper):
@@ -1653,7 +1691,7 @@ class SectionNode(XContainerElementWrapper):
     def __init__(self, Number, Name=None, Path=None, attrib=None, **extra):
 
         if Name is None:
-            Name = str(Number)
+            Name = nornir_buildmanager.templates.Current.SectionTemplate % Number
 
         if Path is None:
             Path = nornir_buildmanager.templates.Current.SectionTemplate % Number
