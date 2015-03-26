@@ -1607,9 +1607,21 @@ class FilterNode(XContainerElementWrapper):
         self.attrib['MaxIntensityCutoff'] = "%g" % MaxIntensityCutoff
         self.attrib['Gamma'] = "%g" % Gamma
         
+    def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+        XElementWrapper.logger.warn("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff, Gamma))
+        
     def RemoveTilePyramidOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         '''Remove the Filter node if the Contrast values do not match the passed parameters
         :return: TilePyramid node if the node was preserved.  None if the node was removed'''
+        
+        if self.Locked:
+            if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff) or \
+               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff', MaxIntensityCutoff) or \
+               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'Gamma', Gamma, 3):
+                XElementWrapper.logger.warn("Contrast mismatch ignored due to filter lock on %s" % self.FullPath)
+                self._LogContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
+            return False 
+        
         OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, NodeToRemove=self.TilePyramid)
         if OutputNode is None:
             return True

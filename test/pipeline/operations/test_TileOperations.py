@@ -365,7 +365,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
-        self.assertEqual(self.OutputFilterNode.Gamma, AutoGamma)
+        self.assertAlmostEqual(self.OutputFilterNode.Gamma, AutoGamma, places=4)
 
         ChannelOutput = AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName)
         self.assertIsNone(ChannelOutput)

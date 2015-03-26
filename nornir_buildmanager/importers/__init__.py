@@ -3,6 +3,7 @@ import collections
 import csv
 
 ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
+DefaultHistogramFilename = "ContrastOverrides.txt"
 
 def CreateDefaultHistogramCutoffFile(histogramFilename):
     with open(histogramFilename, 'w+') as histogramFilehandle:
@@ -35,6 +36,22 @@ def LoadHistogramCutoffs(filename):
                 print("Could not parse histogram line: %s" % ', '.join(line))
         
     return Values
+
+def SaveHistogramCutoffs(filename, SectionToContrast):
+    '''
+    :param dict values: Dictionary mapping SectionNumber to ContrastValues
+    '''
+
+    with open(filename, 'w+') as histogramFilehandle:
+        histogramFilehandle.write("#Section Min Max Gamma\n")
+        sortedKeys = sorted(SectionToContrast.keys())
+        for sectionNumber in sortedKeys:
+            values = SectionToContrast[sectionNumber] 
+            histogramFilehandle.write("%d %d %d %g\n" % (sectionNumber, values.Min, values.Max, values.Gamma))
+
+        histogramFilehandle.close()
+
+    return
     
 
 def GetFlipList(path):

@@ -10,6 +10,7 @@ import shutil
 import unittest
 import time
 
+import nornir_buildmanager.importers
 from nornir_buildmanager.VolumeManagerETree import VolumeManager 
 import nornir_buildmanager.build as build
 from nornir_buildmanager.importers.idoc import SerialEMLog
@@ -283,11 +284,15 @@ class IDocSingleSectionImportTest(IDocTest):
 
     @property
     def VolumePath(self):
-        return "RC2_Micro/%d" % self.SectionNumber
+        return "RC2_Micro\\%d" % self.SectionNumber
 
     @property
     def SectionNumber(self):
         return 17
+    
+    @property
+    def HistogramFullPath(self):
+        return os.path.join(self.ImportedDataPath, nornir_buildmanager.importers.DefaultHistogramFilename)
 
     def LoadMetaData(self):
         '''Updates the object's meta-data variables from disk'''
@@ -322,15 +327,32 @@ class IDocSingleSectionImportTest(IDocTest):
         self.assertIsNotNone(FilterNode)
 
         return FilterNode
+    
+    def CreateImportContrastOverrideMapping(self, sectionNumber, MinVal, MaxVal, Gamma):
+        ContrastMap = {}        
+        ContrastMap[sectionNumber] = nornir_buildmanager.importers.ContrastValues(sectionNumber, MinVal, MaxVal, Gamma)
+        return ContrastMap 
+    
+    def VerifyFilterValues(self, MinVal, MaxVal, Gamma):
+        BlockNode = self.VolumeObj.find('Block')
+        self.assertIsNotNone(BlockNode)
+        
+        FilterObj = self._getFilterNode(BlockNode, self.SectionNumber)
+        self.assertIsNotNone(FilterObj)
+        
+        self.assertEqual(FilterObj.MinIntensityCutoff, MinVal)
+        self.assertEqual(FilterObj.MaxIntensityCutoff, MaxVal)
+        self.assertEqual(FilterObj.Gamma, Gamma)
 
     def runTest(self):
-
+         
         self.RunImport()
         self.LoadMetaData()
 
         SectionNodes = list(self.VolumeObj.findall("Block/Section"))
         self.assertEqual(len(SectionNodes), 1)
-
+        
+        
         IDocData = self.ChannelData.GetChildByAttrib('Data', 'Name', 'IDoc')
         self.assertIsNotNone(IDocData)
 
@@ -339,12 +361,42 @@ class IDocSingleSectionImportTest(IDocTest):
 
         BlockNode = self.VolumeObj.find('Block')
         self.assertIsNotNone(BlockNode)
+        
+        FilterObj = self._getFilterNode(BlockNode, self.SectionNumber)
+        self.assertIsNotNone(FilterObj)
+        
+        OriginalMaxIntensity = FilterObj.MaxIntensityCutoff
+        OriginalMinIntensity = FilterObj.MinIntensityCutoff
+        OriginalGamma = FilterObj.Gamma
+        
+        TargetMinIntensity = 1500
+        TargetMaxIntensity = 6000
+        TargetGamma = 1.0
+        
+        ContrastMap = self.CreateImportContrastOverrideMapping(self.SectionNumber, TargetMinIntensity, TargetMaxIntensity, Gamma=TargetGamma)
 
-        self.EnsureTilePyramidIsFull(self._getFilterNode(BlockNode, self.SectionNumber), 25)
+        self.EnsureTilePyramidIsFull(FilterObj, 25)
 
         self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="1")
+        
+        
+        nornir_buildmanager.importers.SaveHistogramCutoffs(self.HistogramFullPath, ContrastMap)
+        
+        self.RunImport()
+        self.LoadMetaData()
+        self.VerifyFilterValues(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma)
+        
         self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="0")
-
+        
+        self.RunImport()
+        self.LoadMetaData()
+        self.VerifyFilterValues(TargetMinIntensity, TargetMaxIntensity, TargetGamma)
+        
+    def tearDown(self):
+        IDocTest.tearDown(self)
+        if os.path.exists(self.HistogramFullPath):
+            os.remove(self.HistogramFullPath)
+          
 
 # class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
 #     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''

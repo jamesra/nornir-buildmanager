@@ -34,20 +34,22 @@ import sys
 import re
 import cPickle as pickle
 import nornir_buildmanager.templates
+from nornir_buildmanager.VolumeManagerETree import *
+from nornir_buildmanager.operations.tile import VerifyTiles
+import nornir_buildmanager.importers
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration import image_stats
 from nornir_shared.images import *
 import nornir_shared.files as files
 from nornir_shared.histogram import *
-from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
-import logging
 import nornir_shared.plot as plot
+import logging
 import collections
 import nornir_pools
 
-from nornir_buildmanager.operations.tile import VerifyTiles
+
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
@@ -56,7 +58,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         extension = 'idoc'
         
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
-    histogramFilename = os.path.join(ImportPath, "ContrastOverrides.txt")
+    histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
     if len(ContrastMap) == 0:
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
@@ -271,8 +273,6 @@ class SerialEMIDocImport(object):
         # Create a channel for the Raw data 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode(Name=FilterName), 'Name')
         filterObj.BitsPerPixel = TargetBpp
-        
-        
 
         SupertileName = 'Stage'
         SupertileTransform = SupertileName + '.mosaic'
@@ -304,10 +304,11 @@ class SerialEMIDocImport(object):
         
         ImageConversionRequired = False
         if not added_filter:
-            filterObj.RemoveTilePyramidOnContrastMismatch(ActualMosaicMin, ActualMosaicMax, Gamma)
-            ImageConversionRequired = True
-        
-        filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
+            if filterObj.RemoveTilePyramidOnContrastMismatch(ActualMosaicMin, ActualMosaicMax, Gamma):
+                ImageConversionRequired = True
+                filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
+        else:
+            filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
             
         LevelObj = filterObj.TilePyramid.GetOrCreateLevel(1, GenerateData=False)
                 
