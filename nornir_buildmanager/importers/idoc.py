@@ -429,7 +429,7 @@ class SerialEMIDocImport(object):
         return andValue
     
 def _GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
-    MinCutoff = 0.00001
+    MinCutoff = 0.0001
     MaxCutoff = 0.0001
     histogramObj = None
     if not histogramFullPath is None:
