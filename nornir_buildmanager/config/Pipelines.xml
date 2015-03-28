@@ -247,6 +247,7 @@
 						<Entry Name="MeshWidth" Value="8"/>
 						<Entry Name="MeshHeight" Value="8"/>
 						<Entry Name="Cell" Value="128"/>
+						<Entry Name="Threshold" Value="0.25"/>
 					</Parameters>
 				</PythonCall>
 	 
@@ -292,7 +293,8 @@
 					<Parameters>
 						<Entry Name="MeshWidth" Value="8"/>
 						<Entry Name="MeshHeight" Value="8"/>
-						<Entry Name="Cell" Value="128"/>
+						<Entry Name="Cell" Value="96"/>
+						<Entry Name="Threshold" Value="0.5"/>
 					</Parameters>
 				</PythonCall>
 	 
