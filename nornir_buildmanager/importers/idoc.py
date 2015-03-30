@@ -226,11 +226,11 @@ class SerialEMIDocImport(object):
                                               SectionName,
                                               SectionPath)
 
-        [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
+        [saveSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
         sectionObj.Name = SectionName
 
         # Create a channel group 
-        [added, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode('TEM'), 'Name')
+        [saveChannel, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode('TEM'), 'Name')
   
         ChannelPath = channelObj.FullPath
         OutputSectionPath = os.path.join(OutputPath, ChannelPath)
@@ -352,7 +352,13 @@ class SerialEMIDocImport(object):
 
             transformObj.ResetChecksum()
             # transformObj.Checksum = MFile.Checksum
-        return
+            
+        if saveBlock:
+            return BlockObj
+        elif saveSection:
+            return sectionObj
+        else:
+            return channelObj
     
     
     @classmethod
