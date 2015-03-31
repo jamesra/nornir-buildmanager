@@ -1615,18 +1615,18 @@ class FilterNode(XContainerElementWrapper):
         :return: TilePyramid node if the node was preserved.  None if the node was removed'''
         
         if self.Locked:
-            if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff) or \
-               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff', MaxIntensityCutoff) or \
+            if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff, 3) or \
+               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 3) or \
                not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'Gamma', Gamma, 3):
                 XElementWrapper.logger.warn("Contrast mismatch ignored due to filter lock on %s" % self.FullPath)
                 self._LogContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
             return False 
         
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, NodeToRemove=self.TilePyramid)
+        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, 3,NodeToRemove=self.TilePyramid)
         if OutputNode is None:
             return True
         
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MaxIntensityCutoff', MaxIntensityCutoff, NodeToRemove=self.TilePyramid)
+        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 3,NodeToRemove=self.TilePyramid)
         if OutputNode is None:
             return True
         
