@@ -62,13 +62,13 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
     if len(ContrastMap) == 0:
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
-        
+
     DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
-            SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
+            yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
             
-    return VolumeElement
+    yield VolumeElement
 
 def try_remove_spaces_from_dirname(sectionDir):
     ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
