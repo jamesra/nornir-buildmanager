@@ -1446,35 +1446,35 @@ class FilterNode(XContainerElementWrapper):
     @property
     def MaxIntensityCutoff(self):
         if 'MaxIntensityCutoff' in self.attrib:
-            return float(self.attrib['MaxIntensityCutoff'])
+            return round(float(self.attrib['MaxIntensityCutoff']),3)
 
         return None
     
     @MaxIntensityCutoff.setter
     def MaxIntensityCutoff(self, value):
-        self.attrib['MaxIntensityCutoff'] = "%g" % value
+        self.attrib['MaxIntensityCutoff'] = "%g" % round(value, 3)
         return None
 
     @property
     def MinIntensityCutoff(self):
         if 'MinIntensityCutoff' in self.attrib:
-            return float(self.attrib['MinIntensityCutoff'])
+            return round(float(self.attrib['MinIntensityCutoff']),3)
         return None
     
     @MinIntensityCutoff.setter
     def MinIntensityCutoff(self, value):
-        self.attrib['MinIntensityCutoff'] = "%g" % value
+        self.attrib['MinIntensityCutoff'] = "%g" % round(value, 3)
         return None
 
     @property
     def Gamma(self):
         if 'Gamma' in self.attrib:
-            return float(self.attrib['Gamma'])
+            return round(float(self.attrib['Gamma']),3)
         return None
     
     @Gamma.setter
     def Gamma(self, value):
-        self.attrib['Gamma'] = "%g" % value
+        self.attrib['Gamma'] = "%g" % round(value, 3)
         return None
 
     @property
@@ -1615,18 +1615,18 @@ class FilterNode(XContainerElementWrapper):
         :return: TilePyramid node if the node was preserved.  None if the node was removed'''
         
         if self.Locked:
-            if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff, 3) or \
-               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 3) or \
+            if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff, 2) or \
+               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 2) or \
                not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'Gamma', Gamma, 3):
                 XElementWrapper.logger.warn("Contrast mismatch ignored due to filter lock on %s" % self.FullPath)
                 self._LogContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
             return False 
         
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, 3,NodeToRemove=self.TilePyramid)
+        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, 2,NodeToRemove=self.TilePyramid)
         if OutputNode is None:
             return True
         
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 3,NodeToRemove=self.TilePyramid)
+        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 2,NodeToRemove=self.TilePyramid)
         if OutputNode is None:
             return True
         
