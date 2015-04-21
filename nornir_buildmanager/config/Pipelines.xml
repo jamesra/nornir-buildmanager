@@ -524,6 +524,7 @@
 
 	<Pipeline Name="CreateBlobFilter" Description="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section to execute blob on.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Leveled" help="Name of filter to create blob filter for" required="True"/>
 			<Argument flag="-Levels" dest="BlobDownsampleLevels" default="1" help="Downsample levels to be blobbed" required="False"/>
@@ -533,18 +534,22 @@
 			<Argument flag="-OutputFilter" dest="OutputFilterName" default="Blob" help="Prefix added to created filters" required="False"/>
 		</Arguments>
 
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
-
-			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
-
-			<PythonCall Function="channel.CreateBlobFilter" Levels="#BlobDownsampleLevels" InputFilter="#FilterNode" OutputFilterName="#OutputFilterName">
-				<Parameters>
-					<Entry Name="r" Value="#BlobRadius"/>
-					<Entry Name="median" Value="#BlobMedian"/>
-					<Entry Name="max" Value="#BlobMax"/>
-				</Parameters>
-			</PythonCall>
+		<Iterate VariableName="SectionNode" XPath="Block/Section">	
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+	
+				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+	
+				<PythonCall Function="channel.CreateBlobFilter" Levels="#BlobDownsampleLevels" InputFilter="#FilterNode" OutputFilterName="#OutputFilterName">
+					<Parameters>
+						<Entry Name="r" Value="#BlobRadius"/>
+						<Entry Name="median" Value="#BlobMedian"/>
+						<Entry Name="max" Value="#BlobMax"/>
+					</Parameters>
+				</PythonCall>
+			</Iterate>
 		</Iterate>
 	</Pipeline>
 
