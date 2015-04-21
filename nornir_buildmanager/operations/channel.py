@@ -101,8 +101,13 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
                                 'InputFile' : InputImageNode.FullPath} + MaskStr
 
         prettyoutput.Log(cmd)
-        subprocess.call(cmd + " && exit", shell=True)
-        SaveFilterNode = True
+        proc = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (stdout,stderr) = proc.communicate()
+        if proc.returncode < 0:
+            SaveFilterNode  = False 
+            prettyoutput.LogErr("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd,stdout))
+        else:
+            SaveFilterNode = True
 
     if(not 'InputImageChecksum' in BlobImageSet):
         BlobImageSet.InputImageChecksum = InputImageNode.Checksum
