@@ -80,7 +80,7 @@ class PruneObj:
 
         OutputTransformNode = TransformParent.GetChildByAttrib('Transform', 'Name', OutputTransformName)
         OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
-        OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, PruneDataNode, Logger)
+        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
         OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
 
         # Add the Prune Transform node if it is missing
@@ -93,6 +93,7 @@ class PruneObj:
 
         OutputTransformNode.InputTransform = InputTransformNode.Name
         OutputTransformNode.InputPruneDataType = PruneNode.Type
+        OutputTransformNode.attrib['InputPruneDataChecksum'] = PruneDataNode.Checksum 
         OutputTransformNode.InputTransformChecksum = InputTransformNode.Checksum
         if not Threshold is None:
             OutputTransformNode.Threshold = '%g' % Threshold
