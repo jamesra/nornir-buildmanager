@@ -75,15 +75,15 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         Logger.warning("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
         return
 
-    InputMaskNode = InputFilter.GetOrCreateMaskImage(thisLevel)
+    InputMaskImageNode = InputFilter.GetOrCreateMaskImage(thisLevel)
     MaskStr = ""
-    if not os.path.exists(InputMaskNode.FullPath):
-        InputMaskNode = None
+    if not os.path.exists(InputMaskImageNode.FullPath):
+        InputMaskImageNode = None
 
-    if not InputMaskNode is None:
-        OutputFilterNode.MaskName = InputMaskNode.Name
+    if not InputMaskImageNode is None:
+        OutputFilterNode.MaskName = InputFilter.DefaultMaskFilter.Name
 
-        MaskStr = ' -mask %s ' % InputMaskNode.FullPath
+        MaskStr = ' -mask %s ' % InputMaskImageNode.FullPath
 
     BlobImageNode = OutputFilterNode.Imageset.GetImage(thisLevel)
     if not BlobImageNode is None:
