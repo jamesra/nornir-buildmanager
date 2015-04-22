@@ -72,9 +72,15 @@ class PruneObj:
         PruneNodeParent = PruneNode.Parent
 
         TransformParent.RemoveOldChildrenByAttrib('Transform', 'Name', OutputTransformName)
+        
+        PruneDataNode = PruneNode.find('Data')
+        if(PruneDataNode is None):
+            Logger.warning("Did not find expected prune data node")
+            return None
 
         OutputTransformNode = TransformParent.GetChildByAttrib('Transform', 'Name', OutputTransformName)
         OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
+        OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, PruneDataNode, Logger)
         OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
 
         # Add the Prune Transform node if it is missing
@@ -90,11 +96,6 @@ class PruneObj:
         OutputTransformNode.InputTransformChecksum = InputTransformNode.Checksum
         if not Threshold is None:
             OutputTransformNode.Threshold = '%g' % Threshold
-
-        PruneDataNode = PruneNode.find('Data')
-        if(PruneDataNode is None):
-            Logger.warning("Did not find expected prune data node")
-            return None
 
         PruneObjInstance = cls.ReadPruneMap(PruneDataNode.FullPath)
         PruneObjInstance.Tolerance = Threshold
