@@ -82,16 +82,19 @@ def IsOutdated(OutputNode, InputNode, Logger=None):
     assert(hasattr(OutputNode, 'FullPath'))
     assert(hasattr(OutputNode, 'InputTransformChecksum'))
     assert(hasattr(InputNode, 'Checksum'))
-
-    if Logger is None:
-        Logger = logging.getLogger(__name__ + ".IsOutdated")
-
+ 
     if not os.path.exists(OutputNode.FullPath):
+        if Logger is None:
+            Logger = logging.getLogger(__name__ + ".IsOutdated")
+            
         Logger.info("Output transform did not exist: " + OutputNode.FullPath)
         OutputNode.Clean()
         return True
 
     if not OutputNode.InputTransformChecksum == InputNode.Checksum:
+        if Logger is None:
+            Logger = logging.getLogger(__name__ + ".IsOutdated")
+            
         Logger.info("Checksum mismatch: " + InputNode.FullPath + " -> " + OutputNode.FullPath)
         return True
 
