@@ -1,19 +1,19 @@
 title CreateBlobFilter
 nornir-build CreateBlobFilter -volume %1  -Channels TEM -InputFilter Leveled -Levels 16,32 -OutputFilter Blob -Radius 9 -Median 7 -Max 3
 title AlignSections
-nornir-build AlignSections -volume %1 -NumAdjacentSections 1 -Filters Blob -StosUseMasks True -Downsample 32 -Channels TEM
+nornir-build AlignSections -volume %1 -NumAdjacentSections 1 -Filters Blob -UseMasks -Downsample 32 -Channels TEM 
 title AssembleStosOverlays
 nornir-build AssembleStosOverlays -volume %1 -StosGroup StosBrute -Downsample 32 -StosMap PotentialRegistrationChain
 title SelectBestRegistrationChain
 nornir-build SelectBestRegistrationChain -volume %1 -StosGroup StosBrute -Downsample 32 -InputStosMap PotentialRegistrationChain -OutputStosMap FinalStosMap
 title RefineSectionAlignment
-nornir-build RefineSectionAlignment -volume %1 -InputGroup StosBrute -InputDownsample 32 -OutputGroup Grid -OutputDownsample 32 -Filter Leveled -StosUseMasks True
+nornir-build RefineSectionAlignment -volume %1 -InputGroup StosBrute -InputDownsample 32 -OutputGroup Grid -OutputDownsample 32 -Filter Leveled -UseMasks
 title AssembleStosOverlays
 nornir-build AssembleStosOverlays -volume %1 -StosGroup Grid -Downsample 32 -StosMap FinalStosMap
 title CreateVikingXML
 nornir-build CreateVikingXML -volume %1 -StosGroup Grid32 -StosMap FinalStosMap -OutputFile Grid32
 title RefineSectionAlignment
-nornir-build RefineSectionAlignment -volume %1 -InputGroup Grid -InputDownsample 32 -OutputGroup Grid -OutputDownsample 16 -Filter Leveled -StosUseMasks True
+nornir-build RefineSectionAlignment -volume %1 -InputGroup Grid -InputDownsample 32 -OutputGroup Grid -OutputDownsample 16 -Filter Leveled -UseMasks
 title ScaleVolumeTransforms
 nornir-build ScaleVolumeTransforms -volume %1 -InputGroup Grid -InputDownsample 16 -OutputDownsample 1
 title SliceToVolume
