@@ -146,7 +146,14 @@ class PruneObj:
                     os.remove(OutputMosaicFullPath)
 
         if not os.path.exists(OutputMosaicFullPath):
-            PruneObjInstance.WritePruneMosaic(PruneNodeParent.FullPath, InputTransformNode.FullPath, OutputMosaicFullPath, Tolerance=Threshold)
+            try:
+                PruneObjInstance.WritePruneMosaic(PruneNodeParent.FullPath, InputTransformNode.FullPath, OutputMosaicFullPath, Tolerance=Threshold)
+            except KeyError:
+                os.remove(PruneDataNode.FullPath)
+                PruneNode.remove(PruneDataNode)
+                prettyoutput.LogErr("Remove prune data for section " + PruneDataNode.FullPath)
+                return PruneNodeParent
+                
 
         OutputTransformNode.Type = MangledName
         OutputTransformNode.Name = OutputTransformName
