@@ -38,6 +38,7 @@ from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.operations.tile import VerifyTiles
 import nornir_buildmanager.importers
 from nornir_imageregistration.files import mosaicfile
+from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration import image_stats
 from nornir_shared.images import *
 import nornir_shared.files as files
@@ -349,7 +350,8 @@ class SerialEMIDocImport(object):
             # Sometimes files fail to convert, when this occurs remove them from the .mosaic
             if MFile.RemoveInvalidMosaicImages(LevelObj.FullPath):
                 MFile.Save(SupertilePath)
-
+ 
+            Mosaic.TranslateMosaicFileToZeroOrigin(SupertilePath)
             transformObj.ResetChecksum()
             # transformObj.Checksum = MFile.Checksum
             
