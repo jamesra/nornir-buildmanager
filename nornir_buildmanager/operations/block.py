@@ -471,6 +471,8 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
         Logger.error("Mapped image missing" + MappedImageNode.FullPath)
         return None
     
+    ControlMaskImageNode = None
+    MappedMaskImageNode = None
     if UseMasks:
         ControlMaskImageNode = ControlFilter.GetOrCreateMaskImage(StosGroup.Downsample)
         MappedMaskImageNode = MappedFilter.GetOrCreateMaskImage(StosGroup.Downsample)
