@@ -915,7 +915,7 @@ class PipelineManager(object):
                     # if they return false we do not need to run the expensive save operation
                     NodesToSave = stageFunc(**kwargs)
 
-                PipelineManager._SaveNodes(NodesToSave, VolumePath=ArgSet.Arguments["volumepath"])
+                PipelineManager._SaveNodes(NodesToSave)
 
             finally:
                 ArgSet.ClearAttributes()
