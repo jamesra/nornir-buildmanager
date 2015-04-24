@@ -109,10 +109,6 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         else:
             SaveFilterNode = True
 
-    if(not 'InputImageChecksum' in BlobImageSet):
-        BlobImageSet.InputImageChecksum = InputImageNode.Checksum
-        SaveFilterNode = True
-
     if(not 'InputImageChecksum' in BlobImageNode):
         BlobImageNode.InputImageChecksum = InputImageNode.Checksum
         SaveFilterNode = True
