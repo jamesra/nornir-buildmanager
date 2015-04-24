@@ -805,6 +805,7 @@ class PipelineManager(object):
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             if SelectedVolumeElem.CleanIfInvalid():
+                PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
                 SelectedVolumeElem = None
 
         if not SelectedVolumeElem is None:
@@ -824,8 +825,8 @@ class PipelineManager(object):
 
         NumProcessed = 0
         for VolumeElemChild in VolumeElemIter:
-
             if VolumeElemChild.CleanIfInvalid():
+                PipelineManager._SaveNodes(VolumeElemChild.Parent)
                 continue
 
             NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
@@ -834,16 +835,16 @@ class PipelineManager(object):
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
     @classmethod
-    def _SaveNodes(cls, NodesToSave, VolumePath):
+    def _SaveNodes(cls, NodesToSave):
         if not NodesToSave is None:
             if isinstance(NodesToSave, collections.Iterable):
                 for node in NodesToSave:
                     if node is None:
                         continue 
                     
-                    VolumeManagerETree.VolumeManager.Save(VolumePath, node)
+                    VolumeManagerETree.VolumeManager.Save(node)
             else:
-                VolumeManagerETree.VolumeManager.Save(VolumePath, NodesToSave)
+                VolumeManagerETree.VolumeManager.Save(NodesToSave)
 
     def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.

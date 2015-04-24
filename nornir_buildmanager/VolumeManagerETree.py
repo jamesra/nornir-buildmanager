@@ -188,46 +188,14 @@ class VolumeManager():
 
 
     @classmethod
-    def Save(cls, VolumePath, VolumeObj):
+    def Save(cls, VolumeObj):
         '''Save the volume to an XML file'''
 
-        '''We cannot include the volume checksum in the calculation because including it changes the checksum'''
-#        NewChecksum = cls.CalcVolumeChecksum(VolumeObj)
-#        OldChecksum = VolumeObj.get('Checksum', '')
-#
-#        if OldChecksum == NewChecksum:
-#            '''When the checksums match there is nothing new to save'''
-#            return
-
-        # cls.__RemoveElementsWithoutPath__(VolumeObj)
-        # cls.__SortNodes__(VolumeObj)
-        # cls.__RemoveEmptyElements__(VolumeObj)
-
+        #We cannot include the volume checksum in the calculation because including it changes the checksum'''
         if hasattr(VolumeObj, 'Save'):
             VolumeObj.Save(tabLevel=None)
         else:
-            cls.Save(VolumePath, VolumeObj.Parent)
-
-#        #Make sure any changes are accounted for by calculating a new checksum
-#        NewChecksum = cls.CalcVolumeChecksum(VolumeObj)
-#        VolumeObj.attrib['Checksum'] = NewChecksum
-#
-#        TempXMLFilename = os.path.join(VolumePath, 'TempVolume.XML')
-#
-#        OutputXML = ElementTree.tostring(VolumeObj, encoding="utf-8")
-#
-#        hFile = open(TempXMLFilename, 'w')
-#        hFile.write(OutputXML)
-#        hFile.close()
-#
-#        XMLFilename = os.path.join(VolumePath, 'Volume.XML')
-#
-#        shutil.copy(TempXMLFilename, XMLFilename)
-#        os.remove(TempXMLFilename)
-#
-#        #Update the cache we use to load volumes
-#        __LoadedVolumeXMLDict__[XMLFilename] = ElementTree.ElementTree(VolumeObj)
-
+            cls.Save(VolumeObj.Parent)
 
 class XPropertiesElementWrapper(ElementTree.Element):
     @property
