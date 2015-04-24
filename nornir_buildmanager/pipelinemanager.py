@@ -838,6 +838,9 @@ class PipelineManager(object):
         if not NodesToSave is None:
             if isinstance(NodesToSave, collections.Iterable):
                 for node in NodesToSave:
+                    if node is None:
+                        continue 
+                    
                     VolumeManagerETree.VolumeManager.Save(VolumePath, node)
             else:
                 VolumeManagerETree.VolumeManager.Save(VolumePath, NodesToSave)
