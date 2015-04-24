@@ -67,7 +67,17 @@ def SetFilterContrastLocked(FilterNode, Locked, **kwargs):
 
     logger.info("Setting filter to locked = " + str(Locked) + "  " + FilterNode.FullPath)
 
-    return FilterNode
+    return FilterNode.Parent
+
+def SetFilterMaskName(FilterNode, MaskName, **kwargs):
+    
+    logger = logging.getLogger(__name__ + '.SetFilterContrastLocked')
+
+    FilterNode.MaskName = MaskName
+
+    logger.info("Setting filter MaskName to " + MaskName + "  " + FilterNode.FullPath)
+
+    return FilterNode.Parent
 
 if __name__ == '__main__':
     pass

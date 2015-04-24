@@ -137,6 +137,16 @@
 			<PythonCall Function="general.MovePath" Node="#FilterNode" NewPath="#NewName"/>
 		</Iterate>
 	</Pipeline>
+	
+	<Pipeline Name="SetFilterMaskName" Description="Renames a filter">
+		<Arguments>
+			<Argument flag="-InputFilter" dest="InputFilter" help="Old Filter name" required="True"/>
+			<Argument flag="-MaskName" dest="NewName" help="New Mask Name for filter name" required="True"/>
+		</Arguments>
+		<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter[@Name='#InputFilter']">
+			<PythonCall Function="setters.SetFilterMaskName" FilterNode="#FilterNode" MaskName="#NewName"/>
+		</Iterate>
+	</Pipeline>
 
 	<Pipeline Name="RemoveDuplicateFilters" Description="For debugging.  Removes filters from meta-data that have duplicate names.">
 		<Arguments>
@@ -418,19 +428,30 @@
 	
 	
 	<Pipeline Name="Cleanup"  Description="Clean common errors from the volume meta-data"> 
-		<Arguments> 
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/> 
 		</Arguments>
-			<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter">
-				<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
+			<Iterate VariableName="SectionNode" XPath="Block/Section">
+				<RequireSetMembership Attribute="Number" List="#Sections"/>
+				
+				<Iterate VariableName="FilterNode" XPath="Channel/Filter">
+					<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
+				</Iterate>
+				<Iterate VariableName="ImageNode" XPath="Channel/Filter/ImageSet/Level/Image">
+					<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
+				</Iterate>
+				<Iterate VariableName="TransformNode" XPath="Channel/Transform">
+					<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+				</Iterate>
 			</Iterate>
-			<Iterate VariableName="ImageNode" XPath="Block/Section/Channel/Filter/ImageSet/Level/Image">
-				<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
-			</Iterate>
+			
 			<Iterate VariableName="TransformNode" XPath="Block/StosGroup/SectionMappings/Transform">
+				<RequireSetMembership Attribute="ControlSectionNumber" List="#Sections"/>	
 				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>
 			</Iterate>
-			<Iterate VariableName="TransformNode" XPath="Block/Section/Channel/Transform">
-				<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+			<Iterate VariableName="TransformNode" XPath="Block/StosGroup/SectionMappings/Transform">
+				<RequireSetMembership Attribute="MappedSectionNumber" List="#Sections"/>	
+				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>
 			</Iterate>
 	</Pipeline>
 	
