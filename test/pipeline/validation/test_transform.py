@@ -98,7 +98,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             # Make sure the transforms are still consistent
             self.ValidateAllTransforms(self.ChannelData)
             
-            RefreshedTransform = tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.InputTransform)
+            RefreshedTransform = tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.Name)
             self.assertIsNotNone(RefreshedTransform)
 
             # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
