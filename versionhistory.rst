@@ -1,4 +1,36 @@
 
+1.3.0
+-----
+
+**New**
+
+* ir-refine-translate has been replaced with a python implementation.  This appears to solve tiles that were misplaced in mosaics when stage position was very incorrect
+* Contrast settings can be set manually when importing 16bpp images
+* When performing import, save progress incrementally in case of crash
+* Added -Sections flag to CreateBlobFilter
+* Remove .stos files if the input images have changed
+* Save meta-data when we generate a new level for an image on the fly
+
+
+**Changed**
+
+* Do not set build process to low priority unless specified on command line.  Low priority has a huge performance cost.
+* Importers are now pipelines.  They have specific names for the type of data to import
+* Wait for pools to complete before executing next pipeline stage
+* Added options to generate histograms asynchronously
+* Refactored idoc import code
+* Write errors that occur during ir-blob to the log window
+
+
+**Fixed**
+
+* Remove generated Prune.mosaic file if it is older than the prune data it is generated from
+* Masks were entirely missed in slice-to-slice registration.  Masks are now properly included and propogated.  Removed parameter from '-UseMasks' flag
+* Do not crash if the same level is passed to CreatePyramid functions twice in a list
+ 
+
+
+
 1.2.4
 -----
 
