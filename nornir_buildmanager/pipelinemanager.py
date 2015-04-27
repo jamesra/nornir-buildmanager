@@ -18,6 +18,7 @@ import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
 import argparsexml
+import nornir_pools
 
 
 class ArgumentSet():
@@ -646,6 +647,8 @@ class PipelineManager(object):
         # dargs = copy.deepcopy(defaultDargs)
 
         self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
+        
+        nornir_pools.ClosePools()
 
     def ExecuteChildPipelines(self, ArgSet, VolumeElem, PipelineNode):
         '''Run all of the child pipeline elements on the volume element'''
@@ -802,6 +805,7 @@ class PipelineManager(object):
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             if SelectedVolumeElem.CleanIfInvalid():
+                PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
                 SelectedVolumeElem = None
 
         if not SelectedVolumeElem is None:
@@ -821,8 +825,8 @@ class PipelineManager(object):
 
         NumProcessed = 0
         for VolumeElemChild in VolumeElemIter:
-
             if VolumeElemChild.CleanIfInvalid():
+                PipelineManager._SaveNodes(VolumeElemChild.Parent)
                 continue
 
             NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
@@ -831,13 +835,16 @@ class PipelineManager(object):
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
     @classmethod
-    def _SaveNodes(cls, NodesToSave, VolumePath):
+    def _SaveNodes(cls, NodesToSave):
         if not NodesToSave is None:
             if isinstance(NodesToSave, collections.Iterable):
                 for node in NodesToSave:
-                    VolumeManagerETree.VolumeManager.Save(VolumePath, node)
+                    if node is None:
+                        continue 
+                    
+                    VolumeManagerETree.VolumeManager.Save(node)
             else:
-                VolumeManagerETree.VolumeManager.Save(VolumePath, NodesToSave)
+                VolumeManagerETree.VolumeManager.Save(NodesToSave)
 
     def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
@@ -908,11 +915,13 @@ class PipelineManager(object):
                     # if they return false we do not need to run the expensive save operation
                     NodesToSave = stageFunc(**kwargs)
 
-                PipelineManager._SaveNodes(NodesToSave, VolumePath=ArgSet.Arguments["volumepath"])
+                PipelineManager._SaveNodes(NodesToSave)
 
             finally:
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
+                
+            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
  #           PipelineManager.RemoveParameters(dargs, PipelineNode)
  #           PipelineManager.RemoveAttributes(dargs, PipelineNode)

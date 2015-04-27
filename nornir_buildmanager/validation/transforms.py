@@ -55,9 +55,13 @@ def IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision=None):
     return TargetValue == OutputValue
 
 
-def RemoveOnMismatch(OutputNode, OutputAttribute, TargetValue, Precision=None):
-    '''Remove an element if the attribute does not have the expected value'''
-
+def RemoveOnMismatch(OutputNode, OutputAttribute, TargetValue, Precision=None, NodeToRemove=None):
+    '''Remove an element if the attribute does not have the expected value
+    :param object NodeToRemove: The node that should be removed on a mismatch, if None remove the OutputNode
+    :param object TargetValue: Value we expect the attribute to have
+    :param str OutputAttribute: Name of attribute on OutputNode containing value to check
+    :param object OutputNode: Node that must have the attributes'''
+ 
     if OutputNode is None:
         return None
 
@@ -65,7 +69,10 @@ def RemoveOnMismatch(OutputNode, OutputAttribute, TargetValue, Precision=None):
         return OutputNode
 
     reasonStr = OutputAttribute + " = " + str(__GetAttribOrDefault(OutputNode, OutputAttribute, "None")) + " unequal to target value of " + str(TargetValue)
-    OutputNode.Clean(reason=reasonStr)
+    if NodeToRemove is None:
+        NodeToRemove = OutputNode
+        
+    NodeToRemove.Clean(reason=reasonStr)
     return None
 
 
@@ -75,16 +82,19 @@ def IsOutdated(OutputNode, InputNode, Logger=None):
     assert(hasattr(OutputNode, 'FullPath'))
     assert(hasattr(OutputNode, 'InputTransformChecksum'))
     assert(hasattr(InputNode, 'Checksum'))
-
-    if Logger is None:
-        Logger = logging.getLogger(__name__ + ".IsOutdated")
-
+ 
     if not os.path.exists(OutputNode.FullPath):
+        if Logger is None:
+            Logger = logging.getLogger(__name__ + ".IsOutdated")
+            
         Logger.info("Output transform did not exist: " + OutputNode.FullPath)
         OutputNode.Clean()
         return True
 
     if not OutputNode.InputTransformChecksum == InputNode.Checksum:
+        if Logger is None:
+            Logger = logging.getLogger(__name__ + ".IsOutdated")
+            
         Logger.info("Checksum mismatch: " + InputNode.FullPath + " -> " + OutputNode.FullPath)
         return True
 

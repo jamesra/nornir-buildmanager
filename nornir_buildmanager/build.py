@@ -59,18 +59,7 @@ def ConfigDataPath():
 #                         type=str,
 #                         help='The names of the pipeline to use',
 #                         dest='pipelinenames'
-#                         )
-
-def _BuildImportParser(parser):
-    parser.add_argument('inputpath',
-                        metavar='import',
-                        action='store',
-                        type=str,
-                        default=None,
-                        help='The path of data to import, if any',
-                        )
-
-    parser.set_defaults(func=call_importer)
+#                         ) 
 
 
 def AddVolumeArgumentToParser(parser):
@@ -94,12 +83,12 @@ def _AddParserRootArguments(parser):
                         dest='debug')
 
 
-    parser.add_argument('-normalpriority', '-np',
+    parser.add_argument('-lowpriority', '-lp',
                         action='store_true',
                         required=False,
                         default=False,
-                        help='Run the build without trying to lower the priority.  Faster builds but the machine may be less responsive.',
-                        dest='normpriority')
+                        help='Run the build with lower priority.  The machine may be more responsive at the expense of much slower builds. 3x-5x slower in tests.',
+                        dest='lowpriority')
 
     parser.add_argument('-verbose',
                         action='store_true',
@@ -152,11 +141,11 @@ def BuildParserRoot():
 
     CommandParserDict['help'] = help_parser
 
-    import_parser = subparsers.add_parser('import', help='Import new data into a volume')
-    AddVolumeArgumentToParser(import_parser)
-    _BuildImportParser(import_parser)
-
-    CommandParserDict['import'] = import_parser
+#     import_parser = subparsers.add_parser('import', help='Import new data into a volume')
+#     AddVolumeArgumentToParser(import_parser)
+#     _BuildImportParser(import_parser)
+# 
+#     CommandParserDict['import'] = import_parser
 
     update_parser = subparsers.add_parser('update', help='If directories have been copied directly into the volume this flag is required to detect them')
     AddVolumeArgumentToParser(update_parser)
@@ -248,30 +237,23 @@ def Execute(buildArgs=None):
     InitLogging(buildArgs)
 
     # print "Current Working Directory: " + os.getcwd()
-
-    vikingURL = ""
-
-    dargs = dict()
     # dargs.update(args.__dict__)
 
-    TimingOutput = 'Timing.txt'
+    #TimingOutput = 'Timing.txt'
 
     Timer = TaskTimer()
 
     parser = BuildParserRoot()
 
     args = parser.parse_args(buildArgs)
-
-    PipelineXML = _GetPipelineXMLPath()
-
-    if not args.normpriority:
+   
+    if args.lowpriority:
+        
         lowpriority()
-
+        
     # SetupLogging(args.volumepath)
-
-    try:
-        Timer.Start('Total Runtime')
-
+    
+    try:  
 #        Timer.Start('ADoc To Mosaic')
 
 #         Importer = None
@@ -286,8 +268,12 @@ def Execute(buildArgs=None):
 #
 #             Importer.ConvertAll(args.inputpath, args.volumepath)
 
+        Timer.Start(args.PipelineName)
+
         args.func(args)
 
+        Timer.End(args.PipelineName)
+        
 #         if args.pipelinenames is None:
 #             return
 #
@@ -295,18 +281,17 @@ def Execute(buildArgs=None):
 #
 #             pipeline = pipelinemanager.PipelineManager.Load(PipelineXMLPath, pipelinename)
 #             pipeline.Execute(parser, buildArgs)
-
-
-
+  
     finally:
         OutStr = str(Timer)
         prettyoutput.Log(OutStr)
+        timeTextFullPath = os.path.join(args.volumepath, 'Timing.txt') 
         try:
-            OutputFile = open(os.path.join(args.volumepath, 'Timing.txt'), 'w')
-            OutputFile.writelines(OutStr)
-            OutputFile.close()
+            with open(timeTextFullPath, 'w+') as OutputFile:
+                OutputFile.writelines(OutStr)
+                OutputFile.close()
         except:
-            prettyoutput.Log('Could not write timing.txt')
+            prettyoutput.Log('Could not write %s' % (timeTextFullPath))
 
 #
 # def SetupLogging(OutputPath):

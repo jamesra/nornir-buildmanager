@@ -7,6 +7,36 @@
 		<Argument flag="-to" action="store" dest="To" default="" help="E-Mail addresses for reports" nargs="*"/>
 		<Argument flag="-cc" action="store" dest="CC" default="" help="E-Mail addresses for reports" nargs="*"/>
 	</Arguments>
+	
+	<Pipeline Name="ImportIDoc" Description="Import SerialEM IDOC into a volume">
+		<Arguments>
+			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="-ext" dest="extension" default="idoc" help="Extension of idoc files, default is idoc"/>
+		</Arguments>
+ 
+		<PythonCall Module="nornir_buildmanager.importers.idoc" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
+		
+	</Pipeline>
+	
+	<Pipeline Name="ImportPMG" Description="Import PMG file into a volume">
+		<Arguments>
+			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="-ext" dest="extension" default="pmg" help="Extension of pmg files, default is pmg"/>
+		</Arguments>
+ 
+		<PythonCall Module="nornir_buildmanager.importers.pmg" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
+		
+	</Pipeline>
+	
+	<Pipeline Name="ImportSectionsImages" Description="Import single images that represent an entire section in a volume">
+		<Arguments>
+			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="-ext" dest="extension" default="png" help="Extension of image files, default is png"/>
+		</Arguments>
+ 
+		<PythonCall Module="nornir_buildmanager.importers.sectionimage" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
+		
+	</Pipeline>
 
 	<Pipeline Name="Prune" Description="Removes tiles without enough features for proper alignment.">
 		<Arguments>
@@ -107,6 +137,16 @@
 			<PythonCall Function="general.MovePath" Node="#FilterNode" NewPath="#NewName"/>
 		</Iterate>
 	</Pipeline>
+	
+	<Pipeline Name="SetFilterMaskName" Description="Renames a filter">
+		<Arguments>
+			<Argument flag="-InputFilter" dest="InputFilter" help="Old Filter name" required="True"/>
+			<Argument flag="-MaskName" dest="NewName" help="New Mask Name for filter name" required="True"/>
+		</Arguments>
+		<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter[@Name='#InputFilter']">
+			<PythonCall Function="setters.SetFilterMaskName" FilterNode="#FilterNode" MaskName="#NewName"/>
+		</Iterate>
+	</Pipeline>
 
 	<Pipeline Name="RemoveDuplicateFilters" Description="For debugging.  Removes filters from meta-data that have duplicate names.">
 		<Arguments>
@@ -167,7 +207,7 @@
 				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
 	
 				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
-				<PythonCall Function="tile.AutolevelTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter">
+				<PythonCall Function="tile.AutolevelTiles" InputFilter="#FilterNode" OutputFilterName="#OutputFilter">
 					<Parameters>
 						<Entry Name="Gamma" Value="#Gamma"/> 
 						<Entry Name="MinCutoff" Value="#MinCutoff"/> 
@@ -217,6 +257,7 @@
 						<Entry Name="MeshWidth" Value="8"/>
 						<Entry Name="MeshHeight" Value="8"/>
 						<Entry Name="Cell" Value="128"/>
+						<Entry Name="Threshold" Value="0.25"/>
 					</Parameters>
 				</PythonCall>
 	 
@@ -262,7 +303,8 @@
 					<Parameters>
 						<Entry Name="MeshWidth" Value="8"/>
 						<Entry Name="MeshHeight" Value="8"/>
-						<Entry Name="Cell" Value="128"/>
+						<Entry Name="Cell" Value="96"/>
+						<Entry Name="Threshold" Value="0.5"/>
 					</Parameters>
 				</PythonCall>
 	 
@@ -388,19 +430,30 @@
 	
 	
 	<Pipeline Name="Cleanup"  Description="Clean common errors from the volume meta-data"> 
-		<Arguments> 
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/> 
 		</Arguments>
-			<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter">
-				<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
+			<Iterate VariableName="SectionNode" XPath="Block/Section">
+				<RequireSetMembership Attribute="Number" List="#Sections"/>
+				
+				<Iterate VariableName="FilterNode" XPath="Channel/Filter">
+					<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
+				</Iterate>
+				<Iterate VariableName="ImageNode" XPath="Channel/Filter/ImageSet/Level/Image">
+					<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
+				</Iterate>
+				<Iterate VariableName="TransformNode" XPath="Channel/Transform">
+					<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+				</Iterate>
 			</Iterate>
-			<Iterate VariableName="ImageNode" XPath="Block/Section/Channel/Filter/ImageSet/Level/Image">
-				<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
-			</Iterate>
+			
 			<Iterate VariableName="TransformNode" XPath="Block/StosGroup/SectionMappings/Transform">
+				<RequireSetMembership Attribute="ControlSectionNumber" List="#Sections"/>	
 				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>
 			</Iterate>
-			<Iterate VariableName="TransformNode" XPath="Block/Section/Channel/Transform">
-				<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+			<Iterate VariableName="TransformNode" XPath="Block/StosGroup/SectionMappings/Transform">
+				<RequireSetMembership Attribute="MappedSectionNumber" List="#Sections"/>	
+				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>
 			</Iterate>
 	</Pipeline>
 	
@@ -494,6 +547,7 @@
 
 	<Pipeline Name="CreateBlobFilter" Description="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
 		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section to execute blob on.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Leveled" help="Name of filter to create blob filter for" required="True"/>
 			<Argument flag="-Levels" dest="BlobDownsampleLevels" default="1" help="Downsample levels to be blobbed" required="False"/>
@@ -503,18 +557,22 @@
 			<Argument flag="-OutputFilter" dest="OutputFilterName" default="Blob" help="Prefix added to created filters" required="False"/>
 		</Arguments>
 
-		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
-
-			<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
-
-			<PythonCall Function="channel.CreateBlobFilter" Levels="#BlobDownsampleLevels" InputFilter="#FilterNode" OutputFilterName="#OutputFilterName">
-				<Parameters>
-					<Entry Name="r" Value="#BlobRadius"/>
-					<Entry Name="median" Value="#BlobMedian"/>
-					<Entry Name="max" Value="#BlobMax"/>
-				</Parameters>
-			</PythonCall>
+		<Iterate VariableName="SectionNode" XPath="Block/Section">	
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+	
+				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
+	
+				<PythonCall Function="channel.CreateBlobFilter" Levels="#BlobDownsampleLevels" InputFilter="#FilterNode" OutputFilterName="#OutputFilterName">
+					<Parameters>
+						<Entry Name="r" Value="#BlobRadius"/>
+						<Entry Name="median" Value="#BlobMedian"/>
+						<Entry Name="max" Value="#BlobMax"/>
+					</Parameters>
+				</PythonCall>
+			</Iterate>
 		</Iterate>
 	</Pipeline>
 
@@ -524,7 +582,7 @@
 			<Argument flag="-NumAdjacentSections"  default="1" dest="NumAdjacentSections" type="int" help="Number of adjacent sections to attempt registration with." required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to be aligned" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
-			<Argument flag="-StosUseMasks"  default="True" dest="UseMasks" type="bool" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
+			<Argument flag="-UseMasks"  action="store_true" dest="UseMasks" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
 			<Argument flag="-Downsample"  default="1" dest="StosBruteDownsample" type="int" help="Amount to downsample input images before attempting alignment.  Images are padded to the next power of two for the FFT.  Large images, roughly greater than 2048x2048, can be very slow." required="True"/>
 			<Argument flag="-OutputStosMap"  default="PotentialRegistrationChain" dest="OutputStosMap" type="str" help="Name assigned to generated stos map." required="False"/>		
 		</Arguments>
@@ -544,6 +602,7 @@
 					<Entry Name="Downsample" Value="#StosBruteDownsample"/>
 					<Entry Name="refine"/>
 					<Entry Name="regularize"/>
+					<Entry Name="UseMasks" Value="#UseMasks"/>
 				</Parameters>
 			</PythonCall>
 		</Iterate>
@@ -585,7 +644,7 @@
 			<Argument flag="-OutputGroup"  default="StosGrid" dest="OutputGroup" type="str" help="Name of output group" required="False"/>
 			<Argument flag="-OutputDownsample" dest="OutputDownsample" type="int" help="Downsample level to use for refinement" required="True"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
-			<Argument flag="-StosUseMasks"  default="True" dest="UseMasks" type="bool" help="Image set to use as mask" required="False"/>
+			<Argument flag="-UseMasks"  action="store_true" dest="UseMasks" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
 		</Arguments>
 
 		<Select VariableName="BlockNode" XPath="Block"/>
@@ -594,7 +653,7 @@
 		<Select VariableName="InputGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#InputGroup#InputDownsample']"/>
 		<Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"  XPath="Mapping">
 			<PythonCall Function="block.StosGrid" MappingNode="#MappingNodeObj" OutputStosGroup="#OutputGroup#OutputDownsample" Downsample="#OutputDownsample"
-      												   ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx">
+      												   ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx" UseMasks="#UseMasks">
 				<Parameters>
 					<Entry Name="grid_spacing" Value="128"/>
 					<Entry Name="neighborhood" Value="128"/>

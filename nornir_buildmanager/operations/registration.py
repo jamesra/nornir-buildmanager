@@ -12,6 +12,8 @@ import subprocess
 from nornir_buildmanager import *
 from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files import *
+import nornir_imageregistration.arrange_mosaic
+import nornir_imageregistration
 from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
@@ -33,6 +35,61 @@ def TransformNodeToZeroOrigin(transform_node, **kwargs):
 
 
 def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
+    '''@ChannelNode'''
+    OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
+    InputTransformNode = TransformNode
+
+    LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
+
+    MangledName = misc.GenNameFromDict(Parameters)
+
+    # Check if there is an existing prune map, and if it exists if it is out of date
+    TransformParentNode = TransformNode.Parent
+
+    SaveRequired = False
+
+    OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
+    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
+
+    if OutputTransformNode is None:
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputTransform' : InputTransformNode.Name,
+                                                                                                               'InputImageDir' : LevelNode.FullPath,
+                                                                                                               'InputTransformChecksum' : InputTransformNode.Checksum})
+
+        (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
+
+    if not os.path.exists(OutputTransformNode.FullPath):
+
+        # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
+    
+        #TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
+        tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
+        mfileObj = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
+        invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
+        
+        mosaicToLoadPath = InputTransformNode.FullPath
+        if invalidFiles:
+            mfileObj.Save(tempMosaicFullPath)
+            mosaicToLoadPath = tempMosaicFullPath
+            
+        mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
+        translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(LevelNode.FullPath, usecluster=True)
+        translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
+
+        SaveRequired = os.path.exists(OutputTransformNode.FullPath)
+        
+        print("%s -> %s" % (OutputTransformNode.FullPath, mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
+        
+        if os.path.exists(tempMosaicFullPath):
+            os.remove(tempMosaicFullPath)
+ 
+    if SaveRequired:
+        return TransformParentNode
+    else:
+        return None
+
+
+def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
     '''@ChannelNode'''
     MaxOffsetX = Parameters.get('MaxOffsetX', 0.1)
     MaxOffsetY = Parameters.get('MaxOffsetY', 0.1)

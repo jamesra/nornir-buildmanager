@@ -14,6 +14,7 @@ import datetime
 
 import test.testbase
 
+
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
 import nornir_buildmanager.build as build
@@ -21,6 +22,7 @@ from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files.mosaicfile import *
 from nornir_buildmanager.argparsexml import NumberList
 import nornir_shared.misc
+import nornir_imageregistration.files
  
 
 
@@ -129,7 +131,7 @@ class PlatformTest(test.testbase.TestBase):
 
     @property
     def PlatformFullPath(self):
-        return os.path.join(self.TestDataPath, "PlatformRaw", self.Platform)
+        return os.path.join(self.TestInputPath, "PlatformRaw", self.Platform)
      
     @property
     def ImportedDataPath(self):
@@ -141,6 +143,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def RunBuild(self, buildArgs):
         '''Run a build, ensure the output directory exists, and return the volume obj'''
+        print("Run build : %s" % str(buildArgs))
         build.Execute(buildArgs)
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
         return self.LoadVolume()
@@ -167,9 +170,9 @@ class PlatformTest(test.testbase.TestBase):
 
         return pargs
 
-    def _CreateImportArgs(self, importpath, *args):
+    def _CreateImportArgs(self, importer, importpath, *args):
 
-        pargs = [ '-debug', 'import', importpath, ]
+        pargs = [ '-debug', importer, importpath]
 
         pargs.extend(['-volume', self.TestOutputPath])
 
@@ -243,9 +246,21 @@ class PlatformTest(test.testbase.TestBase):
     def RunImportThroughMosaicAssemble(self):
         self.RunImportThroughMosaic()
         self.RunAssemble()
-
+        
     def RunImport(self):
-        buildArgs = self._CreateImportArgs(self.ImportedDataPath)
+        if 'idoc' in self.Platform.lower():
+            return self.RunIDocImport()
+        elif 'pmg' in self.Platform.lower():
+            return self.RunPMGImport()
+            
+        raise NotImplemented("Derived classes should point RunImport at a specific importer")
+
+    def RunIDocImport(self):
+        buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+        
+    def RunPMGImport(self):
+        buildArgs = self._CreateImportArgs('ImportPMG', self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
     def RunPrune(self, Filter=None, Downsample=None):
@@ -263,6 +278,9 @@ class PlatformTest(test.testbase.TestBase):
 
         PruneNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Prune']")
         self.assertIsNotNone(PruneNode, "No prune node produced")
+        
+        #Delete one prune data file, and make sure the associated .mosaic regenerates
+        
 
         return volumeNode
 
@@ -528,7 +546,17 @@ class PlatformTest(test.testbase.TestBase):
         return volumeNode
     
     
-    def VerifyStosTransformPipelineSharedTests(self, volumeNode, stos_map_name, stos_group_name, buildArgs):
+    def _StosFileHasMasks(self,stosfileFullPath):
+        stosfileObj = nornir_imageregistration.files.StosFile.Load(stosfileFullPath)
+        return stosfileObj.HasMasks
+    
+    
+    def _StosGroupHasMasks(self, stos_group_node):
+        transformNodes = list(stos_group_node.findall("SectionMappings/Transform"))
+        return self._StosFileHasMasks(transformNodes[0].FullPath)
+    
+    
+    def VerifyStosTransformPipelineSharedTests(self, volumeNode, stos_map_name, stos_group_name, MasksRequired, buildArgs):
         '''Ensure every section has a transform and that the transform is not regenerated if the pipeline is run twice.'''
         stos_map_node = volumeNode.find("Block/StosMap[@Name='%s']" % (stos_map_name))
         self.assertIsNotNone(stos_map_node)
@@ -544,20 +572,26 @@ class PlatformTest(test.testbase.TestBase):
         full_paths = FullPathsForNodes(stos_group_node.findall("SectionMappings/Transform"))
         transform_last_modified = BuildPathToModifiedDateMap(full_paths)
         
+        #Make sure our output stos file has masks if they were called for
+        self.assertEqual(self._StosFileHasMasks(full_paths[0]), MasksRequired, "%s does not match mask expectation, masks expected = %s" % (full_paths[0], '-UseMasks' in buildArgs))
+          
         volumeNode = self.RunBuild(buildArgs)
         self.VerifyFilesLastModifiedDateUnchanged(transform_last_modified)
         
 
-    def RunAlignSections(self, Channels, Filters, Levels, Center=None):
+    def RunAlignSections(self, Channels, Filters, Levels, Center=None, UseMasks=True):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', Channels)
+        buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-Downsample', str(Levels), '-Channels', Channels)
         if not Center is None:
-            buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-StosUseMasks', 'True', '-Downsample', str(Levels), '-Channels', Channels, '-Center', str(Center))             
+            buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-Downsample', str(Levels), '-Channels', Channels, '-Center', str(Center))
+            
+        if UseMasks:
+            buildArgs.append('-UseMasks')             
         
         volumeNode = self.RunBuild(buildArgs)
         self.assertIsNotNone(volumeNode)
 
-        self.VerifyStosTransformPipelineSharedTests(volumeNode, stos_map_name='PotentialRegistrationChain', stos_group_name='%s%d' % ('StosBrute', Levels), buildArgs=buildArgs)
+        self.VerifyStosTransformPipelineSharedTests(volumeNode, stos_map_name='PotentialRegistrationChain', stos_group_name='%s%d' % ('StosBrute', Levels), MasksRequired='-UseMasks' in buildArgs, buildArgs=buildArgs)
     
         return volumeNode
     
@@ -637,20 +671,22 @@ class PlatformTest(test.testbase.TestBase):
         return volumeNode
     
 
-    def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter):
+    def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter, UseMasks=True):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('RefineSectionAlignment', '-InputGroup', InputGroup,
                                           '-InputDownsample', str(InputLevel),
                                           '-OutputGroup', OutputGroup,
                                           '-OutputDownsample', str(OutputLevel),
-                                          '-Filter', 'Leveled',
-                                          '-StosUseMasks', 'True')
+                                          '-Filter', 'Leveled')
+        if UseMasks:
+            buildArgs.append('-UseMasks')   
+            
         volumeNode = self.RunBuild(buildArgs)
 
         stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (OutputGroup, OutputLevel))
         self.assertIsNotNone(stos_group_node, "No %s%d Stos Group node produced" % (OutputGroup, OutputLevel))
           
-        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (OutputGroup, OutputLevel), stos_map_name='FinalStosMap', buildArgs=buildArgs)
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (OutputGroup, OutputLevel), stos_map_name='FinalStosMap',  MasksRequired='-UseMasks' in buildArgs, buildArgs=buildArgs)
          
         return volumeNode
 
@@ -662,7 +698,9 @@ class PlatformTest(test.testbase.TestBase):
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (InputGroup, OutputLevel))
         self.assertIsNotNone(StosGroupNode, "No %s%d Stos Group node produced" % (InputGroup, OutputLevel))
         
-        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (InputGroup, OutputLevel), stos_map_name='FinalStosMap', buildArgs=buildArgs)
+        MasksRequired = self._StosGroupHasMasks(StosGroupNode)
+        
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (InputGroup, OutputLevel), stos_map_name='FinalStosMap', MasksRequired=MasksRequired, buildArgs=buildArgs)
         return volumeNode
 
     def RunSliceToVolume(self, Level=1):
@@ -674,7 +712,9 @@ class PlatformTest(test.testbase.TestBase):
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (group_name,Level))
         self.assertIsNotNone(StosGroupNode, "No SliceToVolume%d stos group node created" % Level)
         
-        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (group_name, Level), stos_map_name='FinalStosMap', buildArgs=buildArgs)
+        MasksRequired = self._StosGroupHasMasks(StosGroupNode)
+        
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (group_name, Level), stos_map_name='FinalStosMap', MasksRequired=MasksRequired, buildArgs=buildArgs)
         return volumeNode
 
     def RunMosaicToVolume(self):
@@ -849,9 +889,7 @@ class ImportOnlySetup(PlatformTest):
         super(ImportOnlySetup, self).setUp()
 
         # Import the files
-        buildArgs = ['-debug', 'import', self.ImportedDataPath, '-volume', self.TestOutputPath]
-        build.Execute(buildArgs)
-
+        self.RunImport()
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
 
         # Load the meta-data from the volumedata.xml file

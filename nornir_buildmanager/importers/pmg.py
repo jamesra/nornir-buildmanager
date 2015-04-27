@@ -42,14 +42,29 @@ import nornir_buildmanager
 from filenameparser import ParseFilename, mapping
 from nornir_buildmanager import templates
 from nornir_buildmanager.VolumeManagerETree import *
-from nornir_buildmanager.importers import filenameparser
+from nornir_buildmanager.importers import filenameparser, GetFlipList
 from nornir_buildmanager.operations.tile import VerifyTiles
 from nornir_imageregistration import image_stats
 from nornir_imageregistration.files import mosaicfile
 import nornir_imageregistration.core
-from nornir_shared.files import *
+import nornir_shared.files
 from nornir_shared.images import *
 import nornir_shared.prettyoutput as prettyoutput
+
+
+def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
+    '''Import the specified directory into the volume'''
+    
+    if extension is None:
+        extension = 'idoc'
+     
+            
+    DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
+    for path in DirList:
+        for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
+            PMGImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, *args, **kwargs)
+            
+    return VolumeElement
 
 
 DEBUG = False
@@ -86,245 +101,154 @@ class PMGInfo(filenameparser.FilenameInfo):
 
         super(PMGInfo, self).__init__(**kwargs)
 
-
-
-#    @classmethod
-#    def PrintPMGUsage(cls):
-#        Logger = logging.getLogger("PMG Import")
-#        Logger.error("PMG files are expected to follow a naming convention:")
-#        Logger.error("Slide#_Block#_Initials_Mag_Spot_Probe")
-#        Logger.error("If there are multiple slides for a volume the section number may be prepended to the name")
-#        Logger.error("Slide#_Block#_Section#_Initials_Mag_Spot_Probe")
-#
-#    @classmethod
-#    def ParsePMGFilename(cls, PMGPath):
-#        '''#PMG Files are expected to have this naming convention:
-#           # Slide#_Block#_Initials_Mag_Spot_Probe
-#           # Only the last two, Spot and Probe, are used as section #
-#           # and channel name respectively.  The others are appended
-#           # to the directory name'''
-#
-#        Logger = logging.getLogger("PMG Import")
-#
-#        PMGBase = os.path.basename(PMGPath)
-#
-#        # Make sure there are no spaces in the filename
-#
-#        [fileName, ext] = os.path.splitext(PMGBase)
-#
-#        if(ext.lower() != '.pmg'):
-#            raise "GetPMGInfo called on non PMG file: " + PMGPath
-#
-#        # TODO, Regular expression
-#        mapping = {'Slide' : {'index' : 0, 'type' : int},
-#                   'Block' : {'index' : 1, 'type' : str},
-#                   'Initials' : {'index' : 2, 'type' : str},
-#                   'Mag' : {'index' : 3, 'type' : str},
-#                   'Spot' : {'index' : 4, 'type' : int},
-#                   'Probe' : {'index' : 5, 'type' : str}}
-#
-#        parts = fileName.split("_")
-#
-#        Output = PMGInfo()
-#
-#        if len(parts) < len(mapping):
-#            cls.PrintPMGUsage()
-#            raise Exception("Insufficient arguments in PMG filename " + fileName)
-#        elif len(parts) > len(mapping) + 1:
-#            cls.PrintPMGUsage()
-#            raise Exception("Too many underscores in PMG filename " + fileName)
-#        elif len(parts) == len(mapping) + 1:
-#            # Add the section to the expected values
-#
-#            for key, data in mapping.items():
-#                index = data['index']
-#                if index >= 2:
-#                    data['index'] = index + 1
-#
-#            mapping['Section'] = {'index' : 2, 'type' : int}
-#
-#
-#        for key, data in mapping.items():
-#            try:
-#                value = parts[data['index']]
-#                mapfunc = data['type']
-#                convValueList = map(mapfunc, [value])
-#
-#                ConvValue = convValueList[0]
-#
-#                setattr(Output, key, ConvValue)
-#            except:
-#                raise Exception("Cannot convert " + key + " from PMG filename " + fileName)
-#                cls.PrintPMGUsage()
-#
-#        return Output
-
 class PMGImport(object):
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, PMGFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None, *args, **kwargs):
 
         '''#Converts a PMG
-    #PMG files are created by Objective Imaging's Surveyor. 
-    #This function expects a directory to contain a single PMG file with the tile images in the same directory
-    #Returns the SectionNumber and ChannelName of PMG processed.  Otherwise [None,None]'''
-
-
+        #PMG files are created by Objective Imaging's Surveyor. 
+        #This function expects a directory to contain a single PMG file with the tile images in the same directory
+        #Returns the SectionNumber and ChannelName of PMG processed.  Otherwise [None,None]'''
+    
+        
+        ParentDir = os.path.dirname(PMGFullPath)
+        sectionDir = os.path.basename(PMGFullPath)
+        
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:
             OutputPath = os.path.join(InputPath, "..")
-
+    
         # If the user did not supply a value, use a default
         if(TileOverlap is None):
             TileOverlap = 0.10
-
+    
         if (TargetBpp is None):
             TargetBpp = 8
-
+    
         # Report the current stage to the user
         # prettyoutput.CurseString('Stage', "PMGToMosaic " + InputPath)
-
-        # Find the files with a .pmg extension
-        pmgFiles = glob.glob(os.path.join(InputPath, '*.pmg'))
-        if(len(pmgFiles) == 0):
-            # This shouldn't happen, but just in case
-            assert len(pmgFiles) > 0, "ToMosaic called without proper target file present in the path: " + str(InputPath)
-            return
-
-        ParentDir = os.path.dirname(InputPath)
-        sectionDir = os.path.basename(InputPath)
-
+     
         BlockName = 'TEM'
         BlockObj = BlockNode('TEM')
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
-
+    
         ChannelName = None
-
-        for filename in pmgFiles:
-            # TODO wrap in try except and print nice error on badly named files?
-            PMG = ParseFilename(filename, pmgMappings)
-            PMGDir = os.path.dirname(filename)
-
-            if(PMG is None):
-                raise Exception("Could not parse section from PMG filename: " + filename)
-
-            if PMG.Section is None:
-                PMG.Section = PMG.Spot
-
-
-
-            sectionObj = SectionNode(PMG.Section)
-
-            [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
-
-            # Calculate our output directory.  The scripts expect directories to have section numbers, so use that.
-            SectionPath = os.path.join(OutputPath, '{:04d}'.format(PMG.Section))
-
-            ChannelName = PMG.Probe
-            ChannelName = ChannelName.replace(' ', '_')
-            channelObj = XContainerElementWrapper('Channel', ChannelName)
-            [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
-
-            channelObj.Initials = PMG.Initials
-            channelObj.Mag = PMG.Mag
-            channelObj.Spot = PMG.Spot
-            channelObj.Slide = PMG.Slide
-            channelObj.Block = PMG.Block
-
-            FlipList = nornir_buildmanager.GetFlipList(ParentDir)
-            Flip = PMG.Section in FlipList
-
-            if(Flip):
-                prettyoutput.Log("Flipping")
-
-
-            # TODO: Add scale element
-
-
-           # OutFilename = ChannelName + "_supertile.mosaic"
-           # OutFilepath = os.path.join(SectionPath, OutFilename)
-
-            # Preserve the PMG file
-#            PMGBasename = os.path.basename(filename)
-#            PMGOutputFile = os.path.join(OutputPath, PMGBasename)
-#            ir.RemoveOutdatedFile(filename, PMGOutputFile)
-#            if not os.path.exists(PMGOutputFile):
-#                shutil.copy(filename, PMGOutputFile)
-#
-#            #See if we need to remove the old supertile mosaic
-#            ir.RemoveOutdatedFile(filename, OutFilepath)
-#            if(os.path.exists(OutFilepath)):
-#                continue
-#
-            Tiles = ParsePMG(filename)
-
-            if len(Tiles) == 0:
-                raise Exception("No tiles found within PMG file")
-
-            NumImages = len(Tiles)
-
-            # Create a filter and mosaic
-            FilterName = 'Raw' + str(TargetBpp)
-            if(TargetBpp is None):
-                FilterName = 'Raw'
-
-            filterObj = XContainerElementWrapper('Filter', FilterName)
-            [addedFilter, filterObj] = channelObj.UpdateOrAddChildByAttrib(filterObj, "Name")
-
-            filterObj.BitsPerPixel = TargetBpp
-
-            SupertileName = 'Stage'
-            SupertileTransform = SupertileName + '.mosaic'
-            SupertilePath = os.path.join(channelObj.FullPath, SupertileTransform)
-
-            [addedTransform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
-                                                                         Path=SupertileTransform,
-                                                                         Type='Stage'),
-                                                                         'Path')
-
-            PyramidName = 'TilePyramid'
-            [added, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
-                                                                                         NumberOfTiles=NumImages),
-                                                                                         'Path')
-
-            LevelPath = templates.Current.DownsampleFormat % 1
-
-            [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode(Level=1), 'Downsample')
-
-            # Make sure the target LevelObj is verified
-            VerifyTiles(LevelNode=LevelObj)
-
-            InputImagePath = InputPath
-            OutputImagePath = os.path.join(channelObj.FullPath, filterObj.Path, PyramidNodeObj.Path, LevelObj.Path)
-
-            if not os.path.exists(OutputImagePath):
-                os.makedirs(OutputImagePath)
-
-            InputTileToOutputTile = {}
-            PngTiles = {}
-            TileKeys = Tiles.keys()
-
-
-            imageSize = []
-            for inputTile in TileKeys:
-                [base, ext] = os.path.splitext(inputTile)
-                pngMosaicTile = base + '.png'
-
-                OutputTileFullPath = os.path.join(LevelObj.FullPath, pngMosaicTile)
-                InputTileFullPath = os.path.join(PMGDir, inputTile)
-
-                if not os.path.exists(OutputTileFullPath):
-                    InputTileToOutputTile[InputTileFullPath] = OutputTileFullPath
-
-                PngTiles[pngMosaicTile] = Tiles[inputTile]
-                (Height, Width) = nornir_imageregistration.core.GetImageSize(InputTileFullPath)
-                imageSize.append((Width, Height))
-
-            ConvertImagesInDict(InputTileToOutputTile, Flip=False, Bpp=TargetBpp)
-
-            if not os.path.exists(transformObj.FullPath):
-                mosaicfile.MosaicFile.Write(transformObj.FullPath, PngTiles, Flip=Flip, ImageSize=imageSize)
-
+         # TODO wrap in try except and print nice error on badly named files?
+        PMG = ParseFilename(PMGFullPath, pmgMappings)
+        PMGDir = os.path.dirname(PMGFullPath)
+    
+        if(PMG is None):
+            raise Exception("Could not parse section from PMG filename: " + filename)
+    
+        if PMG.Section is None:
+            PMG.Section = PMG.Spot
+        
+        sectionObj = SectionNode(PMG.Section)
+    
+        [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
+    
+        # Calculate our output directory.  The scripts expect directories to have section numbers, so use that.
+        ChannelName = PMG.Probe
+        ChannelName = ChannelName.replace(' ', '_')
+        channelObj = XContainerElementWrapper('Channel', ChannelName)
+        [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
+    
+        channelObj.Initials = PMG.Initials
+        channelObj.Mag = PMG.Mag
+        channelObj.Spot = PMG.Spot
+        channelObj.Slide = PMG.Slide
+        channelObj.Block = PMG.Block
+    
+        FlipList = GetFlipList(ParentDir)
+        Flip = PMG.Section in FlipList
+    
+        if(Flip):
+            prettyoutput.Log("Flipping")
+    
+    
+        # TODO: Add scale element
+    
+    
+       # OutFilename = ChannelName + "_supertile.mosaic"
+       # OutFilepath = os.path.join(SectionPath, OutFilename)
+    
+        # Preserve the PMG file
+    #            PMGBasename = os.path.basename(filename)
+    #            PMGOutputFile = os.path.join(OutputPath, PMGBasename)
+    #            ir.RemoveOutdatedFile(filename, PMGOutputFile)
+    #            if not os.path.exists(PMGOutputFile):
+    #                shutil.copy(filename, PMGOutputFile)
+    #
+    #            #See if we need to remove the old supertile mosaic
+    #            ir.RemoveOutdatedFile(filename, OutFilepath)
+    #            if(os.path.exists(OutFilepath)):
+    #                continue
+    #
+        Tiles = ParsePMG(PMGFullPath)
+    
+        if len(Tiles) == 0:
+            raise Exception("No tiles found within PMG file")
+    
+        NumImages = len(Tiles)
+    
+        # Create a filter and mosaic
+        FilterName = 'Raw' + str(TargetBpp)
+        if(TargetBpp is None):
+            FilterName = 'Raw'
+    
+        filterObj = XContainerElementWrapper('Filter', FilterName)
+        [addedFilter, filterObj] = channelObj.UpdateOrAddChildByAttrib(filterObj, "Name")
+    
+        filterObj.BitsPerPixel = TargetBpp
+    
+        SupertileName = 'Stage'
+        SupertileTransform = SupertileName + '.mosaic'
+        
+        [addedTransform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
+                                                                     Path=SupertileTransform,
+                                                                     Type='Stage'),
+                                                                     'Path')
+    
+        [added, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
+                                                                                     NumberOfTiles=NumImages),
+                                                                                     'Path')
+    
+        [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode(Level=1), 'Downsample')
+    
+        # Make sure the target LevelObj is verified
+        VerifyTiles(LevelNode=LevelObj)
+     
+        OutputImagePath = os.path.join(channelObj.FullPath, filterObj.Path, PyramidNodeObj.Path, LevelObj.Path)
+    
+        if not os.path.exists(OutputImagePath):
+            os.makedirs(OutputImagePath)
+    
+        InputTileToOutputTile = {}
+        PngTiles = {}
+        TileKeys = Tiles.keys()
+    
+    
+        imageSize = []
+        for inputTile in TileKeys:
+            [base, ext] = os.path.splitext(inputTile)
+            pngMosaicTile = base + '.png'
+    
+            OutputTileFullPath = os.path.join(LevelObj.FullPath, pngMosaicTile)
+            InputTileFullPath = os.path.join(PMGDir, inputTile)
+    
+            if not os.path.exists(OutputTileFullPath):
+                InputTileToOutputTile[InputTileFullPath] = OutputTileFullPath
+    
+            PngTiles[pngMosaicTile] = Tiles[inputTile]
+            (Height, Width) = nornir_imageregistration.core.GetImageSize(InputTileFullPath)
+            imageSize.append((Width, Height))
+    
+        ConvertImagesInDict(InputTileToOutputTile, Flip=False, Bpp=TargetBpp)
+    
+        if not os.path.exists(transformObj.FullPath):
+            mosaicfile.MosaicFile.Write(transformObj.FullPath, PngTiles, Flip=Flip, ImageSize=imageSize)
+    
         return [PMG.Section, ChannelName]
 
 def ParsePMG(filename, TileOverlapPercent=None):

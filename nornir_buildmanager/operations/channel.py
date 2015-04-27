@@ -75,15 +75,15 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         Logger.warning("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
         return
 
-    InputMaskNode = InputFilter.GetOrCreateMaskImage(thisLevel)
+    InputMaskImageNode = InputFilter.GetOrCreateMaskImage(thisLevel)
     MaskStr = ""
-    if not os.path.exists(InputMaskNode.FullPath):
-        InputMaskNode = None
+    if not os.path.exists(InputMaskImageNode.FullPath):
+        InputMaskImageNode = None
 
-    if not InputMaskNode is None:
-        OutputFilterNode.MaskName = InputMaskNode.Name
+    if not InputMaskImageNode is None:
+        OutputFilterNode.MaskName = InputFilter.DefaultMaskFilter.Name
 
-        MaskStr = ' -mask %s ' % InputMaskNode.FullPath
+        MaskStr = ' -mask %s ' % InputMaskImageNode.FullPath
 
     BlobImageNode = OutputFilterNode.Imageset.GetImage(thisLevel)
     if not BlobImageNode is None:
@@ -101,12 +101,13 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
                                 'InputFile' : InputImageNode.FullPath} + MaskStr
 
         prettyoutput.Log(cmd)
-        subprocess.call(cmd + " && exit", shell=True)
-        SaveFilterNode = True
-
-    if(not 'InputImageChecksum' in BlobImageSet):
-        BlobImageSet.InputImageChecksum = InputImageNode.Checksum
-        SaveFilterNode = True
+        proc = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        (stdout,stderr) = proc.communicate()
+        if proc.returncode < 0:
+            SaveFilterNode  = False 
+            prettyoutput.LogErr("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd,stdout))
+        else:
+            SaveFilterNode = True
 
     if(not 'InputImageChecksum' in BlobImageNode):
         BlobImageNode.InputImageChecksum = InputImageNode.Checksum

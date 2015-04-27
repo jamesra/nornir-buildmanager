@@ -3,15 +3,15 @@ nornir-build Assemble -volume %1 -Filters LeveledShadingCorrected -Downsample 2 
 title CreateBlobFilter
 nornir-build CreateBlobFilter -volume %1  -InputFilter LeveledShadingCorrected -OutputFilter Blob -Levels 2,4,8 -Radius 7 -Median 5 -Max 3
 title AlignSections
-nornir-build AlignSections -volume %1  -Downsample 8 -Filters Blob -OutputStosMap PotentialRegistrationChain
+nornir-build AlignSections -volume %1  -Downsample 8 -Filters Blob -OutputStosMap PotentialRegistrationChain -UseMasks
 title AssembleStosOverlays
 nornir-build AssembleStosOverlays -volume %1 -StosGroup StosBrute -Downsample 8 -StosMap PotentialRegistrationChain
 title SelectBestRegistrationChain
 nornir-build SelectBestRegistrationChain -volume %1 -StosGroup StosBrute -Downsample 8 -InputStosMap PotentialRegistrationChain -OutputStosMap FinalStosMap
 title RefineSectionAlignment
-nornir-build RefineSectionAlignment -volume %1  -Filters LeveledShadingCorrected -InputGroup StosBrute -InputDownsample 8 -OutputGroup Grid -OutputDownsample 8
+nornir-build RefineSectionAlignment -volume %1  -Filters LeveledShadingCorrected -InputGroup StosBrute -InputDownsample 8 -OutputGroup Grid -OutputDownsample 8 -UseMasks
 title RefineSectionAlignment
-nornir-build RefineSectionAlignment -volume %1  -Filters LeveledShadingCorrected -InputGroup Grid -InputDownsample 8 -OutputGroup Grid -OutputDownsample 2
+nornir-build RefineSectionAlignment -volume %1  -Filters LeveledShadingCorrected -InputGroup Grid -InputDownsample 8 -OutputGroup Grid -OutputDownsample 2 -UseMasks
 title ScaleVolumeTransforms
 nornir-build ScaleVolumeTransforms -volume %1  -InputGroup Grid -InputDownsample 2 -OutputDownsample 1
 title SliceToVolume

@@ -18,6 +18,7 @@ from nornir_buildmanager import metadatautils
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser
 import nornir_shared.prettyoutput as prettyoutput
+import nornir_shared.files
 
 
 imageNameMappings = [mapping('Section', typefunc=int),
@@ -48,6 +49,16 @@ def FillInMissingImageNameData(imageData):
 
     return imageData
 
+
+
+def Import(VolumeElement, ImportPath, extension, *args, **kwargs):
+    '''Import the specified directory into the volume'''
+        
+    DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
+    for path in DirList:
+        for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
+            yield SectionImage.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath)
+    
 
 
 class SectionImage(object):
