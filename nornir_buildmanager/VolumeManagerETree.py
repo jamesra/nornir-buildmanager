@@ -2115,7 +2115,7 @@ class MappingNode(XElementWrapper):
 
 
     def __str__(self):
-        return "%d <- %s" % (self.Control, str(Mapped))
+        return "%d <- %s" % (self.Control, str(self.Mapped))
 
 
     def __init__(self, ControlNumber, MappedNumbers, attrib=None, **extra):
