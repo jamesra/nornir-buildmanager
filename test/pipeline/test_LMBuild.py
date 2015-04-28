@@ -25,10 +25,10 @@ class ShadingCorrectionTest(LMBuildTest):
     def testLMBuild(self):
 
         # Import the files
-        buildArgs = ['-debug', '-verbose', 'ImportPMG', self.ImportedDataPath, '-volume', self.TestOutputPath]
+        buildArgs = [self.TestOutputPath, '-debug', '-verbose', 'ImportPMG', self.ImportedDataPath]
         build.Execute(buildArgs)
 
-        buildArgs = ['-debug', '-verbose', 'ShadeCorrect', '-volume', self.TestOutputPath, '-Correction', 'brightfield']
+        buildArgs = [self.TestOutputPath, '-debug', '-verbose', 'ShadeCorrect', '-Correction', 'brightfield']
         build.Execute(buildArgs)
 
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
