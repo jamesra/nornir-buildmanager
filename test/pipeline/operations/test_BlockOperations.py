@@ -60,7 +60,7 @@ def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection
 #         return "SliceToSliceRegistrationSkipBrute"
 #
 #     def testMosaicToVolume(self):
-#         buildArgs = ['Build.py', '-volume', self.TestOutputPath, \
+#         buildArgs = ['Build.py', self.TestOutputPath, \
 #                      '-pipeline', 'MosaicToVolume', \
 #                      '-debug', \
 #                      '-InputTransform', 'Grid', \
@@ -270,7 +270,7 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
     def testAlignSectionsPipeline(self):
 
         # Import the files
-        buildArgs = ['-debug', 'AlignSections', '-volume', self.TestOutputPath, \
+        buildArgs = [ self.TestOutputPath, '-debug', 'AlignSections', \
                      '-Downsample', '16', \
                      '-Center', '5', \
                      '-Channels', 'LeveledShading.*']
@@ -354,7 +354,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         groupNames = ['StosBrute16', 'StosGrid16', 'StosGrid8', 'SliceToVolume8']
 
         # Import the files
-        buildArgs = ['-debug', 'AlignSections', '-volume', self.TestOutputPath, \
+        buildArgs = [self.TestOutputPath, '-debug', 'AlignSections',  \
                       \
                      '-Downsample', '16', \
                      '-Center', '5', \
@@ -367,7 +367,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         SixToFiveAutomaticBruteFirstPassTransform = FetchStosTransform(self, self.VolumeObj, 'StosBrute16', 6, 7)
 
         # Try to refine the results
-        FirstRefineBuildArgs = ['-debug', 'RefineSectionAlignment', '-volume', self.TestOutputPath, \
+        FirstRefineBuildArgs = [ self.TestOutputPath, '-debug', 'RefineSectionAlignment', \
                       \
                      '-Filter', '.*mosaic.*', \
                      '-InputGroup', 'StosBrute', \
@@ -388,13 +388,13 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 #                         "InputChecksum of first pass refine transform should match checksum of brute transform")
 
         # Try to scale the transforms to full size
-        ScaleArgs = ['-debug', 'ScaleVolumeTransforms', '-volume', self.TestOutputPath, \
+        ScaleArgs = [self.TestOutputPath, '-debug', 'ScaleVolumeTransforms', \
                              '-InputGroup', 'StosGrid', \
                              '-InputDownsample', '16', \
                              '-OutputDownsample', '1']
         self.VolumeObj = self.RunBuild(ScaleArgs)
 
-        VolumeImageArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \
+        VolumeImageArgs = [self.TestOutputPath, '-debug', 'VolumeImage',  \
                      '-InputGroup', 'StosGrid', \
                      '-InputDownsample', '16']
         self.VolumeObj = self.RunBuild(VolumeImageArgs)
@@ -407,7 +407,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveAutomaticGridFirstPassTransform,
                                 AutoOutputTransform=ScaledTransformFromSixteen)
 
-        VolumeImagesArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \
+        VolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage',  \
                              '-InputGroup', 'StosGrid', \
                              '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(VolumeImagesArgs)
@@ -415,7 +415,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.assertIsNotNone(VolumeImageNode)
 
         # Try to refine the of stos-grid
-        SecondRefineBuildArgs = ['-debug', 'RefineSectionAlignment', '-volume', self.TestOutputPath, \
+        SecondRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment',  \
                      '-InputGroup', 'StosGrid', \
                      '-Filter', '.*mosaic.*', \
                      '-InputDownsample', '16', \
@@ -436,7 +436,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # "InputChecksum of second pass transform should match checksum of first pass transform")
 
         # Try to refine the of stos-grid
-        SliceToVolumeBuildArgs = ['-debug', 'SliceToVolume', '-volume', self.TestOutputPath, \
+        SliceToVolumeBuildArgs = [self.TestOutputPath, '-debug', 'SliceToVolume',  \
                      '-InputGroup', 'StosGrid', \
                      '-InputDownsample', '8']
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
@@ -528,7 +528,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
 ###################
 
-        SliceToVolumeScaleArgs = ['-debug', 'ScaleVolumeTransforms', '-volume', self.TestOutputPath, \
+        SliceToVolumeScaleArgs = [self.TestOutputPath, '-debug', 'ScaleVolumeTransforms', \
                              '-InputGroup', 'SliceToVolume', \
                              '-InputDownsample', '8', \
                              '-OutputDownsample', '1']
@@ -541,7 +541,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveRebuiltFromManualSliceToVolumeTransform,
                                 AutoOutputTransform=SliceToVolumeScaleTransformFromEight)
 
-        SliceToVolumeImagesArgs = ['-debug', 'VolumeImage', '-volume', self.TestOutputPath, \
+        SliceToVolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
                                  '-InputGroup', 'SliceToVolume', \
                                  '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(SliceToVolumeImagesArgs)
@@ -549,7 +549,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # self.assertIsNotNone(SliceToVolumeScaleAndVolumeImageGroupNode, "Could not find StosGroup SliceToVolume1")
 
     def testBlob(self):
-        buildArgs = ['-debug', 'CreateBlobFilter', '-volume', self.TestOutputPath, \
+        buildArgs = [self.TestOutputPath, '-debug', 'CreateBlobFilter',  \
                                  '-InputFilter', 'mosaic',
                                  '-OutputFilter', 'Blob_mosaic',
                                  '-Radius', '1',

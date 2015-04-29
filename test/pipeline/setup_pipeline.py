@@ -158,13 +158,13 @@ class PlatformTest(test.testbase.TestBase):
 
     def _CreateBuildArgs(self, pipeline=None, *args):
 
-        pargs = ['-debug']
+        pargs = [self.TestOutputPath, '-debug']
 
         if isinstance(pipeline, str):
             # pargs.append('-pipeline')
             pargs.append(pipeline)
 
-        pargs.extend(['-volume', self.TestOutputPath])
+        #pargs.extend([self.TestOutputPath])
 
         pargs.extend(args)
 
@@ -172,9 +172,7 @@ class PlatformTest(test.testbase.TestBase):
 
     def _CreateImportArgs(self, importer, importpath, *args):
 
-        pargs = [ '-debug', importer, importpath]
-
-        pargs.extend(['-volume', self.TestOutputPath])
+        pargs = [self.TestOutputPath, '-debug', importer, importpath]
 
         pargs.extend(args)
 
