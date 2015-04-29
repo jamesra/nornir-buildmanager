@@ -596,11 +596,11 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
             del Parameters['Downsample']
 
         for MappedFilter in MappedFilterList:
-            print "\tMap - " + MappedFilter.Parent.Name + "_" + MappedFilter.Name
+            print("\tMap - " + MappedFilter.FullPath)
              
             ControlFilterList = ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
             for ControlFilter in ControlFilterList:
-                print "\tCtrl - " + ControlFilter.Parent.Name + "_" + ControlFilter.Name
+                print("\tCtrl - " + ControlFilter.FullPath)
 
                 # ControlImageSetNode = VolumeManagerETree.ImageNode.wrap(ControlImageSetNode)
                 OutputFile = __StosFilename(ControlFilter, MappedFilter)
