@@ -28,7 +28,7 @@ from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
 
 
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
-import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
+import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume 
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -928,7 +928,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
 
     BlockNode = InputGroupNode.FindParent('Block')
 
-     # OK, we have the best mapping. Add it to our registration chain.
+    # OK, we have the best mapping. Add it to our registration chain.
     # Create a node to store the stos mappings
     OutputStosMapNode = VolumeManagerETree.StosMapNode(Name=OutputStosMapName, Type=OutputStosMapName, CenterSection=str(StosMapNode.CenterSection))
     (added, OutputStosMapNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosMapNode)
@@ -1074,7 +1074,7 @@ def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputD
     InputStosFullPath = __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath=AutomaticInputStosFullPath, ManualInputStosFullPath=ManualInputStosFullPath)
     InputChecksum = None
     if InputStosFullPath == AutomaticInputStosFullPath:
-        __GenerateStosFile(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter, MappedFilter)
+        __GenerateStosFileIfOutdated(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter, MappedFilter)
         InputChecksum = InputTransformNode.Checksum
     else:
         InputChecksum = stosfile.StosFile.LoadChecksum(InputStosFullPath)
@@ -1082,70 +1082,78 @@ def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputD
     return (InputStosFullPath, InputChecksum)
 
 
+def __GenerateStosFileIfOutdated(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter):
+    '''Only generates a stos file if the Output is stale compared to the input
+    :return: True if a file was generated, False if the output already existed and was valid
+    '''
+    # We should not be trying to create output if we have no input
+    assert(os.path.exists(InputTransformNode.FullPath))
+    
+    # Replace the automatic files if they are outdated.
+    files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputTransformPath)
+    if not os.path.exists(OutputTransformPath):
+        __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter)
+        return True
+    
+    return False
+
+
+def __PredictStosImagePaths(filter_node, Downsample):
+    '''
+    .stos files embed file names.  However if we scale .stos files past the point where they have an assembled image we need to put the filename we would expect 
+    without actually creating meta-data for a non-existent image level 
+    '''
+    
+    imageFullPath = filter_node.PredictImageFullPath(Downsample)
+    
+    if filter_node.HasMask():
+        maskFullPath = filter_node.PredictMaskFullPath(Downsample)
+
+    return (imageFullPath, maskFullPath)
+    
+
 def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter):
     '''Generates a new stos file using the specified filters and scales the transform to match the
        requested downsample as needed.
        :rtype: bool
        :return: True if a new stos file was generated
     '''
+    
+    StosGroupNode = InputTransformNode.FindParent('StosGroup')
+    InputDownsample = StosGroupNode.Downsample
+    try:
+        InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+    except ValueError:
+        return False
+         
+    ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+    MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+    
+    ControlMaskImageFullPath = None
+    MappedMaskImageFullPath = None
+    if InputStos.HasMasks:
+        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
 
-    # Replace the automatic files if they are outdated.
-    # We should not be trying to create output if we have no input
-    assert(os.path.exists(InputTransformNode.FullPath))
+    if not (InputStos.ControlImagePath == ControlImageFullPath and
+        InputStos.MappedImagePath == MappedImageFullPath and
+        InputStos.ControlMaskFullPath == ControlMaskImageFullPath and
+        InputStos.MappedMaskFullPath == MappedMaskImageFullPath and
+        OutputDownsample == InputDownsample):
 
-    files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputTransformPath)
-    if not os.path.exists(OutputTransformPath):
-        StosGroupNode = InputTransformNode.FindParent('StosGroup')
-        InputDownsample = StosGroupNode.Downsample
-        try:
-            InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
-        except ValueError:
-            return False
-             
-        ControlImage = ControlFilter.GetOrCreateImage(OutputDownsample)
-        if ControlImage is None:
-            raise Exception("No control image available for stos file generation: %s" % InputTransformNode.FullPath)
+        ModifiedInputStos = InputStos.ChangeStosGridPixelSpacing(oldspacing=InputDownsample,
+                                       newspacing=OutputDownsample,
+                                       ControlImageFullPath=ControlImageFullPath,
+                                       MappedImageFullPath=MappedImageFullPath,
+                                       ControlMaskFullPath=ControlMaskImageFullPath,
+                                       MappedMaskFullPath=MappedMaskImageFullPath)
 
-        MappedImage = MappedFilter.GetOrCreateImage(OutputDownsample)
-        if MappedImage is None:
-            raise Exception("No mapped image available for stos file generation: %s" % InputTransformNode.FullPath)
-        
-        ControlMaskImage = None
-        MappedMaskImage = None
-        if InputStos.HasMasks:
-            ControlMaskImage = ControlFilter.GetOrCreateMaskImage(OutputDownsample)
-            if ControlMaskImage is None:
-                raise Exception("No control mask image available for stos file generation: %s" % InputTransformNode.FullPath)
-        
-            MappedMaskImage = MappedFilter.GetOrCreateMaskImage(OutputDownsample)
-            if MappedMaskImage is None:
-                raise Exception("No mapped mask image available for stos file generation: %s" % InputTransformNode.FullPath)
+        ModifiedInputStos.Save(OutputTransformPath)
+    else:
+        shutil.copyfile(InputTransformNode.FullPath, OutputTransformPath)
 
-        if not (InputStos.ControlImagePath == ControlImage.FullPath and
-           InputStos.MappedImagePath == MappedImage.FullPath and
-           OutputDownsample == InputDownsample):
-
-            if ControlMaskImage is None or MappedMaskImage is None:
-                ModifiedInputStos = InputStos.ChangeStosGridPixelSpacing(oldspacing=InputDownsample,
-                                           newspacing=OutputDownsample,
-                                           ControlImageFullPath=ControlImage.FullPath,
-                                           MappedImageFullPath=MappedImage.FullPath)
-            else:
-                ModifiedInputStos = InputStos.ChangeStosGridPixelSpacing(oldspacing=InputDownsample,
-                                           newspacing=OutputDownsample,
-                                           ControlImageFullPath=ControlImage.FullPath,
-                                           MappedImageFullPath=MappedImage.FullPath, 
-                                           ControlMaskFullPath=ControlMaskImage.FullPath,
-                                           MappedMaskFullPath=MappedMaskImage.FullPath)
-
-            ModifiedInputStos.Save(OutputTransformPath)
-        else:
-            shutil.copyfile(InputTransformNode.FullPath, OutputTransformPath)
-
-        return True
-
-    return False
-
+    return True
+ 
 
 def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInputStosFullPath):
     ''' Use the manual stos file if it exists, prevent any cleanup from occurring on the manual file '''
@@ -1727,7 +1735,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                     os.remove(stosNode.FullPath)
                     
             if not os.path.exists(stosNode.FullPath):
-                stosGenerated = __GenerateStosFile(InputTransformNode,
+                stosGenerated = __GenerateStosFileIfOutdated(InputTransformNode,
                                                                 stosNode.FullPath,
                                                                 OutputDownsample,
                                                                 ControlFilter,
@@ -1740,64 +1748,6 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                     OutputGroupNode.Remove(stosNode)
 
                 yield OutputGroupNode 
- 
-
-# def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwargs):
-#
-#     '''Take a stos group node, scale the transforms, and save in new stosgroup'''
-#
-#     ControlChannelPattern = kwargs.get("ControlChannelPattern", None)
-#     ControlFilterPattern = kwargs.get("ControlFilterPattern", None)
-#     MappedChannelPattern = kwargs.get("MappedChannelPattern", None)
-#     MappedFilterPattern = kwargs.get("MappedFilterPattern", None)
-#
-#     GroupParent = InputStosGroupNode.Parent
-#
-#     OutputGroupNode = VolumeManagerETree.StosGroupNode(OutputGroupName, OutputDownsample)
-#     (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)
-#
-#     if not os.path.exists(OutputGroupNode.FullPath):
-#             os.makedirs(OutputGroupNode.FullPath)
-#
-#     for inputSectionMapping in InputStosGroupNode.SectionMappings:
-#
-#         OutputSectionMapping = OutputGroupNode.GetOrCreateSectionMapping(inputSectionMapping.MappedSectionNumber)
-#
-#         InputTransformNodes = inputSectionMapping.findall('Transform')
-#
-#         for InputTransformNode in InputTransformNodes:
-#
-#             ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
-#             MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
-#
-#             for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
-#
-#                 stosNode = OutputGroupNode.CreateStosTransformNode(ControlFilter,
-#                                                                  MappedFilter,
-#                                                                  OutputType=InputTransformNode.Type,
-#                                                                  OutputPath=__StosFilename(ControlFilter, MappedFilter))
-#
-#                 __RemoveStosFileIfOutdated(stosNode, InputTransformNode)
-#
-#                 if not os.path.exists(stosNode.FullPath):
-#                     stosGenerated = __GenerateStosFile(InputTransformNode,
-#                                                                     stosNode.FullPath,
-#                                                                     OutputDownsample,
-#                                                                     ControlFilter,
-#                                                                     MappedFilter)
-#
-#                     if stosGenerated:
-#                         stosNode.InputTransformChecksum = InputTransformNode.Checksum
-#                         stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
-#                     else:
-#                         OutputGroupNode.Remove(stosNode)
-#
-#                 SaveBlockNode = SaveBlockNode or stosGenerated
-#
-#     if SaveBlockNode:
-#         return GroupParent
-#     return None
-
 
 def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
     '''Removes the .stos file from the file system but leaves the meta data alone for reuse.
@@ -1873,7 +1823,12 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
 
         SToV = stosfile.StosFile.Load(StosTransformNode.FullPath)
         # Make sure we are not using a downsampled transform
-        SToV = SToV.ChangeStosGridPixelSpacing(StosGroupNode.Downsample, 1.0, create_copy=False)
+        SToV = SToV.ChangeStosGridPixelSpacing(StosGroupNode.Downsample, 1.0,
+                                               SToV.ControlImageFullPath,
+                                               SToV.MappedImageFullPath,
+                                               SToV.ControlMaskFullPath, 
+                                               SToV.MappedMaskFullPath, 
+                                               create_copy=False)
         StoVTransform = factory.LoadTransform(SToV.Transform)
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)

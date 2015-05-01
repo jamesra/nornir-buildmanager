@@ -238,7 +238,7 @@ class PyramidLevelHandler(object):
         '''
         :return: True if this level could be generated from higher resolution levels
         '''
-        return not self.LessDetailedLevel(Downsample) is None
+        return not self.MoreDetailedLevel(Downsample) is None
 
     def CreateLevels(self, Levels):
         assert(isinstance(Levels, list))

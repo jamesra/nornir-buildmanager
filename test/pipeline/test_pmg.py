@@ -175,78 +175,25 @@ class ImportPMG(PMGTest):
         self.assertEqual(TilePyramidObj.NumberOfTiles, pmgData.NumberOfImages)
 
  
-class PMGBuildTest(PMGTest):
- 
-    @property
-    def VolumePath(self):
-        return "6263_NoDapi"
-     
-    @property
-    def Grid32ManualStosFullPath(self):
-        return os.path.join(self.PlatformFullPath, '6263_ManualStos')
-      
- 
-    def runTest(self):
- 
-        self.RunImport()
-        self.RunShadingCorrection(ChannelPattern="(?![D|d]api)", CorrectionType='brightfield', FilterPattern="Raw8")
-        self.RunShadingCorrection(ChannelPattern="([D|d]api)", CorrectionType='darkfield', FilterPattern="Raw8")
-        self.RunPrune(Filter="ShadingCorrected", Downsample=2)
-        self.RunHistogram(Filter="ShadingCorrected", Downsample=4)
-        self.RunAdjustContrast(Sections=None, Filter="ShadingCorrected", Gamma=1.0)
-        self.RunMosaic(Filter="Leveled")
-        self.RunAssemble(Levels=[1])
-        self.RunAssemble(Filter="ShadingCorrected", Levels=1)
-        self.RunExportImages(Channels="(?!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
- 
-        self.RunMosaicReport(ContrastFilter="Leveled", AssembleFilter="ShadingCorrected", AssembleDownsample=1)
- 
-        BruteLevel = 8
- 
-        self.RunCreateBlobFilter(Channels="*", Levels="8,16,%d" % (BruteLevel), Filter="Leveled")
-        self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
-         
-        self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
-        self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
- 
-        volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
- 
-        listReplacedTransformNodes = self.CopyManualStosFiles(self.Grid32ManualStosFullPath, StosGroupName='%s%d' % ('Grid', BruteLevel))
-         
-        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
-         
-        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
-        self.RunSliceToVolume()
-        self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
-        self.RunMosaicToVolume()
-        self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleLevel=1)
-        self.RunExportImages(Channels="Registered", Filters="ShadingCorrected", AssembleLevel=1, Output="Registered")
-         
-#     
-#             
-#     
+# class PMGBuildTest(PMGTest):
 #  
-# class PMGBuildTest(setup_pipeline.CopySetupTestBase):
-# 
 #     @property
 #     def VolumePath(self):
-#         return "PMGBuildTest"
-# 
+#         return "6263_NoDapi"
+#      
 #     @property
-#     def Platform(self):
-#         return "PMG"
-# 
+#     def Grid32ManualStosFullPath(self):
+#         return os.path.join(self.PlatformFullPath, '6263_ManualStos')
+#       
+#  
 #     def runTest(self):
-# 
-# 
-#         #=======================================================================
-#         # self.RunImport()
-#         # self.RunShadingCorrection(ChannelPattern="(?![D|d]api)", CorrectionType='brightfield', FilterPattern="Raw8")
-#         # self.RunShadingCorrection(ChannelPattern="([D|d]api)", CorrectionType='darkfield', FilterPattern="Raw8")
-#         # self.RunPrune(Filter="ShadingCorrected", Downsample=2)
-#         # self.RunHistogram(Filter="ShadingCorrected", Downsample=4)
-#         # self.RunAdjustContrast(Filter="ShadingCorrected", Gamma=1.0)
+#  
+#         self.RunImport()
+#         self.RunShadingCorrection(ChannelPattern="(?![D|d]api)", CorrectionType='brightfield', FilterPattern="Raw8")
+#         self.RunShadingCorrection(ChannelPattern="([D|d]api)", CorrectionType='darkfield', FilterPattern="Raw8")
+#         self.RunPrune(Filter="ShadingCorrected", Downsample=2)
+#         self.RunHistogram(Filter="ShadingCorrected", Downsample=4)
+#         self.RunAdjustContrast(Sections=None, Filter="ShadingCorrected", Gamma=1.0)
 #         self.RunMosaic(Filter="Leveled")
 #         self.RunAssemble(Levels=[1])
 #         self.RunAssemble(Filter="ShadingCorrected", Levels=1)
@@ -275,6 +222,59 @@ class PMGBuildTest(PMGTest):
 #         self.RunMosaicToVolume()
 #         self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleLevel=1)
 #         self.RunExportImages(Channels="Registered", Filters="ShadingCorrected", AssembleLevel=1, Output="Registered")
+         
+     
+             
+     
+  
+class PMGBuildTest(setup_pipeline.CopySetupTestBase):
+ 
+    @property
+    def VolumePath(self):
+        return "PMGBuildTest"
+ 
+    @property
+    def Platform(self):
+        return "PMG"
+ 
+    def runTest(self):
+ 
+ 
+        #=======================================================================
+        # self.RunImport()
+        # self.RunShadingCorrection(ChannelPattern="(?![D|d]api)", CorrectionType='brightfield', FilterPattern="Raw8")
+        # self.RunShadingCorrection(ChannelPattern="([D|d]api)", CorrectionType='darkfield', FilterPattern="Raw8")
+        # self.RunPrune(Filter="ShadingCorrected", Downsample=2)
+        # self.RunHistogram(Filter="ShadingCorrected", Downsample=4)
+        # self.RunAdjustContrast(Filter="ShadingCorrected", Gamma=1.0)
+        #self.RunMosaic(Filter="Leveled")
+        self.RunAssemble(Levels=[1])
+        self.RunAssemble(Filter="ShadingCorrected", Levels=1)
+        self.RunExportImages(Channels="(?!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
+  
+        self.RunMosaicReport(ContrastFilter="Leveled", AssembleFilter="ShadingCorrected", AssembleDownsample=1)
+  
+        BruteLevel = 8
+  
+        self.RunCreateBlobFilter(Channels="*", Levels="8,16,%d" % (BruteLevel), Filter="Leveled")
+        self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
+          
+        self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+        self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+  
+        volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+  
+        listReplacedTransformNodes = self.CopyManualStosFiles(self.Grid32ManualStosFullPath, StosGroupName='%s%d' % ('Grid', BruteLevel))
+          
+        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+          
+        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+        self.RunSliceToVolume()
+        self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
+        self.RunMosaicToVolume()
+        self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleLevel=1)
+        self.RunExportImages(Channels="Registered", Filters="ShadingCorrected", AssembleLevel=1, Output="Registered")
 
 # class PMGAlignTest(setup_pipeline.CopySetupTestBase):
 #

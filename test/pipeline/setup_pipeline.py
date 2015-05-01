@@ -85,7 +85,7 @@ def MatchingFilters(SectionNodes, Channels, Filters):
     :param str Channels: Regular expression for channel names 
     :param str Filters: Regular expression for channel names
     :return: Generator of matching filters
-    :rtype: FilterNode'''
+    :rtype: FilterNode''' 
 
     for sectionNode in SectionNodes:
         ChannelNodes = SearchCollection(sectionNode.Channels, AttribName='Name', RegExStr=Channels)
@@ -433,7 +433,7 @@ class PlatformTest(test.testbase.TestBase):
         
         self._CheckInputTransformChecksumCorrect(AssembledImageNode, InputTransformName=Transform)
 
-    def RunAssemble(self, Filter=None, Transform=None, Levels=8):
+    def RunAssemble(self, Channels=None, Filter=None, Transform=None, Levels=8):
         if Filter is None:
             Filter = "Leveled"
             
@@ -451,14 +451,24 @@ class PlatformTest(test.testbase.TestBase):
             Levels = NumberList(LevelStr)
 
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Assemble', '-Transform', Transform, '-Filters', Filter, '-Downsample', LevelStr, '-NoInterlace')
+        buildArgs = []
+        if not Channels is None:
+            buildArgs = self._CreateBuildArgs('Assemble', '-Channels', Channels, '-Transform', Transform, '-Filters', Filter, '-Downsample', LevelStr, '-NoInterlace')
+        else:
+            buildArgs = self._CreateBuildArgs('Assemble', '-Transform', Transform, '-Filters', Filter, '-Downsample', LevelStr, '-NoInterlace')
+            
         volumeNode = self.RunBuild(buildArgs)
 
         # ChannelNode = volumeNode.find("Block/Section/Channel")
-        
-        ImageSetNodes = list(volumeNode.findall("Block/Section/Channel/Filter[@Name='%s']/ImageSet" % (Filter)))
-        self.assertIsNotNone(ImageSetNodes, "ImageSet nodes not found")
-        self.assertGreater(len(ImageSetNodes), 0, "ImageSet nodes should be created by assemble unless this is a negative test of some sort")
+        ImageSetNodes = []
+        if Channels is None:
+            ImageSetNodes = list(volumeNode.findall("Block/Section/Channel/Filter[@Name='%s']/ImageSet" % (Filter)))
+            self.assertIsNotNone(ImageSetNodes, "ImageSet nodes not found")
+            self.assertGreater(len(ImageSetNodes), 0, "ImageSet nodes should be created by assemble unless this is a negative test of some sort")
+        else:
+            filters = MatchingFilters(volumeNode.findall("Block/Section"), Channels, Filter)
+            for f in filters:
+                ImageSetNodes.append(f.Imageset)
         
         for ImageSetNode in ImageSetNodes: 
             self._CheckImageSetIsCorrect(ImageSetNode, Transform, Levels)
@@ -765,9 +775,15 @@ class PlatformTest(test.testbase.TestBase):
                                                           '-Downsample', str(AssembleLevel),
                                                           '-Output', imageOutputPath)
         volumeNode = self.RunBuild(buildArgs)
-
+        
+        filters = MatchingFilters(volumeNode.findall("Block/Section"), Channels, Filters)
+        NumImages = 0
+        for f in filters:
+            if f.Imageset.HasImage(AssembleLevel):
+                NumImages += 1
+                
         OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))
-        self.assertTrue(len(OutputPngs) > 0, "No exported images found in %s" % imageOutputPath)
+        self.assertEqual(len(OutputPngs), NumImages, "Missing exported images %s" % imageOutputPath)
 
         return volumeNode
 

@@ -64,7 +64,7 @@ class VolumeManager():
     def __init__(self, volumeData, filename):
         self.Data = volumeData
         self.XMLFilename = filename
-        pass
+        return
 
     @classmethod
     def Create(cls, VolumePath):
@@ -151,8 +151,7 @@ class VolumeManager():
             VolumeManager.__SetElementParent__(e, Element)
 
         return
-
-        return False
+    
 
     @classmethod
     def __SortNodes__(cls, Element):
@@ -184,7 +183,7 @@ class VolumeManager():
         XMLString = ElementTree.tostring(VolumeObj, encoding="utf-8")
         OldChecksum = VolumeObj.get('Checksum', '')
         XMLString = XMLString.replace(OldChecksum, "", 1)
-        return nornir_shared.Checksum.DataChecksum(XMLString)
+        return nornir_shared.checksum.DataChecksum(XMLString)
 
 
     @classmethod
@@ -221,8 +220,9 @@ class XPropertiesElementWrapper(ElementTree.Element):
         if '__fullpath' in self.__dict__:
             del self.__dict__['__fullpath']
 
-    '''Wrapper for a properties element'''
+    
     def __init__(self, tag, attrib=None, **extra):
+        '''Wrapper for a properties element'''
         super(XPropertiesElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
@@ -835,8 +835,8 @@ class XElementWrapper(ElementTree.Element):
         # TODO: Need to modify to only search one level at a time
 
 
- #       if not isinstance(self, XContainerElementWrapper):
- #           return
+#       if not isinstance(self, XContainerElementWrapper):
+#           return
         # OK, check for linked elements that also meet the criteria
 
         LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
@@ -985,7 +985,7 @@ class XFileElementWrapper(XResourceElementWrapper):
 
     @Name.setter
     def Name(self, value):
-         self.attrib['Name'] = value
+        self.attrib['Name'] = value
 
 
     @property
@@ -997,7 +997,7 @@ class XFileElementWrapper(XResourceElementWrapper):
 
     @Type.setter
     def Type(self, value):
-         self.attrib['Type'] = value
+        self.attrib['Type'] = value
 
     @property
     def Path(self):
@@ -1137,7 +1137,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         XMLElement = XMLTree.getroot()
 
         VolumeManager.WrapElement(XMLElement)
-       # SubContainer = XContainerElementWrapper.wrap(XMLElement)
+        # SubContainer = XContainerElementWrapper.wrap(XMLElement)
 
         VolumeManager.__SetElementParent__(XMLElement, self)
 
@@ -1246,7 +1246,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             os.makedirs(saveDir)
 
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
-       # print OutputXML
+        # print OutputXML
         with open(TempXMLFilename, 'w') as hFile:
             hFile.write(OutputXML)
             hFile.close()
@@ -1498,6 +1498,16 @@ class FilterNode(XContainerElementWrapper):
             self.append(imageset)
 
         return imageset
+    
+    @property
+    def MaskImageset(self):
+        '''Get the imageset for the default mask'''
+        
+        maskFilter = self.DefaultMaskFilter
+        if maskFilter is None:
+            return None
+        
+        return maskFilter.Imageset
 
     @property
     def MaskName(self):
@@ -1524,7 +1534,7 @@ class FilterNode(XContainerElementWrapper):
             if len(m) == 0:
                 return True
             
-        return m is None
+        return not m is None
 
     @property
     def DefaultMaskFilter(self):
@@ -1571,8 +1581,6 @@ class FilterNode(XContainerElementWrapper):
 
     def GetHistogram(self):
         return self.find('Histogram')
-        
-        pass
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         if Path is None:
@@ -1779,6 +1787,30 @@ class StosGroupNode(XContainerElementWrapper):
             self.__LegacyUpdateStosNode(stosNode, ControlFilter, MappedFilter, OutputPath)   
 
         return (added, stosNode)
+    
+    def  _AddChecksumsToStos(self, stosNode, ControlFilter, MappedFilter):
+            
+        if MappedFilter.Imageset.HasImage(self.Downsample) or MappedFilter.Imageset.CanGenerate(self.Downsample):
+            stosNode.attrib['MappedImageChecksum'] = MappedFilter.Imageset.GetOrCreateImage(self.Downsample).Checksum
+        else:
+            stosNode.attrib['MappedImageChecksum'] = ""
+        
+        if ControlFilter.Imageset.HasImage(self.Downsample) or ControlFilter.Imageset.CanGenerate(self.Downsample):
+            stosNode.attrib['ControlImageChecksum'] = ControlFilter.Imageset.GetOrCreateImage(self.Downsample).Checksum
+        else:
+            stosNode.attrib['ControlImageChecksum'] = ""
+            
+        if MappedFilter.HasDefaultMask and ControlFilter.HasDefaultMask:
+            if MappedFilter.MaskImageset.HasImage(self.Downsample) or MappedFilter.MaskImageset.CanGenerate(self.Downsample):
+                stosNode.attrib['MappedMaskImageChecksum'] = MappedFilter.MaskImageset.GetOrCreateImage(self.Downsample).Checksum
+            else:
+                stosNode.attrib['MappedMaskImageChecksum'] = ""
+            
+            if ControlFilter.MaskImageset.HasImage(self.Downsample) or ControlFilter.MaskImageset.CanGenerate(self.Downsample):
+                stosNode.attrib['ControlMaskImageChecksum'] = ControlFilter.MaskImageset.GetOrCreateImage(self.Downsample).Checksum
+            else:
+                stosNode.attrib['ControlMaskImageChecksum'] = ""
+
 
     def CreateStosTransformNode(self, ControlFilter, MappedFilter, OutputType, OutputPath):
         '''
@@ -1793,31 +1825,24 @@ class StosGroupNode(XContainerElementWrapper):
         ControlSectionNode = ControlFilter.FindParent("Section")
         ControlChannelNode = ControlFilter.FindParent("Channel")
         
-        
-
         SectionMappingsNode = self.GetSectionMapping(MappedSectionNode.Number)
         assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
-
+               
         stosNode = TransformNode(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
                                                                                         'MappedSectionNumber' : str(MappedSectionNode.Number),
                                                                                         'MappedChannelName' : str(MappedChannelNode.Name),
                                                                                         'MappedFilterName' : str(MappedFilter.Name),
-                                                                                        'MappedImageChecksum' : str(MappedFilter.GetOrCreateImage(self.Downsample).Checksum),
                                                                                         'ControlChannelName' : str(ControlChannelNode.Name),
-                                                                                        'ControlFilterName' : str(ControlFilter.Name),
-                                                                                        'ControlImageChecksum' : str(ControlFilter.GetOrCreateImage(self.Downsample).Checksum)})
+                                                                                        'ControlFilterName' : str(ControlFilter.Name)})
          
-        if MappedFilter.HasDefaultMask and ControlFilter.HasDefaultMask:
-            stosNode.attrib['MappedMaskImageChecksum'] = MappedFilter.GetOrCreateMaskImage(self.Downsample).Checksum
-            stosNode.attrib['ControlMaskImageChecksum'] = ControlFilter.GetOrCreateMaskImage(self.Downsample).Checksum
-        
-   #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
-   #        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber',
-   #                                                                                    'ControlChannelName',
-   #                                                                                    'ControlFilterName',
-   #                                                                                    'MappedSectionNumber',
-   #                                                                                    'MappedChannelName',
-   #                                                                                    'MappedFilterName'])
+        self._AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
+#        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
+#        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber',
+#                                                                                    'ControlChannelName',
+#                                                                                    'ControlFilterName',
+#                                                                                    'MappedSectionNumber',
+#                                                                                    'MappedChannelName',
+#                                                                                    'MappedFilterName'])
 
         SectionMappingsNode.append(stosNode)   
        
@@ -2320,6 +2345,9 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
             return None
 
         return image
+    
+    def HasImage(self, Downsample):
+        return not self.GetImage(Downsample) is None
 
     def GetOrCreateImage(self, Downsample, Path=None, GenerateData=True):
         '''Returns image node for the specified downsample. Generates image if requested and image is missing.  If unable to generate an image node is returned'''
@@ -2327,20 +2355,45 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
         imageNode = LevelNode.find("Image")
         if imageNode is None:
+            
+            if GenerateData and not self.CanGenerate(Downsample):
+                raise ValueError("%s Cannot generate downsample %d" % (self.FullPath, Downsample))
+            
             if Path is None:
-                Path = ImageNode.DefaultName
+                Path = self.__PredictImagePath()
 
             imageNode = ImageNode(Path)
             [added, imageNode] = LevelNode.UpdateOrAddChild(imageNode)
             if not os.path.exists(imageNode.FullPath):
                 if not os.path.exists(os.path.dirname(imageNode.FullPath)):
                     os.makedirs(os.path.dirname(imageNode.FullPath))
-
+                
                 if GenerateData:
                     self.__GenerateMissingImageLevel(OutputImage=imageNode, Downsample=Downsample)
                     self.Save()
         
         return imageNode
+    
+    
+    def __PredictImagePath(self):
+        '''Get the path of the highest resolution image in this ImageSet'''
+        list_images = list(self.Images)
+        if len(list_images) > 0:
+            return list_images[0].Path
+        
+        raise LookupError("No images found to predict path in imageset %s" % self.FullPath)
+    
+    
+    def GetOrPredictImageFullPath(self, Downsample):
+        '''Either return what the full path to the image at the downsample is, or predict what it should be if it does not exist without creating it
+        :rtype: str
+        '''
+        image_node = self.GetImage(Downsample)
+        if image_node is None:
+            return self.__PredictImagePath()
+        else:
+            return image_node.FullPath
+        
 
     def __GetImageNearestToLevel(self, Downsample):
         '''Returns the nearest existing image and downsample level lower than the requested downsample level'''
