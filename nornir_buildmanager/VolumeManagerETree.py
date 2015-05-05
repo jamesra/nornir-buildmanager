@@ -1402,7 +1402,7 @@ class ChannelNode(XContainerElementWrapper):
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
     return nornir_buildmanager.templates.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
 
-class FilterNode(XContainerElementWrapper):
+class FilterNode(VMH.Lockable, XContainerElementWrapper):
 
     DefaultMaskName = "Mask"
     
@@ -1455,22 +1455,6 @@ class FilterNode(XContainerElementWrapper):
     @BitsPerPixel.setter
     def BitsPerPixel(self, val):
         self.attrib['BitsPerPixel'] = '%d' % val
-
-    @property
-    def Locked(self):
-        if 'Locked' in self.attrib:
-            return bool(int(self.attrib['Locked']))
-
-        return False;
-
-    @Locked.setter
-    def Locked(self, val):
-        if not val:
-            if 'Locked' in self.attrib:
-                del self.attrib['Locked']
-                return
-
-        self.attrib['Locked'] = '%d' % val
 
     @property
     def TilePyramid(self):
@@ -2256,10 +2240,12 @@ class MosaicBaseNode(XFileElementWrapper):
         self.attrib['Type'] = Value
 
 
-class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
+class TransformNode(VMH.InputTransformHandler, VMH.Lockable, MosaicBaseNode):
 
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
+        
+    
 
     @property
     def CropBox(self):
