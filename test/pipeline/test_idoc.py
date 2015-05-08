@@ -420,79 +420,82 @@ class IDocSingleSectionImportTest(IDocTest):
 #        self.RunAssembleMosaicToVolume(Channels="TEM")
 #===============================================================================
 #      
- 
+   
 class IDocBuildTest(IDocTest, StosRebuildHelper):
-        
+          
     def runTest(self):
-        
+          
         self.RunImport()
         self.RunPrune()
-        
+          
         self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
-        
+          
         self.RunHistogram()
-        
+          
         self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
-        
+          
         self.RunAdjustContrast()
-        
+          
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=2)  
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)       
-                
+                  
         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
-        
+          
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
-        self.RunAssemble(Levels=[8,16])
-                
+        self.RunAssemble(Channels='TEM', Levels=[8,16])
+                  
         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
         self.RunMosaicReport()
-        
+          
         # Copy output here to run IDocAlignTest
-        
+          
         BruteLevel = 32
-        
+          
         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
         self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
-                
+                  
         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
-                
+                  
         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-        
+          
         # Copy output here to run IDocAlignOutputTest
-        
+          
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
         self.RunAssembleMosaicToVolume(Channels="TEM")
         self.RunMosaicReport(OutputFile='VolumeReport')
-        self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16) 
-    
+        self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
+ 
+        self.RunAssemble(Channels='TEM', Levels=[1])
+        self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
+      
         #TODO, this failed.  Fix it
         self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)
-# # 
+# # # 
 # class IDocBuildTest(setup_pipeline.CopySetupTestBase, StosRebuildHelper):
-#       
+#         
 #     @property
 #     def VolumePath(self):
 #         return "IDocBuildTest"
-#      
+#        
 #     @property
 #     def Platform(self):
 #         return "IDOC"
-#      
-#      
+#        
+#        
 #     @property
 #     def Grid32ManualStosFullPath(self):
 #         return os.path.join(self.PlatformFullPath, "IDocBuildTest_Grid32Manual")
-#  
+#    
 #     def runTest(self):
-#       
+#         
 # #         self.RunImport()
 # #         self.RunPrune()
 # #      
@@ -513,37 +516,42 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
 # #      
 # #         self.RunMosaic(Filter="Leveled")
 # #         self.RunMosaicReport()
-# #         self.RunAssemble(Levels=[8,16])
-# #              
-# #         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
-# #         self.RunMosaicReport()
-# #      
+# #         self.RunAssemble(Channels='TEM', Levels=[8,16])
+# #                
+# # #        self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
+# #         #self.RunMosaicReport()
+# #        
 # #         # Copy output here to run IDocAlignTest
-# #      
+# # #      
 #         BruteLevel = 32
-# #      
-#         #self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
-#         #self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
-# #              
-#         #self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
-#         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
-# #              
-#         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
-#         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-#       
-#         # Copy output here to run IDocAlignOutputTest
-#       
-#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
-#         self.RunSliceToVolume()
-#         self.RunMosaicToVolume()
-#         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
+# #        
+# #         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels=[8,16,BruteLevel])
+# #         self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
+# #                
+# #         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+# #         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+# #               
+# #         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+# #         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+# #         
+# #         #Copy output here to run IDocAlignOutputTest
+# #         
+# #         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+# #         self.RunSliceToVolume()
+# #         self.RunMosaicToVolume()
+# #         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
 #         self.RunAssembleMosaicToVolume(Channels="TEM")
 #         self.RunMosaicReport(OutputFile='VolumeReport')
-#         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16) 
+#         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
+#          
+#         #Make sure we can export full-res mosaics.  This tests an old bug where level 1 image nodes were created with the same name
+#         self.RunAssemble(Channels='TEM', Levels=[1])
+#         self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
+#  
 # #  
 #         #TODO, this failed.  Fix it
 #         self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)  
-#          
+           
 #===============================================================================
 #  
 # class IDocAlignTest(setup_pipeline.CopySetupTestBase):
@@ -638,7 +646,7 @@ class LogReaderTest(IDocTest):
         self.assertEqual(TileData.startTime, 4924.937)
         self.assertEqual(TileData.endTime, 4948.016)
 
-         # From the log file we see that the tile wtih Z=22 should have two recorded drifts, 1.38, 0.9
+        # From the log file we see that the tile wtih Z=22 should have two recorded drifts, 1.38, 0.9
         TileData = LogData.tileData[23]
         self.assertIsNotNone(TileData)
         self.assertEqual(TileData.drift, 0.9)

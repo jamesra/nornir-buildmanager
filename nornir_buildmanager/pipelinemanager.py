@@ -923,8 +923,8 @@ class PipelineManager(object):
                 
             prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
- #           PipelineManager.RemoveParameters(dargs, PipelineNode)
- #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
+#           PipelineManager.RemoveParameters(dargs, PipelineNode)
+#           PipelineManager.RemoveAttributes(dargs, PipelineNode)
 
     def AddPipelineNodeVariable(self, PipelineNode, VolumeElem, ArgSet):
         '''Adds a variable to our dictionary passed to functions'''

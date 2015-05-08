@@ -125,7 +125,6 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     :return: True if the filter has all of the tiles the mosaic file indicates it should have at the provided downsample level
     ''' 
     ChannelNode = InputFilterNode.Parent
-    InputChannelFullPath = ChannelNode.FullPath
     InputPyramidNode = InputFilterNode.find('TilePyramid')
     InputLevelNode = InputPyramidNode.GetChildByAttrib('Level', 'Downsample', Downsample)
     OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
@@ -958,11 +957,9 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     if not prefix is None and len(prefix) > 0:
         OutputName = prefix + OutputName
     else:
-        return InputChannelNode
+        return (False, InputChannelNode)
 
-    [added, OutputChannelNode] = InputChannelNode.Parent.UpdateOrAddChildByAttrib(nb.VolumeManager.ChannelNode(OutputName, OutputName))
-
-    return OutputChannelNode
+    return InputChannelNode.Parent.UpdateOrAddChildByAttrib(nb.VolumeManager.ChannelNode(OutputName, OutputName))
 
 
 def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name):
@@ -1046,21 +1043,23 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     
-    image_ext = DefaultImageExtension
-    
-    MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
+    image_ext = DefaultImageExtension    
     InputChannelNode = FilterNode.FindParent('Channel')
-    SectionNode = InputChannelNode.FindParent('Section')
+    InputFilterMaskName = FilterNode.GetOrCreateMaskName()
     
-    OutputChannelNode = __GetOrCreateOutputChannelForPrefix(OutputChannelPrefix, InputChannelNode)
+    [AddedChannel, OutputChannelNode] = __GetOrCreateOutputChannelForPrefix(OutputChannelPrefix, InputChannelNode)
+    if AddedChannel:
+        yield OutputChannelNode.Parent
 
+    AddedFilters = not (OutputChannelNode.HasFilter(FilterNode.Name) and OutputChannelNode.HasFilter(InputFilterMaskName))
+    InputMaskFilterNode = FilterNode.GetOrCreateMaskFilter()
     OutputFilterNode = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
-    OutputMaskFilterNode = OutputChannelNode.GetOrCreateFilter(MaskFilterNode.Name)
-
+    OutputMaskFilterNode = OutputChannelNode.GetOrCreateFilter(InputFilterMaskName)
+    
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
     OutputImageNameTemplate = FilterNode.DefaultImageName(image_ext)
-    OutputImageMaskNameTemplate = MaskFilterNode.DefaultImageName(image_ext)  
+    OutputImageMaskNameTemplate = InputMaskFilterNode.DefaultImageName(image_ext)  
     
     if OutputFilterNode.HasImageset:
         OutputFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
@@ -1069,8 +1068,6 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
     OutputFilterNode.Imageset.SetTransform(TransformNode)
     OutputMaskFilterNode.Imageset.SetTransform(TransformNode)
-
-    argstring = misc.ArgumentsFromDict(Parameters)
 
     thisLevel = PyramidLevels[0]
 
@@ -1147,8 +1144,11 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
-        
-    yield SectionNode
+    if AddedFilters:
+        yield OutputChannelNode
+    else:
+        yield OutputFilterNode
+        yield OutputMaskFilterNode
 
     ImageSet = BuildImagePyramid(OutputFilterNode.Imageset, Interlace=Interlace, **kwargs)
     if not ImageSet is None:
@@ -1617,178 +1617,178 @@ def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
     return Info
 
 
-# OK, now build/check the remaining levels of the tile pyramids
-def BuildTilesetPyramid(TileSetNode, Levels=None, Pool=None, **kwargs):
-    '''@TileSetNode'''
+def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePrefix, FilePostfix, Pool=None, **kwargs):
+    '''
+    :param tuple SourceGridDimensions: (GridDimY,GridDimX) Number of tiles along each axis
+    :param ndarray TileDim: Dimensions of tile (Y,X)
+    
+    '''
+    
+    try:
+        os.makedirs(DestPath)
+    except:
+        e = 1  # Just a garbage statement, not sure how to swallow an exception
+        
+    if Pool is None:
+        Pool = Pools.GetGlobalLocalMachinePool()
+
+    # Merge all the tiles we can find into tiles of the same size
+    for iY in range(0, DestGridDimensions[0]):
+
+        '''We wait for the last task we queued for each row so we do not swamp the ProcessPool but are not waiting for the entire pool to empty'''
+        FirstTaskForRow = None
+
+        for iX in range(0, DestGridDimensions[1]):
+
+            X1 = iX * 2
+            X2 = X1 + 1
+            Y1 = iY * 2
+            Y2 = Y1 + 1
+
+            # OutputFile = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % iX + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY + FilePostfix
+            OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : iX,
+                                                 'Y' : iY,
+                                                 'postfix' : FilePostfix }
+
+            OutputFileFullPath = os.path.join(DestPath, OutputFile)
+
+            # Skip if file already exists
+            # if(os.path.exists(OutputFileFullPath)):
+            #    continue
+
+            # TopLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
+            # TopRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
+            # BottomLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
+            # BottomRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
+            TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X1,
+                                                 'Y' : Y1,
+                                                 'postfix' : FilePostfix }
+            TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X2,
+                                                 'Y' : Y1,
+                                                 'postfix' : FilePostfix }
+            BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X1,
+                                                 'Y' : Y2,
+                                                 'postfix' : FilePostfix }
+            BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X2,
+                                                 'Y' : Y2,
+                                                 'postfix' : FilePostfix }
+
+
+            TopLeft = os.path.join(SourcePath, TopLeft)
+            TopRight = os.path.join(SourcePath, TopRight)
+            BottomLeft = os.path.join(SourcePath, BottomLeft)
+            BottomRight = os.path.join(SourcePath, BottomRight)
+
+            nullCount = 0
+
+            if(os.path.exists(TopLeft) == False):
+                TopLeft = 'null:'
+                nullCount = nullCount + 1
+            if(os.path.exists(TopRight) == False):
+                TopRight = 'null:'
+                nullCount = nullCount + 1
+            if(os.path.exists(BottomLeft) == False):
+                BottomLeft = 'null:'
+                nullCount = nullCount + 1
+            if(os.path.exists(BottomRight) == False):
+                BottomRight = 'null:'
+                nullCount = nullCount + 1
+
+            if(nullCount == 4):
+                continue
+
+            # Complicated ImageMagick call reads in up to four adjacent tiles, merges them, and shrinks
+            # BUG this assumes we only downsample by a factor of two
+            cmd = ("montage " + TopLeft + ' ' + TopRight + ' ' + 
+                  BottomLeft + ' ' + BottomRight + 
+                  ' -geometry %dx%d' % (TileDim[1] / 2, TileDim[0] / 2)
+                  + ' -set colorspace RGB  -mode Concatenate -tile 2x2 -background black '
+                  + ' -depth 8 -type Grayscale -define png:format=png8 ' + OutputFileFullPath)
+            # prettyoutput.CurseString('Cmd', cmd)
+            # prettyoutput.Log(
+            # TestOutputFileFullPath = os.path.join(NextLevelNode.FullPath, 'Test_' + OutputFile)
+
+            montageBugFixCmd = 'convert ' + OutputFileFullPath + ' -set colorspace RGB -type Grayscale ' + OutputFileFullPath
+
+            task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
+
+            if FirstTaskForRow is None:
+                FirstTaskForRow = task
+
+
+        # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
+        # prettyoutput.CurseProgress(TaskString, iY + 1, newYDim)
+
+        # We can easily saturate the pool with hundreds of thousands of tasks.
+        # If the pool has a reasonable number of tasks then we should wait for
+        # a task from a row to complete before queueing more.
+        if hasattr(Pool, 'tasks'):
+            if Pool.tasks.qsize() > 256:
+                FirstTaskForRow.wait()
+                FirstTaskForRow = None
+        elif hasattr(Pool, 'ActiveTasks'):
+            if Pool.ActiveTasks > 512:
+                FirstTaskForRow.wait()
+                FirstTaskForRow = None
+
+        prettyoutput.Log("\nBeginning Row %d of %d" % (iY + 1, DestGridDimensions[0]))
+
+    if not Pool is None:
+        Pool.wait_completion()
     
 
-    FilterNode = TileSetNode.FindParent('Filter')
+# OK, now build/check the remaining levels of the tile pyramids
+def BuildTilesetPyramid(TileSetNode, Pool=None, **kwargs):
+    '''@TileSetNode'''
+    
+    MinResolutionLevel = TileSetNode.MinResLevel
 
-    MaxLevelNode = TileSetNode.MinResLevel
+    while not MinResolutionLevel is None:
+        # If the tileset is already a single tile, then do not downsample
+        if(MinResolutionLevel.GridDimX == 1 and MinResolutionLevel.GridDimY == 1):
+            return
 
-    # LevelNode = TileSetNode.Levels[len(TileSetNode.Levels)-1]
-    LevelNode = MaxLevelNode
-
-    # If the tileset is already a single tile, then do not downsample
-    if(LevelNode.GridDimX == 1 and LevelNode.GridDimY == 1):
-        return LevelNode.Downsample
-
-    ShrinkFactor = 0.5
-
-    newXDim = float(LevelNode.GridDimX) * ShrinkFactor
-    newYDim = float(LevelNode.GridDimY) * ShrinkFactor
-
-    newXDim = int(math.ceil(newXDim))
-    newYDim = int(math.ceil(newYDim))
-
-    FilePrefix = TileSetNode.FilePrefix
-    FilePostfix = TileSetNode.FilePostfix
-
-    # If there is only one tile in the next level, try to find a thumbnail image an change the downsample level
-    if(newXDim == 1 and newYDim == 1):
-        return
-
-    # Need to call ir-assemble
-    NextLevelNode = nb.VolumeManager.LevelNode(LevelNode.Downsample * 2)
-    [added, NextLevelNode] = TileSetNode.UpdateOrAddChildByAttrib(NextLevelNode, 'Downsample')
-
-    NextLevelNode.GridDimX = str(newXDim)
-    NextLevelNode.GridDimY = str(newYDim)
-
-    # Check to make sure the level hasn't already been generated and we've just missed the
-    [Valid, Reason] = NextLevelNode.IsValid()
-    if not Valid:
-
-        # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
-
-        try:
-            os.makedirs(NextLevelNode.FullPath)
-        except:
-            e = 1  # Just a garbage statement, not sure how to swallow an exception
-            
-        if Pool is None:
-            Pool = Pools.GetGlobalClusterPool()
-
-        # Merge all the tiles we can find into tiles of the same size
-        for iY in range(0, newYDim):
-
-            '''We wait for the last task we queued for each row so we do not swamp the ProcessPool but are not waiting for the entire pool to empty'''
-            FirstTaskForRow = None
-
-            for iX in range(0, newXDim):
-
-                X1 = iX * 2
-                X2 = X1 + 1
-                Y1 = iY * 2
-                Y2 = Y1 + 1
-
-                # OutputFile = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % iX + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY + FilePostfix
-                OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
-                                                     'X' : iX,
-                                                     'Y' : iY,
-                                                     'postfix' : FilePostfix }
-
-                OutputFileFullPath = os.path.join(NextLevelNode.FullPath, OutputFile)
-
-                # Skip if file already exists
-                # if(os.path.exists(OutputFileFullPath)):
-                #    continue
-
-                # TopLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
-                # TopRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
-                # BottomLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
-                # BottomRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
-                TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
-                                                     'X' : X1,
-                                                     'Y' : Y1,
-                                                     'postfix' : FilePostfix }
-                TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
-                                                     'X' : X2,
-                                                     'Y' : Y1,
-                                                     'postfix' : FilePostfix }
-                BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
-                                                     'X' : X1,
-                                                     'Y' : Y2,
-                                                     'postfix' : FilePostfix }
-                BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
-                                                     'X' : X2,
-                                                     'Y' : Y2,
-                                                     'postfix' : FilePostfix }
-
-
-                TopLeft = os.path.join(LevelNode.FullPath, TopLeft)
-                TopRight = os.path.join(LevelNode.FullPath, TopRight)
-                BottomLeft = os.path.join(LevelNode.FullPath, BottomLeft)
-                BottomRight = os.path.join(LevelNode.FullPath, BottomRight)
-
-                nullCount = 0
-
-                if(os.path.exists(TopLeft) == False):
-                    TopLeft = 'null:'
-                    nullCount = nullCount + 1
-                if(os.path.exists(TopRight) == False):
-                    TopRight = 'null:'
-                    nullCount = nullCount + 1
-                if(os.path.exists(BottomLeft) == False):
-                    BottomLeft = 'null:'
-                    nullCount = nullCount + 1
-                if(os.path.exists(BottomRight) == False):
-                    BottomRight = 'null:'
-                    nullCount = nullCount + 1
-
-                if(nullCount == 4):
-                    continue
-
-                # Complicated ImageMagick call reads in up to four adjacent tiles, merges them, and shrinks
-                # BUG this assumes we only downsample by a factor of two
-                cmd = ("montage " + TopLeft + ' ' + TopRight + ' ' + 
-                      BottomLeft + ' ' + BottomRight + 
-                      ' -geometry ' + str(TileSetNode.TileXDim / 2) + 'x' + str(TileSetNode.TileYDim / 2)
-                      + ' -set colorspace RGB  -mode Concatenate -tile 2x2 -background black '
-                      + ' -depth 8 -type Grayscale -define png:format=png8 ' + OutputFileFullPath)
-                # prettyoutput.CurseString('Cmd', cmd)
-                # prettyoutput.Log(
-                # TestOutputFileFullPath = os.path.join(NextLevelNode.FullPath, 'Test_' + OutputFile)
-
-                montageBugFixCmd = 'convert ' + OutputFileFullPath + ' -set colorspace RGB -type Grayscale ' + OutputFileFullPath
-
-                task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
-
-                if FirstTaskForRow is None:
-                    FirstTaskForRow = task
-
-
-            # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
-            # prettyoutput.CurseProgress(TaskString, iY + 1, newYDim)
-
-            # We can easily saturate the pool with hundreds of thousands of tasks.
-            # If the pool has a reasonable number of tasks then we should wait for
-            # a task from a row to complete before queueing more.
-            if hasattr(Pool, 'tasks'):
-                if Pool.tasks.qsize() > 256:
-                    FirstTaskForRow.wait()
-                    FirstTaskForRow = None
-            elif hasattr(Pool, 'ActiveTasks'):
-                if Pool.ActiveTasks > 512:
-                    FirstTaskForRow.wait()
-                    FirstTaskForRow = None
-
-            prettyoutput.Log("\nBeginning Row " + str(iY + 1) + " of " + str(newYDim))
-
-        Pool.wait_completion()
-
-    else:
-        logging.info("Level was already generated " + str(TileSetNode))
-
-    if Pool is not None:
-        Pool.wait_completion()
-        
-    # This was a lot of work, make sure it is saved before queueing the next level
-    TileSetNode.Save()
-    prettyoutput.Log("\nTileset level completed")
-
-    return BuildTilesetPyramid(TileSetNode, Pool=Pool, **kwargs)
-
+        ShrinkFactor = 0.5
+        newYDim = float(MinResolutionLevel.GridDimY) * ShrinkFactor
+        newXDim = float(MinResolutionLevel.GridDimX) * ShrinkFactor
+    
+        newXDim = int(math.ceil(newXDim))
+        newYDim = int(math.ceil(newYDim))
+    
+        # If there is only one tile in the next level, try to find a thumbnail image and change the downsample level
+        if(newXDim == 1 and newYDim == 1):
+            return
+    
+        # Need to call ir-assemble
+        NextLevelNode = nb.VolumeManager.LevelNode(MinResolutionLevel.Downsample * 2)
+        [added, NextLevelNode] = TileSetNode.UpdateOrAddChildByAttrib(NextLevelNode, 'Downsample')
+        NextLevelNode.GridDimX = str(newXDim)
+        NextLevelNode.GridDimY = str(newYDim)
+        if added:
+            yield TileSetNode
+    
+        # Check to make sure the level hasn't already been generated and we've just missed the
+        [Valid, Reason] = NextLevelNode.IsValid()
+        if not Valid:
+            # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
+            BuildTilesetLevel(MinResolutionLevel.FullPath, NextLevelNode.FullPath, 
+                               DestGridDimensions=(newYDim, newXDim),
+                               TileDim=(TileSetNode.TileYDim, TileSetNode.TileXDim),
+                               FilePrefix=TileSetNode.FilePrefix,
+                               FilePostfix=TileSetNode.FilePostfix,
+                               Pool=Pool)
+            # This was a lot of work, make sure it is saved before queueing the next level
+            yield TileSetNode
+            prettyoutput.Log("\nTileset level %d completed" % NextLevelNode.Downsample)
+        else:
+            logging.info("Level was already generated " + str(TileSetNode))
+    
+        MinResolutionLevel = TileSetNode.MinResLevel
 
 if __name__ == "__main__":
 

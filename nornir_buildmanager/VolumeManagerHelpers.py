@@ -59,6 +59,26 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
     return Matches
  
 
+class Lockable(object):
+    
+    @property
+    def Locked(self):
+        '''
+        Return true if the node is locked and should not be deleted
+        '''
+        return bool(int(self.attrib.get('Locked', False)))
+    
+    @Locked.setter
+    def Locked(self, value):
+        
+        if value is None:
+            if 'Locked' in self.attrib:
+                del self.attrib['Locked'] 
+            return
+        
+        assert(isinstance(value, bool))
+        self.attrib['Locked'] = "%d" % value
+        
 
 class InputTransformHandler(object):
 
@@ -233,6 +253,12 @@ class PyramidLevelHandler(object):
 
     def HasLevel(self, Downsample):
         return not self.GetLevel(Downsample) is None
+    
+    def CanGenerate(self, Downsample):
+        '''
+        :return: True if this level could be generated from higher resolution levels
+        '''
+        return not self.MoreDetailedLevel(Downsample) is None
 
     def CreateLevels(self, Levels):
         assert(isinstance(Levels, list))
