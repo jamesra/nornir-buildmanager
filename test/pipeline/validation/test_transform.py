@@ -86,11 +86,14 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
-            buildArgs = [self.TestOutputPath, '-debug', 'Prune', '-Threshold', '1.0']
-            build.Execute(buildArgs)
+            
+            #buildArgs = [self.TestOutputPath, '-debug', 'Prune', '-Threshold', '1.0']
+            #build.Execute(buildArgs)
+            self.RunPrune()
 
-            buildArgs = [ self.TestOutputPath, '-debug', 'Mosaic', '-InputFilter', 'Leveled']
-            build.Execute(buildArgs)
+            #buildArgs = [ self.TestOutputPath, '-debug', 'Mosaic', '-InputFilter', 'Leveled']
+            #build.Execute(buildArgs)
+            self.RunMosaic(Filter="Leveled")
 
             # Load the meta-data from the volumedata.xml file again
             self.LoadMetaData()

@@ -391,35 +391,22 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
 
     return None
 
-def __CallNornirStosBrute(stosNode, Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode=None, MappedMaskImageNode=None, argstring=None, Logger=None):
+def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath, ControlMaskImageFullPath=None, MappedMaskImageFullPath=None, argstring=None, Logger=None):
     '''Call the stos-brute version from nornir-imageregistration'''
 
-    alignment = None
-    if not (ControlMaskImageNode is None or MappedMaskImageNode is None):
-        alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageNode.FullPath,
-                                                      WarpedImageInput=MappedImageNode.FullPath,
-                                                      FixedImageMaskPath=ControlMaskImageNode.FullPath,
-                                                      WarpedImageMaskPath=MappedMaskImageNode.FullPath,
-                                                      Cluster=False)
+    alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageFullPath,
+                                                  WarpedImageInput=MappedImageFullPath,
+                                                  FixedImageMaskPath=ControlMaskImageFullPath,
+                                                  WarpedImageMaskPath=MappedMaskImageFullPath,
+                                                  Cluster=False)
 
-        stos = alignment.ToStos(ControlImageNode.FullPath,
-                         MappedImageNode.FullPath,
-                         ControlMaskImageNode.FullPath,
-                         MappedMaskImageNode.FullPath,
-                         PixelSpacing=Downsample)
-
-        stos.Save(stosNode.FullPath)
-
-    else:
-        alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageNode.FullPath,
-                                                      WarpedImageInput=MappedImageNode.FullPath,
-                                                      Cluster=False)
-
-        stos = alignment.ToStos(ControlImageNode.FullPath,
-                         MappedImageNode.FullPath,
-                         PixelSpacing=Downsample)
-
-        stos.Save(stosNode.FullPath, AddMasks=False)
+    stos = alignment.ToStos(ControlImageFullPath,
+                     MappedImageFullPath,
+                     ControlMaskImageFullPath,
+                     MappedMaskImageFullPath,
+                     PixelSpacing=Downsample)
+    
+    stos.Save(stosNode.FullPath)
 
     return
 
@@ -450,6 +437,40 @@ def __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlM
     if not os.path.exists(stosNode.FullPath):
         Logger.error("Stos brute did not produce useable output\n" + cmd)
         return None
+    
+
+def GetOrCreateRegistrationImageNodes(filter_node, Downsample, GetMask, Logger=None):
+    '''
+    :param object filter_node: Filter meta-data to get images for
+    :param int Downsample: Resolution of the image node to fetch or create
+    :param bool GetMask: True if the mask node should be returned
+    :return: Tuple of (image_node, mask_node) for the filter at the given downsample level
+    '''
+    if Logger is None:
+        Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
+        
+    image_node = filter_node.GetOrCreateImage(Downsample)
+    if image_node is None:
+        Logger.error("Image metadata missing %s" % filter_node.FullPath)
+        return (None,None)
+    
+    if not os.path.exists(image_node.FullPath):
+        Logger.error("Image image file missing %" % image_node.FullPath)
+        return (None,None)
+    
+    mask_image_node = None
+    if GetMask:
+        mask_image_node =  filter_node.GetOrCreateMaskImage(Downsample)
+        if mask_image_node is None:
+            Logger.error("Mask image metadata missing %s" % filter_node.FullPath)
+            return (None,None)
+        
+        if not os.path.exists(mask_image_node.FullPath):
+            Logger.error("Mask image file missing %s" % mask_image_node.FullPath)
+            return (None, None)
+        
+    return (image_node, mask_image_node)
+        
 
 def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, OutputType, OutputPath, UseMasks, Logger=None, argstring=None):
     '''Create a transform node, populate, and generate the transform'''
@@ -459,40 +480,10 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
         Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
         
     stosNode = StosGroup.GetStosTransformNode(ControlFilter, MappedFilter)
-           
-    ControlImageNode = ControlFilter.GetOrCreateImage(StosGroup.Downsample)
-    MappedImageNode = MappedFilter.GetOrCreateImage(StosGroup.Downsample)
-    
-    if not os.path.exists(ControlImageNode.FullPath):
-        Logger.error("Control image missing" + ControlImageNode.FullPath)
-        return None
-
-    if not os.path.exists(MappedImageNode.FullPath):
-        Logger.error("Mapped image missing" + MappedImageNode.FullPath)
-        return None
-    
-    ControlMaskImageNode = None
-    MappedMaskImageNode = None
-    if UseMasks:
-        ControlMaskImageNode = ControlFilter.GetOrCreateMaskImage(StosGroup.Downsample)
-        MappedMaskImageNode = MappedFilter.GetOrCreateMaskImage(StosGroup.Downsample)
-        
-        if ControlMaskImageNode is None:
-            Logger.error("Control mask image metadata missing" + ControlFilter.FullPath)
-            return None
-        
-        if MappedMaskImageNode is None:
-            Logger.error("Control mask image metadata missing" + MappedFilter.FullPath)
-            return None
             
-        if not os.path.exists(ControlMaskImageNode.FullPath):
-            Logger.error("Control mask image missing" + ControlMaskImageNode.FullPath)
-            return None
-        
-        if not os.path.exists(MappedMaskImageNode.FullPath):
-            Logger.error("Mapped mask image missing" + MappedMaskImageNode.FullPath)
-            return None 
-
+    (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
+    (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
+    
     if not stosNode is None:
         if StosGroup.AreStosInputImagesOutdated(stosNode, ControlFilter, MappedFilter, MaskRequired=UseMasks):
             stosNode.Clean("Input Images are Outdated")
@@ -513,10 +504,14 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
         if not ManualStosFileFullPath is None:
             prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
-            CmdRan = True
-        else: 
-            __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode)
-            CmdRan = True
+            #Ensure we add or remove masks according to the parameters
+            SetStosFileMasks(stosNode.FullPath, ControlFilter, MappedFilter, UseMasks, StosGroup.Downsample)
+        elif not (ControlMaskImageNode is None and MappedMaskImageNode is None):
+            __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode.FullPath, MappedImageNode.FullPath, ControlMaskImageNode.FullPath, MappedMaskImageNode.FullPath)
+        else:
+            __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode.FullPath, MappedImageNode.FullPath)
+            
+        CmdRan = True
             # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
     
             # Rescale stos file to full-res
@@ -529,9 +524,8 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     
             # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
         stosNode.ResetChecksum()
-        stosNode.ControlImageChecksum = ControlImageNode.Checksum
-        stosNode.MappedImageChecksum = MappedImageNode.Checksum
-
+        StosGroup.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
+        
     if CmdRan:
         return stosNode
 
@@ -547,6 +541,7 @@ def __StosFilename(ControlFilter, MappedFilter):
                              '_ctrl-' + ControlFilter.Parent.Name + "_" + ControlFilter.Name + \
                              '_map-' + MappedFilter.Parent.Name + "_" + MappedFilter.Name + '.stos'
     return OutputFile
+
 
 
 def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
@@ -1054,7 +1049,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
 #    return InputTransformNode
  
 
-def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputDownsample, ControlFilter, MappedFilter):
+def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
     '''
     :return: If a manual override stos file exists we return the manual file.  If it does not exist we scale the input transform to the desired size
     '''
@@ -1074,7 +1069,7 @@ def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputD
     InputStosFullPath = __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath=AutomaticInputStosFullPath, ManualInputStosFullPath=ManualInputStosFullPath)
     InputChecksum = None
     if InputStosFullPath == AutomaticInputStosFullPath:
-        __GenerateStosFileIfOutdated(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter, MappedFilter)
+        __GenerateStosFileIfOutdated(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks)
         InputChecksum = InputTransformNode.Checksum
     else:
         InputChecksum = stosfile.StosFile.LoadChecksum(InputStosFullPath)
@@ -1082,17 +1077,137 @@ def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputD
     return (InputStosFullPath, InputChecksum)
 
 
-def __GenerateStosFileIfOutdated(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter):
-    '''Only generates a stos file if the Output is stale compared to the input
-    :return: True if a file was generated, False if the output already existed and was valid
+def SetStosFileMasks(stosFullPath, ControlFilter, MappedFilter, UseMasks, Downsample):
     '''
-    # We should not be trying to create output if we have no input
-    assert(os.path.exists(InputTransformNode.FullPath))
+    Ensure the stos file has masks
+    '''
+    
+    OutputStos = stosfile.StosFile.Load(stosFullPath)
+    if OutputStos.HasMasks == UseMasks:
+        return 
+    else:
+        if not UseMasks:
+            if OutputStos.HasMasks:
+                OutputStos.ClearMasks()
+                OutputStos.Save(stosFullPath, AddMasks=False)
+            
+            return 
+        else:
+            ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)
+            MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)
+            
+            OutputStos.ControlMaskFullPath = ControlMaskImageFullPath
+            OutputStos.MappedMaskFullPath = MappedMaskImageFullPath
+            OutputStos.Save(stosFullPath)
+            return 
+        
+    
+    
+
+
+def IsStosNodeOutdated(InputTransformNode, OutputTransformNode, ControlFilter, MappedFilter, UseMasks, OutputDownsample):
+    '''
+    :param bool UseMasks: True if masks should be included.  None if we should use masks if they exist in the input stos transform
+    :Return: true if the output stos transform is stale
+    '''
+    
+    if not os.path.exists(OutputTransformNode.FullPath):
+        return True
+    
+    if OutputTransformNode is None:
+        return True
+    
+    OutputStosGroup = OutputTransformNode.GetParent('StosGroup') 
+    
+    InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+    if UseMasks is None:
+        UseMasks = InputStos.HasMasks
+        
+    if 'InputTransformChecksum' in OutputTransformNode.attrib:
+        if not transforms.IsValueMatched(OutputTransformNode, 'InputTransformChecksum', InputTransformNode.Checksum):
+            return True
+        
+    if OutputStosGroup.AreStosInputImagesOutdated(OutputTransformNode, ControlFilter, MappedFilter, MasksRequired=UseMasks):
+        return True
+    
+    
+    if UseMasks is None:
+        InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+        UseMasks = InputStos.HasMasks
+        
+    OutputStos = stosfile.StosFile.Load(OutputTransformNode.FullPath)
+    if OutputStos.HasMasks != UseMasks:
+        return True 
+    
+    ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+    MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+    
+    ControlMaskImageFullPath = None
+    MappedMaskImageFullPath = None
+    if UseMasks:
+        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+    
+    return not (OutputStos.ControlImagePath == ControlImageFullPath and
+                OutputStos.MappedImagePath == MappedImageFullPath and
+                OutputStos.ControlMaskFullPath == ControlMaskImageFullPath and
+                OutputStos.MappedMaskFullPath == MappedMaskImageFullPath and
+                OutputStos.HasMasks == UseMasks)
+    
+
+def IsStosFileOutdated(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
+    '''
+    :param bool UseMasks: True if masks should be included.  None if we should use masks if they exist in the input stos transform
+    :return: True if any part of the stos file is out of date compared to the input stos file
+    '''
     
     # Replace the automatic files if they are outdated.
     files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputTransformPath)
+    
     if not os.path.exists(OutputTransformPath):
-        __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter)
+        return True 
+     
+    if UseMasks is None:
+        InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+        UseMasks = InputStos.HasMasks
+        
+    OutputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+    if not OutputStos.HasMasks == UseMasks:
+        return False
+    
+    ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+    MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+    
+    if not (OutputStos.ControlImagePath == ControlImageFullPath and OutputStos.MappedImagePath == MappedImageFullPath ):
+        return False 
+    
+    ControlMaskImageFullPath = None
+    MappedMaskImageFullPath = None
+    if UseMasks:
+        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+        
+        if not OutputStos.ControlMaskFullPath == ControlMaskImageFullPath and OutputStos.MappedMaskFullPath == MappedMaskImageFullPath:
+            return False 
+    
+    return True
+    
+
+
+def __GenerateStosFileIfOutdated(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
+    '''Only generates a stos file if the Output stos path has an earlier last modified time compared to the input
+    :param bool UseMasks: True if masks should be included.  None if we should copy setting from input stos transform
+    :return: True if a file was generated, False if the output already existed and was valid
+    '''
+    
+    # We should not be trying to create output if we have no input
+    assert(os.path.exists(InputTransformNode.FullPath))
+    if IsStosFileOutdated(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
+        if os.path.exists(OutputTransformPath):
+            os.remove(OutputTransformPath)
+    
+    if not os.path.exists(OutputTransformPath):
+        __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks)
         return True
     
     return False
@@ -1110,37 +1225,40 @@ def __PredictStosImagePaths(filter_node, Downsample):
         maskFullPath = filter_node.PredictMaskFullPath(Downsample)
 
     return (imageFullPath, maskFullPath)
-    
 
-def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter):
+
+def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
     '''Generates a new stos file using the specified filters and scales the transform to match the
        requested downsample as needed.
+       :param bool UseMasks: True if masks should be included.  None if we should copy setting from input stos transform
        :rtype: bool
        :return: True if a new stos file was generated
     '''
     
     StosGroupNode = InputTransformNode.FindParent('StosGroup')
     InputDownsample = StosGroupNode.Downsample
-    try:
-        InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
-    except ValueError:
-        return False
-         
+
+    InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+    if UseMasks is None:
+        UseMasks = InputStos.HasMasks
+     
     ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
     MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
     
     ControlMaskImageFullPath = None
     MappedMaskImageFullPath = None
-    if InputStos.HasMasks:
+    if UseMasks:
         ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
         MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
 
+    #If all the core details are the same we can save time by copying the data instead
     if not (InputStos.ControlImagePath == ControlImageFullPath and
         InputStos.MappedImagePath == MappedImageFullPath and
         InputStos.ControlMaskFullPath == ControlMaskImageFullPath and
         InputStos.MappedMaskFullPath == MappedMaskImageFullPath and
-        OutputDownsample == InputDownsample):
-
+        OutputDownsample == InputDownsample and
+        InputStos.HasMasks == UseMasks): 
+        
         ModifiedInputStos = InputStos.ChangeStosGridPixelSpacing(oldspacing=InputDownsample,
                                        newspacing=OutputDownsample,
                                        ControlImageFullPath=ControlImageFullPath,
@@ -1181,7 +1299,7 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
 
                                                                               
 
-def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
+def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
 
     Logger = logging.getLogger(__name__ + '.StosGrid')
 
@@ -1198,12 +1316,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
     MappedSectionList = MappingNode.Mapped
 
     MappedSectionList.sort()
-
-    SaveBlockNode = False
-    SaveGroupNode = False
-    
-    UseMasks = kwargs.get("UseMasks", False)
-    
+ 
     (added, OutputStosGroupNode) = BlockNode.GetOrCreateStosGroup(OutputStosGroupName, Downsample)
     OutputStosGroupNode.CreateDirectories()
 
@@ -1226,10 +1339,6 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
             if added:
                 yield OutputStosGroupNode 
 
-            InputStosGroupNode = InputSectionMappingNode.FindParent('StosGroup')
-            InputDownsample = int(InputStosGroupNode.Downsample)
-            InputImageXPathTemplate = "Channel/Filter/Image[@Name='%(ImageName)s']/Level[@Downsample='%(OutputDownsample)d']"
-            
             ControlFilter = __GetFirstMatchingFilter(BlockNode,
                                                      InputTransformNode.ControlSectionNumber, 
                                                      InputTransformNode.ControlChannelName,
@@ -1251,6 +1360,9 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                 OutputSectionMappingNode.Clean("No mapped filter found in stos grid")
                 yield OutputStosGroupNode 
                 continue
+            
+            (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
+            (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
 
             OutputFile = __StosFilename(ControlFilter, MappedFilter)
             OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
@@ -1262,7 +1374,8 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                                                                     InputTransformNode=InputTransformNode,
                                                                     ControlFilter=ControlFilter,
                                                                     MappedFilter=MappedFilter,
-                                                                    OutputDownsample=OutputDownsample)
+                                                                    OutputDownsample=OutputDownsample,
+                                                                    UseMasks=UseMasks)
 
             if not os.path.exists(InputStosFullPath):
                 # Hmm... no input.  This is worth reporting and moving on
@@ -1327,6 +1440,9 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, Downsample=32, ControlFilt
                 else:
                     prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
                     shutil.copy(ManualStosFileFullPath, OutputStosFullPath)
+                    
+                    #Ensure we add or remove masks according to the parameters
+                    SetStosFileMasks(OutputStosFullPath, ControlFilter, MappedFilter, UseMasks, OutputStosGroupNode.Downsample)
 
                 stosNode.Path = OutputFile
 
@@ -1608,7 +1724,7 @@ def __GetFilterAndMaskFilter(transform_node, section, channel, filter):
     if filterNode is None:
         return (None, None)
     
-    mask_filterNode = filterNode.DefaultMaskFilter
+    mask_filterNode = filterNode.GetMaskFilter()
     return (filterNode, mask_filterNode)
 
 
@@ -1668,7 +1784,8 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
 #     return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
 
 
-def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwargs):
+
+def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMasks, **kwargs):
 
     '''Take a stos group node, scale the transforms, and save in new stosgroup
     
@@ -1735,11 +1852,12 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, **kwar
                     os.remove(stosNode.FullPath)
                     
             if not os.path.exists(stosNode.FullPath):
-                stosGenerated = __GenerateStosFileIfOutdated(InputTransformNode,
-                                                                stosNode.FullPath,
-                                                                OutputDownsample,
-                                                                ControlFilter,
-                                                                MappedFilter)
+                stosGenerated = __GenerateStosFile(InputTransformNode,
+                                                    stosNode.FullPath,
+                                                    OutputDownsample,
+                                                    ControlFilter,
+                                                    MappedFilter,
+                                                    UseMasks=None)
 
                 if stosGenerated:
                     stosNode.ResetChecksum()

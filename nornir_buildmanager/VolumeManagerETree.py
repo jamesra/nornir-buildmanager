@@ -1382,6 +1382,9 @@ class ChannelNode(XContainerElementWrapper):
 
     def GetFilter(self, Filter):
         return self.GetChildByAttrib('Filter', 'Name', Filter)
+    
+    def HasFilter(self, FilterName):
+        return not self.GetFilter(FilterName) is None
 
     def GetOrCreateFilter(self, Name):
         (added, filterNode) = self.UpdateOrAddChildByAttrib(FilterNode(Name), 'Name')
@@ -1487,7 +1490,7 @@ class FilterNode(VMH.Lockable, XContainerElementWrapper):
     def MaskImageset(self):
         '''Get the imageset for the default mask'''
         
-        maskFilter = self.DefaultMaskFilter
+        maskFilter = self.GetMaskFilter()
         if maskFilter is None:
             return None
         
@@ -1511,36 +1514,42 @@ class FilterNode(VMH.Lockable, XContainerElementWrapper):
         else:
             self.attrib['MaskName'] = val
             
-    @property
-    def HasDefaultMask(self):
-        m = self.attrib.get("MaskName", None)
-        if not m is None:
-            if len(m) == 0:
-                return True
             
-        return not m is None
-
+    def GetOrCreateMaskName(self):
+        '''Returns the maskname for the filter, if it does not exist use the default mask name'''
+        if self.MaskName is None:
+            self.MaskName = FilterNode.DefaultMaskName 
+            
+        return self.MaskName
+            
     @property
-    def DefaultMaskFilter(self):
-        maskname = self.MaskName
-        if maskname is None:
-            maskname = FilterNode.DefaultMaskName
-
-        return self.GetMaskFilter(maskname)
+    def HasMask(self):
+        '''
+        :return: True if the mask filter exists
+        '''
+        return not self.GetMaskFilter() is None
     
-    def GetMaskFilter(self, MaskName):
+    
+    def GetMaskFilter(self, MaskName=None):
+        if MaskName is None:
+            MaskName = self.MaskName
+            
         if MaskName is None:
             return None
+        
+        assert(isinstance(MaskName, str))
 
-        return self.Parent.GetChildByAttrib('Filter', 'Name', MaskName)
+        return self.Parent.GetFilter(MaskName)
+    
 
-    def GetOrCreateMaskFilter(self, maskname=None):
-        if maskname is None:
-            maskname = FilterNode.DefaultMaskName
+    def GetOrCreateMaskFilter(self, MaskName=None):
+        if MaskName is None:
+            MaskName = self.GetOrCreateMaskName()
+            
+        assert(isinstance(MaskName, str))
 
-        assert(isinstance(maskname, str))
+        return self.Parent.GetOrCreateFilter(MaskName)
 
-        return self.Parent.GetOrCreateFilter(maskname)
 
     def GetImage(self, Downsample):
         if not self.HasImageset:
@@ -1548,20 +1557,24 @@ class FilterNode(VMH.Lockable, XContainerElementWrapper):
         
         return self.Imageset.GetImage(Downsample)
 
+
     def GetOrCreateImage(self, Downsample):
         imageset = self.Imageset
         return imageset.GetOrCreateImage(Downsample)
 
+
     def GetMaskImage(self, Downsample):
-        maskFilter = self.DefaultMaskFilter
+        maskFilter = self.GetMaskFilter()
         if maskFilter is None:
             return None
 
         return maskFilter.GetImage(Downsample)
 
+
     def GetOrCreateMaskImage(self, Downsample):
         maskFilter = self.GetOrCreateMaskFilter()
         return maskFilter.GetOrCreateImage(Downsample)
+
 
     def GetHistogram(self):
         return self.find('Histogram')
@@ -1772,7 +1785,7 @@ class StosGroupNode(XContainerElementWrapper):
 
         return (added, stosNode)
     
-    def  _AddChecksumsToStos(self, stosNode, ControlFilter, MappedFilter):
+    def  AddChecksumsToStos(self, stosNode, ControlFilter, MappedFilter):
             
         if MappedFilter.Imageset.HasImage(self.Downsample) or MappedFilter.Imageset.CanGenerate(self.Downsample):
             stosNode.attrib['MappedImageChecksum'] = MappedFilter.Imageset.GetOrCreateImage(self.Downsample).Checksum
@@ -1784,7 +1797,7 @@ class StosGroupNode(XContainerElementWrapper):
         else:
             stosNode.attrib['ControlImageChecksum'] = ""
             
-        if MappedFilter.HasDefaultMask and ControlFilter.HasDefaultMask:
+        if MappedFilter.HasMask and ControlFilter.HasMask:
             if MappedFilter.MaskImageset.HasImage(self.Downsample) or MappedFilter.MaskImageset.CanGenerate(self.Downsample):
                 stosNode.attrib['MappedMaskImageChecksum'] = MappedFilter.MaskImageset.GetOrCreateImage(self.Downsample).Checksum
             else:
@@ -1819,7 +1832,7 @@ class StosGroupNode(XContainerElementWrapper):
                                                                                         'ControlChannelName' : str(ControlChannelNode.Name),
                                                                                         'ControlFilterName' : str(ControlFilter.Name)})
          
-        self._AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
+        self.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
 #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
 #        (added, stosNode) = SectionMappingsNode.UpdateOrAddChildByAttrib(stosNode, ['ControlSectionNumber',
 #                                                                                    'ControlChannelName',
@@ -2346,22 +2359,23 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
                 raise ValueError("%s Cannot generate downsample %d" % (self.FullPath, Downsample))
             
             if Path is None:
-                Path = self.__PredictImagePath()
+                Path = self.__PredictImageFilename()
 
             imageNode = ImageNode(Path)
-            [added, imageNode] = LevelNode.UpdateOrAddChild(imageNode)
+            [level_added, imageNode] = LevelNode.UpdateOrAddChild(imageNode)
             if not os.path.exists(imageNode.FullPath):
                 if not os.path.exists(os.path.dirname(imageNode.FullPath)):
                     os.makedirs(os.path.dirname(imageNode.FullPath))
                 
                 if GenerateData:
                     self.__GenerateMissingImageLevel(OutputImage=imageNode, Downsample=Downsample)
-                    self.Save()
-        
+            
+            self.Save()
+                    
         return imageNode
     
     
-    def __PredictImagePath(self):
+    def __PredictImageFilename(self):
         '''Get the path of the highest resolution image in this ImageSet'''
         list_images = list(self.Images)
         if len(list_images) > 0:
@@ -2376,7 +2390,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         '''
         image_node = self.GetImage(Downsample)
         if image_node is None:
-            return self.__PredictImagePath()
+            return os.path.join(self.FullPath, LevelNode.PredictPath(Downsample) ,self.__PredictImageFilename() )
         else:
             return image_node.FullPath
         
@@ -2631,7 +2645,9 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.attrib['ImageFormatExt'] = ImageFormatExt
 
     def GenerateLevels(self, Levels):
-        tile.BuildTilePyramids(self, Levels)
+        node = tile.BuildTilePyramids(self, Levels)
+        if not node is None:
+            node.Save()
 
 class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
@@ -2678,11 +2694,17 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
             self.attrib['Path'] = TilesetNode.DefaultPath
 
     def GenerateLevels(self, Levels):
-        tile.BuildTilesetPyramid(self)
+        node = tile.BuildTilesetPyramid(self)
+        if not node is None:
+            node.Save()
 
 
 class LevelNode(XContainerElementWrapper):
 
+    @classmethod
+    def PredictPath(cls, level):
+        return nornir_buildmanager.templates.Current.LevelFormat % int(level)
+        
     @classmethod
     def ClassSortKey(cls, self):
         '''Required for objects derived from XContainerElementWrapper'''
@@ -2778,7 +2800,7 @@ class LevelNode(XContainerElementWrapper):
         if(attrib is None):
             attrib = {}
 
-        attrib['Path'] = nornir_buildmanager.templates.Current.LevelFormat % int(Level)
+        attrib['Path'] = LevelNode.PredictPath(Level)
 
         if isinstance(Level, str):
             attrib['Downsample'] = Level

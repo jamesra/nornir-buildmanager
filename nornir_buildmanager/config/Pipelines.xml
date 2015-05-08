@@ -230,6 +230,9 @@
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to use for registration" required="True"/>
 			<Argument flag="-InputTransform" dest="InputTransformName" default="Prune" help="Name of the input transform" required="False"/>
 			<Argument flag="-OutputTransform" dest="OutputTransformName" default="Grid" help="Name of output transform." required="False"/>
+			<Argument flag="-Iterations" default="10" dest="Iterations" type="int" help="Maximum number of refinement passes to run" required="False"/>
+			<Argument flag="-Threshold" default="0.25" dest="DisplacementThreshold" type="float" help="Displacement threshold for control point movement.  Refinement stops below this value" required="False"/>
+			<Argument flag="-CellArea" default="128" dest="CellArea"  type="int" help="Size of region around each grid point to register, in pixels" required="False"/>
 		</Arguments>
 
 		<Iterate VariableName="section_node" XPath="Block/Section">
@@ -256,8 +259,9 @@
 					<Parameters>
 						<Entry Name="MeshWidth" Value="8"/>
 						<Entry Name="MeshHeight" Value="8"/>
-						<Entry Name="Cell" Value="128"/>
-						<Entry Name="Threshold" Value="0.25"/>
+						<Entry Name="Cell" Value="#CellArea"/>
+						<Entry Name="Threshold" Value="#DisplacementThreshold"/>
+						<Entry Name="it" Value="#Iterations"/>
 					</Parameters>
 				</PythonCall>
 	 
@@ -643,6 +647,10 @@
 			<Argument flag="-OutputDownsample" dest="OutputDownsample" type="int" help="Downsample level to use for refinement" required="True"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
 			<Argument flag="-UseMasks"  action="store_true" dest="UseMasks" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
+			<Argument flag="-Threshold" default="0.1" dest="DisplacementThreshold" type="float" help="Displacement threshold for control point movement.  Refinement stops below this value" required="False"/>
+			<Argument flag="-Spacing" default="128" dest="GridSpacing" type="int" help="Grid spacing in pixels" required="False"/>
+			<Argument flag="-CellArea" default="128" dest="CellArea" type="int" help="Size of region around each grid point to register, in pixels" required="False"/>
+			<Argument flag="-Iterations" default="10" dest="Iterations" type="int" help="Maximum number of refinement passes to run" required="False"/>
 		</Arguments>
 
 		<Select VariableName="BlockNode" XPath="Block"/>
@@ -650,14 +658,19 @@
 
 		<Select VariableName="InputGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#InputGroup#InputDownsample']"/>
 		<Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"  XPath="Mapping">
-			<PythonCall Function="block.StosGrid" MappingNode="#MappingNodeObj" OutputStosGroup="#OutputGroup#OutputDownsample" Downsample="#OutputDownsample"
-      												   ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx" UseMasks="#UseMasks">
+			<PythonCall Function="block.StosGrid"
+						 MappingNode="#MappingNodeObj"
+						 OutputStosGroup="#OutputGroup#OutputDownsample"
+						 Downsample="#OutputDownsample"
+      		 			 ControlFilterPattern="#FiltersRegEx"
+      		 			 MappedFilterPattern="#FiltersRegEx"
+      		 			 UseMasks="#UseMasks">
 				<Parameters>
-					<Entry Name="grid_spacing" Value="128"/>
-					<Entry Name="neighborhood" Value="128"/>
-					<Entry Name="it" Value="10"/>
+					<Entry Name="grid_spacing" Value="#GridSpacing"/>
+					<Entry Name="neighborhood" Value="#CellArea"/>
+					<Entry Name="it" Value="#Iterations"/>
 					<Entry Name="fft" Value="2 0.25"/> 
-					<Entry Name="displacement_threshold" Value="0.1"/>
+					<Entry Name="displacement_threshold" Value="#DisplacementThreshold"/>
 				</Parameters>
 			</PythonCall>
 		</Iterate>
@@ -668,6 +681,7 @@
 			<Argument flag="-InputGroup" default="SliceToVolume" dest="ScaleGroupName" type="str" required="False" help="Name of stos group to scale" />
 			<Argument flag="-InputDownsample" dest="ScaleInputDownsample" type="int" help="Downsample level of input stosgroup" required="True"/>
 			<Argument flag="-OutputDownsample"  default="1" dest="ScaleOutputDownsample" type="int" help="Downsample level of output" required="False"/>
+			<Argument flag="-UseMasks"  action="store_true" dest="UseMasks" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
 		</Arguments>
 
 		<Iterate VariableName="BlockNode" XPath="Block">
@@ -675,7 +689,8 @@
 			<PythonCall Function="block.ScaleStosGroup"
 	   			   InputStosGroupNode="#StosGroupNode"
 	               OutputDownsample="#ScaleOutputDownsample"
-	               OutputGroupName="#ScaleGroupName#ScaleOutputDownsample"/>   
+	               OutputGroupName="#ScaleGroupName#ScaleOutputDownsample"
+	               UseMasks="#UseMasks"/>   
 		</Iterate>
 	</Pipeline>
 

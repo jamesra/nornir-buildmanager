@@ -76,14 +76,13 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         return
 
     MaskStr = ""
-    if InputFilter.HasDefaultMask:
+    if InputFilter.HasMask:
         InputMaskImageNode = InputFilter.GetOrCreateMaskImage(thisLevel)
         if not os.path.exists(InputMaskImageNode.FullPath):
             InputMaskImageNode = None
     
         if not InputMaskImageNode is None:
-            OutputFilterNode.MaskName = InputFilter.DefaultMaskFilter.Name
-    
+            OutputFilterNode.MaskName = InputFilter.MaskName
             MaskStr = ' -mask %s ' % InputMaskImageNode.FullPath 
 
     BlobImageNode = OutputFilterNode.Imageset.GetImage(thisLevel)
