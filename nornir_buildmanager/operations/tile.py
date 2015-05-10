@@ -1569,7 +1569,7 @@ def _InsertExistingLevelIfMissing(PyramidNode, Levels):
     if not PyramidNode.HasLevel(Levels[0]):
         MoreDetailedLevel = PyramidNode.MoreDetailedLevel(Levels[0])
         if MoreDetailedLevel is None:
-            raise Exception("No pyramid level available with more detail than %d" % Levels[0])
+            raise Exception("No pyramid level available with more detail than %d in %s" % (Levels[0],PyramidNode.FullPath))
 
         Levels.insert(0, MoreDetailedLevel.Downsample)
 
