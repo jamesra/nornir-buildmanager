@@ -80,7 +80,8 @@ class PruneObj:
 
         OutputTransformNode = TransformParent.GetChildByAttrib('Transform', 'Name', OutputTransformName)
         if not OutputTransformNode is None:
-            OutputTransformNode = OutputTransformNode.RemoveIfTransformMismatched(InputTransformNode)
+            if OutputTransformNode.RemoveIfTransformMismatched(InputTransformNode):
+                OutputTransformNode = None
         OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
         OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
 
