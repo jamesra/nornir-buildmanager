@@ -2653,8 +2653,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
             node.Save()
 
 class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
-
-    DefaultName = 'Tileset'
+ 
     DefaultPath = 'Tileset'
 
     @property
@@ -2690,7 +2689,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.attrib['TileYDim'] = '%d' % int(val)
 
     def __init__(self, attrib=None, **extra):
-        super(TilesetNode, self).__init__(tag='Tileset', path=TilesetNode.DefaultName, attrib=attrib, **extra)
+        super(TilesetNode, self).__init__(tag='Tileset', path=TilesetNode.DefaultPath, attrib=attrib, **extra)
  
         if(not 'Path' in self.attrib):
             self.attrib['Path'] = TilesetNode.DefaultPath

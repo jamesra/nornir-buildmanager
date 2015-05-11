@@ -1238,7 +1238,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetN
     CmdCount = 0
 
     TileSetNode = nb.VolumeManager.TilesetNode()
-    [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode)
+    [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
 
     TileSetNode.TileXDim = str(TileWidth)
     TileSetNode.TileYDim = str(TileHeight)
