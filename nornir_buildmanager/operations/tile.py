@@ -6,16 +6,12 @@ Created on May 22, 2012
 
 import math
 import subprocess
-import sys
-import xml
+import xml.dom
 import logging
 import glob
 import os
 import shutil
 import copy
-
-import numpy as np
-
 import nornir_buildmanager as nb 
 
 
@@ -160,56 +156,56 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
 #    return   FileCountEqual
     return True
 
-
-def EvaluateImageList(ImageList, CmdTemplate):
-    # FileList = list()
-    OutputNumber = 0
-    TempFileList = []
-
-    CmdLineFileList = ""
-    while len(TempFileList) == 0 and CmdLineFileList == "":
-
-        # First we process all of the original tiles.  We can't run them all because Windows has command line length limits.  I haven't tried passing the arguments as an array though...
-        if(len(ImageList) > 0):
-            while len(ImageList) > 0:
-                # basefilename = os.path.basename(tilefullpath)
-            #    FileList.append(basefilename)
-            #    CmdList.append(basefilename)
-                if(len(CmdLineFileList) + len(ImageList[0]) < 900):
-                    TileFileName = ImageList.pop()
-                    CmdLineFileList = CmdLineFileList + ' ' + os.path.basename(str(TileFileName))
-                else:
-                    break
-
-        # This only runs after we've processed all of the original tiles
-        elif(len(TempFileList) > 1):
-            while len(TempFileList) > 1:
-                if(len(CmdLineFileList) + len(TempFileList[0]) < 900):
-                    CmdLineFileList = CmdLineFileList + ' ' + str(TempFileList[0])
-                    del TempFileList[0]
-                else:
-                    break
-
-        TempFinalTarget = os.path.join(Path, 'Temp' + str(OutputNumber) + '.png')
-        OutputNumber = OutputNumber + 1
-        ImageList.append(TempFinalTarget)
-        TempFileList.append(TempFinalTarget)
-
-        # CmdList.append(FileList)
-#        CmdList.append(PreEvaluateSequenceArg)
-#        CmdList.append("-evaluate-sequence")
-#        CmdList.append(EvaluateSequenceArg)
-#        CmdList.append(PostEvaluateSequenceArg)
-#        CmdList.append(FinalTarget)
-
-        Cmd = CmdBase % {'Images' : CmdLineFileList,
-                          'PreEvaluateSequenceArg' : PreEvaluateSequenceArg,
-                          'EvaluateSequenceArg' :  EvaluateSequenceArg,
-                          'OutputFile' : TempFinalTarget}
-
-        prettyoutput.Log(Cmd)
-        subprocess.call(Cmd + " && exit", shell=True, cwd=TileDir)
-        CmdLineFileList = ""
+# 
+# def EvaluateImageList(ImageList, CmdTemplate):
+#     # FileList = list()
+#     OutputNumber = 0
+#     TempFileList = []
+# 
+#     CmdLineFileList = ""
+#     while len(TempFileList) == 0 and CmdLineFileList == "":
+# 
+#         # First we process all of the original tiles.  We can't run them all because Windows has command line length limits.  I haven't tried passing the arguments as an array though...
+#         if(len(ImageList) > 0):
+#             while len(ImageList) > 0:
+#                 # basefilename = os.path.basename(tilefullpath)
+#             #    FileList.append(basefilename)
+#             #    CmdList.append(basefilename)
+#                 if(len(CmdLineFileList) + len(ImageList[0]) < 900):
+#                     TileFileName = ImageList.pop()
+#                     CmdLineFileList = CmdLineFileList + ' ' + os.path.basename(str(TileFileName))
+#                 else:
+#                     break
+# 
+#         # This only runs after we've processed all of the original tiles
+#         elif(len(TempFileList) > 1):
+#             while len(TempFileList) > 1:
+#                 if(len(CmdLineFileList) + len(TempFileList[0]) < 900):
+#                     CmdLineFileList = CmdLineFileList + ' ' + str(TempFileList[0])
+#                     del TempFileList[0]
+#                 else:
+#                     break
+# 
+#         TempFinalTarget = os.path.join(Path, 'Temp' + str(OutputNumber) + '.png')
+#         OutputNumber = OutputNumber + 1
+#         ImageList.append(TempFinalTarget)
+#         TempFileList.append(TempFinalTarget)
+# 
+#         # CmdList.append(FileList)
+# #        CmdList.append(PreEvaluateSequenceArg)
+# #        CmdList.append("-evaluate-sequence")
+# #        CmdList.append(EvaluateSequenceArg)
+# #        CmdList.append(PostEvaluateSequenceArg)
+# #        CmdList.append(FinalTarget)
+# 
+#         Cmd = CmdBase % {'Images' : CmdLineFileList,
+#                           'PreEvaluateSequenceArg' : PreEvaluateSequenceArg,
+#                           'EvaluateSequenceArg' :  EvaluateSequenceArg,
+#                           'OutputFile' : TempFinalTarget}
+# 
+#         prettyoutput.Log(Cmd)
+#         subprocess.call(Cmd + " && exit", shell=True, cwd=TileDir)
+#         CmdLineFileList = ""
 
 
 def Evaluate(Parameters, FilterNode, OutputImageName=None, Level=1, PreEvaluateSequenceArg=None, EvaluateSequenceArg=None, PostEvaluateSequenceArg=None, **kwargs):
@@ -883,66 +879,6 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
         return HistogramElement
     else:
         return None
-
-
-def MigrateMultipleImageSets(FilterNode, Logger, **kwargs):
-    '''Temp function to migrate the mask from the old layout with masks not having a separate filter.'''
-
-    ChannelNode = FilterNode.Parent
-    ImageSets = list(FilterNode.findall('ImageSet'))
-
-    if(len(ImageSets) < 1):
-        return None
-
-    MigrationOccurred = False
-
-    for isetNode in ImageSets:
-
-        originalName = isetNode.Name.lower()
-
-        if originalName == ImageSetNode.DefaultName:
-            continue
-
-        Logger.warn("Outdated ImageSet %s found in FilterNode.  Migrating..." % originalName)
-        MigrationOccurred = True
-
-        OldPath = isetNode.FullPath
-
-        isetNode.Name = ImageSetNode.DefaultName
-        isetNode.Path = ImageSetNode.DefaultPath
-
-        # Create a mask filter for this imageset
-        ChannelNode = FilterNode.Parent
-
-        NewFilterNode = None
-        if 'mask' in originalName:
-            NewFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
-        elif not 'assemble' in originalName:
-            NewFilterNode = ChannelNode.GetOrCreateFilter(originalName)
-        else:
-            if hasattr(isetNode, 'MaskName'):
-                del isetNode.MaskName
-
-        # We use assemble as the old default imageset name for a filter to prevent a filter with no imagesets being left behind
-        if not NewFilterNode is None:
-            FilterNode.remove(isetNode)
-            NewFilterNode.append(isetNode)
-            isetNode.Parent = NewFilterNode
-
-        NewPath = isetNode.FullPath
-
-        if os.path.exists(NewPath):
-            os.removedirs(NewPath)
-
-        Logger.warn("Moving: " + OldPath + "\n-> " + NewPath)
-        shutil.move(OldPath, NewPath)
-
-    if MigrationOccurred:
-        return ChannelNode
-
-    return None
-    # return MigrationOccurred
-
 
 def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
     for yieldval in AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, **kwargs):

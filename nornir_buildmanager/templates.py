@@ -35,7 +35,7 @@ class __Config:
             self.__NumProcs = multiprocessing.cpu_count();
             try:
 
-                from Utils import prettyoutput;
+                from nornir_shared import prettyoutput;
                 prettyoutput.CurseString("# of Cores", str(self.__NumProcs));
             except:
                 pass;

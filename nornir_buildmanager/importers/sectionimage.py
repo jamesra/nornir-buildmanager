@@ -125,7 +125,7 @@ class SectionImage(object):
             if BlockName is None or len(BlockName) == 0:
                 BlockName = 'LM'
 
-            BlockObj = XContainerElementWrapper('Block', BlockName);
+            BlockObj = BlockNode(BlockName);
             [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj);
 
             if(fileData is None):
@@ -144,7 +144,7 @@ class SectionImage(object):
 
             ChannelName = fileData.Channel
             ChannelName = ChannelName.replace(' ', '_')
-            channelObj = XContainerElementWrapper('Channel', ChannelName)
+            channelObj = ChannelNode(ChannelName)
             [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
 
             # Create a filter for the images
@@ -153,9 +153,7 @@ class SectionImage(object):
             if(TargetBpp is None):
                 FilterName = 'Raw';
 
-            filterObj = XContainerElementWrapper('Filter', FilterName);
-            [addedFilter, filterObj] = channelObj.UpdateOrAddChildByAttrib(filterObj, "Name");
-
+            filterObj = channelObj.GetOrCreateFilter(FilterName);
             filterObj.BitsPerPixel = TargetBpp
 
             # Create an image for the filter

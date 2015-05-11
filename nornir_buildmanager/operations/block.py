@@ -1791,12 +1791,6 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMas
     
        TODO: This function used to create stos transforms between different filters to.  Port that to a seperate function
     '''
-
-    ControlChannelPattern = kwargs.get("ControlChannelPattern", None)
-    ControlFilterPattern = kwargs.get("ControlFilterPattern", None)
-    MappedChannelPattern = kwargs.get("MappedChannelPattern", None)
-    MappedFilterPattern = kwargs.get("MappedFilterPattern", None)
-
     GroupParent = InputStosGroupNode.Parent
 
     OutputGroupNode = VolumeManagerETree.StosGroupNode(OutputGroupName, OutputDownsample)

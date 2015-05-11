@@ -5,7 +5,6 @@ Created on Oct 11, 2012
 '''
 
 import re
-import math
 
 import VolumeManagerETree as VolumeManager
 from operator import attrgetter
