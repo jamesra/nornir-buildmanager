@@ -2639,9 +2639,8 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if ImageFormatExt is None:
             ImageFormatExt = '.png'
 
-        super(TilePyramidNode, self).__init__(tag='TilePyramid',
-                                               Name=TilePyramidNode.DefaultName,
-                                               Path=TilePyramidNode.DefaultPath,
+        super(TilePyramidNode, self).__init__(tag='TilePyramid', 
+                                               path=TilePyramidNode.DefaultPath,
                                                attrib=attrib, **extra)
 
         self.attrib['NumberOfTiles'] = str(NumberOfTiles)
@@ -2691,9 +2690,8 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.attrib['TileYDim'] = '%d' % int(val)
 
     def __init__(self, attrib=None, **extra):
-        super(TilesetNode, self).__init__(tag='Tileset', Name=TilesetNode.DefaultName, attrib=attrib, **extra)
-
-        self.Name = TilesetNode.DefaultName
+        super(TilesetNode, self).__init__(tag='Tileset', path=TilesetNode.DefaultName, attrib=attrib, **extra)
+ 
         if(not 'Path' in self.attrib):
             self.attrib['Path'] = TilesetNode.DefaultPath
 
@@ -2791,8 +2789,6 @@ class LevelNode(XContainerElementWrapper):
                                                                                         'postfix' : FilePostfix})
                 if(os.path.exists(MatchString)):
                     return [True, "Last column found"]
-
-
 
             return [False, "Last column of tileset not found"]
 

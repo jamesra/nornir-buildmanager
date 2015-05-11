@@ -197,7 +197,7 @@ class PMGImport(object):
         if(TargetBpp is None):
             FilterName = 'Raw'
     
-        [addedFilter, filterObj] = channelObj.GetOrCreateFilter(FilterName)
+        filterObj = channelObj.GetOrCreateFilter(FilterName)
         filterObj.BitsPerPixel = TargetBpp
     
         SupertileName = 'Stage'
