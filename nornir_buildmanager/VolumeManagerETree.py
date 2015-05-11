@@ -827,6 +827,12 @@ class XElementWrapper(ElementTree.Element):
         RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
         return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath)
 
+    def _replace_link(self, link_node):
+        '''Replace the link_node, removing it from our element.  Insert the linked directory'''
+        self.remove(link_node)
+        SubContainerPath = os.path.join(self.FullPath, link_node.attrib["Path"])
+        return self.LoadSubElement(SubContainerPath)
+        
 
     def findall(self, match):
 
@@ -839,27 +845,8 @@ class XElementWrapper(ElementTree.Element):
         if LinkMatches is None:
             return  # matches
 
-        for link in LinkMatches:
-            self.remove(link)
-            SubContainerPath = os.path.join(self.FullPath, link.attrib["Path"])
-
-            SubContainerElement = self.LoadSubElement(SubContainerPath)
-            if(SubContainerElement is None):
-                continue
-
-#            if len(RemainingXPath) > 0:
-#                subContainerMatches = SubContainerElement.findall(RemainingXPath)
-#                if subContainerMatches is not None:
-#                    for m in subContainerMatches:
-#                        yield m
-#                    # matches.extend(subContainerMatches)
-#            else:
-#                yield SubContainerElement
-
-            # print "Unloading " + str(SubContainerElement)
-            # self.remove(SubContainerElement)
-            # self.append(link)
-                # matches.append(SubContainerElement)
+        for link_node in LinkMatches:
+            self._replace_link(link_node)
 
         # return matches
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
@@ -868,7 +855,9 @@ class XElementWrapper(ElementTree.Element):
 #             NotValid = m.CleanIfInvalid()
 #             if NotValid:
 #                 continue
-
+            if '_Link' in m.tag:
+                m = self._replace_link(m)
+                
             if len(RemainingXPath) > 0:
                 subContainerMatches = m.findall(RemainingXPath)
                 if subContainerMatches is not None:
@@ -877,7 +866,7 @@ class XElementWrapper(ElementTree.Element):
             else:
                 yield m
 
-class XResourceElementWrapper(XElementWrapper):
+class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
     '''Wrapper for an XML element that refers to a file or directory'''
 
     @property
@@ -954,6 +943,13 @@ class XResourceElementWrapper(XElementWrapper):
         return outStr
 
     def Clean(self, reason=None):
+        if self.Locked:
+            Logger = logging.getLogger(__name__ + '.' + 'Clean')
+            Logger.warning('Could not delete resource with locked flag set: %s\nReason for attempt: %s' % self.FullPath)
+            if not reason is None:
+                Logger.warning('\nReason for attempt: %s' % reason)
+            return
+            
         '''Remove the contents referred to by this node from the disk'''
         if os.path.exists(self.FullPath):
             try:
@@ -1411,7 +1407,7 @@ class ChannelNode(XNamedContainerElementWrapped):
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
     return nornir_buildmanager.templates.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
 
-class FilterNode(VMH.Lockable, XNamedContainerElementWrapped):
+class FilterNode(XNamedContainerElementWrapped):
 
     DefaultMaskName = "Mask"
     
@@ -2259,13 +2255,11 @@ class MosaicBaseNode(XFileElementWrapper):
         self.attrib['Type'] = Value
 
 
-class TransformNode(VMH.InputTransformHandler, VMH.Lockable, MosaicBaseNode):
+class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
 
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
-        
-    
-
+         
     @property
     def CropBox(self):
         '''Returns boundaries of transform output if available, otherwise none
@@ -2302,16 +2296,11 @@ class TransformNode(VMH.InputTransformHandler, VMH.Lockable, MosaicBaseNode):
         else:
             raise Exception("Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
-
-
     def IsValid(self):
         valid = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
             return super(TransformNode, self).IsValid()
-
-
-
-
+        
 
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
 
@@ -2807,7 +2796,7 @@ class LevelNode(XContainerElementWrapper):
         super(LevelNode, self).__init__(tag='Level', path=LevelNode.PredictPath(Level), attrib=attrib, **extra)
 
 
-class HistogramBase(XElementWrapper):
+class HistogramBase(VMH.InputTransformHandler, XElementWrapper):
 
     @property
     def DataNode(self):
@@ -2849,7 +2838,7 @@ class HistogramBase(XElementWrapper):
         '''Check for the transform node and ensure the checksums match'''
         # TransformNode = self.Parent.find('Transform')
 
-        return True
+        return super(HistogramBase, self).IsValid()
 
     def __init__(self, tag, attrib, **extra):
         super(HistogramBase, self).__init__(tag=tag, attrib=attrib, **extra)
@@ -2922,8 +2911,7 @@ class HistogramNode(HistogramBase):
 
     def __init__(self, InputTransformNode, Type, attrib, **extra):
         super(HistogramNode, self).__init__(tag='Histogram', attrib=attrib, **extra)
-        self.attrib['InputTransformType'] = InputTransformNode.Type
-        self.attrib['InputTransformChecksum'] = InputTransformNode.Checksum
+        self.SetTransform(InputTransformNode)
         self.attrib['Type'] = Type
 
     def GetAutoLevelHint(self):

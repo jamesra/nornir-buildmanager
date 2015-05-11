@@ -738,6 +738,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     ElementCleaned = False
 
     if not HistogramElementCreated:
+        HistogramElement.RemoveIfTransformMismatched(TransformNode)
         if HistogramElement.CleanIfInvalid():
             HistogramElement = None
             ElementCleaned = True

@@ -15,7 +15,6 @@
 		</Arguments>
  
 		<PythonCall Module="nornir_buildmanager.importers.idoc" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
-		
 	</Pipeline>
 	
 	<Pipeline Name="ImportPMG" Description="Import PMG file into a volume">
@@ -119,6 +118,13 @@
 		<Iterate VariableName="TransformNode" XPath="Block/Section/Channel/Transform">
 			<RequireMatch Attribute="Name" RegEx="Grid"/>
 			<PythonCall Function="registration.TransformNodeToZeroOrigin" transform_node="#TransformNode">
+			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="MigrateTo1.3" Description="Migrate mosaic transforms to zero origins">
+		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
+			<PythonCall Function="setters.MigrateChannel_1p2_to_1p3" channel_node="#ChannelNode">
 			</PythonCall>
 		</Iterate>
 	</Pipeline>
