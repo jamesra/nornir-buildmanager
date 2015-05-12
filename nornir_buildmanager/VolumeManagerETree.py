@@ -945,7 +945,7 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
     def Clean(self, reason=None):
         if self.Locked:
             Logger = logging.getLogger(__name__ + '.' + 'Clean')
-            Logger.warning('Could not delete resource with locked flag set: %s\nReason for attempt: %s' % self.FullPath)
+            Logger.warning('Could not delete resource with locked flag set: %s' % self.FullPath)
             if not reason is None:
                 Logger.warning('\nReason for attempt: %s' % reason)
             return
