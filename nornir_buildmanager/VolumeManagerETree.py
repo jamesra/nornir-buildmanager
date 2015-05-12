@@ -274,15 +274,15 @@ class XPropertiesElementWrapper(ElementTree.Element):
         elif(name[0] == '_'):
             self.__dict__[name] = value
         else:
-                valstr = pickle.dumps(value, 0)
-                valstr = urllib.quote_plus(valstr)
+            valstr = pickle.dumps(value, 0)
+            valstr = urllib.quote_plus(valstr)
 
-                entry = self.__getEntry__(name)
-                if entry is None:
-                    entry = ElementTree.Element("Entry", {'Name':name, 'Value':valstr})
-                    self.append(entry)
-                else:
-                    entry.attrib['Value'] = valstr
+            entry = self.__getEntry__(name)
+            if entry is None:
+                entry = ElementTree.Element("Entry", {'Name':name, 'Value':valstr})
+                self.append(entry)
+            else:
+                entry.attrib['Value'] = valstr
 
     def __delattr__(self, name):
         '''Like __setattr__() but for attribute deletion instead of assignment. This should only be implemented if del obj.name is meaningful for the object.'''
@@ -706,7 +706,7 @@ class XElementWrapper(ElementTree.Element):
                 NewNodeCreated = True
             else:
                 # No data provided to create the child element
-                return None
+                return (False, None)
 
         # Make sure the parent is set correctly
         VolumeManager.WrapElement(Child)
@@ -827,43 +827,26 @@ class XElementWrapper(ElementTree.Element):
         RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
         return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath)
 
+    def _replace_link(self, link_node):
+        '''Replace the link_node, removing it from our element.  Insert the linked directory'''
+        self.remove(link_node)
+        SubContainerPath = os.path.join(self.FullPath, link_node.attrib["Path"])
+        return self.LoadSubElement(SubContainerPath)
+        
 
     def findall(self, match):
 
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(match)
 
         # TODO: Need to modify to only search one level at a time
-
-
-#       if not isinstance(self, XContainerElementWrapper):
-#           return
         # OK, check for linked elements that also meet the criteria
 
         LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
         if LinkMatches is None:
             return  # matches
 
-        for link in LinkMatches:
-            self.remove(link)
-            SubContainerPath = os.path.join(self.FullPath, link.attrib["Path"])
-
-            SubContainerElement = self.LoadSubElement(SubContainerPath)
-            if(SubContainerElement is None):
-                continue
-
-#            if len(RemainingXPath) > 0:
-#                subContainerMatches = SubContainerElement.findall(RemainingXPath)
-#                if subContainerMatches is not None:
-#                    for m in subContainerMatches:
-#                        yield m
-#                    # matches.extend(subContainerMatches)
-#            else:
-#                yield SubContainerElement
-
-            # print "Unloading " + str(SubContainerElement)
-            # self.remove(SubContainerElement)
-            # self.append(link)
-                # matches.append(SubContainerElement)
+        for link_node in LinkMatches:
+            self._replace_link(link_node)
 
         # return matches
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
@@ -872,7 +855,9 @@ class XElementWrapper(ElementTree.Element):
 #             NotValid = m.CleanIfInvalid()
 #             if NotValid:
 #                 continue
-
+            if '_Link' in m.tag:
+                m = self._replace_link(m)
+                
             if len(RemainingXPath) > 0:
                 subContainerMatches = m.findall(RemainingXPath)
                 if subContainerMatches is not None:
@@ -881,8 +866,8 @@ class XElementWrapper(ElementTree.Element):
             else:
                 yield m
 
-class XResourceElementWrapper(XElementWrapper):
-    '''Wrapper for an XML element that refers to a file'''
+class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
+    '''Wrapper for an XML element that refers to a file or directory'''
 
     @property
     def Path(self):
@@ -958,6 +943,13 @@ class XResourceElementWrapper(XElementWrapper):
         return outStr
 
     def Clean(self, reason=None):
+        if self.Locked:
+            Logger = logging.getLogger(__name__ + '.' + 'Clean')
+            Logger.warning('Could not delete resource with locked flag set: %s\nReason for attempt: %s' % self.FullPath)
+            if not reason is None:
+                Logger.warning('\nReason for attempt: %s' % reason)
+            return
+            
         '''Remove the contents referred to by this node from the disk'''
         if os.path.exists(self.FullPath):
             try:
@@ -968,7 +960,6 @@ class XResourceElementWrapper(XElementWrapper):
             except:
                 Logger = logging.getLogger(__name__ + '.' + 'Clean')
                 Logger.warning('Could not delete cleaned directory: ' + self.FullPath)
-                pass
 
         return super(XResourceElementWrapper, self).Clean(reason=reason)
 
@@ -1035,8 +1026,10 @@ class XFileElementWrapper(XResourceElementWrapper):
                 self.attrib['Checksum'] = str(checksum)
 
         return checksum
-
+    
+    
 class XContainerElementWrapper(XResourceElementWrapper):
+    '''XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid'''
 
     @property
     def SortKey(self):
@@ -1057,15 +1050,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                         return tagClass.ClassSortKey(self)
 
         return self.tag
-
-    @property
-    def Name(self):
-        return self.get('Name', '')
-
-    @Name.setter
-    def Name(self, Value):
-        self.attrib['Name'] = Value
-
+    
     @property
     def Path(self):
         return self.attrib.get('Path', '')
@@ -1098,8 +1083,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
            Removes missing nodes from the volume.'''
 
         dirNames = os.listdir(self.FullPath)
-        dirList = []
-
+        
         for dirname in dirNames:
             volumeDataFullPath = os.path.join(dirname, "VolumeData.xml")
             if os.path.exists(volumeDataFullPath):
@@ -1150,18 +1134,14 @@ class XContainerElementWrapper(XResourceElementWrapper):
         return XMLElement
 
 
-    def __init__(self, tag, Name, Path=None, attrib=None, **extra):
-
-        if Path is None:
-            Path = Name
+    def __init__(self, tag, path, attrib=None, **extra):
 
         if(attrib is None):
             attrib = {}
 
         super(XContainerElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra)
-
-        self.attrib['Name'] = Name
-        self.attrib['Path'] = Path
+ 
+        self.attrib['Path'] = path
 
 
 
@@ -1257,6 +1237,28 @@ class XContainerElementWrapper(XResourceElementWrapper):
         except:
             pass
 
+class XNamedContainerElementWrapped(XContainerElementWrapper):
+    '''XML meta-data for a container whose sub-elements are contained within a directory on the file system whose name is not constant.  Such as a channel name.'''
+    
+    @property
+    def Name(self):
+        return self.get('Name', '')
+
+    @Name.setter
+    def Name(self, Value):
+        self.attrib['Name'] = Value
+
+    def __init__(self, tag, Name, Path=None, attrib=None, **extra):
+
+        if Path is None:
+            Path = Name
+
+        if attrib is None:
+            attrib = {}
+
+        super(XNamedContainerElementWrapped, self).__init__(tag=tag, path=Path, attrib=attrib, **extra)
+
+        self.attrib['Name'] = Name 
 
 class XLinkedContainerElementWrapper(XContainerElementWrapper):
     '''Child elements of XLinkedContainerElementWrapper are saved
@@ -1277,7 +1279,7 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
         # pool = Pools.GetGlobalThreadPool()
 
         logger = logging.getLogger(__name__ + '.' + 'XLinkedContainerElementWrapper')
-        tabs = '\t' * tabLevel
+        #tabs = '\t' * tabLevel
         #logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
         # Create a copy of ourselves for saving
@@ -1322,7 +1324,7 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
             # pool.wait_completion()
 
 
-class BlockNode(XContainerElementWrapper):
+class BlockNode(XNamedContainerElementWrapped):
 
     @property
     def Sections(self):
@@ -1374,7 +1376,7 @@ class BlockNode(XContainerElementWrapper):
         super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
 
 
-class ChannelNode(XContainerElementWrapper):
+class ChannelNode(XNamedContainerElementWrapped):
 
     @property
     def Filters(self):
@@ -1405,15 +1407,15 @@ class ChannelNode(XContainerElementWrapper):
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
     return nornir_buildmanager.templates.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
 
-class FilterNode(VMH.Lockable, XContainerElementWrapper):
+class FilterNode(XNamedContainerElementWrapped):
 
     DefaultMaskName = "Mask"
     
     def DefaultImageName(self, extension):
         '''Default name for an image in this filters imageset'''
         InputChannelNode = self.FindParent('Channel')
-        SectionNode = InputChannelNode.FindParent('Section')
-        return BuildFilterImageName(SectionNode.Number, InputChannelNode.Name, self.Name, extension)
+        section_node = InputChannelNode.FindParent('Section')
+        return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
 
     @property
     def MaxIntensityCutoff(self):
@@ -1641,7 +1643,7 @@ class NotesNode(XResourceElementWrapper):
         return False
 
 
-class SectionNode(XContainerElementWrapper):
+class SectionNode(XNamedContainerElementWrapped):
 
     @classmethod
     def ClassSortKey(cls, self):
@@ -1695,7 +1697,7 @@ class SectionNode(XContainerElementWrapper):
         self.Number = Number
 
 
-class StosGroupNode(XContainerElementWrapper):
+class StosGroupNode(XNamedContainerElementWrapped):
 
     @property
     def Downsample(self):
@@ -2253,13 +2255,11 @@ class MosaicBaseNode(XFileElementWrapper):
         self.attrib['Type'] = Value
 
 
-class TransformNode(VMH.InputTransformHandler, VMH.Lockable, MosaicBaseNode):
+class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
 
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
-        
-    
-
+         
     @property
     def CropBox(self):
         '''Returns boundaries of transform output if available, otherwise none
@@ -2296,22 +2296,16 @@ class TransformNode(VMH.InputTransformHandler, VMH.Lockable, MosaicBaseNode):
         else:
             raise Exception("Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
-
-
     def IsValid(self):
         valid = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
             return super(TransformNode, self).IsValid()
-
-
-
-
+        
 
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
 
-    def __init__(self, Name, Type, Path, attrib=None, **extra):
-        super(ImageSetBaseNode, self).__init__(tag='ImageSet', Name=Name, Path=Path, attrib=attrib, **extra)
-        self.attrib['Name'] = Name
+    def __init__(self, Type, Path, attrib=None, **extra):
+        super(ImageSetBaseNode, self).__init__(tag='ImageSet', path=Path, attrib=attrib, **extra)
         self.attrib['Type'] = Type
         self.attrib['Path'] = Path
         
@@ -2449,8 +2443,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
 
 class ImageSetNode(ImageSetBaseNode):
-
-    DefaultName = 'Images'
+ 
     DefaultPath = 'Images'
 
     def __init__(self, Type=None, attrib=None, **extra):
@@ -2461,7 +2454,7 @@ class ImageSetNode(ImageSetBaseNode):
         # if Path is None:
         #    Path = ImageSetNode.Name + Type
 
-        super(ImageSetNode, self).__init__(Name=ImageSetNode.DefaultName, Type=Type, Path=ImageSetNode.DefaultPath, attrib=attrib, **extra)
+        super(ImageSetNode, self).__init__(Type=Type, Path=ImageSetNode.DefaultPath, attrib=attrib, **extra)
 
 
 class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
@@ -2566,7 +2559,7 @@ class SectionMappingsNode(XElementWrapper):
 
 
     def CleanIfInvalid(self):
-        self.CleanTransformsIfInvalid(self)
+        self.CleanTransformsIfInvalid()
         XElementWrapper.CleanIfInvalid(self)
 
 
@@ -2635,9 +2628,8 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if ImageFormatExt is None:
             ImageFormatExt = '.png'
 
-        super(TilePyramidNode, self).__init__(tag='TilePyramid',
-                                               Name=TilePyramidNode.DefaultName,
-                                               Path=TilePyramidNode.DefaultPath,
+        super(TilePyramidNode, self).__init__(tag='TilePyramid', 
+                                               path=TilePyramidNode.DefaultPath,
                                                attrib=attrib, **extra)
 
         self.attrib['NumberOfTiles'] = str(NumberOfTiles)
@@ -2650,8 +2642,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
             node.Save()
 
 class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
-
-    DefaultName = 'Tileset'
+ 
     DefaultPath = 'Tileset'
 
     @property
@@ -2687,9 +2678,8 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         self.attrib['TileYDim'] = '%d' % int(val)
 
     def __init__(self, attrib=None, **extra):
-        super(TilesetNode, self).__init__(tag='Tileset', Name=TilesetNode.DefaultName, attrib=attrib, **extra)
-
-        self.Name = TilesetNode.DefaultName
+        super(TilesetNode, self).__init__(tag='Tileset', path=TilesetNode.DefaultPath, attrib=attrib, **extra)
+ 
         if(not 'Path' in self.attrib):
             self.attrib['Path'] = TilesetNode.DefaultPath
 
@@ -2788,8 +2778,6 @@ class LevelNode(XContainerElementWrapper):
                 if(os.path.exists(MatchString)):
                     return [True, "Last column found"]
 
-
-
             return [False, "Last column of tileset not found"]
 
         return super(LevelNode, self).IsValid()
@@ -2800,17 +2788,15 @@ class LevelNode(XContainerElementWrapper):
         if(attrib is None):
             attrib = {}
 
-        attrib['Path'] = LevelNode.PredictPath(Level)
-
         if isinstance(Level, str):
             attrib['Downsample'] = Level
         else:
             attrib['Downsample'] = '%g' % Level
 
-        super(XContainerElementWrapper, self).__init__(tag='Level', attrib=attrib, **extra)
+        super(LevelNode, self).__init__(tag='Level', path=LevelNode.PredictPath(Level), attrib=attrib, **extra)
 
 
-class HistogramBase(XElementWrapper):
+class HistogramBase(VMH.InputTransformHandler, XElementWrapper):
 
     @property
     def DataNode(self):
@@ -2852,7 +2838,7 @@ class HistogramBase(XElementWrapper):
         '''Check for the transform node and ensure the checksums match'''
         # TransformNode = self.Parent.find('Transform')
 
-        return True
+        return super(HistogramBase, self).IsValid()
 
     def __init__(self, tag, attrib, **extra):
         super(HistogramBase, self).__init__(tag=tag, attrib=attrib, **extra)
@@ -2925,8 +2911,7 @@ class HistogramNode(HistogramBase):
 
     def __init__(self, InputTransformNode, Type, attrib, **extra):
         super(HistogramNode, self).__init__(tag='Histogram', attrib=attrib, **extra)
-        self.attrib['InputTransformType'] = InputTransformNode.Type
-        self.attrib['InputTransformChecksum'] = InputTransformNode.Checksum
+        self.SetTransform(InputTransformNode)
         self.attrib['Type'] = Type
 
     def GetAutoLevelHint(self):
@@ -2937,7 +2922,7 @@ class HistogramNode(HistogramBase):
             return self.GetAutoLevelHint()
         else:
             # Create a new AutoLevelData node using the calculated values as overrides so users can find and edit it later
-            [added, AutoLevelDataNode] = self.UpdateOrAddChild(AutoLevelHintNode())
+            self.UpdateOrAddChild(AutoLevelHintNode())
             return self.GetAutoLevelHint()
 
 class PruneNode(HistogramBase):

@@ -5,7 +5,6 @@ Created on Oct 11, 2012
 '''
 
 import re
-import math
 
 import VolumeManagerETree as VolumeManager
 from operator import attrgetter
@@ -81,6 +80,10 @@ class Lockable(object):
         
 
 class InputTransformHandler(object):
+    
+    @property
+    def HasInputTransform(self):
+        return not self.InputTransformChecksum is None
 
     def SetTransform(self, transform_node):
         if transform_node is None:
@@ -208,7 +211,30 @@ class InputTransformHandler(object):
                 return [False, 'Input Transform checksum mismatch']
 
         return True
-
+    
+    @classmethod
+    def EnumerateTransformDependents(cls, parent_node, checksum, type, recursive):
+        '''Return a list of all sibling transforms (Same parent element) which have our checksum and type as an input transform checksum and type'''
+        
+        #WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
+        for t in parent_node.findall('*'):
+            if recursive:
+                for c in cls.EnumerateTransformDependents(t, checksum, type, recursive):
+                    yield c
+            
+            if not 'InputTransformChecksum' in t.attrib:
+                continue 
+            
+            if not t.InputTransformChecksum == checksum:
+                continue 
+            
+            if 'InputTransformType' in t.attrib:
+                if not t.InputTransformType == type:
+                    continue
+                
+            yield t
+            
+        return
 
 class PyramidLevelHandler(object):
 

@@ -317,8 +317,6 @@ class PlatformTest(test.testbase.TestBase):
         self.assertIsNotNone(PruneNode, "No prune node produced")
         
         #Delete one prune data file, and make sure the associated .mosaic regenerates
-        
-
         return volumeNode
 
 
@@ -897,19 +895,6 @@ class CopySetupTestBase(PlatformTest):
 
         shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
 
-
-# nornir-build -volume %1 -pipeline CreateBlobFilter -Channels AssembledTEM -InputFilter Leveled -Levels 16,32 -OutputFilter Blob
-# nornir-build -volume %1 -pipeline AlignSections -NumAdjacentSections 1 -Filters Blob -StosUseMasks True -Downsample 32 -Channels AssembledTEM
-# nornir-build -volume %1 -pipeline RefineSectionAlignment -InputGroup StosBrute -InputDownsample 32 -OutputGroup Grid -OutputDownsample 32 -Filter Leveled -StosUseMasks True
-# nornir-build -volume %1 -pipeline RefineSectionAlignment -InputGroup Grid -InputDownsample 32 -OutputGroup Grid -OutputDownsample 16 -Filter Leveled -StosUseMasks True
-# nornir-build -volume %1 -pipeline ScaleVolumeTransforms -InputGroup Grid -InputDownsample 16 -OutputDownsample 1
-# nornir-build -volume %1 -pipeline SliceToVolume -InputDownsample 1 -InputGroup Grid -OutputGroup SliceToVolume
-#
-# nornir-build -volume %1 -pipeline MosaicToVolume -InputTransform Grid -OutputTransform ChannelToVolume -Channels TEM
-#
-# nornir-build -volume %1 -pipeline Assemble -Channels TEM -Filters Leveled -AssembleDownsample 8,16,32 -NoInterlace -Transform ChannelToVolume
-
-
 class ImportOnlySetup(PlatformTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
 
@@ -957,7 +942,7 @@ class PrepareThroughAssembleSetup(PlatformTest):
 
     def setUp(self):
 
-        super(PrepareAndMosaicSetup, self).setUp()
+        super(PrepareThroughAssembleSetup, self).setUp()
         # Import the files
 
         self.RunImportThroughMosaicAssemble()

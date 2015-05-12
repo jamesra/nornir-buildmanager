@@ -189,7 +189,7 @@ class SerialEMIDocImport(object):
         SectionNumber = 0
         (ParentDir, sectionDir) = cls.GetDirectories(idocFileFullPath)
           
-        BlockObj = XContainerElementWrapper('Block', 'TEM')
+        BlockObj = BlockNode('TEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
          
         # If the parent directory doesn't have the section number in the name, change it
@@ -988,7 +988,7 @@ class SerialEMLog(object):
     @property
     def MinTileDrift(self):
         '''Largest drift for a tile in seconds'''
-        mindrift = self.MaxDrift + 1
+        mindrift = self.MaxTileDrift + 1
         for t in self.tileData.values():
             if not (t.dwellTime is None or t.drift is None):
                 mindrift = min(mindrift, t.driftStamps[-1][1])
@@ -1058,7 +1058,7 @@ class SerialEMLog(object):
                 pickle.dump(self, filehandle, protocol=0)
         except:
             try:
-                os.path.remove(picklePath)
+                os.remove(picklePath)
             except:
                 pass
 
@@ -1299,7 +1299,7 @@ def PlotDriftGrid(DataSource, OutputImageFile):
 #    print "Fastest Capture: %g" % fastestTime
 #
 
-   # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
+    #PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
 
     x = []
     y = []

@@ -79,9 +79,13 @@ class PruneObj:
             return None
 
         OutputTransformNode = TransformParent.GetChildByAttrib('Transform', 'Name', OutputTransformName)
-        OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
-        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
-        OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
+        if not OutputTransformNode is None:
+            if not OutputTransformNode.Locked:
+                if OutputTransformNode.RemoveIfTransformMismatched(InputTransformNode):
+                    OutputTransformNode = None
+                    
+                OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
+                OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:
@@ -91,10 +95,9 @@ class PruneObj:
             # The meta-data and output exist, do nothing
             return None
 
-        OutputTransformNode.InputTransform = InputTransformNode.Name
+        OutputTransformNode.SetTransform(InputTransformNode)
         OutputTransformNode.InputPruneDataType = PruneNode.Type
         OutputTransformNode.attrib['InputPruneDataChecksum'] = PruneDataNode.Checksum 
-        OutputTransformNode.InputTransformChecksum = InputTransformNode.Checksum
         if not Threshold is None:
             OutputTransformNode.Threshold = '%g' % Threshold
 

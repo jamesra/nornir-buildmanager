@@ -151,7 +151,7 @@ class PMGImport(object):
         # Calculate our output directory.  The scripts expect directories to have section numbers, so use that.
         ChannelName = PMG.Probe
         ChannelName = ChannelName.replace(' ', '_')
-        channelObj = XContainerElementWrapper('Channel', ChannelName)
+        channelObj = ChannelNode(ChannelName)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
     
         channelObj.Initials = PMG.Initials
@@ -197,9 +197,7 @@ class PMGImport(object):
         if(TargetBpp is None):
             FilterName = 'Raw'
     
-        filterObj = XContainerElementWrapper('Filter', FilterName)
-        [addedFilter, filterObj] = channelObj.UpdateOrAddChildByAttrib(filterObj, "Name")
-    
+        filterObj = channelObj.GetOrCreateFilter(FilterName)
         filterObj.BitsPerPixel = TargetBpp
     
         SupertileName = 'Stage'

@@ -44,18 +44,16 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
     MangledName = misc.GenNameFromDict(Parameters)
 
     # Check if there is an existing prune map, and if it exists if it is out of date
-    TransformParentNode = TransformNode.Parent
+    TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = False
 
     OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
-    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
+    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, InputTransformNode, Logger)
 
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputTransform' : InputTransformNode.Name,
-                                                                                                               'InputImageDir' : LevelNode.FullPath,
-                                                                                                               'InputTransformChecksum' : InputTransformNode.Checksum})
-
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
 
     if not os.path.exists(OutputTransformNode.FullPath):
@@ -126,10 +124,8 @@ def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, Registrati
     OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
 
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputTransform' : InputTransformNode.Name,
-                                                                                                               'InputImageDir' : LevelNode.FullPath,
-                                                                                                               'InputTransformChecksum' : InputTransformNode.Checksum})
-
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode.SetTransform(TransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
 
     if not os.path.exists(OutputTransformNode.FullPath):
@@ -181,12 +177,14 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     MeshWidth = Parameters.get('MeshWidth', 6)
     MeshHeight = Parameters.get('MeshHeight', 6)
     Threshold = Parameters.get('Threshold', None)
+    
+    InputTransformNode = TransformNode
 
     LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
     Parameters['sp'] = int(RegistrationDownsample)
 
-    OutputTransformName = kwargs.get('OutputTransform', 'Refined_' + TransformNode.Name)
+    OutputTransformName = kwargs.get('OutputTransform', 'Refined_' + InputTransformNode.Name)
 
     MangledName = misc.GenNameFromDict(Parameters)
 
@@ -205,23 +203,21 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     SpacingString = ' -sp ' + str(PixelSpacing) + ' '
 
     # Check if there is an existing prune map, and if it exists if it is out of date
-    TransformParentNode = TransformNode.Parent
+    TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = False
 
     OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
-    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
+    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, InputTransformNode, Logger)
 
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputTransform' : TransformNode.Name,
-                                                                                                                   'InputImageDir' : LevelNode.FullPath,
-                                                                                                                   'InputTransformChecksum' : TransformNode.Checksum})
-
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
 
     if not os.path.exists(OutputTransformNode.FullPath):
         CmdLineTemplate = "ir-refine-grid -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s " + ThresholdString + ItString + CellString + MeshString + SpacingString
-        cmd = CmdLineTemplate % {'InputMosaic' : TransformNode.FullPath, 'OutputMosaic' : OutputTransformNode.FullPath, 'ImageDir' : LevelNode.FullPath}
+        cmd = CmdLineTemplate % {'InputMosaic' : InputTransformNode.FullPath, 'OutputMosaic' : OutputTransformNode.FullPath, 'ImageDir' : LevelNode.FullPath}
         prettyoutput.CurseString('Cmd', cmd)
         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
         ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
