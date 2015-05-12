@@ -110,6 +110,10 @@ def MigrateChannel_1p2_to_1p3(channel_node, **kwargs):
 def MigrateTransforms_1p2_to_1p3(transform_node, **kwargs):
     '''Update the checksums to use the new algorithm.  Then rename grid transforms to use the sorted type name'''
     
+    if not os.path.exists(transform_node.FullPath):
+        transform_node.Clean()
+        return transform_node.Parent
+    
     original_checksum = transform_node.Checksum
     original_type = transform_node.Type
     
