@@ -856,7 +856,11 @@ class XElementWrapper(ElementTree.Element):
 #             if NotValid:
 #                 continue
             if '_Link' in m.tag:
-                m = self._replace_link(m)
+                m_replaced = self._replace_link(m)
+                if m_replaced is None:
+                    continue
+                else: 
+                    m = m_replaced
                 
             if len(RemainingXPath) > 0:
                 subContainerMatches = m.findall(RemainingXPath)
@@ -947,7 +951,7 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
             Logger = logging.getLogger(__name__ + '.' + 'Clean')
             Logger.warning('Could not delete resource with locked flag set: %s' % self.FullPath)
             if not reason is None:
-                Logger.warning('\nReason for attempt: %s' % reason)
+                Logger.warning('Reason for attempt: %s' % reason)
             return
             
         '''Remove the contents referred to by this node from the disk'''
@@ -2721,6 +2725,7 @@ class LevelNode(XContainerElementWrapper):
     @Downsample.setter
     def Downsample(self, Value):
         self.attrib['Downsample'] = '%g' % Value
+                
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
@@ -2737,6 +2742,8 @@ class LevelNode(XContainerElementWrapper):
 
             if(len(files) == 0):
                 return [False, "No files in level"]
+            
+            
 
             FileNumberMatch = len(files) <= PyramidNode.NumberOfTiles
 

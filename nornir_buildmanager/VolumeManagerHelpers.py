@@ -217,6 +217,9 @@ class InputTransformHandler(object):
         '''Return a list of all sibling transforms (Same parent element) which have our checksum and type as an input transform checksum and type'''
         
         #WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
+        if parent_node is None:
+            return 
+        
         for t in parent_node.findall('*'):
             if recursive:
                 for c in cls.EnumerateTransformDependents(t, checksum, type, recursive):
