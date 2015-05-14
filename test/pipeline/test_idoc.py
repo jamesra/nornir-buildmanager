@@ -40,34 +40,6 @@ class IDocTest(setup_pipeline.PlatformTest):
     def Grid32ManualStosFullPath(self):
         return os.path.join(self.PlatformFullPath, "IDocBuildTest_Grid32Manual")
 
-#    def setUp(self):
-#
-#        '''Imports a PMG volume and stops, tests call pipeline functions'''
-#        TestBaseDir = os.getcwd()
-#        if 'TESTDIR' in os.environ:
-#            TestBaseDir = os.environ["TESTDIR"]
-#
-#        self.PlatformFullPath = os.path.join(os.getcwd(), "test/data/PlatformRaw/IDoc")
-#        self.VolumeFullPath = os.path.join(TestBaseDir, "TestOutput", self.classname)
-#
-#        self.assertTrue(os.path.exists(self.PlatformFullPath), "Test input does not exist")
-#
-#        self.idocDirs = nornir_shared.Files.RecurseSubdirectories(self.PlatformFullPath, "*.idoc")
-#        self.assertTrue(len(self.idocDirs) > 0, "No test input found")
-#
-#        #Remove output of earlier tests
-#        if os.path.exists(self.VolumeFullPath):
-#            shutil.rmtree(self.VolumeFullPath)
-#
-#        nornir_shared.Misc.SetupLogging(os.path.join(TestBaseDir, 'Logs', self.classname))
-#        self.Logger = logging.getLogger(self.classname)
-
-#    def tearDown(self):
-#
-#        if os.path.exists(self.VolumeFullPath):
-#            shutil.rmtree(self.VolumeFullPath)
-#
-
 
 class StosRebuildHelper(object):
     

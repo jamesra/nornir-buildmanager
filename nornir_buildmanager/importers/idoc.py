@@ -561,7 +561,9 @@ class NornirTileset():
         ''' 
         :param tiles IDocTileData: List of tiles to build dictionaries from
         '''
-        ImageNumber = 0
+        
+        #SerialEM begins numbering file names from zero.  So we will too. 
+        ImageNumber = -1
         
         obj = NornirTileset(OutputImageExt)
         
