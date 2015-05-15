@@ -6,9 +6,7 @@ Created on Jun 22, 2012
 
 
 import copy
-import itertools
 import logging
-import os
 import random
 import shutil
 import subprocess
@@ -17,11 +15,10 @@ import math
 from nornir_buildmanager import VolumeManagerETree, VolumeManagerHelpers
 from nornir_buildmanager.metadatautils import *
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration import assemble, mosaic, volume
-from nornir_imageregistration.files import stosfile, mosaicfile
+from nornir_imageregistration import assemble, mosaic
+from nornir_imageregistration.files import stosfile
 from nornir_imageregistration.transforms import *
 import nornir_imageregistration.stos_brute as stos_brute
-from nornir_imageregistration.alignment_record import AlignmentRecord
 import nornir_pools as pools
 from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
@@ -455,7 +452,7 @@ def GetOrCreateRegistrationImageNodes(filter_node, Downsample, GetMask, Logger=N
         return (None,None)
     
     if not os.path.exists(image_node.FullPath):
-        Logger.error("Image image file missing %" % image_node.FullPath)
+        Logger.error("Image image file missing %s" % image_node.FullPath)
         return (None,None)
     
     mask_image_node = None
@@ -1693,7 +1690,7 @@ def __ControlFilterForTransform(transform_node):
                                 transform_node.ControlChannelName,
                                 transform_node.ControlFilterName)
 
-def __GetFilter(transform_node, section, channel, filter):
+def __GetFilter(transform_node, section, channel, filter_name):
     BlockNode = transform_node.FindParent(ParentTag='Block')
     if BlockNode is None:
         return None
@@ -1704,10 +1701,10 @@ def __GetFilter(transform_node, section, channel, filter):
     if channelNode is None:
         return None
     
-    filterNode = channelNode.GetFilter(filter)
+    filterNode = channelNode.GetFilter(filter_name)
     return filterNode
 
-def __GetFilterAndMaskFilter(transform_node, section, channel, filter):
+def __GetFilterAndMaskFilter(transform_node, section, channel, filter_name):
     BlockNode = transform_node.FindParent(ParentTag='Block')
     if BlockNode is None:
         return None
@@ -1720,7 +1717,7 @@ def __GetFilterAndMaskFilter(transform_node, section, channel, filter):
     if channelNode is None:
         return (None, None)
     
-    filterNode = channelNode.GetFilter(filter)
+    filterNode = channelNode.GetFilter(filter_name)
     if filterNode is None:
         return (None, None)
     

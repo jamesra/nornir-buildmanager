@@ -117,7 +117,7 @@ class PMGImport(object):
         
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:
-            OutputPath = os.path.join(InputPath, "..")
+            OutputPath = os.path.join(PMGFullPath, "..")
     
         # If the user did not supply a value, use a default
         if(TileOverlap is None):
@@ -139,7 +139,7 @@ class PMGImport(object):
         PMGDir = os.path.dirname(PMGFullPath)
     
         if(PMG is None):
-            raise Exception("Could not parse section from PMG filename: " + filename)
+            raise Exception("Could not parse section from PMG filename: %s" + PMGFullPath)
     
         if PMG.Section is None:
             PMG.Section = PMG.Spot

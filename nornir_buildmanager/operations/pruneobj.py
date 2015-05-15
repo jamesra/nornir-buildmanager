@@ -292,7 +292,7 @@ class PruneObj:
     def CreateHistogram(self, HistogramXMLFile, MapImageToScoreFile=None):
         if(len(self.MapImageToScore.items()) == 0 and MapImageToScoreFile is not None):
    #         prettyoutput.Log( "Reading scores, MapImageToScore Empty " + MapImageToScoreFile)
-            PruneObj.ReadPruneMap(self, MapImageToScoreFile)
+            PruneObj.ReadPruneMap(MapImageToScoreFile)
    #         prettyoutput.Log( "Read scores complete: " + str(self.MapImageToScore))
  
         if(len(self.MapImageToScore.items()) == 0):
