@@ -615,6 +615,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     if(OutputFilterNode is not None):
         #Check that the existing filter is valid
         if(OutputFilterNode.Locked):
+            prettyoutput.Log("Skipping contrast on locked filter %s" % OutputFilterNode.FullPath)
             return
         
         yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
