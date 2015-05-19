@@ -366,7 +366,7 @@ def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
 def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
     OutputTilesetNode = ETree.SubElement(OutputSectionNode, 'Tileset', {
                                                          'path' : InputTilesetNode.Path,
-                                                         'name' : InputTilesetNode.Name,
+                                                         'name' : FilterNode.Name,
                                                          'TileXDim' : str(InputTilesetNode.TileXDim),
                                                          'TileYDim' : str(InputTilesetNode.TileYDim),
                                                          'FilePrefix' : InputTilesetNode.FilePrefix,
