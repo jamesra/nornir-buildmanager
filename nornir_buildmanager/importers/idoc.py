@@ -49,6 +49,7 @@ import nornir_shared.plot as plot
 import logging
 import collections
 import nornir_pools
+import numpy
 
 
 
@@ -301,6 +302,8 @@ class SerialEMIDocImport(object):
         
         histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
         (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, Tileset, histogramFullPath)
+        ActualMosaicMax = numpy.around(ActualMosaicMax)
+        ActualMosaicMin = numpy.around(ActualMosaicMin)
         _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
         
         ImageConversionRequired = False
