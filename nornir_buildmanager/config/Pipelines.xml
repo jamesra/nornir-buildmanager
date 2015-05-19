@@ -122,9 +122,23 @@
 		</Iterate>
 	</Pipeline>
 	
+	<Pipeline Name="FixTilePyramidNumbering" Description="Migrate mosaic transforms to zero origins">
+		<Iterate VariableName="TilePyramidNode" XPath="Block/Section/Channel/Filter/TilePyramid">
+			<PythonCall Function="migration.MoveTilesToStartAtZero" tile_pyramid_node="#TilePyramidNode">
+			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="FixTransformNumbering" Description="Migrate mosaic transforms tile numbering to zero">
+		<Iterate VariableName="TransformNode" XPath="Block/Section/Channel/Transform">
+			<PythonCall Function="migration.RenumberTransformTilesToStartAtZero" transform_node="#TransformNode">
+			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	
 	<Pipeline Name="MigrateTo1.3" Description="Migrate mosaic transforms to zero origins">
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<PythonCall Function="setters.MigrateChannel_1p2_to_1p3" channel_node="#ChannelNode">
+			<PythonCall Function="migration.MigrateChannel_1p2_to_1p3" channel_node="#ChannelNode">
 			</PythonCall>
 		</Iterate>
 	</Pipeline>

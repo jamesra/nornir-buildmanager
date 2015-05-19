@@ -94,8 +94,12 @@ def _MapTransformToCurrentType(transform_node, name, old_type, new_type):
     new_path = transform_node.Name + new_type + ext
     
     if os.path.exists(transform_node.FullPath):
-        os.rename(transform_node.FullPath, os.path.join(transform_node.Parent.FullPath, new_path))
-        transform_node.Path = new_path
+        output_transform_path = os.path.join(transform_node.Parent.FullPath, new_path)
+        if os.path.exists(output_transform_path):
+            os.remove(transform_node.FullPath)
+        else:
+            os.rename(transform_node.FullPath, os.path.join(transform_node.Parent.FullPath, new_path))
+            transform_node.Path = new_path
             
     return True
 
