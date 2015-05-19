@@ -166,6 +166,7 @@ def Execute(buildArgs=None):
     if args.lowpriority:
         
         lowpriority()
+        print("Warning, using low priority flag.  This can make builds much slower")
         
     # SetupLogging(args.volumepath)
     
