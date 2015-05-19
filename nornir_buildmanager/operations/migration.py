@@ -24,6 +24,15 @@ def GetTileFormatString(tilefilename):
     file_format = '%' + '0%dd%s' % (min_digits, extension)
     return file_format
 
+def GetListOfTileNumbers(tile_filenames):
+    tile_number_list = []
+    for tile_filename in tile_filenames:
+        tile_number = GetTileNumber(tile_filename)
+        tile_number_list.append(tile_number)
+        
+    tile_number_list.sort()
+    return tile_number_list
+
 #-------------------------------------
 #Begin Fix transform numbering section
 
@@ -45,12 +54,14 @@ def RenumberTransformTilesToStartAtZero(transform_node, **kwargs):
     
     tile_format = GetTileFormatString(sorted_keys[0])
     
-    for key in sorted_keys:
-        tile_number = GetTileNumber(key)
+    tile_number_list = GetListOfTileNumbers(sorted_keys)
+    
+    for tile_number in tile_number_list: 
+        original_key = tile_format % (tile_number)
         new_tile_name = tile_format % (tile_number - 1)
         
-        transform = mFile.ImageToTransformString[key]
-        del mFile.ImageToTransformString[key]
+        transform = mFile.ImageToTransformString[original_key]
+        del mFile.ImageToTransformString[original_key]
         if new_tile_name in mFile.ImageToTransformString:
             print("Tile %s already exists in mosaic %s" % (new_tile_name, transform_node.FullPath) )
             
@@ -81,13 +92,8 @@ def FixFileNumbering(files_list):
     dirname = os.path.dirname(sorted_files[0])
     file_format = GetTileFormatString(sorted_files[0])
     
-    tile_number_list = []
-    for tile_filename in sorted_files:
-        tile_number = GetTileNumber(tile_filename)
-        tile_number_list.append(tile_number)
-        
-    tile_number_list.sort()
-        
+    
+    tile_number_list = GetListOfTileNumbers(sorted_files)
     
     #OK, we need to decrement every tile number by one.
     First = True
