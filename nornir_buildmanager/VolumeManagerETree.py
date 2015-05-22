@@ -2742,8 +2742,6 @@ class LevelNode(XContainerElementWrapper):
 
             if(len(files) == 0):
                 return [False, "No files in level"]
-            
-            
 
             FileNumberMatch = len(files) <= PyramidNode.NumberOfTiles
 

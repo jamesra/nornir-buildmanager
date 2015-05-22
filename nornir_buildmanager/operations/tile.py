@@ -122,8 +122,8 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     ''' 
     ChannelNode = InputFilterNode.Parent
     InputPyramidNode = InputFilterNode.find('TilePyramid')
-    InputLevelNode = InputPyramidNode.GetChildByAttrib('Level', 'Downsample', Downsample)
-    OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
+    InputLevelNode = InputPyramidNode.GetLevel(Downsample)
+    OutputFilterNode = ChannelNode.GetFilter(OutputFilterName)
     if OutputFilterNode is None:
         return False
 
@@ -135,7 +135,7 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     if OutputPyramidNode.NumberOfTiles < mFile.NumberOfImages:
         return False
 
-    OutputLevelNode = OutputFilterNode.find("TilePyramid/Level[@Downsample='%g']" % Downsample)
+    OutputLevelNode = OutputFilterNode.TilePyramid.GetLevel(Downsample)
     if OutputLevelNode is None:
         return False
 
@@ -607,15 +607,15 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=InputFilter.BitsPerPixel)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
-    UpdatedHistogramElement = None
-     
     OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
     EntireTilePyramidNeedsBuilding = OutputFilterNode is None
     
     if(OutputFilterNode is not None):
+        
+        FilterPopulated = FilterIsPopulated(InputFilter, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName)
         #Check that the existing filter is valid
-        if(OutputFilterNode.Locked):
-            prettyoutput.Log("Skipping contrast on locked filter %s" % OutputFilterNode.FullPath)
+        if OutputFilterNode.Locked and FilterPopulated:
+            prettyoutput.Log("Skipping contrast on existing locked filter %s" % OutputFilterNode.FullPath)
             return
         
         yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
@@ -624,9 +624,8 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
             EntireTilePyramidNeedsBuilding = True 
             OutputFilterNode.SetContrastValues(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
             yield OutputFilterNode.Parent
-        
-        if FilterIsPopulated(InputFilter, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
-            #Nothing to do, filter is populated
+        elif FilterPopulated:
+            #Nothing to do, contrast matches and the filter is populated
             return 
     else:
         yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
