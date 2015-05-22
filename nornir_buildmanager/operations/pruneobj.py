@@ -15,6 +15,7 @@ import nornir_shared.prettyoutput as prettyoutput
 import nornir_pools as pools
 
 
+
 class PruneObj:
     """Executes ir-prune and produces a histogram"""
 
@@ -77,15 +78,15 @@ class PruneObj:
         if(PruneDataNode is None):
             Logger.warning("Did not find expected prune data node")
             return None
-
-        OutputTransformNode = TransformParent.GetChildByAttrib('Transform', 'Name', OutputTransformName)
+ 
+        OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParent, InputTransformNode=InputTransformNode, OutputTransformPath=OutputMosaicName)
         if not OutputTransformNode is None:
-            if not OutputTransformNode.Locked:
-                if OutputTransformNode.RemoveIfTransformMismatched(InputTransformNode):
-                    OutputTransformNode = None
-                    
-                OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
-                OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
+            if OutputTransformNode.Locked:
+                Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+                return None
+            
+            OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
+            OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:

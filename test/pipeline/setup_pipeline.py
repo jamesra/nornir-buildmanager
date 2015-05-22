@@ -244,13 +244,14 @@ class PlatformTest(test.testbase.TestBase):
         InputTransform = transformNode.Parent.GetChildByAttrib('Transform', 'Name', transformNode.InputTransform)
         self.assertIsNotNone(InputTransform)
 
-        self.assertFalse(transforms.IsOutdated(transformNode, InputTransform))
+        
+        self.assertTrue(transformNode.IsInputTransformMatched(InputTransform))
 
         # Check that our reported checksum and actual file checksums match
         self.ValidateTransformChecksum(InputTransform)
 
         # Check that
-        self.assertFalse(transforms.IsOutdated(self.PruneTransform, self.StageTransform))
+        self.assertTrue(self.PruneTransform.IsInputTransformMatched(self.StageTransform))
 
     def EnsureTilePyramidIsFull(self, FilterNode, NumExpectedTiles):
 

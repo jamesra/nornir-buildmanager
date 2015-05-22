@@ -76,47 +76,20 @@ def RemoveOnMismatch(OutputNode, OutputAttribute, TargetValue, Precision=None, N
     return None
 
 
-def IsOutdated(OutputNode, InputNode, Logger=None):
-    '''Works for any nodes with corresponding Checksum and InputTranformChecksum attributes and 
-       a FullPath attribute to the file system.'''
-    assert(hasattr(OutputNode, 'FullPath'))
-    assert(hasattr(OutputNode, 'InputTransformChecksum'))
-    assert(hasattr(InputNode, 'Checksum'))
- 
-    if not os.path.exists(OutputNode.FullPath):
-        if Logger is None:
-            Logger = logging.getLogger(__name__ + ".IsOutdated")
-            
-        Logger.info("Output transform did not exist: " + OutputNode.FullPath)
-        OutputNode.Clean()
-        return True
-
-    if not OutputNode.InputTransformChecksum == InputNode.Checksum:
-        if Logger is None:
-            Logger = logging.getLogger(__name__ + ".IsOutdated")
-            
-        Logger.info("Checksum mismatch: " + InputNode.FullPath + " -> " + OutputNode.FullPath)
-        return True
-
-    return False
-
-
-def RemoveIfOutdated(OutputNode, InputNode, Logger=None):
-    '''Removes the output transform node if the input node has changed.
-       Returns None if the node did not exist or was removed, otherwise returns the output node'''
-
-    if OutputNode is None:
-        return None
-
-    remove = IsOutdated(OutputNode, InputNode , Logger)
-
-    if remove:
-        if os.path.exists(OutputNode.FullPath):
-            os.remove(OutputNode.FullPath)
-        OutputNode.Clean(reason="Pipeline.validation.transforms.IsOutdated returned true")
-        return None
-
-    return OutputNode
+def LoadOrCleanExistingTransformForInputTransform(channel_node, InputTransformNode, OutputTransformPath):
+    '''Return the existing transform node if it exists and if the input transform matches the passed input transform node.  If the transform is locked always return the existing transform node'''
+    
+    OutputTransformNode = channel_node.GetChildByAttrib('Transform', 'Path', OutputTransformPath)
+    if not OutputTransformNode is None:
+        if not os.path.exists(OutputTransformNode.FullPath):
+            OutputTransformNode.Clean("Output transform file does not exist %s" % OutputTransformNode.FullPath)
+            OutputTransformNode = None
+        elif not OutputTransformNode.Locked:
+            if not OutputTransformNode.IsInputTransformMatched(InputTransformNode):
+                OutputTransformNode.Clean("New input transform %s was specified" % InputTransformNode.FullPath)
+                OutputTransformNode = None
+                
+    return OutputTransformNode
 
 if __name__ == '__main__':
     pass

@@ -364,6 +364,7 @@ class IDocSingleSectionImportTest(IDocTest):
         self.LoadMetaData()
         self.VerifyFilterValues(TargetMinIntensity, TargetMaxIntensity, TargetGamma)
         
+        
     def tearDown(self):
         IDocTest.tearDown(self)
         if os.path.exists(self.HistogramFullPath):

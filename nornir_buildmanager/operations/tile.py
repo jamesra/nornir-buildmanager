@@ -450,7 +450,8 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
     outputFileFullPath = os.path.join(os.path.dirname(TransformNode.FullPath), outputFilename)
 
     OutputTransformNode = TransformNode.Parent.GetChildByAttrib('Transform', 'Path', outputFilename)
-    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
+    if not OutputTransformNode.CleanIfInputTransformMismatched(TransformNode):
+        return None
 
     if os.path.exists(outputFileFullPath) and (not OutputTransformNode is None):
         return None
@@ -738,7 +739,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     ElementCleaned = False
 
     if not HistogramElementCreated:
-        HistogramElement.RemoveIfTransformMismatched(TransformNode)
+        HistogramElement.CleanIfInputTransformMismatched(TransformNode)
         if HistogramElement.CleanIfInvalid():
             HistogramElement = None
             ElementCleaned = True
@@ -908,7 +909,7 @@ def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name
     image_node = image_level_node.find('Image')
     #===========================================================================
     # if not image_node is None:
-    #     if image_node.RemoveIfTransformMismatched(transform_node):
+    #     if image_node.CleanIfInputTransformMismatched(transform_node):
     #         image_node = None
     #===========================================================================
             
@@ -999,9 +1000,9 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     OutputImageMaskNameTemplate = InputMaskFilterNode.DefaultImageName(image_ext)  
     
     if OutputFilterNode.HasImageset:
-        OutputFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
+        OutputFilterNode.Imageset.CleanIfInputTransformMismatched(TransformNode)
     if OutputMaskFilterNode.HasImageset:
-        OutputMaskFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
+        OutputMaskFilterNode.Imageset.CleanIfInputTransformMismatched(TransformNode)
 
     OutputFilterNode.Imageset.SetTransform(TransformNode)
     OutputMaskFilterNode.Imageset.SetTransform(TransformNode)

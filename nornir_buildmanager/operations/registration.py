@@ -47,15 +47,17 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
     TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = False
-
-    OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
-    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, InputTransformNode, Logger)
-
+    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
+    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
+    
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
-
+    elif OutputTransformNode.Locked:
+        Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+        return None
+            
     if not os.path.exists(OutputTransformNode.FullPath):
 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
@@ -121,12 +123,13 @@ def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, Registrati
     SaveRequired = False
 
     OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
-    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
-
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
-        OutputTransformNode.SetTransform(TransformNode)
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
+    elif OutputTransformNode.Locked:
+        Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+        return None
 
     if not os.path.exists(OutputTransformNode.FullPath):
 
@@ -207,13 +210,15 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
 
     SaveRequired = False
 
-    OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
-    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, InputTransformNode, Logger)
-
+    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
+    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
+    elif OutputTransformNode.Locked:
+        Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+        return None
 
     if not os.path.exists(OutputTransformNode.FullPath):
         CmdLineTemplate = "ir-refine-grid -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s " + ThresholdString + ItString + CellString + MeshString + SpacingString

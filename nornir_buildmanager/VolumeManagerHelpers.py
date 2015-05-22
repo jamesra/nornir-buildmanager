@@ -106,13 +106,13 @@ class InputTransformHandler(object):
                 self.InputTransformCropBox == transform_node.CropBox
       
     
-    def RemoveIfTransformMismatched(self, transform_node):
+    def CleanIfInputTransformMismatched(self, transform_node):
         '''Remove this element from its parent if the transform node does not match our input transform attributes
         :return: True if element removed from parent, otherwise false
         :rtype: bool
         '''
         if not self.IsInputTransformMatched(transform_node):
-            self.Clean() 
+            self.Clean("Input transform %s did not match" % transform_node.FullPath) 
             return True
         
         return False
@@ -207,8 +207,8 @@ class InputTransformHandler(object):
                 self.logger.warning('Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
                 return True
 
-            if not (InputTransformNode.Checksum == self.InputTransformChecksum):
-                return [False, 'Input Transform checksum mismatch']
+            if not self.IsInputTransformMatched(InputTransformNode):
+                return [False, 'Input Transform mismatch']
 
         return True
     

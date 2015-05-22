@@ -828,7 +828,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                     if created_overlay:
                         OverlayImageNode.SetTransform(StosTransformNode)
                     else:
-                        if not OverlayImageNode.RemoveIfTransformMismatched(StosTransformNode):
+                        if not OverlayImageNode.CleanIfInputTransformMismatched(StosTransformNode):
                             files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
                             files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
                             files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
@@ -836,12 +836,12 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                     if created_diff:
                         DiffImageNode.SetTransform(StosTransformNode)
                     else:
-                        DiffImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                        DiffImageNode.CleanIfInputTransformMismatched(StosTransformNode)
                         
                     if created_warped:
                         WarpedImageNode.SetTransform(StosTransformNode)
                     else:
-                        WarpedImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                        WarpedImageNode.CleanIfInputTransformMismatched(StosTransformNode)
 
                     # Compare the .stos file creation date to the output
                      

@@ -2301,6 +2301,8 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
             raise Exception("Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
     def IsValid(self):
+        '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
+           If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         valid = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
             return super(TransformNode, self).IsValid()
