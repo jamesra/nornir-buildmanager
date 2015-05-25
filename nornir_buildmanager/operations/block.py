@@ -164,25 +164,6 @@ def SectionNumberCompare(SectionNodeA, SectionNodeB):
     return cmp(int(SectionNodeA.get('Number', None)), int(SectionNodeB.get('Number', None)))
 
 
-def GetOrCreateNonStosSectionList(BlockNode, **kwargs):
-
-    StosExemptNode = VolumeManagerETree.XElementWrapper(tag='NonStosSectionNumbers')
-    (added, StosExemptNode) = BlockNode.UpdateOrAddChild(StosExemptNode)
-
-    # Fetch the list of the exempt nodes from the element text
-    ExemptString = StosExemptNode.text
-
-    if(ExemptString is None or len(ExemptString) == 0):
-        return []
-
-    # OK, parse the exempt string to a different list
-    NonStosSectionNumbers = [int(x) for x in ExemptString.split(',')]
-
-    return NonStosSectionNumbers
-
-
-
-
 def _GetCenterSection(Parameters, MappingNode=None):
     '''Returns the number of the center section from the Block Node if possible, otherwise it checks the parameters.  Returns None if unspecified'''
 
@@ -209,7 +190,7 @@ def _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSe
     SectionNodeList.sort(key=SectionNumberKey)
 
     # Fetch the list of known bad sections, if it exists
-    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
+    NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
 
     SectionNumberList = [SectionNumberKey(s) for s in SectionNodeList]
 
@@ -217,10 +198,7 @@ def _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSe
     for sectionNumber in SectionNumberList:
         if not sectionNumber in NonStosSectionNumbers:
             StosSectionNumbers.append(sectionNumber)
-
-    # Fetch the list of known bad sections, if it exists
-    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
-
+ 
     RT = registrationtree.RegistrationTree.CreateRegistrationTree(StosSectionNumbers, adjacentThreshold=NumAdjacentSections, center=CenterSectionNumber)
     RT.AddNonControlSections(NonStosSectionNumbers)
 
@@ -301,7 +279,7 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
     if OutputMappingNode.CenterSection is None:
         OutputMappingNode.CenterSection = DefaultRT.RootNodes.values()[0].SectionNumber
 
-    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
+    NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
     if OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbers):
         SaveOutputMapping = True
 

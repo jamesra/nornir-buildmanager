@@ -80,6 +80,17 @@ def SetFilterMaskName(FilterNode, MaskName, **kwargs):
 
     return FilterNode.Parent
 
+def PrintSectionsDamaged(block_node, **kwargs):
+    print(','.join(list(map(str,block_node.NonStosSectionNumbers))))
+    return None
+
+def MarkSectionsAsDamaged(block_node, SectionNumbers, **kwargs):
+    block_node.MarkSectionsAsDamaged(SectionNumbers)
+    return block_node.Parent
+    
+def MarkSectionsAsUndamaged(block_node, SectionNumbers, **kwargs):
+    block_node.MarkSectionsAsUndamaged(SectionNumbers)
+    return block_node.Parent
 
 if __name__ == '__main__':
     pass

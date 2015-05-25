@@ -1375,6 +1375,50 @@ class BlockNode(XNamedContainerElementWrapped):
             return True
         
         return False
+    
+    def MarkSectionsAsDamaged(self, section_number_list):
+        '''Add the sections in the list to the NonStosSectionNumbers'''
+        if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
+            section_number_list = frozenset(section_number_list)
+            
+        existing_set = frozenset(self.NonStosSectionNumbers)
+        self.NonStosSectionNumbers = section_number_list.union(existing_set)
+        
+    def MarkSectionsAsUndamaged(self,section_number_list):
+        if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
+            section_number_list = frozenset(section_number_list)
+            
+        existing_set = frozenset(self.NonStosSectionNumbers)
+        self.NonStosSectionNumbers = existing_set.difference(section_number_list)
+    
+    @property
+    def NonStosSectionNumbers(self):
+        '''A list of integers indicating which section numbers should not be control sections for slice to slice registration'''
+        StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
+        (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
+    
+        # Fetch the list of the exempt nodes from the element text
+        ExemptString = StosExemptNode.text
+    
+        if(ExemptString is None or len(ExemptString) == 0):
+            return []
+    
+        # OK, parse the exempt string to a different list
+        NonStosSectionNumbers = sorted(frozenset([int(x) for x in ExemptString.split(',')]))
+    
+        return NonStosSectionNumbers
+    
+    @NonStosSectionNumbers.setter
+    def NonStosSectionNumbers(self, value):
+        '''A list of integers indicating which section numbers should not be control sections for slice to slice registration'''
+        StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
+        (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
+        
+        if isinstance(value, str):
+            StosExemptNode.text = value
+        elif isinstance(value, list) or isinstance(value, set) or isinstance(value, frozenset):
+            StosExemptNode.text = ','.join(list(map(str,value)))
+       
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
