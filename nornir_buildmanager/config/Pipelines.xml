@@ -433,7 +433,7 @@
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Transform defining images into mosaic" required="False"/>
 			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma separated list of downsample levels for assembling output images" required="False"/>
-			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberList" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
+			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
 		</Arguments>
 
 		<Iterate VariableName="section_node" XPath="Block/Section">
