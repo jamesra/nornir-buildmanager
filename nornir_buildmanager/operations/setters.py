@@ -6,8 +6,6 @@ Created on Feb 25, 2014
 
 import logging
 import math
-import os
-from nornir_buildmanager import VolumeManagerHelpers
 
 def SetFilterLock(Node, Locked):
     ParentFilter = Node.FindParent('Filter')

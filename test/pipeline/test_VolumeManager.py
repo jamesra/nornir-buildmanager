@@ -39,7 +39,7 @@ class VolumeManagerBlockTest(VolumeManagerTestBase):
         
         block = BlockNode("TEM")
         [added_block, block] = self.VolumeObj.UpdateOrAddChild(block)
-        self.assertTrue(added_block, "Block should exist after add")
+        self.assertTrue(added_block, "New block should return true")
         
         test_data = [1,2,3,4,5]
         even_data = [2,4]
@@ -72,6 +72,35 @@ class VolumeManagerBlockTest(VolumeManagerTestBase):
         (added_block, loaded_block) = self.VolumeObj.UpdateOrAddChild(block)
         self.assertFalse(added_block, "Block should exist after running pipeline")
         self.assertListEqual(loaded_block.NonStosSectionNumbers, even_data, "Even sections should be marked after removing odd numbers")
+        
+class VolumeManagerFilterTest(VolumeManagerTestBase):
+
+    def testBlock(self):
+        
+        block = BlockNode("TEM")
+        [added_block, block] = self.VolumeObj.UpdateOrAddChild(block)
+        self.assertTrue(added_block, "New block should return true")
+        
+        section = SectionNode(543)
+        [added_section, section] = block.UpdateOrAddChild(section)
+        self.assertTrue(added_section, "New section should return true")
+        
+        channel = ChannelNode("YY")
+        [added_channel, channel] = section.UpdateOrAddChild(channel)
+        self.assertTrue(added_channel, "New channel should return true")
+        
+        filter = FilterNode("Leveled")
+        [added_filter, filter] = channel.UpdateOrAddChild(filter)
+        self.assertTrue(added_filter, "New channel should return true")
+        
+        filter.MinIntensityCutoff = 4
+        filter.MaxIntensityCutoff = 250
+        filter.Gamma = 1.4
+        
+        self.VolumeObj.Save()
+        
+        #See if we can print the filter contrast settings
+        nornir_buildmanager.build.Execute(buildArgs=[self.TestOutputPath, 'ListFilterContrast'])
         
 
 class VolumeManagerAppendTest(VolumeManagerTestBase):
