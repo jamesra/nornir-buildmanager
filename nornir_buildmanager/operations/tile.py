@@ -1217,11 +1217,14 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
     if not MaskImageSet is None:
         yield MaskImageSet
 
-def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetName=None, TileWidth=256, TileHeight=256, Logger=None, **kwargs):
+def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShape=None, TileSetName=None,  Logger=None, **kwargs):
     '''Create full resolution tiles of specfied size for the mosaics
        @FilterNode
        @TransformNode'''
-    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")
+    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")   
+    
+    TileWidth=TileShape[0]
+    TileHeight=TileShape[1]
 
     Feathering = Parameters.get('Feathering', 'binary')
 

@@ -69,7 +69,7 @@ class PrepareThenMosaicTest(PlatformTest):
 
         # self.CheckTransformsExist(VolumeObj)
 
-        buildArgs = self._CreateBuildArgs(pipeline='AssembleTiles')
+        buildArgs = self._CreateBuildArgs('AssembleTiles', '-Shape', '512,512')
         build.Execute(buildArgs)
 
         # Load the meta-data from the volumedata.xml file
