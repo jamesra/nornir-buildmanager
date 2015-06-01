@@ -1521,6 +1521,10 @@ class FilterNode(XNamedContainerElementWrapped):
         return pyramid
     
     @property
+    def HasTilePyramid(self):
+        return not self.find('TilePyramid') is None
+    
+    @property
     def HasImageset(self):
         return not self.find('ImageSet') is None
 
@@ -1642,7 +1646,7 @@ class FilterNode(XNamedContainerElementWrapped):
         
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         XElementWrapper.logger.warn("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff, Gamma))
-        
+            
     def RemoveTilePyramidOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         '''Remove the Filter node if the Contrast values do not match the passed parameters
         :return: TilePyramid node if the node was preserved.  None if the node was removed'''

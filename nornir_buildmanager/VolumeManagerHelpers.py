@@ -280,6 +280,13 @@ class PyramidLevelHandler(object):
         '''Creates data to populate a level of a pyramid.  Derived class should override'''
         raise NotImplementedError('PyramidLevelHandler.GenerateMissingLevel')
 
+    @property
+    def HasLevels(self):
+        '''
+        :return: true if the pyramid has any levels
+        '''
+        return len(self.Levels) > 0
+    
     def HasLevel(self, Downsample):
         return not self.GetLevel(Downsample) is None
     
