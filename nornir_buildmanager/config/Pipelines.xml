@@ -165,6 +165,25 @@
 		</Iterate>
 	</Pipeline>
 	
+	<Pipeline Name="ListOutdatedImagesets" Description="Print a list of all image sets that have older timestamps than the input tile pyramid.">
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>			
+			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
+			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/> 
+		</Arguments>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
+					<PythonCall Function="diagnostics.PrintImageSetsOlderThanTilePyramids" node="#FilterNode"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
 	<Pipeline Name="ListDamagedSections" Description="Print a list of all damaged sections.  Damaged sections are never used as control sections when chaining slice-to-slice transforms together to build slice-to-volume transforms">
 		<Arguments>
 			<Argument flag="-Block"  default="*" dest="BlockRegEx" type="str" help="Regular expression describing blocks to include, * processes all blocks" required="False"/>
