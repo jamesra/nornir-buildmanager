@@ -87,7 +87,18 @@ class TestBase(unittest.TestCase):
             TestOutputDir = os.environ["TESTOUTPUTPATH"]
             return os.path.join(TestOutputDir, self.classname)
         else:
-            self.fail("TESTOUTPUTPATH environment variable should specfify input data directory")
+            self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
+
+        return None
+    
+    @property
+    def TestSetupCachePath(self):
+        '''The directory where we can cache the setup phase of the tests.  Delete to obtain a clean run of all tests'''
+        if 'TESTOUTPUTPATH' in os.environ:
+            TestOutputDir = os.environ["TESTOUTPUTPATH"]
+            return os.path.join(TestOutputDir, 'Cache')
+        else:
+            self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
 
         return None
     
@@ -141,6 +152,38 @@ class TestBase(unittest.TestCase):
             self.profiler.dump_stats(self.TestProfilerOutputPath)
                          
         unittest.TestCase.tearDown(self)
+        
+    def SaveTestSetupToCache(self, subpath=None):
+        '''Copy the results from the output directory to the test cache directory'''
+        TestCachePath = self.TestSetupCachePath
+        if subpath is not None:
+            TestCachePath = os.path.join(self.TestSetupCachePath, subpath)
+            
+        if os.path.exists(TestCachePath):
+            shutil.rmtree(TestCachePath)
+            
+        shutil.copytree(self.TestOutputPath, TestCachePath)
+        print("Saved test setup to cache %s" % TestCachePath)
+        
+    def TryLoadTestSetupFromCache(self, subpath=None):
+        '''Copy the results from the setup cache to the output directory.
+        :return: True if cache existed and copied
+        ''' 
+        if not isinstance(subpath, str):
+            subpath = str(subpath)
+            
+        TestCachePath = self.TestSetupCachePath
+        if subpath is not None:
+            TestCachePath = os.path.join(self.TestSetupCachePath, subpath)
+            
+        if os.path.exists(TestCachePath):
+            print("Found test setup in cache %s" % TestCachePath)
+            if os.path.exists(self.TestOutputPath):
+                shutil.rmtree(self.TestOutputPath)
+            shutil.copytree(TestCachePath, self.TestOutputPath)
+            return True
+        
+        return False 
 
 
 class ImageTestBase(TestBase):
