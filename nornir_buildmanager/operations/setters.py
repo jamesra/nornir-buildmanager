@@ -11,6 +11,14 @@ def SetFilterLock(Node, Locked):
     ParentFilter = Node.FindParent('Filter')
     if not ParentFilter is None:
         ParentFilter.Locked = Locked
+        
+def SetLocked(Node, Locked):
+    Node.Locked = Locked
+    parent = Node.Parent
+    if not parent is None:
+        return parent
+    
+    return None
 
 
 def SetPruneThreshold(PruneNode, Value, **kwargs):
