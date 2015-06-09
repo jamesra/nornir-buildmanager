@@ -33,6 +33,7 @@ import nornir_buildmanager.templates
 import nornir_pools as Pools
 
 from nornir_imageregistration.tileset import ShadeCorrectionTypes
+from nornir_buildmanager.exceptions import NornirUserException
 
 HistogramTagStr = "HistogramData"
 
@@ -578,7 +579,8 @@ def _ClearInvalidHistogramElements(filterObj, checksum):
     HistogramElementRemoved = False
     while HistogramElement is None:
         HistogramElement = filterObj.find("Histogram[@InputTransformChecksum='" + checksum + "']")
-        assert(not HistogramElement is None) 
+        if HistogramElement is None:
+            raise NornirUserException("Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath) 
         if HistogramElement.CleanIfInvalid(): 
             HistogramElement = None
             HistogramElementRemoved = True
@@ -613,7 +615,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=InputFilter.BitsPerPixel)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
-    OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
+    OutputFilterNode = ChannelNode.GetFilter(OutputFilterName)
     EntireTilePyramidNeedsBuilding = OutputFilterNode is None
     
     if(OutputFilterNode is not None):
@@ -626,10 +628,13 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
         
         yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
         
-        if OutputFilterNode.RemoveTilePyramidOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma):
-            EntireTilePyramidNeedsBuilding = True 
+        if ChannelNode.RemoveFilterOnContrastMismatch(OutputFilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+            EntireTilePyramidNeedsBuilding = True
+            yield ChannelNode.Parent
+            
+            (added_filter, OutputFilterNode) = ChannelNode.GetOrCreateFilter(OutputFilterName)
             OutputFilterNode.SetContrastValues(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
-            yield OutputFilterNode.Parent
+            yield ChannelNode
         elif FilterPopulated:
             #Nothing to do, contrast matches and the filter is populated
             return 
@@ -990,14 +995,18 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     InputChannelNode = FilterNode.FindParent('Channel')
     InputFilterMaskName = FilterNode.GetOrCreateMaskName()
     
+    if not FilterNode.HasTilePyramid:
+        Logger.warn("Input filter %s has no tile pyramid" % FilterNode.FullPath)
+        return
+    
     [AddedChannel, OutputChannelNode] = __GetOrCreateOutputChannelForPrefix(OutputChannelPrefix, InputChannelNode)
     if AddedChannel:
         yield OutputChannelNode.Parent
 
     AddedFilters = not (OutputChannelNode.HasFilter(FilterNode.Name) and OutputChannelNode.HasFilter(InputFilterMaskName))
-    InputMaskFilterNode = FilterNode.GetOrCreateMaskFilter()
-    OutputFilterNode = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
-    OutputMaskFilterNode = OutputChannelNode.GetOrCreateFilter(InputFilterMaskName)
+    (added_input_mask_filter, InputMaskFilterNode) = FilterNode.GetOrCreateMaskFilter()
+    (added_output_filter, OutputFilterNode) = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
+    (added_output_mask_filter, OutputMaskFilterNode) = OutputChannelNode.GetOrCreateFilter(InputFilterMaskName)
     
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
@@ -1108,7 +1117,7 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
        '''
     Feathering = Parameters.get('Feathering', 'binary')
 
-    MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
+    (added_mask_filter, MaskFilterNode) = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
     ChannelNode = FilterNode.FindParent('Channel')
     SectionNode = ChannelNode.FindParent('Section')
 
@@ -1239,13 +1248,10 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
     if(TileSetName is None):
         TileSetName = 'Tileset'
 
-    InputLevelNode = PyramidNode.GetChildByAttrib('Level', 'Downsample', 1)
+    InputLevelNode = PyramidNode.GetLevel(1)
     if InputLevelNode is None:
         Logger.warning("No input tiles found for assembletiles")
         return
-
-    MangledName = misc.GenNameFromDict(Parameters) + InputTransformNode.Type
-    CmdCount = 0
 
     TileSetNode = nb.VolumeManager.TilesetNode()
     [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
@@ -1515,7 +1521,7 @@ def _InsertExistingLevelIfMissing(PyramidNode, Levels):
     if not PyramidNode.HasLevel(Levels[0]):
         MoreDetailedLevel = PyramidNode.MoreDetailedLevel(Levels[0])
         if MoreDetailedLevel is None:
-            raise Exception("No pyramid level available with more detail than %d in %s" % (Levels[0],PyramidNode.FullPath))
+            raise Exception("No pyramid level available with more detail than %d in %s" % (Levels[0], PyramidNode.FullPath))
 
         Levels.insert(0, MoreDetailedLevel.Downsample)
 

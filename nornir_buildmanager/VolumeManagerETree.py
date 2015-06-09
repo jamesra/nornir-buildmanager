@@ -1438,7 +1438,7 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def GetOrCreateFilter(self, Name):
         (added, filterNode) = self.UpdateOrAddChildByAttrib(FilterNode(Name), 'Name')
-        return filterNode
+        return (added, filterNode)
 
     def MatchFilterPattern(self, filterPattern):
         return VMH.SearchCollection(self.Filters,
@@ -1447,6 +1447,24 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def GetTransform(self, transform_name):
         return self.GetChildByAttrib('Transform', 'Name', transform_name)
+    
+    def RemoveFilterOnContrastMismatch(self, FilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+        '''
+        Return: true if filter found and removed
+        '''
+        
+        filter_node = self.GetFilter(Filter=FilterName)
+        if filter_node is None:
+            return False
+        
+        if filter_node.Locked:
+            if filter_node.IsContrastMismatched(MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+                self.logger.warn("Locked filter cannot be removed for contrast mismatch. %s " % filter_node.FullPath)
+                return False 
+                
+        
+        return filter_node.RemoveNodeOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
+            
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
@@ -1455,7 +1473,7 @@ class ChannelNode(XNamedContainerElementWrapped):
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
     return nornir_buildmanager.templates.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
 
-class FilterNode(XNamedContainerElementWrapped):
+class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
 
     DefaultMaskName = "Mask"
     
@@ -1464,41 +1482,18 @@ class FilterNode(XNamedContainerElementWrapped):
         InputChannelNode = self.FindParent('Channel')
         section_node = InputChannelNode.FindParent('Section')
         return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
-
-    @property
-    def MaxIntensityCutoff(self):
-        if 'MaxIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MaxIntensityCutoff']),3)
-
-        return None
     
-    @MaxIntensityCutoff.setter
-    def MaxIntensityCutoff(self, value):
-        self.attrib['MaxIntensityCutoff'] = "%g" % round(value, 3)
-        return None
-
     @property
-    def MinIntensityCutoff(self):
-        if 'MinIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MinIntensityCutoff']),3)
-        return None
-    
-    @MinIntensityCutoff.setter
-    def MinIntensityCutoff(self, value):
-        self.attrib['MinIntensityCutoff'] = "%g" % round(value, 3)
-        return None
+    def Histogram(self):
+        '''Get the image set for the filter, create if missing'''
+        # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
+        # There should be only one Imageset, so use find
+        histogram = self.find('Histogram')
+        if histogram is None:
+            histogram = HistogramNode()
+            self.append(histogram)
 
-    @property
-    def Gamma(self):
-        if 'Gamma' in self.attrib:
-            return round(float(self.attrib['Gamma']),3)
-        return None
-    
-    @Gamma.setter
-    def Gamma(self, value):
-        self.attrib['Gamma'] = "%g" % round(value, 3)
-        return None
-
+        return histogram
     @property
     def BitsPerPixel(self):
         if 'BitsPerPixel' in self.attrib:
@@ -1527,6 +1522,10 @@ class FilterNode(XNamedContainerElementWrapped):
     @property
     def HasImageset(self):
         return not self.find('ImageSet') is None
+    
+    @property
+    def HasTileset(self):
+        return not self.find('Tileset') is None
 
     @property
     def Imageset(self):
@@ -1626,7 +1625,7 @@ class FilterNode(XNamedContainerElementWrapped):
 
 
     def GetOrCreateMaskImage(self, Downsample):
-        maskFilter = self.GetOrCreateMaskFilter()
+        (added_mask_filter, maskFilter) = self.GetOrCreateMaskFilter()
         return maskFilter.GetOrCreateImage(Downsample)
 
 
@@ -1646,33 +1645,6 @@ class FilterNode(XNamedContainerElementWrapped):
         
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         XElementWrapper.logger.warn("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff, Gamma))
-            
-    def RemoveTilePyramidOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
-        '''Remove the Filter node if the Contrast values do not match the passed parameters
-        :return: TilePyramid node if the node was preserved.  None if the node was removed'''
-        
-        if self.Locked:
-            if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff, 0) or \
-               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 0) or \
-               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'Gamma', Gamma, 3):
-                XElementWrapper.logger.warn("Contrast mismatch ignored due to filter lock on %s" % self.FullPath)
-                self._LogContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
-            return False 
-        
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, 0,NodeToRemove=self.TilePyramid)
-        if OutputNode is None:
-            return True
-        
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 0,NodeToRemove=self.TilePyramid)
-        if OutputNode is None:
-            return True
-        
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'Gamma', Gamma, 3, NodeToRemove=self.TilePyramid)
-        if OutputNode is None:
-            return True
-        
-        return False
-
 
 class NotesNode(XResourceElementWrapper):
 

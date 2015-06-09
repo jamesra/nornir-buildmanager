@@ -271,9 +271,25 @@ class SerialEMIDocImport(object):
         FilterName = 'Raw' + str(TargetBpp)
         if(TargetBpp is None):
             FilterName = 'Raw'
+        
+        
+        histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
+        source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles ]
+        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, source_tile_list, histogramFullPath)
+        ActualMosaicMax = numpy.around(ActualMosaicMax)
+        ActualMosaicMin = numpy.around(ActualMosaicMin)
+        _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+            
+        channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
+        
+        ImageConversionRequired = False
 
         # Create a channel for the Raw data 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode(Name=FilterName), 'Name')
+        if added_filter:
+            ImageConversionRequired = True
+        
+        filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
         filterObj.BitsPerPixel = TargetBpp
 
         SupertileName = 'Stage'
@@ -283,38 +299,24 @@ class SerialEMIDocImport(object):
         # Check to make sure our supertile mosaic file is valid
         RemoveOutdatedFile(idocFilePath, SupertilePath)
 
-        [added, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
+        [added_transform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
                                                                          Path=SupertileTransform,
                                                                          Type='Stage'),
                                                                          'Path')
-
-        [added, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
+ 
+        
+        [added_tilepyramid, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
                                                                             NumberOfTiles=IDocData.NumTiles),
                                                                             'Path')
 
-        [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode(Level=1), 'Downsample')
+        LevelObj = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
+        
+        Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
+        
             
         # Parse the images
         ImageBpp = cls.GetImageBpp(IDocData, sectionDir)
         
-        
-        Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
-        
-        histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
-        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, Tileset, histogramFullPath)
-        ActualMosaicMax = numpy.around(ActualMosaicMax)
-        ActualMosaicMin = numpy.around(ActualMosaicMin)
-        _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-        
-        ImageConversionRequired = False
-        if not added_filter:
-            if filterObj.RemoveTilePyramidOnContrastMismatch(ActualMosaicMin, ActualMosaicMax, Gamma):
-                ImageConversionRequired = True
-                filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
-        else:
-            filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
-            
-        LevelObj = filterObj.TilePyramid.GetOrCreateLevel(1, GenerateData=False)
                 
         # Make sure the target LevelObj is verified        
         if not os.path.exists(LevelObj.FullPath):
@@ -367,7 +369,7 @@ class SerialEMIDocImport(object):
     
     
     @classmethod
-    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, Tileset, histogramFullPath):
+    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, SourceImagesFullPaths, histogramFullPath):
         '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
         ActualMosaicMin = None
         ActualMosaicMax = None
@@ -377,7 +379,7 @@ class SerialEMIDocImport(object):
             ActualMosaicMax = ContrastMap[SectionNumber].Max
             Gamma = ContrastMap[SectionNumber].Gamma
         else:
-            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(Tileset.SourceImagesFullPaths, histogramFullPath)
+            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, histogramFullPath)
         
         return (ActualMosaicMin, ActualMosaicMax, Gamma)
         
@@ -521,8 +523,7 @@ class NornirTileset():
             imagePaths.append(t.SourceImageFullPath)
             
         return imagePaths
-    
-    
+          
     @property 
     def Tiles(self):
         return self._tiles
@@ -591,7 +592,6 @@ class NornirTileset():
             obj.AddTile(NornirTileset.Tile(SourceImageFullPath, TargetImageFullPath, Position=tile.PieceCoordinates[0:2]))
         
         return obj
-
 
 
 def AddIdocNode(containerObj, idocFullPath, idocObj, logger):

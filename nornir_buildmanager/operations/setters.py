@@ -10,10 +10,10 @@ import math
 def SetFilterLock(Node, Locked):
     ParentFilter = Node.FindParent('Filter')
     if not ParentFilter is None:
-        ParentFilter.Locked = Locked
+        ParentFilter.Locked = bool(Locked)
         
-def SetLocked(Node, Locked):
-    Node.Locked = Locked
+def SetLocked(Node, Locked, **kwargs):
+    Node.Locked = bool(Locked)
     parent = Node.Parent
     if not parent is None:
         return parent

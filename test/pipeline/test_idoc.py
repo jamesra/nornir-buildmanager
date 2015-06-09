@@ -274,6 +274,7 @@ class IDocSingleSectionImportTest(IDocTest):
 
         self.ChannelData = self.VolumeObj.find("Block/Section[@Number='17']/Channel")
         self.assertIsNotNone(self.ChannelData, "Could not locate channel meta-data")
+        self.RawFilterObj = self._getRawDataFilterNode(self.SectionNumber)
 
         # OK, by default the transforms should be correct
         self.StageTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', 'Stage')
@@ -288,8 +289,15 @@ class IDocSingleSectionImportTest(IDocTest):
 #        self.assertIsNotNone(self.GridTransform)
 #        self.assertIsNotNone(self.ZeroGridTransform)
 
-    def _getFilterNode(self, BlockNode, SectionNumber):
-        SectionNode = BlockNode.GetSection(SectionNumber)
+    @property
+    def Block(self):
+        block = self.VolumeObj.find('Block')
+        self.assertIsNotNone(block)
+        return block
+    
+
+    def _getRawDataFilterNode(self, SectionNumber):
+        SectionNode = self.Block.GetSection(SectionNumber)
         self.assertIsNotNone(SectionNode)
 
         ChannelNode = SectionNode.GetChannel('TEM')
@@ -305,16 +313,11 @@ class IDocSingleSectionImportTest(IDocTest):
         ContrastMap[sectionNumber] = nornir_buildmanager.importers.ContrastValues(sectionNumber, MinVal, MaxVal, Gamma)
         return ContrastMap 
     
-    def VerifyFilterValues(self, MinVal, MaxVal, Gamma):
-        BlockNode = self.VolumeObj.find('Block')
-        self.assertIsNotNone(BlockNode)
-        
-        FilterObj = self._getFilterNode(BlockNode, self.SectionNumber)
+    def VerifyFilterContrast(self, MinVal, MaxVal, Gamma):
+        FilterObj = self._getRawDataFilterNode(self.SectionNumber)
         self.assertIsNotNone(FilterObj)
         
-        self.assertEqual(FilterObj.MinIntensityCutoff, MinVal)
-        self.assertEqual(FilterObj.MaxIntensityCutoff, MaxVal)
-        self.assertEqual(FilterObj.Gamma, Gamma)
+        self.assertFalse(FilterObj.IsContrastMismatched(MinVal, MaxVal, Gamma))
 
     def runTest(self):
          
@@ -334,7 +337,7 @@ class IDocSingleSectionImportTest(IDocTest):
         BlockNode = self.VolumeObj.find('Block')
         self.assertIsNotNone(BlockNode)
         
-        FilterObj = self._getFilterNode(BlockNode, self.SectionNumber)
+        FilterObj = self._getRawDataFilterNode(self.SectionNumber)
         self.assertIsNotNone(FilterObj)
         
         OriginalMaxIntensity = FilterObj.MaxIntensityCutoff
@@ -347,7 +350,21 @@ class IDocSingleSectionImportTest(IDocTest):
         
         ContrastMap = self.CreateImportContrastOverrideMapping(self.SectionNumber, TargetMinIntensity, TargetMaxIntensity, Gamma=TargetGamma)
 
-        self.EnsureTilePyramidIsFull(FilterObj, 25)
+        # Make sure we have images and mosaics for the original imported data.  We want to make sure these are regenerated after the second import.
+        self.RunHistogram(Transform='Stage')
+        self.LoadMetaData() 
+        
+        #histogramNode = self.RawFilterObj.GetHistogram()
+        #self.assertFalse(histogramNode.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
+        self.RunAdjustContrast(Transform='Stage')
+        
+        # I do not run mosaic based on the prune transform both to save time and to ensure that rebuilding the prune transform is not rebuilding the mosaic and images by some side-effect
+        self.RunMosaic(Filter='Leveled', Transform='Stage')
+        self.LoadMetaData()
+        
+        #self.assertFalse(self.RawFilterObj.TilePyramid.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
+        #self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))         
+        self.EnsureTilePyramidIsFull(self.RawFilterObj, 25)
 
         self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="1")
         
@@ -356,13 +373,25 @@ class IDocSingleSectionImportTest(IDocTest):
         
         self.RunImport()
         self.LoadMetaData()
-        self.VerifyFilterValues(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma)
+        self.VerifyFilterContrast(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma)
         
         self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="0")
         
         self.RunImport()
-        self.LoadMetaData()
-        self.VerifyFilterValues(TargetMinIntensity, TargetMaxIntensity, TargetGamma)
+        self.LoadMetaData() 
+        self.VerifyFilterContrast(TargetMinIntensity, TargetMaxIntensity, Gamma=TargetGamma)
+        
+        #Check that the histogram has the new target values
+        self.RunHistogram()
+        self.LoadMetaData() 
+        #self.assertFalse(self.RawFilterObj.GetHistogram().IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma))
+        
+        self.RunAdjustContrast(Transform='Stage')
+        self.RunMosaic(Filter='Leveled', Transform='Stage')
+        
+        self.LoadMetaData() 
+        #self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma)) 
+        
         
         
     def tearDown(self):
