@@ -33,6 +33,7 @@ import nornir_buildmanager.templates
 import nornir_pools as Pools
 
 from nornir_imageregistration.tileset import ShadeCorrectionTypes
+from nornir_buildmanager.exceptions import NornirUserException
 
 HistogramTagStr = "HistogramData"
 
@@ -122,8 +123,8 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     ''' 
     ChannelNode = InputFilterNode.Parent
     InputPyramidNode = InputFilterNode.find('TilePyramid')
-    InputLevelNode = InputPyramidNode.GetChildByAttrib('Level', 'Downsample', Downsample)
-    OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
+    InputLevelNode = InputPyramidNode.GetLevel(Downsample)
+    OutputFilterNode = ChannelNode.GetFilter(OutputFilterName)
     if OutputFilterNode is None:
         return False
 
@@ -135,7 +136,7 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     if OutputPyramidNode.NumberOfTiles < mFile.NumberOfImages:
         return False
 
-    OutputLevelNode = OutputFilterNode.find("TilePyramid/Level[@Downsample='%g']" % Downsample)
+    OutputLevelNode = OutputFilterNode.TilePyramid.GetLevel(Downsample)
     if OutputLevelNode is None:
         return False
 
@@ -450,7 +451,8 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
     outputFileFullPath = os.path.join(os.path.dirname(TransformNode.FullPath), outputFilename)
 
     OutputTransformNode = TransformNode.Parent.GetChildByAttrib('Transform', 'Path', outputFilename)
-    OutputTransformNode = transforms.RemoveIfOutdated(OutputTransformNode, TransformNode, Logger)
+    if not OutputTransformNode.CleanIfInputTransformMismatched(TransformNode):
+        return None
 
     if os.path.exists(outputFileFullPath) and (not OutputTransformNode is None):
         return None
@@ -560,7 +562,12 @@ def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercen
             raise nb.NornirUserException("%g > %g Max intensity is less than min intensity for histogram correction. %s" % (MinIntensityCutoff, MaxIntensityCutoff, HistogramElement.DataFullPath))
 
         if Gamma is None:
-            Gamma = histogram.GammaAtValue(histogram.PeakValue(MinIntensityCutoff, MaxIntensityCutoff), minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
+            #We look for the largest peak that is not at either extrema
+            peakVal = histogram.PeakValue(MinIntensityCutoff+1, MaxIntensityCutoff-1)
+            if peakVal is None:
+                Gamma = 1.0
+            else:
+                Gamma = histogram.GammaAtValue(peakVal, minVal=MinIntensityCutoff, maxVal=MaxIntensityCutoff)
 
     return (MinIntensityCutoff, MaxIntensityCutoff, Gamma)
 
@@ -572,7 +579,8 @@ def _ClearInvalidHistogramElements(filterObj, checksum):
     HistogramElementRemoved = False
     while HistogramElement is None:
         HistogramElement = filterObj.find("Histogram[@InputTransformChecksum='" + checksum + "']")
-        assert(not HistogramElement is None) 
+        if HistogramElement is None:
+            raise NornirUserException("Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath) 
         if HistogramElement.CleanIfInvalid(): 
             HistogramElement = None
             HistogramElementRemoved = True
@@ -607,25 +615,28 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=InputFilter.BitsPerPixel)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
-    UpdatedHistogramElement = None
-     
-    OutputFilterNode = ChannelNode.GetChildByAttrib('Filter', 'Name', OutputFilterName)
+    OutputFilterNode = ChannelNode.GetFilter(OutputFilterName)
     EntireTilePyramidNeedsBuilding = OutputFilterNode is None
     
     if(OutputFilterNode is not None):
+        
+        FilterPopulated = FilterIsPopulated(InputFilter, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName)
         #Check that the existing filter is valid
-        if(OutputFilterNode.Locked):
+        if OutputFilterNode.Locked and FilterPopulated:
+            prettyoutput.Log("Skipping contrast on existing locked filter %s" % OutputFilterNode.FullPath)
             return
         
         yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
         
-        if OutputFilterNode.RemoveTilePyramidOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma):
-            EntireTilePyramidNeedsBuilding = True 
+        if ChannelNode.RemoveFilterOnContrastMismatch(OutputFilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+            EntireTilePyramidNeedsBuilding = True
+            yield ChannelNode.Parent
+            
+            (added_filter, OutputFilterNode) = ChannelNode.GetOrCreateFilter(OutputFilterName)
             OutputFilterNode.SetContrastValues(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
-            yield OutputFilterNode.Parent
-        
-        if FilterIsPopulated(InputFilter, InputLevelNode.Downsample, InputTransformNode.FullPath, OutputFilterName):
-            #Nothing to do, filter is populated
+            yield ChannelNode
+        elif FilterPopulated:
+            #Nothing to do, contrast matches and the filter is populated
             return 
     else:
         yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
@@ -738,7 +749,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     ElementCleaned = False
 
     if not HistogramElementCreated:
-        HistogramElement.RemoveIfTransformMismatched(TransformNode)
+        HistogramElement.CleanIfInputTransformMismatched(TransformNode)
         if HistogramElement.CleanIfInvalid():
             HistogramElement = None
             ElementCleaned = True
@@ -908,7 +919,7 @@ def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name
     image_node = image_level_node.find('Image')
     #===========================================================================
     # if not image_node is None:
-    #     if image_node.RemoveIfTransformMismatched(transform_node):
+    #     if image_node.CleanIfInputTransformMismatched(transform_node):
     #         image_node = None
     #===========================================================================
             
@@ -984,14 +995,18 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     InputChannelNode = FilterNode.FindParent('Channel')
     InputFilterMaskName = FilterNode.GetOrCreateMaskName()
     
+    if not FilterNode.HasTilePyramid:
+        Logger.warn("Input filter %s has no tile pyramid" % FilterNode.FullPath)
+        return
+    
     [AddedChannel, OutputChannelNode] = __GetOrCreateOutputChannelForPrefix(OutputChannelPrefix, InputChannelNode)
     if AddedChannel:
         yield OutputChannelNode.Parent
 
     AddedFilters = not (OutputChannelNode.HasFilter(FilterNode.Name) and OutputChannelNode.HasFilter(InputFilterMaskName))
-    InputMaskFilterNode = FilterNode.GetOrCreateMaskFilter()
-    OutputFilterNode = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
-    OutputMaskFilterNode = OutputChannelNode.GetOrCreateFilter(InputFilterMaskName)
+    (added_input_mask_filter, InputMaskFilterNode) = FilterNode.GetOrCreateMaskFilter()
+    (added_output_filter, OutputFilterNode) = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
+    (added_output_mask_filter, OutputMaskFilterNode) = OutputChannelNode.GetOrCreateFilter(InputFilterMaskName)
     
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
@@ -999,9 +1014,9 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     OutputImageMaskNameTemplate = InputMaskFilterNode.DefaultImageName(image_ext)  
     
     if OutputFilterNode.HasImageset:
-        OutputFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
+        OutputFilterNode.Imageset.CleanIfInputTransformMismatched(TransformNode)
     if OutputMaskFilterNode.HasImageset:
-        OutputMaskFilterNode.Imageset.RemoveIfTransformMismatched(TransformNode)
+        OutputMaskFilterNode.Imageset.CleanIfInputTransformMismatched(TransformNode)
 
     OutputFilterNode.Imageset.SetTransform(TransformNode)
     OutputMaskFilterNode.Imageset.SetTransform(TransformNode)
@@ -1102,7 +1117,7 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
        '''
     Feathering = Parameters.get('Feathering', 'binary')
 
-    MaskFilterNode = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
+    (added_mask_filter, MaskFilterNode) = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
     ChannelNode = FilterNode.FindParent('Channel')
     SectionNode = ChannelNode.FindParent('Section')
 
@@ -1216,11 +1231,14 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
     if not MaskImageSet is None:
         yield MaskImageSet
 
-def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetName=None, TileWidth=256, TileHeight=256, Logger=None, **kwargs):
+def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShape=None, TileSetName=None,  Logger=None, **kwargs):
     '''Create full resolution tiles of specfied size for the mosaics
        @FilterNode
        @TransformNode'''
-    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")
+    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")   
+    
+    TileWidth=TileShape[0]
+    TileHeight=TileShape[1]
 
     Feathering = Parameters.get('Feathering', 'binary')
 
@@ -1230,13 +1248,10 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileSetN
     if(TileSetName is None):
         TileSetName = 'Tileset'
 
-    InputLevelNode = PyramidNode.GetChildByAttrib('Level', 'Downsample', 1)
+    InputLevelNode = PyramidNode.GetLevel(1)
     if InputLevelNode is None:
         Logger.warning("No input tiles found for assembletiles")
         return
-
-    MangledName = misc.GenNameFromDict(Parameters) + InputTransformNode.Type
-    CmdCount = 0
 
     TileSetNode = nb.VolumeManager.TilesetNode()
     [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
@@ -1506,7 +1521,7 @@ def _InsertExistingLevelIfMissing(PyramidNode, Levels):
     if not PyramidNode.HasLevel(Levels[0]):
         MoreDetailedLevel = PyramidNode.MoreDetailedLevel(Levels[0])
         if MoreDetailedLevel is None:
-            raise Exception("No pyramid level available with more detail than %d in %s" % (Levels[0],PyramidNode.FullPath))
+            raise Exception("No pyramid level available with more detail than %d in %s" % (Levels[0], PyramidNode.FullPath))
 
         Levels.insert(0, MoreDetailedLevel.Downsample)
 

@@ -6,9 +6,7 @@ Created on Jun 22, 2012
 
 
 import copy
-import itertools
 import logging
-import os
 import random
 import shutil
 import subprocess
@@ -17,11 +15,10 @@ import math
 from nornir_buildmanager import VolumeManagerETree, VolumeManagerHelpers
 from nornir_buildmanager.metadatautils import *
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration import assemble, mosaic, volume
-from nornir_imageregistration.files import stosfile, mosaicfile
+from nornir_imageregistration import assemble, mosaic
+from nornir_imageregistration.files import stosfile
 from nornir_imageregistration.transforms import *
 import nornir_imageregistration.stos_brute as stos_brute
-from nornir_imageregistration.alignment_record import AlignmentRecord
 import nornir_pools as pools
 from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
@@ -167,25 +164,6 @@ def SectionNumberCompare(SectionNodeA, SectionNodeB):
     return cmp(int(SectionNodeA.get('Number', None)), int(SectionNodeB.get('Number', None)))
 
 
-def GetOrCreateNonStosSectionList(BlockNode, **kwargs):
-
-    StosExemptNode = VolumeManagerETree.XElementWrapper(tag='NonStosSectionNumbers')
-    (added, StosExemptNode) = BlockNode.UpdateOrAddChild(StosExemptNode)
-
-    # Fetch the list of the exempt nodes from the element text
-    ExemptString = StosExemptNode.text
-
-    if(ExemptString is None or len(ExemptString) == 0):
-        return []
-
-    # OK, parse the exempt string to a different list
-    NonStosSectionNumbers = [int(x) for x in ExemptString.split(',')]
-
-    return NonStosSectionNumbers
-
-
-
-
 def _GetCenterSection(Parameters, MappingNode=None):
     '''Returns the number of the center section from the Block Node if possible, otherwise it checks the parameters.  Returns None if unspecified'''
 
@@ -212,7 +190,7 @@ def _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSe
     SectionNodeList.sort(key=SectionNumberKey)
 
     # Fetch the list of known bad sections, if it exists
-    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
+    NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
 
     SectionNumberList = [SectionNumberKey(s) for s in SectionNodeList]
 
@@ -220,10 +198,7 @@ def _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSe
     for sectionNumber in SectionNumberList:
         if not sectionNumber in NonStosSectionNumbers:
             StosSectionNumbers.append(sectionNumber)
-
-    # Fetch the list of known bad sections, if it exists
-    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
-
+ 
     RT = registrationtree.RegistrationTree.CreateRegistrationTree(StosSectionNumbers, adjacentThreshold=NumAdjacentSections, center=CenterSectionNumber)
     RT.AddNonControlSections(NonStosSectionNumbers)
 
@@ -304,7 +279,7 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
     if OutputMappingNode.CenterSection is None:
         OutputMappingNode.CenterSection = DefaultRT.RootNodes.values()[0].SectionNumber
 
-    NonStosSectionNumbers = GetOrCreateNonStosSectionList(BlockNode)
+    NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
     if OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbers):
         SaveOutputMapping = True
 
@@ -455,7 +430,7 @@ def GetOrCreateRegistrationImageNodes(filter_node, Downsample, GetMask, Logger=N
         return (None,None)
     
     if not os.path.exists(image_node.FullPath):
-        Logger.error("Image image file missing %" % image_node.FullPath)
+        Logger.error("Image image file missing %s" % image_node.FullPath)
         return (None,None)
     
     mask_image_node = None
@@ -482,7 +457,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     stosNode = StosGroup.GetStosTransformNode(ControlFilter, MappedFilter)
             
     (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
-    (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
+    (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
     
     if not stosNode is None:
         if StosGroup.AreStosInputImagesOutdated(stosNode, ControlFilter, MappedFilter, MaskRequired=UseMasks):
@@ -831,7 +806,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                     if created_overlay:
                         OverlayImageNode.SetTransform(StosTransformNode)
                     else:
-                        if not OverlayImageNode.RemoveIfTransformMismatched(StosTransformNode):
+                        if not OverlayImageNode.CleanIfInputTransformMismatched(StosTransformNode):
                             files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
                             files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
                             files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
@@ -839,12 +814,12 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                     if created_diff:
                         DiffImageNode.SetTransform(StosTransformNode)
                     else:
-                        DiffImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                        DiffImageNode.CleanIfInputTransformMismatched(StosTransformNode)
                         
                     if created_warped:
                         WarpedImageNode.SetTransform(StosTransformNode)
                     else:
-                        WarpedImageNode.RemoveIfTransformMismatched(StosTransformNode)
+                        WarpedImageNode.CleanIfInputTransformMismatched(StosTransformNode)
 
                     # Compare the .stos file creation date to the output
                      
@@ -1693,7 +1668,7 @@ def __ControlFilterForTransform(transform_node):
                                 transform_node.ControlChannelName,
                                 transform_node.ControlFilterName)
 
-def __GetFilter(transform_node, section, channel, filter):
+def __GetFilter(transform_node, section, channel, filter_name):
     BlockNode = transform_node.FindParent(ParentTag='Block')
     if BlockNode is None:
         return None
@@ -1704,10 +1679,10 @@ def __GetFilter(transform_node, section, channel, filter):
     if channelNode is None:
         return None
     
-    filterNode = channelNode.GetFilter(filter)
+    filterNode = channelNode.GetFilter(filter_name)
     return filterNode
 
-def __GetFilterAndMaskFilter(transform_node, section, channel, filter):
+def __GetFilterAndMaskFilter(transform_node, section, channel, filter_name):
     BlockNode = transform_node.FindParent(ParentTag='Block')
     if BlockNode is None:
         return None
@@ -1720,7 +1695,7 @@ def __GetFilterAndMaskFilter(transform_node, section, channel, filter):
     if channelNode is None:
         return (None, None)
     
-    filterNode = channelNode.GetFilter(filter)
+    filterNode = channelNode.GetFilter(filter_name)
     if filterNode is None:
         return (None, None)
     

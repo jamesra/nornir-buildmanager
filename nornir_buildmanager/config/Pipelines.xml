@@ -39,7 +39,7 @@
 
 	<Pipeline Name="Prune" Description="Removes tiles without enough features for proper alignment.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Threshold" dest="PruneThreshold" default="0" type="float" help="Texture complexity threshold" required="True"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to calculate complexity upon" required="False"/>
@@ -83,7 +83,7 @@
 
 	<Pipeline Name="ShadeCorrect" Description="Brightfield microscopy shading correction.  Uses the max tile intensity across all tiles to determine the shading gradient.  Produces an inverted output filter with the shading subtracted.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>			
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>			
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/> 
 			<Argument flag="-OutputFilter" dest="OutputFilter" default="ShadingCorrected" help="Prefix added to output filters" required="False"/>
@@ -107,6 +107,7 @@
 		</Iterate>
 	</Pipeline>
 
+	<!--
 	<Pipeline Name="MigrateMultipleImageSets" Description="Migrate meta-data to latest version">
 		<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter">
 			<PythonCall Function="tile.MigrateMultipleImageSets">
@@ -122,10 +123,96 @@
 		</Iterate>
 	</Pipeline>
 	
+	<Pipeline Name="FixTilePyramidNumbering" Description="Migrate mosaic transforms to zero origins">
+		<Iterate VariableName="TilePyramidNode" XPath="Block/Section/Channel/Filter/TilePyramid">
+			<PythonCall Function="migration.MoveTilesToStartAtZero" tile_pyramid_node="#TilePyramidNode">
+			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="FixTransformNumbering" Description="Migrate mosaic transforms tile numbering to zero">
+		<Iterate VariableName="TransformNode" XPath="Block/Section/Channel/Transform">
+			<PythonCall Function="migration.RenumberTransformTilesToStartAtZero" transform_node="#TransformNode">
+			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	
 	<Pipeline Name="MigrateTo1.3" Description="Migrate mosaic transforms to zero origins">
 		<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel">
-			<PythonCall Function="setters.MigrateChannel_1p2_to_1p3" channel_node="#ChannelNode">
+			<PythonCall Function="migration.MigrateChannel_1p2_to_1p3" channel_node="#ChannelNode">
 			</PythonCall>
+		</Iterate>
+	</Pipeline>
+	-->
+	
+	<Pipeline Name="ListFilterContrast" Description="Print a list of all damaged sections.  Damaged sections are never used as control sections when chaining slice-to-slice transforms together to build slice-to-volume transforms">
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>			
+			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
+			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/> 
+		</Arguments>
+		<PythonCall Function="diagnostics.PrintContrastValuesHeader"/>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
+					<PythonCall Function="diagnostics.PrintContrastValues" node="#FilterNode"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="ListOutdatedImagesets" Description="Print a list of all image sets that have older timestamps than the input tile pyramid.">
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>			
+			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
+			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/> 
+		</Arguments>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
+					<PythonCall Function="diagnostics.PrintImageSetsOlderThanTilePyramids" node="#FilterNode"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="ListDamagedSections" Description="Print a list of all damaged sections.  Damaged sections are never used as control sections when chaining slice-to-slice transforms together to build slice-to-volume transforms">
+		<Arguments>
+			<Argument flag="-Block"  default="*" dest="BlockRegEx" type="str" help="Regular expression describing blocks to include, * processes all blocks" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockRegEx"/>
+			<PythonCall Function="setters.PrintSectionsDamaged" block_node="#BlockNode"/>
+		</Iterate>		
+	</Pipeline>
+	
+	<Pipeline Name="MarkSectionsDamaged" Description="Mark sections as damaged.  Damaged sections are never used as control sections when chaining slice-to-slice transforms together to build slice-to-volume transforms">
+		<Arguments>
+			<Argument flag="-Block"  default="*" dest="BlockRegEx" type="str" help="Regular expression describing blocks to include, * processes all blocks" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers that should not be used as control sections.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockRegEx"/>
+			<PythonCall Function="setters.MarkSectionsAsDamaged"  block_node="#BlockNode" SectionNumbers="#Sections"/>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="MarkSectionsUndamaged" Description="Remove sections from the damaged list.  Damaged sections are never used as control sections when chaining slice-to-slice transforms together to build slice-to-volume transforms">
+		<Arguments>
+			<Argument flag="-Block"  default="*" dest="BlockRegEx" type="str" help="Regular expression describing blocks to include, * processes all blocks" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to remove from the damaged list.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockRegEx"/>
+			<PythonCall Function="setters.MarkSectionsAsUndamaged"  block_node="#BlockNode" SectionNumbers="#Sections"/>
 		</Iterate>
 	</Pipeline>
 
@@ -166,7 +253,7 @@
 
 	<Pipeline Name="Histogram" Description="Calculates the histogram from all tiles in a mosaic">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to include, * processes all filters" required="False"/>
 			<Argument flag="-InputTransform" dest="InputTransform" default="Prune" help="The transform provided the list of tiles in the mosaic." required="True"/>
@@ -193,7 +280,7 @@
 
 	<Pipeline Name="AdjustContrast" Description="Creates a new filter with adjusted contrast.  The cutoffs can be adjusted within the meta-data by altering the AutoLevelHint element of the input filters volume.xml meta-data file.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/>
 			<Argument flag="-MinCutoff" dest="MinCutoff" default="0.1" help="Min pixel intensity cutoff as a percentage, 0 to 100" required="False"/>
@@ -229,10 +316,10 @@
 
 	<Pipeline Name="Mosaic" Description="Aligns tiles of a filter into a single mosaic.  Produces an assembled mosaic image.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-RegistrationDownsample" dest="Downsample" default="4" type="int" help="Downsample level to use for ir-tools" required="False"/>
-			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
+			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma separated list of downsample levels used for assembling output images" required="False"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to use for registration" required="True"/>
 			<Argument flag="-InputTransform" dest="InputTransformName" default="Prune" help="Name of the input transform" required="False"/>
 			<Argument flag="-OutputTransform" dest="OutputTransformName" default="Grid" help="Name of output transform." required="False"/>
@@ -279,10 +366,10 @@
 	
 	<Pipeline Name="MosaicNoTranslate" Description="Aligns tiles of a filter into a single mosaic.  Produces an assembled mosaic image.  Assumes stage coordinates are correct and refines distortions only without translating tiles.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
 			<Argument flag="-RegistrationDownsample" dest="Downsample" default="4" type="int" help="Downsample level to use for ir-tools" required="False"/>
-			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma seperated list of downsample levels used for assembling output images" required="False"/>
+			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5" type="float" help="Comma separated list of downsample levels used for assembling output images" required="False"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8" help="Filter to use for registration" required="True"/>
 			<Argument flag="-InputTransform" dest="InputTransformName" default="Prune" help="Name of the input transform" required="False"/>
 			<Argument flag="-OutputTransform" dest="OutputTransformName" default="Grid" help="Name of output transform." required="False"/>
@@ -326,8 +413,8 @@
 
 	<Pipeline Name="Assemble" Description="Creates an assembled image from a transform and filter. Optionally creates a new channel for output.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
-			<Argument flag="-Downsample" dest="Levels" default="1" help="Comma seperated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Downsample" dest="Levels" default="1" help="Comma separated list of downsample levels for assembling images.  If output is desired only one downsample level can be used." required="False"/>
 			<Argument flag="-NoInterlace" dest="Interlace" action="store_false" default="True" help="Setting this flag skips the interlace step after assemble.  Interlaced images load faster on web pages, but are larger than non-interlaced images." required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" default="" type="str" help="Create a new channel for the output with this prefix and the name of the input." required="False"/>
@@ -359,11 +446,12 @@
 
 	<Pipeline Name="AssembleTiles" Description="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Transform defining images into mosaic" required="False"/>
-			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma seperated list of downsample levels for assembling output images" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma separated list of downsample levels for assembling output images" required="False"/>
+			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
 		</Arguments>
 
 		<Iterate VariableName="section_node" XPath="Block/Section">
@@ -378,7 +466,7 @@
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>			
 	
 					<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid"/>
-					<PythonCall Function="tile.AssembleTileset"/>
+					<PythonCall Function="tile.AssembleTileset" TileShape="#shape"/>
 	
 					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
 					<PythonCall Function="tile.BuildTilesetPyramid"/>
@@ -441,7 +529,7 @@
 	
 	<Pipeline Name="Cleanup"  Description="Clean common errors from the volume meta-data"> 
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/> 
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/> 
 		</Arguments>
 			<Iterate VariableName="SectionNode" XPath="Block/Section">
 				<RequireSetMembership Attribute="Number" List="#Sections"/>
@@ -470,7 +558,7 @@
 	<Pipeline Name="SetPruneCutoff" Description="Set the prune threshold for a filter">
 		<Arguments>
 		    <Argument flag="-Value" dest="PruneVal" type="float" help="Prune threshold to set" required="True" default="0"/>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="True"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="True"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be edited" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="*" help="Regular expression describing filters to be edited" required="False"/>
 		</Arguments>
@@ -502,30 +590,19 @@
 		    <Argument flag="-Min" dest="MinValue" type="float" help="Min intensity value, set to 0 in output" required="False" default="NaN"/>
 			<Argument flag="-Max" dest="MaxValue" type="float" help="Max intensity value, set to 1 in output" required="False" default="NaN"/>
 			<Argument flag="-Gamma" dest="GammaValue" type="float" help="Gamma adjustment" required="False" default="NaN"/>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="True"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="True"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be edited" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="*" help="Regular expression describing filters to be edited" required="False"/>
 		</Arguments>
-		
 		<Iterate VariableName="SectionNode" XPath="Block/Section">
 			<RequireSetMembership Attribute="Number" List="#Sections"/>
-			
 			<Iterate VariableName="ChannelNode" XPath="Channel">
 				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
-				
 				<Iterate VariableName="FilterNode" XPath="Filter">
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
-					
 					<Select VariableName="HistogramNode" XPath="Histogram"/>
-					
 					<PythonCall Function="setters.SetContrastRange" HistogramElement="#HistogramNode" 
 					            MinValue="#MinValue" MaxValue="#MaxValue" GammaValue="#GammaValue"/>
-					
-				</Iterate>
-				
-				<Iterate VariableName="FilterNode" XPath="Filter">
-				    <!-- This should be more refined to only unlock filters built upon the filter whose contrast has been changed -->
-					<PythonCall Function="setters.SetFilterContrastLocked" FilterNode="#FilterNode" Locked="0"/>
 				</Iterate>
 			</Iterate>
 		</Iterate>
@@ -534,7 +611,7 @@
 	<Pipeline Name="SetFilterLock" Description="Toggle the locked flag for a filter.  Locked filters will not have images recalculated.">
 		<Arguments>
 		    <Argument flag="-Locked" dest="Locked" type="int" help="Lock value, 0 = unlocked, 1 = locked" required="True"/>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="True"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="True"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be edited" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="*" help="Regular expression describing filters to be edited" required="False"/>
 		</Arguments>
@@ -548,7 +625,35 @@
 				<Iterate VariableName="FilterNode" XPath="Filter">
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/> 
 					
-					<PythonCall Function="setters.SetFilterContrastLocked" FilterNode="#FilterNode" Locked="#Locked"/>
+					<PythonCall Function="setters.SetLocked" Node="#FilterNode" Locked="#Locked"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="SetMosaicLock" Description="Toggle the locked flag for a .mosaic transform to prevent or enable regeneration.">
+		<Arguments>
+		    <Argument flag="-Locked" dest="Locked" type="int" help="Lock value, 0 = unlocked, 1 = locked" required="True"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="True"/>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be edited" required="False"/>
+			<Argument flag="-Filters" dest="FilterRegEx" default="*" help="Regular expression describing filters to be edited" required="False"/>
+			<Argument flag="-Transforms" dest="TransformRegEx" help="Regular expression describing transform names to be edited" required="True"/>
+		</Arguments>
+		
+		<Iterate VariableName="SectionNode" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+				
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/> 
+					
+					<Iterate VariableName="TransformNode" XPath="Transform">
+						<RequireMatch Attribute="Name" RegEx="#TransformRegEx"/> 
+					
+						<PythonCall Function="setters.SetLocked" Node="#TransformNode" Locked="#Locked"/>
+					</Iterate>
 				</Iterate>
 			</Iterate>
 		</Iterate>
@@ -557,7 +662,7 @@
 
 	<Pipeline Name="CreateBlobFilter" Description="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section to execute blob on.  Values are seperated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section to execute blob on.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-InputFilter" dest="InputFilter" default="Leveled" help="Name of filter to create blob filter for" required="True"/>
 			<Argument flag="-Levels" dest="BlobDownsampleLevels" default="1" help="Downsample levels to be blobbed" required="False"/>

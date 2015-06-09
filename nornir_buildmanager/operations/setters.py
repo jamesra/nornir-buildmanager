@@ -6,13 +6,19 @@ Created on Feb 25, 2014
 
 import logging
 import math
-import os
-from nornir_buildmanager import VolumeManagerHelpers
 
 def SetFilterLock(Node, Locked):
     ParentFilter = Node.FindParent('Filter')
     if not ParentFilter is None:
-        ParentFilter.Locked = Locked
+        ParentFilter.Locked = bool(Locked)
+        
+def SetLocked(Node, Locked, **kwargs):
+    Node.Locked = bool(Locked)
+    parent = Node.Parent
+    if not parent is None:
+        return parent
+    
+    return None
 
 
 def SetPruneThreshold(PruneNode, Value, **kwargs):
@@ -80,56 +86,17 @@ def SetFilterMaskName(FilterNode, MaskName, **kwargs):
 
     return FilterNode.Parent
 
-def _MapTransformToCurrentType(transform_node, name, old_type, new_type):
-    '''Rename a transform if it matches the name parameter.  Adjust both the path and type attributes'''
-    
-    if transform_node.Name != name:
-        return False
-    
-    if transform_node.Type != old_type:
-        return False
+def PrintSectionsDamaged(block_node, **kwargs):
+    print(','.join(list(map(str,block_node.NonStosSectionNumbers))))
+    return None
 
-    (filename, ext) = os.path.splitext(transform_node.Path)
-    transform_node.Type = new_type
-    new_path = transform_node.Name + new_type + ext
+def MarkSectionsAsDamaged(block_node, SectionNumbers, **kwargs):
+    block_node.MarkSectionsAsDamaged(SectionNumbers)
+    return block_node.Parent
     
-    if os.path.exists(transform_node.FullPath):
-        os.rename(transform_node.FullPath, os.path.join(transform_node.Parent.FullPath, new_path))
-        transform_node.Path = new_path
-            
-    return True
-
-def MigrateChannel_1p2_to_1p3(channel_node, **kwargs):
-    
-    for transform_node in channel_node.findall('Transform'):
-        MigrateTransforms_1p2_to_1p3(transform_node)
-        
-    print("Saving %s" % (channel_node.Parent.FullPath))
-    return channel_node
-
-def MigrateTransforms_1p2_to_1p3(transform_node, **kwargs):
-    '''Update the checksums to use the new algorithm.  Then rename grid transforms to use the sorted type name'''
-    
-    if not os.path.exists(transform_node.FullPath):
-        transform_node.Clean()
-        return transform_node.Parent
-    
-    original_checksum = transform_node.Checksum
-    original_type = transform_node.Type
-    
-    transform_node.ResetChecksum()
-    transform_node.Locked = True
-
-    _MapTransformToCurrentType(transform_node, name='Grid', old_type='_Cel128_Mes8_sp4_Mes8_Thr0.25', new_type='_Cel128_Mes8_Mes8_Thr0.25_it10_sp4')
-    _MapTransformToCurrentType(transform_node, name='Grid', old_type='_Cel96_Mes8_sp4_Mes8_Thr0.5', new_type='_Cel128_Mes8_Mes8_Thr0.25_it10_sp4')
-    
-    #All done changing the transforms meta-data.  Now update transforms which depend on us with correct information
-    for dependent in VolumeManagerHelpers.InputTransformHandler.EnumerateTransformDependents(transform_node.Parent, original_checksum, original_type, recursive=True):
-        if dependent.HasInputTransform:
-            dependent.SetTransform(transform_node)
-            
-    return transform_node.Parent
-        
+def MarkSectionsAsUndamaged(block_node, SectionNumbers, **kwargs):
+    block_node.MarkSectionsAsUndamaged(SectionNumbers)
+    return block_node.Parent
 
 if __name__ == '__main__':
     pass

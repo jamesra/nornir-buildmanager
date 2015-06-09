@@ -856,7 +856,11 @@ class XElementWrapper(ElementTree.Element):
 #             if NotValid:
 #                 continue
             if '_Link' in m.tag:
-                m = self._replace_link(m)
+                m_replaced = self._replace_link(m)
+                if m_replaced is None:
+                    continue
+                else: 
+                    m = m_replaced
                 
             if len(RemainingXPath) > 0:
                 subContainerMatches = m.findall(RemainingXPath)
@@ -945,9 +949,9 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
     def Clean(self, reason=None):
         if self.Locked:
             Logger = logging.getLogger(__name__ + '.' + 'Clean')
-            Logger.warning('Could not delete resource with locked flag set: %s\nReason for attempt: %s' % self.FullPath)
+            Logger.warning('Could not delete resource with locked flag set: %s' % self.FullPath)
             if not reason is None:
-                Logger.warning('\nReason for attempt: %s' % reason)
+                Logger.warning('Reason for attempt: %s' % reason)
             return
             
         '''Remove the contents referred to by this node from the disk'''
@@ -1371,6 +1375,50 @@ class BlockNode(XNamedContainerElementWrapped):
             return True
         
         return False
+    
+    def MarkSectionsAsDamaged(self, section_number_list):
+        '''Add the sections in the list to the NonStosSectionNumbers'''
+        if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
+            section_number_list = frozenset(section_number_list)
+            
+        existing_set = frozenset(self.NonStosSectionNumbers)
+        self.NonStosSectionNumbers = section_number_list.union(existing_set)
+        
+    def MarkSectionsAsUndamaged(self,section_number_list):
+        if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
+            section_number_list = frozenset(section_number_list)
+            
+        existing_set = frozenset(self.NonStosSectionNumbers)
+        self.NonStosSectionNumbers = existing_set.difference(section_number_list)
+    
+    @property
+    def NonStosSectionNumbers(self):
+        '''A list of integers indicating which section numbers should not be control sections for slice to slice registration'''
+        StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
+        (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
+    
+        # Fetch the list of the exempt nodes from the element text
+        ExemptString = StosExemptNode.text
+    
+        if(ExemptString is None or len(ExemptString) == 0):
+            return []
+    
+        # OK, parse the exempt string to a different list
+        NonStosSectionNumbers = sorted(frozenset([int(x) for x in ExemptString.split(',')]))
+    
+        return NonStosSectionNumbers
+    
+    @NonStosSectionNumbers.setter
+    def NonStosSectionNumbers(self, value):
+        '''A list of integers indicating which section numbers should not be control sections for slice to slice registration'''
+        StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
+        (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
+        
+        if isinstance(value, str):
+            StosExemptNode.text = value
+        elif isinstance(value, list) or isinstance(value, set) or isinstance(value, frozenset):
+            StosExemptNode.text = ','.join(list(map(str,value)))
+       
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(BlockNode, self).__init__(tag='Block', Name=Name, Path=Path, attrib=attrib, **extra)
@@ -1390,7 +1438,7 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def GetOrCreateFilter(self, Name):
         (added, filterNode) = self.UpdateOrAddChildByAttrib(FilterNode(Name), 'Name')
-        return filterNode
+        return (added, filterNode)
 
     def MatchFilterPattern(self, filterPattern):
         return VMH.SearchCollection(self.Filters,
@@ -1399,6 +1447,24 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def GetTransform(self, transform_name):
         return self.GetChildByAttrib('Transform', 'Name', transform_name)
+    
+    def RemoveFilterOnContrastMismatch(self, FilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+        '''
+        Return: true if filter found and removed
+        '''
+        
+        filter_node = self.GetFilter(Filter=FilterName)
+        if filter_node is None:
+            return False
+        
+        if filter_node.Locked:
+            if filter_node.IsContrastMismatched(MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+                self.logger.warn("Locked filter cannot be removed for contrast mismatch. %s " % filter_node.FullPath)
+                return False 
+                
+        
+        return filter_node.RemoveNodeOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
+            
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
@@ -1407,7 +1473,7 @@ class ChannelNode(XNamedContainerElementWrapped):
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
     return nornir_buildmanager.templates.Current.SectionTemplate % int(SectionNumber) + "_" + ChannelName + "_" + FilterName + Extension
 
-class FilterNode(XNamedContainerElementWrapped):
+class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
 
     DefaultMaskName = "Mask"
     
@@ -1416,41 +1482,18 @@ class FilterNode(XNamedContainerElementWrapped):
         InputChannelNode = self.FindParent('Channel')
         section_node = InputChannelNode.FindParent('Section')
         return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
-
-    @property
-    def MaxIntensityCutoff(self):
-        if 'MaxIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MaxIntensityCutoff']),3)
-
-        return None
     
-    @MaxIntensityCutoff.setter
-    def MaxIntensityCutoff(self, value):
-        self.attrib['MaxIntensityCutoff'] = "%g" % round(value, 3)
-        return None
-
     @property
-    def MinIntensityCutoff(self):
-        if 'MinIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MinIntensityCutoff']),3)
-        return None
-    
-    @MinIntensityCutoff.setter
-    def MinIntensityCutoff(self, value):
-        self.attrib['MinIntensityCutoff'] = "%g" % round(value, 3)
-        return None
+    def Histogram(self):
+        '''Get the image set for the filter, create if missing'''
+        # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
+        # There should be only one Imageset, so use find
+        histogram = self.find('Histogram')
+        if histogram is None:
+            histogram = HistogramNode()
+            self.append(histogram)
 
-    @property
-    def Gamma(self):
-        if 'Gamma' in self.attrib:
-            return round(float(self.attrib['Gamma']),3)
-        return None
-    
-    @Gamma.setter
-    def Gamma(self, value):
-        self.attrib['Gamma'] = "%g" % round(value, 3)
-        return None
-
+        return histogram
     @property
     def BitsPerPixel(self):
         if 'BitsPerPixel' in self.attrib:
@@ -1473,8 +1516,16 @@ class FilterNode(XNamedContainerElementWrapped):
         return pyramid
     
     @property
+    def HasTilePyramid(self):
+        return not self.find('TilePyramid') is None
+    
+    @property
     def HasImageset(self):
         return not self.find('ImageSet') is None
+    
+    @property
+    def HasTileset(self):
+        return not self.find('Tileset') is None
 
     @property
     def Imageset(self):
@@ -1574,7 +1625,7 @@ class FilterNode(XNamedContainerElementWrapped):
 
 
     def GetOrCreateMaskImage(self, Downsample):
-        maskFilter = self.GetOrCreateMaskFilter()
+        (added_mask_filter, maskFilter) = self.GetOrCreateMaskFilter()
         return maskFilter.GetOrCreateImage(Downsample)
 
 
@@ -1594,33 +1645,6 @@ class FilterNode(XNamedContainerElementWrapped):
         
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         XElementWrapper.logger.warn("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff, Gamma))
-        
-    def RemoveTilePyramidOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
-        '''Remove the Filter node if the Contrast values do not match the passed parameters
-        :return: TilePyramid node if the node was preserved.  None if the node was removed'''
-        
-        if self.Locked:
-            if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff, 2) or \
-               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 2) or \
-               not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'Gamma', Gamma, 3):
-                XElementWrapper.logger.warn("Contrast mismatch ignored due to filter lock on %s" % self.FullPath)
-                self._LogContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
-            return False 
-        
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MinIntensityCutoff', MinIntensityCutoff, 2,NodeToRemove=self.TilePyramid)
-        if OutputNode is None:
-            return True
-        
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'MaxIntensityCutoff', MaxIntensityCutoff, 2,NodeToRemove=self.TilePyramid)
-        if OutputNode is None:
-            return True
-        
-        OutputNode = nornir_buildmanager.validation.transforms.RemoveOnMismatch(self, 'Gamma', Gamma, 3, NodeToRemove=self.TilePyramid)
-        if OutputNode is None:
-            return True
-        
-        return False
-
 
 class NotesNode(XResourceElementWrapper):
 
@@ -2297,6 +2321,8 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
             raise Exception("Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
     def IsValid(self):
+        '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
+           If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         valid = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
             return super(TransformNode, self).IsValid()
@@ -2721,6 +2747,7 @@ class LevelNode(XContainerElementWrapper):
     @Downsample.setter
     def Downsample(self, Value):
         self.attrib['Downsample'] = '%g' % Value
+                
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''

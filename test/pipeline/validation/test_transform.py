@@ -63,8 +63,8 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
         # self.assertFalse(self.ZeroGridTransform.Checksum == self.GridTransform.Checksum)
 
         # Make sure the checksum test is able to fail
-        self.assertTrue(transforms.IsOutdated(self.PruneTransform, self.TranslateTransform))
-        self.assertTrue(transforms.IsOutdated(self.TranslateTransform, self.GridTransform))
+        self.assertFalse(self.PruneTransform.IsInputTransformMatched(self.TranslateTransform))
+        self.assertFalse(self.PruneTransform.IsInputTransformMatched(self.GridTransform))
 
         # Take turns removing transform files and ensuring they are regenerated in isolation
         TransformNodes = list(self.ChannelData.findall('Transform'))

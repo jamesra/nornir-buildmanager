@@ -9,7 +9,7 @@ import unittest
 from setup_pipeline import *
 
 
-class PrepareThenMosaicTest(PlatformTest):
+class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
     '''Run the build with prepare, then run again with mosiac'''
 
     TransformNames = ["translate", "grid", "zerogrid", "stage"]
@@ -64,12 +64,10 @@ class PrepareThenMosaicTest(PlatformTest):
 
     def runTest(self):
         # Import the files
-
-        self.RunImportThroughMosaicAssemble()
-
+  
         # self.CheckTransformsExist(VolumeObj)
 
-        buildArgs = self._CreateBuildArgs(pipeline='AssembleTiles')
+        buildArgs = self._CreateBuildArgs('AssembleTiles', '-Shape', '512,512')
         build.Execute(buildArgs)
 
         # Load the meta-data from the volumedata.xml file

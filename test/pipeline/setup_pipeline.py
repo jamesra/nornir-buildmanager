@@ -171,6 +171,18 @@ class PlatformTest(test.testbase.TestBase):
     @property
     def PlatformFullPath(self):
         return os.path.join(self.TestInputPath, "PlatformRaw", self.Platform)
+    
+    
+    @property
+    def TestSetupCachePath(self):
+        '''The directory where we can cache the setup phase of the tests.  Delete to obtain a clean run of all tests'''
+        if 'TESTOUTPUTPATH' in os.environ:
+            TestOutputDir = os.environ["TESTOUTPUTPATH"]
+            return os.path.join(TestOutputDir, 'Cache', self.Platform, self.VolumePath)
+        else:
+            self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
+
+        return None
      
     @property
     def ImportedDataPath(self):
@@ -244,13 +256,14 @@ class PlatformTest(test.testbase.TestBase):
         InputTransform = transformNode.Parent.GetChildByAttrib('Transform', 'Name', transformNode.InputTransform)
         self.assertIsNotNone(InputTransform)
 
-        self.assertFalse(transforms.IsOutdated(transformNode, InputTransform))
+        
+        self.assertTrue(transformNode.IsInputTransformMatched(InputTransform))
 
         # Check that our reported checksum and actual file checksums match
         self.ValidateTransformChecksum(InputTransform)
 
         # Check that
-        self.assertFalse(transforms.IsOutdated(self.PruneTransform, self.StageTransform))
+        self.assertTrue(self.PruneTransform.IsInputTransformMatched(self.StageTransform))
 
     def EnsureTilePyramidIsFull(self, FilterNode, NumExpectedTiles):
 
@@ -290,7 +303,7 @@ class PlatformTest(test.testbase.TestBase):
         elif 'pmg' in self.Platform.lower():
             return self.RunPMGImport()
             
-        raise NotImplemented("Derived classes should point RunImport at a specific importer")
+        raise NotImplementedError("Derived classes should point RunImport at a specific importer")
 
     def RunIDocImport(self):
         buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
@@ -415,12 +428,15 @@ class PlatformTest(test.testbase.TestBase):
         self.assertIsNotNone(ExpectedOutputFilter, "No filter node produced for contrast adjustment")
 
 
-    def RunHistogram(self, Filter=None, Downsample=4):
+    def RunHistogram(self, Filter=None, Downsample=4, Transform=None):
         if Filter is None:
             Filter = 'Raw8'
+        
+        if Transform is None:
+            Transform = "Prune"
 
         # Adjust Contrast
-        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', Filter, '-Downsample', str(Downsample), '-InputTransform', 'Prune')
+        buildArgs = self._CreateBuildArgs('Histogram', '-Filters', Filter, '-Downsample', str(Downsample), '-InputTransform', Transform)
         volumeNode = self.RunBuild(buildArgs)
 
         HistogramNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']/Histogram" % Filter)
@@ -428,15 +444,18 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunAdjustContrast(self, Sections=None, Filter=None, Gamma=None):
+    def RunAdjustContrast(self, Sections=None, Filter=None, Gamma=None, Transform=None):
         if Filter is None:
             Filter = 'Raw8'
+            
+        if Transform is None:
+            Transform = 'Prune'
 
         # Adjust Contrast
         if Sections is None:
-            buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+            buildArgs = self._CreateBuildArgs('AdjustContrast', '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', Transform)
         else:
-            buildArgs = self._CreateBuildArgs('AdjustContrast', '-Sections', str(Sections), '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', 'Prune')
+            buildArgs = self._CreateBuildArgs('AdjustContrast', '-Sections', str(Sections), '-InputFilter', Filter, '-OutputFilter', 'Leveled', '-InputTransform', Transform)
 
         if not Gamma is None:
             buildArgs.extend(['-Gamma', str(Gamma)])
@@ -448,11 +467,15 @@ class PlatformTest(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunMosaic(self, Filter):
+    def RunMosaic(self, Filter, Transform=None):
         if Filter is None:
             Filter = 'Leveled'
+        
+        if Transform is None:
+            Transform = 'Prune'
+            
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', 'Prune', '-InputFilter', Filter, '-OutputTransform', 'Grid', '-Iterations', "3", '-Threshold', "1.0")
+        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', Transform, '-InputFilter', Filter, '-OutputTransform', 'Grid', '-Iterations', "3", '-Threshold', "1.0")
         volumeNode = self.RunBuild(buildArgs)
 
         TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")
@@ -901,10 +924,13 @@ class ImportOnlySetup(PlatformTest):
     def setUp(self):
         super(ImportOnlySetup, self).setUp()
 
+        CacheName = 'ImportOnlySetup'
         # Import the files
-        self.RunImport()
-        self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
-
+        if not self.TryLoadTestSetupFromCache(CacheName):
+            self.RunImport()
+            self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
+            self.SaveTestSetupToCache(CacheName)
+            
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
         self.assertIsNotNone(self.VolumeObj)
@@ -913,10 +939,13 @@ class PrepareSetup(PlatformTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
     def setUp(self):
         super(PrepareSetup, self).setUp()
-
-        self.RunImport()
-        self.RunPrune()
-        self.RunHistogram()
+        CacheName = 'PrepareSetup'
+        
+        if not self.TryLoadTestSetupFromCache(CacheName):
+            self.RunImport()
+            self.RunPrune()
+            self.RunHistogram()        
+            self.SaveTestSetupToCache(CacheName)
 
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
@@ -930,8 +959,11 @@ class PrepareAndMosaicSetup(PlatformTest):
 
         super(PrepareAndMosaicSetup, self).setUp()
         # Import the files
+        CacheName = 'PrepareAndMosaicSetup'
 
-        self.RunImportThroughMosaic()
+        if not self.TryLoadTestSetupFromCache(CacheName):
+            self.RunImportThroughMosaic()
+            self.SaveTestSetupToCache(CacheName)
 
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
@@ -943,9 +975,11 @@ class PrepareThroughAssembleSetup(PlatformTest):
     def setUp(self):
 
         super(PrepareThroughAssembleSetup, self).setUp()
+        CacheName = 'PrepareThroughAssembleSetup'
         # Import the files
-
-        self.RunImportThroughMosaicAssemble()
+        if not self.TryLoadTestSetupFromCache(CacheName):
+            self.RunImportThroughMosaicAssemble()
+            self.SaveTestSetupToCache(CacheName)
 
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.TestOutputPath)

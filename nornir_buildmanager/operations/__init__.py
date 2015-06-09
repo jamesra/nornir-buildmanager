@@ -1,1 +1,1 @@
-__all__ = ['block', 'channel', 'general', 'pruneobj', 'registration', 'reporting', 'setters', 'tile', 'versions', 'vikingxml'];
+__all__ = ['block', 'channel', 'diagnostics', 'general', 'migration', 'pruneobj', 'registration', 'reporting', 'setters', 'tile', 'versions', 'vikingxml'];
