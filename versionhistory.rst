@@ -2,6 +2,8 @@
 1.3.0
 -----
 
+**1.3.0 is not compatible with volumes built with earlier versions.  If you have data you do not want to reimport contact me about migrating it to 1.3.0.  The migration has been done but requires some supervision.**
+
 **New**
 
 * ir-refine-translate has been replaced with a python implementation.  This appears to solve tiles that were misplaced in mosaics when stage position was very incorrect
