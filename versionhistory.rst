@@ -8,18 +8,26 @@
 * Contrast settings can be set manually when importing 16bpp images
 * When performing import, save progress incrementally in case of crash
 * Added -Sections flag to CreateBlobFilter
-* Remove .stos files if the input images have changed
+* Regenerate .stos files if the input images have changed
 * Save meta-data when we generate a new level for an image on the fly
-
-
+* Added **SetMosaicLock** pipeline to lock .mosaic transforms.  This prevents regeneration which could break existing annotations.
+* Added **ListFilterContrast** pipeline to print the contrast settings used for filters.
+* Added pipelines for marking damaged sections.  Damaged sections are not used for slice-to-slice registration.
+   * **ListDamagedSections**
+   * **MarkSectionsDamaged**
+   * **MarkSectionsUnamaged**
+* Added -Shape parameter to AssembleTileset pipeline allowing different tile sizes.  256x256 is the default.
+   
 **Changed**
 
+* Removed the -volume flag.  The volume path is now the first argument to the nornir-build command.
 * Do not set build process to low priority unless specified on command line.  Low priority has a huge performance cost.
-* Importers are now pipelines.  They have specific names for the type of data to import
+* Importers are now pipelines.  They have specific names for the type of data to import.
 * Wait for pools to complete before executing next pipeline stage
 * Added options to generate histograms asynchronously
 * Refactored idoc import code
 * Write errors that occur during ir-blob to the log window
+* Test setup is now cached in the TESTOUTPUT directory.  The cache should be cleared before running tests after relevant changes.
 
 
 **Fixed**
@@ -27,7 +35,7 @@
 * Remove generated Prune.mosaic file if it is older than the prune data it is generated from
 * Masks were entirely missed in slice-to-slice registration.  Masks are now properly included and propogated.  Removed parameter from '-UseMasks' flag
 * Do not crash if the same level is passed to CreatePyramid functions twice in a list
- 
+* Number imported tiles from IDOC's starting with 0.  This matches SerialEM's numbering 
 
 
 
