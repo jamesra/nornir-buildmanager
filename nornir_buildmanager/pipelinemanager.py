@@ -592,8 +592,12 @@ class PipelineManager(object):
 
         # parser.prog = PipelineNode.attrib['Name'];
 
+        if 'Help' in PipelineNode.attrib:
+            parser.help = PipelineNode.attrib['Help']
+            
         if 'Description' in PipelineNode.attrib:
             parser.description = PipelineNode.attrib['Description']
+            
 
         if 'Epilog' in PipelineNode.attrib:
             parser.epilog = PipelineNode.attrib['Epilog']
