@@ -303,6 +303,11 @@ def ParseChannels(SectionNode, OutputSectionNode):
                 OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
                 OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path'])
                 print "Tileset found for section " + str(SectionNode.attrib["Number"])
+                
+        NotesNodes = ChannelNode.findall('Notes')
+        for NoteNode in NotesNodes:
+            # Copy over Notes elements verbatim
+            OutputSectionNode.append(copy.deepcopy(NoteNode))
 
 
 def ParseTransform(TransformNode, OutputSectionNode):
