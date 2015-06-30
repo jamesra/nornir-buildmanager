@@ -1074,8 +1074,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         ResourcePath = self.FullPath
         if not os.path.isdir(ResourcePath):
             return [False, 'Directory does not exist']
-
-        if os.path.isdir(ResourcePath) and not self.Parent is None:
+        elif not self.Parent is None:
             if len(os.listdir(ResourcePath)) == 0:
                 return [False, 'Directory is empty']
 
@@ -2471,7 +2470,51 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 class ImageSetNode(ImageSetBaseNode):
  
     DefaultPath = 'Images'
+    
+    
+    def IsLevelPopulated(self, level_full_path):
+        '''
+        :param str level_full_path: The path to the directories containing the image files
+        :return: (Bool, String) containing whether all tiles exist and a reason string
+        '''
+        
+        FilePrefix = self.FilePrefix
+        FilePostfix = self.FilePostfix
+        GridXDim = int(self.GridDimX) - 1
+        GridYDim = int(self.GridDimY) - 1
 
+        GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
+        # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
+        MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
+                                                                                    'X' :  GridXString,
+                                                                                    'Y' : '*',
+                                                                                    'postfix' :  FilePostfix})
+
+        # Start with the middle because it is more likely to have a match earlier
+        TestIndicies = range(GridYDim / 2, GridYDim)
+        TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
+        for iY in TestIndicies:
+            # MatchString = os.path.join(OutputDir, FilePrefix +
+            #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +
+            #                           '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY +
+            #                           FilePostfix)
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
+                                                                                    'X' : GridXString,
+                                                                                    'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
+                                                                                    'postfix' : FilePostfix})
+            if(os.path.exists(MatchString)):
+                return [True, "Last column of tileset found"]
+
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
+                                                                                    'X' : str(GridXDim),
+                                                                                    'Y' : str(iY),
+                                                                                    'postfix' : FilePostfix})
+            if(os.path.exists(MatchString)):
+                return [True, "Last column of tileset found"]
+
+        return [False, "Last column of tileset not found"]
+        
+        
     def __init__(self, Type=None, attrib=None, **extra):
 
         if Type is None:
@@ -2644,6 +2687,26 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
     def ImageFormatExt(self, val):
         assert(isinstance(val, str))
         self.attrib['ImageFormatExt'] = val
+        
+    def IsLevelPopulated(self, level_full_path):
+        '''
+        :param str level_full_path: The path to the directories containing the image files
+        :return: (Bool, String) containing whether all tiles exist and a reason string
+        '''
+    
+        globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
+
+        files = glob.glob(globfullpath)
+
+        if(len(files) == 0):
+            return [False, "No files in level"]
+
+        FileNumberMatch = len(files) <= self.NumberOfTiles
+
+        if not FileNumberMatch:
+            return [False, "File count mismatch for level"] 
+        
+        return [True,None]
 
 
     def __init__(self, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
@@ -2747,67 +2810,24 @@ class LevelNode(XContainerElementWrapper):
     @Downsample.setter
     def Downsample(self, Value):
         self.attrib['Downsample'] = '%g' % Value
-                
+              
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
 
+        
+        
+        if not os.path.isdir(self.FullPath):
+            return [False, 'Directory does not exist']
+         
         PyramidNode = self.Parent
-
-        if not os.path.exists(self.FullPath):
-            return [False, "Path does not exist"]
-
         if(isinstance(PyramidNode, TilePyramidNode)):
-            globfullpath = os.path.join(self.FullPath, '*' + PyramidNode.ImageFormatExt)
-
-            files = glob.glob(globfullpath)
-
-            if(len(files) == 0):
-                return [False, "No files in level"]
-
-            FileNumberMatch = len(files) <= PyramidNode.NumberOfTiles
-
-            if not FileNumberMatch:
-                return [False, "File count mismatch for level"]
+            return PyramidNode.IsLevelPopulated(self.FullPath)
         elif(isinstance(PyramidNode, TilesetNode)):
+            return PyramidNode.IsLevelPopulated(self.FullPath)
             # Make sure each level has at least one tile from the last column on the disk.
-            FilePrefix = PyramidNode.FilePrefix
-            FilePostfix = PyramidNode.FilePostfix
-            GridXDim = int(self.GridDimX) - 1
-            GridYDim = int(self.GridDimY) - 1
-
-            GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
-            # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
-            MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
-                                                                                        'X' :  GridXString,
-                                                                                        'Y' : '*',
-                                                                                        'postfix' :  FilePostfix})
-
-            # Start with the middle because it is more likely to have a match earlier
-            TestIndicies = range(GridYDim / 2, GridYDim)
-            TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
-            for iY in TestIndicies:
-                # MatchString = os.path.join(OutputDir, FilePrefix +
-                #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +
-                #                           '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY +
-                #                           FilePostfix)
-                MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
-                                                                                        'X' : GridXString,
-                                                                                        'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
-                                                                                        'postfix' : FilePostfix})
-                if(os.path.exists(MatchString)):
-                    return [True, "Last column found"]
-
-                MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
-                                                                                        'X' : str(GridXDim),
-                                                                                        'Y' : str(iY),
-                                                                                        'postfix' : FilePostfix})
-                if(os.path.exists(MatchString)):
-                    return [True, "Last column found"]
-
-            return [False, "Last column of tileset not found"]
-
-        return super(LevelNode, self).IsValid()
+            
+        return (True, None)
 
 
     def __init__(self, Level, attrib=None, **extra):
