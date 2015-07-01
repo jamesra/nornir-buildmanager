@@ -762,7 +762,9 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
         for ColSubElement in ColSubElements:
 
             HTML = None
-            if ColSubElement.tag == "Image":
+            if ColSubElement.tag == "Tileset":
+                ColumnBodyList.bgColor = '#A0FFA0'
+            elif ColSubElement.tag == "Image":
                 if ColSubElement.FindParent("ImageSet") is None:
                     kwargs['MaxImageWidth'] = 364
                     kwargs['MaxImageHeight'] = 364
@@ -788,7 +790,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
 
     # if not CaptionHTML is None:
     #   ColumnBodyList.caption = '<caption align=bottom>%s</caption>' % CaptionHTML
-
+    
     return ColumnBodyList
 
 def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
@@ -882,6 +884,23 @@ def __IndentString(IndentLevel):
 
 def __AppendHTML(html, newHtml, IndentLevel):
     html.append(__IndentString(IndentLevel) + newHtml)
+    
+def __ValueToTableRow(value, IndentLevel):
+    HTML = HTMLBuilder(IndentLevel)
+    
+    bgColor = "#FFFFFF"
+    if hasattr(value, 'bgColor'):
+        bgColor = value.bgColor
+    
+    HTML.Add('<tr bgcolor=%s>\n' % bgColor)
+    HTML.Indent()
+    
+    HTML.Add(__ValueToTableCell(value, HTML.IndentLevel))
+
+    HTML.Dedent()
+    HTML.Add("</tr>\n")
+    
+    return HTML
 
 def __ValueToTableCell(value, IndentLevel):
     '''Converts a value to a table cell'''
@@ -1002,17 +1021,8 @@ def DictToTable(RowDict=None, IndentLevel=None):
     keys = RowDict.keys()
     keys.sort(reverse=True)
 
-    for row in keys:
-        value = RowDict[row]
-
-        HTML.Add('<tr>\n')
-        HTML.Indent()
-
-
-        HTML.Add(__ValueToTableCell(value, HTML.IndentLevel))
-
-        HTML.Dedent()
-        HTML.Add("</tr>\n")
+    for row in keys: 
+        HTML.Add(__ValueToTableRow(RowDict[row], HTML.IndentLevel))
 
     if hasattr(RowDict, 'caption'):
         HTML.Add(RowDict.caption)
@@ -1038,8 +1048,6 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
         HTML = HTML + ' ' * IndentLevel + '<tr>\n'
 
         IndentLevel = IndentLevel + 1
-
-
 
         if isinstance(columnList, str):
             HTML = HTML + '<td>'
