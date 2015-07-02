@@ -9,7 +9,7 @@ import pickle
 import shutil
 import sys
 import urllib
-import math
+import math 
  
 import nornir_shared.checksum
 import nornir_shared.misc as misc
@@ -2343,7 +2343,9 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
                 continue
             yield image
             
-        return 
+        return
+    
+    
 
     def GetImage(self, Downsample):
         '''Returns image node for the specified downsample or None'''
@@ -2472,8 +2474,23 @@ class ImageSetNode(ImageSetBaseNode):
     DefaultPath = 'Images'
     
     
-    
+    def FindDownsampleForSize(self, requested_size):
+        '''Find the smallest existing image of the requested size or greater.  If it does not exist return the maximum resolution level
+        :param tuple requested_size: Either a tuple or integer.  A tuple requires both dimensions to be larger than the requested_size.  A integer requires only one of the dimensions to be larger.
+        :return: Downsample level
+        '''
         
+        level = self.MinResLevel
+        
+        while(level > self.MaxResLevel):
+            dim = self.GetImage(level).Dimensions
+            if isinstance(requested_size, tuple):
+                if dim[0] >= requested_size[0] and dim[1] >= requested_size[1]:
+                    return level.Downsample
+            elif dim[0] >= requested_size or dim[1] >= requested_size:
+                    return level.Downsample
+            
+        return self.MaxResLevel.Downsample
         
     def __init__(self, Type=None, attrib=None, **extra):
 
@@ -2513,6 +2530,11 @@ class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
             self.attrib['Checksum'] = str(checksum)
 
         return checksum
+    
+    @property
+    def Dimensions(self):
+        ''':return: (height, width)'''
+        return nornir_imageregistration.GetImageSize(self.FullPath)
 
 
 class DataNode(XFileElementWrapper):
