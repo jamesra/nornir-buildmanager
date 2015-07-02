@@ -567,7 +567,7 @@
      		    RowLabelAttrib="Number"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="Channel/Filter[@Name='#AssembleFilter']/Tileset,Channel/Filter[@Name='#AssembleFilter']/ImageSet/Level[@Downsample='#AssembleDownsample']/Image,Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
+     		    ColumnXPaths="Channel/Filter[@Name='#AssembleFilter'],Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
 
 		<PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
 	</Pipeline>
