@@ -2349,8 +2349,12 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
     def GetImage(self, Downsample):
         '''Returns image node for the specified downsample or None'''
-
-        levelNode = self.GetLevel(Downsample)
+        
+        if not isinstance(Downsample, LevelNode):
+            levelNode = self.GetLevel(Downsample)
+        else:
+            levelNode = Downsample 
+            
         if levelNode is None:
             return None
 
