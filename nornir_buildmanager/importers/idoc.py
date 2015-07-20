@@ -65,7 +65,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if len(ContrastMap) == 0:
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
 
-    DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
+    DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
             yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
