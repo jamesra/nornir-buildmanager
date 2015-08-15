@@ -643,15 +643,19 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
         
         
     # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
-    DictAttributes = {'BitsPerPixel' : 8,
-                        'MinIntensityCutoff' : str(MinIntensityCutoff),
-                        'MaxIntensityCutoff' : str(MaxIntensityCutoff),
-                        'Gamma' : str(Gamma),
-                        'HistogramChecksum' : str(HistogramElement.Checksum)}
+#     DictAttributes = {'BitsPerPixel' : 8,
+#                         'MinIntensityCutoff' : str(MinIntensityCutoff),
+#                         'MaxIntensityCutoff' : str(MaxIntensityCutoff),
+#                         'Gamma' : str(Gamma),
+#                         'HistogramChecksum' : str(HistogramElement.Checksum)}
 
-    (filter_created, OutputFilterNode) = ChannelNode.UpdateOrAddChildByAttrib(nb.VolumeManager.FilterNode(OutputFilterName, OutputFilterName, attrib=DictAttributes))
+    (filter_created, OutputFilterNode) = ChannelNode.GetOrCreateFilter(OutputFilterName)
     if not os.path.exists(OutputFilterNode.FullPath):
         os.makedirs(OutputFilterNode.FullPath)
+        
+    OutputFilterNode.BitsPerPixel = 8
+    OutputFilterNode.HistogramChecksum = str(HistogramElement.Checksum)
+    OutputFilterNode.SetContrastValues(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
         
     Input = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
     ImageFiles = sorted(Input.ImageToTransformString.keys())

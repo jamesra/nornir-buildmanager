@@ -312,18 +312,18 @@ class InputTransformHandler(object):
 
         InputTransformType = self.attrib.get('InputTransformType', None)
         if InputTransformType is None:
-            return True
+            return [True, ""]
 
         if len(self.InputTransformType) > 0:
             InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
             if InputTransformNode is None:
                 self.logger.warning('Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
-                return True
+                return [True, ""]
 
             if not self.IsInputTransformMatched(InputTransformNode):
                 return [False, 'Input Transform mismatch']
 
-        return True
+        return [True, ""]
     
     @classmethod
     def EnumerateTransformDependents(cls, parent_node, checksum, type, recursive):

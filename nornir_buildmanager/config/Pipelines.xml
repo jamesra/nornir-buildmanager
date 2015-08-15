@@ -639,17 +639,25 @@
 			<Iterate VariableName="SectionNode" XPath="Block/Section">
 				<RequireSetMembership Attribute="Number" List="#Sections"/>
 				
-				<Iterate VariableName="FilterNode" XPath="Channel/Filter">
-					<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
-				</Iterate>
-				<Iterate VariableName="ImageNode" XPath="Channel/Filter/ImageSet/Level/Image">
-					<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
-				</Iterate>
-				<Iterate VariableName="TransformNode" XPath="Channel/Transform">
-					<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+				<Iterate VariableName="ChannelNode" XPath="Channel">
+					<Iterate VariableName="TransformNode" XPath="Transform">
+						<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+					</Iterate>
+					
+					<Iterate VariableName="FilterNode" XPath="Filter">
+						<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
+						
+						<Iterate VariableName="ImageNode" XPath="ImageSet/Level/Image">
+							<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
+						</Iterate>
+						<Iterate VariableName="LevelNode" XPath="ImageSet/Level">
+							<PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode"/>
+						</Iterate>
+					</Iterate>
+					 
 				</Iterate>
 			</Iterate>
-			
+			<!--
 			<Iterate VariableName="TransformNode" XPath="Block/StosGroup/SectionMappings/Transform">
 				<RequireSetMembership Attribute="ControlSectionNumber" List="#Sections"/>	
 				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>
@@ -658,6 +666,7 @@
 				<RequireSetMembership Attribute="MappedSectionNumber" List="#Sections"/>	
 				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>
 			</Iterate>
+			-->
 	</Pipeline>
 	
 	

@@ -455,8 +455,8 @@ class XElementWrapper(ElementTree.Element):
 
 
         if not Valid[0]:
-
             self.Clean(Valid[1])
+            
 
         return not Valid[0]
 
@@ -1627,7 +1627,6 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
         (added_mask_filter, maskFilter) = self.GetOrCreateMaskFilter()
         return maskFilter.GetOrCreateImage(Downsample)
 
-
     def GetHistogram(self):
         return self.find('Histogram')
 
@@ -1636,12 +1635,7 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
             Path = Name
 
         super(FilterNode, self).__init__(tag='Filter', Name=Name, Path=Path, attrib=attrib, **extra)
-        
-    def SetContrastValues(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
-        self.attrib['MinIntensityCutoff'] = "%g" % MinIntensityCutoff
-        self.attrib['MaxIntensityCutoff'] = "%g" % MaxIntensityCutoff
-        self.attrib['Gamma'] = "%g" % Gamma
-        
+                
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         XElementWrapper.logger.warn("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff, Gamma))
 
@@ -2322,9 +2316,15 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
     def IsValid(self):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
-        valid = VMH.InputTransformHandler.InputTransformIsValid(self)
+        
+        [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
-            return super(TransformNode, self).IsValid()
+            [valid, reason] = super(TransformNode, self).IsValid()
+            
+            if not os.path.exists(self.FullPath):
+                self.Locked = False
+        
+        return [valid, reason]
         
 
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
@@ -2464,9 +2464,11 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         return OutputImage
 
     def IsValid(self):
-        valid = VMH.InputTransformHandler.InputTransformIsValid(self)
+        [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
             return super(ImageSetBaseNode, self).IsValid()
+        else:
+            return [valid, reason]
         
     @property
     def Checksum(self):
@@ -2495,6 +2497,27 @@ class ImageSetNode(ImageSetBaseNode):
                     return level.Downsample
             
         return self.MaxResLevel.Downsample
+    
+    def IsLevelPopulated(self, level_full_path):
+        '''
+        :param str level_full_path: The path to the directories containing the image files
+        :return: (Bool, String) containing whether all tiles exist and a reason string
+        '''
+    
+        globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
+
+        files = glob.glob(globfullpath)
+
+        if(len(files) == 0):
+            return [False, "No files in level"]
+
+        FileNumberMatch = len(files) <= self.NumberOfTiles
+
+        if not FileNumberMatch:
+            return [False, "File count mismatch for level"] 
+        
+        return [True,None]
+
         
     def __init__(self, Type=None, attrib=None, **extra):
 
@@ -2853,6 +2876,9 @@ class LevelNode(XContainerElementWrapper):
             return PyramidNode.IsLevelPopulated(self.FullPath)
         elif(isinstance(PyramidNode, TilesetNode)):
             return PyramidNode.IsLevelPopulated(self.FullPath, self.GridDimX, self.GridDimY)
+        elif(isinstance(PyramidNode, ImageSetNode)):
+            if not PyramidNode.HasImage(self.Downsample):
+                return (False, "No image node found")
             # Make sure each level has at least one tile from the last column on the disk.
             
         return (True, None)
