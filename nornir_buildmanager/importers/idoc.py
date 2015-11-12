@@ -69,9 +69,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
             yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
-            
-    yield VolumeElement
-
+              
 def try_remove_spaces_from_dirname(sectionDir):
     ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
     sectionDirNoSpaces = sectionDir.replace(' ', '_')
