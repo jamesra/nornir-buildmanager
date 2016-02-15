@@ -52,7 +52,6 @@ import nornir_pools
 import numpy
 
 
-
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
     
@@ -359,8 +358,10 @@ class SerialEMIDocImport(object):
             # transformObj.Checksum = MFile.Checksum
             
         if saveBlock:
-            return BlockObj
+            return VolumeObj
         elif saveSection:
+            return BlockObj
+        elif saveChannel:
             return sectionObj
         else:
             return channelObj
@@ -838,10 +839,15 @@ class IDoc():
                                 for v in values:
                                     convVal = int(v.strip())
                                     ConvertedValues.append(convVal)
-                            except:
-                                for v in values:
-                                    convVal = float(v.strip())
-                                    ConvertedValues.append(convVal)
+                            except ValueError:
+                                
+                                try:
+                                    for v in values:
+                                        convVal = float(v.strip())
+                                        ConvertedValues.append(convVal)
+                                except ValueError:
+                                    convVal = parts[1]
+                                    
 
                             values = ConvertedValues
                             if len(values) == 1:
