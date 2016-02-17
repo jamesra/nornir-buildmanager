@@ -88,12 +88,14 @@ class VolumeManager():
                 VolumeRoot.Save()
 
 
+        SaveNewVolume = False
         if not os.path.exists(Filename):
             if(Create):
                 if not os.path.exists(VolumePath):
                     os.makedirs(VolumePath)
 
                 VolumeRoot = ElementTree.Element('Volume', {"Name" : os.path.basename(VolumePath), "Path" : VolumePath})
+                SaveNewVolume = True                
                 # VM =  VolumeManager(VolumeData, Filename)
                 # return VM
             else:
@@ -112,6 +114,9 @@ class VolumeManager():
         VolumeRoot.attrib['Path'] = VolumePath
         VolumeRoot = XContainerElementWrapper.wrap(VolumeRoot)
         VolumeManager.__SetElementParent__(VolumeRoot)
+        
+        if SaveNewVolume:
+            VolumeRoot.Save()
 
         prettyoutput.Log("Volume Root: " + VolumeRoot.attrib['Path'])
         # VolumeManager.__RemoveElementsWithoutPath__(VolumeRoot)
@@ -1336,7 +1341,20 @@ class BlockNode(XNamedContainerElementWrapped):
     def GetSection(self, Number):
         return self.GetChildByAttrib('Section', 'Number', Number)
     
-    
+    def GetOrCreateSection(self, Number):
+        sectionObj = self.GetSection(Number) 
+        
+        if sectionObj is None:
+            SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
+            SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
+            
+            sectionObj = SectionNode(Number,
+                                     SectionName,
+                                     SectionPath)
+            return self.UpdateOrAddChildByAttrib(sectionObj, 'Number')
+        else:
+            return (False, sectionObj)
+             
     def GetStosGroup(self, group_name, downsample):
         for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):
             if stos_group.Downsample == downsample:
@@ -1502,6 +1520,18 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
     @BitsPerPixel.setter
     def BitsPerPixel(self, val):
         self.attrib['BitsPerPixel'] = '%d' % val
+        
+
+    def GetOrCreateTilePyramid(self):
+        # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
+        # There should be only one Imageset, so use find
+        pyramid = self.find('TilePyramid')
+        if pyramid is None:
+            pyramid = TilePyramidNode(NumberOfTiles=0)
+            self.append(pyramid)
+            return (True, pyramid)
+        else:
+            return (False,pyramid)
 
     @property
     def TilePyramid(self):
@@ -1686,6 +1716,14 @@ class SectionNode(XNamedContainerElementWrapped):
 
     def GetChannel(self, Channel):
         return self.GetChildByAttrib('Channel', 'Name', Channel)
+    
+    def GetOrCreateChannel(self, ChannelName):
+        channelObj = self.GetChildByAttrib('Channel', 'Name', ChannelName)
+        if channelObj is None:
+            channelObj = ChannelNode(ChannelName)
+            return self.UpdateOrAddChildByAttrib(channelObj, 'Name')
+        else:
+            return (False, channelObj)
 
     def MatchChannelPattern(self, channelPattern):
         return VMH.SearchCollection(self.Channels,
@@ -2866,8 +2904,6 @@ class LevelNode(XContainerElementWrapper):
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
 
-        
-        
         if not os.path.isdir(self.FullPath):
             return [False, 'Directory does not exist']
          

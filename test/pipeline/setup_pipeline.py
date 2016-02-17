@@ -302,6 +302,8 @@ class PlatformTest(test.testbase.TestBase):
             return self.RunIDocImport()
         elif 'pmg' in self.Platform.lower():
             return self.RunPMGImport()
+        elif 'dm4' in self.Platform.lower():
+            return self.RunDM4Import()
             
         raise NotImplementedError("Derived classes should point RunImport at a specific importer")
 
@@ -311,6 +313,10 @@ class PlatformTest(test.testbase.TestBase):
         
     def RunPMGImport(self):
         buildArgs = self._CreateImportArgs('ImportPMG', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+        
+    def RunDM4Import(self):
+        buildArgs = self._CreateImportArgs('ImportDM4', self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
     def RunPrune(self, Filter=None, Downsample=None):
