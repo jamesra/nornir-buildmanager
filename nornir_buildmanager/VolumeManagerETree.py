@@ -2524,8 +2524,7 @@ class ImageSetNode(ImageSetBaseNode):
         :return: Downsample level
         '''
         
-        level = self.MinResLevel
-        
+        level = self.MinResLevel 
         while(level > self.MaxResLevel):
             dim = self.GetImage(level).Dimensions
             if isinstance(requested_size, tuple):
@@ -2533,6 +2532,8 @@ class ImageSetNode(ImageSetBaseNode):
                     return level.Downsample
             elif dim[0] >= requested_size or dim[1] >= requested_size:
                     return level.Downsample
+                
+            level = self.MoreDetailedLevel(level.Downsample)
             
         return self.MaxResLevel.Downsample
     
