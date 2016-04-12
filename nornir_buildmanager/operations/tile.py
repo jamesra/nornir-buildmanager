@@ -807,8 +807,6 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     if(NumBins > 2048):
         NumBins = 2048
 
-        HistogramElement.append(AutoLevelDataNode)
-
     ImageCreated = False
     if not os.path.exists(DataNode.FullPath):
         mosaic = mosaicfile.MosaicFile.Load(InputMosaicFullPath)
