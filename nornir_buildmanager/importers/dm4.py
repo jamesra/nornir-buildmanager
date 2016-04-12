@@ -212,15 +212,15 @@ class DigitalMicrograph4Import(object):
         BlockObj = BlockNode('SEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
         if saveBlock:
-            yield BlockObj
+            yield VolumeObj
         
         [saveSection, SectionObj] = BlockObj.GetOrCreateSection(section_number)
         if saveSection:
-            yield SectionObj
+            yield BlockObj
             
         [saveChannel, ChannelObj] = SectionObj.GetOrCreateChannel('SEM')
         if saveChannel:
-            yield ChannelObj
+            yield SectionObj
             
         FilterName = 'Raw' + str(InputImageBpp)
         if(InputImageBpp is None):
@@ -228,15 +228,15 @@ class DigitalMicrograph4Import(object):
             
         [saveFilter, FilterObj] = ChannelObj.GetOrCreateFilter(FilterName)
         if saveFilter:
-            yield FilterObj
+            yield ChannelObj
             
         [savePyramid, TilePyramidObj] = FilterObj.GetOrCreateTilePyramid() 
         if savePyramid:
-            yield TilePyramidObj
+            yield FilterObj
             
         [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
         cls.AddTileToMosaic(transformObj, dm4data, tile_number)
-        yield transformObj
+        yield ChannelObj
         
         #histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
         #cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
