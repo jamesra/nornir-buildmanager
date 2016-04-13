@@ -249,11 +249,11 @@ class StosRebuildHelper(object):
               
         return updatedTransforms
     
-     
+      
 class DM4BuildTest(DM4Test, StosRebuildHelper):
-                
+                 
     def runTest(self):
-                
+                 
         self.RunImport()
         #self.RunPrune(Filter='Raw16')
         self.RunHistogram(Filter='Raw16', Transform='Stage') 
@@ -262,19 +262,19 @@ class DM4BuildTest(DM4Test, StosRebuildHelper):
         self.RunMosaic(Filter="Leveled", Transform='Stage')
         self.RunMosaicReport(ContrastFilter='Raw16')
         self.RunAssemble(Channels='SEM', Levels=[4,8,16])
-        #self.RunAssembleTiles(Channels='SEM', Levels=[4,8,16])
-          
-          
+        self.RunAssembleTiles(Channels='SEM', Levels=1)
+           
+           
 #         self.RunPrune()
-             
+              
         #self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
-             
+              
         #self.RunHistogram()
-             
+              
         #self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
-             
+              
         #self.RunAdjustContrast()
-             
+              
 #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
 #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=2)  
 #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)       
@@ -285,25 +285,25 @@ class DM4BuildTest(DM4Test, StosRebuildHelper):
 #         self.RunMosaic(Filter="Leveled")
 #         self.RunMosaicReport()
 #         self.RunAssemble(Channels='TEM', Levels=[8,16])
-                   
+                    
         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
 #         self.RunMosaicReport()
 #           
 #         # Copy output here to run DM4AlignTest
 #           
         BruteLevel = 32
-             
+              
 #         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
         self.RunAlignSections(Channels="SEM", Filters="Leveled", Levels=BruteLevel)
-                   
+                    
 #         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
 #                   
         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-           
+            
 #         # Copy output here to run DM4AlignOutputTest
-           
+            
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunMosaicToVolume()
@@ -311,84 +311,85 @@ class DM4BuildTest(DM4Test, StosRebuildHelper):
         self.RunAssembleMosaicToVolume(Channels="SEM")
         self.RunMosaicReport(ContrastFilter='Raw16', OutputFile='VolumeReport')
         self.RunExportImages(Channels="Registered", Filters="Leveled", Output="RegisteredExport", AssembleLevel=16)
-  
+   
         self.RunAssemble(Channels='TEM', Levels=[1])
         self.RunExportImages(Channels="SEM", Filters="Leveled", AssembleLevel=8, Output="MosaicExport")
-       
+        
 #         #TODO, this failed.  Fix it
 #         self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)  
 
-# 
+#  
 # class DM4BuildTest(setup_pipeline.CopySetupTestBase, StosRebuildHelper):
-#               
+#                
 #     @property
 #     def VolumePath(self):
 #         return "DM4BuildTest"
-#              
+#               
 #     @property
 #     def Platform(self):
 #         return "DM4"
-#              
-#              
+#               
+#               
 #     @property
 #     def Grid32ManualStosFullPath(self):
 #         return os.path.join(self.PlatformFullPath, "DM4BuildTest_Grid32Manual")
-#          
-#     def runTest(self):
-#                 
-#          #self.RunImport()
-#          #self.RunPrune(Filter='Raw16')
-#          #      
-#          #         self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
-#          #      
-#          self.RunHistogram(Filter='Raw16', Transform='Stage')
-#                
-#          self.RunSetContrast(MinValue="11000", MaxValue="NaN", GammaValue="NaN", Section="477", Channels="*", Filters="Raw16")
-#          #      
-#          self.RunAdjustContrast(Filter='Raw16', Gamma=1.0, Transform='Stage')
-#          #      
-#          #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
-#          #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=2)  
-#          #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)       
-#          #              
-#          #         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
-#          #         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
-#          #      
-#          self.RunMosaic(Filter="Leveled", Transform='Stage')
-#          self.RunMosaicReport(ContrastFilter='Raw16')
-#          self.RunAssemble(Channels='SEM', Levels=[4,8,16])
-#          # # #                
-#          self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
-#          self.RunMosaicReport()
-#          # #        
-#          #         # Copy output here to run DM4AlignTest
-#          # # #      
-#          BruteLevel = 32
-#          # #        
-#          # #         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels=[8,16,BruteLevel])
-#          self.RunAlignSections(Channels="SEM", Filters="Leveled", Levels=BruteLevel)
-#          # #                
-#          # #         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
-#          self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
-#          # #               
-#          self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
-#          self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
-#          # #         
-#          # #         #Copy output here to run DM4AlignOutputTest
-#          # #         
-#          self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
-#          self.RunSliceToVolume()
-#          self.RunMosaicToVolume()
-#          self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
-#          self.RunAssembleMosaicToVolume(Channels="SEM")
-#          self.RunMosaicReport(OutputFile='VolumeReport')
-#          self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
-#             
-#          #Make sure we can export full-res mosaics.  This tests an old bug where level 1 image nodes were created with the same name
-#          self.RunAssemble(Channels='SEM', Levels=[1])
-#          self.RunExportImages(Channels="SEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 #           
-             
+#     def runTest(self):
+#                   
+#         #self.RunImport()
+#         #self.RunPrune(Filter='Raw16')
+#         #      
+#         #         self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
+#         #      
+#         self.RunHistogram(Filter='Raw16', Transform='Stage')
+#                  
+#         self.RunSetContrast(MinValue="11000", MaxValue="NaN", GammaValue="NaN", Section="477", Channels="*", Filters="Raw16")
+#         #      
+#         self.RunAdjustContrast(Filter='Raw16', Gamma=1.0, Transform='Stage')
+#         #      
+#         #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
+#         #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=2)  
+#         #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)       
+#         #              
+#         #         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
+#         #         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
+#         #      
+#         self.RunMosaic(Filter="Leveled", Transform='Stage')
+#         self.RunMosaicReport(ContrastFilter='Raw16')
+#         self.RunAssemble(Channels='SEM', Levels=[4,8,16])
+#         self.RunAssembleTiles(Channels='SEM', Levels=1)
+#         # #                
+#         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
+#         self.RunMosaicReport()
+#         # #        
+#         #         # Copy output here to run DM4AlignTest
+#         # # #      
+#         BruteLevel = 32
+#         # #        
+#         # #         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels=[8,16,BruteLevel])
+#         self.RunAlignSections(Channels="SEM", Filters="Leveled", Levels=BruteLevel)
+#         # #                
+#         # #         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+#         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+#         # #               
+#         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+#         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+#         # #         
+#         # #         #Copy output here to run DM4AlignOutputTest
+#         # #         
+#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
+#         self.RunSliceToVolume()
+#         self.RunMosaicToVolume()
+#         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
+#         self.RunAssembleMosaicToVolume(Channels="SEM")
+#         self.RunMosaicReport(OutputFile='VolumeReport')
+#         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
+#              
+#         #Make sure we can export full-res mosaics.  This tests an old bug where level 1 image nodes were created with the same name
+#         self.RunAssemble(Channels='SEM', Levels=[1])
+#         self.RunExportImages(Channels="SEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
+#            
+#              
 #===============================================================================
 #  
 # class DM4AlignTest(setup_pipeline.CopySetupTestBase):
