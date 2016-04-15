@@ -457,8 +457,6 @@ def __ExtractLogDataText(Data):
     return Columns
 
 
-
-
 def HTMLFromDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
 
     if not hasattr(DataNode, 'Name'):
@@ -693,6 +691,50 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     
 
 
+def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
+    '''Create the HTML to display the basic information about a filter'''
+    assert(not filter is None)
+    
+    HTML = HTMLBuilder()
+    HTML.Add("<TABLE>")
+    HTML.Add('<CAPTION align="top">%s</CAPTION>' % (filter.Parent.Name + '.' + filter.Name))
+        
+    if MaxImageWidth is None:
+        MaxImageWidth = 1024
+
+    if MaxImageHeight is None:
+        MaxImageHeight = 1024
+        
+    if filter.HasImageset:
+        HTML.Add('<TR><TD colspan="99">')
+        requiredLevel = filter.Imageset.FindDownsampleForSize((MaxImageHeight, MaxImageWidth))
+        image_node = filter.GetImage(requiredLevel)
+        HTML.Add( ImgTagFromImageNode(image_node, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)) 
+        HTML.Add("</TD></TR>")
+        
+    HTML.Add("<TR>") 
+    if filter.HasTileset:
+        HTML.Add('<TD align="center" bgcolor="#A0FFA0">Optimized</TD>')
+    else:
+        HTML.Add('<TD align="center" bgcolor="#FFA0A0">Unoptimized</TD>')
+        
+    if filter.Locked: 
+        HTML.Add('<TD align="center" bgcolor="#8080FF">Locked</TD>')
+    else:
+        HTML.Add('<TD align="center"  bgcolor="#AAAAAA">Unlocked</TD>')
+          
+    HTML.Add("</TR>")
+    
+    if(not (filter.Gamma is None or filter.MinIntensityCutoff is None or filter.MaxIntensityCutoff is None)):
+        HTML.Add('<TR><TD align="center">%d - %d</TD><TD align="center">Gamma %g</TD></TR>' % (filter.MinIntensityCutoff, filter.MaxIntensityCutoff, filter.Gamma))    
+    
+    HTML.Add("</TABLE>")
+    
+    return str(HTML)
+    
+    
+    
+
 def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
     '''Create the HTML to display an image with an anchor to the full image.
        If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute'''
@@ -762,7 +804,11 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
         for ColSubElement in ColSubElements:
 
             HTML = None
-            if ColSubElement.tag == "Image":
+            if ColSubElement.tag == "Tileset":
+                ColumnBodyList.bgColor = '#A0FFA0'
+            elif ColSubElement.tag == "Filter":
+                HTML = HTMLFromFilterNode(filter=ColSubElement, htmlpaths=HTMLPaths, MaxImageWidth=364, MaxImageHeight=364,Logger=Logger)
+            elif ColSubElement.tag == "Image":
                 if ColSubElement.FindParent("ImageSet") is None:
                     kwargs['MaxImageWidth'] = 364
                     kwargs['MaxImageHeight'] = 364
@@ -788,7 +834,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
 
     # if not CaptionHTML is None:
     #   ColumnBodyList.caption = '<caption align=bottom>%s</caption>' % CaptionHTML
-
+    
     return ColumnBodyList
 
 def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
@@ -882,31 +928,49 @@ def __IndentString(IndentLevel):
 
 def __AppendHTML(html, newHtml, IndentLevel):
     html.append(__IndentString(IndentLevel) + newHtml)
+    
+def __ValueToTableRow(value, IndentLevel):
+    HTML = HTMLBuilder(IndentLevel)
+    
+    if hasattr(value, 'bgColor'):
+        bgColor = value.bgColor
+        HTML.Add('<tr bgcolor="%s">\n' % bgColor)
+    else:
+        HTML.Add('<tr>')
+
+    HTML.Indent()
+    
+    HTML.Add(__ValueToTableCell(value, HTML.IndentLevel))
+
+    HTML.Dedent()
+    HTML.Add("</tr>\n")
+    
+    return HTML
 
 def __ValueToTableCell(value, IndentLevel):
     '''Converts a value to a table cell'''
     HTML = HTMLBuilder(IndentLevel)
-
+    if hasattr(value, 'bgColor'):
+        bgColor = value.bgColor
+        HTML.Add('<td bgcolor="%s" valign="top">\n' % bgColor)
+    else:
+        HTML.Add('<td valign="top">')
+    
     if isinstance(value, str):
-        HTML.Add('<td valign="top"> ')
         HTML.Add(value)
     elif isinstance(value, dict):
-        HTML.Add('<td valign="top">\n')
         HTML.Indent()
         HTML.Add(DictToTable(value, HTML.IndentLevel))
         HTML.Dedent()
     elif isinstance(value, UnorderedItemList):
-        HTML.Add('<td valign="top">\n ')
         HTML.Indent()
         HTML.Add(__ListToUnorderedList(value, HTML.IndentLevel))
         HTML.Dedent()
     elif isinstance(value, RowList):
-        HTML.Add('<td valign="top">\n ')
         HTML.Indent()
         HTML.Add(__ListToTableRows(value, HTML.IndentLevel))
         HTML.Dedent()
     elif isinstance(value, list):
-        HTML.Add('<td valign="top">\n ')
         HTML.Indent()
         HTML.Add(__ListToTableColumns(value, HTML.IndentLevel))
         HTML.Dedent()
@@ -1002,17 +1066,8 @@ def DictToTable(RowDict=None, IndentLevel=None):
     keys = RowDict.keys()
     keys.sort(reverse=True)
 
-    for row in keys:
-        value = RowDict[row]
-
-        HTML.Add('<tr>\n')
-        HTML.Indent()
-
-
-        HTML.Add(__ValueToTableCell(value, HTML.IndentLevel))
-
-        HTML.Dedent()
-        HTML.Add("</tr>\n")
+    for row in keys: 
+        HTML.Add(__ValueToTableRow(RowDict[row], HTML.IndentLevel))
 
     if hasattr(RowDict, 'caption'):
         HTML.Add(RowDict.caption)
@@ -1038,8 +1093,6 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
         HTML = HTML + ' ' * IndentLevel + '<tr>\n'
 
         IndentLevel = IndentLevel + 1
-
-
 
         if isinstance(columnList, str):
             HTML = HTML + '<td>'

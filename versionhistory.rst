@@ -1,4 +1,24 @@
 
+1.3.1 4/15/2016
+---------------
+
+**Added** 
+
+* Support for Digital Micrograph 4 file format (DM4).  Allows importing from many SEM microscopes.
+* Add locked/unlocked and optimized/unoptimized indicators to mosaic reports
+* Color code rows in mosaic report if an optimized tileset exists 
+
+**Fixed**
+
+* Imported images from Syncroscan had colorspace problems
+* Notes are copied into the VikingXML again
+* Do not exclude input directories that have a power of 2 in the name
+* Rounding errors when comparing old/new gamma values that forced unnecessary rebuilds
+* Crash on import when non-numeric attributes appeared in idoc files
+* Infinite loop when searching for imageset levels that did not exist
+* Do not add duplicate autolevelhint node to 16-bit raw data.
+
+
 1.3.0
 -----
 

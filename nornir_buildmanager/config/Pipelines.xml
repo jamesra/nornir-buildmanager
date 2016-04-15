@@ -36,6 +36,15 @@
 		<PythonCall Module="nornir_buildmanager.importers.sectionimage" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
 		
 	</Pipeline>
+	
+	<Pipeline Name="ImportDM4" Help="Import Digital Micrograph 4">
+		<Arguments>
+			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="-ext" dest="extension" default="dm4" help="Extension of digital micrograph version 4 files, default is dm4"/>
+		</Arguments>
+ 
+		<PythonCall Module="nornir_buildmanager.importers.dm4" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
+	</Pipeline>
 
 	<Pipeline Name="Prune" Help="Removes tiles without enough features for proper alignment.">
 		<Arguments>
@@ -528,6 +537,7 @@
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Transform defining images into mosaic" required="False"/>
 			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma separated list of downsample levels for assembling output images" required="False"/>
 			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
+			
 		</Arguments>
 
 		<Iterate VariableName="section_node" XPath="Block/Section">
@@ -548,7 +558,7 @@
 					<PythonCall Function="tile.BuildTilesetPyramid"/>
 				</Iterate>
 			</Iterate>
-		</Iterate> 
+		</Iterate>
 	</Pipeline>
 
 	<Pipeline Name="MosaicReport" Help="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
@@ -566,7 +576,7 @@
      		    RowLabelAttrib="Number"
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
-     		    ColumnXPaths="Channel/Filter[@Name='#AssembleFilter']/ImageSet/Level[@Downsample='#AssembleDownsample']/Image,Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
+     		    ColumnXPaths="Channel/Filter[@Name='#AssembleFilter'],Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
 
 		<PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
 	</Pipeline>
@@ -640,14 +650,22 @@
 			<Iterate VariableName="SectionNode" XPath="Block/Section">
 				<RequireSetMembership Attribute="Number" List="#Sections"/>
 				
-				<Iterate VariableName="FilterNode" XPath="Channel/Filter">
-					<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
-				</Iterate>
-				<Iterate VariableName="ImageNode" XPath="Channel/Filter/ImageSet/Level/Image">
-					<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
-				</Iterate>
-				<Iterate VariableName="TransformNode" XPath="Channel/Transform">
-					<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+				<Iterate VariableName="ChannelNode" XPath="Channel">
+					<Iterate VariableName="TransformNode" XPath="Transform">
+						<PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode"/>
+					</Iterate>
+					
+					<Iterate VariableName="FilterNode" XPath="Filter">
+						<PythonCall Function="tile.VerifyAssembledImagePathIsCorrect" FilterNode="#FilterNode"/>
+						
+						<Iterate VariableName="ImageNode" XPath="ImageSet/Level/Image">
+							<PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode"/>
+						</Iterate>
+						<Iterate VariableName="LevelNode" XPath="ImageSet/Level">
+							<PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode"/>
+						</Iterate>
+					</Iterate>
+					 
 				</Iterate>
 			</Iterate>
 			
@@ -661,8 +679,6 @@
 			</Iterate>
 	</Pipeline>
 	
-	
-
 	<Pipeline Name="CreateBlobFilter" Help="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
 		<Arguments>
 			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section to execute blob on.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>

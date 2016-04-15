@@ -9,7 +9,7 @@ import pickle
 import shutil
 import sys
 import urllib
-import math
+import math 
  
 import nornir_shared.checksum
 import nornir_shared.misc as misc
@@ -88,12 +88,14 @@ class VolumeManager():
                 VolumeRoot.Save()
 
 
+        SaveNewVolume = False
         if not os.path.exists(Filename):
             if(Create):
                 if not os.path.exists(VolumePath):
                     os.makedirs(VolumePath)
 
                 VolumeRoot = ElementTree.Element('Volume', {"Name" : os.path.basename(VolumePath), "Path" : VolumePath})
+                SaveNewVolume = True                
                 # VM =  VolumeManager(VolumeData, Filename)
                 # return VM
             else:
@@ -112,6 +114,9 @@ class VolumeManager():
         VolumeRoot.attrib['Path'] = VolumePath
         VolumeRoot = XContainerElementWrapper.wrap(VolumeRoot)
         VolumeManager.__SetElementParent__(VolumeRoot)
+        
+        if SaveNewVolume:
+            VolumeRoot.Save()
 
         prettyoutput.Log("Volume Root: " + VolumeRoot.attrib['Path'])
         # VolumeManager.__RemoveElementsWithoutPath__(VolumeRoot)
@@ -455,8 +460,8 @@ class XElementWrapper(ElementTree.Element):
 
 
         if not Valid[0]:
-
             self.Clean(Valid[1])
+            
 
         return not Valid[0]
 
@@ -1074,8 +1079,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         ResourcePath = self.FullPath
         if not os.path.isdir(ResourcePath):
             return [False, 'Directory does not exist']
-
-        if os.path.isdir(ResourcePath) and not self.Parent is None:
+        elif not self.Parent is None:
             if len(os.listdir(ResourcePath)) == 0:
                 return [False, 'Directory is empty']
 
@@ -1337,7 +1341,20 @@ class BlockNode(XNamedContainerElementWrapped):
     def GetSection(self, Number):
         return self.GetChildByAttrib('Section', 'Number', Number)
     
-    
+    def GetOrCreateSection(self, Number):
+        sectionObj = self.GetSection(Number) 
+        
+        if sectionObj is None:
+            SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
+            SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
+            
+            sectionObj = SectionNode(Number,
+                                     SectionName,
+                                     SectionPath)
+            return self.UpdateOrAddChildByAttrib(sectionObj, 'Number')
+        else:
+            return (False, sectionObj)
+             
     def GetStosGroup(self, group_name, downsample):
         for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):
             if stos_group.Downsample == downsample:
@@ -1503,6 +1520,18 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
     @BitsPerPixel.setter
     def BitsPerPixel(self, val):
         self.attrib['BitsPerPixel'] = '%d' % val
+        
+
+    def GetOrCreateTilePyramid(self):
+        # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
+        # There should be only one Imageset, so use find
+        pyramid = self.find('TilePyramid')
+        if pyramid is None:
+            pyramid = TilePyramidNode(NumberOfTiles=0)
+            self.append(pyramid)
+            return (True, pyramid)
+        else:
+            return (False,pyramid)
 
     @property
     def TilePyramid(self):
@@ -1628,7 +1657,6 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
         (added_mask_filter, maskFilter) = self.GetOrCreateMaskFilter()
         return maskFilter.GetOrCreateImage(Downsample)
 
-
     def GetHistogram(self):
         return self.find('Histogram')
 
@@ -1637,12 +1665,7 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
             Path = Name
 
         super(FilterNode, self).__init__(tag='Filter', Name=Name, Path=Path, attrib=attrib, **extra)
-        
-    def SetContrastValues(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
-        self.attrib['MinIntensityCutoff'] = "%g" % MinIntensityCutoff
-        self.attrib['MaxIntensityCutoff'] = "%g" % MaxIntensityCutoff
-        self.attrib['Gamma'] = "%g" % Gamma
-        
+                
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         XElementWrapper.logger.warn("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff, Gamma))
 
@@ -1693,6 +1716,14 @@ class SectionNode(XNamedContainerElementWrapped):
 
     def GetChannel(self, Channel):
         return self.GetChildByAttrib('Channel', 'Name', Channel)
+    
+    def GetOrCreateChannel(self, ChannelName):
+        channelObj = self.GetChildByAttrib('Channel', 'Name', ChannelName)
+        if channelObj is None:
+            channelObj = ChannelNode(ChannelName)
+            return self.UpdateOrAddChildByAttrib(channelObj, 'Name')
+        else:
+            return (False, channelObj)
 
     def MatchChannelPattern(self, channelPattern):
         return VMH.SearchCollection(self.Channels,
@@ -2323,9 +2354,15 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
     def IsValid(self):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
-        valid = VMH.InputTransformHandler.InputTransformIsValid(self)
+        
+        [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
-            return super(TransformNode, self).IsValid()
+            [valid, reason] = super(TransformNode, self).IsValid()
+            
+            if not os.path.exists(self.FullPath):
+                self.Locked = False
+        
+        return [valid, reason]
         
 
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
@@ -2344,12 +2381,18 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
                 continue
             yield image
             
-        return 
+        return
+    
+    
 
     def GetImage(self, Downsample):
         '''Returns image node for the specified downsample or None'''
-
-        levelNode = self.GetLevel(Downsample)
+        
+        if not isinstance(Downsample, LevelNode):
+            levelNode = self.GetLevel(Downsample)
+        else:
+            levelNode = Downsample 
+            
         if levelNode is None:
             return None
 
@@ -2459,9 +2502,11 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         return OutputImage
 
     def IsValid(self):
-        valid = VMH.InputTransformHandler.InputTransformIsValid(self)
+        [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
             return super(ImageSetBaseNode, self).IsValid()
+        else:
+            return [valid, reason]
         
     @property
     def Checksum(self):
@@ -2471,7 +2516,48 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 class ImageSetNode(ImageSetBaseNode):
  
     DefaultPath = 'Images'
+    
+    
+    def FindDownsampleForSize(self, requested_size):
+        '''Find the smallest existing image of the requested size or greater.  If it does not exist return the maximum resolution level
+        :param tuple requested_size: Either a tuple or integer.  A tuple requires both dimensions to be larger than the requested_size.  A integer requires only one of the dimensions to be larger.
+        :return: Downsample level
+        '''
+        
+        level = self.MinResLevel 
+        while(level > self.MaxResLevel):
+            dim = self.GetImage(level).Dimensions
+            if isinstance(requested_size, tuple):
+                if dim[0] >= requested_size[0] and dim[1] >= requested_size[1]:
+                    return level.Downsample
+            elif dim[0] >= requested_size or dim[1] >= requested_size:
+                    return level.Downsample
+                
+            level = self.MoreDetailedLevel(level.Downsample)
+            
+        return self.MaxResLevel.Downsample
+    
+    def IsLevelPopulated(self, level_full_path):
+        '''
+        :param str level_full_path: The path to the directories containing the image files
+        :return: (Bool, String) containing whether all tiles exist and a reason string
+        '''
+    
+        globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
 
+        files = glob.glob(globfullpath)
+
+        if(len(files) == 0):
+            return [False, "No files in level"]
+
+        FileNumberMatch = len(files) <= self.NumberOfTiles
+
+        if not FileNumberMatch:
+            return [False, "File count mismatch for level"] 
+        
+        return [True,None]
+
+        
     def __init__(self, Type=None, attrib=None, **extra):
 
         if Type is None:
@@ -2510,6 +2596,11 @@ class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
             self.attrib['Checksum'] = str(checksum)
 
         return checksum
+    
+    @property
+    def Dimensions(self):
+        ''':return: (height, width)'''
+        return nornir_imageregistration.GetImageSize(self.FullPath)
 
 
 class DataNode(XFileElementWrapper):
@@ -2644,6 +2735,26 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
     def ImageFormatExt(self, val):
         assert(isinstance(val, str))
         self.attrib['ImageFormatExt'] = val
+        
+    def IsLevelPopulated(self, level_full_path):
+        '''
+        :param str level_full_path: The path to the directories containing the image files
+        :return: (Bool, String) containing whether all tiles exist and a reason string
+        '''
+    
+        globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
+
+        files = glob.glob(globfullpath)
+
+        if(len(files) == 0):
+            return [False, "No files in level"]
+
+        FileNumberMatch = len(files) <= self.NumberOfTiles
+
+        if not FileNumberMatch:
+            return [False, "File count mismatch for level"] 
+        
+        return [True,None]
 
 
     def __init__(self, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
@@ -2713,6 +2824,48 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         node = tile.BuildTilesetPyramid(self)
         if not node is None:
             node.Save()
+            
+    def IsLevelPopulated(self, level_full_path, GridDimX, GridDimY):
+        '''
+        :param str level_full_path: The path to the directories containing the image files
+        :return: (Bool, String) containing whether all tiles exist and a reason string
+        '''
+        
+        FilePrefix = self.FilePrefix
+        FilePostfix = self.FilePostfix
+        GridXDim = int(GridDimX) - 1
+        GridYDim = int(GridDimY) - 1
+
+        GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
+        # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
+        MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
+                                                                                    'X' :  GridXString,
+                                                                                    'Y' : '*',
+                                                                                    'postfix' :  FilePostfix})
+
+        # Start with the middle because it is more likely to have a match earlier
+        TestIndicies = range(GridYDim / 2, GridYDim)
+        TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
+        for iY in TestIndicies:
+            # MatchString = os.path.join(OutputDir, FilePrefix +
+            #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +
+            #                           '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY +
+            #                           FilePostfix)
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
+                                                                                    'X' : GridXString,
+                                                                                    'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
+                                                                                    'postfix' : FilePostfix})
+            if(os.path.exists(MatchString)):
+                return [True, "Last column of tileset found"]
+
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
+                                                                                    'X' : str(GridXDim),
+                                                                                    'Y' : str(iY),
+                                                                                    'postfix' : FilePostfix})
+            if(os.path.exists(MatchString)):
+                return [True, "Last column of tileset found"]
+
+        return [False, "Last column of tileset not found"]
 
 
 class LevelNode(XContainerElementWrapper):
@@ -2747,67 +2900,25 @@ class LevelNode(XContainerElementWrapper):
     @Downsample.setter
     def Downsample(self, Value):
         self.attrib['Downsample'] = '%g' % Value
-                
+              
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
 
+        if not os.path.isdir(self.FullPath):
+            return [False, 'Directory does not exist']
+         
         PyramidNode = self.Parent
-
-        if not os.path.exists(self.FullPath):
-            return [False, "Path does not exist"]
-
         if(isinstance(PyramidNode, TilePyramidNode)):
-            globfullpath = os.path.join(self.FullPath, '*' + PyramidNode.ImageFormatExt)
-
-            files = glob.glob(globfullpath)
-
-            if(len(files) == 0):
-                return [False, "No files in level"]
-
-            FileNumberMatch = len(files) <= PyramidNode.NumberOfTiles
-
-            if not FileNumberMatch:
-                return [False, "File count mismatch for level"]
+            return PyramidNode.IsLevelPopulated(self.FullPath)
         elif(isinstance(PyramidNode, TilesetNode)):
+            return PyramidNode.IsLevelPopulated(self.FullPath, self.GridDimX, self.GridDimY)
+        elif(isinstance(PyramidNode, ImageSetNode)):
+            if not PyramidNode.HasImage(self.Downsample):
+                return (False, "No image node found")
             # Make sure each level has at least one tile from the last column on the disk.
-            FilePrefix = PyramidNode.FilePrefix
-            FilePostfix = PyramidNode.FilePostfix
-            GridXDim = int(self.GridDimX) - 1
-            GridYDim = int(self.GridDimY) - 1
-
-            GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
-            # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
-            MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
-                                                                                        'X' :  GridXString,
-                                                                                        'Y' : '*',
-                                                                                        'postfix' :  FilePostfix})
-
-            # Start with the middle because it is more likely to have a match earlier
-            TestIndicies = range(GridYDim / 2, GridYDim)
-            TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
-            for iY in TestIndicies:
-                # MatchString = os.path.join(OutputDir, FilePrefix +
-                #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +
-                #                           '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY +
-                #                           FilePostfix)
-                MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
-                                                                                        'X' : GridXString,
-                                                                                        'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
-                                                                                        'postfix' : FilePostfix})
-                if(os.path.exists(MatchString)):
-                    return [True, "Last column found"]
-
-                MatchString = os.path.join(self.FullPath, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
-                                                                                        'X' : str(GridXDim),
-                                                                                        'Y' : str(iY),
-                                                                                        'postfix' : FilePostfix})
-                if(os.path.exists(MatchString)):
-                    return [True, "Last column found"]
-
-            return [False, "Last column of tileset not found"]
-
-        return super(LevelNode, self).IsValid()
+            
+        return (True, None)
 
 
     def __init__(self, Level, attrib=None, **extra):

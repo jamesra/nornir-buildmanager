@@ -111,6 +111,18 @@ def EnumerateImageSets(testObj, volumeNode, Channels, Filter, RequireMasks=True)
         testObj.assertIsNotNone(image_sets, "ImageSet node not found")
         testObj.assertEqual(len(image_sets),1, "Multiple ImageSet nodes found")
         yield image_sets[0]
+        
+def EnumerateTileSets(testObj, volumeNode, Channels, Filter):
+    '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
+    
+    sections = list(volumeNode.findall("Block/Section"))
+    filters = EnumerateFilters(sections, Channels, Filter)
+    
+    for f in filters:
+        tile_sets = list(f.findall('Tileset'))
+        testObj.assertIsNotNone(tile_sets, "Tileset node not found")
+        testObj.assertEqual(len(tile_sets),1, "Multiple Tileset nodes found")
+        yield tile_sets[0]
 
 
 def ConvertLevelsToList(Levels):
@@ -302,6 +314,8 @@ class PlatformTest(test.testbase.TestBase):
             return self.RunIDocImport()
         elif 'pmg' in self.Platform.lower():
             return self.RunPMGImport()
+        elif 'dm4' in self.Platform.lower():
+            return self.RunDM4Import()
             
         raise NotImplementedError("Derived classes should point RunImport at a specific importer")
 
@@ -311,6 +325,10 @@ class PlatformTest(test.testbase.TestBase):
         
     def RunPMGImport(self):
         buildArgs = self._CreateImportArgs('ImportPMG', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+        
+    def RunDM4Import(self):
+        buildArgs = self._CreateImportArgs('ImportDM4', self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
     def RunPrune(self, Filter=None, Downsample=None):
@@ -505,6 +523,15 @@ class PlatformTest(test.testbase.TestBase):
         
         self.assertEqual(image_set_node.InputTransform, transform_name, "InputTransform for ImageSet does not match transform used for assemble")
         self._VerifyInputTransformIsCorrect(image_set_node, InputTransformName=transform_name)
+        
+    
+    def _VerifyPyramidHasExpectedLevels(self, pyramid_node, expected_levels, ):
+        '''Used to ensure that any node with level children nodes has the correct levels'''
+        for level in expected_levels:
+            LevelNode = pyramid_node.find("Level[@Downsample='%d']" % (level))
+            self.assertIsNotNone(LevelNode, "No Level node at level %d" % (level))
+            self.assertTrue(os.path.exists(LevelNode.FullPath), "Output directory expected for level node, level %d" % (level))
+        
      
     
     def _VerifyImageSetHasExpectedLevels(self, image_set_node, expected_levels, ):
@@ -536,6 +563,32 @@ class PlatformTest(test.testbase.TestBase):
         for image_set_node in EnumerateImageSets(self, volumeNode, Channels, Filter, RequireMasks=True) : 
             self._VerifyImageSetHasExpectedLevels(image_set_node, Levels)
             self._VerifyImageSetMatchesTransform(image_set_node, TransformName)
+
+        return volumeNode
+    
+    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=1, Shape=[512,512]):
+        if Filter is None:
+            Filter = "Leveled"
+            
+        if TransformName is None:
+            TransformName = 'Grid'
+        
+        Levels = ConvertLevelsToList(Levels)
+        LevelsStr = ConvertLevelsToString(Levels) 
+        
+        ShapeStr = ConvertLevelsToString(Shape)
+        
+        # Build Mosaics
+        buildArgs = []
+        if not Channels is None:
+            buildArgs = self._CreateBuildArgs('AssembleTiles', '-Channels', Channels, '-Transform', TransformName, '-Filters', Filter, '-Downsample', LevelsStr, '-Shape', ShapeStr)
+        else:
+            buildArgs = self._CreateBuildArgs('AssembleTiles', '-Transform', TransformName, '-Filters', Filter, '-Downsample', LevelsStr, '-Shape', ShapeStr)
+            
+        volumeNode = self.RunBuild(buildArgs)
+ 
+        for tile_set_node in EnumerateTileSets(self, volumeNode, Channels, Filter) : 
+            self._VerifyPyramidHasExpectedLevels(tile_set_node, Levels) 
 
         return volumeNode
     

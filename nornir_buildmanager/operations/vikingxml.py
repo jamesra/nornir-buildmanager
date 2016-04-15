@@ -95,84 +95,6 @@ def RecursiveMergeAboutXML(path, xmlFileName, sourceXML="About.xml"):
 
     return Url
 
-    #####################
-#
-#    WriteXML(OutputXMLFile, "<?xml version=\"1.0\"?>")
-#
-#
-#
-#    OutputXMLFile = open(OutputXMLFilename, "w")
-#
-#
-#
-#    StosCount = 0
-#    SectionCount = 0
-#
-#    #Find all the stos files:
-#    stosfiles = glob.glob(os.path.join(path, "*.stos"))
-#    StosCount = 0
-#
-#    for f in stosfiles:
-#        if(IsStosIncluded(f)):
-#            StosCount += 1
-#
-#
-#    #Count all the sections
-#    SectionDirs = os.listdir(path)
-#    for sectionDir in SectionDirs:
-#        #Skip if it contains a .
-#        if sectionDir.find('.') > -1:
-#            continue
-#
-#        (SectionNumber, SectionName, Downsample) = ir.GetSectionInfo(sectionDir)
-#        if(SectionNumber < 0):
-#            continue
-#
-#        SectionCount = SectionCount + 1
-#
-#    VolumeTag = "<Volume name=\"" + basename + "\" " + \
-#                " num_stos=\"" + str(StosCount) + "\" " + \
-#                " num_sections=\"" + str(SectionCount) + "\""
-#
-#    if(server is not None):
-#        VolumeTag = VolumeTag + " path=\"" + str(server) + "\" "
-#
-#    VolumeTag = VolumeTag + " xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"http://connectomes.utah.edu/VikingXML.xsd\">"
-#
-#    WriteXML(OutputXMLFile, VolumeTag)
-#
-#    for sfile in stosfiles:
-#        if(IsStosIncluded(sfile)):
-#            AddStosTransform(OutputXMLFile, sfile)
-#
-#    for sectionDir in SectionDirs:
-#
-#        #Skip if it contains a .
-#        if sectionDir.find('.') > -1:
-#            continue
-#
-#        (SectionNumber, SectionName, Downsample) = ir.GetSectionInfo(sectionDir)
-#        if(SectionNumber < 0):
-#            continue
-#
-#        prettyoutput.Log(sectionDir)
-#        AddSection(OutputXMLFile, sectionDir)
-#
-#    WriteXML(OutputXMLFile, "</Volume>")
-#    OutputXMLFile.close()
-#
-#    #Walk down to the path from the root directory, merging about.xml's as we go
-#    Url = RecursiveMergeAboutXML(path, OutputXMLFilename)
-#
-#    os.chdir(StartingPath)
-#
-#    prettyoutput.Log("Launch string:")
-#    prettyoutput.Log(Url)
-#    finalUrl = url_join(Url, "Volume.VikingXML")
-#    vikingUrl = "http://connectomes.utah.edu/Software/Viking4/viking.application?" + finalUrl
-#
-#    prettyoutput.Log(vikingUrl)
-#    return vikingUrl
 def ParseScale(InputVolumeNode, OutputVolumeNode):
 
     ScaleNode = InputVolumeNode.find('Block/Section/Channel/Scale')
@@ -205,15 +127,6 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
         StosMapNode = BlockNode.GetChildByAttrib("StosMap", 'Name', StosMapName)
         if StosMapNode is None:
             continue
-
-        # StosGroups = BlockNode.findall("StosGroup[@Downsample='16']")
-        # if StosGroups is None:
-            # continue
-
-        # for StosGroup in StosGroups:
-
-        # if 'Brute' in StosGroup.Name:
-            # continue
 
         StosGroup = BlockNode.GetChildByAttrib("StosGroup", "Name", StosGroupName)
         if StosGroup is None:
@@ -303,6 +216,13 @@ def ParseChannels(SectionNode, OutputSectionNode):
                 OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
                 OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path'])
                 print "Tileset found for section " + str(SectionNode.attrib["Number"])
+        
+        NotesNodes = ChannelNode.findall('Notes')
+        for NoteNode in NotesNodes:
+            # Copy over Notes elements verbatim
+            OutputNotesNode = ETree.SubElement(OutputSectionNode, 'Notes')
+            OutputNotesNode.text = NoteNode.text
+            OutputSectionNode.append(OutputNotesNode)
 
 
 def ParseTransform(TransformNode, OutputSectionNode):

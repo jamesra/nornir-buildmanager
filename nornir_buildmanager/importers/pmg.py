@@ -59,7 +59,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         extension = 'idoc'
      
             
-    DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
+    DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
             PMGImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, *args, **kwargs)
