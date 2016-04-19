@@ -317,19 +317,18 @@ class DigitalMicrograph4Import(object):
         
     @classmethod
     def AddAndImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
-        TilePyramidObj.ImageFormatExt = '.' + TileExtension
-        TilePyramidObj.NumberOfTiles += 1
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
-         
         filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) #Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath,filename)
         
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath)
-            
-        if os.path.exists(output_fullpath):
-            return TilePyramidObj
-            
+        elif os.path.exists(output_fullpath):
+            return None
+        
+        TilePyramidObj.NumberOfTiles += 1
+        TilePyramidObj.ImageFormatExt = '.' + TileExtension
+                    
         pools = nornir_pools.GetGlobalLocalMachinePool()
         #DM4FileHandler.ConvertDM4ToPng(dm4FileFullPath, output_fullpath)
         t = pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
