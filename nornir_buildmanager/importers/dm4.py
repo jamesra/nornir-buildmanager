@@ -23,6 +23,7 @@ import nornir_shared.plot as plot
 import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_pools
+import tempfile
 
 from nornir_shared.files import RemoveOutdatedFile
 
@@ -47,7 +48,33 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         for idocFullPath in glob.glob(os.path.join(path, '*.dm4')):
             for obj in DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap):
                 yield obj
-            
+    
+    nornir_pools.WaitOnAllPools() 
+    
+'''Convert a DM4 file to another image format.  Intended to be called from a multithreading pool'''
+def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
+    #(section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
+    dm4data = DM4FileHandler(dm4FileFullPath)
+                   
+    tempdir = tempfile.mkdtemp(prefix="DM4")
+     
+    tempfilename =  os.path.basename(output_fullpath + '.tif') #cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG.  We save to TIF and convert
+    temp_output_fullpath = os.path.join(tempdir,tempfilename)
+    
+    image_data = dm4data.ReadImage()
+      
+    InputImageBpp = dm4data.ReadImageBpp()
+    im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
+    im.save(temp_output_fullpath)
+    
+    cmd = "convert %s %s" % (temp_output_fullpath, output_fullpath)
+    
+    pools = nornir_pools.GetGlobalLocalMachinePool()
+    pools.add_process(output_fullpath, cmd)
+    pools.wait_completion()
+    
+    os.remove(temp_output_fullpath)
+    os.removedirs(tempdir)
     
 
 class DM4FileHandler():
@@ -235,14 +262,18 @@ class DigitalMicrograph4Import(object):
             yield FilterObj
             
         [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
+        if(saveTransformObj):
+            yield ChannelObj
+            
         cls.AddTileToMosaic(transformObj, dm4data, tile_number)
-        yield ChannelObj
         
         #histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
         #cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
         
-        TilePyramidObj = cls.AddImageToTilePyramid(TilePyramidObj, dm4data, tile_number)
+        TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
         yield TilePyramidObj
+        
+        
         
     @classmethod
     def GetOrCreateStageTransform(cls, channelObj):
@@ -256,34 +287,52 @@ class DigitalMicrograph4Import(object):
             return (False, transformObj)
         
     @classmethod
-    def AddImageToTilePyramid(cls, TilePyramidObj, dm4data, tile_number):
+    def AddImageToTilePyramidMetaData(cls, TilePyramidObj):
         TilePyramidObj.ImageFormatExt = '.' + TileExtension
         TilePyramidObj.NumberOfTiles += 1
-        InputImageBpp = dm4data.ReadImageBpp()
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
-        tempfilename = cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG
-        temp_output_fullpath = os.path.join(LevelObj.FullPath,tempfilename)
         
+        if not os.path.exists(LevelObj.FullPath):
+            os.makedirs(LevelObj.FullPath)
+                 
+        return TilePyramidObj
+    
+        
+    @classmethod
+    def ImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
+        '''Adds a DM4 file to the tile pyramid directory without updating the meta-data'''
+        LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
         filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) #Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath,filename)
         
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath)
-        
-        image_data = dm4data.ReadImage()   
-          
-        im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
-        im.save(temp_output_fullpath)
-        
-        cmd = "convert %s %s" % (temp_output_fullpath, output_fullpath)
-        
+            
+        if os.path.exists(LevelObj.FullPath):
+            return
+            
         pools = nornir_pools.GetGlobalLocalMachinePool()
-        pools.add_process(output_fullpath, cmd)
+        pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
+                
         
-        pools.wait_completion()
+    @classmethod
+    def AddAndImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
+        TilePyramidObj.ImageFormatExt = '.' + TileExtension
+        TilePyramidObj.NumberOfTiles += 1
+        LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
+         
+        filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) #Pillow does not support 16-bit PNG
+        output_fullpath = os.path.join(LevelObj.FullPath,filename)
         
-        os.remove(temp_output_fullpath)
-                 
+        if not os.path.exists(LevelObj.FullPath):
+            os.makedirs(LevelObj.FullPath)
+            
+        if os.path.exists(output_fullpath):
+            return TilePyramidObj
+            
+        pools = nornir_pools.GetGlobalLocalMachinePool()
+        #DM4FileHandler.ConvertDM4ToPng(dm4FileFullPath, output_fullpath)
+        t = pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
         return TilePyramidObj
     
         
