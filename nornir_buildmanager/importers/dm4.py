@@ -37,6 +37,10 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if extension is None:
         extension = 'dm4'
         
+    if not os.path.exists(ImportPath):
+        raise Exception("Import directory not found: " + ImportPath)
+        return
+        
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
