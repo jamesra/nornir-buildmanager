@@ -527,6 +527,10 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
     OutputStosGroupName = kwargs.get('OutputGroup', 'Brute')
     OutputStosType = kwargs.get('Type', 'Brute')
     AngleSearchRange = kwargs.get('AngleSearchRange', None)
+    
+    #Argparse value for 
+    if(AngleSearchRange == "None"): 
+        AngleSearchRange = None
 
     # Additional arguments for stos-brute
     argstring = misc.ArgumentsFromDict(Parameters)

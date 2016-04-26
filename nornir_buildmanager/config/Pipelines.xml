@@ -713,7 +713,7 @@
 		<Arguments>
 			<Argument flag="-Center" dest="Center" type="int" help="Center section of the volume.  Defaults to center if unspecified.  The first run center is saved in meta-data and re-used on later runs." required="False"/>
 			<Argument flag="-NumAdjacentSections"  default="1" dest="NumAdjacentSections" type="int" help="Number of adjacent sections to attempt registration with." required="False"/>
-			<Argument flag="-AngleRange" dest="AngleSearchRange" type="FloatRange" help="Range of angles to check in degrees not radians" required="False"/>
+			<Argument flag="-AngleRange" default="" dest="AngleSearchRange" type="FloatRange" help="Range of angles to check in degrees not radians" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to be aligned" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
 			<Argument flag="-UseMasks"  action="store_true" dest="UseMasks" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
