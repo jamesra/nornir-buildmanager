@@ -294,7 +294,7 @@ class DM4BuildTest(DM4Test, StosRebuildHelper):
         BruteLevel = 32
               
 #         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
-        self.RunAlignSections(Channels="SEM", Filters="Leveled", Levels=BruteLevel)
+        self.RunAlignSections(Channels="SEM", Filters="Leveled", Levels=BruteLevel, Angles="0.0")
                     
 #         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')

@@ -673,14 +673,18 @@ class PlatformTest(test.testbase.TestBase):
         self.VerifyFilesLastModifiedDateUnchanged(transform_last_modified)
         
 
-    def RunAlignSections(self, Channels, Filters, Levels, Center=None, UseMasks=True):
+    def RunAlignSections(self, Channels, Filters, Levels, Angles=None, Center=None, UseMasks=True):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-Downsample', str(Levels), '-Channels', Channels)
         if not Center is None:
             buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-Downsample', str(Levels), '-Channels', Channels, '-Center', str(Center))
             
         if UseMasks:
-            buildArgs.append('-UseMasks')             
+            buildArgs.append('-UseMasks')
+            
+        if Angles:
+            buildArgs.append('-AngleRange')
+            buildArgs.append('%s' % Angles)             
         
         volumeNode = self.RunBuild(buildArgs)
         self.assertIsNotNone(volumeNode)
