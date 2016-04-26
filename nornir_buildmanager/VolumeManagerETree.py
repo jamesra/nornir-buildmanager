@@ -1224,26 +1224,16 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # prettyoutput.Log("Saving %s" % xmlfilename)
 
-        TempXMLFilename = os.path.join(self.FullPath, 'Temp_' + xmlfilename)
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
 
         # prettyoutput.Log("Saving %s" % XMLFilename)
         
-        saveDir = os.path.dirname(TempXMLFilename)
-        if not os.path.exists(saveDir):
-            os.makedirs(saveDir)
-
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         # print OutputXML
-        with open(TempXMLFilename, 'w') as hFile:
+        with open(XMLFilename, 'w') as hFile:
             hFile.write(OutputXML)
             hFile.close()
 
-        shutil.copy(TempXMLFilename, XMLFilename)
-        try:
-            os.remove(TempXMLFilename)
-        except:
-            pass
 
 class XNamedContainerElementWrapped(XContainerElementWrapper):
     '''XML meta-data for a container whose sub-elements are contained within a directory on the file system whose name is not constant.  Such as a channel name.'''
