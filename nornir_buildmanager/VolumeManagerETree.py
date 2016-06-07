@@ -457,13 +457,12 @@ class XElementWrapper(ElementTree.Element):
 
         if isinstance(Valid, bool):
             Valid = [Valid, ""]
-
-
+ 
         if not Valid[0]:
             self.Clean(Valid[1])
-            
-
-        return not Valid[0]
+            return True
+        
+        return False
 
 
     def Clean(self, reason=None):
@@ -1135,8 +1134,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         self.append(XMLElement)
 
-        NotValid = XMLElement.CleanIfInvalid()
-        if NotValid:
+        Cleaned = XMLElement.CleanIfInvalid()
+        if Cleaned:
             return None
 
         return XMLElement
@@ -2304,6 +2303,20 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
 
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
+        
+    @property
+    def ControlSectionNumber(self):
+        if 'ControlSectionNumber' in self.attrib:
+            return int(self.attrib['ControlSectionNumber'])
+        
+        return None
+    
+    @property
+    def MappedSectionNumber(self):
+        if 'MappedSectionNumber' in self.attrib:
+            return int(self.attrib['MappedSectionNumber'])
+        
+        return None
          
     @property
     def CropBox(self):
@@ -2345,14 +2358,18 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         
-        [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
-        if valid:
-            [valid, reason] = super(TransformNode, self).IsValid()
+        result = super(MosaicBaseNode, self).IsValid()
+        if result[0]: 
+            [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
+            if valid:
+                [valid, reason] = super(TransformNode, self).IsValid()
+                
+                if not os.path.exists(self.FullPath):
+                    self.Locked = False
             
-            if not os.path.exists(self.FullPath):
-                self.Locked = False
-        
-        return [valid, reason]
+            return [valid, reason]
+        else:
+            return result
         
 
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
@@ -2666,26 +2683,42 @@ class SectionMappingsNode(XElementWrapper):
 
 
     def CleanIfInvalid(self):
-        self.CleanTransformsIfInvalid()
-        XElementWrapper.CleanIfInvalid(self)
-
+        cleaned = XElementWrapper.CleanIfInvalid(self)
+        if not cleaned:
+            return self.CleanTransformsIfInvalid()
+        
+        return cleaned
+        
 
     def CleanTransformsIfInvalid(self):
         block = self.FindParent('Block')
+        
+        transformCleaned = False;
 
         # Check the transforms and make sure the input data still exists
         for t in self.Transforms:
+            transformValid = t.IsValid()
+            if not transformValid[0]:
+                prettyoutput.Log("Cleaning invalid transform " + t.Path + " " + transformValid[1])
+                t.Clean();
+                transformCleaned = True;
+                continue;
+            
             ControlResult = SectionMappingsNode._CheckForFilterExistence(block, t.ControlSectionNumber, t.ControlChannelName, t.ControlFilterName)
             if ControlResult[0] == False:
                 prettyoutput.Log("Cleaning transform " + t.Path + " control input did not exist: " + ControlResult[1])
                 t.Clean()
+                transformCleaned = True;
                 continue
 
             MappedResult = SectionMappingsNode._CheckForFilterExistence(block, t.MappedSectionNumber, t.MappedChannelName, t.MappedFilterName)
             if MappedResult[0] == False:
                 prettyoutput.Log("Cleaning transform " + t.Path + " mapped input did not exist: " + MappedResult[1])
                 t.Clean()
+                transformCleaned = True;
                 continue
+            
+        return transformCleaned
 
 
     def __init__(self, MappedSectionNumber=None, attrib=None, **extra):
@@ -2835,7 +2868,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
         # Start with the middle because it is more likely to have a match earlier
         TestIndicies = range(GridYDim / 2, GridYDim)
-        TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
+        TestIndicies.extend(range((GridYDim / 2)-1, -1, -1))
         for iY in TestIndicies:
             # MatchString = os.path.join(OutputDir, FilePrefix +
             #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +

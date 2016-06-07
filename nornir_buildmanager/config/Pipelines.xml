@@ -642,6 +642,12 @@
 		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"  Host="#Host" OutputFile="#OutputFile"/>
 	</Pipeline> 
 	
+	<Pipeline Name="CleanupStos"  Help="Clean common errors in section mappings" >
+		<Iterate VariableName="SectionMappingNode" XPath="Block/StosGroup[@Name='StosBrute64']/SectionMappings">
+			<PythonCall Function="block.ValidateSectionMappingPipeline" section_mapping_node="#SectionMappingNode"/>
+		</Iterate>
+	</Pipeline>
+	
 	<Pipeline Name="Cleanup"  Help="Clean common errors from the volume meta-data"> 
 		<Arguments>
 			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/> 
@@ -663,11 +669,9 @@
 						<Iterate VariableName="LevelNode" XPath="ImageSet/Level">
 							<PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode"/>
 						</Iterate>
-					</Iterate>
-					 
+					</Iterate> 
 				</Iterate>
 			</Iterate>
-			
 			<Iterate VariableName="TransformNode" XPath="Block/StosGroup/SectionMappings/Transform">
 				<RequireSetMembership Attribute="ControlSectionNumber" List="#Sections"/>	
 				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>

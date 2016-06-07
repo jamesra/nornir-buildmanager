@@ -636,9 +636,25 @@ def StosImageNodes(StosTransformNode, Downsample):
 
     return output
 
+def ValidateSectionMappingPipeline(Parameters, Logger, section_mapping_node, **kwargs):
+    return ValidateSectionMapping(section_mapping_node, Logger)
+    
+def ValidateSectionMapping(section_mapping_node, Logger):
+    save_node = False;
+    save_node |= section_mapping_node.CleanIfInvalid();
+    for t in section_mapping_node.Transforms:
+        save_node |= ValidateSectionMappingTransform(t, Logger) is not None
+    
+    for img in section_mapping_node.Images:
+        save_node |= img.CleanIfInvalid()
+        
+    if save_node:
+        return section_mapping_node;
+    
+    return None
 
 def ValidateSectionMappingTransformPipeline(Parameters, Logger, stos_transform_node, **kwargs):
-    ValidateSectionMappingTransform(stos_transform_node, Logger)
+    return ValidateSectionMappingTransform(stos_transform_node, Logger)
         
 def ValidateSectionMappingTransform(stos_transform_node, Logger):
     
@@ -1393,7 +1409,6 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, C
 
     #        FixStosFilePaths(ControlFilter, MappedFilter, InputTransformNode, OutputDownsample, StosFilePath=InputStosFullPath)
             if not os.path.exists(OutputStosFullPath):
-
                 ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
                 if ManualStosFileFullPath is None:
                     argstring = misc.ArgumentsFromDict(Parameters)
