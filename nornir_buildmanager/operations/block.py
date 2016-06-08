@@ -737,7 +737,7 @@ def SectionToVolumeImage(Parameters, TransformNode, Logger, CropUndefined=True, 
 
     SectionMappingNode = TransformNode.FindParent('SectionMappings')
 
-    FilePrefix = str(SectionMappingNode.MappedSectionNumber) + '-' + TransformNode.ControlSectionNumber + '_'
+    FilePrefix = str(SectionMappingNode.MappedSectionNumber) + '-' + str(TransformNode.ControlSectionNumber) + '_'
     WarpedOutputFilename = FilePrefix + 'warped_' + GroupNode.Name + "_" + TransformNode.Type + '.png'
     WarpedOutputFileFullPath = os.path.join(GroupNode.FullPath, WarpedOutputFilename)
 
@@ -819,7 +819,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                     (created_warped, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
                     WarpedImageNode.Type = 'Warped_' + StosTransformNode.Type
 
-                    FilePrefix = str(SectionMappingNode.MappedSectionNumber) + '-' + StosTransformNode.ControlSectionNumber + '_'
+                    FilePrefix = str(SectionMappingNode.MappedSectionNumber) + '-' + str(StosTransformNode.ControlSectionNumber) + '_'
 
                     stosImages = StosImageNodes(StosTransformNode, GroupNode.Downsample)
 

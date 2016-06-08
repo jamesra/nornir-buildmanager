@@ -2311,11 +2311,30 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
         
         return None
     
+    @ControlSectionNumber.setter
+    def ControlSectionNumber(self, value):
+        
+        if value is None:
+            if 'ControlSectionNumber' in self.attrib:
+                del self.attrib['ControlSectionNumber']
+        else:
+            self.attrib['ControlSectionNumber'] = "%d" % value
+        return None
+    
     @property
     def MappedSectionNumber(self):
         if 'MappedSectionNumber' in self.attrib:
             return int(self.attrib['MappedSectionNumber'])
         
+        return None
+    
+    @MappedSectionNumber.setter
+    def MappedSectionNumber(self, value):
+        if value is None:
+            if 'MappedSectionNumber' in self.attrib:
+                del self.attrib['MappedSectionNumber']
+        else:
+            self.attrib['MappedSectionNumber'] = "%d" % value
         return None
          
     @property
