@@ -13,6 +13,7 @@ import nornir_shared.misc
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_pools as pools
+from scipy.stats.mstats_basic import threshold
 
 
 
@@ -37,6 +38,35 @@ class PruneObj:
         else:
             self.MapImageToScore = MapToImageScore
 
+    @classmethod
+    def _GetThreshold(cls, PruneNode, ThresholdParameter):
+        '''Return the threshold value that should be used.
+           If a UserRequestedCutoff is specified use that.
+           If a Threshold is passed only use if no UserRequstedValue exists
+           '''
+        
+        Threshold = None
+        if not PruneNode.UserRequestedCutoff is None:
+            Threshold = PruneNode.UserRequestedCutoff
+        else:
+            Threshold = ThresholdParameter
+        
+        if Threshold is None:
+            Threshold = 0.0
+        
+        return Threshold
+           
+    @classmethod
+    def _TryUpdateUndefinedThresholdFromParameter(cls, PruneNode, ThresholdParameter):
+        '''If a Threshold parameter is passed set the UserRequested cutoff if it is not already specified'''
+        
+        if(PruneNode.UserRequestedCutoff is None and ThresholdParameter is not None):
+            PruneNode.UserRequestedCutoff = ThresholdParameter
+            return True
+        
+        return False
+        
+    
 
     @classmethod
     def PruneMosaic(cls, Parameters, PruneNode, TransformNode, OutputTransformName=None, Logger=None, **kwargs):
@@ -46,13 +76,10 @@ class PruneObj:
         if(Logger is None):
             Logger = logging.getLogger(__name__ + '.PruneMosaic')
 
-        Threshold = Parameters.get('Threshold', 0.0)
-        if Threshold is None:
-            Threshold = 0.0
-
-        if not PruneNode.UserRequestedCutoff is None:
-            Threshold = PruneNode.UserRequestedCutoff
-
+        
+        Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
+        cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Parameters.get('Threshold', None))
+          
         if OutputTransformName is None:
             OutputTransformName = 'Prune'
 
@@ -71,6 +98,8 @@ class PruneObj:
 
         # Check if there is an existing prune map, and if it exists if it is out of date
         PruneNodeParent = PruneNode.Parent
+        
+        '''TODO: Add function to remove duplicate Prune Transforms with different thresholds'''
 
         TransformParent.RemoveOldChildrenByAttrib('Transform', 'Name', OutputTransformName)
         
