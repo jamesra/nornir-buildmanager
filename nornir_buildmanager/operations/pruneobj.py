@@ -99,6 +99,8 @@ class PruneObj:
         # Check if there is an existing prune map, and if it exists if it is out of date
         PruneNodeParent = PruneNode.Parent
         
+        transforms.RemoveWhere(TransformParent, 'Transform[@Name="' + OutputTransformName + '"]', lambda t: float(t.attrib['Threshold']) != Threshold)
+        
         '''TODO: Add function to remove duplicate Prune Transforms with different thresholds'''
 
         TransformParent.RemoveOldChildrenByAttrib('Transform', 'Name', OutputTransformName)
