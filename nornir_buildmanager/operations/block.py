@@ -1741,7 +1741,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
         return None
         
      
-    # TODO: Skip transforms using filters which no longer exist.  Should live in a seperate function.
+    # TODO: Skip transforms using filters which no longer exist.  Should live in a separate function.
     filter_matches = VolumeManagerHelpers.SearchCollection(channel_node.Filters,
                                                           'Name', filter_pattern,
                                                           CaseSensitive=True)
@@ -1786,7 +1786,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMas
 
     '''Take a stos group node, scale the transforms, and save in new stosgroup
     
-       TODO: This function used to create stos transforms between different filters to.  Port that to a seperate function
+       TODO: This function used to create stos transforms between different filters to.  Port that to a separate function
     '''
     GroupParent = InputStosGroupNode.Parent
 
