@@ -1337,15 +1337,15 @@ if __name__ == "__main__":
 
     dtime = datetime.timedelta(seconds=(Data.MontageEnd - Data.MontageStart))
 
-    print "%d tiles" % len(Data.tileData)
+    print("%d tiles" % len(Data.tileData))
 
-    print "Average drift: %g nm/sec" % Data.AverageTileDrift
-    print "Min drift: %g nm/sec" % Data.MinTileDrift
-    print "Max drift: %g nm/sec" % Data.MaxTileDrift
-    print "Average tile time: %g sec" % Data.AverageTileTime
-    print "Fastest tile time: %g sec" % Data.FastestTileTime
-    print "Total time: %s" % str(dtime)
-    print "Total tiles: %d" % Data.NumTiles
+    print( "Average drift: %g nm/sec" % Data.AverageTileDrift)
+    print( "Min drift: %g nm/sec" % Data.MinTileDrift)
+    print( "Max drift: %g nm/sec" % Data.MaxTileDrift)
+    print( "Average tile time: %g sec" % Data.AverageTileTime)
+    print( "Fastest tile time: %g sec" % Data.FastestTileTime)
+    print( "Total time: %s" % str(dtime))
+    print( "Total tiles: %d" % Data.NumTiles)
 
     PlotDriftGrid(datapath, os.path.join(outdir, outfile + "_driftgrid.svg"))
     PlotDriftSettleTime(datapath, os.path.join(outdir, outfile + "_settletime.svg"))

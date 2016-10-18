@@ -79,7 +79,7 @@ def RemoveDuplicateLinks(ParentNode, ChildNodeName, ChildAttrib=None, **kwargs):
             else:
                 knownValues.append(val)
 
-    print "Found %s nodes " % len(NodesToDelete)
+    print( "Found %s nodes " % len(NodesToDelete))
 
     if len(NodesToDelete) > 0:
         for n in NodesToDelete:
