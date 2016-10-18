@@ -1092,7 +1092,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, FixedRegion=RequestedBoundingBox, usecluster=False)
+        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, FixedRegion=RequestedBoundingBox, usecluster=True)
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)
