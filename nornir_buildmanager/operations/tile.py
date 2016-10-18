@@ -914,8 +914,9 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
     else:
         return None
 
-def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
-    for yieldval in AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, **kwargs):
+def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
+    
+    for yieldval in AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, **kwargs):
         yield yieldval
 
 
@@ -1010,9 +1011,11 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
             yield imageSet
     
         
-def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, **kwargs):
+def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     
+    RequestedBoundingBox = [CropBox[1], CropBox[0], CropBox[3], CropBox[2]]
+             
     image_ext = DefaultImageExtension    
     InputChannelNode = FilterNode.FindParent('Channel')
     InputFilterMaskName = FilterNode.GetOrCreateMaskName()
@@ -1089,13 +1092,14 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, usecluster=True)
+        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, FixedRegion=RequestedBoundingBox, usecluster=False)
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)
             return
 
-        if not TransformNode.CropBox is None:
+        #Cropping based on the transform usually enlarges the image to match the largest transform in the volume.  We don't crop if a specfic region was already requested
+        if not TransformNode.CropBox is None and RequestedBoundingBox is None:
             cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
             (Xo, Yo, Width, Height) = TransformNode.CropBoxDownsampled(thisLevel)
 

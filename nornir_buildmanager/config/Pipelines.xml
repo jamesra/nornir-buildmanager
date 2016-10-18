@@ -505,6 +505,7 @@
 			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" default="" type="str" help="Create a new channel for the output with this prefix and the name of the input." required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Directory to move assembled images to" required="False"/>
+			<Argument flag="-Crop" dest="CropBox" type="Quadruple" help="Bounding box of region to assemble.  Default is no cropping.  Form is MinX,MinY,MaxX,MaxY with no spaces." required="False"/>
 		</Arguments>
 		<Iterate VariableName="section_node" XPath="Block/Section">
 			<RequireSetMembership Attribute="Number" List="#Sections"/>
@@ -519,7 +520,7 @@
 				<Iterate VariableName="FilterNode" XPath="Filter">
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 	
-					<PythonCall Function="tile.AssembleTransform" OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace" Levels="#Levels">
+					<PythonCall Function="tile.AssembleTransform" OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace" Levels="#Levels" CropBox="#CropBox">
 						<Parameters>
 							<Entry Name="feathering" Value="binary"/>
 						</Parameters>
@@ -527,7 +528,6 @@
 				</Iterate>
 			</Iterate>
 		</Iterate>
-		
 	</Pipeline>
 
 	<Pipeline Name="AssembleTiles" Help="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded">
