@@ -1014,7 +1014,10 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
     '''@ChannelNode - TransformNode lives under ChannelNode'''
     
-    RequestedBoundingBox = [CropBox[1], CropBox[0], CropBox[3], CropBox[2]]
+    if not CropBox is None:
+        RequestedBoundingBox = [CropBox[1], CropBox[0], CropBox[3], CropBox[2]]
+    else:
+        RequestedBoundingBox = None
              
     image_ext = DefaultImageExtension    
     InputChannelNode = FilterNode.FindParent('Channel')
