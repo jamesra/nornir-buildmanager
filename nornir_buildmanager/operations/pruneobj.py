@@ -14,6 +14,7 @@ import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_pools as pools
 from scipy.stats.mstats_basic import threshold
+import nornir_buildmanager
 
 
 
@@ -65,20 +66,22 @@ class PruneObj:
             return True
         
         return False
-        
-    
 
     @classmethod
     def PruneMosaic(cls, Parameters, PruneNode, TransformNode, OutputTransformName=None, Logger=None, **kwargs):
         '''@ChannelNode 
            Uses a PruneData node to prune the specified mosaic file'''
+         
+        threshold_precision = VolumeManagerETree.TransformNode.get_threshold_precision() #Number of digits to save in XML file
 
         if(Logger is None):
             Logger = logging.getLogger(__name__ + '.PruneMosaic')
-
-        
+                    
         Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
-        cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Parameters.get('Threshold', None))
+        if not Threshold is None:
+            Threshold = round(Threshold, threshold_precision)
+            
+        cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Threshold)
           
         if OutputTransformName is None:
             OutputTransformName = 'Prune'
@@ -99,7 +102,7 @@ class PruneObj:
         # Check if there is an existing prune map, and if it exists if it is out of date
         PruneNodeParent = PruneNode.Parent
         
-        transforms.RemoveWhere(TransformParent, 'Transform[@Name="' + OutputTransformName + '"]', lambda t: float(t.attrib['Threshold']) != Threshold)
+        transforms.RemoveWhere(TransformParent, 'Transform[@Name="' + OutputTransformName + '"]', lambda t: t.Threshold != Threshold)
         
         '''TODO: Add function to remove duplicate Prune Transforms with different thresholds'''
 
@@ -117,7 +120,7 @@ class PruneObj:
                 return None
             
             OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
-            OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
+            OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=threshold_precision)
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:
@@ -131,7 +134,7 @@ class PruneObj:
         OutputTransformNode.InputPruneDataType = PruneNode.Type
         OutputTransformNode.attrib['InputPruneDataChecksum'] = PruneDataNode.Checksum 
         if not Threshold is None:
-            OutputTransformNode.Threshold = '%g' % Threshold
+            OutputTransformNode.Threshold = Threshold
 
         PruneObjInstance = cls.ReadPruneMap(PruneDataNode.FullPath)
         PruneObjInstance.Tolerance = Threshold
@@ -147,7 +150,7 @@ class PruneObj:
 
             HistogramImageNode = PruneNode.find('Image')
             if not HistogramImageNode is None:
-                HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=2)
+                HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
 
             if HistogramImageNode is None or not os.path.exists(PruneObjInstance.HistogramImageFileFullPath):
                 HistogramImageNode = VolumeManagerETree.ImageNode(HistogramImageFile)
@@ -158,7 +161,7 @@ class PruneObj:
                         os.remove(HistogramImageNode.FullPath)
                     HistogramImageNode.Path = HistogramImageFile
                     
-                HistogramImageNode.Threshold = '%g' % Threshold
+                HistogramImageNode.Threshold = Threshold
                 PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath)
                 assert(HistogramImageNode.FullPath == PruneObjInstance.HistogramImageFileFullPath)
                 #if Async:

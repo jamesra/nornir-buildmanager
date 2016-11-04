@@ -2301,6 +2301,14 @@ class MosaicBaseNode(XFileElementWrapper):
 
 class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
 
+    @classmethod
+    def get_threshold_format(cls):
+        return "%2.4g"
+    
+    @classmethod
+    def get_threshold_precision(cls):
+        return 2 #Number of digits to save in XML file
+    
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
         
@@ -2389,6 +2397,25 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
             return [valid, reason]
         else:
             return result
+         
+    @property
+    def Threshold(self):
+        val = self.attrib.get('Threshold', None)
+        if isinstance(val, str):
+            if len(val) == 0:
+                return None
+
+        if not val is None:
+            val = float(val)
+
+        return val 
+    
+    @Threshold.setter
+    def Threshold(self, val):
+        if val is None and 'Threshold' in self.attrib:
+            del self.attrib['Threshold']
+        
+        self.attrib['Threshold'] = TransformNode.get_threshold_format() % val
         
 
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
