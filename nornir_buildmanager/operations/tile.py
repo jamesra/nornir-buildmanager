@@ -146,6 +146,9 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
         return False
 
     mFile = mosaicfile.MosaicFile.Load(MosaicFullPath)
+    if mFile is None:
+        raise Exception("Unable to load mosaic file: %s" % MosaicFullPath)
+    
     if OutputPyramidNode.NumberOfTiles < mFile.NumberOfImages:
         return False
 
