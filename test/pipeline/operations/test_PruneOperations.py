@@ -102,7 +102,7 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
 
         MeanScore = Scores[len(Scores) / 2]
 
-        NewThreshold = MeanScore
+        NewThreshold = MeanScore - 0.01
 
         PruneNode.UserRequestedCutoff = NewThreshold  # Using int as a floor command
 
