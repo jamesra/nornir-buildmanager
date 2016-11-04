@@ -97,28 +97,30 @@ class ArgumentSet():
         sys.exit()
 
     def TryGetSubstituteObject(self, val):
-        '''Place an object directly into a dictionary, return true on success'''
+        '''Place an object directly into a dictionary. 
+        :param str val: The key to lookup
+        :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned.'''
         if val is None:
-            return None
+            return (False, None)
 
         if len(val) == 0:
-            return None
+            return (False, None)
 
         if val[0] == '#':
             if val[1:].find('#') >= 0:
                 # If there are two '#' signs in the string it is a string not an object
-                return None
+                return (False, None)
 
             # Find the existing entry in the dargs
             key = val[1:]
 
             try:
                 # If no object found then return None
-                return self.TryGetValueForKey(key)
+                return (True, self.TryGetValueForKey(key))
             except KeyError as e:
-                return None
+                return (False, None)
 
-        return None
+        return (False, None)
 
     def AddArguments(self, args):
         '''Add arguments from the command line'''
@@ -152,8 +154,8 @@ class ArgumentSet():
                 self.Attribs[key] = val
                 continue
 
-            subObj = self.TryGetSubstituteObject(val)
-            if not subObj is None:
+            (found, subObj) = self.TryGetSubstituteObject(val)
+            if found:
                 self.Attribs[key] = subObj
                 continue
 
@@ -207,8 +209,8 @@ class ArgumentSet():
                     name = entryNode.attrib['Name']
                     val = entryNode.attrib.get('Value', '')
 
-                    subObj = self.TryGetSubstituteObject(val)
-                    if not subObj is None:
+                    (found, subObj) = self.TryGetSubstituteObject(val)
+                    if found:
                         NewParameters[name] = subObj
                         continue
 
@@ -747,8 +749,11 @@ class PipelineManager(object):
                                 PipelineNode=PipelineNode,
                                 message="List attribute missing on <RequireSetMembership> node")
 
-        listOfValid = ArgSet.TryGetSubstituteObject(listVariable)
-        if listOfValid is None:
+        (found, listOfValid) = ArgSet.TryGetSubstituteObject(listVariable)
+        if not found:
+            # No set to compare with.  We allow it.
+            return
+        elif listOfValid is None:
             # No set to compare with.  We allow it.
             return
 
