@@ -439,7 +439,7 @@ class ExtensionData:
 class PipelineManager(object):
     logger = logging.getLogger('PipelineManager')
 
-
+    
 
     '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
     def __init__(self, pipelinesRoot, pipelineData):
@@ -524,11 +524,8 @@ class PipelineManager(object):
 
         PipelineNodes = PipelineXML.findall("Pipeline")
 
-        PipelineNames = []
-        for n in PipelineNodes:
-            PipelineNames.append(n.attrib['Name'])
-
-        return PipelineNames
+        PipelineNames = map(lambda p: p.attrib['Name'], PipelineNodes)
+        return sorted(PipelineNames)
 
     @classmethod
     def __PrintPipelineArguments(cls, PipelineNode):

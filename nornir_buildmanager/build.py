@@ -99,6 +99,9 @@ def BuildParserRoot():
 def _AddPipelineParsers(subparsers):
 
     PipelineXML = _GetPipelineXMLPath()
+    #Load the element tree once and pass it to the later functions so we aren't parsing the XML text in the loop
+    PipelineXML = pipelinemanager.PipelineManager.LoadPipelineXML(PipelineXML)
+
     for pipeline_name in pipelinemanager.PipelineManager.ListPipelines(PipelineXML):
         pipeline = pipelinemanager.PipelineManager.Load(PipelineXML, pipeline_name)
 
