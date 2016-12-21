@@ -43,12 +43,10 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
     # Load the inputXML file and begin parsing
 
     # Create the root output node
-    OutputVolumeNode = ETree.Element('Volume', {'name' : InputVolumeNode.Name,
+    OutputVolumeNode = ETree.Element('Volume', {'Name' : InputVolumeNode.Name,
                                                 'num_stos' : '0',
                                                 'num_sections' : '0',
                                                 'InputChecksum' : InputVolumeNode.Checksum})
-
-    VikingXMLETree = ETree.ElementTree(OutputVolumeNode)
 
     ParseScale(InputVolumeNode, OutputVolumeNode)
     ParseSections(InputVolumeNode, OutputVolumeNode)
@@ -260,10 +258,9 @@ def ParseTransform(TransformNode, OutputSectionNode):
         UseForVolume = 'true'
 
 
+    #Viking needs the transform names to be consistent, and if transforms are built with different spacings, for TEM and CMP, Viking can't display
+    #So we simplify the transform name
     TransformName = TransformNode.Name
-    if('Type' in TransformNode.attrib):
-        TransformName = TransformName + TransformNode.attrib['Type']
-    # By default grid.mosaic files are marked as the reference for volume transforms
 
     return ETree.SubElement(OutputSectionNode, 'Transform', {'FilePostfix' : Postfix,
                                                           'FilePrefix' : Prefix,
@@ -333,15 +330,12 @@ def MergeAboutXML(volumeXML, aboutXML):
         prettyoutput.Log("Relative path: " + relPath)
         Url = UpdateVolumePath(volumeNode, aboutNode, relPath)
 
-
-
     MergeElements(volumeNode, aboutNode)
 
     prettyoutput.Log("")
-#   print volumeDom.toprettyxml()
 
     xmlFile = open(volumeXML, "w")
-    xmlFile.write(volumeDom.toprettyxml())
+    xmlFile.write(volumeDom.toxml())
     xmlFile.close()
 
     return Url
@@ -350,7 +344,7 @@ def MergeAboutXML(volumeXML, aboutXML):
 def MergeElements(volumeNode, aboutNode):
 
     if(ElementsEqual(volumeNode, aboutNode)):
-        CopyAttributes(volumeNode, aboutNode)
+        CopyNewAttributes(volumeNode, aboutNode)
         MergeChildren(volumeNode, aboutNode)
 
 
@@ -376,14 +370,25 @@ def MergeChildren(volumeParent, aboutParent):
 
 # Compare the attributes of two elements and return true if they match
 def ElementsEqual(volumeElement, aboutElement):
+    '''Return true if the elements have the same tag, and the attributes found in both elements have same value'''
+    
     if(aboutElement.nodeName != volumeElement.nodeName):
         return False
+
+    for attrib_key in aboutElement.attributes.keys():
+        if not (volumeElement.hasAttribute(attrib_key) and aboutElement.hasAttribute(attrib_key)):
+            continue
+        if not volumeElement.getAttribute(attrib_key) == aboutElement.getAttribute(attrib_key):
+            return False
+
+    return True
+
 
     # Volume is the root element so it is always a match
     if(aboutElement.nodeName == "Volume"):
         return True
 
-    # Sections only match if their numbers match
+    # Nodes only match if their attributes match
     if(aboutElement.nodeName == "Section"):
         aboutNumber = aboutElement.getAttribute("number")
         volNumber = volumeElement.getAttribute("number")
@@ -399,7 +404,8 @@ def ElementsEqual(volumeElement, aboutElement):
 
     return False
 
-def CopyAttributes(volumeElement, aboutElement):
+def CopyNewAttributes(volumeElement, aboutElement):
+    '''Copy the attributes from the aboutElement to the volumeElement'''
 #   print 'v: ' + volumeElement.toxml()
 #   print 'a: ' + aboutElement.toxml()
 
@@ -410,8 +416,8 @@ def CopyAttributes(volumeElement, aboutElement):
     for i in range(0, attributeMap.length):
         attribute = attributeMap.item(i)
 
-        # if(volumeElement.hasAttribute(attribute.name) == False):
-        volumeElement.setAttribute(attribute.name, attribute.value)
+        if(volumeElement.hasAttribute(attribute.name) == False):
+            volumeElement.setAttribute(attribute.name, attribute.value)
 
 
 def UpdateVolumePath(volumeElement, aboutElement, relPath):
