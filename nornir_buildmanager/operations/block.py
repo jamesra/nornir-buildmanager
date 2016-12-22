@@ -253,7 +253,7 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Logger):
     return Modified
 
 
-def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
+def CreateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
     '''Figure out which sections should be registered to each other
         @BlockNode'''
     NumAdjacentSections = int(Parameters.get('NumAdjacentSections', '1'))
@@ -268,6 +268,7 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
     (SaveBlock, OutputMappingNode) = BlockNode.UpdateOrAddChildByAttrib(OutputMappingNode)
 
     SectionNodeList = list(BlockNode.findall('Section'))
+      
     SectionNodeList.sort(key=SectionNumberKey)
 
     CenterSectionNumber = _GetCenterSection(Parameters, OutputMappingNode)
@@ -280,84 +281,19 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, Logger, **kwargs):
         OutputMappingNode.CenterSection = DefaultRT.RootNodes.values()[0].SectionNumber
 
     NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
+    
+    #Add sections which do not have the correct channels or filters to the non-stos section list.  These will not be used as control sections
+    MissingChannelOrFilterSections = filter(lambda s: False == s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx), SectionNodeList)
+    MissingChannelOrFilterSectionNumbers = map(lambda s: s.SectionNumber, MissingChannelOrFilterSections)
+    
+    NonStosSectionNumbers += MissingChannelOrFilterSectionNumbers
+        
     if OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbers):
         SaveOutputMapping = True
 
     if UpdateStosMapWithRegistrationTree(OutputMappingNode, DefaultRT, Logger):
         SaveOutputMapping = True
-
-#
-#     for iSectionNode, SectionNode  in enumerate(SectionNodeList):
-#         iStartingAdjacent = iSectionNode - NumAdjacentSections
-#         iEndingAdjacent = iSectionNode + NumAdjacentSections
-#
-#         if(iStartingAdjacent < 0):
-#             iStartingAdjacent = 0
-#
-#         if iEndingAdjacent >= len(SectionNodeList):
-#             iEndingAdjacent = len(SectionNodeList) - 1
-#
-#         iAdjacentSections = list(range(iStartingAdjacent, iSectionNode))
-#         iAdjacentSections.extend(range(iSectionNode + 1, iEndingAdjacent + 1))
-#
-#         AdjacentSections = list()
-#
-#         Logger.warn("Finding maps for " + str(SectionNode.Number))
-#         SectionNumber = int(SectionNode.Number)
-#
-#         StosMapEntry = OutputMappingNode.find("Mapping[@Control='" + str(SectionNumber) + "']")
-#
-#         if SectionNumber in NonStosSectionNumbers:
-#             Logger.warn("Skipping Banned Section: " + str(SectionNumber))
-#             if not StosMapEntry is None:
-#                 OutputMappingNode.remove(StosMapEntry)
-#                 SaveOutputMapping = True
-#         else:
-#
-#             for i in iAdjacentSections:
-#
-#                 AdjNodeNumber = int(SectionNodeList[i].Number)
-#
-#                 if SectionNumber - BlockMiddle == 0:
-#                     ControlNumber = SectionNumber
-#                     MappingNumber = AdjNodeNumber
-#                 elif SectionNumber - BlockMiddle < 0:
-#                     ControlNumber = max(SectionNumber, AdjNodeNumber)
-#                     MappingNumber = min(SectionNumber, AdjNodeNumber)
-#                 else:
-#                     MappingNumber = max(SectionNumber, AdjNodeNumber)
-#                     ControlNumber = min(SectionNumber, AdjNodeNumber)
-#
-#                 # Don't map the center section
-#                 if MappingNumber == BlockMiddle:
-#                     Logger.warn("Skipping Center Section: " + str(MappingNumber))
-#                     continue
-#
-#                 # Figure out which section should be the control and which should be mapped
-#                 if(SectionNumber - BlockMiddle == 0):
-#                     AdjacentSections.append(MappingNumber)
-#                     Logger.warn("Adding " + str(MappingNumber))
-#                 elif(SectionNumber == ControlNumber):
-#                     AdjacentSections.append(MappingNumber)
-#                     Logger.warn("Adding " + str(MappingNumber))
-#                 else:
-#                     Logger.warn("Skipping " + str(MappingNumber))
-#
-#             # Create a node to store the stos mappings
-#             if len(AdjacentSections) > 0:
-#     #            AdjacentSectionString = ''.join(str(AdjacentSections))
-#     #            AdjacentSectionString = AdjacentSectionString.strip('[')
-#     #            AdjacentSectionString = AdjacentSectionString.strip(']')
-#                 if StosMapEntry is None:
-#                     StosMapEntry = VolumeManagerETree.MappingNode(SectionNode.Number, AdjacentSections)
-#                     OutputMappingNode.append(StosMapEntry)
-#                     SaveOutputMapping = True
-#                 else:
-#                     for a in AdjacentSections:
-#                         if not a in StosMapEntry.Mapped:
-#                             StosMapEntry.Mapped.append(a)
-#                             SaveOutputMapping = True
-
+        
     if SaveBlock:
         return BlockNode
     elif SaveOutputMapping:
@@ -508,16 +444,6 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     return None
 
 
-def __StosFilename(ControlFilter, MappedFilter):
-
-    ControlSectionNode = ControlFilter.FindParent('Section')
-    MappedSectionNode = MappedFilter.FindParent('Section')
-
-    OutputFile = str(MappedSectionNode.Number) + '-' + str(ControlSectionNode.Number) + \
-                             '_ctrl-' + ControlFilter.Parent.Name + "_" + ControlFilter.Name + \
-                             '_map-' + MappedFilter.Parent.Name + "_" + MappedFilter.Name + '.stos'
-    return OutputFile
-
 
 
 def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
@@ -579,7 +505,7 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
                 print("\tCtrl - " + ControlFilter.FullPath)
 
                 # ControlImageSetNode = VolumeManagerETree.ImageNode.wrap(ControlImageSetNode)
-                OutputFile = __StosFilename(ControlFilter, MappedFilter)
+                OutputFile = VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
                 
                 (added, stos_mapping_node) = StosGroupNode.GetOrCreateSectionMapping(MappedSection)
                 if added:
@@ -1033,20 +959,6 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
     return BlockNode
 
 
-# def FindTransformsForMapping(GroupNode, ControlSection, MappedSection):
-#    '''Locate the transform within GroupNode mapping ControlSection to MappedSection'''
-#
-#    SectionMappingNode = GroupNode.GetSectionMapping(MappedSection)
-#
-#    TransformXPathTemplate = "SectionMappings[@MappedSectionNumber='%(MappedSection)d']/Transform[@ControlSectionNumber='%(ControlSection)d']"
-#    # Find the inputTransformNode in the InputGroupNode
-#    TransformXPath = TransformXPathTemplate % {'MappedSection' : MappedSection,
-#                                               'ControlSection' : ControlSection}
-#
-#    InputTransformNode = GroupNode.find(TransformXPath)
-#    return InputTransformNode
- 
-
 def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
     '''
     :return: If a manual override stos file exists we return the manual file.  If it does not exist we scale the input transform to the desired size
@@ -1062,7 +974,7 @@ def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputD
 
     # Copy the input stos or converted stos to the input directory
     AutomaticInputStosFullPath = os.path.join(AutomaticInputDir, InputTransformNode.Path)
-    ManualInputStosFullPath = os.path.join(ManualInputDir, __StosFilename(ControlFilter, MappedFilter))
+    ManualInputStosFullPath = os.path.join(ManualInputDir, VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter))
 
     InputStosFullPath = __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath=AutomaticInputStosFullPath, ManualInputStosFullPath=ManualInputStosFullPath)
     InputChecksum = None
@@ -1362,7 +1274,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, C
             (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
             (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
 
-            OutputFile = __StosFilename(ControlFilter, MappedFilter)
+            OutputFile = VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
             OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
             stosNode = OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter)
             if stosNode is None:
@@ -1831,7 +1743,7 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMas
             (stosNode_added, stosNode) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
                                                              MappedFilter,
                                                              OutputType=InputTransformNode.Type,
-                                                             OutputPath=__StosFilename(ControlFilter, MappedFilter))
+                                                             OutputPath=VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter))
             
             if not stosNode_added:
                 if not stosNode.IsInputTransformMatched(InputTransformNode):
@@ -1990,8 +1902,6 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
     '''Create a .mosaic file that translates a section directly into the volume.  Two .mosaics are created, a _untraslated version which may have a negative origin
        and a version with the requested OutputTransformName which will have an origin at zero
     '''
-    
-
     Channels = BlockNode.findall('Section/Channel')
 
     MatchingChannelNodes = VolumeManagerHelpers.SearchCollection(Channels, 'Name', ChannelsRegEx)
@@ -2077,6 +1987,38 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms, OutputStosMosaicTransformNam
 
     return
 
+
+def FetchVolumeTransforms(StosMapNode, ChannelsRegEx, TransformRegEx):
+    BlockNode = StosMapNode.FindParent('Block')
+    Channels = BlockNode.findall('Section/Channel')
+    MatchingChannelNodes = VolumeManagerHelpers.SearchCollection(Channels, 'Name', ChannelsRegEx)
+    
+    MatchingTransformNodes = VolumeManagerHelpers.SearchCollection(MatchingChannelNodes, 'Name', TransformRegEx)
+     
+    StosMosaicTransforms = []
+    for TransformNode in MatchingTransformNodes:
+        sectionNode = TransformNode.FindParent('Section')
+        if sectionNode is None:
+            continue
+        
+        if not StosMapNode.SectionInMap(sectionNode.Number):
+            continue
+            
+        StosMosaicTransforms.append(TransformNode) 
+    
+    return StosMosaicTransforms
+
+
+def ReportVolumeBounds(StosMapNode, ChannelsRegEx, TransformName, Logger, **kwargs): 
+   
+    StosMosaicTransformNodes = FetchVolumeTransforms(StosMapNode, ChannelsRegEx, TransformName)
+    
+    StosMosaicTransforms = map(lambda tnode: tnode.FullPath, StosMosaicTransformNodes)
+    
+    mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
+    
+    return str(mosaicToVolume.VolumeBounds)
+    
 
 def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNode, OutputTransformName, Logger, **kwargs):
     '''Build a slice-to-volume transform for each section referenced in the StosMap'''

@@ -321,9 +321,9 @@ class DigitalMicrograph4Import(object):
         
     @classmethod
     def AddAndImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
-        LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
+        [created, LevelObj] = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
         filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) #Pillow does not support 16-bit PNG
-        output_fullpath = os.path.join(LevelObj.FullPath,filename)
+        output_fullpath = os.path.join(LevelObj.FullPath, filename)
         
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath)
@@ -337,8 +337,8 @@ class DigitalMicrograph4Import(object):
         #DM4FileHandler.ConvertDM4ToPng(dm4FileFullPath, output_fullpath)
         t = pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
         return TilePyramidObj
+
     
-        
     @classmethod
     def AddTileToMosaic(cls, transformObj, dm4data, tile_number):
         tile_filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) 

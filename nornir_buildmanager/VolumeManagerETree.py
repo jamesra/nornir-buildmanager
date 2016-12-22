@@ -505,7 +505,7 @@ class XElementWrapper(ElementTree.Element):
 
         if(isinstance(dictElement, XContainerElementWrapper)):
             if(not 'Path' in dictElement.attrib):
-                print dictElement.ToElementString() + " no path attribute but being set as container"
+                print(dictElement.ToElementString() + " no path attribute but being set as container")
             assert('Path' in dictElement.attrib)
 
         return dictElement
@@ -1327,12 +1327,20 @@ class BlockNode(XNamedContainerElementWrapped):
     def Sections(self):
         return self.findall('Section')
 
+    @property
+    def StosGroups(self):
+        return list(self.findall('StosGroup'));
+
+    @property
+    def StosMaps(self):
+        return list(self.findall('StosMap'));
+
     def GetSection(self, Number):
         return self.GetChildByAttrib('Section', 'Number', Number)
-    
+
     def GetOrCreateSection(self, Number):
         sectionObj = self.GetSection(Number) 
-        
+
         if sectionObj is None:
             SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
             SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
@@ -1343,7 +1351,7 @@ class BlockNode(XNamedContainerElementWrapped):
             return self.UpdateOrAddChildByAttrib(sectionObj, 'Number')
         else:
             return (False, sectionObj)
-             
+    
     def GetStosGroup(self, group_name, downsample):
         for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):
             if stos_group.Downsample == downsample:
@@ -1352,7 +1360,7 @@ class BlockNode(XNamedContainerElementWrapped):
         return None
     
     def GetOrCreateStosGroup(self, group_name, downsample):
-        ''':Return: Tuple of (stos_group, created)'''
+        ''':Return: Tuple of (created, stos_group)'''
         
         existing_stos_group = self.GetStosGroup(group_name, downsample)
         if not existing_stos_group is None:
@@ -1378,6 +1386,15 @@ class BlockNode(XNamedContainerElementWrapped):
         stos_map_node = self.GetStosMap(map_name)
         if not stos_map_node is None:
             self.remove(stos_map_node)
+            return True
+        
+        return False
+    
+    def RemoveStosGroup(self, group_name, downsample):
+        ''':return: True if a StosGroup was found and removed'''
+        existing_stos_group = self.GetStosGroup(group_name, downsample)
+        if not existing_stos_group is None:
+            self.remove(existing_stos_group)
             return True
         
         return False
@@ -1891,6 +1908,18 @@ class StosGroupNode(XNamedContainerElementWrapped):
        
         return stosNode
     
+    @classmethod
+    def GenerateStosFilename(cls, ControlFilter, MappedFilter):
+    
+        ControlSectionNode = ControlFilter.FindParent('Section')
+        MappedSectionNode = MappedFilter.FindParent('Section')
+    
+        OutputFile = str(MappedSectionNode.Number) + '-' + str(ControlSectionNode.Number) + \
+                                 '_ctrl-' + ControlFilter.Parent.Name + "_" + ControlFilter.Name + \
+                                 '_map-' + MappedFilter.Parent.Name + "_" + MappedFilter.Name + '.stos'
+        return OutputFile
+
+    
     
     @classmethod 
     def _IsStosInputImageOutdated(cls, stosNode, ChecksumAttribName, imageNode):
@@ -1971,9 +2000,38 @@ class StosGroupNode(XNamedContainerElementWrapped):
 
         super(StosGroupNode, self).__init__(tag='StosGroup', Name=Name, Path=Name, attrib=attrib, **extra)
         self.Downsample = Downsample
-
+    
+    @property
+    def SummaryString(self):
+        '''
+            :return: Name of the group and the downsample level
+            :rtype str:
+        '''
+        return "{0:s} {1:3d}".format(self.Name.ljust(20), int(self.Downsample))
+         
 
 class StosMapNode(XElementWrapper):
+
+    @property
+    def Name(self):
+        return self.get('Name', '')
+
+    @Name.setter
+    def Name(self, Value):
+        self.attrib['Name'] = Value
+
+    @property
+    def Type(self):
+        '''Type of Stos Map'''
+        m = self.attrib.get("Type", None)
+
+    @Type.setter
+    def Type(self, val):
+        if val is None:
+            if 'Type' in self.attrib:
+                del self.attrib['Type']
+        else:
+            self.attrib['Type'] = val
 
     @property
     def CenterSection(self):
@@ -2032,17 +2090,24 @@ class StosMapNode(XElementWrapper):
     @property
     def AllowDuplicates(self):
         return self.attrib.get('AllowDuplicates', True)
+    
+    @classmethod
+    def _SectionNumberFromParameter(self, input_value):
+        val = None
+        if isinstance(input_value, nornir_imageregistration.transforms.registrationtree.RegistrationTreeNode):
+            val = input_value.SectionNumber
+        elif isinstance(input_value, int):
+            val = input_value
+        else:
+            raise TypeError("Section Number parameter should be an integer or RegistrationTreeNode")
+
+        return val
 
     def AddMapping(self, Control, Mapped):
         '''Create a mapping to a control section'''
 
-        val = None
-        if isinstance(Mapped, nornir_imageregistration.transforms.registrationtree.RegistrationTreeNode):
-            val = Mapped.SectionNumber
-        elif isinstance(Mapped, int):
-            val = Mapped
-        else:
-            raise TypeError("Mapped should be an int or RegistrationTreeNode")
+        val = StosMapNode._SectionNumberFromParameter(Mapped)
+        Control = StosMapNode._SectionNumberFromParameter(Control)
 
         childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
         if childMapping is None:
@@ -2052,6 +2117,26 @@ class StosMapNode(XElementWrapper):
             if not val in childMapping.Mapped:
                 childMapping.AddMapping(val)
         return
+
+    def RemoveMapping(self, Control, Mapped):
+        '''Remove a mapping
+        :return: True if mapped section is found and removed
+        '''
+
+        Mapped = StosMapNode._SectionNumberFromParameter(Mapped)
+        Control = StosMapNode._SectionNumberFromParameter(Control)
+
+        childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
+        if childMapping is not None:
+            if Mapped in childMapping.Mapped:
+                childMapping.RemoveMapping(Mapped)
+
+                if len(childMapping.Mapped) == 0:
+                    self.remove(childMapping)
+
+                return True
+
+        return False
 
     def FindAllControlsForMapped(self, MappedSection):
         '''Given a section to be mapped, return the first control section found'''
@@ -2466,7 +2551,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
     def GetOrCreateImage(self, Downsample, Path=None, GenerateData=True):
         '''Returns image node for the specified downsample. Generates image if requested and image is missing.  If unable to generate an image node is returned'''
-        LevelNode = self.GetOrCreateLevel(Downsample, GenerateData=False)
+        [added_level, LevelNode] = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
         imageNode = LevelNode.find("Image")
         if imageNode is None:
@@ -2502,7 +2587,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
     
     def GetOrPredictImageFullPath(self, Downsample):
         '''Either return what the full path to the image at the downsample is, or predict what it should be if it does not exist without creating it
-        :rtype: str
+        :rtype str:
         '''
         image_node = self.GetImage(Downsample)
         if image_node is None:
@@ -2687,6 +2772,7 @@ class SectionMappingsNode(XElementWrapper):
 
     def FindStosTransform(self, ControlSectionNumber, ControlChannelName, ControlFilterName, MappedSectionNumber, MappedChannelName, MappedFilterName):
         '''WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query'''
+        
         for t in self.Transforms:
             if int(t.ControlSectionNumber) != int(ControlSectionNumber):
                 continue
@@ -2805,6 +2891,24 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         assert(isinstance(val, str))
         self.attrib['ImageFormatExt'] = val
         
+    @property
+    def Type(self):
+        '''The default mask to use for this filter'''
+        m = self.attrib.get("Type", None)
+        if not m is None:
+            if len(m) == 0:
+                m = None
+
+        return m
+
+    @Type.setter
+    def Type(self, val):
+        if val is None:
+            if 'Type' in self.attrib:
+                del self.attrib['Type']
+        else:
+            self.attrib['Type'] = val
+
     def IsLevelPopulated(self, level_full_path):
         '''
         :param str level_full_path: The path to the directories containing the image files

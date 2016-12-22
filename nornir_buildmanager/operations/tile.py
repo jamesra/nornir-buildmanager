@@ -599,7 +599,7 @@ def _ClearInvalidHistogramElements(filterObj, checksum):
         if HistogramElement.CleanIfInvalid(): 
             HistogramElement = None
             HistogramElementRemoved = True
-            
+
     return (HistogramElementRemoved, HistogramElement)
 
 
@@ -607,7 +607,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     '''Create a new filter using the histogram of the input filter
        @ChannelNode'''
 
-    InputLevelNode = InputFilter.TilePyramid.GetOrCreateLevel(Downsample)
+    [added_level, InputLevelNode] = InputFilter.TilePyramid.GetOrCreateLevel(Downsample)
     InputTransformNode = TransformNode
     InputPyramidNode = InputFilter.TilePyramid
 
@@ -753,12 +753,60 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     yield ChannelNode
 
 
+def InvertFilter(Parameters, InputFilterNode, OutputFilterName, **kwargs):
+    '''Create a new filter by inverting the input filter
+       @ChannelNode'''
+
+    # Find out if the output filter already exists
+    [addedOutputFilter, OutputFilterNode] = InputFilterNode.Parent.GetOrCreateFilter(OutputFilterName)
+    OutputFilterNode.BitsPerPixel = InputFilterNode.BitsPerPixel
+    InputPyramidNode = InputFilterNode.TilePyramid
+    InputLevelNode = InputPyramidNode.MaxResLevel
+
+    #Use the highest resolution of the input pyramid as our downsample level
+    Downsample = InputLevelNode.Downsample
+
+    if addedOutputFilter:
+        yield InputFilterNode.Parent
+
+    [addedOutputTilePyramid, OutputPyramidNode] = OutputFilterNode.GetOrCreateTilePyramid();
+    if addedOutputTilePyramid:
+        OutputPyramidNode.Type = InputPyramidNode.Type
+        OutputPyramidNode.NumberOfTiles = InputPyramidNode.NumberOfTiles
+        OutputPyramidNode.LevelFormat = InputPyramidNode.LevelFormat
+        OutputPyramidNode.ImageFormatExt = InputPyramidNode.ImageFormatExt
+        yield OutputFilterNode
+
+    [addedLevel, OutputLevelNode] = OutputPyramidNode.GetOrCreateLevel(1, False)
+    if addedLevel:
+        yield OutputPyramidNode
+
+    # Make sure the destination directory exists
+    if not os.path.exists(OutputLevelNode.FullPath):
+        os.makedirs(OutputLevelNode.FullPath)
+
+    InputTiles = glob.glob(os.path.join(InputLevelNode.FullPath, '*' + InputPyramidNode.ImageFormatExt))
+    OutputLevelFullPath = OutputLevelNode.FullPath
+
+    TileMappingDict = {}
+    for InputTileFullPath in InputTiles:
+        Basename = os.path.basename(InputTileFullPath)
+        OutputTileFullPath = os.path.join(OutputLevelFullPath, Basename)
+        TileMappingDict[InputTileFullPath] = OutputTileFullPath
+
+    tilesConverted = nornir_shared.images.ConvertImagesInDict(TileMappingDict, Invert=True, Bpp = InputFilterNode.BitsPerPixel)
+    if tilesConverted:
+        yield InputFilterNode.Parent
+
+    return 
+
+
 def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs):
     '''Construct the intensity histogram for a filter
        @FilterNode'''
     NodeToSave = None
 
-    LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
+    [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
 
     if(TransformNode is None):
         prettyoutput.LogErr("Missing TransformNode attribute on PruneTiles")
@@ -829,8 +877,8 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
 
     HistogramElement.InputTransformChecksum = TransformNode.Checksum
 
-    if ElementCleaned or HistogramElementCreated or DataElementCreated or ImageCreated:
-        return FilterNode
+    if ElementCleaned or HistogramElementCreated or DataElementCreated or ImageCreated or added_level:
+        return FilterNode 
     else:
         return None
 
@@ -937,7 +985,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
 
 
 def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name):
-    image_level_node = imageset_node.GetOrCreateLevel(level, GenerateData=False)
+    [added_level, image_level_node] = imageset_node.GetOrCreateLevel(level, GenerateData=False)
 
     if not os.path.exists(image_level_node.FullPath):
         os.makedirs(image_level_node.FullPath)
@@ -1055,8 +1103,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     thisLevel = PyramidLevels[0]
 
     # Create a node for this level
-    ImageLevelNode = OutputFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
-    ImageMaskLevelNode = OutputMaskFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
+    [added_level, ImageLevelNode] = OutputFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
+    [added_mask_level, ImageMaskLevelNode] = OutputMaskFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
 
     if not os.path.exists(ImageLevelNode.FullPath):
         os.makedirs(ImageLevelNode.FullPath)
@@ -1088,7 +1136,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
         # LevelFormatStr = LevelFormatTemplate % thisLevel
-        InputLevelNode = FilterNode.TilePyramid.GetOrCreateLevel(thisLevel)
+        [added_input_level, InputLevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(thisLevel)
 
         ImageDir = InputLevelNode.FullPath
         # ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
@@ -1173,8 +1221,8 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
     thisLevel = PyramidLevels[0]
 
     # Create a node for this level
-    ImageLevelNode = FilterNode.Imageset.GetOrCreateLevel(thisLevel)
-    ImageMaskLevelNode = MaskFilterNode.Imageset.GetOrCreateLevel(thisLevel)
+    [added_image_level, ImageLevelNode] = FilterNode.Imageset.GetOrCreateLevel(thisLevel)
+    [added_mask_level, ImageMaskLevelNode] = MaskFilterNode.Imageset.GetOrCreateLevel(thisLevel)
 
     if not os.path.exists(ImageLevelNode.FullPath):
         os.makedirs(ImageLevelNode.FullPath)
@@ -1780,7 +1828,7 @@ if __name__ == "__main__":
     BadTestImageOut = os.path.join(TestImageDir, 'Bad101Shrink.png')
 
     task = Shrink(Pool, BadTestImage, BadTestImageOut, 0.5)
-    print 'Bad image return value: ' + str(task.returncode)
+    print('Bad image return value: ' + str(task.returncode))
     Pool.wait_completion()
 
     GoodTestImage = os.path.join(TestImageDir, '400.png')
@@ -1788,4 +1836,4 @@ if __name__ == "__main__":
 
     task = Shrink(Pool, GoodTestImage, GoodTestImageOut, 0.5)
     Pool.wait_completion()
-    print 'Good image return value: ' + str(task.returncode)
+    print('Good image return value: ' + str(task.returncode))

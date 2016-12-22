@@ -5,6 +5,7 @@ Created on Jan 30, 2014
 '''
 
 import nornir_imageregistration.volume as volume
+import nornir_buildmanager.operations.block
 import nornir_imageregistration.mosaic as mosaic
 import nornir_imageregistration.files.mosaicfile as mosaicfile
 import nornir_imageregistration.transforms.factory as factory
@@ -14,6 +15,12 @@ class MosaicVolume(volume.Volume):
     '''
     Converts a list of mosaic transforms into a volume object
     '''
+    
+    @classmethod
+    def LoadVolume(cls, StosMapNode, StosGroupNode, BlockNode, ChannelsRegEx, TransformsRegEx):
+        StosMosaicTransformNodes = nornir_buildmanager.operations.block.FetchVolumeTransforms(StosMapNode, BlockNode, ChannelsRegEx, TransformsRegEx)
+        StosMosaicTransforms = map(lambda tnode: tnode.FullPath, StosMosaicTransformNodes)
+        return MosaicVolume.Load(StosMosaicTransforms)
 
     @classmethod
     def Load(cls, TransformNodes):

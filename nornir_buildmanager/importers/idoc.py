@@ -179,8 +179,6 @@ class SerialEMIDocImport(object):
 
         logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
 
-        # VolumeObj = VolumeManager.Load(OutputPath, Create=True)
-
         # Report the current stage to the user
         prettyoutput.CurseString('Stage', "SerialEM to Mosaic " + str(idocFileFullPath))
 
@@ -306,7 +304,8 @@ class SerialEMIDocImport(object):
                                                                             NumberOfTiles=IDocData.NumTiles),
                                                                             'Path')
 
-        LevelObj = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
+        [added_level, LevelObj] = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
+        
         
         Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
         

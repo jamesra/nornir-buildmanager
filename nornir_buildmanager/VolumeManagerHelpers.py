@@ -387,7 +387,7 @@ class PyramidLevelHandler(object):
             self.GenerateLevels(Downsample)
 
         [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode(Downsample), "Downsample")
-        return lnode
+        return [added, lnode]
 
     def GenerateLevels(self, Levels):
         '''Creates data to populate a level of a pyramid.  Derived class should override'''

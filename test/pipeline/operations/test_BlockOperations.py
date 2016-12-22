@@ -7,7 +7,7 @@ import glob
 import unittest
 
 from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
-    CopySetupTestBase
+    CopySetupTestBase, EmptyVolumeTestBase
 
 import nornir_buildmanager.build as build
 from nornir_buildmanager.operations.block import *
@@ -74,10 +74,13 @@ def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection
 
 
 class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
-
+    
+    @property
+    def VolumePath(self):
+        return "SectionToSectionMappingTest"
 
     def _GetResetBlockNode(self):
-        VolumeObj = self.LoadVolumeObj()
+        VolumeObj = self.LoadOrCreateVolume()
         BlockNode = VolumeObj.find("Block")
         self.assertIsNotNone(BlockNode)
 
@@ -144,7 +147,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         BlockNode = self._GetResetBlockNode()
 
         GoodSections = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, Logger=self.Logger)
+        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, ChannelsRegEx="*", FiltersRegEx="*", Logger=self.Logger)
         self.assertIsNotNone(OutputBlockNode)
 
         # VolumeManagerETree.VolumeManager.Save(self.TestOutputPath, VolumeObj)
@@ -169,7 +172,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
         self.SetNonStosSectionList(BlockNode, BadSections)
 
-        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, Logger=self.Logger)
+        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, ChannelsRegEx='*', FiltersRegEx='*', Logger=self.Logger)
         self.assertIsNotNone(OutputBlockNode)
 
         volumechecklist = [VolumeEntry("StosMap", "Name", "PotentialRegistrationChain")]
@@ -264,7 +267,6 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
 
     @property
     def VolumePath(self):
-
         return "6872_small"
 
     def testAlignSectionsPipeline(self):
@@ -578,6 +580,63 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.assertEqual(oldstatDSFour.st_ctime, newstatDSFour.st_ctime, "Blob image recreated after second call to build")
 
 
+class StosGroupTest(EmptyVolumeTestBase):
+
+    @property
+    def VolumePath(self):
+        return "StosGroupTest"
+    
+    def setUp(self):
+        super(StosGroupTest, self).setUp()
+
+        volumeObj = self.LoadOrCreateVolume()
+        BlockObj = VolumeManagerETree.BlockNode('TEM')
+        [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
+        volumeObj.Save()
+
+    def _GetResetBlockNode(self):
+        VolumeObj = self.LoadOrCreateVolume()
+        BlockNode = VolumeObj.find("Block")
+        self.assertIsNotNone(BlockNode)
+
+        return BlockNode
+
+    def RunCreateStosGroup(self, StosGroupName, Downsample, BlockName=None,):
+
+        buildArgs = self._CreateBuildArgs('CreateStosGroup', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+    def RunRemoveStosGroup(self, StosGroupName, Downsample, BlockName=None):
+
+        buildArgs = self._CreateBuildArgs('RemoveStosGroup', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+    def HasStosGroup(self, StosGroupName, Downsample):
+        BlockNode = self._GetResetBlockNode()
+        StosGroupNode = BlockNode.GetStosGroup(StosGroupName + str(Downsample), Downsample)
+        return StosGroupNode is not None
+
+    def AssertHasStosGroup(self, StosGroupName, Downsample):
+        self.assertTrue(self.HasStosGroup(StosGroupName, Downsample), "Missing StosGroup {0:s}".format(StosGroupName) )
+
+    def AssertNoStosGroup(self, StosGroupName, Downsample):
+        self.assertFalse(self.HasStosGroup(StosGroupName, Downsample), "Should not have StosGroup {0:s}".format(StosGroupName) )
+
+    def testCRUDOperations(self):
+        self.AssertNoStosGroup("TestStosGroup", 1)
+        self.RunCreateStosGroup("TestStosGroup",1)
+        self.AssertHasStosGroup("TestStosGroup",1)
+        self.AssertNoStosGroup("TestStosGroup", 2)
+        self.RunRemoveStosGroup("TestStosGroup",1)
+        self.AssertNoStosGroup("TestStosGroup", 1)
 
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']

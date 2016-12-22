@@ -217,7 +217,7 @@ class PruneObj:
 
         assert(isinstance(Downsample, int) or isinstance(Downsample, float))
 
-        LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
+        [created, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
 
         if(LevelNode is None):
             prettyoutput.LogErr("Missing InputPyramidLevelNode attribute on PruneTiles")

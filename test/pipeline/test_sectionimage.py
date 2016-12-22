@@ -22,15 +22,12 @@ class ImportLMImages(setup_pipeline.PlatformTest):
     @property
     def VolumePath(self):
         return "6872"
-
-    def LoadVolumeObj(self):
-        return nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
-
+ 
     def setUp(self):
         super(ImportLMImages, self).setUp()
 
         ImportDir = os.path.join(self.PlatformFullPath, self.VolumePath)
-        VolumeObj = self.LoadVolumeObj()
+        VolumeObj = self.LoadOrCreateVolume()
         sectionimage.SectionImage.ToMosaic(VolumeObj, InputPath=ImportDir, OutputPath=self.TestOutputPath, debug=True)
         VolumeObj.Save()
         del VolumeObj

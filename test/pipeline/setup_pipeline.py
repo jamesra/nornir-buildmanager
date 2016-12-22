@@ -166,8 +166,8 @@ class VolumeEntry(object):
         return x
 
 
-class PlatformTest(test.testbase.TestBase):
-    '''Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class. 
+class NornirBuildTestBase(test.testbase.TestBase):
+    '''Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class or PlatformTest
        Eventually all platforms should have the same standard tests taking input to a volume under this framework to ensure basic functionality
        is operating.  At this time the IDOC platform is the only one with a complete test.  PMG has a thorough test not entirely integrated with
        this class'''
@@ -176,15 +176,6 @@ class PlatformTest(test.testbase.TestBase):
     def VolumePath(self):
         raise Exception("VolumePath property not implemented")
 
-    @property
-    def Platform(self):
-        raise Exception("Platform property not implemented")
-
-    @property
-    def PlatformFullPath(self):
-        return os.path.join(self.TestInputPath, "PlatformRaw", self.Platform)
-    
-    
     @property
     def TestSetupCachePath(self):
         '''The directory where we can cache the setup phase of the tests.  Delete to obtain a clean run of all tests'''
@@ -195,14 +186,6 @@ class PlatformTest(test.testbase.TestBase):
             self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
 
         return None
-     
-    @property
-    def ImportedDataPath(self):
-
-        if self.VolumePath and len(self.VolumePath) > 0:
-            return os.path.join(self.PlatformFullPath, self.VolumePath)
-        else:
-            return self.PlatformFullPath
 
     def RunBuild(self, buildArgs):
         '''Run a build, ensure the output directory exists, and return the volume obj'''
@@ -210,7 +193,7 @@ class PlatformTest(test.testbase.TestBase):
         build.Execute(buildArgs)
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
         return self.LoadVolume()
-        
+
     def LoadVolume(self):
         '''Load the volume meta data from disk''' 
         VolumeObj = VolumeManager.Load(self.TestOutputPath)
@@ -218,6 +201,9 @@ class PlatformTest(test.testbase.TestBase):
         self.assertTrue(os.path.exists(VolumeObj.FullPath))
 
         return VolumeObj
+    
+    def LoadOrCreateVolume(self):
+        return nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
 
     def _CreateBuildArgs(self, pipeline=None, *args):
 
@@ -241,11 +227,7 @@ class PlatformTest(test.testbase.TestBase):
 
         return pargs
 
-    def setUp(self):
-        '''Imports a volume and stops, tests call pipeline functions'''
-        super(PlatformTest, self).setUp()
-        self.assertTrue(os.path.exists(self.PlatformFullPath), "Test data for platform does not exist:" + self.PlatformFullPath)
-
+    
 
     def ValidateTransformChecksum(self, Node):
         '''Ensure that the reported checksum and actual file checksum match'''
@@ -309,27 +291,7 @@ class PlatformTest(test.testbase.TestBase):
         self.RunImportThroughMosaic()
         self.RunAssemble()
         
-    def RunImport(self):
-        if 'idoc' in self.Platform.lower():
-            return self.RunIDocImport()
-        elif 'pmg' in self.Platform.lower():
-            return self.RunPMGImport()
-        elif 'dm4' in self.Platform.lower():
-            return self.RunDM4Import()
-            
-        raise NotImplementedError("Derived classes should point RunImport at a specific importer")
-
-    def RunIDocImport(self):
-        buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
-        self.RunBuild(buildArgs)
-        
-    def RunPMGImport(self):
-        buildArgs = self._CreateImportArgs('ImportPMG', self.ImportedDataPath)
-        self.RunBuild(buildArgs)
-        
-    def RunDM4Import(self):
-        buildArgs = self._CreateImportArgs('ImportDM4', self.ImportedDataPath)
-        self.RunBuild(buildArgs)
+    
 
     def RunPrune(self, Filter=None, Downsample=None):
         if Filter is None:
@@ -960,6 +922,59 @@ class PlatformTest(test.testbase.TestBase):
             stosTransformList.append(stosTransform)
             
         return stosTransformList
+    
+class PlatformTest(NornirBuildTestBase):
+
+    @property
+    def Platform(self):
+        raise Exception("Platform property not implemented")
+
+    @property
+    def PlatformFullPath(self):
+        return os.path.join(self.TestInputPath, "PlatformRaw", self.Platform)
+    
+    @property
+    def ImportedDataPath(self):
+
+        if self.VolumePath and len(self.VolumePath) > 0:
+            return os.path.join(self.PlatformFullPath, self.VolumePath)
+        else:
+            return self.PlatformFullPath
+
+    def setUp(self):
+        '''Imports a volume and stops, tests call pipeline functions'''
+        super(PlatformTest, self).setUp()
+        self.assertTrue(os.path.exists(self.PlatformFullPath), "Test data for platform does not exist:" + self.PlatformFullPath)
+
+    def RunImport(self):
+        if 'idoc' in self.Platform.lower():
+            return self.RunIDocImport()
+        elif 'pmg' in self.Platform.lower():
+            return self.RunPMGImport()
+        elif 'dm4' in self.Platform.lower():
+            return self.RunDM4Import()
+            
+        raise NotImplementedError("Derived classes should point RunImport at a specific importer")
+
+    def RunIDocImport(self):
+        buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+        
+    def RunPMGImport(self):
+        buildArgs = self._CreateImportArgs('ImportPMG', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+        
+    def RunDM4Import(self):
+        buildArgs = self._CreateImportArgs('ImportDM4', self.ImportedDataPath)
+        self.RunBuild(buildArgs)
+
+
+class EmptyVolumeTestBase(NornirBuildTestBase):
+    '''The class to use when one only wants an empty volume'''
+
+    def setUp(self):
+        super(EmptyVolumeTestBase, self).setUp()
+        VolumeManager.Load(self.TestOutputPath, Create=True)
 
 
 class CopySetupTestBase(PlatformTest):

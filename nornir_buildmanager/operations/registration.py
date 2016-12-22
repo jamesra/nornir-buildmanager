@@ -39,17 +39,17 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
     InputTransformNode = TransformNode
 
-    LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
+    [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
     MangledName = misc.GenNameFromDict(Parameters)
 
     # Check if there is an existing prune map, and if it exists if it is out of date
     TransformParentNode = InputTransformNode.Parent
 
-    SaveRequired = False
+    SaveRequired = added_level
     OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
-    
+
     if OutputTransformNode is None:
         OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
@@ -57,7 +57,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
     elif OutputTransformNode.Locked:
         Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
         return None
-            
+
     if not os.path.exists(OutputTransformNode.FullPath):
 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
@@ -99,7 +99,7 @@ def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, Registrati
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
     InputTransformNode = TransformNode
 
-    LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
+    [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
     MangledName = misc.GenNameFromDict(Parameters)
 
@@ -120,7 +120,7 @@ def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, Registrati
     # Check if there is an existing prune map, and if it exists if it is out of date
     TransformParentNode = TransformNode.Parent
 
-    SaveRequired = False
+    SaveRequired = added_level
 
     OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
     if OutputTransformNode is None:
@@ -183,7 +183,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     
     InputTransformNode = TransformNode
 
-    LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
+    [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
     Parameters['sp'] = int(RegistrationDownsample)
 
@@ -208,7 +208,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     # Check if there is an existing prune map, and if it exists if it is out of date
     TransformParentNode = InputTransformNode.Parent
 
-    SaveRequired = False
+    SaveRequired = added_level
 
     OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
