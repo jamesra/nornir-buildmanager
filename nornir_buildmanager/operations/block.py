@@ -1477,7 +1477,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
         if MappedToControlTransforms is None or len(MappedToControlTransforms) == 0:
             Logger.error(" %s : No transform found:" % (logStr))
             continue
-         
+        
+        #In theory each iteration of this loop could be run in a seperate thread.  Useful when center is in center of volume.
         for MappedToControlTransform in MappedToControlTransforms:
             
             ControlSectionNumber = None
