@@ -364,8 +364,8 @@ class SerialEMIDocImport(object):
             return sectionObj
         else:
             return channelObj
-    
-    
+
+
     @classmethod
     def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, SourceImagesFullPaths, histogramFullPath):
         '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
@@ -378,10 +378,10 @@ class SerialEMIDocImport(object):
             Gamma = ContrastMap[SectionNumber].Gamma
         else:
             (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, histogramFullPath)
-        
+
         return (ActualMosaicMin, ActualMosaicMax, Gamma)
-        
-    
+
+
     @classmethod
     def GetImageBpp(cls, IDocData, sectionDir):
         ImageBpp = IDocData.GetImageBpp()
@@ -395,22 +395,16 @@ class SerialEMIDocImport(object):
         else:
             prettyoutput.Log("Could not determine source image BPP")
             raise ValueError("Could not determine source image BPP")
-        
+
         return ImageBpp
-    
+
     @classmethod
     def CreateScaleNode(cls, IDocData, channelObj):
         '''Create a scale node for the channel
         :return: ScaleNode object that was created'''
         scaleValueInNm = float(IDocData.PixelSpacing) / 10.0
-        [added, ScaleObj] = channelObj.UpdateOrAddChild(XElementWrapper('Scale'))
+        return channelObj.SetScale(scaleValueInNm)
 
-        ScaleObj.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
-                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
-        ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
-                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
-        return (added, ScaleObj)
-    
     @classmethod
     def GetBitmask(cls, ImageMin, ImageMax, TargetBpp):
         '''
@@ -418,7 +412,7 @@ class SerialEMIDocImport(object):
         :param int ImageMax: Maximum value
         :param int TargetBpp: Desired bits-per-pixel after applying the bitmask,i.e. length of the bitmask
         :return: A bitmask which removes bits which do not contain information for integer values between min and max.'''
-        
+
         # Figure out how many bits are required to encode the values between min and max
         ValueRange = ImageMax - ImageMin
 
@@ -774,7 +768,7 @@ class IDoc():
         self.ImageSize = None
         self.tiles = []
         pass
-    
+
     def GetImageBpp(self):
         ''':return: Bits per pixel if specified in the IDoc, otherwise None'''
         ImageBpp = None
@@ -785,7 +779,7 @@ class IDoc():
                 ImageBpp = 16
             elif self.DataMode == 6:
                 ImageBpp = 16
-        
+
         return ImageBpp
 
     @classmethod
@@ -815,8 +809,6 @@ class IDoc():
                 attribute = parts[0].strip()
                 # attribute = attribute.lower()
 
-
-
                 # If we find an image tag, create a new tiledata
                 if(attribute == 'Image'):
                     imageFilename = parts[1].strip()
@@ -830,7 +822,6 @@ class IDoc():
                         vTemp = values[0].strip()
                         if vTemp[0].isdigit() or vTemp[0] == '-':
 
-
                             # Find out how many attributes we have.
                             # Try to convert to ints, then to float
                             ConvertedValues = []
@@ -839,14 +830,14 @@ class IDoc():
                                     convVal = int(v.strip())
                                     ConvertedValues.append(convVal)
                             except ValueError:
-                                
+
                                 try:
                                     for v in values:
                                         convVal = float(v.strip())
                                         ConvertedValues.append(convVal)
                                 except ValueError:
                                     convVal = parts[1]
-                                    
+
 
                             values = ConvertedValues
                             if len(values) == 1:

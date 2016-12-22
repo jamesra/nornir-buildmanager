@@ -52,7 +52,7 @@ from nornir_shared.images import *
 import nornir_shared.prettyoutput as prettyoutput
 
 
-def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
+def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
     
     if extension is None:
@@ -62,7 +62,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
-            PMGImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, *args, **kwargs)
+            PMGImport.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
             
     return VolumeElement
 
@@ -104,7 +104,7 @@ class PMGInfo(filenameparser.FilenameInfo):
 class PMGImport(object):
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, PMGFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None, *args, **kwargs):
+    def ToMosaic(cls, VolumeObj, PMGFullPath, scaleValueInNm, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None, *args, **kwargs):
 
         '''#Converts a PMG
         #PMG files are created by Objective Imaging's Surveyor. 
@@ -152,6 +152,7 @@ class PMGImport(object):
         ChannelName = PMG.Probe
         ChannelName = ChannelName.replace(' ', '_')
         channelObj = ChannelNode(ChannelName)
+        channelObj.SetScale(scaleValueInNm)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
     
         channelObj.Initials = PMG.Initials

@@ -19,12 +19,12 @@
 	
 	<Pipeline Name="ImportPMG" Help="Import PMG file into a volume">
 		<Arguments>
-			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="ImportDir" help="Directory to import from"/>
+			<Argument flag="-Scale" type="float" dest="scaleValueInNm" help="Pixel size in nanometers" required="True"/> 
 			<Argument flag="-ext" dest="extension" default="pmg" help="Extension of pmg files, default is pmg"/>
 		</Arguments>
  
-		<PythonCall Module="nornir_buildmanager.importers.pmg" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
-		
+		<PythonCall Module="nornir_buildmanager.importers.pmg" Function="Import" ImportPath="#ImportDir" extension="#extension" scaleValueInNm="#scaleValueInNm"/> 
 	</Pipeline>
 	
 	<Pipeline Name="ImportSectionsImages" Help="Import single images that represent an entire section in a volume">

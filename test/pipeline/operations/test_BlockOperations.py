@@ -585,7 +585,7 @@ class StosGroupTest(EmptyVolumeTestBase):
     @property
     def VolumePath(self):
         return "StosGroupTest"
-    
+
     def setUp(self):
         super(StosGroupTest, self).setUp()
 
@@ -619,6 +619,24 @@ class StosGroupTest(EmptyVolumeTestBase):
 
         volumeNode = self.RunBuild(buildArgs)
 
+    def RunListStosGroups(self, BlockName=None):
+
+        buildArgs = self._CreateBuildArgs('ListStosGroups')
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+    def RunListStosGroupContents(self,  StosGroupName, Downsample, BlockName=None):
+
+        buildArgs = self._CreateBuildArgs('ListGroupSectionMappings', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
     def HasStosGroup(self, StosGroupName, Downsample):
         BlockNode = self._GetResetBlockNode()
         StosGroupNode = BlockNode.GetStosGroup(StosGroupName + str(Downsample), Downsample)
@@ -632,11 +650,35 @@ class StosGroupTest(EmptyVolumeTestBase):
 
     def testCRUDOperations(self):
         self.AssertNoStosGroup("TestStosGroup", 1)
+        self.RunListStosGroups() #Just ensure we don't crash during the list call, we don't check output
         self.RunCreateStosGroup("TestStosGroup",1)
+
+        self.RunListStosGroups() #Just ensure we don't crash during the list call, we don't check output
+        self.RunListStosGroupContents("TestStosGroup", 1) #Just ensure we don't crash during the list call, we don't check output
         self.AssertHasStosGroup("TestStosGroup",1)
         self.AssertNoStosGroup("TestStosGroup", 2)
+
         self.RunRemoveStosGroup("TestStosGroup",1)
         self.AssertNoStosGroup("TestStosGroup", 1)
+        self.RunListStosGroupContents("TestStosGroup", 1) #Just ensure we don't crash during the list call, we don't check output
+
+
+class StosMapTest(EmptyVolumeTestBase):
+
+    @property
+    def VolumePath(self):
+        return "StosMapTest"
+
+    def setUp(self):
+        super(StosGroupTest, self).setUp()
+
+        volumeObj = self.LoadOrCreateVolume()
+        BlockObj = VolumeManagerETree.BlockNode('TEM')
+        [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
+        volumeObj.Save()
+
+    def testCRUDOperations(self):
+        return
 
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']

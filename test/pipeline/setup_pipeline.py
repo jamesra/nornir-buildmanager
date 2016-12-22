@@ -953,17 +953,18 @@ class PlatformTest(NornirBuildTestBase):
             return self.RunPMGImport()
         elif 'dm4' in self.Platform.lower():
             return self.RunDM4Import()
-            
+
         raise NotImplementedError("Derived classes should point RunImport at a specific importer")
 
     def RunIDocImport(self):
         buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
         self.RunBuild(buildArgs)
-        
+
     def RunPMGImport(self):
         buildArgs = self._CreateImportArgs('ImportPMG', self.ImportedDataPath)
+        buildArgs.extend(['-Scale', '0.01'])
         self.RunBuild(buildArgs)
-        
+
     def RunDM4Import(self):
         buildArgs = self._CreateImportArgs('ImportDM4', self.ImportedDataPath)
         self.RunBuild(buildArgs)

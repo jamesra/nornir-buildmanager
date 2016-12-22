@@ -1470,24 +1470,34 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def GetTransform(self, transform_name):
         return self.GetChildByAttrib('Transform', 'Name', transform_name)
-    
+
     def RemoveFilterOnContrastMismatch(self, FilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         '''
         Return: true if filter found and removed
         '''
-        
+
         filter_node = self.GetFilter(Filter=FilterName)
         if filter_node is None:
             return False
-        
+
         if filter_node.Locked:
             if filter_node.IsContrastMismatched(MinIntensityCutoff, MaxIntensityCutoff, Gamma):
                 self.logger.warn("Locked filter cannot be removed for contrast mismatch. %s " % filter_node.FullPath)
                 return False 
-                
-        
+
         return filter_node.RemoveNodeOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
-            
+
+    def SetScale(self, scaleValueInNm):
+        '''Create a scale node for the channel
+        :return: ScaleNode object that was created'''
+        #TODO: Scale should be its own object and a property
+        [added, ScaleObj] = self.UpdateOrAddChild(XElementWrapper('Scale'))
+
+        ScaleObj.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
+                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
+        ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
+                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
+        return (added, ScaleObj)
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
@@ -1499,13 +1509,13 @@ def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None)
 class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
 
     DefaultMaskName = "Mask"
-    
+
     def DefaultImageName(self, extension):
         '''Default name for an image in this filters imageset'''
         InputChannelNode = self.FindParent('Channel')
         section_node = InputChannelNode.FindParent('Section')
         return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
-    
+
     @property
     def Histogram(self):
         '''Get the image set for the filter, create if missing'''
