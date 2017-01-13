@@ -1772,7 +1772,7 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
     
 
 # OK, now build/check the remaining levels of the tile pyramids
-def BuildTilesetPyramid(TileSetNode, Pool=None, **kwargs):
+def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs):
     '''@TileSetNode'''
     
     MinResolutionLevel = TileSetNode.MinResLevel
@@ -1780,6 +1780,9 @@ def BuildTilesetPyramid(TileSetNode, Pool=None, **kwargs):
     while not MinResolutionLevel is None:
         # If the tileset is already a single tile, then do not downsample
         if(MinResolutionLevel.GridDimX == 1 and MinResolutionLevel.GridDimY == 1):
+            return
+        
+        if HighestDownsample and MinResolutionLevel.Downsample >= float(HighestDownsample):
             return
 
         ShrinkFactor = 0.5

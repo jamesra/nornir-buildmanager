@@ -188,7 +188,6 @@
 			</PythonCall>
 		</Iterate>
 	</Pipeline>
-	
 	<Pipeline Name="FixTilePyramidNumbering" Help="Migrate mosaic transforms to zero origins">
 		<Iterate VariableName="TilePyramidNode" XPath="Block/Section/Channel/Filter/TilePyramid">
 			<PythonCall Function="migration.MoveTilesToStartAtZero" tile_pyramid_node="#TilePyramidNode">
@@ -561,7 +560,7 @@
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Transform defining images into mosaic" required="False"/>
-			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma separated list of downsample levels for assembling output images" required="False"/>
+			<Argument flag="-HighestDownsample" dest="HighestDownsample" type="int" help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile." required="False"/>
 			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
 			
 		</Arguments>
@@ -578,10 +577,10 @@
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>			
 	
 					<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid"/>
-					<PythonCall Function="tile.AssembleTileset" TileShape="#shape"/>
+					<PythonCall Function="tile.AssembleTileset" TileShape="#shape" />
 	
 					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
-					<PythonCall Function="tile.BuildTilesetPyramid"/>
+					<PythonCall Function="tile.BuildTilesetPyramid" HighestDownsample="#HighestDownsample"/>
 				</Iterate>
 			</Iterate>
 		</Iterate>
