@@ -48,8 +48,13 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
                                                 'num_sections' : '0',
                                                 'InputChecksum' : InputVolumeNode.Checksum})
 
-    ParseScale(InputVolumeNode, OutputVolumeNode)
+    (units_of_measure, units_per_pixel) = DetermineVolumeScale(InputVolumeNode)
+    AddScaleData(OutputVolumeNode, units_of_measure, units_per_pixel)
+
     ParseSections(InputVolumeNode, OutputVolumeNode)
+
+    RemoveDuplicateScaleEntries(OutputVolumeNode, units_of_measure, units_per_pixel)
+
     ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName)
 
     OutputXML = ETree.tostring(OutputVolumeNode).decode('utf-8')
@@ -93,16 +98,67 @@ def RecursiveMergeAboutXML(path, xmlFileName, sourceXML="About.xml"):
 
     return Url
 
-def ParseScale(InputVolumeNode, OutputVolumeNode):
+def DetermineVolumeScale(InputVolumeNode):
+    '''
+    Returns the highest resolution found in all sections of the volume
+    '''
 
-    ScaleNode = InputVolumeNode.find('Block/Section/Channel/Scale')
+    ScaleNodes = list(InputVolumeNode.findall('Block/Section/Channel/Scale'))
+    if ScaleNodes is None or len(ScaleNodes) == 0:
+        return
+
+    #This code assumes all units are the same
+    units_of_measure = map(lambda s: s.X.UnitsOfMeasure, ScaleNodes )
+
+    units_all_equal = all(x == units_of_measure[0] for x in units_of_measure)
+    if not units_all_equal:
+        raise AssertionError("Not all units are equal in the volume.  This can be supported, but is not added yet.")
+
+    UnitsPerPixel = map(lambda s: s.X.UnitsPerPixel, ScaleNodes )
+
+    min_UnitsPerPixel = min(UnitsPerPixel)
+
+    return (units_of_measure[0], min_UnitsPerPixel)
+
+
+def AddScaleData(OutputNode, units_of_measure, units_per_pixel):
+    '''Adds a scale node to the OutputNode'''
+
+    OutputScaleNode = ETree.SubElement(OutputNode, 'Scale', {'UnitsOfMeasure' : str(units_of_measure),
+                                                           'UnitsPerPixel' : str(units_per_pixel)})
+
+    return OutputScaleNode
+
+
+def AddChannelScale(InputChannelNode, OutputNode):
+    '''
+    Add scale element to node based on the channel's scale information
+    '''
+
+    ScaleNode = InputChannelNode.GetScale()
     if ScaleNode is None:
         return
 
-    XNode = ScaleNode.find('X')
+    AddScaleData(OutputNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
 
-    OutputSectionNode = ETree.SubElement(OutputVolumeNode, 'Scale', {'UnitsOfMeasure' : XNode.UnitsOfMeasure,
-                                                           'UnitsPerPixel' : XNode.UnitsPerPixel})
+
+def RemoveDuplicateScaleEntries(OutputNode, volume_units_of_measure, volume_units_per_pixel):
+    '''Remove scale elements that match the volume's default scale'''
+
+    for subelem in OutputNode:
+        scale_node = subelem.find('Scale')
+        if scale_node is None:
+            RemoveDuplicateScaleEntries(subelem, volume_units_of_measure, volume_units_per_pixel)
+        else:
+            #Determine if the scales match
+            elem_units_of_measure = scale_node.attrib['UnitsOfMeasure']
+            elem_units_per_pixel = float(scale_node.attrib['UnitsPerPixel'])
+
+            if elem_units_of_measure == volume_units_of_measure and volume_units_per_pixel == elem_units_per_pixel:
+                subelem.remove(scale_node)
+
+            continue
+
 
 def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
@@ -201,6 +257,8 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
 def ParseChannels(SectionNode, OutputSectionNode):
 
     for ChannelNode in SectionNode.Channels:
+        ScaleNode = ChannelNode.find('Scale')
+
         for TransformNode in ChannelNode.findall('Transform'):
             OutputTransformNode = ParseTransform(TransformNode, OutputSectionNode)
             if not OutputTransformNode is None:
@@ -210,11 +268,16 @@ def ParseChannels(SectionNode, OutputSectionNode):
             for tilepyramid in FilterNode.findall('TilePyramid'):
                 OutputPyramidNode = ParsePyramidNode(FilterNode, tilepyramid, OutputSectionNode)
                 OutputPyramidNode.attrib['Path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputPyramidNode.attrib['Path'])
+                if ScaleNode is not None:
+                    AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
             for tileset in FilterNode.findall('Tileset'):
                 OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
                 OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path'])
-                print "Tileset found for section " + str(SectionNode.attrib["Number"])
-        
+                if ScaleNode is not None:
+                    AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
+                print "Tileset found for section " + str(SectionNode.attrib["Number"])    
+
+
         NotesNodes = ChannelNode.findall('Notes')
         for NoteNode in NotesNodes:
             # Copy over Notes elements verbatim
@@ -371,7 +434,7 @@ def MergeChildren(volumeParent, aboutParent):
 # Compare the attributes of two elements and return true if they match
 def ElementsEqual(volumeElement, aboutElement):
     '''Return true if the elements have the same tag, and the attributes found in both elements have same value'''
-    
+
     if(aboutElement.nodeName != volumeElement.nodeName):
         return False
 

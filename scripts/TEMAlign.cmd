@@ -21,7 +21,7 @@ nornir-build %1 SliceToVolume -InputDownsample 1 -InputGroup Grid -OutputGroup S
 title CreateVikingXML
 nornir-build %1 CreateVikingXML -OutputFile SliceToVolume -StosGroup SliceToVolume1 -StosMap SliceToVolume
 title MosaicToVolume
-nornir-build %1 MosaicToVolume -InputTransform Grid -OutputTransform ChannelToVolume -Channels TEM
+nornir-build %1 MosaicToVolume -InputTransform Grid -OutputTransform ChannelToVolume -Channels (?!Registered)
 title Assemble
 nornir-build %1 Assemble -Channels (?!Registered) -Filters Leveled -Downsample 32 -NoInterlace -Transform ChannelToVolume -ChannelPrefix Registered_
 title MosaicReport

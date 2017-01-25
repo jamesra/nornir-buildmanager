@@ -1487,6 +1487,9 @@ class ChannelNode(XNamedContainerElementWrapped):
 
         return filter_node.RemoveNodeOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
 
+    def GetScale(self):
+        return self.find('Scale')
+
     def SetScale(self, scaleValueInNm):
         '''Create a scale node for the channel
         :return: ScaleNode object that was created'''
@@ -1501,6 +1504,45 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
+
+
+class ScaleNode(XElementWrapper):
+
+    @property
+    def X(self):
+        x_elem = self.find('X')
+
+        if x_elem is None:
+            return None
+
+        return ScaleAxis(x_elem.UnitsPerPixel, x_elem.UnitsOfMeasure)
+
+    @property
+    def Y(self):
+        y_elem = self.find('Y')
+
+        if y_elem is None:
+            return None
+
+        return ScaleAxis(y_elem.UnitsPerPixel, y_elem.UnitsOfMeasure)
+
+    @property
+    def Z(self):
+        z_elem = self.find('Z')
+
+        if z_elem is None:
+            return None
+
+        return ScaleAxis(z_elem.UnitsPerPixel, z_elem.UnitsOfMeasure)
+
+    def __init__(self, attrib=None, **extra):
+        super(ScaleNode, self).__init__(tag='Scale', attrib=attrib, **extra)
+
+class ScaleAxis:
+
+    def __init__(self, UnitsPerPixel, UnitsOfMeasure):
+        self.UnitsPerPixel = float(UnitsPerPixel)
+        self.UnitsOfMeasure = str(UnitsOfMeasure)
 
 
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):

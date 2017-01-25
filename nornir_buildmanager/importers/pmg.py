@@ -54,16 +54,16 @@ import nornir_shared.prettyoutput as prettyoutput
 
 def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
-    
+
     if extension is None:
         extension = 'idoc'
-     
-            
+
+
     DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
             PMGImport.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
-            
+
     return VolumeElement
 
 
@@ -110,67 +110,66 @@ class PMGImport(object):
         #PMG files are created by Objective Imaging's Surveyor. 
         #This function expects a directory to contain a single PMG file with the tile images in the same directory
         #Returns the SectionNumber and ChannelName of PMG processed.  Otherwise [None,None]'''
-    
-        
+
         ParentDir = os.path.dirname(PMGFullPath)
         sectionDir = os.path.basename(PMGFullPath)
-        
+
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:
             OutputPath = os.path.join(PMGFullPath, "..")
-    
+
         # If the user did not supply a value, use a default
         if(TileOverlap is None):
             TileOverlap = 0.10
-    
+
         if (TargetBpp is None):
             TargetBpp = 8
-    
+
         # Report the current stage to the user
         # prettyoutput.CurseString('Stage', "PMGToMosaic " + InputPath)
-     
+
         BlockName = 'TEM'
         BlockObj = BlockNode('TEM')
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
-    
+
         ChannelName = None
          # TODO wrap in try except and print nice error on badly named files?
         PMG = ParseFilename(PMGFullPath, pmgMappings)
         PMGDir = os.path.dirname(PMGFullPath)
-    
+
         if(PMG is None):
             raise Exception("Could not parse section from PMG filename: %s" + PMGFullPath)
-    
+
         if PMG.Section is None:
             PMG.Section = PMG.Spot
-        
+
         sectionObj = SectionNode(PMG.Section)
-    
+
         [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
-    
+
         # Calculate our output directory.  The scripts expect directories to have section numbers, so use that.
         ChannelName = PMG.Probe
         ChannelName = ChannelName.replace(' ', '_')
         channelObj = ChannelNode(ChannelName)
         channelObj.SetScale(scaleValueInNm)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
-    
+
         channelObj.Initials = PMG.Initials
         channelObj.Mag = PMG.Mag
         channelObj.Spot = PMG.Spot
         channelObj.Slide = PMG.Slide
         channelObj.Block = PMG.Block
-    
+
         FlipList = GetFlipList(ParentDir)
         Flip = PMG.Section in FlipList
-    
+
         if(Flip):
             prettyoutput.Log("Flipping")
-    
-    
+
+
         # TODO: Add scale element
-    
-    
+
+
        # OutFilename = ChannelName + "_supertile.mosaic"
        # OutFilepath = os.path.join(SectionPath, OutFilename)
     

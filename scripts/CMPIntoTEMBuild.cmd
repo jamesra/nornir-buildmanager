@@ -1,5 +1,5 @@
 title Import
-nornir-build %1 ImportPMG %2
+nornir-build %1 ImportPMG %2 -Scale %3
 title ShadeCorrect Brightfield
 nornir-build %1 ShadeCorrect -Channels "(?!(DAPI$)|(TEM$)|(SEM$))" -Filters Raw8 -OutputFilter ShadingCorrected -Correction brightfield
 title ShadeCorrect Darkfield
