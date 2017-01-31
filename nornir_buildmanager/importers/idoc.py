@@ -252,7 +252,7 @@ class SerialEMIDocImport(object):
         if IDocData.NumTiles == 0:
             prettyoutput.Log("No tiles found in IDoc: " + idocFilePath)
             return
-        
+
         # See if we can find a notes file...
         TryAddNotes(channelObj, sectionDir, logger)
         TryAddLogs(channelObj, sectionDir, logger)
@@ -262,28 +262,28 @@ class SerialEMIDocImport(object):
         # Set the scale
         [added, ScaleObj] = cls.CreateScaleNode(IDocData, channelObj) 
 
-       
+
         FilterName = 'Raw' + str(TargetBpp)
         if(TargetBpp is None):
             FilterName = 'Raw'
-        
-        
+
+
         histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
         source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles ]
         (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, source_tile_list, histogramFullPath)
         ActualMosaicMax = numpy.around(ActualMosaicMax)
         ActualMosaicMin = numpy.around(ActualMosaicMin)
         _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-            
+
         channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
-        
+
         ImageConversionRequired = False
 
         # Create a channel for the Raw data 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode(Name=FilterName), 'Name')
         if added_filter:
             ImageConversionRequired = True
-        
+
         filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
         filterObj.BitsPerPixel = TargetBpp
 
@@ -298,31 +298,31 @@ class SerialEMIDocImport(object):
                                                                          Path=SupertileTransform,
                                                                          Type='Stage'),
                                                                          'Path')
- 
-        
+
+
         [added_tilepyramid, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
                                                                             NumberOfTiles=IDocData.NumTiles),
                                                                             'Path')
 
         [added_level, LevelObj] = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
-        
-        
+
+
         Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
-        
-            
+
+
         # Parse the images
         ImageBpp = cls.GetImageBpp(IDocData, sectionDir)
-        
-                
+
+
         # Make sure the target LevelObj is verified        
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath)
         else:
             VerifyTiles(filterObj.TilePyramid.GetLevel(1))
             Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
-            
+
         SourceToMissingTargetMap = Tileset.GetSourceToMissingTargetMap()
-         
+
         # Figure out if we have to move or convert images
         if len(SourceToMissingTargetMap) == 0:
             ImageConversionRequired = False
@@ -335,7 +335,7 @@ class SerialEMIDocImport(object):
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             #andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
             nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
-            
+
         elif(Tileset.ImageMoveRequired):
             for f in SourceToMissingTargetMap:
                 shutil.copy(f, SourceToMissingTargetMap[f])
@@ -355,7 +355,7 @@ class SerialEMIDocImport(object):
             Mosaic.TranslateMosaicFileToZeroOrigin(SupertilePath)
             transformObj.ResetChecksum()
             # transformObj.Checksum = MFile.Checksum
-            
+
         if saveBlock:
             return VolumeObj
         elif saveSection:

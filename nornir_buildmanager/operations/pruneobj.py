@@ -60,29 +60,29 @@ class PruneObj:
     @classmethod
     def _TryUpdateUndefinedThresholdFromParameter(cls, PruneNode, ThresholdParameter):
         '''If a Threshold parameter is passed set the UserRequested cutoff if it is not already specified'''
-        
+
         if(PruneNode.UserRequestedCutoff is None and ThresholdParameter is not None):
             PruneNode.UserRequestedCutoff = ThresholdParameter
             return True
-        
+
         return False
 
     @classmethod
     def PruneMosaic(cls, Parameters, PruneNode, TransformNode, OutputTransformName=None, Logger=None, **kwargs):
         '''@ChannelNode 
            Uses a PruneData node to prune the specified mosaic file'''
-         
+
         threshold_precision = VolumeManagerETree.TransformNode.get_threshold_precision() #Number of digits to save in XML file
 
         if(Logger is None):
             Logger = logging.getLogger(__name__ + '.PruneMosaic')
-                    
+
         Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
         if not Threshold is None:
             Threshold = round(Threshold, threshold_precision)
-            
+
         cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Threshold)
-          
+
         if OutputTransformName is None:
             OutputTransformName = 'Prune'
 
