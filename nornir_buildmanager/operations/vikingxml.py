@@ -334,7 +334,7 @@ def ParseTransform(TransformNode, OutputSectionNode):
 def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
     OutputPyramidNode = ETree.SubElement(OutputSectionNode, 'Pyramid', {
                                                          'Path' : InputPyramidNode.Path,
-                                                         'Name' : FilterNode.Name,
+                                                         'Name' : FilterNode.Parent.Name + "." + FilterNode.Name + ".Pyramid",
                                                          'LevelFormat' : InputPyramidNode.LevelFormat})
 
     for LevelNode in InputPyramidNode.Levels:
@@ -346,7 +346,7 @@ def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
 def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
     OutputTilesetNode = ETree.SubElement(OutputSectionNode, 'Tileset', {
                                                          'path' : InputTilesetNode.Path,
-                                                         'name' : FilterNode.Name,
+                                                         'name' : FilterNode.Parent.Name + "." + FilterNode.Name,
                                                          'TileXDim' : str(InputTilesetNode.TileXDim),
                                                          'TileYDim' : str(InputTilesetNode.TileYDim),
                                                          'FilePrefix' : InputTilesetNode.FilePrefix,
@@ -360,7 +360,6 @@ def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
                                                       'GridDimY' : str(LevelNode.GridDimY)})
 
     return OutputTilesetNode
-
 
 
 # Merge the created VolumeXML with the general definitions in about.XML
