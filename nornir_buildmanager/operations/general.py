@@ -89,6 +89,12 @@ def RemoveDuplicateLinks(ParentNode, ChildNodeName, ChildAttrib=None, **kwargs):
     else:
         return None
 
+def SaveVolumeDataToSingleFile(VolumeNode, save_filename, **kwargs):
 
+    VolumeNode = kwargs.get('VolumeElement', None)
+    if VolumeNode is None:
+        print("No volume node was passed to the function.")
+        return
 
-
+    VolumeNode.LoadAllLinkedNodes()
+    VolumeManager.SaveSingleFile(VolumeNode, save_filename)

@@ -193,8 +193,28 @@ class VolumeManager():
 
 
     @classmethod
+    def SaveSingleFile(cls, VolumeObj, xmlfile_fullpath):
+        '''Save the volume to a single XML file'''
+
+        fullpath = os.path.dirname(xmlfile_fullpath)
+
+        if not os.path.exists(fullpath):
+            os.makedirs(fullpath)
+
+        # prettyoutput.Log("Saving %s" % xmlfilename)
+
+
+        # prettyoutput.Log("Saving %s" % XMLFilename)
+
+        OutputXML = ElementTree.tostring(VolumeObj, encoding="utf-8")
+        # print OutputXML
+        with open(xmlfile_fullpath, 'w') as hFile:
+            hFile.write(OutputXML)
+            hFile.close()
+
+    @classmethod
     def Save(cls, VolumeObj):
-        '''Save the volume to an XML file'''
+        '''Save the volume to an XML file, putting sub-elements in seperate folders'''
 
         # We cannot include the volume checksum in the calculation because including it changes the checksum'''
         if hasattr(VolumeObj, 'Save'):
@@ -874,6 +894,21 @@ class XElementWrapper(ElementTree.Element):
                         yield m
             else:
                 yield m
+
+    def LoadAllLinkedNodes(self):
+        '''Recursively load all of the linked nodes on this element'''
+        
+        child_nodes = list(self)
+        for n in child_nodes:
+            if n.tag.endswith('_Link'):
+                n_replaced = self._replace_link(n)
+                if n_replaced is None:
+                    continue
+                n = n_replaced
+
+                n.LoadAllLinkedNodes()
+
+        return
 
 class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
     '''Wrapper for an XML element that refers to a file or directory'''

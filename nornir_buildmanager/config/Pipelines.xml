@@ -1114,5 +1114,13 @@
 			</Iterate>
 		</Iterate>
 	</Pipeline>
+	
+	<Pipeline Name="ExportMetadata" Help="Export all meta-data to a single file">   
+		<Arguments>
+			<Argument flag="-Output" dest="OutputPath" help="Filename to create" required="True"/>
+		</Arguments>
+	
+		<PythonCall Function="general.SaveVolumeDataToSingleFile" save_filename="#OutputPath"/>
+	</Pipeline>
 
 </Pipelines>
