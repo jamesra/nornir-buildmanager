@@ -533,17 +533,14 @@ class NornirBuildTestBase(test.testbase.TestBase):
         if TransformName is None:
             TransformName = 'Grid'
         
-        Levels = ConvertLevelsToList(Levels)
-        LevelsStr = ConvertLevelsToString(Levels) 
-        
         ShapeStr = ConvertLevelsToString(Shape)
         
         # Build Mosaics
         buildArgs = []
         if not Channels is None:
-            buildArgs = self._CreateBuildArgs('AssembleTiles', '-Channels', Channels, '-Transform', TransformName, '-Filters', Filter, '-Downsample', LevelsStr, '-Shape', ShapeStr)
+            buildArgs = self._CreateBuildArgs('AssembleTiles', '-Channels', Channels, '-Transform', TransformName, '-Filters', Filter, '-HighestDownsample', str(Levels), '-Shape', ShapeStr)
         else:
-            buildArgs = self._CreateBuildArgs('AssembleTiles', '-Transform', TransformName, '-Filters', Filter, '-Downsample', LevelsStr, '-Shape', ShapeStr)
+            buildArgs = self._CreateBuildArgs('AssembleTiles', '-Transform', TransformName, '-Filters', Filter, '-HighestDownsample', str(Levels), '-Shape', ShapeStr)
             
         volumeNode = self.RunBuild(buildArgs)
  
