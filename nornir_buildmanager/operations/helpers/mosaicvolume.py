@@ -4,12 +4,14 @@ Created on Jan 30, 2014
 @author: u0490822
 '''
 
-import nornir_imageregistration.volume as volume
 import nornir_buildmanager.operations.block
-import nornir_imageregistration.mosaic as mosaic
-import nornir_imageregistration.files.mosaicfile as mosaicfile
-import nornir_imageregistration.transforms.factory as factory
 import nornir_pools
+
+import nornir_imageregistration.files.mosaicfile as mosaicfile
+import nornir_imageregistration.mosaic as mosaic
+import nornir_imageregistration.transforms.factory as factory
+import nornir_imageregistration.volume as volume
+
 
 class MosaicVolume(volume.Volume):
     '''
@@ -36,13 +38,13 @@ class MosaicVolume(volume.Volume):
             Section = transform.FindParent('Section')
             task.transformNode = transform
             task.sectionKey = "%d_%s" % (Section.Number, Channel.Name) 
-            #mosaicObj.transformNode = transform
-            #sectionKey = "%d_%s" % (Section.Number, Channel.Name)
+            # mosaicObj.transformNode = transform
+            # sectionKey = "%d_%s" % (Section.Number, Channel.Name)
             
             tasks.append(task)
 
         for task in tasks:
-            #mosaicObj = #mosaic.Mosaic.LoadFromMosaicFile(transform.FullPath)
+            # mosaicObj = #mosaic.Mosaic.LoadFromMosaicFile(transform.FullPath)
             mosaicObj = task.wait_return()
             mosaicObj.transformNode = task.transformNode
 

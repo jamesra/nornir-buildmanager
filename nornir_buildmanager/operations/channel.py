@@ -11,8 +11,8 @@ import xml
 
 from nornir_buildmanager import *
 from nornir_buildmanager.VolumeManagerETree import *
-from nornir_buildmanager.validation import transforms
 import nornir_buildmanager.operations.tile
+from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
@@ -102,10 +102,10 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
 
         prettyoutput.Log(cmd)
         proc = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (stdout,stderr) = proc.communicate()
+        (stdout, stderr) = proc.communicate()
         if proc.returncode < 0:
-            SaveFilterNode  = False 
-            prettyoutput.LogErr("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd,stdout))
+            SaveFilterNode = False 
+            prettyoutput.LogErr("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
         else:
             SaveFilterNode = True
 

@@ -1,18 +1,18 @@
+import glob
 import logging
 import os
 import shutil
 import tempfile
 import unittest
-import glob
 
-from test.pipeline.setup_pipeline import *
-
-import nornir_imageregistration.core as core
 from nornir_buildmanager.VolumeManagerETree import *
-import nornir_buildmanager.build as build
-import nornir_buildmanager.validation.image as image
 import nornir_shared.files
 import nornir_shared.misc
+from test.pipeline.setup_pipeline import *
+
+import nornir_buildmanager.build as build
+import nornir_buildmanager.validation.image as image
+import nornir_imageregistration.core as core
 
 
 class ImageValidationTest(CopySetupTestBase):

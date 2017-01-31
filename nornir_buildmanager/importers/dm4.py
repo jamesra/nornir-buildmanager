@@ -4,32 +4,32 @@ Created on Aug 7, 2015
 @author: u0490822
 '''
 
-import glob
-import os
 import collections
-import nornir_buildmanager.importers 
-import dm4reader
+import glob
 import logging
-import PIL
-import nornir_imageregistration
-import nornir_imageregistration.transforms.factory
-
-import numpy as np
-
-import nornir_buildmanager.templates
-import nornir_imageregistration.core 
-from nornir_buildmanager.VolumeManagerETree import *
-import nornir_shared.plot as plot
-import nornir_shared.files as files
-import nornir_shared.prettyoutput as prettyoutput
-import nornir_pools
+import os
 import tempfile
 
+import PIL
+import dm4reader
+from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager.importers 
+import nornir_buildmanager.templates
+import nornir_imageregistration
+import nornir_imageregistration.core 
+import nornir_imageregistration.transforms.factory
+import nornir_pools
 from nornir_shared.files import RemoveOutdatedFile
+
+import nornir_shared.files as files
+import nornir_shared.plot as plot
+import nornir_shared.prettyoutput as prettyoutput
+import numpy as np
+
 
 DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Units'))
 
-TileExtension = 'png' #Pillow does not support 16-bit png files, so we use the npy extension
+TileExtension = 'png'  # Pillow does not support 16-bit png files, so we use the npy extension
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
@@ -57,13 +57,13 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     
 '''Convert a DM4 file to another image format.  Intended to be called from a multithreading pool'''
 def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
-    #(section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
+    # (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
     dm4data = DM4FileHandler(dm4FileFullPath)
                    
     tempdir = tempfile.mkdtemp(prefix="DM4")
      
-    tempfilename =  os.path.basename(output_fullpath + '.tif') #cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG.  We save to TIF and convert
-    temp_output_fullpath = os.path.join(tempdir,tempfilename)
+    tempfilename = os.path.basename(output_fullpath + '.tif')  # cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG.  We save to TIF and convert
+    temp_output_fullpath = os.path.join(tempdir, tempfilename)
     
     image_data = dm4data.ReadImage()
       
@@ -234,7 +234,7 @@ class DigitalMicrograph4Import(object):
         
         (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
         
-        #Open the DM4 file
+        # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
           
         
@@ -271,8 +271,8 @@ class DigitalMicrograph4Import(object):
             
         cls.AddTileToMosaic(transformObj, dm4data, tile_number)
         
-        #histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
-        #cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
+        # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
+        # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
         
         TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
         yield TilePyramidObj
@@ -306,8 +306,8 @@ class DigitalMicrograph4Import(object):
     def ImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
         '''Adds a DM4 file to the tile pyramid directory without updating the meta-data'''
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
-        filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) #Pillow does not support 16-bit PNG
-        output_fullpath = os.path.join(LevelObj.FullPath,filename)
+        filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
+        output_fullpath = os.path.join(LevelObj.FullPath, filename)
         
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath)
@@ -322,7 +322,7 @@ class DigitalMicrograph4Import(object):
     @classmethod
     def AddAndImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
         [created, LevelObj] = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
-        filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) #Pillow does not support 16-bit PNG
+        filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath, filename)
         
         if not os.path.exists(LevelObj.FullPath):
@@ -334,7 +334,7 @@ class DigitalMicrograph4Import(object):
         TilePyramidObj.ImageFormatExt = '.' + TileExtension
                     
         pools = nornir_pools.GetGlobalLocalMachinePool()
-        #DM4FileHandler.ConvertDM4ToPng(dm4FileFullPath, output_fullpath)
+        # DM4FileHandler.ConvertDM4ToPng(dm4FileFullPath, output_fullpath)
         t = pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
         return TilePyramidObj
 
@@ -347,7 +347,7 @@ class DigitalMicrograph4Import(object):
         (ImageHeight, ImageWidth) = dm4data.ReadImageShape()
         
         grid_position = (tile_number % XDim, tile_number // XDim)
-        assert(grid_position[1] < YDim) #Make sure the grid position is not off the grid
+        assert(grid_position[1] < YDim)  # Make sure the grid position is not off the grid
         
         mosaicObj = None
         if os.path.exists(transformObj.FullPath):
@@ -358,7 +358,7 @@ class DigitalMicrograph4Import(object):
         overlapScalar = dm4data.ReadMontageOverlap()
         
         PerGridXOffset = ImageWidth * (1.0 - overlapScalar)
-        PerGridYOffset =  ImageHeight * (1.0 - overlapScalar)
+        PerGridYOffset = ImageHeight * (1.0 - overlapScalar)
         
         XPosition = grid_position[0] * PerGridXOffset
         YPosition = grid_position[1] * PerGridYOffset

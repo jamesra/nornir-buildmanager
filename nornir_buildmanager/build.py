@@ -9,19 +9,19 @@
 
 '''
 
-import sys
-import os
-
-import time
 import argparse
-import nornir_shared.prettyoutput as prettyoutput
-from nornir_shared.misc import SetupLogging, lowpriority
-from nornir_shared.tasktimer import TaskTimer
 import logging
+import os
+import sys
+import time
+
 from nornir_buildmanager import *
 from nornir_imageregistration.files import *
-
+from nornir_shared.misc import SetupLogging, lowpriority
+from nornir_shared.tasktimer import TaskTimer
 from pkg_resources import resource_filename
+
+import nornir_shared.prettyoutput as prettyoutput
 
 
 CommandParserDict = {}
@@ -76,19 +76,19 @@ def BuildParserRoot():
     parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve', description='Options available to all build commands.  Specific pipelines may extend the argument list.')
     _AddParserRootArguments(parser)
 
-    #subparsers = parser.add_subparsers(title='help')
-    #help_parser = subparsers.add_parser('help', help='Print help information')
+    # subparsers = parser.add_subparsers(title='help')
+    # help_parser = subparsers.add_parser('help', help='Print help information')
 # 
-    #help_parser.set_defaults(func=print_help, parser=parser)
-    #help_parser.add_argument('pipelinename',
-                        #default=None,
-                        #nargs='?',
-                        #type=str,
-                        #help='Print help for a pipeline, or all pipelines if unspecified')
+    # help_parser.set_defaults(func=print_help, parser=parser)
+    # help_parser.add_argument('pipelinename',
+                        # default=None,
+                        # nargs='?',
+                        # type=str,
+                        # help='Print help for a pipeline, or all pipelines if unspecified')
 
-    #CommandParserDict['help'] = help_parser
+    # CommandParserDict['help'] = help_parser
 
-    #update_parser = subparsers.add_parser('update', help='If directories have been copied directly into the volume this flag is required to detect them')
+    # update_parser = subparsers.add_parser('update', help='If directories have been copied directly into the volume this flag is required to detect them')
     
     pipeline_subparsers = parser.add_subparsers(title='Commands')
     _AddPipelineParsers(pipeline_subparsers)
@@ -99,7 +99,7 @@ def BuildParserRoot():
 def _AddPipelineParsers(subparsers):
 
     PipelineXML = _GetPipelineXMLPath()
-    #Load the element tree once and pass it to the later functions so we aren't parsing the XML text in the loop
+    # Load the element tree once and pass it to the later functions so we aren't parsing the XML text in the loop
     PipelineXML = pipelinemanager.PipelineManager.LoadPipelineXML(PipelineXML)
 
     for pipeline_name in pipelinemanager.PipelineManager.ListPipelines(PipelineXML):
@@ -133,7 +133,7 @@ def call_pipeline(args):
     
 def _GetFromNamespace(ns, attribname, default=None):
     if attribname in ns:
-        return getattr(ns,attribname)
+        return getattr(ns, attribname)
     else:
         return default
 

@@ -6,8 +6,9 @@ Created on May 15, 2015
 All the code, often throwaway, to migrate from one version to another.
 '''
 
-import os
 import glob
+import os
+
 import nornir_imageregistration
 import nornir_imageregistration.files
 
@@ -34,7 +35,7 @@ def GetListOfTileNumbers(tile_filenames):
     return tile_number_list
 
 #-------------------------------------
-#Begin Fix transform numbering section
+# Begin Fix transform numbering section
 
 def RenumberTransformTilesToStartAtZero(transform_node, **kwargs):
     '''
@@ -48,7 +49,7 @@ def RenumberTransformTilesToStartAtZero(transform_node, **kwargs):
     sorted_keys = sorted(mFile.ImageToTransformString.keys())
     
     firstTileNumber = GetTileNumber(sorted_keys[0])
-    #We only make the first number zero if the the first tile is 1
+    # We only make the first number zero if the the first tile is 1
     if firstTileNumber != 1:
         return
     
@@ -63,21 +64,21 @@ def RenumberTransformTilesToStartAtZero(transform_node, **kwargs):
         transform = mFile.ImageToTransformString[original_key]
         del mFile.ImageToTransformString[original_key]
         if new_tile_name in mFile.ImageToTransformString:
-            print("Tile %s already exists in mosaic %s" % (new_tile_name, transform_node.FullPath) )
+            print("Tile %s already exists in mosaic %s" % (new_tile_name, transform_node.FullPath))
             
         mFile.ImageToTransformString[new_tile_name] = transform
         
     mFile.Save(transform_node.FullPath)
     print("Updated tile numbering for %s" % (transform_node.FullPath))
     
-    #return transform_node.Parent
+    # return transform_node.Parent
     
 
-#End fix transform numbering section
+# End fix transform numbering section
 #-----------------------------------
     
 #-------------------------------------------------------
-#Begin Fix tile numbering section
+# Begin Fix tile numbering section
 
 def FixFileNumbering(files_list):
     '''
@@ -95,7 +96,7 @@ def FixFileNumbering(files_list):
     
     tile_number_list = GetListOfTileNumbers(sorted_files)
     
-    #OK, we need to decrement every tile number by one.
+    # OK, we need to decrement every tile number by one.
     First = True
     for tile_number in tile_number_list:    
         InputFilename = os.path.join(dirname, file_format % tile_number)
@@ -120,7 +121,7 @@ def MoveTilesToStartAtZero(tile_pyramid_node, **kwargs):
         
         FixFileNumbering(tile_list)
 
-#End Fix tile numbering section
+# End Fix tile numbering section
 #-------------------------------------------------------
 
 
@@ -171,7 +172,7 @@ def MigrateTransforms_1p2_to_1p3(transform_node, **kwargs):
     _MapTransformToCurrentType(transform_node, name='Grid', old_type='_Cel128_Mes8_sp4_Mes8_Thr0.25', new_type='_Cel128_Mes8_Mes8_Thr0.25_it10_sp4')
     _MapTransformToCurrentType(transform_node, name='Grid', old_type='_Cel96_Mes8_sp4_Mes8_Thr0.5', new_type='_Cel128_Mes8_Mes8_Thr0.25_it10_sp4')
     
-    #All done changing the transforms meta-data.  Now update transforms which depend on us with correct information
+    # All done changing the transforms meta-data.  Now update transforms which depend on us with correct information
     for dependent in VolumeManagerHelpers.InputTransformHandler.EnumerateTransformDependents(transform_node.Parent, original_checksum, original_type, recursive=True):
         if dependent.HasInputTransform:
             dependent.SetTransform(transform_node)

@@ -11,14 +11,15 @@ import subprocess
 
 from nornir_buildmanager import *
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration.files import *
-import nornir_imageregistration.arrange_mosaic
 import nornir_imageregistration
+import nornir_imageregistration.arrange_mosaic
+from nornir_imageregistration.files import *
 from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
 
 import nornir_imageregistration.mosaic as mosaic
+
 
 def TransformNodeToZeroOrigin(transform_node, **kwargs):
     ''':return: transform_node if the mosaic was adjusted.  None if the transform_node already had a zero origin'''
@@ -62,7 +63,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
     
-        #TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
+        # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
         tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
         mfileObj = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
         invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)

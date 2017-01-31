@@ -7,9 +7,8 @@ Created on Aug 30, 2013
 import glob
 import os
 
-from setuptools import setup, find_packages
-
 from ez_setup import use_setuptools
+from setuptools import setup, find_packages
 
 
 # This if test prevents an infinite recursion running tests from "python setup.py test"

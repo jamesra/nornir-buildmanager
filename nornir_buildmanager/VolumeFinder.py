@@ -3,10 +3,11 @@
 import glob
 import os
 
+import nornir_imageregistration.core
 import nornir_shared.files
 import nornir_shared.images
+
 import nornir_shared.prettyoutput as PrettyOutput
-import nornir_imageregistration.core
 import xml.etree.ElementTree as ElementTree
 
 

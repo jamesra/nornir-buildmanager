@@ -8,6 +8,7 @@ import os
 import unittest
 
 import nornir_buildmanager.VolumeManagerETree
+
 import nornir_buildmanager.importers.sectionimage as sectionimage
 from setup_pipeline import VolumeEntry
 import setup_pipeline

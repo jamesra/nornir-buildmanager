@@ -3,27 +3,25 @@ Created on Feb 14, 2013
 
 @author: u0490822
 '''
+import datetime
 import logging
 import os
 import shutil
 import sys
 import tempfile
-import unittest
 import time
-import datetime
-
-import test.testbase
-
+import unittest
 
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
-import nornir_buildmanager.build as build
-from nornir_buildmanager.validation import transforms
-from nornir_imageregistration.files.mosaicfile import *
 from nornir_buildmanager.argparsexml import NumberList
-import nornir_shared.misc
+from nornir_buildmanager.validation import transforms
 import nornir_imageregistration.files
- 
+from nornir_imageregistration.files.mosaicfile import *
+import nornir_shared.misc
+import test.testbase
+
+import nornir_buildmanager.build as build
 
 
 def VerifyVolume(test, VolumeObj, listVolumeEntries):
@@ -71,7 +69,7 @@ def FullPathsForNodes(node_list):
 
 def BuildPathToModifiedDateMap(path_list):
     '''Given a list of paths, construct a dictionary which maps to a cached last modified date'''
-    file_to_modified_time= {}
+    file_to_modified_time = {}
     for file_path in path_list:
         mtime = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
         file_to_modified_time[file_path] = mtime
@@ -109,7 +107,7 @@ def EnumerateImageSets(testObj, volumeNode, Channels, Filter, RequireMasks=True)
             
         image_sets = list(f.findall('ImageSet'))
         testObj.assertIsNotNone(image_sets, "ImageSet node not found")
-        testObj.assertEqual(len(image_sets),1, "Multiple ImageSet nodes found")
+        testObj.assertEqual(len(image_sets), 1, "Multiple ImageSet nodes found")
         yield image_sets[0]
         
 def EnumerateTileSets(testObj, volumeNode, Channels, Filter):
@@ -121,7 +119,7 @@ def EnumerateTileSets(testObj, volumeNode, Channels, Filter):
     for f in filters:
         tile_sets = list(f.findall('Tileset'))
         testObj.assertIsNotNone(tile_sets, "Tileset node not found")
-        testObj.assertEqual(len(tile_sets),1, "Multiple Tileset nodes found")
+        testObj.assertEqual(len(tile_sets), 1, "Multiple Tileset nodes found")
         yield tile_sets[0]
 
 
@@ -213,7 +211,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
             # pargs.append('-pipeline')
             pargs.append(pipeline)
 
-        #pargs.extend([self.TestOutputPath])
+        # pargs.extend([self.TestOutputPath])
 
         pargs.extend(args)
 
@@ -309,7 +307,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         PruneNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Prune']")
         self.assertIsNotNone(PruneNode, "No prune node produced")
         
-        #Delete one prune data file, and make sure the associated .mosaic regenerates
+        # Delete one prune data file, and make sure the associated .mosaic regenerates
         return volumeNode
 
 
@@ -487,7 +485,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self._VerifyInputTransformIsCorrect(image_set_node, InputTransformName=transform_name)
         
     
-    def _VerifyPyramidHasExpectedLevels(self, pyramid_node, expected_levels, ):
+    def _VerifyPyramidHasExpectedLevels(self, pyramid_node, expected_levels,):
         '''Used to ensure that any node with level children nodes has the correct levels'''
         for level in expected_levels:
             LevelNode = pyramid_node.find("Level[@Downsample='%d']" % (level))
@@ -496,7 +494,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         
      
     
-    def _VerifyImageSetHasExpectedLevels(self, image_set_node, expected_levels, ):
+    def _VerifyImageSetHasExpectedLevels(self, image_set_node, expected_levels,):
         for level in expected_levels:
             AssembledImageNode = image_set_node.find("Level[@Downsample='%d']/Image" % (level))
             self.assertIsNotNone(AssembledImageNode, "No Image node at level %d produced from assemble pipeline" % (level))
@@ -528,7 +526,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return volumeNode
     
-    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=1, Shape=[512,512]):
+    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=1, Shape=[512, 512]):
         if Filter is None:
             Filter = "Leveled"
             
@@ -597,12 +595,12 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         for image_set_node in EnumerateImageSets(self, volumeNode, Channels, Filter='Blob', RequireMasks=True) : 
             self._VerifyImageSetHasExpectedLevels(image_set_node, Levels)
-            #self._VerifyImageSetMatchesTransform(image_set_node, TransformName)
+            # self._VerifyImageSetMatchesTransform(image_set_node, TransformName)
             
         return volumeNode
     
     
-    def _StosFileHasMasks(self,stosfileFullPath):
+    def _StosFileHasMasks(self, stosfileFullPath):
         stosfileObj = nornir_imageregistration.files.StosFile.Load(stosfileFullPath)
         return stosfileObj.HasMasks
     
@@ -624,11 +622,11 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.assertIsNotNone(sectionNodes)
         self.VerifySectionsHaveStosTransform(stos_group_node, stos_map_node.CenterSection, sectionNodes)
         
-        #Run align again, make sure the last modified date is unchanged
+        # Run align again, make sure the last modified date is unchanged
         full_paths = FullPathsForNodes(stos_group_node.findall("SectionMappings/Transform"))
         transform_last_modified = BuildPathToModifiedDateMap(full_paths)
         
-        #Make sure our output stos file has masks if they were called for
+        # Make sure our output stos file has masks if they were called for
         self.assertEqual(self._StosFileHasMasks(full_paths[0]), MasksRequired, "%s does not match mask expectation, masks expected = %s" % (full_paths[0], '-UseMasks' in buildArgs))
           
         volumeNode = self.RunBuild(buildArgs)
@@ -704,7 +702,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         image_nodes = list(stos_group_node.findall('SectionMappings/Image'))
         self.assertGreater(len(image_nodes), 0, "Images should be produced by RunAssembleStosOverlays")
         
-        #Check that the overlays are not regenerated on a rebuild
+        # Check that the overlays are not regenerated on a rebuild
         full_paths = FullPathsForNodes(image_nodes)
         image_last_modified = BuildPathToModifiedDateMap(full_paths)
         
@@ -737,7 +735,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
                                           '-InputDownsample', str(InputLevel),
                                           '-OutputGroup', OutputGroup,
                                           '-OutputDownsample', str(OutputLevel),
-                                          '-Filter', 'Leveled', 
+                                          '-Filter', 'Leveled',
                                           '-Iterations', "3",
                                           '-Threshold', "1.0")
         if UseMasks:
@@ -748,7 +746,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (OutputGroup, OutputLevel))
         self.assertIsNotNone(stos_group_node, "No %s%d Stos Group node produced" % (OutputGroup, OutputLevel))
           
-        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (OutputGroup, OutputLevel), stos_map_name='FinalStosMap',  MasksRequired='-UseMasks' in buildArgs, buildArgs=buildArgs)
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (OutputGroup, OutputLevel), stos_map_name='FinalStosMap', MasksRequired='-UseMasks' in buildArgs, buildArgs=buildArgs)
          
         return volumeNode
 
@@ -771,7 +769,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         buildArgs = self._CreateBuildArgs('SliceToVolume', '-InputDownsample', str(Level), '-InputGroup', 'Grid', '-OutputGroup', 'SliceToVolume')
         volumeNode = self.RunBuild(buildArgs)
 
-        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (group_name,Level))
+        StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (group_name, Level))
         self.assertIsNotNone(StosGroupNode, "No SliceToVolume%d stos group node created" % Level)
         
         MasksRequired = self._StosGroupHasMasks(StosGroupNode)
@@ -915,7 +913,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
             
             stosFilePath = os.path.basename(f)
             
-            #Find the TransformNode in the stos group we expect to be replaced by this manual file
+            # Find the TransformNode in the stos group we expect to be replaced by this manual file
             stosTransform = StosGroupNode.find("SectionMappings/Transform[@Path='%s']" % stosFilePath)
             self.assertIsNotNone(stosTransform, "Stos transform file that is overriden by manual files does not exist: %s" % stosFilePath)
             

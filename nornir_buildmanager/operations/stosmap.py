@@ -26,7 +26,7 @@ def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
 
     print("Stosmap Name:   {0:s}".format(StosMap.Name))
     print("Center Section: {0:d}".format(StosMap.CenterSection))
-    print("{0:s}{1:s}".format('Control #'.ljust(10), "Mapped #'s" ))
+    print("{0:s}{1:s}".format('Control #'.ljust(10), "Mapped #'s"))
 
     mappings = StosMap.Mappings
     if ControlSection:
@@ -34,7 +34,7 @@ def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
 
     for mapping in sorted(mappings, key=lambda m: m.Control):
         print("{0:s}{1:s}".format(repr(mapping.Control).ljust(10),
-              ', '.join(map(lambda n: str(n), sorted(mapping.Mapped) ) ) ) ) 
+              ', '.join(map(lambda n: str(n), sorted(mapping.Mapped))))) 
 
     print('');
     return

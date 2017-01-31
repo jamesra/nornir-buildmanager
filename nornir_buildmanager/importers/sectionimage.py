@@ -13,12 +13,13 @@ import os
 import shutil
 import sys
 
-from filenameparser import ParseFilename, mapping
 from nornir_buildmanager import metadatautils
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser
-import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.files
+
+from filenameparser import ParseFilename, mapping
+import nornir_shared.prettyoutput as prettyoutput
 
 
 imageNameMappings = [mapping('Section', typefunc=int),

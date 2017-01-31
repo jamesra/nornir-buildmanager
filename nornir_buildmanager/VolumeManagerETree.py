@@ -3,29 +3,30 @@ import copy
 import datetime
 import glob
 import logging
+import math 
 import operator
 import os
 import pickle
 import shutil
 import sys
 import urllib
-import math 
- 
+
+import nornir_buildmanager
+import nornir_buildmanager.validation.transforms
+from nornir_imageregistration.files import *
+import nornir_imageregistration.transforms.registrationtree
 import nornir_shared.checksum
+import nornir_shared.files
+
+import VolumeManagerHelpers as VMH
+import nornir_buildmanager.operations.tile as tile
+import nornir_buildmanager.operations.versions as versions
 import nornir_shared.misc as misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection as reflection
-import nornir_shared.files
-
-import nornir_buildmanager
-import nornir_buildmanager.operations.versions as versions
-import nornir_buildmanager.operations.tile as tile
-import nornir_imageregistration.transforms.registrationtree
-from nornir_imageregistration.files import *
 import xml.etree.ElementTree as ElementTree 
-import VolumeManagerHelpers as VMH
-import nornir_buildmanager.validation.transforms
- 
+
+
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
 
@@ -195,7 +196,7 @@ class VolumeManager():
     def Save(cls, VolumeObj):
         '''Save the volume to an XML file'''
 
-        #We cannot include the volume checksum in the calculation because including it changes the checksum'''
+        # We cannot include the volume checksum in the calculation because including it changes the checksum'''
         if hasattr(VolumeObj, 'Save'):
             VolumeObj.Save(tabLevel=None)
         else:
@@ -1165,9 +1166,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # pool = Pools.GetGlobalThreadPool()
          
-        #tabs = '\t' * tabLevel
+        # tabs = '\t' * tabLevel
 
-        #if hasattr(self, 'FullPath'):
+        # if hasattr(self, 'FullPath'):
         #    logger.info("Saving " + self.FullPath)
 
         # logger.info('Saving ' + tabs + str(self))
@@ -1276,8 +1277,8 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
         # pool = Pools.GetGlobalThreadPool()
 
         logger = logging.getLogger(__name__ + '.' + 'XLinkedContainerElementWrapper')
-        #tabs = '\t' * tabLevel
-        #logger.info('Saving ' + tabs + str(self))
+        # tabs = '\t' * tabLevel
+        # logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
         # Create a copy of ourselves for saving
         SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
@@ -1407,7 +1408,7 @@ class BlockNode(XNamedContainerElementWrapped):
         existing_set = frozenset(self.NonStosSectionNumbers)
         self.NonStosSectionNumbers = section_number_list.union(existing_set)
         
-    def MarkSectionsAsUndamaged(self,section_number_list):
+    def MarkSectionsAsUndamaged(self, section_number_list):
         if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
             section_number_list = frozenset(section_number_list)
             
@@ -1440,7 +1441,7 @@ class BlockNode(XNamedContainerElementWrapped):
         if isinstance(value, str):
             StosExemptNode.text = value
         elif isinstance(value, list) or isinstance(value, set) or isinstance(value, frozenset):
-            StosExemptNode.text = ','.join(list(map(str,value)))
+            StosExemptNode.text = ','.join(list(map(str, value)))
        
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
@@ -1493,7 +1494,7 @@ class ChannelNode(XNamedContainerElementWrapped):
     def SetScale(self, scaleValueInNm):
         '''Create a scale node for the channel
         :return: ScaleNode object that was created'''
-        #TODO: Scale should be its own object and a property
+        # TODO: Scale should be its own object and a property
         [added, ScaleObj] = self.UpdateOrAddChild(XElementWrapper('Scale'))
 
         ScaleObj.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
@@ -1589,7 +1590,7 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
             self.append(pyramid)
             return (True, pyramid)
         else:
-            return (False,pyramid)
+            return (False, pyramid)
 
     @property
     def TilePyramid(self):
@@ -1875,7 +1876,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         if SectionMappingsNode is None:
             return None
         
-        #assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
+        # assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
 
         stosNode = SectionMappingsNode.FindStosTransform(ControlSectionNode.Number,
                                                                ControlChannelNode.Name,
@@ -1938,7 +1939,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         ControlChannelNode = ControlFilter.FindParent("Channel")
         
         SectionMappingsNode = self.GetSectionMapping(MappedSectionNode.Number)
-        assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
+        assert(not SectionMappingsNode is None)  # We expect the caller to arrange for a section mappings node in advance
                
         stosNode = TransformNode(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
                                                                                         'MappedSectionNumber' : str(MappedSectionNode.Number),
@@ -1986,7 +1987,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         
         IsInvalid = False
         
-        if len(stosNode.attrib.get(ChecksumAttribName,"")) > 0:
+        if len(stosNode.attrib.get(ChecksumAttribName, "")) > 0:
             IsInvalid = IsInvalid or not nornir_buildmanager.validation.transforms.IsValueMatched(stosNode, ChecksumAttribName, imageNode.Checksum)
         else:
             if not os.path.exists(imageNode.FullPath):
@@ -2436,7 +2437,7 @@ class MosaicBaseNode(XFileElementWrapper):
         self.attrib['Type'] = Value
 
 
-class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
+class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
 
     @classmethod
     def get_threshold_format(cls):
@@ -2444,7 +2445,7 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
     
     @classmethod
     def get_threshold_precision(cls):
-        return 2 #Number of digits to save in XML file
+        return 2  # Number of digits to save in XML file
     
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
@@ -2643,7 +2644,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         '''
         image_node = self.GetImage(Downsample)
         if image_node is None:
-            return os.path.join(self.FullPath, LevelNode.PredictPath(Downsample) ,self.__PredictImageFilename() )
+            return os.path.join(self.FullPath, LevelNode.PredictPath(Downsample) , self.__PredictImageFilename())
         else:
             return image_node.FullPath
         
@@ -2745,7 +2746,7 @@ class ImageSetNode(ImageSetBaseNode):
         if not FileNumberMatch:
             return [False, "File count mismatch for level"] 
         
-        return [True,None]
+        return [True, None]
 
         
     def __init__(self, Type=None, attrib=None, **extra):
@@ -2979,7 +2980,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if not FileNumberMatch:
             return [False, "File count mismatch for level"] 
         
-        return [True,None]
+        return [True, None]
 
 
     def __init__(self, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
@@ -2990,7 +2991,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if ImageFormatExt is None:
             ImageFormatExt = '.png'
 
-        super(TilePyramidNode, self).__init__(tag='TilePyramid', 
+        super(TilePyramidNode, self).__init__(tag='TilePyramid',
                                                path=TilePyramidNode.DefaultPath,
                                                attrib=attrib, **extra)
 
@@ -3070,7 +3071,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
         # Start with the middle because it is more likely to have a match earlier
         TestIndicies = range(GridYDim / 2, GridYDim)
-        TestIndicies.extend(range((GridYDim / 2)-1, -1, -1))
+        TestIndicies.extend(range((GridYDim / 2) - 1, -1, -1))
         for iY in TestIndicies:
             # MatchString = os.path.join(OutputDir, FilePrefix +
             #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +

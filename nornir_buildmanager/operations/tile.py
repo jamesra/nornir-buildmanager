@@ -4,37 +4,36 @@ Created on May 22, 2012
 @author: Jamesan
 '''
 
-import math
-import subprocess
-import xml.dom
-import logging
+import copy
 import glob
+import logging
+import math
 import os
 import shutil
-import copy
-import nornir_buildmanager as nb 
+import subprocess
+import xml.dom
 
-
+from nornir_buildmanager.exceptions import NornirUserException
+import nornir_buildmanager.templates
 from nornir_buildmanager.validation import transforms, image
-import nornir_imageregistration.core as core
-import nornir_imageregistration.image_stats as image_stats
-import nornir_imageregistration.tileset as tiles
+import nornir_imageregistration
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
+from nornir_imageregistration.tileset import ShadeCorrectionTypes
 from nornir_imageregistration.transforms import *
-import nornir_imageregistration.spatial as spatial
 from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile, OutdatedFile
 from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 import nornir_shared.plot
-import nornir_buildmanager.templates
 
+import nornir_buildmanager as nb 
+import nornir_imageregistration.core as core
+import nornir_imageregistration.image_stats as image_stats
+import nornir_imageregistration.spatial as spatial
+import nornir_imageregistration.tileset as tiles
 import nornir_pools as Pools
 
-from nornir_imageregistration.tileset import ShadeCorrectionTypes
-from nornir_buildmanager.exceptions import NornirUserException
-import nornir_imageregistration
 
 HistogramTagStr = "HistogramData"
 
@@ -763,7 +762,7 @@ def InvertFilter(Parameters, InputFilterNode, OutputFilterName, **kwargs):
     InputPyramidNode = InputFilterNode.TilePyramid
     InputLevelNode = InputPyramidNode.MaxResLevel
 
-    #Use the highest resolution of the input pyramid as our downsample level
+    # Use the highest resolution of the input pyramid as our downsample level
     Downsample = InputLevelNode.Downsample
 
     if addedOutputFilter:
@@ -794,7 +793,7 @@ def InvertFilter(Parameters, InputFilterNode, OutputFilterName, **kwargs):
         OutputTileFullPath = os.path.join(OutputLevelFullPath, Basename)
         TileMappingDict[InputTileFullPath] = OutputTileFullPath
 
-    tilesConverted = nornir_shared.images.ConvertImagesInDict(TileMappingDict, Invert=True, Bpp = InputFilterNode.BitsPerPixel)
+    tilesConverted = nornir_shared.images.ConvertImagesInDict(TileMappingDict, Invert=True, Bpp=InputFilterNode.BitsPerPixel)
     if tilesConverted:
         yield InputFilterNode.Parent
 
@@ -1152,7 +1151,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
             Logger.error("No output produced assembling " + TransformNode.FullPath)
             return
 
-        #Cropping based on the transform usually enlarges the image to match the largest transform in the volume.  We don't crop if a specfic region was already requested
+        # Cropping based on the transform usually enlarges the image to match the largest transform in the volume.  We don't crop if a specfic region was already requested
         if not TransformNode.CropBox is None and RequestedBoundingBox is None:
             cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
             (Xo, Yo, Width, Height) = TransformNode.CropBoxDownsampled(thisLevel)
@@ -1808,7 +1807,7 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
         [Valid, Reason] = NextLevelNode.IsValid()
         if not Valid:
             # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
-            BuildTilesetLevel(MinResolutionLevel.FullPath, NextLevelNode.FullPath, 
+            BuildTilesetLevel(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
                                DestGridDimensions=(newYDim, newXDim),
                                TileDim=(TileSetNode.TileYDim, TileSetNode.TileXDim),
                                FilePrefix=TileSetNode.FilePrefix,

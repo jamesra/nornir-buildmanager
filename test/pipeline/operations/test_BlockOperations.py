@@ -6,14 +6,14 @@ Created on Apr 25, 2013
 import glob
 import unittest
 
+from nornir_buildmanager.operations.block import *
+from nornir_imageregistration.transforms import registrationtree
 from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
     CopySetupTestBase, EmptyVolumeTestBase
 
-import nornir_buildmanager.build as build
-from nornir_buildmanager.operations.block import *
-from nornir_imageregistration.transforms import registrationtree
-import test.pipeline.test_sectionimage as test_sectionimage
 import nornir_buildmanager.VolumeManagerETree as volman
+import nornir_buildmanager.build as build
+import test.pipeline.test_sectionimage as test_sectionimage
 
 
 def _RTNodesToNumberList(Nodes):
@@ -356,7 +356,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         groupNames = ['StosBrute16', 'StosGrid16', 'StosGrid8', 'SliceToVolume8']
 
         # Import the files
-        buildArgs = [self.TestOutputPath, '-debug', 'AlignSections',  \
+        buildArgs = [self.TestOutputPath, '-debug', 'AlignSections', \
                       \
                      '-Downsample', '16', \
                      '-Center', '5', \
@@ -396,7 +396,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                              '-OutputDownsample', '1']
         self.VolumeObj = self.RunBuild(ScaleArgs)
 
-        VolumeImageArgs = [self.TestOutputPath, '-debug', 'VolumeImage',  \
+        VolumeImageArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
                      '-InputGroup', 'StosGrid', \
                      '-InputDownsample', '16']
         self.VolumeObj = self.RunBuild(VolumeImageArgs)
@@ -409,7 +409,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveAutomaticGridFirstPassTransform,
                                 AutoOutputTransform=ScaledTransformFromSixteen)
 
-        VolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage',  \
+        VolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
                              '-InputGroup', 'StosGrid', \
                              '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(VolumeImagesArgs)
@@ -417,7 +417,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.assertIsNotNone(VolumeImageNode)
 
         # Try to refine the of stos-grid
-        SecondRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment',  \
+        SecondRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment', \
                      '-InputGroup', 'StosGrid', \
                      '-Filter', '.*mosaic.*', \
                      '-InputDownsample', '16', \
@@ -438,7 +438,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # "InputChecksum of second pass transform should match checksum of first pass transform")
 
         # Try to refine the of stos-grid
-        SliceToVolumeBuildArgs = [self.TestOutputPath, '-debug', 'SliceToVolume',  \
+        SliceToVolumeBuildArgs = [self.TestOutputPath, '-debug', 'SliceToVolume', \
                      '-InputGroup', 'StosGrid', \
                      '-InputDownsample', '8']
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
@@ -551,7 +551,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # self.assertIsNotNone(SliceToVolumeScaleAndVolumeImageGroupNode, "Could not find StosGroup SliceToVolume1")
 
     def testBlob(self):
-        buildArgs = [self.TestOutputPath, '-debug', 'CreateBlobFilter',  \
+        buildArgs = [self.TestOutputPath, '-debug', 'CreateBlobFilter', \
                                  '-InputFilter', 'mosaic',
                                  '-OutputFilter', 'Blob_mosaic',
                                  '-Radius', '1',
@@ -628,7 +628,7 @@ class StosGroupTest(EmptyVolumeTestBase):
 
         volumeNode = self.RunBuild(buildArgs)
 
-    def RunListStosGroupContents(self,  StosGroupName, Downsample, BlockName=None):
+    def RunListStosGroupContents(self, StosGroupName, Downsample, BlockName=None):
 
         buildArgs = self._CreateBuildArgs('ListGroupSectionMappings', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
 
@@ -643,24 +643,24 @@ class StosGroupTest(EmptyVolumeTestBase):
         return StosGroupNode is not None
 
     def AssertHasStosGroup(self, StosGroupName, Downsample):
-        self.assertTrue(self.HasStosGroup(StosGroupName, Downsample), "Missing StosGroup {0:s}".format(StosGroupName) )
+        self.assertTrue(self.HasStosGroup(StosGroupName, Downsample), "Missing StosGroup {0:s}".format(StosGroupName))
 
     def AssertNoStosGroup(self, StosGroupName, Downsample):
-        self.assertFalse(self.HasStosGroup(StosGroupName, Downsample), "Should not have StosGroup {0:s}".format(StosGroupName) )
+        self.assertFalse(self.HasStosGroup(StosGroupName, Downsample), "Should not have StosGroup {0:s}".format(StosGroupName))
 
     def testCRUDOperations(self):
         self.AssertNoStosGroup("TestStosGroup", 1)
-        self.RunListStosGroups() #Just ensure we don't crash during the list call, we don't check output
-        self.RunCreateStosGroup("TestStosGroup",1)
+        self.RunListStosGroups()  # Just ensure we don't crash during the list call, we don't check output
+        self.RunCreateStosGroup("TestStosGroup", 1)
 
-        self.RunListStosGroups() #Just ensure we don't crash during the list call, we don't check output
-        self.RunListStosGroupContents("TestStosGroup", 1) #Just ensure we don't crash during the list call, we don't check output
-        self.AssertHasStosGroup("TestStosGroup",1)
+        self.RunListStosGroups()  # Just ensure we don't crash during the list call, we don't check output
+        self.RunListStosGroupContents("TestStosGroup", 1)  # Just ensure we don't crash during the list call, we don't check output
+        self.AssertHasStosGroup("TestStosGroup", 1)
         self.AssertNoStosGroup("TestStosGroup", 2)
 
-        self.RunRemoveStosGroup("TestStosGroup",1)
+        self.RunRemoveStosGroup("TestStosGroup", 1)
         self.AssertNoStosGroup("TestStosGroup", 1)
-        self.RunListStosGroupContents("TestStosGroup", 1) #Just ensure we don't crash during the list call, we don't check output
+        self.RunListStosGroupContents("TestStosGroup", 1)  # Just ensure we don't crash during the list call, we don't check output
 
 
 class StosMapTest(EmptyVolumeTestBase):

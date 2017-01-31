@@ -19,7 +19,6 @@ from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 
 
-
 def Rename(OldNode, NewName, **kwargs):
     OldNode.Name = NewName
     return OldNode.Parent
@@ -79,7 +78,7 @@ def RemoveDuplicateLinks(ParentNode, ChildNodeName, ChildAttrib=None, **kwargs):
             else:
                 knownValues.append(val)
 
-    print( "Found %s nodes " % len(NodesToDelete))
+    print("Found %s nodes " % len(NodesToDelete))
 
     if len(NodesToDelete) > 0:
         for n in NodesToDelete:

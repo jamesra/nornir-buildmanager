@@ -3,9 +3,11 @@ Created on May 26, 2015
 
 @author: u0490822
 '''
-import os
 import glob 
+import os
+
 import nornir_shared.files 
+
 
 num_contrast_pad_chars = 64
 
@@ -53,11 +55,11 @@ def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
     '''Print the contrast values used to generated the filter'''
     global num_contrast_pad_chars
     if not node.HasImageset:
-        #print("No Imageset for %s" % node.FullPath)
+        # print("No Imageset for %s" % node.FullPath)
         return None
         
     if not node.HasTilePyramid:
-        #print("No TilePyramid for %s" % node.FullPath)
+        # print("No TilePyramid for %s" % node.FullPath)
         return None
         
     if not node.Imageset.HasLevels:

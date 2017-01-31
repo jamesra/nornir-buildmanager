@@ -10,12 +10,13 @@ import shutil
 import unittest
 
 from nornir_buildmanager.VolumeManagerETree import *
-import nornir_buildmanager.importers.pmg as pmg
+import nornir_buildmanager.build
 import nornir_shared.files
 import nornir_shared.misc
 import test.testbase
 
-import nornir_buildmanager.build
+import nornir_buildmanager.importers.pmg as pmg
+
 
 class VolumeManagerTestBase(test.testbase.TestBase):
 
@@ -41,9 +42,9 @@ class VolumeManagerBlockTest(VolumeManagerTestBase):
         [added_block, block] = self.VolumeObj.UpdateOrAddChild(block)
         self.assertTrue(added_block, "New block should return true")
         
-        test_data = [1,2,3,4,5]
-        even_data = [2,4]
-        odd_data = [1,3,5]
+        test_data = [1, 2, 3, 4, 5]
+        even_data = [2, 4]
+        odd_data = [1, 3, 5]
         self.assertListEqual(block.NonStosSectionNumbers, [], "Non stos section numbers should initialize to empty list")
         block.MarkSectionsAsDamaged(test_data)
         self.assertListEqual(block.NonStosSectionNumbers, test_data, "Damaged sections should be reflected in the block node")
@@ -61,13 +62,13 @@ class VolumeManagerBlockTest(VolumeManagerTestBase):
             
         nornir_buildmanager.build.Execute(buildArgs=[self.TestOutputPath, 'ListDamagedSections'])
         
-        nornir_buildmanager.build.Execute(buildArgs=[self.TestOutputPath, 'MarkSectionsDamaged', '-Sections', ','.join(list(map(str,even_data)))])
+        nornir_buildmanager.build.Execute(buildArgs=[self.TestOutputPath, 'MarkSectionsDamaged', '-Sections', ','.join(list(map(str, even_data)))])
         self.VolumeObj = VolumeManager.Load(self.VolumeFullPath, Create=True)
         (added_block, loaded_block) = self.VolumeObj.UpdateOrAddChild(block)
         self.assertFalse(added_block, "Block should exist after running pipeline")
         self.assertListEqual(loaded_block.NonStosSectionNumbers, test_data, "All sections should be marked after adding even numbers")
         
-        nornir_buildmanager.build.Execute(buildArgs=[self.TestOutputPath, 'MarkSectionsUndamaged', '-Sections',','.join(list(map(str,odd_data)))])
+        nornir_buildmanager.build.Execute(buildArgs=[self.TestOutputPath, 'MarkSectionsUndamaged', '-Sections', ','.join(list(map(str, odd_data)))])
         self.VolumeObj = VolumeManager.Load(self.VolumeFullPath, Create=True)
         (added_block, loaded_block) = self.VolumeObj.UpdateOrAddChild(block)
         self.assertFalse(added_block, "Block should exist after running pipeline")
@@ -99,7 +100,7 @@ class VolumeManagerFilterTest(VolumeManagerTestBase):
         
         self.VolumeObj.Save()
         
-        #See if we can print the filter contrast settings
+        # See if we can print the filter contrast settings
         nornir_buildmanager.build.Execute(buildArgs=[self.TestOutputPath, 'ListFilterContrast'])
         
 

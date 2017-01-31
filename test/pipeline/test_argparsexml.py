@@ -1,6 +1,8 @@
 
 import unittest
+
 import nornir_buildmanager.argparsexml as argparsexml
+
 
 class ArgParseXMLTests(unittest.TestCase):
 
@@ -31,7 +33,7 @@ class ArgParseXMLTests(unittest.TestCase):
 		self.assertEqual(output, [1, 3, 5, 6, 7, 9])
 		
 		output = argparsexml.NumberPair('256')
-		self.assertEqual(output, (256,256))
+		self.assertEqual(output, (256, 256))
 		
 		output = argparsexml.NumberPair('512,256')
-		self.assertEqual(output, (512,256))
+		self.assertEqual(output, (512, 256))

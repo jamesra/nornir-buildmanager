@@ -7,10 +7,11 @@ Operations to manipulate or report on the volume.
 
 '''
 import os
+import shutil
+
+from nornir_buildmanager import VolumeManagerETree
 import nornir_imageregistration
 from nornir_imageregistration.files import stosfile
-import shutil
-from nornir_buildmanager import VolumeManagerETree
 
 
 def CreateStosGroup(GroupName, BlockNode, Downsample, **kwargs):
@@ -35,7 +36,7 @@ def ListStosGroups(BlockNode, **kwargs):
     
     print("Slice-to-Slice Transform Groups");
     print("");
-    sortedGroups = sorted(BlockNode.StosGroups, key= lambda sg: sg.Name)
+    sortedGroups = sorted(BlockNode.StosGroups, key=lambda sg: sg.Name)
     
     for group in sortedGroups:
         print(group.SummaryString);
@@ -45,15 +46,15 @@ def ListGroupSectionMappings(BlockNode, GroupName, Downsample, **kwargs):
     
     print("Slice-to-Slice Transform Groups");
     print("");
-    StosGroup = BlockNode.GetStosGroup(GroupName,Downsample)
+    StosGroup = BlockNode.GetStosGroup(GroupName, Downsample)
     if StosGroup is None:
         print("No stos group found with name {0}".format(GroupName))
         return
     
     print("{0:s}{1:s}{2:s}".format('Mapped'.ljust(30), 'Control'.ljust(30), 'Type'.ljust(10)))
-    print("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}".format('Section'.ljust(10), 'Channel'.ljust(10), 'Filter'.ljust(10), 'Section'.ljust(10), 'Channel'.ljust(10), 'Filter'.ljust(10) ))
+    print("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}".format('Section'.ljust(10), 'Channel'.ljust(10), 'Filter'.ljust(10), 'Section'.ljust(10), 'Channel'.ljust(10), 'Filter'.ljust(10)))
     
-    for transforms in map( lambda sm: sm.Transforms, sorted(StosGroup.SectionMappings, key=lambda sm: sm.MappedSectionNumber)):
+    for transforms in map(lambda sm: sm.Transforms, sorted(StosGroup.SectionMappings, key=lambda sm: sm.MappedSectionNumber)):
         for t in transforms:
             print("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}{6:s}".format(repr(t.MappedSectionNumber).ljust(10), t.MappedChannelName.ljust(10), t.MappedFilterName.ljust(10),
                                                           repr(t.ControlSectionNumber).ljust(10), t.ControlChannelName.ljust(10), t.ControlFilterName.ljust(10),
@@ -67,7 +68,7 @@ def CopyStosGroup(BlockNode, SourceGroupName, TargetGroupName, Downsample, **kwa
     
     Copy the transforms from one stos group to another.  If the target group does not exist it is created.
     '''
-    #Get or create the TargetGroup
+    # Get or create the TargetGroup
     (created_source, SourceGroup) = BlockNode.GetOrCreateStosGroup(SourceGroupName, Downsample)
     (created_target, TargetGroup) = BlockNode.GetOrCreateStosGroup(TargetGroupName, Downsample)
     
@@ -87,17 +88,17 @@ def CopySectionMappingTransforms(SourceMapping, TargetMapping):
     BlockNode = SourceGroup.FindParent('Block')
     
     for source_transform in SourceMapping.Transforms:
-        #Copy the file that 
+        # Copy the file that 
         ControlFilter = BlockNode.GetSection(source_transform.ControlSectionNumber).GetChannel(source_transform.ControlChannelName).GetFilter(source_transform.ControlFilterName)
-        MappedFilter  = BlockNode.GetSection(source_transform.MappedSectionNumber).GetChannel(source_transform.MappedChannelName).GetFilter(source_transform.MappedFilterName)
+        MappedFilter = BlockNode.GetSection(source_transform.MappedSectionNumber).GetChannel(source_transform.MappedChannelName).GetFilter(source_transform.MappedFilterName)
         
-        #Remove the existing transform and replace it
+        # Remove the existing transform and replace it
         TargetTransform = TargetGroup.GetStosTransformNode(ControlFilter, MappedFilter)
         if not TargetTransform is None:
             TargetTransform.Clean()
             TargetTransform = None
         
-        #Copy the transform file itself
+        # Copy the transform file itself
         SourceStosFullpath = source_transform.FullPath
         TargetStosFullpath = os.path.join(TargetMapping.Parent.FullPath, os.path.basename(SourceStosFullpath))    
         shutil.copy(SourceStosFullpath, TargetStosFullpath)
@@ -120,7 +121,7 @@ def ImportStos(InputStosFullpath, BlockNode, GroupName,
         print("No stos group found with name {0}".format(GroupName))
         return
     
-    #Copy the original stos file to a subdirectory under the StosGroup
+    # Copy the original stos file to a subdirectory under the StosGroup
     OriginalsFullPath = os.path.join(StosGroup.FullPath, 'Originals') 
     if not os.path.exists(OriginalsFullPath):
         os.makedirs(OriginalsFullPath)
@@ -128,18 +129,18 @@ def ImportStos(InputStosFullpath, BlockNode, GroupName,
     OriginalCopyFullPath = os.path.join(OriginalsFullPath, os.path.basename(InputStosFullpath))
     shutil.copy(InputStosFullpath, OriginalCopyFullPath)
     
-    #Create the Transform meta-data and copy the file into the StosGroup
+    # Create the Transform meta-data and copy the file into the StosGroup
     ControlFilter = BlockNode.GetSection(ControlSectionNumber).GetChannel(ControlChannelName).GetFilter(ControlFilterName)
     MappedFilter = BlockNode.GetSection(MappedSectionNumber).GetChannel(MappedChannelName).GetFilter(MappedFilterName)
     
     OutputFilename = VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
     OutputFileFullPath = os.path.join(StosGroup.FullPath, OutputFilename)
     
-    #Copy the STOS file into the StosGroup directory
+    # Copy the STOS file into the StosGroup directory
     if(ControlDownsample != MappedDownsample):
-        #Adjust the mappedDownsample to match the control downsample
+        # Adjust the mappedDownsample to match the control downsample
         stos = stosfile.StosFile.Load(InputStosFullpath)
-        adjustedStos = stos.EqualizeStosGridPixelSpacing(ControlDownsample, MappedDownsample, 
+        adjustedStos = stos.EqualizeStosGridPixelSpacing(ControlDownsample, MappedDownsample,
                                           MappedFilter.GetOrCreateImage(ControlDownsample).FullPath,
                                           MappedFilter.GetOrCreateMaskImage(ControlDownsample).FullPath,
                                           False)

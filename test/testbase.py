@@ -3,17 +3,19 @@ Created on Mar 21, 2013
 
 @author: u0490822
 '''
-import unittest
-import os
+import cProfile
 import glob
 import logging
-from nornir_shared.misc import SetupLogging
-import shutil
-import cProfile
+import os
 import pickle
 import pstats
+import shutil
+import unittest
+
 import nornir_pools
- 
+from nornir_shared.misc import SetupLogging
+
+
 class PickleHelper(object):
          
     @property
@@ -205,7 +207,7 @@ class MosaicTestBase(TestBase):
     
     @property
     def TestOutputPath(self):
-        return os.path.join(super(MosaicTestBase,self).TestOutputPath, self.id())
+        return os.path.join(super(MosaicTestBase, self).TestOutputPath, self.id())
 
     def GetMosaicFiles(self):
         return glob.glob(os.path.join(self.ImportedDataPath, self.TestName, "*.mosaic"))

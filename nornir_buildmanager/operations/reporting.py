@@ -4,20 +4,23 @@ Created on Oct 3, 2012
 @author: u0490822
 '''
 
-import logging
-import shutil
-import os
-import nornir_shared.images
-import nornir_pools as Pools
-import nornir_imageregistration.core
 import datetime
-import nornir_buildmanager.importers.idoc as idoc
+import logging
+import os
+import shutil
+
+from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet
+import nornir_imageregistration.core
+import nornir_shared.images
 import nornir_shared.plot
 import nornir_shared.prettyoutput
-from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet
-import nornir_shared.files as nfiles
-# import Pipelines.VolumeManagerETree as VolumeManager
 
+import nornir_buildmanager.importers.idoc as idoc
+import nornir_pools as Pools
+import nornir_shared.files as nfiles
+
+
+# import Pipelines.VolumeManagerETree as VolumeManager
 if __name__ == '__main__':
     pass
 
@@ -709,7 +712,7 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
         HTML.Add('<TR><TD colspan="99">')
         requiredLevel = filter.Imageset.FindDownsampleForSize((MaxImageHeight, MaxImageWidth))
         image_node = filter.GetImage(requiredLevel)
-        HTML.Add( ImgTagFromImageNode(image_node, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)) 
+        HTML.Add(ImgTagFromImageNode(image_node, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)) 
         HTML.Add("</TD></TR>")
         
     HTML.Add("<TR>") 
@@ -807,7 +810,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
             if ColSubElement.tag == "Tileset":
                 ColumnBodyList.bgColor = '#A0FFA0'
             elif ColSubElement.tag == "Filter":
-                HTML = HTMLFromFilterNode(filter=ColSubElement, htmlpaths=HTMLPaths, MaxImageWidth=364, MaxImageHeight=364,Logger=Logger)
+                HTML = HTMLFromFilterNode(filter=ColSubElement, htmlpaths=HTMLPaths, MaxImageWidth=364, MaxImageHeight=364, Logger=Logger)
             elif ColSubElement.tag == "Image":
                 if ColSubElement.FindParent("ImageSet") is None:
                     kwargs['MaxImageWidth'] = 364
@@ -873,7 +876,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     # Build a 2D list to build the table from later
 
-    #pool = Pools.GetGlobalThreadPool()
+    # pool = Pools.GetGlobalThreadPool()
     tableDict = {}
     tasks = []
 

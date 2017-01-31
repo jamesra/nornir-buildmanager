@@ -3,24 +3,25 @@ Created on Apr 2, 2012
 
 '''
 
+import collections
 import copy
 import logging
 import os
 import re
 import sys
 import traceback
-# import xml.etree
 from xml.etree import cElementTree as ElementTree
-import collections
 
 from nornir_buildmanager import VolumeManagerETree
-import nornir_shared.misc
-import nornir_shared.prettyoutput as prettyoutput
-import nornir_shared.reflection
-import argparsexml
 import nornir_pools
+import nornir_shared.misc
+import nornir_shared.reflection
+
+import argparsexml
+import nornir_shared.prettyoutput as prettyoutput
 
 
+# import xml.etree
 class ArgumentSet():
     '''Collection of arguments from each source'''
 
@@ -811,7 +812,7 @@ class PipelineManager(object):
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             if not SelectedVolumeElem.IsValid():
-                #Check if the node is locked, otherwise clean it and look for another node
+                # Check if the node is locked, otherwise clean it and look for another node
                 if 'Locked' in SelectedVolumeElem.attrib:
                     if SelectedVolumeElem.Locked:
                         break
@@ -915,7 +916,7 @@ class PipelineManager(object):
                         errorStr = errorStr + traceback.format_exc()
                         errorStr = errorStr + '-' * 60 + '\n'
                         PipelineManager.logger.error(errorStr)
-                        #prettyoutput.LogErr(errorStr)
+                        # prettyoutput.LogErr(errorStr)
 
                         self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
                         return

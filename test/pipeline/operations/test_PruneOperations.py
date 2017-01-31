@@ -6,10 +6,9 @@ Created on Feb 14, 2013
 import os
 import unittest
 
-import test.pipeline.setup_pipeline
-
 from nornir_buildmanager.operations.pruneobj import PruneObj
 from nornir_imageregistration.files.mosaicfile import MosaicFile
+import test.pipeline.setup_pipeline
 
 
 class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
