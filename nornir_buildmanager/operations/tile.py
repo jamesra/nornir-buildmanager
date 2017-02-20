@@ -1777,6 +1777,12 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
     MinResolutionLevel = TileSetNode.MinResLevel
 
     while not MinResolutionLevel is None:
+        
+        #The grid attributes are missing if the meta-data was created but there are no tiles
+        if not (hasattr(MinResolutionLevel, 'GridDimX') and hasattr(MinResolutionLevel, 'GridDimY')):
+            prettyoutput.Log("Tileset incomplete: " + TileSetNode.FullPath)
+            return 
+            
         # If the tileset is already a single tile, then do not downsample
         if(MinResolutionLevel.GridDimX == 1 and MinResolutionLevel.GridDimY == 1):
             return
