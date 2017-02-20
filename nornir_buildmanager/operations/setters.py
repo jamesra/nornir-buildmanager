@@ -39,25 +39,28 @@ def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs)
     logger = logging.getLogger(__name__ + '.SetContrastRange')
 
     if math.isnan(MinValue):
-        minStr = "Default"
+        minStr = "Default/Unchanged"
     else:
         minStr = MinValue
 
     if math.isnan(MaxValue):
-        maxStr = "Default"
+        maxStr = "Default/Unchanged"
     else:
         maxStr = MaxValue
 
     if math.isnan(GammaValue):
-        gammaStr = "Default"
+        gammaStr = "Default/Unchanged"
     else:
         gammaStr = GammaValue
 
     AutoLevelHint = HistogramElement.GetOrCreateAutoLevelHint()
 
-    AutoLevelHint.UserRequestedMinIntensityCutoff = MinValue
-    AutoLevelHint.UserRequestedMaxIntensityCutoff = MaxValue
-    AutoLevelHint.UserRequestedGamma = GammaValue
+    if not math.isnan(MinValue):
+        AutoLevelHint.UserRequestedMinIntensityCutoff = float(MinValue)
+    if not math.isnan(MaxValue):
+        AutoLevelHint.UserRequestedMaxIntensityCutoff = float(MaxValue)
+    if not math.isnan(GammaValue):
+        AutoLevelHint.UserRequestedGamma = GammaValue
 
     SetFilterLock(AutoLevelHint, False)
 
