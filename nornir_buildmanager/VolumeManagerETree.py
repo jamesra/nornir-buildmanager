@@ -2096,6 +2096,17 @@ class StosGroupNode(XNamedContainerElementWrapped):
             :rtype str:
         '''
         return "{0:s} {1:3d}".format(self.Name.ljust(20), int(self.Downsample))
+    
+    def CleanIfInvalid(self):
+        cleaned = super(StosGroupNode, self).CleanIfInvalid()
+        
+        #TODO: Deleting stale transforms and section mappinds needs to be enabled, but I identified this shortcoming in a remote and 
+        #want to work on it in my own test environment
+        #if not cleaned:    
+            #for mapping in self.SectionMappings:
+                #cleaned or mapping.CleanIfInvalid()
+                
+        return cleaned
          
 
 class StosMapNode(XElementWrapper):
@@ -2859,7 +2870,14 @@ class SectionMappingsNode(XElementWrapper):
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
 
     def FindStosTransform(self, ControlSectionNumber, ControlChannelName, ControlFilterName, MappedSectionNumber, MappedChannelName, MappedFilterName):
-        '''WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query'''
+        '''
+        Find the stos transform matching all of the parameters if it exists
+        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
+        :rtype TransformNode:
+        '''
+        
+        # TODO: 3/10/2017 I believe I can stop checking MappedSectionNumber because it is built into the SectionMapping node.  This is a sanity check before I pull the plug
+        assert(MappedSectionNumber == self.MappedSectionNumber)
         
         for t in self.Transforms:
             if int(t.ControlSectionNumber) != int(ControlSectionNumber):
@@ -2883,6 +2901,42 @@ class SectionMappingsNode(XElementWrapper):
             return t
 
         return None
+     
+    def TryRemoveTransformNode(self, transform_node):
+        '''Remove the transform if it exists
+        :rtype bool:
+        :return: True if transform removed 
+        '''
+        return self.TryRemoveTransform(transform_node.ControlSectionNumber,
+                                    transform_node.ControlChannelName,
+                                    transform_node.ControlFilterName,
+                                    transform_node.MappedChannelName,
+                                    transform_node.MappedFilterName)
+    
+    def TryRemoveTransform(self, ControlSectionNumber, ControlChannelName, ControlFilterName, MappedChannelName, MappedFilterName):
+        '''Remove the transform if it exists
+        :rtype bool:
+        :return: True if transform removed 
+        '''
+        
+        existing_transform = self.FindStosTransform(ControlSectionNumber, ControlChannelName, ControlFilterName, self.MappedSectionNumber, MappedChannelName, MappedFilterName)
+        if not existing_transform is None:
+            existing_transform.Clean()
+            return True
+        
+        return False
+        
+    
+    def AddOrUpdateTransform(self, transform_node):
+        '''
+        Add or update a transform to the section mappings.
+        :rtype bool:
+        :return: True if the transform node was added.  False if updated.
+        '''
+        existing_transform = self.TryRemoveTransformNode(transform_node) 
+        self.AddChild(transform_node)
+        return not existing_transform
+            
 
     @classmethod
     def _CheckForFilterExistence(self, block, section_number, channel_name, filter_name):

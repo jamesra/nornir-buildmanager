@@ -1502,9 +1502,9 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
             
             if OutputTransform is None:
                 OutputTransform = copy.deepcopy(MappedToControlTransform)
-                (OutputTransformAdded, OutputTransform) = OutputSectionMappingsNode.UpdateOrAddChildByAttrib(OutputTransform, 'MappedSectionNumber')
                 OutputTransform.Name = str(mappedSectionNumber) + '-' + str(ControlSection)
                 OutputTransform.Path = OutputTransform.Name + '.stos'
+                OutputTransformAdded = OutputSectionMappingsNode.AddOrUpdateTransform(OutputTransform)
                 OutputTransform.SetTransform(MappedToControlTransform)
                 
                 # Remove any residual transform file just in case
@@ -1569,7 +1569,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                         # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
                     except ValueError:
                         # Probably an invalid transform.  Skip it
-                        OutputSectionMappingsNode.remove(OutputTransform)
+                        OutputTransform.Clean()
                         OutputTransform = None
                         pass
                     yield OutputSectionMappingsNode
