@@ -4,8 +4,9 @@ Created on Jan 6, 2014
 @author: u0490822
 '''
 import unittest
-import nornir_buildmanager.pipelinemanager as pm
+
 import nornir_buildmanager.argparsexml as argparsexml
+import nornir_buildmanager.pipelinemanager as pm
 import xml.etree.ElementTree as etree
 
 

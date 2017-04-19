@@ -19,12 +19,12 @@
 	
 	<Pipeline Name="ImportPMG" Help="Import PMG file into a volume">
 		<Arguments>
-			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="ImportDir" help="Directory to import from"/>
+			<Argument flag="-Scale" type="float" dest="scaleValueInNm" help="Pixel size in nanometers" required="True"/> 
 			<Argument flag="-ext" dest="extension" default="pmg" help="Extension of pmg files, default is pmg"/>
 		</Arguments>
  
-		<PythonCall Module="nornir_buildmanager.importers.pmg" Function="Import" ImportPath="#ImportDir" extension="#extension"/> 
-		
+		<PythonCall Module="nornir_buildmanager.importers.pmg" Function="Import" ImportPath="#ImportDir" extension="#extension" scaleValueInNm="#scaleValueInNm"/> 
 	</Pipeline>
 	
 	<Pipeline Name="ImportSectionsImages" Help="Import single images that represent an entire section in a volume">
@@ -135,14 +135,39 @@
 			
 			<Iterate VariableName="ChannelNode" XPath="Channel">
 				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-				<Iterate VariableName="FilterNode" XPath="Filter">
+				<Iterate VariableName="InputFilterNode" XPath="Filter">
 					<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
 	
 					<Iterate VariableName="TilePyramidNode" XPath="TilePyramid">
 						<PythonCall Function="tile.VerifyImages"/>
 					</Iterate>
 	
-					<PythonCall Function="tile.CorrectTiles" FilterNode="#FilterNode" OutputFilterName="#OutputFilter" InvertSource="True" CorrectionType="#Correction"/>
+					<PythonCall Function="tile.CorrectTiles" FilterNode="#InputFilterNode" OutputFilterName="#OutputFilter" InvertSource="True" CorrectionType="#Correction"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="InvertFilter" Help="Produce a new filter, inverted from the input">
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>			
+			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to include, * processes all channels" required="False"/>
+			<Argument flag="-InputFilter"  dest="FiltersRegEx" type="str" help="The filter to invert" required="True"/> 
+			<Argument flag="-OutputFilter" dest="OutputFilter" default="Inverted" help="Prefix added to output filters" required="True"/>
+		</Arguments>
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
+				<Iterate VariableName="InputFilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
+	
+					<Iterate VariableName="TilePyramidNode" XPath="TilePyramid">
+						<PythonCall Function="tile.VerifyImages"/>
+					</Iterate>
+	
+					<PythonCall Function="tile.InvertFilter" InputFilterNode="#InputFilterNode" OutputFilterName="#OutputFilter"/>
 				</Iterate>
 			</Iterate>
 		</Iterate>
@@ -163,7 +188,6 @@
 			</PythonCall>
 		</Iterate>
 	</Pipeline>
-	
 	<Pipeline Name="FixTilePyramidNumbering" Help="Migrate mosaic transforms to zero origins">
 		<Iterate VariableName="TilePyramidNode" XPath="Block/Section/Channel/Filter/TilePyramid">
 			<PythonCall Function="migration.MoveTilesToStartAtZero" tile_pyramid_node="#TilePyramidNode">
@@ -505,6 +529,7 @@
 			<Argument flag="-ChannelPrefix" dest="OutputChannelPrefix" default="" type="str" help="Create a new channel for the output with this prefix and the name of the input." required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Directory to move assembled images to" required="False"/>
+			<Argument flag="-Crop" dest="CropBox" type="Quadruple" default="" help="Bounding box of region to assemble.  Default is no cropping.  Form is MinX,MinY,MaxX,MaxY with no spaces." required="False"/>
 		</Arguments>
 		<Iterate VariableName="section_node" XPath="Block/Section">
 			<RequireSetMembership Attribute="Number" List="#Sections"/>
@@ -519,7 +544,7 @@
 				<Iterate VariableName="FilterNode" XPath="Filter">
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 	
-					<PythonCall Function="tile.AssembleTransform" OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace" Levels="#Levels">
+					<PythonCall Function="tile.AssembleTransform" OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace" Levels="#Levels" CropBox="#CropBox">
 						<Parameters>
 							<Entry Name="feathering" Value="binary"/>
 						</Parameters>
@@ -535,7 +560,7 @@
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
 			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
 			<Argument flag="-Transform" dest="TransformName" default="Grid" help="Transform defining images into mosaic" required="False"/>
-			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Comma separated list of downsample levels for assembling output images" required="False"/>
+			<Argument flag="-HighestDownsample" dest="HighestDownsample" type="int" help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile." required="False"/>
 			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
 			
 		</Arguments>
@@ -552,10 +577,10 @@
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>			
 	
 					<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid"/>
-					<PythonCall Function="tile.AssembleTileset" TileShape="#shape"/>
+					<PythonCall Function="tile.AssembleTileset" TileShape="#shape" />
 	
 					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
-					<PythonCall Function="tile.BuildTilesetPyramid"/>
+					<PythonCall Function="tile.BuildTilesetPyramid" HighestDownsample="#HighestDownsample"/>
 				</Iterate>
 			</Iterate>
 		</Iterate>
@@ -577,10 +602,8 @@
      		    MaxImageWidth="512"
      		    MaxImageHeight="512"
      		    ColumnXPaths="Channel/Filter[@Name='#AssembleFilter'],Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
-
 		<PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
 	</Pipeline>
-
 
 	<Pipeline Name="StosReport" Help="Generate a web page containing a summary of the alignments between sections in a 3D volume">
 		<Arguments>
@@ -597,6 +620,26 @@
 
 		<PythonCall Module="nornir_buildmanager.VolumeFinder" Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC"/>
 	</Pipeline> 
+	
+	<Pipeline Name="ReportVolumeBounds" Help="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
+		<Arguments>
+			<Argument flag="-Channels" dest="ChannelRegEx" help="Regular expression describing channels to be assembled" required="True"/>
+			<Argument flag="-Transforms" dest="TransformsRegEx" help="Transform defining images into mosaic" required="True"/>
+			<Argument flag="-StosMap" dest="StosMap" help="Slice-to-slice mapping of transforms.  If not specified only unregistered mosaics are included." required="False"/>
+		</Arguments>
+		<Select VariableName="BlockNode" XPath="Block"/>
+		<Iterate VariableName="VolumeStosMap" XPath="Block/StosMap[@Name='#StosMap']">
+		
+		<PythonCall Function="block.StosBrute" Root="BlockNode" OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx" FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange">
+			<Parameters>
+				<Entry Name="Downsample" Value="#StosBruteDownsample"/>
+				<Entry Name="refine"/>
+				<Entry Name="regularize"/>
+				<Entry Name="UseMasks" Value="#UseMasks"/>
+			</Parameters>
+		</PythonCall>
+		</Iterate>
+	</Pipeline>
 	
 	<Pipeline Name="ListDamagedSections" Help="Print a list of all damaged sections.  Damaged sections are never used as control sections when chaining slice-to-slice transforms together to build slice-to-volume transforms">
 		<Arguments>
@@ -641,7 +684,153 @@
 		</Arguments>
 
 		<PythonCall Function="vikingxml.CreateVikingXML" StosMapName="#StosMap" StosGroupName="#StosGroup"  Host="#Host" OutputFile="#OutputFile"/>
+	</Pipeline>
+	
+	<Pipeline Name="CreateStosGroup"  Help="Create a SliceToSlice transform group"> 
+		<Arguments>
+			<Argument flag="-StosGroup" dest="StosGroup"  type="str" help="Name of the StosGroup to create" required="True"/>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Downsample level of stos files" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosgroup.CreateStosGroup" BlockNode="#BlockNode" GroupName="#StosGroup#Downsample" Downsample="#Downsample"/>
+		</Iterate>
 	</Pipeline> 
+	
+	<Pipeline Name="RemoveStosGroup"  Help="Remove a SliceToSlice transform group"> 
+		<Arguments>
+			<Argument flag="-StosGroup" dest="StosGroup"  type="str" help="Name of the StosGroup to remove" required="True"/>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Downsample level of stos files" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosgroup.RemoveStosGroup" BlockNode="#BlockNode" GroupName="#StosGroup#Downsample" Downsample="#Downsample"/>
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="CopyStosGroup"  Help="Create a SliceToSlice transform group"> 
+		<Arguments>
+			<Argument flag="-Input" dest="SourceGroupName"  type="str" help="Source StosGroup to copy transforms from." required="True"/>
+			<Argument flag="-Output" dest="TargetGroupName"  type="str" help="Target StosGroup to copy transform to." required="True"/>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Downsample level of stos files" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosgroup.CopyStosGroup" BlockNode="#BlockNode" SourceGroupName="#SourceGroupName#Downsample" TargetGroupName="#TargetGroupName#Downsample" Downsample="#Downsample"/>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="ListStosGroups"  Help="List all SliceToSlice transform groups"> 
+		<Arguments>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosgroup.ListStosGroups" BlockNode="#BlockNode"/>
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="ListGroupSectionMappings"  Help="List all SliceToSlice transform groups"> 
+		<Arguments>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-StosGroup" dest="StosGroup"  type="str" help="Name of the StosGroup" required="True"/>
+			<Argument flag="-Downsample" dest="Downsample" type="int" help="Downsample level of stos files" required="True"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosgroup.ListGroupSectionMappings" BlockNode="#BlockNode" GroupName="#StosGroup#Downsample" Downsample="#Downsample" />
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="ListBlockStosMaps"  Help="List all SliceToSlice maps in a block"> 
+		<Arguments>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Name of block" required="False"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosmap.ListBlockStosMaps" BlockNode="#BlockNode"/>
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="ListStosMap"  Help="List all SliceToSlice mappings within a stos map"> 
+		<Arguments>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-Name" dest="StosMapName"  type="str" help="Name of the StosMap" required="True"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosmap.ListStosMap" BlockNode="#BlockNode" StosMapName="#StosMapName" />
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="AddToStosMap"  Help="List all SliceToSlice mappings within a stos map"> 
+		<Arguments>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-Name" dest="StosMapName"  type="str" help="Name of the StosMap" required="True"/>
+			<Argument flag="-ControlSection" dest="ControlSection" type="int" help="Control Section Number" required="True"/>
+			<Argument flag="-MappedSection" dest="MappedSection" type="int" help="Mapped Section Number" required="True"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosmap.AddMapping" BlockNode="#BlockNode" StosMapName="#StosMapName" ControlSection="#ControlSection" MappedSection="#MappedSection"/>
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="RemoveFromStosMap"  Help="List all SliceToSlice mappings within a stos map"> 
+		<Arguments>
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-Name" dest="StosMapName"  type="str" help="Name of the StosMap" required="True"/>
+			<Argument flag="-ControlSection" dest="ControlSection" type="int" help="Control Section Number" required="True"/>
+			<Argument flag="-MappedSection" dest="MappedSection" type="int" help="Mapped Section Number" required="True"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+		
+			<PythonCall Function="stosmap.RemoveMapping" BlockNode="#BlockNode" StosMapName="#StosMapName" ControlSection="#ControlSection" MappedSection="#MappedSection"/>
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="AddStos"  Help="Import a Slice-to-slice transformation to a StosGroup."> 
+		<Arguments>
+			<Argument flag="-File" dest="InputStosFullPath" type="str" help="Path to the .stos file to import" required="True"/> 
+			<Argument flag="-Block" default="TEM" dest="BlockName"  type="str" help="Block to create the StosGroup within" required="False"/>
+			<Argument flag="-StosGroup" dest="StosGroup"  type="str" help="Name of the StosGroup" required="True"/>
+			<Argument flag="-ControlSection" dest="ControlSection" type="int" help="Control Section Number of the Stos Transform" required="True"/>
+			<Argument flag="-ControlChannel" dest="ControlChannel" type="str" help="Control Channel of the Stos Transform" required="True"/>
+			<Argument flag="-ControlFilter" dest="ControlFilter" type="str" help="Control Filter of image used for transform" required="True"/>
+			<Argument flag="-ControlDownsample" dest="ControlDownsample" type="int" help="Downsample level of controlled section's image" required="True"/>
+			<Argument flag="-MappedSection" dest="MappedSection" type="int" help="Mapped Section Number of the Stos Transform" required="True"/>
+			<Argument flag="-MappedChannel" dest="MappedChannel" type="str" help="Mapped Channel of the Stos Transform" required="True"/>
+			<Argument flag="-MappedFilter" dest="MappedFilter" type="str" help="Mapped Filter of image used for transform" required="True"/>
+			<Argument flag="-MappedDownsample" dest="MappedDownsample" type="int" help="Downsample level of mapped section's image" required="True"/>
+			<Argument flag="-Type" dest="Type"  type="str" help="Name of the StosGroup" required="True"/>
+		</Arguments>
+		<Iterate VariableName="BlockNode" XPath="Block">
+			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+			
+			<PythonCall Function="stosgroup.ImportStos" InputStosFullpath="#InputStosFullPath" BlockNode="#BlockNode" GroupName="#StosGroup#ControlDownsample"
+						ControlSectionNumber="#ControlSection" ControlChannelName="#ControlChannel" ControlFilterName="#ControlFilter" ControlDownsample="#ControlDownsample"
+						MappedSectionNumber="#MappedSection" MappedChannelName="#MappedChannel" MappedFilterName="#MappedFilter" MappedDownsample="#MappedDownsample"
+						Type="#Type"/>
+		</Iterate>
+	</Pipeline> 
+	
+	<Pipeline Name="CleanupStos"  Help="Clean common errors in section mappings" >
+		<Iterate VariableName="SectionMappingNode" XPath="Block/StosGroup[@Name='StosBrute64']/SectionMappings">
+			<PythonCall Function="block.ValidateSectionMappingPipeline" section_mapping_node="#SectionMappingNode"/>
+		</Iterate>
+	</Pipeline>
 	
 	<Pipeline Name="Cleanup"  Help="Clean common errors from the volume meta-data"> 
 		<Arguments>
@@ -664,11 +853,9 @@
 						<Iterate VariableName="LevelNode" XPath="ImageSet/Level">
 							<PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode"/>
 						</Iterate>
-					</Iterate>
-					 
+					</Iterate> 
 				</Iterate>
 			</Iterate>
-			
 			<Iterate VariableName="TransformNode" XPath="Block/StosGroup/SectionMappings/Transform">
 				<RequireSetMembership Attribute="ControlSectionNumber" List="#Sections"/>	
 				<PythonCall Function="block.ValidateSectionMappingTransformPipeline" stos_transform_node="#TransformNode"/>
@@ -714,6 +901,7 @@
 		<Arguments>
 			<Argument flag="-Center" dest="Center" type="int" help="Center section of the volume.  Defaults to center if unspecified.  The first run center is saved in meta-data and re-used on later runs." required="False"/>
 			<Argument flag="-NumAdjacentSections"  default="1" dest="NumAdjacentSections" type="int" help="Number of adjacent sections to attempt registration with." required="False"/>
+			<Argument flag="-AngleRange" default="" dest="AngleSearchRange" type="FloatRange" help="Range of angles to check in degrees not radians" required="False"/>
 			<Argument flag="-Channels"  default="*" dest="ChannelsRegEx" type="str" help="Regular expression describing channels to be aligned" required="False"/>
 			<Argument flag="-Filters"  default="(?![M|m]ask)" dest="FiltersRegEx" type="str" help="Regular expression describing filters to be aligned" required="False"/>
 			<Argument flag="-UseMasks"  action="store_true" dest="UseMasks" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
@@ -722,7 +910,7 @@
 		</Arguments>
 
 		<Select VariableName="BlockNode" XPath="Block"/>
-		<PythonCall Function="block.CreateSectionToSectionMapping" OutputStosMapName="#OutputStosMap" >
+		<PythonCall Function="block.CreateSectionToSectionMapping" ChannelsRegEx="#ChannelsRegEx" FiltersRegEx="#FiltersRegEx" OutputStosMapName="#OutputStosMap" >
 			<Parameters>
 				<Entry Name="NumAdjacentSections" Value="#NumAdjacentSections"/>
 				<Entry Name="CenterSection" Value="#Center"/>
@@ -731,7 +919,7 @@
 
 		<Select Root="BlockNode" VariableName="StosMapNodeObj" XPath="StosMap[@Name='#OutputStosMap']"/>
 		<Iterate Root="StosMapNodeObj" VariableName="MappingNode" XPath="Mapping">
-			<PythonCall Function="block.StosBrute" Root="BlockNode" OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx" FiltersRegEx="#FiltersRegEx">
+			<PythonCall Function="block.StosBrute" Root="BlockNode" OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx" FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange">
 				<Parameters>
 					<Entry Name="Downsample" Value="#StosBruteDownsample"/>
 					<Entry Name="refine"/>
@@ -810,9 +998,9 @@
 
 	<Pipeline Name="ScaleVolumeTransforms" Help="Scales a stos group to use a different downsample level.  Useful for producing full-resolution output after generating transforms using downsampled images.">
 		<Arguments>
-			<Argument flag="-InputGroup" default="SliceToVolume" dest="ScaleGroupName" type="str" required="False" help="Name of stos group to scale" />
+			<Argument flag="-InputGroup" dest="ScaleGroupName" type="str" required="True" help="Name of stos group to scale" />
 			<Argument flag="-InputDownsample" dest="ScaleInputDownsample" type="int" help="Downsample level of input stosgroup" required="True"/>
-			<Argument flag="-OutputDownsample"  default="1" dest="ScaleOutputDownsample" type="int" help="Downsample level of output" required="False"/>
+			<Argument flag="-OutputDownsample"  default="1" dest="ScaleOutputDownsample" type="int" help="Downsample level of output.  Defaults to 1." required="False"/>
 			<Argument flag="-UseMasks"  action="store_true" dest="UseMasks" help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes." required="False"/>
 		</Arguments>
 
@@ -928,6 +1116,14 @@
 				<PythonCall Function="reporting.CopyImage" OutputDir="#OutputPath" FilterNode="#FilterNodeObj" Downsample="#Downsample"/>
 			</Iterate>
 		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="ExportMetadata" Help="Export all meta-data to a single file">   
+		<Arguments>
+			<Argument flag="-Output" dest="OutputPath" help="Filename to create" required="True"/>
+		</Arguments>
+	
+		<PythonCall Function="general.SaveVolumeDataToSingleFile" save_filename="#OutputPath"/>
 	</Pipeline>
 
 </Pipelines>

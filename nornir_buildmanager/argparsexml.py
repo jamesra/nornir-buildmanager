@@ -5,13 +5,15 @@ Converts XML argparser definitions from pipelines and importers into argparsers.
 '''
 
 import argparse
-import logging
 import copy
-import nornir_shared.misc
-import nornir_shared.prettyoutput as prettyoutput
+import logging
 import re
 
 from nornir_shared.argparse_helpers import *
+import nornir_shared.misc
+
+import nornir_shared.prettyoutput as prettyoutput
+
 
 def _ConvertValueToPythonType(val):
     if val.lower() == 'true':

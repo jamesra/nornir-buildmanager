@@ -4,13 +4,15 @@ Created on Oct 11, 2012
 @author: u0490822
 '''
 
+import logging
+from operator import attrgetter
 import re
 
-import VolumeManagerETree as VolumeManager
-from operator import attrgetter
-import nornir_shared.misc
 import nornir_buildmanager.validation.transforms
-import logging
+import nornir_shared.misc
+
+import VolumeManagerETree as VolumeManager
+
 
 def IsMatch(in_string, RegExStr, CaseSensitive=False):
     if RegExStr == '*':
@@ -87,7 +89,7 @@ class ContrastHandler(object):
     @property
     def MaxIntensityCutoff(self):
         if 'MaxIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MaxIntensityCutoff']),3)
+            return round(float(self.attrib['MaxIntensityCutoff']), 3)
 
         return None
     
@@ -102,7 +104,7 @@ class ContrastHandler(object):
     @property
     def MinIntensityCutoff(self):
         if 'MinIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MinIntensityCutoff']),3)
+            return round(float(self.attrib['MinIntensityCutoff']), 3)
         return None
     
     @MinIntensityCutoff.setter
@@ -116,7 +118,7 @@ class ContrastHandler(object):
     @property
     def Gamma(self):
         if 'Gamma' in self.attrib:
-            return round(float(self.attrib['Gamma']),3)
+            return round(float(self.attrib['Gamma']), 3)
         return None
     
     @Gamma.setter
@@ -243,7 +245,7 @@ class InputTransformHandler(object):
             if 'InputTransform' in self.attrib:
                 del self.attrib['InputTransform']
         else:
-            assert(isinstance(value,str))
+            assert(isinstance(value, str))
             self.attrib['InputTransform'] = value
 
 
@@ -276,7 +278,7 @@ class InputTransformHandler(object):
             if 'InputTransformType' in self.attrib:
                 del self.attrib['InputTransformType']
         else:
-            assert(isinstance(value,str))
+            assert(isinstance(value, str))
             self.attrib['InputTransformType'] = value
             
     
@@ -329,7 +331,7 @@ class InputTransformHandler(object):
     def EnumerateTransformDependents(cls, parent_node, checksum, type, recursive):
         '''Return a list of all sibling transforms (Same parent element) which have our checksum and type as an input transform checksum and type'''
         
-        #WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
+        # WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
         if parent_node is None:
             return 
         
@@ -387,7 +389,7 @@ class PyramidLevelHandler(object):
             self.GenerateLevels(Downsample)
 
         [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode(Downsample), "Downsample")
-        return lnode
+        return [added, lnode]
 
     def GenerateLevels(self, Levels):
         '''Creates data to populate a level of a pyramid.  Derived class should override'''

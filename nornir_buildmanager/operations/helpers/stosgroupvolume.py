@@ -4,9 +4,10 @@ Created on Jan 30, 2014
 @author: u0490822
 '''
 
-import nornir_imageregistration.volume as volume
 import nornir_imageregistration.files.stosfile as stosfile
 import nornir_imageregistration.transforms.factory as factory
+import nornir_imageregistration.volume as volume
+
 
 class StosGroupVolume(volume.Volume):
     '''

@@ -13,6 +13,8 @@ import nornir_shared.misc
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_pools as pools
+from scipy.stats.mstats_basic import threshold
+import nornir_buildmanager
 
 
 
@@ -37,21 +39,49 @@ class PruneObj:
         else:
             self.MapImageToScore = MapToImageScore
 
+    @classmethod
+    def _GetThreshold(cls, PruneNode, ThresholdParameter):
+        '''Return the threshold value that should be used.
+           If a UserRequestedCutoff is specified use that.
+           If a Threshold is passed only use if no UserRequstedValue exists
+           '''
+        
+        Threshold = None
+        if not PruneNode.UserRequestedCutoff is None:
+            Threshold = PruneNode.UserRequestedCutoff
+        else:
+            Threshold = ThresholdParameter
+        
+        if Threshold is None:
+            Threshold = 0.0
+        
+        return Threshold
+           
+    @classmethod
+    def _TryUpdateUndefinedThresholdFromParameter(cls, PruneNode, ThresholdParameter):
+        '''If a Threshold parameter is passed set the UserRequested cutoff if it is not already specified'''
+
+        if(PruneNode.UserRequestedCutoff is None and ThresholdParameter is not None):
+            PruneNode.UserRequestedCutoff = ThresholdParameter
+            return True
+
+        return False
 
     @classmethod
     def PruneMosaic(cls, Parameters, PruneNode, TransformNode, OutputTransformName=None, Logger=None, **kwargs):
         '''@ChannelNode 
            Uses a PruneData node to prune the specified mosaic file'''
 
+        threshold_precision = VolumeManagerETree.TransformNode.get_threshold_precision() #Number of digits to save in XML file
+
         if(Logger is None):
             Logger = logging.getLogger(__name__ + '.PruneMosaic')
 
-        Threshold = Parameters.get('Threshold', 0.0)
-        if Threshold is None:
-            Threshold = 0.0
+        Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
+        if not Threshold is None:
+            Threshold = round(Threshold, threshold_precision)
 
-        if not PruneNode.UserRequestedCutoff is None:
-            Threshold = PruneNode.UserRequestedCutoff
+        cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Threshold)
 
         if OutputTransformName is None:
             OutputTransformName = 'Prune'
@@ -71,6 +101,10 @@ class PruneObj:
 
         # Check if there is an existing prune map, and if it exists if it is out of date
         PruneNodeParent = PruneNode.Parent
+        
+        transforms.RemoveWhere(TransformParent, 'Transform[@Name="' + OutputTransformName + '"]', lambda t: t.Threshold != Threshold)
+        
+        '''TODO: Add function to remove duplicate Prune Transforms with different thresholds'''
 
         TransformParent.RemoveOldChildrenByAttrib('Transform', 'Name', OutputTransformName)
         
@@ -86,7 +120,7 @@ class PruneObj:
                 return None
             
             OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'InputPruneDataChecksum', PruneDataNode.Checksum)
-            OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=2)
+            OutputTransformNode = transforms.RemoveOnMismatch(OutputTransformNode, 'Threshold', Threshold, Precision=threshold_precision)
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:
@@ -100,7 +134,7 @@ class PruneObj:
         OutputTransformNode.InputPruneDataType = PruneNode.Type
         OutputTransformNode.attrib['InputPruneDataChecksum'] = PruneDataNode.Checksum 
         if not Threshold is None:
-            OutputTransformNode.Threshold = '%g' % Threshold
+            OutputTransformNode.Threshold = Threshold
 
         PruneObjInstance = cls.ReadPruneMap(PruneDataNode.FullPath)
         PruneObjInstance.Tolerance = Threshold
@@ -116,7 +150,7 @@ class PruneObj:
 
             HistogramImageNode = PruneNode.find('Image')
             if not HistogramImageNode is None:
-                HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=2)
+                HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
 
             if HistogramImageNode is None or not os.path.exists(PruneObjInstance.HistogramImageFileFullPath):
                 HistogramImageNode = VolumeManagerETree.ImageNode(HistogramImageFile)
@@ -127,7 +161,7 @@ class PruneObj:
                         os.remove(HistogramImageNode.FullPath)
                     HistogramImageNode.Path = HistogramImageFile
                     
-                HistogramImageNode.Threshold = '%g' % Threshold
+                HistogramImageNode.Threshold = Threshold
                 PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath)
                 assert(HistogramImageNode.FullPath == PruneObjInstance.HistogramImageFileFullPath)
                 #if Async:
@@ -183,7 +217,7 @@ class PruneObj:
 
         assert(isinstance(Downsample, int) or isinstance(Downsample, float))
 
-        LevelNode = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
+        [created, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
 
         if(LevelNode is None):
             prettyoutput.LogErr("Missing InputPyramidLevelNode attribute on PruneTiles")

@@ -3,24 +3,25 @@ Created on Apr 2, 2012
 
 '''
 
+import collections
 import copy
 import logging
 import os
 import re
 import sys
 import traceback
-# import xml.etree
 from xml.etree import cElementTree as ElementTree
-import collections
 
 from nornir_buildmanager import VolumeManagerETree
-import nornir_shared.misc
-import nornir_shared.prettyoutput as prettyoutput
-import nornir_shared.reflection
-import argparsexml
 import nornir_pools
+import nornir_shared.misc
+import nornir_shared.reflection
+
+import argparsexml
+import nornir_shared.prettyoutput as prettyoutput
 
 
+# import xml.etree
 class ArgumentSet():
     '''Collection of arguments from each source'''
 
@@ -97,28 +98,30 @@ class ArgumentSet():
         sys.exit()
 
     def TryGetSubstituteObject(self, val):
-        '''Place an object directly into a dictionary, return true on success'''
+        '''Place an object directly into a dictionary. 
+        :param str val: The key to lookup
+        :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned.'''
         if val is None:
-            return None
+            return (False, None)
 
         if len(val) == 0:
-            return None
+            return (False, None)
 
         if val[0] == '#':
             if val[1:].find('#') >= 0:
                 # If there are two '#' signs in the string it is a string not an object
-                return None
+                return (False, None)
 
             # Find the existing entry in the dargs
             key = val[1:]
 
             try:
                 # If no object found then return None
-                return self.TryGetValueForKey(key)
+                return (True, self.TryGetValueForKey(key))
             except KeyError as e:
-                return None
+                return (False, None)
 
-        return None
+        return (False, None)
 
     def AddArguments(self, args):
         '''Add arguments from the command line'''
@@ -152,8 +155,8 @@ class ArgumentSet():
                 self.Attribs[key] = val
                 continue
 
-            subObj = self.TryGetSubstituteObject(val)
-            if not subObj is None:
+            (found, subObj) = self.TryGetSubstituteObject(val)
+            if found:
                 self.Attribs[key] = subObj
                 continue
 
@@ -207,8 +210,8 @@ class ArgumentSet():
                     name = entryNode.attrib['Name']
                     val = entryNode.attrib.get('Value', '')
 
-                    subObj = self.TryGetSubstituteObject(val)
-                    if not subObj is None:
+                    (found, subObj) = self.TryGetSubstituteObject(val)
+                    if found:
                         NewParameters[name] = subObj
                         continue
 
@@ -437,7 +440,7 @@ class ExtensionData:
 class PipelineManager(object):
     logger = logging.getLogger('PipelineManager')
 
-
+    
 
     '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
     def __init__(self, pipelinesRoot, pipelineData):
@@ -522,11 +525,8 @@ class PipelineManager(object):
 
         PipelineNodes = PipelineXML.findall("Pipeline")
 
-        PipelineNames = []
-        for n in PipelineNodes:
-            PipelineNames.append(n.attrib['Name'])
-
-        return PipelineNames
+        PipelineNames = map(lambda p: p.attrib['Name'], PipelineNodes)
+        return sorted(PipelineNames)
 
     @classmethod
     def __PrintPipelineArguments(cls, PipelineNode):
@@ -747,8 +747,11 @@ class PipelineManager(object):
                                 PipelineNode=PipelineNode,
                                 message="List attribute missing on <RequireSetMembership> node")
 
-        listOfValid = ArgSet.TryGetSubstituteObject(listVariable)
-        if listOfValid is None:
+        (found, listOfValid) = ArgSet.TryGetSubstituteObject(listVariable)
+        if not found:
+            # No set to compare with.  We allow it.
+            return
+        elif listOfValid is None:
             # No set to compare with.  We allow it.
             return
 
@@ -809,7 +812,7 @@ class PipelineManager(object):
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             if not SelectedVolumeElem.IsValid():
-                #Check if the node is locked, otherwise clean it and look for another node
+                # Check if the node is locked, otherwise clean it and look for another node
                 if 'Locked' in SelectedVolumeElem.attrib:
                     if SelectedVolumeElem.Locked:
                         break
@@ -913,7 +916,7 @@ class PipelineManager(object):
                         errorStr = errorStr + traceback.format_exc()
                         errorStr = errorStr + '-' * 60 + '\n'
                         PipelineManager.logger.error(errorStr)
-                        #prettyoutput.LogErr(errorStr)
+                        # prettyoutput.LogErr(errorStr)
 
                         self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
                         return

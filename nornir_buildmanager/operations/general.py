@@ -19,7 +19,6 @@ from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 
 
-
 def Rename(OldNode, NewName, **kwargs):
     if OldNode.Name != NewName:
         OldNode.Name = NewName
@@ -82,17 +81,22 @@ def RemoveDuplicateLinks(ParentNode, ChildNodeName, ChildAttrib=None, **kwargs):
             else:
                 knownValues.append(val)
 
-    print "Found %s nodes " % len(NodesToDelete)
+    print("Found %s nodes " % len(NodesToDelete))
 
     if len(NodesToDelete) > 0:
         for n in NodesToDelete:
             ParentNode.remove(n)
 
-
         return ParentNode
     else:
         return None
 
+def SaveVolumeDataToSingleFile(VolumeNode, save_filename, **kwargs):
 
+    VolumeNode = kwargs.get('VolumeElement', None)
+    if VolumeNode is None:
+        print("No volume node was passed to the function.")
+        return
 
-
+    VolumeNode.LoadAllLinkedNodes()
+    VolumeManager.SaveSingleFile(VolumeNode, save_filename)

@@ -6,14 +6,14 @@ Created on Apr 25, 2013
 import glob
 import unittest
 
-from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
-    CopySetupTestBase
-
-import nornir_buildmanager.build as build
 from nornir_buildmanager.operations.block import *
 from nornir_imageregistration.transforms import registrationtree
-import test.pipeline.test_sectionimage as test_sectionimage
+from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
+    CopySetupTestBase, EmptyVolumeTestBase
+
 import nornir_buildmanager.VolumeManagerETree as volman
+import nornir_buildmanager.build as build
+import test.pipeline.test_sectionimage as test_sectionimage
 
 
 def _RTNodesToNumberList(Nodes):
@@ -74,10 +74,13 @@ def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection
 
 
 class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
-
+    
+    @property
+    def VolumePath(self):
+        return "SectionToSectionMappingTest"
 
     def _GetResetBlockNode(self):
-        VolumeObj = self.LoadVolumeObj()
+        VolumeObj = self.LoadOrCreateVolume()
         BlockNode = VolumeObj.find("Block")
         self.assertIsNotNone(BlockNode)
 
@@ -144,7 +147,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         BlockNode = self._GetResetBlockNode()
 
         GoodSections = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, Logger=self.Logger)
+        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, ChannelsRegEx="*", FiltersRegEx="*", Logger=self.Logger)
         self.assertIsNotNone(OutputBlockNode)
 
         # VolumeManagerETree.VolumeManager.Save(self.TestOutputPath, VolumeObj)
@@ -169,7 +172,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
         self.SetNonStosSectionList(BlockNode, BadSections)
 
-        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, Logger=self.Logger)
+        OutputBlockNode = CreateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, ChannelsRegEx='*', FiltersRegEx='*', Logger=self.Logger)
         self.assertIsNotNone(OutputBlockNode)
 
         volumechecklist = [VolumeEntry("StosMap", "Name", "PotentialRegistrationChain")]
@@ -264,7 +267,6 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
 
     @property
     def VolumePath(self):
-
         return "6872_small"
 
     def testAlignSectionsPipeline(self):
@@ -354,7 +356,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         groupNames = ['StosBrute16', 'StosGrid16', 'StosGrid8', 'SliceToVolume8']
 
         # Import the files
-        buildArgs = [self.TestOutputPath, '-debug', 'AlignSections',  \
+        buildArgs = [self.TestOutputPath, '-debug', 'AlignSections', \
                       \
                      '-Downsample', '16', \
                      '-Center', '5', \
@@ -394,7 +396,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                              '-OutputDownsample', '1']
         self.VolumeObj = self.RunBuild(ScaleArgs)
 
-        VolumeImageArgs = [self.TestOutputPath, '-debug', 'VolumeImage',  \
+        VolumeImageArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
                      '-InputGroup', 'StosGrid', \
                      '-InputDownsample', '16']
         self.VolumeObj = self.RunBuild(VolumeImageArgs)
@@ -407,7 +409,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveAutomaticGridFirstPassTransform,
                                 AutoOutputTransform=ScaledTransformFromSixteen)
 
-        VolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage',  \
+        VolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
                              '-InputGroup', 'StosGrid', \
                              '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(VolumeImagesArgs)
@@ -415,7 +417,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.assertIsNotNone(VolumeImageNode)
 
         # Try to refine the of stos-grid
-        SecondRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment',  \
+        SecondRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment', \
                      '-InputGroup', 'StosGrid', \
                      '-Filter', '.*mosaic.*', \
                      '-InputDownsample', '16', \
@@ -436,7 +438,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # "InputChecksum of second pass transform should match checksum of first pass transform")
 
         # Try to refine the of stos-grid
-        SliceToVolumeBuildArgs = [self.TestOutputPath, '-debug', 'SliceToVolume',  \
+        SliceToVolumeBuildArgs = [self.TestOutputPath, '-debug', 'SliceToVolume', \
                      '-InputGroup', 'StosGrid', \
                      '-InputDownsample', '8']
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
@@ -549,7 +551,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # self.assertIsNotNone(SliceToVolumeScaleAndVolumeImageGroupNode, "Could not find StosGroup SliceToVolume1")
 
     def testBlob(self):
-        buildArgs = [self.TestOutputPath, '-debug', 'CreateBlobFilter',  \
+        buildArgs = [self.TestOutputPath, '-debug', 'CreateBlobFilter', \
                                  '-InputFilter', 'mosaic',
                                  '-OutputFilter', 'Blob_mosaic',
                                  '-Radius', '1',
@@ -578,6 +580,105 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.assertEqual(oldstatDSFour.st_ctime, newstatDSFour.st_ctime, "Blob image recreated after second call to build")
 
 
+class StosGroupTest(EmptyVolumeTestBase):
+
+    @property
+    def VolumePath(self):
+        return "StosGroupTest"
+
+    def setUp(self):
+        super(StosGroupTest, self).setUp()
+
+        volumeObj = self.LoadOrCreateVolume()
+        BlockObj = VolumeManagerETree.BlockNode('TEM')
+        [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
+        volumeObj.Save()
+
+    def _GetResetBlockNode(self):
+        VolumeObj = self.LoadOrCreateVolume()
+        BlockNode = VolumeObj.find("Block")
+        self.assertIsNotNone(BlockNode)
+
+        return BlockNode
+
+    def RunCreateStosGroup(self, StosGroupName, Downsample, BlockName=None,):
+
+        buildArgs = self._CreateBuildArgs('CreateStosGroup', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+    def RunRemoveStosGroup(self, StosGroupName, Downsample, BlockName=None):
+
+        buildArgs = self._CreateBuildArgs('RemoveStosGroup', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+    def RunListStosGroups(self, BlockName=None):
+
+        buildArgs = self._CreateBuildArgs('ListStosGroups')
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+    def RunListStosGroupContents(self, StosGroupName, Downsample, BlockName=None):
+
+        buildArgs = self._CreateBuildArgs('ListGroupSectionMappings', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+
+        if BlockName is not None:
+            buildArgs.extend(['-Block', BlockName])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+    def HasStosGroup(self, StosGroupName, Downsample):
+        BlockNode = self._GetResetBlockNode()
+        StosGroupNode = BlockNode.GetStosGroup(StosGroupName + str(Downsample), Downsample)
+        return StosGroupNode is not None
+
+    def AssertHasStosGroup(self, StosGroupName, Downsample):
+        self.assertTrue(self.HasStosGroup(StosGroupName, Downsample), "Missing StosGroup {0:s}".format(StosGroupName))
+
+    def AssertNoStosGroup(self, StosGroupName, Downsample):
+        self.assertFalse(self.HasStosGroup(StosGroupName, Downsample), "Should not have StosGroup {0:s}".format(StosGroupName))
+
+    def testCRUDOperations(self):
+        self.AssertNoStosGroup("TestStosGroup", 1)
+        self.RunListStosGroups()  # Just ensure we don't crash during the list call, we don't check output
+        self.RunCreateStosGroup("TestStosGroup", 1)
+
+        self.RunListStosGroups()  # Just ensure we don't crash during the list call, we don't check output
+        self.RunListStosGroupContents("TestStosGroup", 1)  # Just ensure we don't crash during the list call, we don't check output
+        self.AssertHasStosGroup("TestStosGroup", 1)
+        self.AssertNoStosGroup("TestStosGroup", 2)
+
+        self.RunRemoveStosGroup("TestStosGroup", 1)
+        self.AssertNoStosGroup("TestStosGroup", 1)
+        self.RunListStosGroupContents("TestStosGroup", 1)  # Just ensure we don't crash during the list call, we don't check output
+
+
+class StosMapTest(EmptyVolumeTestBase):
+
+    @property
+    def VolumePath(self):
+        return "StosMapTest"
+
+    def setUp(self):
+        super(StosGroupTest, self).setUp()
+
+        volumeObj = self.LoadOrCreateVolume()
+        BlockObj = VolumeManagerETree.BlockNode('TEM')
+        [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
+        volumeObj.Save()
+
+    def testCRUDOperations(self):
+        return
 
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']

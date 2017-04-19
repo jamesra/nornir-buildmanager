@@ -4,10 +4,11 @@ Created on Feb 19, 2014
 @author: u0490822
 '''
 
-import os
-import math
-import nornir_imageregistration
 import logging
+import math
+import os
+
+import nornir_imageregistration
 
 
 def DimensionsMatch(imageFullPath, area):
@@ -22,7 +23,7 @@ def DimensionsMatch(imageFullPath, area):
     try:
         size = nornir_imageregistration.GetImageSize(imageFullPath)
     except IOError as e:
-        #Unable to read the size, assume the dimensions do not Match
+        # Unable to read the size, assume the dimensions do not Match
         logging.error("IOError reading dimensions of file: %s\n%s" % (imageFullPath, str(e)))
         return False
     

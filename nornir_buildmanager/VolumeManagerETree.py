@@ -3,29 +3,30 @@ import copy
 import datetime
 import glob
 import logging
+import math 
 import operator
 import os
 import pickle
 import shutil
 import sys
 import urllib
-import math 
- 
+
+import nornir_buildmanager
+import nornir_buildmanager.validation.transforms
+from nornir_imageregistration.files import *
+import nornir_imageregistration.transforms.registrationtree
 import nornir_shared.checksum
+import nornir_shared.files
+
+import VolumeManagerHelpers as VMH
+import nornir_buildmanager.operations.tile as tile
+import nornir_buildmanager.operations.versions as versions
 import nornir_shared.misc as misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection as reflection
-import nornir_shared.files
-
-import nornir_buildmanager
-import nornir_buildmanager.operations.versions as versions
-import nornir_buildmanager.operations.tile as tile
-import nornir_imageregistration.transforms.registrationtree
-from nornir_imageregistration.files import *
 import xml.etree.ElementTree as ElementTree 
-import VolumeManagerHelpers as VMH
-import nornir_buildmanager.validation.transforms
- 
+
+
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
 
@@ -192,10 +193,30 @@ class VolumeManager():
 
 
     @classmethod
-    def Save(cls, VolumeObj):
-        '''Save the volume to an XML file'''
+    def SaveSingleFile(cls, VolumeObj, xmlfile_fullpath):
+        '''Save the volume to a single XML file'''
 
-        #We cannot include the volume checksum in the calculation because including it changes the checksum'''
+        fullpath = os.path.dirname(xmlfile_fullpath)
+
+        if not os.path.exists(fullpath):
+            os.makedirs(fullpath)
+
+        # prettyoutput.Log("Saving %s" % xmlfilename)
+
+
+        # prettyoutput.Log("Saving %s" % XMLFilename)
+
+        OutputXML = ElementTree.tostring(VolumeObj, encoding="utf-8")
+        # print OutputXML
+        with open(xmlfile_fullpath, 'w') as hFile:
+            hFile.write(OutputXML)
+            hFile.close()
+
+    @classmethod
+    def Save(cls, VolumeObj):
+        '''Save the volume to an XML file, putting sub-elements in seperate folders'''
+
+        # We cannot include the volume checksum in the calculation because including it changes the checksum'''
         if hasattr(VolumeObj, 'Save'):
             VolumeObj.Save(tabLevel=None)
         else:
@@ -457,13 +478,12 @@ class XElementWrapper(ElementTree.Element):
 
         if isinstance(Valid, bool):
             Valid = [Valid, ""]
-
-
+ 
         if not Valid[0]:
             self.Clean(Valid[1])
-            
-
-        return not Valid[0]
+            return True
+        
+        return False
 
 
     def Clean(self, reason=None):
@@ -506,7 +526,7 @@ class XElementWrapper(ElementTree.Element):
 
         if(isinstance(dictElement, XContainerElementWrapper)):
             if(not 'Path' in dictElement.attrib):
-                print dictElement.ToElementString() + " no path attribute but being set as container"
+                print(dictElement.ToElementString() + " no path attribute but being set as container")
             assert('Path' in dictElement.attrib)
 
         return dictElement
@@ -875,6 +895,21 @@ class XElementWrapper(ElementTree.Element):
             else:
                 yield m
 
+    def LoadAllLinkedNodes(self):
+        '''Recursively load all of the linked nodes on this element'''
+        
+        child_nodes = list(self)
+        for n in child_nodes:
+            if n.tag.endswith('_Link'):
+                n_replaced = self._replace_link(n)
+                if n_replaced is None:
+                    continue
+                n = n_replaced
+
+                n.LoadAllLinkedNodes()
+
+        return
+
 class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
     '''Wrapper for an XML element that refers to a file or directory'''
 
@@ -1135,8 +1170,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         self.append(XMLElement)
 
-        NotValid = XMLElement.CleanIfInvalid()
-        if NotValid:
+        Cleaned = XMLElement.CleanIfInvalid()
+        if Cleaned:
             return None
 
         return XMLElement
@@ -1166,9 +1201,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # pool = Pools.GetGlobalThreadPool()
          
-        #tabs = '\t' * tabLevel
+        # tabs = '\t' * tabLevel
 
-        #if hasattr(self, 'FullPath'):
+        # if hasattr(self, 'FullPath'):
         #    logger.info("Saving " + self.FullPath)
 
         # logger.info('Saving ' + tabs + str(self))
@@ -1224,26 +1259,16 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # prettyoutput.Log("Saving %s" % xmlfilename)
 
-        TempXMLFilename = os.path.join(self.FullPath, 'Temp_' + xmlfilename)
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
 
         # prettyoutput.Log("Saving %s" % XMLFilename)
         
-        saveDir = os.path.dirname(TempXMLFilename)
-        if not os.path.exists(saveDir):
-            os.makedirs(saveDir)
-
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         # print OutputXML
-        with open(TempXMLFilename, 'w') as hFile:
+        with open(XMLFilename, 'w') as hFile:
             hFile.write(OutputXML)
             hFile.close()
 
-        shutil.copy(TempXMLFilename, XMLFilename)
-        try:
-            os.remove(TempXMLFilename)
-        except:
-            pass
 
 class XNamedContainerElementWrapped(XContainerElementWrapper):
     '''XML meta-data for a container whose sub-elements are contained within a directory on the file system whose name is not constant.  Such as a channel name.'''
@@ -1287,8 +1312,8 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
         # pool = Pools.GetGlobalThreadPool()
 
         logger = logging.getLogger(__name__ + '.' + 'XLinkedContainerElementWrapper')
-        #tabs = '\t' * tabLevel
-        #logger.info('Saving ' + tabs + str(self))
+        # tabs = '\t' * tabLevel
+        # logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
         # Create a copy of ourselves for saving
         SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
@@ -1338,12 +1363,20 @@ class BlockNode(XNamedContainerElementWrapped):
     def Sections(self):
         return self.findall('Section')
 
+    @property
+    def StosGroups(self):
+        return list(self.findall('StosGroup'));
+
+    @property
+    def StosMaps(self):
+        return list(self.findall('StosMap'));
+
     def GetSection(self, Number):
         return self.GetChildByAttrib('Section', 'Number', Number)
-    
+
     def GetOrCreateSection(self, Number):
         sectionObj = self.GetSection(Number) 
-        
+
         if sectionObj is None:
             SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
             SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
@@ -1354,7 +1387,7 @@ class BlockNode(XNamedContainerElementWrapped):
             return self.UpdateOrAddChildByAttrib(sectionObj, 'Number')
         else:
             return (False, sectionObj)
-             
+    
     def GetStosGroup(self, group_name, downsample):
         for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):
             if stos_group.Downsample == downsample:
@@ -1363,7 +1396,7 @@ class BlockNode(XNamedContainerElementWrapped):
         return None
     
     def GetOrCreateStosGroup(self, group_name, downsample):
-        ''':Return: Tuple of (stos_group, created)'''
+        ''':Return: Tuple of (created, stos_group)'''
         
         existing_stos_group = self.GetStosGroup(group_name, downsample)
         if not existing_stos_group is None:
@@ -1393,6 +1426,15 @@ class BlockNode(XNamedContainerElementWrapped):
         
         return False
     
+    def RemoveStosGroup(self, group_name, downsample):
+        ''':return: True if a StosGroup was found and removed'''
+        existing_stos_group = self.GetStosGroup(group_name, downsample)
+        if not existing_stos_group is None:
+            self.remove(existing_stos_group)
+            return True
+        
+        return False
+    
     def MarkSectionsAsDamaged(self, section_number_list):
         '''Add the sections in the list to the NonStosSectionNumbers'''
         if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
@@ -1401,7 +1443,7 @@ class BlockNode(XNamedContainerElementWrapped):
         existing_set = frozenset(self.NonStosSectionNumbers)
         self.NonStosSectionNumbers = section_number_list.union(existing_set)
         
-    def MarkSectionsAsUndamaged(self,section_number_list):
+    def MarkSectionsAsUndamaged(self, section_number_list):
         if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
             section_number_list = frozenset(section_number_list)
             
@@ -1434,7 +1476,7 @@ class BlockNode(XNamedContainerElementWrapped):
         if isinstance(value, str):
             StosExemptNode.text = value
         elif isinstance(value, list) or isinstance(value, set) or isinstance(value, frozenset):
-            StosExemptNode.text = ','.join(list(map(str,value)))
+            StosExemptNode.text = ','.join(list(map(str, value)))
        
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
@@ -1464,27 +1506,79 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def GetTransform(self, transform_name):
         return self.GetChildByAttrib('Transform', 'Name', transform_name)
-    
+
     def RemoveFilterOnContrastMismatch(self, FilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         '''
         Return: true if filter found and removed
         '''
-        
+
         filter_node = self.GetFilter(Filter=FilterName)
         if filter_node is None:
             return False
-        
+
         if filter_node.Locked:
             if filter_node.IsContrastMismatched(MinIntensityCutoff, MaxIntensityCutoff, Gamma):
                 self.logger.warn("Locked filter cannot be removed for contrast mismatch. %s " % filter_node.FullPath)
                 return False 
-                
-        
+
         return filter_node.RemoveNodeOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
-            
+
+    def GetScale(self):
+        return self.find('Scale')
+
+    def SetScale(self, scaleValueInNm):
+        '''Create a scale node for the channel
+        :return: ScaleNode object that was created'''
+        # TODO: Scale should be its own object and a property
+        [added, ScaleObj] = self.UpdateOrAddChild(XElementWrapper('Scale'))
+
+        ScaleObj.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
+                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
+        ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
+                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
+        return (added, ScaleObj)
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
+
+
+class ScaleNode(XElementWrapper):
+
+    @property
+    def X(self):
+        x_elem = self.find('X')
+
+        if x_elem is None:
+            return None
+
+        return ScaleAxis(x_elem.UnitsPerPixel, x_elem.UnitsOfMeasure)
+
+    @property
+    def Y(self):
+        y_elem = self.find('Y')
+
+        if y_elem is None:
+            return None
+
+        return ScaleAxis(y_elem.UnitsPerPixel, y_elem.UnitsOfMeasure)
+
+    @property
+    def Z(self):
+        z_elem = self.find('Z')
+
+        if z_elem is None:
+            return None
+
+        return ScaleAxis(z_elem.UnitsPerPixel, z_elem.UnitsOfMeasure)
+
+    def __init__(self, attrib=None, **extra):
+        super(ScaleNode, self).__init__(tag='Scale', attrib=attrib, **extra)
+
+class ScaleAxis:
+
+    def __init__(self, UnitsPerPixel, UnitsOfMeasure):
+        self.UnitsPerPixel = float(UnitsPerPixel)
+        self.UnitsOfMeasure = str(UnitsOfMeasure)
 
 
 def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None):
@@ -1493,13 +1587,13 @@ def BuildFilterImageName(SectionNumber, ChannelName, FilterName, Extension=None)
 class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
 
     DefaultMaskName = "Mask"
-    
+
     def DefaultImageName(self, extension):
         '''Default name for an image in this filters imageset'''
         InputChannelNode = self.FindParent('Channel')
         section_node = InputChannelNode.FindParent('Section')
         return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
-    
+
     @property
     def Histogram(self):
         '''Get the image set for the filter, create if missing'''
@@ -1531,7 +1625,7 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
             self.append(pyramid)
             return (True, pyramid)
         else:
-            return (False,pyramid)
+            return (False, pyramid)
 
     @property
     def TilePyramid(self):
@@ -1817,7 +1911,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         if SectionMappingsNode is None:
             return None
         
-        #assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
+        # assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
 
         stosNode = SectionMappingsNode.FindStosTransform(ControlSectionNode.Number,
                                                                ControlChannelNode.Name,
@@ -1880,7 +1974,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         ControlChannelNode = ControlFilter.FindParent("Channel")
         
         SectionMappingsNode = self.GetSectionMapping(MappedSectionNode.Number)
-        assert(not SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
+        assert(not SectionMappingsNode is None)  # We expect the caller to arrange for a section mappings node in advance
                
         stosNode = TransformNode(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
                                                                                         'MappedSectionNumber' : str(MappedSectionNode.Number),
@@ -1902,6 +1996,18 @@ class StosGroupNode(XNamedContainerElementWrapped):
        
         return stosNode
     
+    @classmethod
+    def GenerateStosFilename(cls, ControlFilter, MappedFilter):
+    
+        ControlSectionNode = ControlFilter.FindParent('Section')
+        MappedSectionNode = MappedFilter.FindParent('Section')
+    
+        OutputFile = str(MappedSectionNode.Number) + '-' + str(ControlSectionNode.Number) + \
+                                 '_ctrl-' + ControlFilter.Parent.Name + "_" + ControlFilter.Name + \
+                                 '_map-' + MappedFilter.Parent.Name + "_" + MappedFilter.Name + '.stos'
+        return OutputFile
+
+    
     
     @classmethod 
     def _IsStosInputImageOutdated(cls, stosNode, ChecksumAttribName, imageNode):
@@ -1916,7 +2022,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         
         IsInvalid = False
         
-        if len(stosNode.attrib.get(ChecksumAttribName,"")) > 0:
+        if len(stosNode.attrib.get(ChecksumAttribName, "")) > 0:
             IsInvalid = IsInvalid or not nornir_buildmanager.validation.transforms.IsValueMatched(stosNode, ChecksumAttribName, imageNode.Checksum)
         else:
             if not os.path.exists(imageNode.FullPath):
@@ -1982,9 +2088,49 @@ class StosGroupNode(XNamedContainerElementWrapped):
 
         super(StosGroupNode, self).__init__(tag='StosGroup', Name=Name, Path=Name, attrib=attrib, **extra)
         self.Downsample = Downsample
-
+    
+    @property
+    def SummaryString(self):
+        '''
+            :return: Name of the group and the downsample level
+            :rtype str:
+        '''
+        return "{0:s} {1:3d}".format(self.Name.ljust(20), int(self.Downsample))
+    
+    def CleanIfInvalid(self):
+        cleaned = super(StosGroupNode, self).CleanIfInvalid()
+        
+        #TODO: Deleting stale transforms and section mappinds needs to be enabled, but I identified this shortcoming in a remote and 
+        #want to work on it in my own test environment
+        #if not cleaned:    
+            #for mapping in self.SectionMappings:
+                #cleaned or mapping.CleanIfInvalid()
+                
+        return cleaned
+         
 
 class StosMapNode(XElementWrapper):
+
+    @property
+    def Name(self):
+        return self.get('Name', '')
+
+    @Name.setter
+    def Name(self, Value):
+        self.attrib['Name'] = Value
+
+    @property
+    def Type(self):
+        '''Type of Stos Map'''
+        m = self.attrib.get("Type", None)
+
+    @Type.setter
+    def Type(self, val):
+        if val is None:
+            if 'Type' in self.attrib:
+                del self.attrib['Type']
+        else:
+            self.attrib['Type'] = val
 
     @property
     def CenterSection(self):
@@ -2043,17 +2189,24 @@ class StosMapNode(XElementWrapper):
     @property
     def AllowDuplicates(self):
         return self.attrib.get('AllowDuplicates', True)
+    
+    @classmethod
+    def _SectionNumberFromParameter(self, input_value):
+        val = None
+        if isinstance(input_value, nornir_imageregistration.transforms.registrationtree.RegistrationTreeNode):
+            val = input_value.SectionNumber
+        elif isinstance(input_value, int):
+            val = input_value
+        else:
+            raise TypeError("Section Number parameter should be an integer or RegistrationTreeNode")
+
+        return val
 
     def AddMapping(self, Control, Mapped):
         '''Create a mapping to a control section'''
 
-        val = None
-        if isinstance(Mapped, nornir_imageregistration.transforms.registrationtree.RegistrationTreeNode):
-            val = Mapped.SectionNumber
-        elif isinstance(Mapped, int):
-            val = Mapped
-        else:
-            raise TypeError("Mapped should be an int or RegistrationTreeNode")
+        val = StosMapNode._SectionNumberFromParameter(Mapped)
+        Control = StosMapNode._SectionNumberFromParameter(Control)
 
         childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
         if childMapping is None:
@@ -2063,6 +2216,26 @@ class StosMapNode(XElementWrapper):
             if not val in childMapping.Mapped:
                 childMapping.AddMapping(val)
         return
+
+    def RemoveMapping(self, Control, Mapped):
+        '''Remove a mapping
+        :return: True if mapped section is found and removed
+        '''
+
+        Mapped = StosMapNode._SectionNumberFromParameter(Mapped)
+        Control = StosMapNode._SectionNumberFromParameter(Control)
+
+        childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
+        if childMapping is not None:
+            if Mapped in childMapping.Mapped:
+                childMapping.RemoveMapping(Mapped)
+
+                if len(childMapping.Mapped) == 0:
+                    self.remove(childMapping)
+
+                return True
+
+        return False
 
     def FindAllControlsForMapped(self, MappedSection):
         '''Given a section to be mapped, return the first control section found'''
@@ -2310,10 +2483,51 @@ class MosaicBaseNode(XFileElementWrapper):
         self.attrib['Type'] = Value
 
 
-class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
+class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
 
+    @classmethod
+    def get_threshold_format(cls):
+        return "%2.4g"
+    
+    @classmethod
+    def get_threshold_precision(cls):
+        return 2  # Number of digits to save in XML file
+    
     def __init__(self, Name, Type, Path=None, attrib=None, **extra):
         super(TransformNode, self).__init__(tag='Transform', Name=Name, Type=Type, Path=Path, attrib=attrib, **extra)
+        
+    @property
+    def ControlSectionNumber(self):
+        if 'ControlSectionNumber' in self.attrib:
+            return int(self.attrib['ControlSectionNumber'])
+        
+        return None
+    
+    @ControlSectionNumber.setter
+    def ControlSectionNumber(self, value):
+        
+        if value is None:
+            if 'ControlSectionNumber' in self.attrib:
+                del self.attrib['ControlSectionNumber']
+        else:
+            self.attrib['ControlSectionNumber'] = "%d" % value
+        return None
+    
+    @property
+    def MappedSectionNumber(self):
+        if 'MappedSectionNumber' in self.attrib:
+            return int(self.attrib['MappedSectionNumber'])
+        
+        return None
+    
+    @MappedSectionNumber.setter
+    def MappedSectionNumber(self, value):
+        if value is None:
+            if 'MappedSectionNumber' in self.attrib:
+                del self.attrib['MappedSectionNumber']
+        else:
+            self.attrib['MappedSectionNumber'] = "%d" % value
+        return None
          
     @property
     def CropBox(self):
@@ -2355,14 +2569,37 @@ class TransformNode(VMH.InputTransformHandler,  MosaicBaseNode):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         
-        [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
-        if valid:
-            [valid, reason] = super(TransformNode, self).IsValid()
+        result = super(MosaicBaseNode, self).IsValid()
+        if result[0]: 
+            [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
+            if valid:
+                [valid, reason] = super(TransformNode, self).IsValid()
+                
+                if not os.path.exists(self.FullPath):
+                    self.Locked = False
             
-            if not os.path.exists(self.FullPath):
-                self.Locked = False
+            return [valid, reason]
+        else:
+            return result
+         
+    @property
+    def Threshold(self):
+        val = self.attrib.get('Threshold', None)
+        if isinstance(val, str):
+            if len(val) == 0:
+                return None
+
+        if not val is None:
+            val = float(val)
+
+        return val 
+    
+    @Threshold.setter
+    def Threshold(self, val):
+        if val is None and 'Threshold' in self.attrib:
+            del self.attrib['Threshold']
         
-        return [valid, reason]
+        self.attrib['Threshold'] = TransformNode.get_threshold_format() % val
         
 
 class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XContainerElementWrapper):
@@ -2413,7 +2650,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
     def GetOrCreateImage(self, Downsample, Path=None, GenerateData=True):
         '''Returns image node for the specified downsample. Generates image if requested and image is missing.  If unable to generate an image node is returned'''
-        LevelNode = self.GetOrCreateLevel(Downsample, GenerateData=False)
+        [added_level, LevelNode] = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
         imageNode = LevelNode.find("Image")
         if imageNode is None:
@@ -2449,11 +2686,11 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
     
     def GetOrPredictImageFullPath(self, Downsample):
         '''Either return what the full path to the image at the downsample is, or predict what it should be if it does not exist without creating it
-        :rtype: str
+        :rtype str:
         '''
         image_node = self.GetImage(Downsample)
         if image_node is None:
-            return os.path.join(self.FullPath, LevelNode.PredictPath(Downsample) ,self.__PredictImageFilename() )
+            return os.path.join(self.FullPath, LevelNode.PredictPath(Downsample) , self.__PredictImageFilename())
         else:
             return image_node.FullPath
         
@@ -2555,7 +2792,7 @@ class ImageSetNode(ImageSetBaseNode):
         if not FileNumberMatch:
             return [False, "File count mismatch for level"] 
         
-        return [True,None]
+        return [True, None]
 
         
     def __init__(self, Type=None, attrib=None, **extra):
@@ -2633,7 +2870,15 @@ class SectionMappingsNode(XElementWrapper):
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
 
     def FindStosTransform(self, ControlSectionNumber, ControlChannelName, ControlFilterName, MappedSectionNumber, MappedChannelName, MappedFilterName):
-        '''WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query'''
+        '''
+        Find the stos transform matching all of the parameters if it exists
+        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
+        :rtype TransformNode:
+        '''
+        
+        # TODO: 3/10/2017 I believe I can stop checking MappedSectionNumber because it is built into the SectionMapping node.  This is a sanity check before I pull the plug
+        assert(MappedSectionNumber == self.MappedSectionNumber)
+        
         for t in self.Transforms:
             if int(t.ControlSectionNumber) != int(ControlSectionNumber):
                 continue
@@ -2656,6 +2901,42 @@ class SectionMappingsNode(XElementWrapper):
             return t
 
         return None
+     
+    def TryRemoveTransformNode(self, transform_node):
+        '''Remove the transform if it exists
+        :rtype bool:
+        :return: True if transform removed 
+        '''
+        return self.TryRemoveTransform(transform_node.ControlSectionNumber,
+                                    transform_node.ControlChannelName,
+                                    transform_node.ControlFilterName,
+                                    transform_node.MappedChannelName,
+                                    transform_node.MappedFilterName)
+    
+    def TryRemoveTransform(self, ControlSectionNumber, ControlChannelName, ControlFilterName, MappedChannelName, MappedFilterName):
+        '''Remove the transform if it exists
+        :rtype bool:
+        :return: True if transform removed 
+        '''
+        
+        existing_transform = self.FindStosTransform(ControlSectionNumber, ControlChannelName, ControlFilterName, self.MappedSectionNumber, MappedChannelName, MappedFilterName)
+        if not existing_transform is None:
+            existing_transform.Clean()
+            return True
+        
+        return False
+        
+    
+    def AddOrUpdateTransform(self, transform_node):
+        '''
+        Add or update a transform to the section mappings.
+        :rtype bool:
+        :return: True if the transform node was added.  False if updated.
+        '''
+        existing_transform = self.TryRemoveTransformNode(transform_node) 
+        self.AddChild(transform_node)
+        return not existing_transform
+            
 
     @classmethod
     def _CheckForFilterExistence(self, block, section_number, channel_name, filter_name):
@@ -2676,26 +2957,42 @@ class SectionMappingsNode(XElementWrapper):
 
 
     def CleanIfInvalid(self):
-        self.CleanTransformsIfInvalid()
-        XElementWrapper.CleanIfInvalid(self)
-
+        cleaned = XElementWrapper.CleanIfInvalid(self)
+        if not cleaned:
+            return self.CleanTransformsIfInvalid()
+        
+        return cleaned
+        
 
     def CleanTransformsIfInvalid(self):
         block = self.FindParent('Block')
+        
+        transformCleaned = False;
 
         # Check the transforms and make sure the input data still exists
         for t in self.Transforms:
+            transformValid = t.IsValid()
+            if not transformValid[0]:
+                prettyoutput.Log("Cleaning invalid transform " + t.Path + " " + transformValid[1])
+                t.Clean();
+                transformCleaned = True;
+                continue;
+            
             ControlResult = SectionMappingsNode._CheckForFilterExistence(block, t.ControlSectionNumber, t.ControlChannelName, t.ControlFilterName)
             if ControlResult[0] == False:
                 prettyoutput.Log("Cleaning transform " + t.Path + " control input did not exist: " + ControlResult[1])
                 t.Clean()
+                transformCleaned = True;
                 continue
 
             MappedResult = SectionMappingsNode._CheckForFilterExistence(block, t.MappedSectionNumber, t.MappedChannelName, t.MappedFilterName)
             if MappedResult[0] == False:
                 prettyoutput.Log("Cleaning transform " + t.Path + " mapped input did not exist: " + MappedResult[1])
                 t.Clean()
+                transformCleaned = True;
                 continue
+            
+        return transformCleaned
 
 
     def __init__(self, MappedSectionNumber=None, attrib=None, **extra):
@@ -2736,6 +3033,24 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         assert(isinstance(val, str))
         self.attrib['ImageFormatExt'] = val
         
+    @property
+    def Type(self):
+        '''The default mask to use for this filter'''
+        m = self.attrib.get("Type", None)
+        if not m is None:
+            if len(m) == 0:
+                m = None
+
+        return m
+
+    @Type.setter
+    def Type(self, val):
+        if val is None:
+            if 'Type' in self.attrib:
+                del self.attrib['Type']
+        else:
+            self.attrib['Type'] = val
+
     def IsLevelPopulated(self, level_full_path):
         '''
         :param str level_full_path: The path to the directories containing the image files
@@ -2754,7 +3069,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if not FileNumberMatch:
             return [False, "File count mismatch for level"] 
         
-        return [True,None]
+        return [True, None]
 
 
     def __init__(self, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
@@ -2765,7 +3080,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if ImageFormatExt is None:
             ImageFormatExt = '.png'
 
-        super(TilePyramidNode, self).__init__(tag='TilePyramid', 
+        super(TilePyramidNode, self).__init__(tag='TilePyramid',
                                                path=TilePyramidNode.DefaultPath,
                                                attrib=attrib, **extra)
 
@@ -2845,7 +3160,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
         # Start with the middle because it is more likely to have a match earlier
         TestIndicies = range(GridYDim / 2, GridYDim)
-        TestIndicies.extend(range((GridYDim / 2) + 1, -1, -1))
+        TestIndicies.extend(range((GridYDim / 2) - 1, -1, -1))
         for iY in TestIndicies:
             # MatchString = os.path.join(OutputDir, FilePrefix +
             #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +

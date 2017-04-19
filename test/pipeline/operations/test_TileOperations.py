@@ -3,27 +3,25 @@ Created on Feb 22, 2013
 
 @author: u0490822
 '''
+import glob
 import logging
 import os
 import shutil
 import tempfile
 import unittest
-import glob
 
+from nornir_buildmanager.VolumeManagerETree import *
+from nornir_buildmanager.operations.tile import *
+from nornir_buildmanager.validation import transforms
+import nornir_shared.files
+import nornir_shared.misc
 from test.pipeline.setup_pipeline import *
 
 import nornir_buildmanager as nb
-
-from nornir_buildmanager.VolumeManagerETree import *
 import nornir_buildmanager.build as build
-from nornir_buildmanager.operations.tile import *
-from nornir_buildmanager.validation import transforms
 import nornir_buildmanager.operations.setters as setters
 import nornir_imageregistration.tileset as tiles
-import nornir_shared.files
-import nornir_shared.misc
 import numpy as np
-
 
 
 # class EvaluateFilterTest(ImportOnlySetup):
@@ -56,8 +54,6 @@ import numpy as np
 #         # Try correcting the tiles and creating a new filter
 #         ChannelNode = _CorrectTilesDeprecated(Parameters={}, FilterNode=self.FilterNode, ImageNode=MaxImageNode, OutputFilterName='DeprecatedShadingCorrected', InvertSource=True, ComposeOperator=None)
 #         self.assertIsNotNone(ChannelNode)
-
-
 class ShadeCorrectionTest(ImportOnlySetup):
 
     @property
@@ -212,7 +208,7 @@ class BuildTilePyramidTest(PrepareSetup):
     def runTest(self):
         volumeNode = self.RunAdjustContrast(Sections=690)
         
-        #Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
+        # Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter='Leveled', level=4)       
 
 class AutoLevelHistogramTest(PrepareSetup):
@@ -312,7 +308,7 @@ class AutoLevelHistogramTest(PrepareSetup):
 
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = None
         ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
-        self.assertEqual(len(ChannelOutput),0, "Locked filter should not regenerate")
+        self.assertEqual(len(ChannelOutput), 0, "Locked filter should not regenerate")
 
         # Calling again with new parameters but the filter locked should not regenerate tiles
         setters.SetFilterContrastLocked(self.OutputFilterNode, Locked=False)

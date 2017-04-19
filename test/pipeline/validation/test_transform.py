@@ -9,13 +9,13 @@ import shutil
 import tempfile
 import unittest
 
-from test.pipeline.setup_pipeline import *
-
 from nornir_buildmanager.VolumeManagerETree import *
-import nornir_buildmanager.build as build
 from nornir_buildmanager.validation import transforms
 import nornir_shared.files
 import nornir_shared.misc
+from test.pipeline.setup_pipeline import *
+
+import nornir_buildmanager.build as build
 
 
 class TransformIsValidTest(PrepareAndMosaicSetup):
@@ -87,12 +87,12 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
             
-            #buildArgs = [self.TestOutputPath, '-debug', 'Prune', '-Threshold', '1.0']
-            #build.Execute(buildArgs)
+            # buildArgs = [self.TestOutputPath, '-debug', 'Prune', '-Threshold', '1.0']
+            # build.Execute(buildArgs)
             self.RunPrune()
 
-            #buildArgs = [ self.TestOutputPath, '-debug', 'Mosaic', '-InputFilter', 'Leveled']
-            #build.Execute(buildArgs)
+            # buildArgs = [ self.TestOutputPath, '-debug', 'Mosaic', '-InputFilter', 'Leveled']
+            # build.Execute(buildArgs)
             self.RunMosaic(Filter="Leveled")
 
             # Load the meta-data from the volumedata.xml file again
@@ -109,7 +109,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
                 if prechecksum == RefreshedTransform.Checksum:
                     self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
                 else:
-                    #This is for translate results, so we'll special case this
+                    # This is for translate results, so we'll special case this
                     self.assertTrue('translate' in RefreshedTransform.Name, "Translate should be the only transform with a different checksum after regeneration")
 
             self.Logger.info("Transform regenerates successfully: " + tNode.FullPath)

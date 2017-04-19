@@ -12,10 +12,11 @@ import unittest
 
 import nornir_buildmanager.VolumeManagerETree
 from nornir_buildmanager.importers.pmg import ParsePMGFilename, PMGInfo
-import nornir_buildmanager.importers.pmg as pmg
 from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
 import nornir_shared.misc
+
+import nornir_buildmanager.importers.pmg as pmg
 import setup_pipeline
 
 
@@ -203,7 +204,7 @@ class PMGBuildTest(PMGTest):
   
         BruteLevel = 8
   
-        self.RunCreateBlobFilter(Channels="*", Levels=[8,16,BruteLevel], Filter="Leveled")
+        self.RunCreateBlobFilter(Channels="*", Levels=[8, 16, BruteLevel], Filter="Leveled")
         self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
           
         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')

@@ -1,6 +1,7 @@
-import idoc;
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.images import *
+
+import idoc;
 
 
 class SerialEMMDocImport(idoc.SerialEMIDocImport):
@@ -10,7 +11,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
 
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath = None, Extension = None, OutputImageExt = None, TileOverlap = None, TargetBpp = None, debug = None, **kwargs):
+    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None, **kwargs):
         '''The mdoc should be paired with a .st file of the same name. 
        The st file is converted to tif's, the mdoc is renamed to an idoc
        and the idoc importer is run.'''
@@ -71,7 +72,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             # [Image = 10000.tif]
             cmd = "mrc2tif " + stNameFullPath + " " + tempDirNameFullPath;
             prettyoutput.Log(cmd);
-            subprocess.call(cmd + " && exit", shell = True);
+            subprocess.call(cmd + " && exit", shell=True);
 
             tiffFiles = glob.glob(os.path.join(InputPath, tempDirName, '.*.tif'));
 

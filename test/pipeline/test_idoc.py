@@ -7,17 +7,18 @@ import glob
 import logging
 import os
 import shutil
-import unittest
 import time
+import unittest
 
-import nornir_buildmanager.importers
 from nornir_buildmanager.VolumeManagerETree import VolumeManager 
-import nornir_buildmanager.build as build
+import nornir_buildmanager.importers
 from nornir_buildmanager.importers.idoc import SerialEMLog
-import nornir_buildmanager.importers.idoc as idoc
 from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
 import nornir_shared.misc
+
+import nornir_buildmanager.build as build
+import nornir_buildmanager.importers.idoc as idoc
 import setup_pipeline
 
 
@@ -113,13 +114,13 @@ class StosRebuildHelper(object):
         StosGroupName = 'Grid32'
         
           
-        #OK, part two is to change a mosaic, and ensure that every file downstream is updated
+        # OK, part two is to change a mosaic, and ensure that every file downstream is updated
         transformList = self.CopyManualStosFiles(Grid32ManualStosFullPath, StosGroupName=StosGroupName)
         self.assertGreater(len(transformList), 0, "Transform list should not be empty")
           
         grid32TransformList = self.RunPipelineToRefreshStosGroupTransforms(transformList,
-                                                     stos_group_name='Grid32', 
-                                                     func=self.RunRefineSectionAlignment, 
+                                                     stos_group_name='Grid32',
+                                                     func=self.RunRefineSectionAlignment,
                                                      func_args_dict={
                                                      'InputGroup':"StosBrute",
                                                      'InputLevel':BruteLevel,
@@ -132,7 +133,7 @@ class StosRebuildHelper(object):
         self.assertGreater(len(originalGrid8TransformList), 0, "Transform list should not be empty")
           
         grid8TransformList = self.RunPipelineToRefreshStosGroupTransforms(originalGrid8TransformList,
-                                                     stos_group_name='Grid8', 
+                                                     stos_group_name='Grid8',
                                                      func=self.RunRefineSectionAlignment,
                                                      func_args_dict={
                                                      'InputGroup':"Grid",
@@ -146,8 +147,8 @@ class StosRebuildHelper(object):
         self.assertGreater(len(originalGrid1TransformList), 0, "Transform list should not be empty")
            
         grid1TransformList = self.RunPipelineToRefreshStosGroupTransforms(originalGrid1TransformList,
-                                                     stos_group_name='Grid1', 
-                                                     func=self.RunScaleVolumeTransforms, 
+                                                     stos_group_name='Grid1',
+                                                     func=self.RunScaleVolumeTransforms,
                                                      func_args_dict={
                                                      'InputGroup':"Grid",
                                                      'InputLevel':BruteLevel / 4,
@@ -158,9 +159,9 @@ class StosRebuildHelper(object):
         self.assertGreater(len(originalsliceToVolume1TransformList), 0, "Transform list should not be empty")
           
         sliceToVolume1 = self.RunPipelineToRefreshStosGroupTransforms(originalsliceToVolume1TransformList,
-                                                     stos_group_name='SliceToVolume1', 
-                                                     func=self.RunSliceToVolume, 
-                                                     func_args_dict={} )
+                                                     stos_group_name='SliceToVolume1',
+                                                     func=self.RunSliceToVolume,
+                                                     func_args_dict={})
         
         originalChannelToMosaicUntranslatedTransformList = self.FetchMosaicToVolumeTransformsByInputTransformChecksum(originalsliceToVolume1TransformList)
         self.assertGreater(len(originalChannelToMosaicUntranslatedTransformList), 0, "Transform list should not be empty")
@@ -172,8 +173,8 @@ class StosRebuildHelper(object):
                    
         sliceToVolume1 = self.RunPipelineToRefreshChannelToMosaicTransforms(originalChannelToMosaicUntranslatedTransformList,
                                                                             originalChannelToMosaicTransformList,
-                                                                            func=self.RunMosaicToVolume, 
-                                                                            func_args_dict={} )
+                                                                            func=self.RunMosaicToVolume,
+                                                                            func_args_dict={})
         
          
           
@@ -186,7 +187,7 @@ class StosRebuildHelper(object):
            
         updatedVolumeObj = func(**func_args_dict)
 
-        return self._EnsureStosGroupTransformsRefreshed(volumeObj=updatedVolumeObj, 
+        return self._EnsureStosGroupTransformsRefreshed(volumeObj=updatedVolumeObj,
                                                stos_group_name=stos_group_name,
                                                originalTransformList=transformList,
                                                last_modified_dict=last_modified_dict)
@@ -202,7 +203,7 @@ class StosRebuildHelper(object):
             updatedTransform = stosGroup.find("SectionMappings/Transform[@Path='%s']" % (originalTransform.Path))
             self.assertIsNotNone(updatedTransform, "Updated transform is None, should match manual transform info")
               
-            #All files should be replaced with the manual stos files
+            # All files should be replaced with the manual stos files
             self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
               
             self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum, "Checksums should not match after being replaced by a manual stos file")
@@ -223,11 +224,11 @@ class StosRebuildHelper(object):
            
         updatedVolumeObj = func(**func_args_dict)
         
-        self._EnsureChannelToMosaicTransformsRefreshed(volumeObj=updatedVolumeObj,  
+        self._EnsureChannelToMosaicTransformsRefreshed(volumeObj=updatedVolumeObj,
                                                               originalTransformList=transform_untranslated_list,
                                                               last_modified_dict=last_untranslated_modified_dict)
         
-        return self._EnsureChannelToMosaicTransformsRefreshed(volumeObj=updatedVolumeObj,  
+        return self._EnsureChannelToMosaicTransformsRefreshed(volumeObj=updatedVolumeObj,
                                                               originalTransformList=transform_translated_list,
                                                               last_modified_dict=last_translated_modified_dict)
           
@@ -240,7 +241,7 @@ class StosRebuildHelper(object):
         for originalTransform in originalTransformList:
             updatedTransform = self._FetchMosaicToVolumeTransform(volumeObj, originalTransform)
               
-            #All files should be replaced with the manual stos files
+            # All files should be replaced with the manual stos files
             self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
               
             self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum, "Checksums should not match after being replaced by a manual stos file")
@@ -354,16 +355,16 @@ class IDocSingleSectionImportTest(IDocTest):
         self.RunHistogram(Transform='Stage')
         self.LoadMetaData() 
         
-        #histogramNode = self.RawFilterObj.GetHistogram()
-        #self.assertFalse(histogramNode.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
+        # histogramNode = self.RawFilterObj.GetHistogram()
+        # self.assertFalse(histogramNode.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
         self.RunAdjustContrast(Transform='Stage')
         
         # I do not run mosaic based on the prune transform both to save time and to ensure that rebuilding the prune transform is not rebuilding the mosaic and images by some side-effect
         self.RunMosaic(Filter='Leveled', Transform='Stage')
         self.LoadMetaData()
         
-        #self.assertFalse(self.RawFilterObj.TilePyramid.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
-        #self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))         
+        # self.assertFalse(self.RawFilterObj.TilePyramid.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
+        # self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))         
         self.EnsureTilePyramidIsFull(self.RawFilterObj, 25)
 
         self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="1")
@@ -381,16 +382,16 @@ class IDocSingleSectionImportTest(IDocTest):
         self.LoadMetaData() 
         self.VerifyFilterContrast(TargetMinIntensity, TargetMaxIntensity, Gamma=TargetGamma)
         
-        #Check that the histogram has the new target values
+        # Check that the histogram has the new target values
         self.RunHistogram()
         self.LoadMetaData() 
-        #self.assertFalse(self.RawFilterObj.GetHistogram().IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma))
+        # self.assertFalse(self.RawFilterObj.GetHistogram().IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma))
         
         self.RunAdjustContrast(Transform='Stage')
         self.RunMosaic(Filter='Leveled', Transform='Stage')
         
         self.LoadMetaData() 
-        #self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma)) 
+        # self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma)) 
         
         
         
@@ -447,7 +448,7 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
           
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
-        self.RunAssemble(Channels='TEM', Levels=[8,16])
+        self.RunAssemble(Channels='TEM', Levels=[8, 16])
                   
         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
         self.RunMosaicReport()
@@ -478,7 +479,7 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
         self.RunAssemble(Channels='TEM', Levels=[1])
         self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
       
-        #TODO, this failed.  Fix it
+        # TODO, this failed.  Fix it
         self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)
 # # # 
 # class IDocBuildTest(setup_pipeline.CopySetupTestBase, StosRebuildHelper):

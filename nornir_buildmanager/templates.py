@@ -2,7 +2,6 @@ import multiprocessing
 import os
 
 
-
 class __Config:
     '''A place to store hardcoded values used throughout the buildscripts'''
 
@@ -67,7 +66,7 @@ class __Config:
     #    return "ir-stos-brute -sh 1 -clahe 2 -refine -cubic -regularize ";
         return "ir-stos-brute -sh 1 -refine -regularize ";
 
-    def StosGridCmd(self, Spacing = None, Neighborhood = None):
+    def StosGridCmd(self, Spacing=None, Neighborhood=None):
         if(Spacing is None):
             Spacing = 128;
         if(Neighborhood is None):

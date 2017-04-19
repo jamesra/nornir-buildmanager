@@ -7,9 +7,8 @@ Created on Aug 30, 2013
 import glob
 import os
 
-from setuptools import setup, find_packages
-
 from ez_setup import use_setuptools
+from setuptools import setup, find_packages
 
 
 # This if test prevents an infinite recursion running tests from "python setup.py test"
@@ -17,9 +16,11 @@ if __name__ == '__main__':
 
     use_setuptools()
 
-    install_requires = ["nornir_pools>=1.3.1",
-                        "nornir_shared>=1.3.1",
-                        "nornir_imageregistration>=1.3.1",
+    #OK to use pools v1.3.1, no changes made for v1.3.2
+
+    install_requires = ["nornir_pools>=1.3.2",
+                        "nornir_shared>=1.3.1", 
+                        "nornir_imageregistration>=1.3.2",
                         "numpy>=1.9.1",
                         "scipy>=0.13.2",
                         "matplotlib"]
@@ -29,8 +30,8 @@ if __name__ == '__main__':
     provides = ["nornir_buildmanager"]
 
     dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.3.1",
-                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.3.1",
-                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.3.1"]
+                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.3.2",
+                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.3.2"]
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
@@ -45,7 +46,7 @@ if __name__ == '__main__':
 
     setup(name='nornir_buildmanager',
           zip_safe=True,
-          version='1.3.1',
+          version='1.3.2',
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",

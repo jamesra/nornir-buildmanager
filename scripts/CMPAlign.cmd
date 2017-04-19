@@ -1,9 +1,9 @@
 title Assemble
 nornir-build %1 Assemble -Filters LeveledShadingCorrected -Downsample 2 -NoInterlace -Transform Grid
 title CreateBlobFilter
-nornir-build %1 CreateBlobFilter    -InputFilter LeveledShadingCorrected -OutputFilter Blob -Levels 2,4,8 -Radius 7 -Median 5 -Max 3
+nornir-build %1 CreateBlobFilter -InputFilter LeveledShadingCorrected -OutputFilter Blob -Levels 2,4,8 -Radius 7 -Median 5 -Max 3
 title AlignSections
-nornir-build %1 AlignSections    -Downsample 8 -Filters Blob -OutputStosMap PotentialRegistrationChain -UseMasks
+nornir-build %1 AlignSections -Downsample 8 -Filters Blob -OutputStosMap PotentialRegistrationChain -UseMasks
 title AssembleStosOverlays
 nornir-build %1 AssembleStosOverlays  -StosGroup StosBrute -Downsample 8 -StosMap PotentialRegistrationChain
 title SelectBestRegistrationChain

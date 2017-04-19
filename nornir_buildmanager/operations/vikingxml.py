@@ -43,15 +43,18 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
     # Load the inputXML file and begin parsing
 
     # Create the root output node
-    OutputVolumeNode = ETree.Element('Volume', {'name' : InputVolumeNode.Name,
+    OutputVolumeNode = ETree.Element('Volume', {'Name' : InputVolumeNode.Name,
                                                 'num_stos' : '0',
                                                 'num_sections' : '0',
                                                 'InputChecksum' : InputVolumeNode.Checksum})
 
-    VikingXMLETree = ETree.ElementTree(OutputVolumeNode)
+    (units_of_measure, units_per_pixel) = DetermineVolumeScale(InputVolumeNode)
+    AddScaleData(OutputVolumeNode, units_of_measure, units_per_pixel)
 
-    ParseScale(InputVolumeNode, OutputVolumeNode)
     ParseSections(InputVolumeNode, OutputVolumeNode)
+
+    RemoveDuplicateScaleEntries(OutputVolumeNode, units_of_measure, units_per_pixel)
+
     ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName)
 
     OutputXML = ETree.tostring(OutputVolumeNode).decode('utf-8')
@@ -95,16 +98,67 @@ def RecursiveMergeAboutXML(path, xmlFileName, sourceXML="About.xml"):
 
     return Url
 
-def ParseScale(InputVolumeNode, OutputVolumeNode):
+def DetermineVolumeScale(InputVolumeNode):
+    '''
+    Returns the highest resolution found in all sections of the volume
+    '''
 
-    ScaleNode = InputVolumeNode.find('Block/Section/Channel/Scale')
+    ScaleNodes = list(InputVolumeNode.findall('Block/Section/Channel/Scale'))
+    if ScaleNodes is None or len(ScaleNodes) == 0:
+        return
+
+    #This code assumes all units are the same
+    units_of_measure = map(lambda s: s.X.UnitsOfMeasure, ScaleNodes )
+
+    units_all_equal = all(x == units_of_measure[0] for x in units_of_measure)
+    if not units_all_equal:
+        raise AssertionError("Not all units are equal in the volume.  This can be supported, but is not added yet.")
+
+    UnitsPerPixel = map(lambda s: s.X.UnitsPerPixel, ScaleNodes )
+
+    min_UnitsPerPixel = min(UnitsPerPixel)
+
+    return (units_of_measure[0], min_UnitsPerPixel)
+
+
+def AddScaleData(OutputNode, units_of_measure, units_per_pixel):
+    '''Adds a scale node to the OutputNode'''
+
+    OutputScaleNode = ETree.SubElement(OutputNode, 'Scale', {'UnitsOfMeasure' : str(units_of_measure),
+                                                           'UnitsPerPixel' : str(units_per_pixel)})
+
+    return OutputScaleNode
+
+
+def AddChannelScale(InputChannelNode, OutputNode):
+    '''
+    Add scale element to node based on the channel's scale information
+    '''
+
+    ScaleNode = InputChannelNode.GetScale()
     if ScaleNode is None:
         return
 
-    XNode = ScaleNode.find('X')
+    AddScaleData(OutputNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
 
-    OutputSectionNode = ETree.SubElement(OutputVolumeNode, 'Scale', {'UnitsOfMeasure' : XNode.UnitsOfMeasure,
-                                                           'UnitsPerPixel' : XNode.UnitsPerPixel})
+
+def RemoveDuplicateScaleEntries(OutputNode, volume_units_of_measure, volume_units_per_pixel):
+    '''Remove scale elements that match the volume's default scale'''
+
+    for subelem in OutputNode:
+        scale_node = subelem.find('Scale')
+        if scale_node is None:
+            RemoveDuplicateScaleEntries(subelem, volume_units_of_measure, volume_units_per_pixel)
+        else:
+            #Determine if the scales match
+            elem_units_of_measure = scale_node.attrib['UnitsOfMeasure']
+            elem_units_per_pixel = float(scale_node.attrib['UnitsPerPixel'])
+
+            if elem_units_of_measure == volume_units_of_measure and volume_units_per_pixel == elem_units_per_pixel:
+                subelem.remove(scale_node)
+
+            continue
+
 
 def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
@@ -203,6 +257,8 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
 def ParseChannels(SectionNode, OutputSectionNode):
 
     for ChannelNode in SectionNode.Channels:
+        ScaleNode = ChannelNode.find('Scale')
+
         for TransformNode in ChannelNode.findall('Transform'):
             OutputTransformNode = ParseTransform(TransformNode, OutputSectionNode)
             if not OutputTransformNode is None:
@@ -212,11 +268,16 @@ def ParseChannels(SectionNode, OutputSectionNode):
             for tilepyramid in FilterNode.findall('TilePyramid'):
                 OutputPyramidNode = ParsePyramidNode(FilterNode, tilepyramid, OutputSectionNode)
                 OutputPyramidNode.attrib['Path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputPyramidNode.attrib['Path'])
+                if ScaleNode is not None:
+                    AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
             for tileset in FilterNode.findall('Tileset'):
                 OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
                 OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path'])
-                print "Tileset found for section " + str(SectionNode.attrib["Number"])
-        
+                if ScaleNode is not None:
+                    AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
+                print "Tileset found for section " + str(SectionNode.attrib["Number"])    
+
+
         NotesNodes = ChannelNode.findall('Notes')
         for NoteNode in NotesNodes:
             # Copy over Notes elements verbatim
@@ -260,10 +321,9 @@ def ParseTransform(TransformNode, OutputSectionNode):
         UseForVolume = 'true'
 
 
+    #Viking needs the transform names to be consistent, and if transforms are built with different spacings, for TEM and CMP, Viking can't display
+    #So we simplify the transform name
     TransformName = TransformNode.Name
-    if('Type' in TransformNode.attrib):
-        TransformName = TransformName + TransformNode.attrib['Type']
-    # By default grid.mosaic files are marked as the reference for volume transforms
 
     return ETree.SubElement(OutputSectionNode, 'Transform', {'FilePostfix' : Postfix,
                                                           'FilePrefix' : Prefix,
@@ -274,7 +334,7 @@ def ParseTransform(TransformNode, OutputSectionNode):
 def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
     OutputPyramidNode = ETree.SubElement(OutputSectionNode, 'Pyramid', {
                                                          'Path' : InputPyramidNode.Path,
-                                                         'Name' : FilterNode.Name,
+                                                         'Name' : FilterNode.Parent.Name + "." + FilterNode.Name + ".Pyramid",
                                                          'LevelFormat' : InputPyramidNode.LevelFormat})
 
     for LevelNode in InputPyramidNode.Levels:
@@ -286,7 +346,7 @@ def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
 def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
     OutputTilesetNode = ETree.SubElement(OutputSectionNode, 'Tileset', {
                                                          'path' : InputTilesetNode.Path,
-                                                         'name' : FilterNode.Name,
+                                                         'name' : FilterNode.Parent.Name + "." + FilterNode.Name,
                                                          'TileXDim' : str(InputTilesetNode.TileXDim),
                                                          'TileYDim' : str(InputTilesetNode.TileYDim),
                                                          'FilePrefix' : InputTilesetNode.FilePrefix,
@@ -300,7 +360,6 @@ def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
                                                       'GridDimY' : str(LevelNode.GridDimY)})
 
     return OutputTilesetNode
-
 
 
 # Merge the created VolumeXML with the general definitions in about.XML
@@ -333,15 +392,12 @@ def MergeAboutXML(volumeXML, aboutXML):
         prettyoutput.Log("Relative path: " + relPath)
         Url = UpdateVolumePath(volumeNode, aboutNode, relPath)
 
-
-
     MergeElements(volumeNode, aboutNode)
 
     prettyoutput.Log("")
-#   print volumeDom.toprettyxml()
 
     xmlFile = open(volumeXML, "w")
-    xmlFile.write(volumeDom.toprettyxml())
+    xmlFile.write(volumeDom.toxml())
     xmlFile.close()
 
     return Url
@@ -350,7 +406,7 @@ def MergeAboutXML(volumeXML, aboutXML):
 def MergeElements(volumeNode, aboutNode):
 
     if(ElementsEqual(volumeNode, aboutNode)):
-        CopyAttributes(volumeNode, aboutNode)
+        CopyNewAttributes(volumeNode, aboutNode)
         MergeChildren(volumeNode, aboutNode)
 
 
@@ -376,14 +432,25 @@ def MergeChildren(volumeParent, aboutParent):
 
 # Compare the attributes of two elements and return true if they match
 def ElementsEqual(volumeElement, aboutElement):
+    '''Return true if the elements have the same tag, and the attributes found in both elements have same value'''
+
     if(aboutElement.nodeName != volumeElement.nodeName):
         return False
+
+    for attrib_key in aboutElement.attributes.keys():
+        if not (volumeElement.hasAttribute(attrib_key) and aboutElement.hasAttribute(attrib_key)):
+            continue
+        if not volumeElement.getAttribute(attrib_key) == aboutElement.getAttribute(attrib_key):
+            return False
+
+    return True
+
 
     # Volume is the root element so it is always a match
     if(aboutElement.nodeName == "Volume"):
         return True
 
-    # Sections only match if their numbers match
+    # Nodes only match if their attributes match
     if(aboutElement.nodeName == "Section"):
         aboutNumber = aboutElement.getAttribute("number")
         volNumber = volumeElement.getAttribute("number")
@@ -399,7 +466,8 @@ def ElementsEqual(volumeElement, aboutElement):
 
     return False
 
-def CopyAttributes(volumeElement, aboutElement):
+def CopyNewAttributes(volumeElement, aboutElement):
+    '''Copy the attributes from the aboutElement to the volumeElement'''
 #   print 'v: ' + volumeElement.toxml()
 #   print 'a: ' + aboutElement.toxml()
 
@@ -410,8 +478,8 @@ def CopyAttributes(volumeElement, aboutElement):
     for i in range(0, attributeMap.length):
         attribute = attributeMap.item(i)
 
-        # if(volumeElement.hasAttribute(attribute.name) == False):
-        volumeElement.setAttribute(attribute.name, attribute.value)
+        if(volumeElement.hasAttribute(attribute.name) == False):
+            volumeElement.setAttribute(attribute.name, attribute.value)
 
 
 def UpdateVolumePath(volumeElement, aboutElement, relPath):
