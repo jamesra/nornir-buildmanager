@@ -84,7 +84,6 @@ def RemoveDuplicateLinks(ParentNode, ChildNodeName, ChildAttrib=None, **kwargs):
         for n in NodesToDelete:
             ParentNode.remove(n)
 
-
         return ParentNode
     else:
         return None

@@ -263,7 +263,7 @@ class DM4BuildTest(DM4Test, StosRebuildHelper):
         self.RunMosaic(Filter="Leveled", Transform='Stage')
         self.RunMosaicReport(ContrastFilter='Raw16')
         self.RunAssemble(Channels='SEM', Levels=[4, 8, 16])
-        self.RunAssembleTiles(Channels='SEM', Levels=1)
+        self.RunAssembleTiles(Channels='SEM', Levels=[1])
            
            
 #         self.RunPrune()
