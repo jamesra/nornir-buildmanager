@@ -18,8 +18,8 @@ if __name__ == '__main__':
 
     #OK to use pools v1.3.1, no changes made for v1.3.2
 
-    install_requires = ["nornir_pools>=1.3.2",
-                        "nornir_shared>=1.3.1", 
+    install_requires = ["nornir_pools>=1.3.1",
+                        "nornir_shared>=1.3.2", 
                         "nornir_imageregistration>=1.3.2",
                         "numpy>=1.9.1",
                         "scipy>=0.13.2",

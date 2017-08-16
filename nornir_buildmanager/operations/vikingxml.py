@@ -49,7 +49,8 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
                                                 'InputChecksum' : InputVolumeNode.Checksum})
 
     (units_of_measure, units_per_pixel) = DetermineVolumeScale(InputVolumeNode)
-    AddScaleData(OutputVolumeNode, units_of_measure, units_per_pixel)
+    if units_of_measure is not None:
+        AddScaleData(OutputVolumeNode, units_of_measure, units_per_pixel)
 
     ParseSections(InputVolumeNode, OutputVolumeNode)
 
@@ -105,7 +106,7 @@ def DetermineVolumeScale(InputVolumeNode):
 
     ScaleNodes = list(InputVolumeNode.findall('Block/Section/Channel/Scale'))
     if ScaleNodes is None or len(ScaleNodes) == 0:
-        return
+        return (None, None)
 
     #This code assumes all units are the same
     units_of_measure = map(lambda s: s.X.UnitsOfMeasure, ScaleNodes )
