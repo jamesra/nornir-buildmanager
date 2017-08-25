@@ -386,18 +386,34 @@ def GetOrCreateRegistrationImageNodes(filter_node, Downsample, GetMask, Logger=N
 def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, OutputType, OutputPath, UseMasks, AngleSearchRange=None, Logger=None, argstring=None):
     '''Create a transform node, populate, and generate the transform'''
 
-
     if Logger is None:
         Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
-        
+
     stosNode = StosGroup.GetStosTransformNode(ControlFilter, MappedFilter)
-            
+
     (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
     (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
-    
-    if not stosNode is None:
+
+    if stosNode:
         if StosGroup.AreStosInputImagesOutdated(stosNode, ControlFilter, MappedFilter, MaskRequired=UseMasks):
             stosNode.Clean("Input Images are Outdated")
+            stosNode = None
+
+    #Check if the manual stos file exists and is different than the output file        
+    ManualStosFileFullPath = StosGroup.PathToManualTransform(stosNode.FullPath)
+    ManualFileExists = os.path.exists(ManualStosFileFullPath)
+    ManualInputChecksum = None
+    if ManualFileExists and stosNode:
+        if 'InputTransformChecksum' in stosNode.attrib:
+            ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+            stosNode = transforms.RemoveOnMismatch(stosNode, 'InputTransformChecksum', ManualInputChecksum)
+        else:
+            stosNode.Clean("No input checksum to test manual stos file against. Replacing with new manual input")
+            stosNode = None
+
+    if not ManualFileExists and stosNode:
+        if 'InputTransformChecksum' in stosNode.attrib:
+            stosNode.Clean("Manual file used to create transform but the manual file has been removed")
             stosNode = None
 
     if stosNode is None:
@@ -405,38 +421,37 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
 
         # We just created this, so remove any old files
         if os.path.exists(stosNode.FullPath):
-            os.remove(stosNode.FullPath)
+            os.remove(stosNode.FullPath) 
 
     # print OutputFileFullPath
     CmdRan = False
     if not os.path.exists(stosNode.FullPath):
-        
-        ManualStosFileFullPath = StosGroup.PathToManualTransform(stosNode.FullPath)
-        if not ManualStosFileFullPath is None:
+        if ManualStosFileFullPath:
             prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
             # Ensure we add or remove masks according to the parameters
             SetStosFileMasks(stosNode.FullPath, ControlFilter, MappedFilter, UseMasks, StosGroup.Downsample)
+            stosNode.InputTransformChecksum = ManualInputChecksum
         elif not (ControlMaskImageNode is None and MappedMaskImageNode is None):
             __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode.FullPath, MappedImageNode.FullPath, ControlMaskImageNode.FullPath, MappedMaskImageNode.FullPath, AngleSearchRange=AngleSearchRange)
         else:
             __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode.FullPath, MappedImageNode.FullPath, AngleSearchRange=AngleSearchRange)
-            
+
         CmdRan = True
             # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
-    
+
             # Rescale stos file to full-res
             # stosFile = stosfile.StosFile.Load(stosNode.FullPath)
             # stosFile.Scale(StosGroup.Downsample)
             # stosFile.Save(stosNode.FullPath)
-    
+
             # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
             # have identical values but different checksums from the Python stos file objects %g representation
-    
+
             # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
         stosNode.ResetChecksum()
         StosGroup.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
-        
+
     if CmdRan:
         return stosNode
 
@@ -478,7 +493,6 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
     StosGroupNode.CreateDirectories()
     if added:
         yield BlockNode
-     
 
     if not os.path.exists(StosGroupNode.FullPath):
         os.makedirs(StosGroupNode.FullPath)
@@ -967,13 +981,9 @@ def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputD
     if not os.path.exists(AutomaticInputDir):
         os.makedirs(AutomaticInputDir)
 
-    ManualInputDir = os.path.join(StosGroupNode.FullPath, 'Manual')
-    if not os.path.exists(ManualInputDir):
-        os.makedirs(ManualInputDir)
-
     # Copy the input stos or converted stos to the input directory
     AutomaticInputStosFullPath = os.path.join(AutomaticInputDir, InputTransformNode.Path)
-    ManualInputStosFullPath = os.path.join(ManualInputDir, VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter))
+    ManualInputStosFullPath = StosGroupNode.PathToManualTransform(InputTransformNode.FullPath)
 
     InputStosFullPath = __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath=AutomaticInputStosFullPath, ManualInputStosFullPath=ManualInputStosFullPath)
     InputChecksum = None
@@ -989,7 +999,7 @@ def __GetInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputD
 def SetStosFileMasks(stosFullPath, ControlFilter, MappedFilter, UseMasks, Downsample):
     '''
     Ensure the stos file has masks
-    '''
+    ''' 
     
     OutputStos = stosfile.StosFile.Load(stosFullPath)
     if OutputStos.HasMasks == UseMasks:
