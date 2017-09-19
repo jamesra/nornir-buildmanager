@@ -18,9 +18,9 @@ if __name__ == '__main__':
 
     #OK to use pools v1.3.1, no changes made for v1.3.2
 
-    install_requires = ["nornir_pools>=1.3.1",
-                        "nornir_shared>=1.3.2", 
-                        "nornir_imageregistration>=1.3.2",
+    install_requires = ["nornir_pools>=1.3.3",
+                        "nornir_shared>=1.3.3", 
+                        "nornir_imageregistration>=1.3.3",
                         "numpy>=1.9.1",
                         "scipy>=0.13.2",
                         "matplotlib"]
@@ -29,9 +29,9 @@ if __name__ == '__main__':
 
     provides = ["nornir_buildmanager"]
 
-    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.3.1",
-                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.3.2",
-                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.3.2"]
+    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.3.3",
+                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.3.3",
+                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.3.3"]
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
@@ -46,7 +46,7 @@ if __name__ == '__main__':
 
     setup(name='nornir_buildmanager',
           zip_safe=True,
-          version='1.3.2',
+          version='1.3.3',
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",

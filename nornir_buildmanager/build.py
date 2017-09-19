@@ -23,7 +23,6 @@ from pkg_resources import resource_filename
 
 import nornir_shared.prettyoutput as prettyoutput
 
-
 CommandParserDict = {}
  
 def ConfigDataPath():

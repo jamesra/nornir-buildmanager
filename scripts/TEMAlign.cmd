@@ -14,10 +14,10 @@ title CreateVikingXML
 nornir-build %1 CreateVikingXML -StosGroup Grid32 -StosMap FinalStosMap -OutputFile Grid32
 title RefineSectionAlignment
 nornir-build %1 RefineSectionAlignment -InputGroup Grid -InputDownsample 32 -OutputGroup Grid -OutputDownsample 16 -Filter Leveled -UseMasks
-title ScaleVolumeTransforms
-nornir-build %1 ScaleVolumeTransforms -InputGroup Grid -InputDownsample 16 -OutputDownsample 1
 title SliceToVolume
-nornir-build %1 SliceToVolume -InputDownsample 1 -InputGroup Grid -OutputGroup SliceToVolume
+nornir-build %1 SliceToVolume -Downsample 16 -InputGroup Grid -OutputGroup SliceToVolume
+title ScaleVolumeTransforms
+nornir-build %1 ScaleVolumeTransforms -InputGroup SliceToVolume -InputDownsample 16 -OutputDownsample 1
 title CreateVikingXML
 nornir-build %1 CreateVikingXML -OutputFile SliceToVolume -StosGroup SliceToVolume1 -StosMap SliceToVolume
 title MosaicToVolume
