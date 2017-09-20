@@ -485,8 +485,11 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self._VerifyInputTransformIsCorrect(image_set_node, InputTransformName=transform_name)
         
     
-    def _VerifyPyramidHasExpectedLevels(self, pyramid_node, expected_levels,):
+    def _VerifyPyramidHasExpectedLevels(self, pyramid_node, expected_levels):
         '''Used to ensure that any node with level children nodes has the correct levels'''
+        if not nornir_shared.misc.IsSequence(expected_levels):
+            expected_levels = [expected_levels]
+        
         for level in expected_levels:
             LevelNode = pyramid_node.find("Level[@Downsample='%d']" % (level))
             self.assertIsNotNone(LevelNode, "No Level node at level %d" % (level))
@@ -494,7 +497,10 @@ class NornirBuildTestBase(test.testbase.TestBase):
         
      
     
-    def _VerifyImageSetHasExpectedLevels(self, image_set_node, expected_levels,):
+    def _VerifyImageSetHasExpectedLevels(self, image_set_node, expected_levels):
+        if not nornir_shared.misc.IsSequence(expected_levels):
+            expected_levels = [expected_levels]
+            
         for level in expected_levels:
             AssembledImageNode = image_set_node.find("Level[@Downsample='%d']/Image" % (level))
             self.assertIsNotNone(AssembledImageNode, "No Image node at level %d produced from assemble pipeline" % (level))
@@ -763,7 +769,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def RunSliceToVolume(self, Level=1):
         # Build Mosaics
         group_name = 'SliceToVolume'
-        buildArgs = self._CreateBuildArgs('SliceToVolume', '-InputDownsample', str(Level), '-InputGroup', 'Grid', '-OutputGroup', 'SliceToVolume')
+        buildArgs = self._CreateBuildArgs('SliceToVolume', '-Downsample', str(Level), '-InputGroup', 'Grid', '-OutputGroup', 'SliceToVolume')
         volumeNode = self.RunBuild(buildArgs)
 
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (group_name, Level))

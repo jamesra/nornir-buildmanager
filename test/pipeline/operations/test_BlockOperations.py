@@ -303,10 +303,17 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
     def InjectManualStosFiles(self, StosGroup, TargetDir):
 
         stosFiles = glob.glob(os.path.join(self.ImportedDataPath, StosGroup, "Manual", "*.stos"))
-        self.assertTrue(len(stosFiles) > 0, "Could not locate manual registration stos files for test")
+        numSourceFiles = len(stosFiles)
+        self.assertTrue(numSourceFiles > 0, "Could not locate manual registration stos files for test")
 
         for stosFile in stosFiles:
             shutil.copy(stosFile, os.path.join(TargetDir, os.path.basename(stosFile)))
+
+        targetFiles = glob.glob(os.path.join(TargetDir, "*.stos"))
+        numTargetFiles = len(targetFiles)
+
+        self.assertEqual(numSourceFiles, numTargetFiles)
+
 
 
     def ValidateTransforms(self, AutoOutputTransform, AutoInputTransform, ManualOutputTransform=None, ManualInputTransform=None):
@@ -440,7 +447,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         # Try to refine the of stos-grid
         SliceToVolumeBuildArgs = [self.TestOutputPath, '-debug', 'SliceToVolume', \
                      '-InputGroup', 'StosGrid', \
-                     '-InputDownsample', '8']
+                     '-Downsample', '8']
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
 
         SixToFiveAutomaticSliceToVolumeTransform = FetchStosTransform(self, self.VolumeObj, 'SliceToVolume8', 5, 7)
@@ -670,7 +677,7 @@ class StosMapTest(EmptyVolumeTestBase):
         return "StosMapTest"
 
     def setUp(self):
-        super(StosGroupTest, self).setUp()
+        super(StosMapTest, self).setUp()
 
         volumeObj = self.LoadOrCreateVolume()
         BlockObj = VolumeManagerETree.BlockNode('TEM')

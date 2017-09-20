@@ -3428,8 +3428,7 @@ if __name__ == '__main__':
     del tagdict.Path
 
     print(ElementTree.tostring(tagdict))
-
-
+ 
     tagdict = XElementWrapper.wrap(ElementTree.Element("Tag"))
     tagdict.V = 5
     tagdict.Path = "path"

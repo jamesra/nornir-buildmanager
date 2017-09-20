@@ -23,7 +23,6 @@ from pkg_resources import resource_filename
 
 import nornir_shared.prettyoutput as prettyoutput
 
-
 CommandParserDict = {}
  
 def ConfigDataPath():
@@ -154,6 +153,9 @@ def InitLogging(buildArgs):
         SetupLogging(Level=logging.WARN)
 
 def Execute(buildArgs=None):
+
+    #Spend more time on each thread before switching
+    sys.setcheckinterval(500)
 
     if buildArgs is None:
         buildArgs = sys.argv[1:]

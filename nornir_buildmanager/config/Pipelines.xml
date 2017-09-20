@@ -1034,15 +1034,19 @@
 
 	<Pipeline Name="SliceToVolume"  Help="Created a group of slice-to-volume transforms from a group of slice-to-slice transforms">
 		<Arguments>
-			<Argument flag="-InputDownsample" dest="StovDownsample" default="16" type="int" help="Downsample level to use for SliceToVolume" required="False"/>
+			<Argument flag="-Downsample" dest="StovDownsample" default="16" type="int" help="Downsample level to use for SliceToVolume" required="False"/>
 			<Argument flag="-InputGroup"  default="StosGrid" dest="StovInputGroup" type="str" help="Map describing which sections register to each other" required="True"/>
 			<Argument flag="-OutputGroup"  default="SliceToVolume" dest="StovOutputGroupName" type="str" help="Name of output group" required="False"/>
 			<Argument flag="-InputMap"  default="FinalStosMap" dest="InputMap" type="str" help="Name of output group" required="False"/>
+			<Argument flag="-OutputMap" dest="OutputMap" type="str" help="Name of output registration map.  Defaults to -OutputGroup name if omitted." required="False"/>
+			<Argument flag="-NoEnrichment" dest="Enrich" action="store_false" help="Do not add extra control points to slice-to-volume transforms to increase accuracy." required="False"/>
+			<Argument flag="-Tolerance" dest="Tolerance" type="float" default="16" help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy." required="False"/>
+			 
 		</Arguments>
 		<Iterate VariableName="BlockNode" XPath="Block"> 
 			<Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#InputMap']">
 				<Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#StovInputGroup#StovDownsample']">
-					<PythonCall Function="block.BuildSliceToVolumeTransforms"  OutputMap="#StovOutputGroupName" OutputGroup="#StovOutputGroupName#StovDownsample">
+					<PythonCall Function="block.BuildSliceToVolumeTransforms"  OutputMap="#OutputMap" OutputGroupName="#StovOutputGroupName" Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance">
 					</PythonCall>
 				</Iterate>
 			</Iterate> 

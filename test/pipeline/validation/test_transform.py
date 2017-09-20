@@ -107,6 +107,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
             if not OutputTransform is None:
                 if prechecksum == RefreshedTransform.Checksum:
+                    #Translated transform involves random numbers, so the odds of a matching checksum are low, which triggers a regeneration of grid transform
                     self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
                 else:
                     # This is for translate results, so we'll special case this
