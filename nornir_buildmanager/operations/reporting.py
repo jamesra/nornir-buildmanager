@@ -16,7 +16,7 @@ import nornir_shared.plot
 import nornir_shared.prettyoutput
 
 import nornir_buildmanager.importers.idoc as idoc
-import nornir_pools as Pools
+import nornir_pools
 import nornir_shared.files as nfiles
 
 
@@ -577,7 +577,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         TableEntries["2"] = __ExtractLogDataText(Data)
 
-        TPool = Pools.GetGlobalMultithreadingPool()
+        TPool = nornir_pools.GetGlobalMultithreadingPool()
 
         LogSrcFullPath = os.path.join(RelPath, DataNode.Path)
 
@@ -682,7 +682,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
         # nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
         # if not os.path.exists(ThumbnailOutputFullPath):
         cmd = "Convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
-        Pool = Pools.GetGlobalProcessPool()
+        Pool = nornir_pools.GetGlobalProcessPool()
         Pool.add_process(cmd, cmd + " && exit", shell=True)
 
         Width = int(Width * Scale)
@@ -876,7 +876,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
     # Build a 2D list to build the table from later
 
-    # pool = Pools.GetGlobalThreadPool()
+    # pool = nornir_pools.GetGlobalThreadPool()
     tableDict = {}
     tasks = []
 

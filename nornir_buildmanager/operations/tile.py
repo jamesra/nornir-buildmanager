@@ -32,7 +32,7 @@ import nornir_imageregistration.core as core
 import nornir_imageregistration.image_stats as image_stats
 import nornir_imageregistration.spatial as spatial
 import nornir_imageregistration.tileset as tiles
-import nornir_pools as Pools
+import nornir_pools
 
 
 HistogramTagStr = "HistogramData"
@@ -431,7 +431,7 @@ def _CorrectTilesDeprecated(Parameters, FilterNode=None, ImageNode=None, OutputF
 
     ZeroedImageNode = _CreateMinCorrectionImage(ImageNode, 'Zeroed' + ImageNode.Name)
 
-    Pool = Pools.GetGlobalClusterPool()
+    Pool = nornir_pools.GetGlobalClusterPool()
 
     for InputTileFullPath in InputTiles:
         inputTile = os.path.basename(InputTileFullPath)
@@ -709,7 +709,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
                 
     Pool = None
     if len(TilesToBuild) > 0:
-        Pool = Pools.GetGlobalClusterPool()
+        Pool = nornir_pools.GetGlobalClusterPool()
 
     if InputFilter.BitsPerPixel == 8:
         MinIntensityCutoff16bpp = MinIntensityCutoff * 256
@@ -948,7 +948,7 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
         prettyoutput.Log("Creating Section Autoleveled Histogram Image: " + DataNode.FullPath)
         
         # if Async:
-            # pool = Pools.GetThreadPool("Histograms")
+            # pool = nornir_pools.GetThreadPool("Histograms")
             # pool.add_task("Create Histogram %s" % DataNode.FullPath, nornir_shared.plot.Histogram, DataNode.FullPath, HistogramImage.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, LineColorList=LineColors, Title=TitleStr)
         # else:
         nornir_shared.plot.Histogram(DataNode.FullPath, HistogramImage.FullPath, MinCutoffPercent, MaxCutoffPercent, LinePosList=LinePositions, LineColorList=LineColors, Title=TitleStr)
@@ -1564,7 +1564,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                 continue
 
             if Pool is None:
-                Pool = Pools.GetGlobalClusterPool()
+                Pool = nornir_pools.GetGlobalClusterPool()
 
             if not LevelHeaderPrinted:
        #         prettyoutput.Log(str(upLevel) + ' -> ' + str(thisLevel) + '\n')
@@ -1658,7 +1658,7 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
         e = 1  # Just a garbage statement, not sure how to swallow an exception
         
     if Pool is None:
-        Pool = Pools.GetGlobalLocalMachinePool()
+        Pool = nornir_pools.GetGlobalLocalMachinePool()
 
     # Merge all the tiles we can find into tiles of the same size
     for iY in range(0, DestGridDimensions[0]):
@@ -1830,7 +1830,7 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
 if __name__ == "__main__":
 
     TestImageDir = 'D:/BuildScript/Test/Images'
-    Pool = Pools.GetGlobalProcessPool()
+    Pool = nornir_pools.GetGlobalProcessPool()
 
     BadTestImage = os.path.join(TestImageDir, 'Bad101.png')
     BadTestImageOut = os.path.join(TestImageDir, 'Bad101Shrink.png')

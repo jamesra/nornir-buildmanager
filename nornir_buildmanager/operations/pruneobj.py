@@ -12,7 +12,6 @@ from nornir_shared.histogram import Histogram
 import nornir_shared.misc
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
-import nornir_pools as pools
 from scipy.stats.mstats_basic import threshold
 import nornir_buildmanager
 
@@ -165,7 +164,7 @@ class PruneObj:
                 PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath)
                 assert(HistogramImageNode.FullPath == PruneObjInstance.HistogramImageFileFullPath)
                 #if Async:
-                    #pool = pools.GetMultithreadingPool("Histograms")
+                    #pool = nornir_pools.GetMultithreadingPool("Histograms")
                     #pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title) 
                 #else:
                 plot.Histogram(PruneObjInstance.HistogramXMLFileFullPath, HistogramImageNode.FullPath, LinePosList=PruneObjInstance.Tolerance, Title="Threshold " + str(Threshold))

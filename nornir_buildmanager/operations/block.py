@@ -18,13 +18,13 @@ from nornir_buildmanager.validation import transforms
 from nornir_imageregistration import assemble, mosaic
 from nornir_imageregistration.files import stosfile
 from nornir_imageregistration.transforms import *
-from nornir_shared import *
+from nornir_shared import prettyoutput, files, misc
 from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
 
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume 
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
 import nornir_imageregistration.stos_brute as stos_brute
-import nornir_pools as pools
+import nornir_pools
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -125,7 +125,7 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                 else:
                     OverlayFilename = self.OverlayFilename
 
-                Pool = pools.GetGlobalProcessPool()
+                Pool = nornir_pools.GetGlobalProcessPool()
 
                 cmd = 'convert -colorspace RGB ' + tempfilenameOne + ' ' + tempfilenameTwo + ' ' + tempfilenameOne + ' -combine -interlace PNG ' + OverlayFilename
                 prettyoutput.Log(cmd)
@@ -815,7 +815,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                         cmd = stomtemplate % {'InputFile' : StosTransformNode.FullPath}
 
                         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-                        processoutputinterceptor.ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
+                        nornir_shared.processoutputinterceptor.ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
                                                                                                                   OverlayFilename=OverlayImageNode.FullPath,
                                                                                                                    DiffFilename=DiffImageNode.FullPath,
                                                                                                                    WarpedFilename=WarpedImageNode.FullPath))
@@ -833,7 +833,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
             # except:
                 # pass
 
-        Pool = pools.GetGlobalProcessPool()
+        Pool = nornir_pools.GetGlobalProcessPool()
         Pool.wait_completion()
     finally:
         if os.path.exists('Temp'):
@@ -850,7 +850,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
     '''Figure out which sections should be registered to each other'''
 
     # SectionMappingsNode
-    Pool = pools.GetGlobalProcessPool()
+    Pool = nornir_pools.GetGlobalProcessPool()
     Pool.wait_completion()
 
     # Assess all of the images
@@ -1887,7 +1887,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
         UsePool = True
         if UsePool:
             # This is a parallel operation, but the Python GIL is so slow using threads is slower.
-            Pool = pools.GetLocalMachinePool()
+            Pool = nornir_pools.GetLocalMachinePool()
     
             for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
                 task = Pool.add_task(imagename, triangulation.AddTransforms, StoVTransform, MosaicToSectionTransform)
