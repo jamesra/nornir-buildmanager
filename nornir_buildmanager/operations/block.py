@@ -1587,6 +1587,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                 if not os.path.exists(OutputTransform.FullPath):
                     try:
                         Logger.info(" %s: Adding transforms" % (logStr))
+                        prettyoutput.Log(logStr)
                         MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath, ControlToVolumeTransform.FullPath, EnrichTolerance=EnrichTolerance)
                         MToVStos.Save(OutputTransform.FullPath)
 
