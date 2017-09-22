@@ -711,9 +711,9 @@
 			<Argument flag="-Downsample" dest="Downsample" type="int" default="1" help="Downsample level of stos files" required="False"/>
 		</Arguments>
 		<Iterate VariableName="BlockNode" XPath="Block">
-			<RequireMatch Attribute="Name" RegEx="#BlockName"/>
+			<RequireMatch Attribute="Name" RegEx="#BlockName" />
 		
-			<PythonCall Function="stosgroup.CreateStosGroup" BlockNode="#BlockNode" GroupName="#StosGroup#Downsample" Downsample="#Downsample"/>
+			<PythonCall Function="stosgroup.CreateStosGroup" BlockNode="#BlockNode" GroupName="#StosGroup#Downsample" Downsample="#Downsample" />
 		</Iterate>
 	</Pipeline> 
 	
@@ -1040,7 +1040,7 @@
 			<Argument flag="-InputMap"  default="FinalStosMap" dest="InputMap" type="str" help="Name of output group" required="False"/>
 			<Argument flag="-OutputMap" dest="OutputMap" type="str" help="Name of output registration map.  Defaults to -OutputGroup name if omitted." required="False"/>
 			<Argument flag="-NoEnrichment" dest="Enrich" action="store_false" help="Do not add extra control points to slice-to-volume transforms to increase accuracy." required="False"/>
-			<Argument flag="-Tolerance" dest="Tolerance" type="float" default="16" help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy." required="False"/>
+			<Argument flag="-Tolerance" dest="Tolerance" type="float" default="64" help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy." required="False"/>
 			 
 		</Arguments>
 		<Iterate VariableName="BlockNode" XPath="Block"> 
