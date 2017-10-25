@@ -75,7 +75,7 @@ DEBUG = False
        # Only the last two, Spot and Probe, are used as section #
        # and channel name respectively.  The others are appended
        # to the directory name'''
-pmgMappings = [ mapping('Slide', typefunc=int),
+pmgMappings = [ mapping('Slide', typefunc=str),
                mapping('Block', typefunc=str),
                mapping('Section', typefunc=int, default=None),
                mapping('Initials', typefunc=str),
@@ -383,10 +383,3 @@ def ParsePMG(filename, TileOverlapPercent=None):
 
     return Tiles
 
-
-# Test code
-if __name__ == "__main__":
-
-    info = PMGInfo.ParsePMGFilename("1234_5678_ja_40x_01_yy.pmg")
-
-    info = PMGInfo.ParsePMGFilename("1234_5678_0001_ja_40x_01_yy.pmg")

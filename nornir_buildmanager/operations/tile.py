@@ -57,7 +57,7 @@ def Shrink(Pool, InFile, OutFile, ShrinkFactor):
         return Pool.add_task(_ShrinkNumpyImageFile, InFile, OutFile, ShrinkFactor)
     else:
         Percentage = (1 / float(ShrinkFactor)) * 100.0
-        cmd = "Convert " + InFile + " -scale \"" + str(Percentage) + "%\" -quality 106  -colorspace gray " + OutFile
+        cmd = "magick convert " + InFile + " -scale \"" + str(Percentage) + "%\" -quality 106  -colorspace gray " + OutFile
         # prettyoutput.CurseString('Cmd', cmd)
         # NewP = subprocess.Popen(cmd + " && exit", shell=True)
         return Pool.add_process('Shrink: ' + InFile, cmd)
@@ -730,12 +730,19 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
         InputImageFullPath = os.path.join(InputLevelNode.FullPath, imageFile)
         ImageSaveFilename = os.path.join(OutputImageDir, os.path.basename(imageFile))
 
-        cmd = 'convert \"' + InputImageFullPath + '\" ' + \
-               '-level ' + str(MinIntensityCutoff16bpp) + \
-               ',' + str(MaxIntensityCutoff16bpp) + \
-               ' -gamma ' + str(Gamma) + \
-               ' -colorspace Gray -depth 8 -type optimize ' + \
-               ' \"' + ImageSaveFilename + '\"'
+#         cmd = 'convert \"' + InputImageFullPath + '\" ' + \
+#                '-level ' + str(MinIntensityCutoff16bpp) + \
+#                ',' + str(MaxIntensityCutoff16bpp) + \
+#                ' -gamma ' + str(Gamma) + \
+#                ' -colorspace Gray -depth 8 -type optimize ' + \
+#                ' \"' + ImageSaveFilename + '\"'
+
+        cmd_template = 'magick convert %(InputFile)s -level %(min)d,%(max)d -gamma %(gamma)f -colorspace Gray -depth 8 -type optimize %(OutputFile)s'
+        cmd = cmd_template % {'InputFile': InputImageFullPath,
+                              'min': MinIntensityCutoff16bpp,
+                              'max': MaxIntensityCutoff16bpp,
+                              'gamma': Gamma,
+                              'OutputFile': ImageSaveFilename};
 
 
         if not SampleCmdPrinted:
@@ -965,10 +972,9 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
         return None
 
 def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True, ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
-    
+
     for yieldval in AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix, UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, **kwargs):
         yield yieldval
-
 
 def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     '''If prefix is empty return the input channel.  Otherwise create a new channel with the prefix'''
@@ -1153,7 +1159,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         # Cropping based on the transform usually enlarges the image to match the largest transform in the volume.  We don't crop if a specfic region was already requested
         if not TransformNode.CropBox is None and RequestedBoundingBox is None:
-            cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
+            cmdTemplate = "magick convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
             (Xo, Yo, Width, Height) = TransformNode.CropBoxDownsampled(thisLevel)
 
             Logger.warn("Cropping assembled image to volume boundary")
@@ -1166,7 +1172,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         # Run convert on the output to make sure it is interlaced
         if(Interlace):
-            ConvertCmd = 'Convert ' + tempOutputFullPath + ' -quality 106 -interlace PNG ' + tempOutputFullPath
+            ConvertCmd = 'magick convert ' + tempOutputFullPath + ' -quality 106 -interlace PNG ' + tempOutputFullPath
             Logger.warn("Interlacing assembled image")
             subprocess.call(ConvertCmd + " && exit", shell=True)
 
@@ -1258,7 +1264,7 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
         subprocess.call(cmd + " && exit", shell=True)
 
         if hasattr(TransformNode, 'CropBox'):
-            cmdTemplate = "convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
+            cmdTemplate = "magick convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
             (Xo, Yo, Width, Height) = nornir_shared.misc.ListFromAttribute(TransformNode.CropBox)
 
             # Figure out the downsample level, adjust the crop box, and crop
@@ -1287,7 +1293,7 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
 
         # Run convert on the output to make sure it is interlaced
         if(Interlace):
-            ConvertCmd = 'Convert ' + tempOutputFullPath + ' -quality 106 -interlace PNG ' + tempOutputFullPath
+            ConvertCmd = 'magick convert ' + tempOutputFullPath + ' -quality 106 -interlace PNG ' + tempOutputFullPath
             Logger.warn("Interlacing assembled image")
             subprocess.call(ConvertCmd + " && exit", shell=True)
 
@@ -1436,8 +1442,7 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
     #            RemoveOnMismatch()
     #            if(TargetImageNode.attrib["InputImageChecksum"] != SourceImageNode.InputImageChecksum):
     #                os.remove(TargetImageNode.FullPath)
-             
-            
+
         else:
             buildLevel = True
 
@@ -1446,18 +1451,18 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
             NewP = images.Shrink(SourceImageNode.FullPath, TargetImageNode.FullPath, scale)
             NewP.wait()
             SaveImageSet = True
-            
+
             if 'InputImageChecksum' in SourceImageNode.attrib:
                 TargetImageNode.attrib['InputImageChecksum'] = str(SourceImageNode.InputImageChecksum)
 
             Logger.info('Shrunk ' + TargetImageNode.FullPath)
 
             if(Interlace):
-                ConvertCmd = 'Convert ' + TargetImageNode.FullPath + ' -quality 106 -interlace PNG ' + TargetImageNode.FullPath
+                ConvertCmd = 'magick convert ' + TargetImageNode.FullPath + ' -quality 106 -interlace PNG ' + TargetImageNode.FullPath
                 Logger.info('Interlacing start ' + TargetImageNode.FullPath)
                 prettyoutput.Log(ConvertCmd)
                 subprocess.call(ConvertCmd + " && exit", shell=True)
-                
+
 
             # TargetImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(TargetImageNode.FullPath)
 
@@ -1732,17 +1737,33 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
 
             # Complicated ImageMagick call reads in up to four adjacent tiles, merges them, and shrinks
             # BUG this assumes we only downsample by a factor of two
-            cmd = ("montage " + TopLeft + ' ' + TopRight + ' ' + 
-                  BottomLeft + ' ' + BottomRight + 
-                  ' -geometry %dx%d' % (TileDim[1] / 2, TileDim[0] / 2)
-                  + ' -set colorspace RGB  -mode Concatenate -tile 2x2 -background black '
-                  + ' -depth 8 -type Grayscale -define png:format=png8 ' + OutputFileFullPath)
+#             cmd = ("magick montage " + TopLeft + ' ' + TopRight + ' ' + 
+#                   BottomLeft + ' ' + BottomRight + 
+#                   ' -geometry %dx%d' % (TileDim[1] / 2, TileDim[0] / 2)
+#                   + ' -set colorspace RGB  -mode Concatenate -tile 2x2 -background black '
+#                   + ' -depth 8 -type Grayscale -define png:format=png8 ' + OutputFileFullPath)
             # prettyoutput.CurseString('Cmd', cmd)
             # prettyoutput.Log(
             # TestOutputFileFullPath = os.path.join(NextLevelNode.FullPath, 'Test_' + OutputFile)
 
-            montageBugFixCmd = 'convert ' + OutputFileFullPath + ' -set colorspace RGB -type Grayscale ' + OutputFileFullPath
+            cmd_template = 'magick montage %(TopLeft)s %(TopRight)s %(BottomLeft)s %(BottomRight)s -geometry %(TileXDim)dx%(TileYDim)d ' + \
+                           '-set colorspace RGB -mode Concatenate -tile 2x2 -background black -depth 8 -type Grayscale -define png:format=png8 %(OutputFile)s'
 
+            montageBugFixCmd_template = 'magick convert %(OutputFile)s -set colorspace RGB -type Grayscale %(OutputFile)s'
+
+            cmd = cmd_template % {'TopLeft': TopLeft,
+                                  'TopRight': TopRight,
+                                  'BottomLeft': BottomLeft,
+                                  'BottomRight': BottomRight,
+                                  'TileXDim': TileDim[1],
+                                  'TileYDim': TileDim[0],
+                                  'OutputFile': OutputFileFullPath}
+
+
+            #montageBugFixCmd_ = 'magick ' + OutputFileFullPath + ' -set colorspace RGB -type Grayscale ' + OutputFileFullPath
+            montageBugFixCmd = montageBugFixCmd_template % {'OutputFile': OutputFileFullPath}
+
+            #montageBugFixCmd_template = 
             task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
 
             if FirstTaskForRow is None:

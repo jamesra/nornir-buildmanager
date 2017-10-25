@@ -54,20 +54,30 @@ import numpy
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
-    
+
     if extension is None:
         extension = 'idoc'
-        
+
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
     if len(ContrastMap) == 0:
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
 
+    if not os.path.exists(ImportPath):
+        raise ValueError("Import Path does not exist: %s" % ImportPath) 
+
     DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
+
+    DataFound = False 
+
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
+            DataFound = True
             yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
+
+    if not DataFound:
+        raise ValueError("No data found in ImportPath %s" % ImportPath)
               
 def try_remove_spaces_from_dirname(sectionDir):
     ''':return: Renamed directory if there were spaced in the filename, otherwise none'''

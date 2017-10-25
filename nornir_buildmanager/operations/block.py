@@ -127,7 +127,7 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
 
                 Pool = nornir_pools.GetGlobalProcessPool()
 
-                cmd = 'convert -colorspace RGB ' + tempfilenameOne + ' ' + tempfilenameTwo + ' ' + tempfilenameOne + ' -combine -interlace PNG ' + OverlayFilename
+                cmd = 'magick convert -colorspace RGB ' + tempfilenameOne + ' ' + tempfilenameTwo + ' ' + tempfilenameOne + ' -combine -interlace PNG ' + OverlayFilename
                 prettyoutput.Log(cmd)
                 Pool.add_process(cmd, cmd + " && exit", shell=True)
                 # subprocess.Popen(cmd + " && exit", shell=True)
@@ -143,7 +143,7 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                 Pool.add_process(cmd, cmd + " && exit", shell=True)
 
                 if not self.WarpedFilename is None:
-                    cmd = 'convert ' + tempfilenameTwo + " -interlace PNG " + self.WarpedFilename
+                    cmd = 'magick convert ' + tempfilenameTwo + " -interlace PNG " + self.WarpedFilename
                     Pool.add_process(cmd, cmd + " && exit", shell=True)
 
                 # subprocess.call(cmd + " && exit", shell=True)
