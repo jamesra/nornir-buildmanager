@@ -8,9 +8,9 @@
 		<Argument flag="-cc" action="store" dest="CC" default="" help="E-Mail addresses for reports" nargs="*"/>
 	</Arguments>
 	
-	<Pipeline Name="ImportIDoc" Help="Import SerialEM IDOC into a volume">
+	<Pipeline Name="ImportIDoc" Help="Import SerialEM IDOC into a volume.">
 		<Arguments>
-			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="ImportDir" help="Directory to import from.  The .idoc files in subdirectories should be named with the desired section number after import. i.e. 0005.idoc to import the file as section #5."/> 
 			<Argument flag="-ext" dest="extension" default="idoc" help="Extension of idoc files, default is idoc"/>
 		</Arguments>
  
@@ -19,7 +19,7 @@
 	
 	<Pipeline Name="ImportPMG" Help="Import PMG file into a volume">
 		<Arguments>
-			<Argument flag="ImportDir" help="Directory to import from"/>
+			<Argument flag="ImportDir" help="Directory to import from.  The PMG file should follow this format: Slide#_Block#_Section#_Initials_Mag_Spot_Probe.  However only Section and Probe are used as the section number and channel name respectively.  The rest is stored as meta-data."/>
 			<Argument flag="-Scale" type="float" dest="scaleValueInNm" help="Pixel size in nanometers" required="True"/> 
 			<Argument flag="-ext" dest="extension" default="pmg" help="Extension of pmg files, default is pmg"/>
 		</Arguments>
