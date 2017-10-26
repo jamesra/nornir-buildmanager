@@ -137,7 +137,7 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                 else:
                     DiffFilename = self.DiffFilename
 
-                cmd = 'composite ' + tempfilenameOne + ' ' + tempfilenameTwo + ' -compose difference  -interlace PNG ' + DiffFilename
+                cmd = 'magick composite ' + tempfilenameOne + ' ' + tempfilenameTwo + ' -compose difference  -interlace PNG ' + DiffFilename
                 prettyoutput.Log(cmd)
 
                 Pool.add_process(cmd, cmd + " && exit", shell=True)
