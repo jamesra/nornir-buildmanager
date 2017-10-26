@@ -19,7 +19,7 @@ from nornir_imageregistration import assemble, mosaic
 from nornir_imageregistration.files import stosfile
 from nornir_imageregistration.transforms import *
 from nornir_shared import prettyoutput, files, misc
-from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
+from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor, ProcessOutputInterceptor
 
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume 
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
@@ -815,7 +815,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                         cmd = stomtemplate % {'InputFile' : StosTransformNode.FullPath}
 
                         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-                        nornir_shared.processoutputinterceptor.ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
+                        ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
                                                                                                                   OverlayFilename=OverlayImageNode.FullPath,
                                                                                                                    DiffFilename=DiffImageNode.FullPath,
                                                                                                                    WarpedFilename=WarpedImageNode.FullPath))
