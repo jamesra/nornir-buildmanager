@@ -75,7 +75,7 @@ DEBUG = False
        # Only the last two, Spot and Probe, are used as section #
        # and channel name respectively.  The others are appended
        # to the directory name'''
-pmgMappings = [ mapping('Slide', typefunc=str),
+pmgMappings = [ mapping('Slide', typefunc=int),
                mapping('Block', typefunc=str),
                mapping('Section', typefunc=int, default=None),
                mapping('Initials', typefunc=str),
