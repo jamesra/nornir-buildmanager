@@ -21,7 +21,6 @@ import nornir_shared.files
 from filenameparser import ParseFilename, mapping
 import nornir_shared.prettyoutput as prettyoutput
 
-
 imageNameMappings = [mapping('Section', typefunc=int),
                      mapping('Channel', typefunc=str),
                      mapping('Filter', typefunc=str, default=None),
@@ -36,32 +35,31 @@ def FillInMissingImageNameData(imageData):
     try:
         imagesetisdownsample = int(imageData.ImageSetName)
         if imageData.Downsample == 1:
-            Downsample = imagesetisdownsample
+            imageData.Downsample = imagesetisdownsample
             imageData.ImageSetName = None
     except:
         pass
 
     if imageData.ImageSetName is None:
-        imageData.ImageSetName = 'image'
+        imageData.ImageSetName = 'Images'
 
     if imageData.Filter is None:
-        imageData.Filter = imageData.Channel
-        imageData.Channel = 'Image'
+        imageData.Filter = 'Raw'
 
     return imageData
 
 
-
-def Import(VolumeElement, ImportPath, extension, *args, **kwargs):
+def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
-        
-    DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension)
-    for path in DirList:
-        for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
-            result = SectionImage.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath)
-            if result:
-                yield result
-    
+    if extension is None:
+        extension = 'png'
+
+        DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*.%s" % extension)
+        for path in DirList:
+            for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
+                result = SectionImage.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, *args, **kwargs)
+                if result:
+                    yield result
 
 
 class SectionImage(object):
@@ -76,24 +74,19 @@ class SectionImage(object):
         '''
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, OutputImageExt=None, TargetBpp=None, debug=None):
 
         '''#Converts a directory of images to sections, each represented by a single image.
            Each image should have the format Section#_ChannelText'''
 
-        if Extension is None:
-            Extension = 'png'
 
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:
-            OutputPath = os.path.join(InputPath, "..");
+            OutputPath = os.path.join(InputPath, "..")
 
         # If the user did not supply a value, use a default
-        if(TileOverlap is None):
-            TileOverlap = 0.10;
-
         if (TargetBpp is None):
-            TargetBpp = 8;
+            TargetBpp = 8
 
         # Report the current stage to the user
         # prettyoutput.CurseString('Stage', "PMGToMosaic " + InputPath);
@@ -101,71 +94,65 @@ class SectionImage(object):
         # Find the files with a .pmg extension
         filename = InputPath
  
-        SectionNumber = None;
-        ChannelName = None;
-         
         if 'histogram' in filename.lower():
             prettyoutput.Log("PNG importer ignoring probable histogram file: " + filename)
             return None
-        
+
         # TODO wrap in try except and print nice error on badly named files?
         fileData = filenameparser.ParseFilename(filename, imageNameMappings)
         fileData = FillInMissingImageNameData(fileData)
-        
+
         imageDir = os.path.dirname(filename);
         imagebasename = os.path.basename(filename)
-        
+
         BlockName = os.path.basename(imageDir)
         if BlockName is None or len(BlockName) == 0:
             BlockName = 'LM'
-        
+
         BlockObj = BlockNode(BlockName);
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj);
-        
+
         if(fileData is None):
-            raise Exception("Could not parse section from PMG filename: " + filename);
-        
+            raise Exception("Could not parse section from PMG filename: " + filename)
+
         if fileData.ImageSetName is None:
             fileData.ImageSetName = "image"
-        
-        SectionNumber = fileData.Section;
-        sectionObj = SectionNode(SectionNumber);
-        
+
+        SectionNumber = fileData.Section
+        sectionObj = SectionNode(SectionNumber)
+
         [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
-        
-        # Calculate our output directory.  The scripts expect directories to have section numbers, so use that.
-        SectionPath = os.path.join(OutputPath, '{:04d}'.format(SectionNumber));
-        
+
         ChannelName = fileData.Channel
         ChannelName = ChannelName.replace(' ', '_')
         channelObj = ChannelNode(ChannelName)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
-        
+
         # Create a filter for the images
         # Create a filter and mosaic
         FilterName = fileData.Filter
         if(TargetBpp is None):
-            FilterName = 'Raw';
-        
-        (added_filter, filterObj) = channelObj.GetOrCreateFilter(FilterName);
+            FilterName = 'Raw'
+
+        (added_filter, filterObj) = channelObj.GetOrCreateFilter(FilterName)
         filterObj.BitsPerPixel = TargetBpp
-        
+
         # Create an image for the filter
         ImageSetNode = metadatautils.CreateImageSetForImage(filterObj, fileData.ImageSetName, filename, Downsample=fileData.Downsample)
-        
+
         # Find the image node
         levelNode = ImageSetNode.GetChildByAttrib('Level', 'Downsample', fileData.Downsample)
         imageNode = levelNode.GetChildByAttrib('Image', 'Path', imagebasename)
-        
+
         if not os.path.exists(os.path.dirname(imageNode.FullPath)):
             os.makedirs(os.path.dirname(imageNode.FullPath))
-        
+
         if not os.path.exists(os.path.dirname(imageNode.FullPath)):
             os.makedirs(os.path.dirname(imageNode.FullPath))
-        
+
         prettyoutput.Log("Copying file: " + imageNode.FullPath)
         shutil.copy(filename, imageNode.FullPath)
-        
+
         if addedBlock:
             return VolumeObj
         elif addedSection:
@@ -174,5 +161,3 @@ class SectionImage(object):
             return sectionObj
         else:
             return channelObj
-
-        return [SectionNumber, ChannelName];

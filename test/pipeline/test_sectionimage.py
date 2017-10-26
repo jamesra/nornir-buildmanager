@@ -29,7 +29,9 @@ class ImportLMImages(setup_pipeline.PlatformTest):
 
         ImportDir = os.path.join(self.PlatformFullPath, self.VolumePath)
         VolumeObj = self.LoadOrCreateVolume()
-        sectionimage.SectionImage.ToMosaic(VolumeObj, InputPath=ImportDir, OutputPath=self.TestOutputPath, debug=True)
+        for node in sectionimage.Import(VolumeObj, ImportPath=ImportDir):
+            node.Save()
+
         VolumeObj.Save()
         del VolumeObj
 
