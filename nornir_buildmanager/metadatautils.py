@@ -43,7 +43,7 @@ def CreateLevelNodes(ParentNode, DownsampleLevels):
     return LevelsCreated
 
 
-def CreateImageSetForImage(ParentNode, ImageSetName, ImageFullPath, Downsample=1, **attribs):
+def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
     if attribs is None:
         attribs = {}
 

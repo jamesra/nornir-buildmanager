@@ -23,8 +23,7 @@ import nornir_shared.prettyoutput as prettyoutput
 
 imageNameMappings = [mapping('Section', typefunc=int),
                      mapping('Channel', typefunc=str),
-                     mapping('Filter', typefunc=str, default=None),
-                     mapping('ImageSetName', typefunc=str, default=None),
+                     mapping('Filter', typefunc=str, default=None), 
                      mapping('Downsample', typefunc=int, default=1)]
 
 def FillInMissingImageNameData(imageData):
@@ -113,10 +112,7 @@ class SectionImage(object):
 
         if(fileData is None):
             raise Exception("Could not parse section from PMG filename: " + filename)
-
-        if fileData.ImageSetName is None:
-            fileData.ImageSetName = "image"
-
+ 
         SectionNumber = fileData.Section
         sectionObj = SectionNode(SectionNumber)
 
@@ -141,7 +137,7 @@ class SectionImage(object):
         filterObj.BitsPerPixel = TargetBpp
 
         # Create an image for the filter
-        ImageSetNode = metadatautils.CreateImageSetForImage(filterObj, fileData.ImageSetName, filename, Downsample=fileData.Downsample)
+        ImageSetNode = metadatautils.CreateImageSetForImage(filterObj, filename, Downsample=fileData.Downsample)
 
         # Find the image node
         levelNode = ImageSetNode.GetChildByAttrib('Level', 'Downsample', fileData.Downsample)
