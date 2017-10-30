@@ -2618,9 +2618,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
                 continue
             yield image
             
-        return
-    
-    
+        return 
 
     def GetImage(self, Downsample):
         '''Returns image node for the specified downsample or None'''
@@ -3094,8 +3092,16 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
             node.Save()
 
 class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
- 
+
     DefaultPath = 'Tileset'
+
+    @property
+    def CoordFormat(self):
+        return self.attrib['CoordFormat']
+
+    @CoordFormat.setter
+    def CoordFormat(self, val):
+        self.attrib['CoordFormat'] = val
 
     @property
     def FilePrefix(self):
@@ -3129,6 +3135,22 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
     def TileYDim(self, val):
         self.attrib['TileYDim'] = '%d' % int(val)
 
+    @property
+    def GridDimX(self):
+        return int(self.attrib['GridDimX'])
+
+    @GridDimX.setter
+    def GridDimX(self, val):
+        self.attrib['GridDimX'] = '%d' % int(val)
+
+    @property
+    def GridDimY(self):
+        return int(self.attrib['GridDimY'])
+
+    @GridDimY.setter
+    def GridDimY(self, val):
+        self.attrib['GridDimY'] = '%d' % int(val)
+
     def __init__(self, attrib=None, **extra):
         super(TilesetNode, self).__init__(tag='Tileset', path=TilesetNode.DefaultPath, attrib=attrib, **extra)
  
@@ -3139,13 +3161,13 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         node = tile.BuildTilesetPyramid(self)
         if not node is None:
             node.Save()
-            
+
     def IsLevelPopulated(self, level_full_path, GridDimX, GridDimY):
         '''
         :param str level_full_path: The path to the directories containing the image files
         :return: (Bool, String) containing whether all tiles exist and a reason string
         '''
-        
+
         FilePrefix = self.FilePrefix
         FilePostfix = self.FilePostfix
         GridXDim = int(GridDimX) - 1
@@ -3173,9 +3195,9 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
             if(os.path.exists(MatchString)):
                 return [True, "Last column of tileset found"]
 
-            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
-                                                                                    'X' : str(GridXDim),
-                                                                                    'Y' : str(iY),
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' :  FilePrefix,
+                                                                                    'X' : GridXDim,
+                                                                                    'Y' : iY,
                                                                                     'postfix' : FilePostfix})
             if(os.path.exists(MatchString)):
                 return [True, "Last column of tileset found"]

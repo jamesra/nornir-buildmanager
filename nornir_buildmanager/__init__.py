@@ -10,5 +10,6 @@ import os
 
 import nornir_buildmanager.VolumeManagerETree as VolumeManager
 import validation
- 
-__all__ = ['pipelinemanager', 'VolumeManagerETree', 'templates', 'operations']
+import metadata.tilesetinfo
+
+__all__ = ['pipelinemanager', 'VolumeManagerETree', 'templates', 'operations', 'metadata']

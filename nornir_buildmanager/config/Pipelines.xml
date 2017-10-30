@@ -603,6 +603,36 @@
 			</Iterate>
 		</Iterate>
 	</Pipeline>
+	
+	<Pipeline Name="AssembleTilesFromImage" Help="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded.  Uses the filter image as source instead of transforms.">
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
+			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
+			<Argument flag="-HighestDownsample" dest="HighestDownsample" type="int" help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile." required="False"/>
+			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
+			
+		</Arguments>
+
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+	
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>			
+	
+					<Select VariableName="ImageSetNode" Root="FilterNode" XPath="ImageSet"/>
+					<PythonCall Function="filter.AssembleTilesetFromImageSet" TileShape="#shape" />
+	
+					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
+					<PythonCall Function="tile.BuildTilesetPyramid" HighestDownsample="#HighestDownsample"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
 
 	<Pipeline Name="MosaicReport" Help="Generate a web page summarizing the output of 2D section mosaics.  Includes prune scores, contrast histograms, and assembled images if any.">
 		<Arguments>

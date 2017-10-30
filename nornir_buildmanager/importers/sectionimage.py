@@ -66,8 +66,7 @@ class SectionImage(object):
     '''
     Import sections represented by a single image
     '''
-
-
+    
     def __init__(self):
         '''
         Constructor
@@ -131,8 +130,11 @@ class SectionImage(object):
         # Create a filter for the images
         # Create a filter and mosaic
         FilterName = fileData.Filter
-        if(TargetBpp is None):
-            FilterName = 'Raw'
+        if FilterName is None:
+            if(TargetBpp is None):
+                FilterName = 'Import'
+            else:
+                FilterName = 'Import' + str(TargetBpp)
 
         (added_filter, filterObj) = channelObj.GetOrCreateFilter(FilterName)
         filterObj.BitsPerPixel = TargetBpp

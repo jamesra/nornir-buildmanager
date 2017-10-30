@@ -11,12 +11,10 @@ import math
 import os
 import shutil
 import subprocess
-import xml.dom
 
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates
 from nornir_buildmanager.validation import transforms, image
-import nornir_imageregistration
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.tileset import ShadeCorrectionTypes
@@ -27,7 +25,7 @@ from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 import nornir_shared.plot
 
-import nornir_buildmanager as nb 
+import nornir_buildmanager as nb
 import nornir_imageregistration.core as core
 import nornir_imageregistration.image_stats as image_stats
 import nornir_imageregistration.spatial as spatial
@@ -1321,7 +1319,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
        @FilterNode
        @TransformNode'''
     prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")   
-    
+
     TileWidth = TileShape[0]
     TileHeight = TileShape[1]
 
@@ -1389,8 +1387,8 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
             return None
 
         Info = __LoadAssembleTilesXML(XmlFilePath=OutputXML, Logger=Logger)
-        LevelOne.GridDimX = str(Info.GridDimX)
-        LevelOne.GridDimY = str(Info.GridDimY)
+        LevelOne.GridDimX = Info.GridDimX
+        LevelOne.GridDimY = Info.GridDimY
 
     return FilterNode
 
@@ -1623,32 +1621,6 @@ def _SortedNumberListFromLevelsParameter(Levels=None):
  #    '''This is a placeholder for patching up volume.xml files on a case-by-case basis'''
     # return
 
-def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
-
-    class TilesetInfo:
-        pass
-
-    Info = TilesetInfo()
-
-    try:
-        dom = xml.dom.minidom.parse(XmlFilePath)
-        levels = dom.getElementsByTagName("Level")
-        level = levels[0]
-
-        Info.GridDimX = int(level.getAttribute('GridDimX'))
-        Info.GridDimY = int(level.getAttribute('GridDimY'))
-        Info.TileXDim = int(level.getAttribute('TileXDim'))
-        Info.TileYDim = int(level.getAttribute('TileYDim'))
-        Info.FilePrefix = level.getAttribute('FilePrefix')
-        Info.FilePostfix = level.getAttribute('FilePostfix')
-        Info.Downsample = float(level.getAttribute('Downsample'))
-    except Exception as e:
-        Logger.warning("Failed to parse XML File: " + XmlFilePath)
-        Logger.warning(str(e))
-        return
-
-    return Info
-
 
 def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePrefix, FilePostfix, Pool=None, **kwargs):
     '''
@@ -1825,8 +1797,8 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
         # Need to call ir-assemble
         NextLevelNode = nb.VolumeManager.LevelNode(MinResolutionLevel.Downsample * 2)
         [added, NextLevelNode] = TileSetNode.UpdateOrAddChildByAttrib(NextLevelNode, 'Downsample')
-        NextLevelNode.GridDimX = str(newXDim)
-        NextLevelNode.GridDimY = str(newYDim)
+        NextLevelNode.GridDimX = newXDim
+        NextLevelNode.GridDimY = newYDim
         if added:
             yield TileSetNode
     

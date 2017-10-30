@@ -33,10 +33,29 @@ class ImportLMImages(setup_pipeline.PlatformTest):
             node.Save()
 
         VolumeObj.Save()
-        del VolumeObj
+        del VolumeObj 
 
 
 class testImportPNG(ImportLMImages):
+
+    def RunTilesetFromImage(self, Channels=None, Filter=None, Shape=[512, 512]):
+        ShapeStr = setup_pipeline.ConvertLevelsToString(Shape)
+
+        buildArgs = []
+        buildArgs = self._CreateBuildArgs('AssembleTilesFromImage', '-Shape', ShapeStr)
+
+        if Channels:
+            buildArgs.extend(['-Channels', Channels])
+
+        if Filter:
+            buildArgs.extend(['-Filter', Channels])
+
+        volumeNode = self.RunBuild(buildArgs)
+
+        for tile_set_node in setup_pipeline.EnumerateTileSets(self, volumeNode, Channels, Filter) : 
+            self._VerifyPyramidHasExpectedLevels(tile_set_node, [1,2,4]) 
+
+        return volumeNode
 
     def test(self):
 
@@ -47,6 +66,8 @@ class testImportPNG(ImportLMImages):
 
 
         setup_pipeline.VerifyVolume(self, self.TestOutputPath, listExpectedEntries)
+
+        self.RunTilesetFromImage(Channels="gfp")
 
 #
 # class testManipulateImageVolume(setup_pipeline.PipelineTest):
