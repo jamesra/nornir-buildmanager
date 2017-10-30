@@ -19,7 +19,7 @@ from nornir_imageregistration import assemble, mosaic
 from nornir_imageregistration.files import stosfile
 from nornir_imageregistration.transforms import *
 from nornir_shared import prettyoutput, files, misc
-from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor
+from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor, ProcessOutputInterceptor
 
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume 
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
@@ -127,7 +127,7 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
 
                 Pool = nornir_pools.GetGlobalProcessPool()
 
-                cmd = 'convert -colorspace RGB ' + tempfilenameOne + ' ' + tempfilenameTwo + ' ' + tempfilenameOne + ' -combine -interlace PNG ' + OverlayFilename
+                cmd = 'magick convert -colorspace RGB ' + tempfilenameOne + ' ' + tempfilenameTwo + ' ' + tempfilenameOne + ' -combine -interlace PNG ' + OverlayFilename
                 prettyoutput.Log(cmd)
                 Pool.add_process(cmd, cmd + " && exit", shell=True)
                 # subprocess.Popen(cmd + " && exit", shell=True)
@@ -137,13 +137,13 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                 else:
                     DiffFilename = self.DiffFilename
 
-                cmd = 'composite ' + tempfilenameOne + ' ' + tempfilenameTwo + ' -compose difference  -interlace PNG ' + DiffFilename
+                cmd = 'magick composite ' + tempfilenameOne + ' ' + tempfilenameTwo + ' -compose difference  -interlace PNG ' + DiffFilename
                 prettyoutput.Log(cmd)
 
                 Pool.add_process(cmd, cmd + " && exit", shell=True)
 
                 if not self.WarpedFilename is None:
-                    cmd = 'convert ' + tempfilenameTwo + " -interlace PNG " + self.WarpedFilename
+                    cmd = 'magick convert ' + tempfilenameTwo + " -interlace PNG " + self.WarpedFilename
                     Pool.add_process(cmd, cmd + " && exit", shell=True)
 
                 # subprocess.call(cmd + " && exit", shell=True)
@@ -815,7 +815,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                         cmd = stomtemplate % {'InputFile' : StosTransformNode.FullPath}
 
                         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-                        nornir_shared.processoutputinterceptor.ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
+                        ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
                                                                                                                   OverlayFilename=OverlayImageNode.FullPath,
                                                                                                                    DiffFilename=DiffImageNode.FullPath,
                                                                                                                    WarpedFilename=WarpedImageNode.FullPath))

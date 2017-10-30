@@ -23,6 +23,9 @@ def LoadHistogramCutoffs(filename):
     with open(filename, 'rb') as contrastFile:
         csvReader = csv.reader(contrastFile, delimiter=' ', skipinitialspace=True,)
         for line in csvReader:
+            if len(line) == 0:
+                continue
+            
             if line[0].startswith("#"):
                 continue
             

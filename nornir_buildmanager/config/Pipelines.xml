@@ -8,9 +8,9 @@
 		<Argument flag="-cc" action="store" dest="CC" default="" help="E-Mail addresses for reports" nargs="*"/>
 	</Arguments>
 	
-	<Pipeline Name="ImportIDoc" Help="Import SerialEM IDOC into a volume">
+	<Pipeline Name="ImportIDoc" Help="Import SerialEM IDOC into a volume.">
 		<Arguments>
-			<Argument flag="ImportDir" help="Directory to import from"/> 
+			<Argument flag="ImportDir" help="Directory to import from.  The .idoc files in subdirectories should be named with the desired section number after import. i.e. 0005.idoc to import the file as section #5."/> 
 			<Argument flag="-ext" dest="extension" default="idoc" help="Extension of idoc files, default is idoc"/>
 		</Arguments>
  
@@ -19,7 +19,7 @@
 	
 	<Pipeline Name="ImportPMG" Help="Import PMG file into a volume">
 		<Arguments>
-			<Argument flag="ImportDir" help="Directory to import from"/>
+			<Argument flag="ImportDir" help="Directory to import from.  The PMG file should follow this format: Slide#_Block#_Section#_Initials_Mag_Spot_Probe.  However only Section and Probe are used as the section number and channel name respectively.  The rest is stored as meta-data."/>
 			<Argument flag="-Scale" type="float" dest="scaleValueInNm" help="Pixel size in nanometers" required="True"/> 
 			<Argument flag="-ext" dest="extension" default="pmg" help="Extension of pmg files, default is pmg"/>
 		</Arguments>
@@ -596,6 +596,36 @@
 	
 					<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid"/>
 					<PythonCall Function="tile.AssembleTileset" TileShape="#shape" />
+	
+					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
+					<PythonCall Function="tile.BuildTilesetPyramid" HighestDownsample="#HighestDownsample"/>
+				</Iterate>
+			</Iterate>
+		</Iterate>
+	</Pipeline>
+	
+	<Pipeline Name="AssembleTilesFromImage" Help="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded.  Uses the filter image as source instead of transforms.">
+		<Arguments>
+			<Argument flag="-Sections" dest="Sections" type="NumberList" help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/>
+			<Argument flag="-Channels" dest="ChannelRegEx" default="*" help="Regular expression describing channels to be assembled" required="False"/>
+			<Argument flag="-Filters" dest="FilterRegEx" default="(?![M|m]ask)" help="Regular expression describing filters to be assembled" required="False"/>
+			<Argument flag="-HighestDownsample" dest="HighestDownsample" type="int" help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile." required="False"/>
+			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair" help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions" required="False"/>
+			
+		</Arguments>
+
+		<Iterate VariableName="section_node" XPath="Block/Section">
+			<RequireSetMembership Attribute="Number" List="#Sections"/>
+			
+			<Iterate VariableName="ChannelNode" XPath="Channel">
+				
+				<RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+	
+				<Iterate VariableName="FilterNode" XPath="Filter">
+					<RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>			
+	
+					<Select VariableName="ImageSetNode" Root="FilterNode" XPath="ImageSet"/>
+					<PythonCall Function="filter.AssembleTilesetFromImageSet" TileShape="#shape" />
 	
 					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
 					<PythonCall Function="tile.BuildTilesetPyramid" HighestDownsample="#HighestDownsample"/>

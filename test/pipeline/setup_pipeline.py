@@ -97,25 +97,28 @@ def EnumerateFilters(SectionNodes, Channels, Filters):
                 
 def EnumerateImageSets(testObj, volumeNode, Channels, Filter, RequireMasks=True):
     '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
-    
+
     sections = list(volumeNode.findall("Block/Section"))
     filters = EnumerateFilters(sections, Channels, Filter)
-    
+
     for f in filters:
         if RequireMasks:
             testObj.assertTrue(f.HasMask, "Mask expected for filters")
-            
+
         image_sets = list(f.findall('ImageSet'))
         testObj.assertIsNotNone(image_sets, "ImageSet node not found")
         testObj.assertEqual(len(image_sets), 1, "Multiple ImageSet nodes found")
         yield image_sets[0]
-        
-def EnumerateTileSets(testObj, volumeNode, Channels, Filter):
+
+def EnumerateTileSets(testObj, volumeNode, Channels, Filter=None):
     '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
-    
+
+    if Filter is None:
+        Filter = '(?![M|m]ask)'
+
     sections = list(volumeNode.findall("Block/Section"))
     filters = EnumerateFilters(sections, Channels, Filter)
-    
+
     for f in filters:
         tile_sets = list(f.findall('Tileset'))
         testObj.assertIsNotNone(tile_sets, "Tileset node not found")
@@ -162,8 +165,7 @@ class VolumeEntry(object):
             x = VolumeEntry.xpathtemplate % {'xpath' : self.XPath, 'AttribName' : self.AttributeName, 'AttribValue' : self.AttributeValue}
 
         return x
-
-
+       
 class NornirBuildTestBase(test.testbase.TestBase):
     '''Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class or PlatformTest
        Eventually all platforms should have the same standard tests taking input to a volume under this framework to ensure basic functionality
@@ -181,7 +183,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
             TestOutputDir = os.environ["TESTOUTPUTPATH"]
             return os.path.join(TestOutputDir, 'Cache', self.Platform, self.VolumePath)
         else:
-            self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
+            self.fail("TESTOUTPUTPATH environment variable should specify output data directory")
 
         return None
 
@@ -199,7 +201,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.assertTrue(os.path.exists(VolumeObj.FullPath))
 
         return VolumeObj
-    
+
     def LoadOrCreateVolume(self):
         return nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
 
@@ -224,9 +226,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         pargs.extend(args)
 
         return pargs
-
-    
-
+  
     def ValidateTransformChecksum(self, Node):
         '''Ensure that the reported checksum and actual file checksum match'''
         self.assertTrue(hasattr(Node, 'Checksum'))
@@ -288,8 +288,6 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def RunImportThroughMosaicAssemble(self):
         self.RunImportThroughMosaic()
         self.RunAssemble()
-        
-    
 
     def RunPrune(self, Filter=None, Downsample=None):
         if Filter is None:
@@ -876,34 +874,34 @@ class NornirBuildTestBase(test.testbase.TestBase):
         '''Remove a single image from an image pyramid
         :return: Filename that was deleted
         '''
-        
+
         levelNode = self.__GetLevelNode(section_number, channel, filter, level)
         self.assertIsNotNone(levelNode, "Missing level %d" % (level))
-        
+
         # Choose a random tile and remove it
         pngFiles = glob.glob(os.path.join(levelNode.FullPath, '*.png'))
-        
+
         chosenPngFile = pngFiles[0]
-        
+
         os.remove(chosenPngFile)
-        
+
         return chosenPngFile
-    
+
     def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter='Leveled', level=1,):
         '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
         removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter, level)
-        
+
         RegenFunction(**RegenKwargs)
-        
+
         self.assertTrue(os.path.exists(removedTileFullPath), "Deleted tile was not regenerated %s" % removedTileFullPath)
-        
+
     def CopyManualStosFiles(self, ManualStosFullPath, StosGroupName):
         '''Copy all stos files from the manual stos directory into the StosGroup's manual directory.
         :param str ManualStosFullPath: Directory containing .stos files
         :param str StosGroupName: Stos group to add manual files to
         :return: list of transform nodes targeted by copied manual files
         '''
-        
+
         volumeNode = self.LoadVolume()
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s']" % StosGroupName)
         self.assertIsNotNone(StosGroupNode)

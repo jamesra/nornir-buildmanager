@@ -383,10 +383,3 @@ def ParsePMG(filename, TileOverlapPercent=None):
 
     return Tiles
 
-
-# Test code
-if __name__ == "__main__":
-
-    info = PMGInfo.ParsePMGFilename("1234_5678_ja_40x_01_yy.pmg")
-
-    info = PMGInfo.ParsePMGFilename("1234_5678_0001_ja_40x_01_yy.pmg")
