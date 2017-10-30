@@ -31,19 +31,8 @@ def FillInMissingImageNameData(imageData):
        The image name mapping system is not terribly sophisticated.  This
        function uses what is known to fill in the blanks'''
 
-    try:
-        imagesetisdownsample = int(imageData.ImageSetName)
-        if imageData.Downsample == 1:
-            imageData.Downsample = imagesetisdownsample
-            imageData.ImageSetName = None
-    except:
-        pass
-
-    if imageData.ImageSetName is None:
-        imageData.ImageSetName = 'Images'
-
     if imageData.Filter is None:
-        imageData.Filter = 'Raw'
+        imageData.Filter = 'Imported'
 
     return imageData
 
