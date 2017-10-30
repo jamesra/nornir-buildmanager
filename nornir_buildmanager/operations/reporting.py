@@ -257,7 +257,7 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
 
     OutputDir = _AbsoluePathFromRelativePath(FilterNode, OutputDir)
     logger = logging.getLogger(__name__ + '.CopyImage')
- 
+
     if not os.path.exists(OutputDir):
         os.makedirs(OutputDir)
 

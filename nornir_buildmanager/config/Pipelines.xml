@@ -235,7 +235,7 @@
 			<Argument flag="-OutputFilter" dest="NewName" help="New Filter name" required="True"/>
 		</Arguments>
 		<Iterate VariableName="FilterNode" XPath="Block/Section/Channel/Filter[@Name='#InputFilter']">
-			<PythonCall Function="general.Rename" OldNode="#FilterNode"/>
+			<PythonCall Function="general.Rename" OldNode="#FilterNode" NewName="#NewName"/>
 			<PythonCall Function="general.MovePath" Node="#FilterNode" NewPath="#NewName"/>
 		</Iterate>
 
@@ -720,6 +720,8 @@
 			<PythonCall Function="setters.MarkSectionsAsUndamaged"  block_node="#BlockNode" SectionNumbers="#Sections"/>
 		</Iterate>
 	</Pipeline>
+	
+	-->
 
 	<Pipeline Name="CreateVikingXML"  Help="Create a vikingxml file for use in Viking"> 
 		<Arguments>
@@ -1101,6 +1103,7 @@
 	</Pipeline>
 	-->
 
+	-->
 
 	<Pipeline Name="VolumeImage" Help="Produces an assembled image for transforms in a stos group.  If the transforms are slice-to-volume transforms the output should be registered into a volume.  Note that using this function requires assembled images to exist at full resolution.  If these do not exist see the MosaicToVolume pipeline.">
 		<Arguments>

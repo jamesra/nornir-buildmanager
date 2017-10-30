@@ -1404,7 +1404,7 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
         mappedSectionNumber = controlSectionNumber
     elif isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
         mappedSectionNumber = mappedSectionNumber.SectionNumber
-
+        
     print("Adding " + str(mappedSectionNumber))
 
     rtNode = None
@@ -1413,7 +1413,7 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
     else:
         return
 
-    # Can loop forever here if a section is mapped twice*/
+    #Can loop forever here if a section is mapped twice*/
     for mapped in rtNode.Children:
         StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
 
