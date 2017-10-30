@@ -49,7 +49,7 @@ def FillInMissingImageNameData(imageData):
     return imageData
 
 
-def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
+def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
     if extension is None:
         extension = 'png'
@@ -57,7 +57,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*.%s" % extension)
         for path in DirList:
             for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
-                result = SectionImage.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, *args, **kwargs)
+                result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
                 if result:
                     yield result
 
@@ -73,7 +73,7 @@ class SectionImage(object):
         '''
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, OutputImageExt=None, TargetBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, InputPath, scaleValueInNm, OutputPath=None, OutputImageExt=None, TargetBpp=None, debug=None):
 
         '''#Converts a directory of images to sections, each represented by a single image.
            Each image should have the format Section#_ChannelText'''
@@ -125,6 +125,7 @@ class SectionImage(object):
         ChannelName = fileData.Channel
         ChannelName = ChannelName.replace(' ', '_')
         channelObj = ChannelNode(ChannelName)
+        channelObj.SetScale(scaleValueInNm)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
 
         # Create a filter for the images

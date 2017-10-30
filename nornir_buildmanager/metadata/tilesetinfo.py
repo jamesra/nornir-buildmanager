@@ -106,7 +106,7 @@ class TilesetInfo(object):
             Info.TileDimY = int(level.getAttribute('TileYDim'))
             fPre = level.getAttribute('FilePrefix')
             fPost = level.getAttribute('FilePostfix')
-    
+
             Info.FilePrefix = level.getAttribute('FilePrefix')
             Info.FilePostfix = level.getAttribute('FilePostfix')
             Info.Downsample = float(level.getAttribute('Downsample'))

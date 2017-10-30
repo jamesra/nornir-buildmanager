@@ -275,9 +275,8 @@ def ParseChannels(SectionNode, OutputSectionNode):
                 OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
                 OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path'])
                 if ScaleNode is not None:
-                    AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
+                    AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
                 print "Tileset found for section " + str(SectionNode.attrib["Number"])    
-
 
         NotesNodes = ChannelNode.findall('Notes')
         for NoteNode in NotesNodes:

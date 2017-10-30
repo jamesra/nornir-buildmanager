@@ -29,7 +29,7 @@ class ImportLMImages(setup_pipeline.PlatformTest):
 
         ImportDir = os.path.join(self.PlatformFullPath, self.VolumePath)
         VolumeObj = self.LoadOrCreateVolume()
-        for node in sectionimage.Import(VolumeObj, ImportPath=ImportDir):
+        for node in sectionimage.Import(VolumeObj, ImportDir, 73):
             node.Save()
 
         VolumeObj.Save()
@@ -68,6 +68,8 @@ class testImportPNG(ImportLMImages):
         setup_pipeline.VerifyVolume(self, self.TestOutputPath, listExpectedEntries)
 
         self.RunTilesetFromImage(Channels="gfp")
+
+        self.RunCreateVikingXML('Mosaic')
 
 #
 # class testManipulateImageVolume(setup_pipeline.PipelineTest):
