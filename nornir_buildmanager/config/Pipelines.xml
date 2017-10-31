@@ -833,7 +833,7 @@
 				type="int"
 				help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile."
 				required="False" />
-			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair"
+			<Argument flag="-Shape" dest="shape" default="512,512" type="NumberPair"
 				help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions"
 				required="False" />
 
