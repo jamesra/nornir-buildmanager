@@ -31,19 +31,8 @@ def FillInMissingImageNameData(imageData):
        The image name mapping system is not terribly sophisticated.  This
        function uses what is known to fill in the blanks'''
 
-    try:
-        imagesetisdownsample = int(imageData.ImageSetName)
-        if imageData.Downsample == 1:
-            imageData.Downsample = imagesetisdownsample
-            imageData.ImageSetName = None
-    except:
-        pass
-
-    if imageData.ImageSetName is None:
-        imageData.ImageSetName = 'Images'
-
     if imageData.Filter is None:
-        imageData.Filter = 'Raw'
+        imageData.Filter = 'Imported'
 
     return imageData
 
@@ -53,12 +42,12 @@ def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **k
     if extension is None:
         extension = 'png'
 
-        DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*.%s" % extension)
-        for path in DirList:
-            for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
-                result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
-                if result:
-                    yield result
+    DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*.%s" % extension)
+    for path in DirList:
+        for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
+            result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
+            if result:
+                yield result
 
 
 class SectionImage(object):
