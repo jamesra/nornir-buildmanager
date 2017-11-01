@@ -1386,7 +1386,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
             # Something went wrong, do not save
             return None
 
-        Info = __LoadAssembleTilesXML(XmlFilePath=OutputXML, Logger=Logger)
+        Info = nornir_buildmanager.metadata.tilesetinfo.TilesetInfo.Load(OutputXML, Logger=Logger)
         LevelOne.GridDimX = Info.GridDimX
         LevelOne.GridDimY = Info.GridDimY
 
