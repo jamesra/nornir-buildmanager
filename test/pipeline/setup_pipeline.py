@@ -304,7 +304,12 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         PruneNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Prune']")
         self.assertIsNotNone(PruneNode, "No prune node produced")
-        
+
+        #Pick a section and ensure the filter only has one prune node
+        for SectionNode in volumeNode.findall("Block/Section"):
+            PruneNodes = list(volumeNode.findall("Block/Section[@Number='%d']/Channel/Filter/Prune" % SectionNode.Number))
+            self.assertEqual(len(PruneNodes), 1, "Multiple prune nodes created for section %d" % SectionNode.Number)
+
         # Delete one prune data file, and make sure the associated .mosaic regenerates
         return volumeNode
 

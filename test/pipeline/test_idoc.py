@@ -427,29 +427,32 @@ class IDocSingleSectionImportTest(IDocTest):
 class IDocBuildTest(IDocTest, StosRebuildHelper):
            
     def runTest(self):
-           
         self.RunImport()
         self.RunPrune()
-           
+
         self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
-           
+
         self.RunHistogram()
-           
+
+        self.RunPrune()
+        
         self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
-           
+
+        self.RunHistogram()
+
         self.RunAdjustContrast()
-           
+
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=2)  
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)       
-                   
+
         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
-           
+
         self.RunMosaic(Filter="Leveled")
         self.RunMosaicReport()
         self.RunAssemble(Channels='TEM', Levels=[8, 16])
-                   
+
         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
         self.RunMosaicReport()
            
