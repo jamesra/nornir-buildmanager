@@ -928,7 +928,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
                         Logger.error("Checksum: " + Transform.Checksum)
                         continue
 
-                    identifyCmd = 'identify -format %[mean] ' + ImageNode.FullPath
+                    identifyCmd = 'magick identify -format %[mean] ' + ImageNode.FullPath
 
                     task = Pool.add_process(ImageNode.attrib['Path'], identifyCmd + " && exit", shell=True)
                     task.TransformNode = Transform

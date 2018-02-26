@@ -46,7 +46,7 @@ def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **k
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
             result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
-            if result:
+            if result is not None:
                 yield result
 
 
@@ -61,7 +61,7 @@ class SectionImage(object):
         '''
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, scaleValueInNm, OutputPath=None, OutputImageExt=None, TargetBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, InputPath, scaleValueInNm, OutputPath=None, OutputImageExt=None, TargetBpp=None, debug=None, *args, **kwargs):
 
         '''#Converts a directory of images to sections, each represented by a single image.
            Each image should have the format Section#_ChannelText'''
