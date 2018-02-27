@@ -12,7 +12,6 @@ from nornir_shared.histogram import Histogram
 import nornir_shared.misc
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
-from scipy.stats.mstats_basic import threshold
 import nornir_buildmanager
 
 
