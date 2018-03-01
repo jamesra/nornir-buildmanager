@@ -508,6 +508,8 @@ class PipelineManager(object):
 
     @classmethod
     def LoadPipelineXML(cls, PipelineXML):
+        if isinstance(PipelineXML, unicode):
+            PipelineXML = PipelineXML.encode(sys.getdefaultencoding())
         if isinstance(PipelineXML, str):
             if cls._CheckPipelineXMLExists(PipelineXML):
                 return ElementTree.parse(PipelineXML)
