@@ -79,17 +79,17 @@ def ParseFilename(filePath, mappinglist):
     Output = FilenameInfo();
 
     if len(parts) < __NumRequriedArgsForMapping(mappinglist):
-        print __MappingUsageString(mappinglist)
+        print(__MappingUsageString(mappinglist))
         raise Exception("Insufficient arguments in filename " + fileName);
     elif len(parts) > len(mappinglist) + 1:
-        print __MappingUsageString(mappinglist)
+        print(__MappingUsageString(mappinglist))
         raise Exception("Too many underscores in filename " + fileName);
 
     for mappingObj in mappinglist:
         try:
             value = parts[0]
             mapfunc = mappingObj.typefunc
-            convValueList = map(mapfunc, [value]);
+            convValueList = list(map(mapfunc, [value]));
 
             ConvValue = convValueList[0];
 
@@ -98,7 +98,7 @@ def ParseFilename(filePath, mappinglist):
             del parts[0]
         except:
             if not hasattr(mappingObj, 'default'):
-                print __MappingUsageString(mappinglist)
+                print(__MappingUsageString(mappinglist))
                 raise Exception("Cannot parse parameter \"" + mappingObj.attribute + "\" from PMG filename:\n" + fileName)
             else:
                 defaultVal = mappingObj.default
