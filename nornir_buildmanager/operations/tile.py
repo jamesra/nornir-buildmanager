@@ -158,7 +158,7 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
 
     # Find out if the number of predicted images matches the number of actual images
     ImageFiles = glob.glob(OutputLevelNode.FullPath + os.sep + '*' + InputPyramidNode.ImageFormatExt)
-    basenameImageFiles = map(os.path.basename, ImageFiles)
+    basenameImageFiles = list(map(os.path.basename, ImageFiles))
 
     for i in mFile.ImageToTransformString:
         if not i in basenameImageFiles:
@@ -481,7 +481,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
     maxY = -float('Inf')
 
     Transforms = {}
-    for imagename, transform in mosaic.ImageToTransformString.iteritems():
+    for imagename, transform in mosaic.ImageToTransformString.items():
         MosaicToSectionTransform = factory.LoadTransform(transform)
         Transforms[imagename] = MosaicToSectionTransform
         bbox = MosaicToSectionTransform.FixedBoundingBox.ToArray()
@@ -507,7 +507,7 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
     Logger.info("Translating mosaic: " + str(minX) + ", " + str(minY) + "\t\t" + TransformNode.FullPath)
 
     # Adjust all of the control points such that the origin is at 0,0
-    for imagename in Transforms.keys():
+    for imagename in list(Transforms.keys()):
         transform = Transforms[imagename]
         transform.TranslateFixed((-minY, -minX))
         mosaic.ImageToTransformString[imagename] = factory.TransformToIRToolsString(transform)
@@ -868,7 +868,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
 
         FullTilePath = LevelNode.FullPath
         fulltilepaths = list()
-        for k in mosaic.ImageToTransformString.keys():
+        for k in list(mosaic.ImageToTransformString.keys()):
             fulltilepaths.append(os.path.join(FullTilePath, k))
 
         histogramObj = image_stats.Histogram(fulltilepaths, Bpp=Bpp)
@@ -1829,7 +1829,7 @@ if __name__ == "__main__":
     BadTestImageOut = os.path.join(TestImageDir, 'Bad101Shrink.png')
 
     task = Shrink(Pool, BadTestImage, BadTestImageOut, 0.5)
-    print('Bad image return value: ' + str(task.returncode))
+    print(('Bad image return value: ' + str(task.returncode)))
     Pool.wait_completion()
 
     GoodTestImage = os.path.join(TestImageDir, '400.png')
@@ -1837,4 +1837,4 @@ if __name__ == "__main__":
 
     task = Shrink(Pool, GoodTestImage, GoodTestImageOut, 0.5)
     Pool.wait_completion()
-    print('Good image return value: ' + str(task.returncode))
+    print(('Good image return value: ' + str(task.returncode)))

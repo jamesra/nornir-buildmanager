@@ -672,7 +672,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def VerifyFilesLastModifiedDateUnchanged(self, file_last_modified_map):
         '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
         
-        for (file_path, last_modified_reference) in file_last_modified_map.items():
+        for (file_path, last_modified_reference) in list(file_last_modified_map.items()):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
             self.assertEqual(last_modified_reference, disk_modified_time, "Last modified date for %s should not be different" % (file_path))
             
@@ -680,7 +680,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def VerifyFilesLastModifiedDateChanged(self, file_last_modified_map):
         '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
         
-        for (file_path, last_modified_reference) in file_last_modified_map.items():
+        for (file_path, last_modified_reference) in list(file_last_modified_map.items()):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
             self.assertGreater(disk_modified_time, last_modified_reference, "Last modified date for %s is %s, should be later than %s" % (file_path, str(disk_modified_time), str(last_modified_reference)))
             

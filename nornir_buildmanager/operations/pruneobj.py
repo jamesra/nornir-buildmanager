@@ -262,7 +262,7 @@ class PruneObj:
         TransformObj.RemoveInvalidMosaicImages(FullTilePath)
 
         files = []
-        for f in TransformObj.ImageToTransformString.keys():
+        for f in list(TransformObj.ImageToTransformString.keys()):
             files.append(os.path.join(FullTilePath, f))
 
         TileToScore = Prune(files, Overlap)
@@ -284,7 +284,7 @@ class PruneObj:
 
         with open(MapImageToScoreFile, 'w') as outfile:
 
-            if(len(self.MapImageToScore.keys()) == 0):
+            if(len(list(self.MapImageToScore.keys())) == 0):
                 if(os.path.exists(MapImageToScoreFile)):
                     os.remove(MapImageToScoreFile)
 
@@ -323,20 +323,20 @@ class PruneObj:
         return PruneObj(MapImageToScore)
 
     def CreateHistogram(self, HistogramXMLFile, MapImageToScoreFile=None):
-        if(len(self.MapImageToScore.items()) == 0 and MapImageToScoreFile is not None):
+        if(len(list(self.MapImageToScore.items())) == 0 and MapImageToScoreFile is not None):
    #         prettyoutput.Log( "Reading scores, MapImageToScore Empty " + MapImageToScoreFile)
             PruneObj.ReadPruneMap(MapImageToScoreFile)
    #         prettyoutput.Log( "Read scores complete: " + str(self.MapImageToScore))
  
-        if(len(self.MapImageToScore.items()) == 0):
+        if(len(list(self.MapImageToScore.items())) == 0):
             prettyoutput.Log("No prune scores to create histogram with")
             return 
 
-        scores = [None] * len(self.MapImageToScore.items())
+        scores = [None] * len(list(self.MapImageToScore.items()))
         numScores = len(scores)
 
         i = 0
-        for pair in self.MapImageToScore.items():
+        for pair in list(self.MapImageToScore.items()):
    #         prettyoutput.Log("pair: " + str(pair))
             scores[i] = pair[1]
             i = i + 1
@@ -402,7 +402,7 @@ class PruneObj:
 
         numRemoved = 0
 
-        for item in self.MapImageToScore.items():
+        for item in list(self.MapImageToScore.items()):
             filename = item[0]
             score = item[1]
 

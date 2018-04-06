@@ -157,9 +157,9 @@ class VolumeManagerAppendTest(VolumeManagerTestBase):
         s = str(dataObj)
         t = str(HistogramElement)
 
-        for k in HistogramElement.attrib.keys():
+        for k in list(HistogramElement.attrib.keys()):
             v = HistogramElement.attrib[k]
-            print str(v)
+            print(str(v))
 
         d = HistogramElement.DataNode
 

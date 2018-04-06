@@ -24,7 +24,7 @@ class XSubPath(object):
 
     def __str__(self):
         s = "";
-        for item in self.__dict__.items():
+        for item in list(self.__dict__.items()):
             if item[0].startswith('_'):
                 continue;
 
@@ -69,7 +69,7 @@ def XPathIterator(XPath):
             # Figure out if Value is a string (Starts with quotes)
             Obj = XSubPath();
             Obj.RawPath = subpath;
-            for item in matches.groupdict().items():
+            for item in list(matches.groupdict().items()):
                 Obj.__dict__[item[0]] = item[1];
 
             Obj.IsAttribute = not matches.group('IsAttribute') is None;

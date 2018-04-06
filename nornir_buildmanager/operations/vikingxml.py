@@ -109,13 +109,13 @@ def DetermineVolumeScale(InputVolumeNode):
         return (None, None)
 
     #This code assumes all units are the same
-    units_of_measure = map(lambda s: s.X.UnitsOfMeasure, ScaleNodes )
+    units_of_measure = [s.X.UnitsOfMeasure for s in ScaleNodes]
 
     units_all_equal = all(x == units_of_measure[0] for x in units_of_measure)
     if not units_all_equal:
         raise AssertionError("Not all units are equal in the volume.  This can be supported, but is not added yet.")
 
-    UnitsPerPixel = map(lambda s: s.X.UnitsPerPixel, ScaleNodes )
+    UnitsPerPixel = [s.X.UnitsPerPixel for s in ScaleNodes]
 
     min_UnitsPerPixel = min(UnitsPerPixel)
 
@@ -169,10 +169,10 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
     bestGroup = None
 
     if StosMapName is None:
-        print "No StosMapName specified, not adding stos"
+        print("No StosMapName specified, not adding stos")
         return
     if StosGroupName is None:
-        print "No StosGroupName specified, not adding stos"
+        print("No StosGroupName specified, not adding stos")
         return
 
     num_stos = 0
@@ -185,7 +185,7 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
         StosGroup = BlockNode.GetChildByAttrib("StosGroup", "Name", StosGroupName)
         if StosGroup is None:
-            print "StosGroup %s not found.  No slice-to-slice transforms are being included" % StosGroupName
+            print("StosGroup %s not found.  No slice-to-slice transforms are being included" % StosGroupName)
             continue
 
         for Mapping in StosMapNode.findall('Mapping'):
@@ -196,12 +196,12 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
                 SectionMappingNode = StosGroup.GetChildByAttrib('SectionMappings', 'MappedSectionNumber', MappedSection)
                 if SectionMappingNode is None:
-                    print "No Section Mapping found for " + MappingString
+                    print("No Section Mapping found for " + MappingString)
                     continue
 
                 transform = SectionMappingNode.GetChildByAttrib('Transform', 'ControlSectionNumber', Mapping.Control)
                 if transform is None:
-                    print "No Section Mapping Transform found for " + MappingString
+                    print("No Section Mapping Transform found for " + MappingString)
                     continue
 
                 OutputStosNode = ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName' : StosGroup.Name,
@@ -217,7 +217,7 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
 
                 if not ECLIPSE:
-                    print('\b' * 80)
+                    print(('\b' * 80))
 
                 print(UpdateString)
 
@@ -276,7 +276,7 @@ def ParseChannels(SectionNode, OutputSectionNode):
                 OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path'])
                 if ScaleNode is not None:
                     AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
-                print "Tileset found for section " + str(SectionNode.attrib["Number"])    
+                print("Tileset found for section " + str(SectionNode.attrib["Number"]))    
 
         NotesNodes = ChannelNode.findall('Notes')
         for NoteNode in NotesNodes:
@@ -299,7 +299,7 @@ def ParseTransform(TransformNode, OutputSectionNode):
         return
 
     # Figure out what the tile prefix and postfix are for this mosaic file by extrapolating from the first tile filename
-    for k in mFile.ImageToTransformString.keys():
+    for k in list(mFile.ImageToTransformString.keys()):
         TileFileName = k
         break
 
@@ -437,7 +437,7 @@ def ElementsEqual(volumeElement, aboutElement):
     if(aboutElement.nodeName != volumeElement.nodeName):
         return False
 
-    for attrib_key in aboutElement.attributes.keys():
+    for attrib_key in list(aboutElement.attributes.keys()):
         if not (volumeElement.hasAttribute(attrib_key) and aboutElement.hasAttribute(attrib_key)):
             continue
         if not volumeElement.getAttribute(attrib_key) == aboutElement.getAttribute(attrib_key):

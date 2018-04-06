@@ -46,7 +46,7 @@ def CreateVariableNameNode(value):
 def CreateParametersNode(**kwargs):
     arguments = etree.Element()
 
-    for k, v in kwargs.items():
+    for k, v in list(kwargs.items()):
         argNode = etree.Element()
         argNode.attrib['Name'] = k
         argNode.attrib['Value'] = v
@@ -59,7 +59,7 @@ def CreateParametersNode(**kwargs):
 def CreatePipelineNode(**kwargs):
     node = etree.Element()
 
-    for k, v in kwargs.items():
+    for k, v in list(kwargs.items()):
         node.attrib[k] = v
 
     return node
@@ -99,7 +99,7 @@ class Test(unittest.TestCase):
         self.assertTrue('ChannelNode' in argset.Variables)
 
         kwargs = argset.KeyWordArgs()
-        print(repr(kwargs))
+        print((repr(kwargs)))
 
 
 if __name__ == "__main__":

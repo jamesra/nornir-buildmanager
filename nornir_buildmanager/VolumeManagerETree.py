@@ -172,7 +172,7 @@ class VolumeManager():
         '''Remove all elements that should be found on the file system but are not'''
         for i in range(len(Element) - 1, -1, -1):
             e = Element[i]
-            if len(e.keys()) == 0 and len(list(e)) == 0:
+            if len(list(e.keys())) == 0 and len(list(e)) == 0:
                 Element.remove(e)
                 continue
 
@@ -276,7 +276,7 @@ class XPropertiesElementWrapper(ElementTree.Element):
             entry = self.__getEntry__(name)
             if(entry is not None):
                 valstr = entry.attrib["Value"]
-                valstr = str(urllib.unquote_plus(valstr))
+                valstr = str(urllib.parse.unquote_plus(valstr))
                 return pickle.loads(valstr)
 
         raise AttributeError(name)
@@ -301,7 +301,7 @@ class XPropertiesElementWrapper(ElementTree.Element):
             self.__dict__[name] = value
         else:
             valstr = pickle.dumps(value, 0)
-            valstr = urllib.quote_plus(valstr)
+            valstr = urllib.parse.quote_plus(valstr)
 
             entry = self.__getEntry__(name)
             if entry is None:
@@ -422,7 +422,7 @@ class XElementWrapper(ElementTree.Element):
             attrib = {}
         else:
             StringAttrib = {}
-            for k in attrib.keys():
+            for k in list(attrib.keys()):
                 if not isinstance(attrib[k], str):
                     XElementWrapper.logger.info('Setting non string value on <' + str(tag) + '>, automatically corrected: ' + k + ' -> ' + str(attrib[k]))
                     StringAttrib[k] = str(attrib[k])
@@ -605,7 +605,7 @@ class XElementWrapper(ElementTree.Element):
         '''Compare the passed dictionary with the attributes on the node, return entries which do not match'''
         mismatched = list()
 
-        for entry, val in dictAttrib.items():
+        for entry, val in list(dictAttrib.items()):
             if hasattr(self, entry):
                 if getattr(self, entry) != val:
                     mismatched.append(entry)
@@ -3181,8 +3181,8 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                                                                                     'postfix' :  FilePostfix})
 
         # Start with the middle because it is more likely to have a match earlier
-        TestIndicies = range(GridYDim / 2, GridYDim)
-        TestIndicies.extend(range((GridYDim / 2) - 1, -1, -1))
+        TestIndicies = list(range(GridYDim / 2, GridYDim))
+        TestIndicies.extend(list(range((GridYDim / 2) - 1, -1, -1)))
         for iY in TestIndicies:
             # MatchString = os.path.join(OutputDir, FilePrefix +
             #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +

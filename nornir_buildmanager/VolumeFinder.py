@@ -58,7 +58,7 @@ def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
     assert(isinstance(ColumnsForRow, dict))
 
     if(RowOrderList is None):
-        RowOrderList = ColumnsForRow.keys()
+        RowOrderList = list(ColumnsForRow.keys())
         RowOrderList = RowOrderList.sort()
 
     assert(isinstance(RowOrderList, list))

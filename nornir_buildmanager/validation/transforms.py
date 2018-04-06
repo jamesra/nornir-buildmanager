@@ -27,7 +27,7 @@ def __GetAttribOrDefault(Node, Attribute, Default):
     
 def NodesWhere(parentNode, findxpath, filter_func):
     nodes = list(parentNode.findall(findxpath))
-    return filter(filter_func, nodes)
+    return list(filter(filter_func, nodes))
     
 def RemoveWhere(parentNode, findxpath, filter_func):
     '''Remove transforms that have an AttribName matching AttribValue'''

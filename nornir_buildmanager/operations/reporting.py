@@ -345,7 +345,7 @@ def __RTFToHTML(rtfStr):
 
     HTMLOut.Add('<p>')
 
-    translatekeys = translationTable.keys()
+    translatekeys = list(translationTable.keys())
     translatekeys = sorted(translatekeys, key=len, reverse=True)
 
     while len(rtfStr) > 0:
@@ -1066,7 +1066,7 @@ def DictToTable(RowDict=None, IndentLevel=None):
         HTML.Add("<table>\n")
     HTML.Indent()
 
-    keys = RowDict.keys()
+    keys = list(RowDict.keys())
     keys.sort(reverse=True)
 
     for row in keys: 
@@ -1139,7 +1139,7 @@ def GenerateImageReport(xpaths, VolumeElement, Logger, OutputFile=None, **kwargs
     Dictionary = dict()
     HTMLString = RecursiveReportGenerator(VolumeElement, xpaths, Logger)
 
-    print HTMLString
+    print(HTMLString)
 
 def RecursiveReportGenerator(VolumeElement, xpaths, Logger=None):
     List = []

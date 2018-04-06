@@ -29,7 +29,7 @@ def ValidateStosMap(test, StosMapNode, expectedRT):
 
     test.assertEqual(len(rt.Nodes), len(expectedRT.Nodes))
 
-    for expectedNode in expectedRT.Nodes.values():
+    for expectedNode in list(expectedRT.Nodes.values()):
         actualNode = rt.Nodes[expectedNode.SectionNumber]
         actualNodeNumbers = _RTNodesToNumberList(actualNode.Children)
         expectedNodeNumbers = _RTNodesToNumberList(expectedNode.Children)

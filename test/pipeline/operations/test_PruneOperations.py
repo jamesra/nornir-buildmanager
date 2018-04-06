@@ -94,7 +94,7 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
 
         # OK, change the prune threshold in the meta-data, verify the prune.mosaic is updated
         Scores = []
-        for f in pruneObj.MapImageToScore.keys():
+        for f in list(pruneObj.MapImageToScore.keys()):
             Scores.append(pruneObj.MapImageToScore[f])
 
         Scores.sort()

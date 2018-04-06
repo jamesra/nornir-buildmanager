@@ -54,7 +54,7 @@ def ListGroupSectionMappings(BlockNode, GroupName, Downsample, **kwargs):
     print("{0:s}{1:s}{2:s}".format('Mapped'.ljust(30), 'Control'.ljust(30), 'Type'.ljust(10)))
     print("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}".format('Section'.ljust(10), 'Channel'.ljust(10), 'Filter'.ljust(10), 'Section'.ljust(10), 'Channel'.ljust(10), 'Filter'.ljust(10)))
     
-    for transforms in map(lambda sm: sm.Transforms, sorted(StosGroup.SectionMappings, key=lambda sm: sm.MappedSectionNumber)):
+    for transforms in [sm.Transforms for sm in sorted(StosGroup.SectionMappings, key=lambda sm: sm.MappedSectionNumber)]:
         for t in transforms:
             print("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}{6:s}".format(repr(t.MappedSectionNumber).ljust(10), t.MappedChannelName.ljust(10), t.MappedFilterName.ljust(10),
                                                           repr(t.ControlSectionNumber).ljust(10), t.ControlChannelName.ljust(10), t.ControlFilterName.ljust(10),

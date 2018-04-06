@@ -225,7 +225,7 @@ class PMGImport(object):
     
         InputTileToOutputTile = {}
         PngTiles = {}
-        TileKeys = Tiles.keys()
+        TileKeys = list(Tiles.keys())
     
     
         imageSize = []

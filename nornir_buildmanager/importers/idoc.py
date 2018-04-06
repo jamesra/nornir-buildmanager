@@ -32,7 +32,7 @@ Example:
 
 import sys
 import re
-import cPickle as pickle
+import pickle as pickle
 import nornir_buildmanager.templates
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.operations.tile import VerifyTiles
@@ -625,7 +625,7 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
         shutil.copyfile(idocFullPath, CopiedFileFullPath)
 
     # Copy over attributes from the idoc
-    for k in idocObj.__dict__.keys():
+    for k in list(idocObj.__dict__.keys()):
         v = idocObj.__dict__[k]
         if k[0] == '_':
             continue
@@ -646,7 +646,7 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
     assert(len(idocObj.tiles) > 0)
     tile = idocObj.tiles[0]
 
-    for k in tile.__dict__.keys():
+    for k in list(tile.__dict__.keys()):
         v = tile.__dict__[k]
 
         if k[0] == '_':
@@ -965,7 +965,7 @@ class SerialEMLog(object):
     @property
     def AverageTileTime(self):
         total = 0.0
-        for t in self.tileData.values():
+        for t in list(self.tileData.values()):
             total = total + t.totalTime
 
         return total / len(self.tileData)
@@ -974,7 +974,7 @@ class SerialEMLog(object):
     def AverageTileDrift(self):
         total = 0.0
         count = 0
-        for t in self.tileData.values():
+        for t in list(self.tileData.values()):
             if t.drift is None:
                 continue
 
@@ -989,7 +989,7 @@ class SerialEMLog(object):
         '''Shortest time to capture a tile in seconds'''
 
         fastestTime = None
-        for t in self.tileData.values():
+        for t in list(self.tileData.values()):
             if not (t.dwellTime is None or t.drift is None):
                 if fastestTime is None:
                     fastestTime = t.totalTime
@@ -1002,7 +1002,7 @@ class SerialEMLog(object):
     def MaxTileDrift(self):
         '''Largest drift for a tile in seconds'''
         maxdrift = 0
-        for t in self.tileData.values():
+        for t in list(self.tileData.values()):
             if not (t.dwellTime is None or t.drift is None):
                 maxdrift = max(maxdrift, t.driftStamps[-1][1])
 
@@ -1012,7 +1012,7 @@ class SerialEMLog(object):
     def MinTileDrift(self):
         '''Largest drift for a tile in seconds'''
         mindrift = self.MaxTileDrift + 1
-        for t in self.tileData.values():
+        for t in list(self.tileData.values()):
             if not (t.dwellTime is None or t.drift is None):
                 mindrift = min(mindrift, t.driftStamps[-1][1])
 
@@ -1022,7 +1022,7 @@ class SerialEMLog(object):
     @property
     def NumTiles(self):
         NumTiles = 0
-        for t in self.tileData.values():
+        for t in list(self.tileData.values()):
             if not (t.dwellTime is None or t.drift is None):
                 NumTiles = NumTiles + 1
 
@@ -1263,7 +1263,7 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
     lines = []
     maxdrift = None
     NumTiles = int(0)
-    for t in Data.tileData.values():
+    for t in list(Data.tileData.values()):
         if not (t.dwellTime is None or t.drift is None):
             time = []
             drift = []
@@ -1293,7 +1293,7 @@ def PlotDriftGrid(DataSource, OutputImageFile):
 
     DriftGrid = []
     c = []
-    for t in Data.tileData.values():
+    for t in list(Data.tileData.values()):
         if not (t.dwellTime is None or t.drift is None):
             time = []
             drift = []

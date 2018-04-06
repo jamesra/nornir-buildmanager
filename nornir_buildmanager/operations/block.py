@@ -228,7 +228,7 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Logger):
                 mapping.AddMapping(rt_mapped.SectionNumber)
 
     # Part two, create nodes existing in the RT but not the StosMap
-    for rt_node in RT.Nodes.values():
+    for rt_node in list(RT.Nodes.values()):
 
         if len(rt_node.Children) == 0:
             continue
@@ -277,13 +277,13 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, FiltersR
         return None
 
     if OutputMappingNode.CenterSection is None:
-        OutputMappingNode.CenterSection = DefaultRT.RootNodes.values()[0].SectionNumber
+        OutputMappingNode.CenterSection = list(DefaultRT.RootNodes.values())[0].SectionNumber
 
     NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
     
     # Add sections which do not have the correct channels or filters to the non-stos section list.  These will not be used as control sections
-    MissingChannelOrFilterSections = filter(lambda s: False == s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx), SectionNodeList)
-    MissingChannelOrFilterSectionNumbers = map(lambda s: s.SectionNumber, MissingChannelOrFilterSections)
+    MissingChannelOrFilterSections = [s for s in SectionNodeList if False == s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)]
+    MissingChannelOrFilterSectionNumbers = [s.SectionNumber for s in MissingChannelOrFilterSections]
     
     NonStosSectionNumbers += MissingChannelOrFilterSectionNumbers
         
@@ -882,7 +882,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
 #                MappedToControlCandidateList[mappedSection] = [mappingNode.Control]
 
     # OK, fetch the mapped section numbers and lets work through them in order
-    mappedSectionNumbers = MappedToControlCandidateList.keys()
+    mappedSectionNumbers = list(MappedToControlCandidateList.keys())
     mappedSectionNumbers.sort()
 
     # If a section is used as a control, then prefer it when generat
@@ -1390,7 +1390,7 @@ def __RegistrationTreeToStosMap(rt, StosMapName):
 
     OutputStosMap = VolumeManagerETree.StosMapNode(StosMapName)
 
-    for sectionNumber in rt.RootNodes.keys():
+    for sectionNumber in list(rt.RootNodes.keys()):
         rootNode = rt.RootNodes[sectionNumber]
         __AddRegistrationTreeNodeToStosMap(OutputStosMap, rt, rootNode.SectionNumber)
 
@@ -1890,7 +1890,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
             # This is a parallel operation, but the Python GIL is so slow using threads is slower.
             Pool = nornir_pools.GetLocalMachinePool()
     
-            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
+            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.items():
                 task = Pool.add_task(imagename, triangulation.AddTransforms, StoVTransform, MosaicToSectionTransform)
                 task.imagename = imagename
                 if hasattr(MosaicToSectionTransform, 'gridWidth'):
@@ -1910,7 +1910,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
                     Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
                     pass
         else:
-            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.iteritems():
+            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.items():
                 MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)
                 MosaicTransform.ImageToTransform[imagename] = MosaicToVolume
                 
@@ -2041,7 +2041,7 @@ def ReportVolumeBounds(StosMapNode, ChannelsRegEx, TransformName, Logger, **kwar
    
     StosMosaicTransformNodes = FetchVolumeTransforms(StosMapNode, ChannelsRegEx, TransformName)
     
-    StosMosaicTransforms = map(lambda tnode: tnode.FullPath, StosMosaicTransformNodes)
+    StosMosaicTransforms = [tnode.FullPath for tnode in StosMosaicTransformNodes]
     
     mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
     

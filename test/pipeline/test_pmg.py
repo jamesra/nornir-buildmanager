@@ -352,7 +352,7 @@ class ParsePMG(PMGTest):
 
             self.assertTrue(len(FilesDict) == pmgData.NumberOfImages)
 
-            for f in FilesDict.keys():
+            for f in list(FilesDict.keys()):
                 self.assertTrue(os.path.exists(os.path.join(pmgDir, f)))
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ class StosGroupVolume(volume.Volume):
 
     def Save(self):
 
-        for key, transform in self.SectionToVolumeTransforms.items():
+        for key, transform in list(self.SectionToVolumeTransforms.items()):
 
             transformNode = transform.transformNode
             originalStos = transform.stosObj
