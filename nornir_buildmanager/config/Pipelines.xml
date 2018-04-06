@@ -16,10 +16,16 @@
 				help="Directory to import from.  The .idoc files in subdirectories should be named with the desired section number after import. i.e. 0005.idoc to import the file as section #5." />
 			<Argument flag="-ext" dest="extension" default="idoc"
 				help="Extension of idoc files, default is idoc" />
+			<Argument flag="-Min" dest="MinValue" type="float"
+				help="Min intensity cutoff.  A value from 0.0 to 1.0" required="False"
+				default="0.0001" />
+			<Argument flag="-Max" dest="MaxValue" type="float"
+				help="Max intensity cutoff.  A value from 0.0 to 1.0" required="False"
+				default=".9999" />
 		</Arguments>
 
 		<PythonCall Module="nornir_buildmanager.importers.idoc"
-			Function="Import" ImportPath="#ImportDir" extension="#extension" />
+			Function="Import" ImportPath="#ImportDir" extension="#extension" Min="#MinValue" Max="#MaxValue" />
 	</Pipeline>
 
 	<Pipeline Name="ImportPMG" Help="Import PMG file into a volume">

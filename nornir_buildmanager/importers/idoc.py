@@ -57,7 +57,22 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     if extension is None:
         extension = 'idoc'
-
+        
+    #TODO, set the defaults at the volume level in the meta-data and pull from there
+    
+    MinCutoff = float(kwargs.get('Min'))
+    MaxCutoff = float(kwargs.get('Max'))
+    ContrastCutoffs = (MinCutoff, MaxCutoff)
+        
+    if MinCutoff < 0.0 or MinCutoff > 1.0:
+        raise ValueError("Min must be between 0 and 1: %f" % MinCutoff)
+    
+    if MaxCutoff < 0.0 or MaxCutoff > 1.0:
+        raise ValueError("Max must be between 0 and 1: %f" % MaxCutoff)
+    
+    if MinCutoff >= MaxCutoff:
+        raise ValueError("Max must be greater than Min: %f is not less than %f" % (MinCutoff, MaxCutoff))
+    
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
@@ -74,7 +89,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
             DataFound = True
-            yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
+            yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, ContrastCutoffs, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
@@ -154,7 +169,7 @@ class SerialEMIDocImport(object):
         return [SectionNumber, SectionName, Downsample]
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
+    def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -280,7 +295,7 @@ class SerialEMIDocImport(object):
 
         histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
         source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles ]
-        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, source_tile_list, histogramFullPath)
+        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, ContrastCutoffs, source_tile_list, histogramFullPath)
         ActualMosaicMax = numpy.around(ActualMosaicMax)
         ActualMosaicMin = numpy.around(ActualMosaicMin)
         _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
@@ -377,7 +392,7 @@ class SerialEMIDocImport(object):
 
 
     @classmethod
-    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, SourceImagesFullPaths, histogramFullPath):
+    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, ContrastCutoffs, SourceImagesFullPaths, histogramFullPath):
         '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
         ActualMosaicMin = None
         ActualMosaicMax = None
@@ -387,7 +402,7 @@ class SerialEMIDocImport(object):
             ActualMosaicMax = ContrastMap[SectionNumber].Max
             Gamma = ContrastMap[SectionNumber].Gamma
         else:
-            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, histogramFullPath)
+            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], histogramFullPath)
 
         return (ActualMosaicMin, ActualMosaicMax, Gamma)
 
@@ -443,9 +458,8 @@ class SerialEMIDocImport(object):
             
         return andValue
     
-def _GetMinMaxCutoffs(listfilenames, histogramFullPath=None):
-    MinCutoff = 0.0001
-    MaxCutoff = 0.0001
+def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, histogramFullPath=None):
+    
     histogramObj = None
     if not histogramFullPath is None:
         if os.path.exists(histogramFullPath):
