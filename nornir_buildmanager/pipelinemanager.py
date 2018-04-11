@@ -815,15 +815,16 @@ class PipelineManager(object):
             if(SelectedVolumeElem is None):
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
-            if not SelectedVolumeElem.IsValid():
+            (IsValid, Reason) = SelectedVolumeElem.IsValid() 
+            if not IsValid:
                 # Check if the node is locked, otherwise clean it and look for another node
                 if 'Locked' in SelectedVolumeElem.attrib:
                     if SelectedVolumeElem.Locked:
                         break
-                    else:
-                        SelectedVolumeElem.Clean()
-                        PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
-                        SelectedVolumeElem = None
+                    
+                SelectedVolumeElem.Clean(Reason)
+                PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
+                SelectedVolumeElem = None
 
         if not SelectedVolumeElem is None:
             self.AddPipelineNodeVariable(PipelineNode, SelectedVolumeElem, ArgSet)

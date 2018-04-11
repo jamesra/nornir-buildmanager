@@ -66,6 +66,10 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
         # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
         tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
         mfileObj = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
+        if mfileObj is None:
+            Logger.warning("Could not load %s" % (InputTransformNode.FullPath))
+            return None
+        
         invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
         
         mosaicToLoadPath = InputTransformNode.FullPath
@@ -77,7 +81,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
         translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(LevelNode.FullPath, usecluster=True)
         translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
 
-        SaveRequired = os.path.exists(OutputTransformNode.FullPath)
+        SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
         
         print("%s -> %s" % (OutputTransformNode.FullPath, mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
         
@@ -183,6 +187,11 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     Threshold = Parameters.get('Threshold', None)
     
     InputTransformNode = TransformNode
+    
+    (Valid, Reason) = InputTransformNode.IsValid()
+    if not Valid:
+        Logger.warning("Skipping refinement of invalid transform %s\n%s" % (InputTransformNode.FullPath, Reason))
+        return None
 
     [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
