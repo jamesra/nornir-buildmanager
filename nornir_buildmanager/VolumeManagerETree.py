@@ -1043,8 +1043,11 @@ class XFileElementWrapper(XResourceElementWrapper):
         self.attrib['Path'] = val
         directory = os.path.dirname(self.FullPath)
 
-        if not os.path.exists(directory):
+        try: 
             os.makedirs(directory)
+        except OSError:
+            if not os.path.isdir(directory):
+                raise
 
         if hasattr(self, '__fullpath'):
             del self.__dict__['__fullpath']
@@ -1254,8 +1257,11 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     def __SaveXML(self, xmlfilename, SaveElement):
         '''Intended to be called on a thread from the save function'''
-        if not os.path.exists(self.FullPath):
+        try: 
             os.makedirs(self.FullPath)
+        except OSError:
+            if not os.path.isdir(self.FullPath):
+                raise
 
         # prettyoutput.Log("Saving %s" % xmlfilename)
 
