@@ -575,7 +575,8 @@ def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercen
 
         if Gamma is None:
             # We look for the largest peak that is not at either extrema
-            peakVal = histogram.PeakValue(MinIntensityCutoff + 1, MaxIntensityCutoff - 1)
+            #peakVal = histogram.PeakValue(MinIntensityCutoff + 1, MaxIntensityCutoff - 1)
+            peakVal = histogram.Mean(MinIntensityCutoff + 1, MaxIntensityCutoff - 1)
             if peakVal is None:
                 Gamma = 1.0
             else:
@@ -689,11 +690,17 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
 
     TilesToBuild = list()
 
-    # Make sure output isn't outdated
-    if(not os.path.exists(OutputImageDir)):
+    # Make sure output isn't outdated.
+    
+    try:
+        #Try to create the output directory.  If we succeed we need to rebuild the entire pyramid. 
+        #If the path does exist make sure it is a directory 
         os.makedirs(OutputImageDir)
         EntireTilePyramidNeedsBuilding = True
-
+    except OSError, WindowsError:
+        if not os.path.isdir(OutputImageDir):
+            raise
+        
     for tile in ImageFiles:
         InputTile = os.path.join(InputImagePath, tile)
         if EntireTilePyramidNeedsBuilding:
@@ -704,7 +711,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
             RemoveOutdatedFile(InputTile, PredictedOutput)
             if not os.path.exists(PredictedOutput):
                 TilesToBuild.append(InputTile)
-                
+
     Pool = None
     if len(TilesToBuild) > 0:
         Pool = nornir_pools.GetGlobalClusterPool()
