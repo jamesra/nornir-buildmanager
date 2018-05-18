@@ -166,66 +166,53 @@ def SectionNumberCompare(SectionNodeA, SectionNodeB):
 def _GetCenterSection(Parameters, MappingNode=None):
     '''Returns the number of the center section from the Block Node if possible, otherwise it checks the parameters.  Returns None if unspecified'''
 
+    CenterSection = Parameters.get('CenterSection', None)
+    try:
+        CenterSection = int(CenterSection)
+        return CenterSection
+    except:
+        CenterSection = None
+
     CenterSection = MappingNode.CenterSection
     if not CenterSection is None:
         return MappingNode.CenterSection
 
-    CenterSection = Parameters.get('CenterSection', None)
-    try:
-        CenterSection = int(CenterSection)
-    except:
-        CenterSection = None
-
     return CenterSection
 
 
-def _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSections, Logger=None):
-    '''Return a list of integers containing known good sections
-    :param BlockNode BlockNode: Block meta-data
-    :param int CenterSectionNumber: Section number to place root of registration tree at
-    :param int NumAdjacentSections: Number of adjacent sections to attempt registration with'''
-
-    SectionNodeList = list(BlockNode.findall('Section'))
-    SectionNodeList.sort(key=SectionNumberKey)
-
-    # Fetch the list of known bad sections, if it exists
-    NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
-
-    SectionNumberList = [SectionNumberKey(s) for s in SectionNodeList]
-
-    StosSectionNumbers = []
-    for sectionNumber in SectionNumberList:
-        if not sectionNumber in NonStosSectionNumbers:
-            StosSectionNumbers.append(sectionNumber)
- 
-    RT = registrationtree.RegistrationTree.CreateRegistrationTree(StosSectionNumbers, adjacentThreshold=NumAdjacentSections, center=CenterSectionNumber)
-    RT.AddNonControlSections(NonStosSectionNumbers)
-
-    return RT
-
-
-def UpdateStosMapWithRegistrationTree(StosMap, RT, Logger):
-    '''Adds any mappings missing in the StosMap with those from the registration tree'''
+def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
+    '''Adds any mappings missing in the StosMap with those from the registration tree
+    @param StosMap StosMap: The Slice-to-slice mapping node to update
+    @param registrationtree RT: The registration tree with new mappings
+    @param bool Mirror: Remove all mappings that are not found in the registration tree
+    @param Logger Logger: A logger class with an info method
+     '''
 
     # Part one, add all RT mappings to the existing nodes
     Modified = False
     mappings = list(StosMap.Mappings)
-    for mapping in mappings:
-        control = mapping.Control
 
-        rt_node = RT.Nodes.get(control, None)
-        if not rt_node:
-            Logger.info("Removing mapping missing from registration tree: " + str(mapping))
-            StosMap.remove(mapping)
+    if Mirror:
+        for map in mappings:
+            StosMap.remove(map)
             Modified = True
-            continue
+    else:
+        for mapping in mappings:
+            control = mapping.Control
 
-        known_mappings = mapping.Mapped
-        for rt_mapped in rt_node.Children:
-
-            if not rt_mapped.SectionNumber in known_mappings:
+            rt_node = RT.Nodes.get(control, None)
+            if not rt_node:
+                Logger.info("Removing mapping missing from registration tree: " + str(mapping))
+                StosMap.remove(mapping)
                 Modified = True
-                mapping.AddMapping(rt_mapped.SectionNumber)
+                continue
+
+            known_mappings = mapping.Mapped
+            for rt_mapped in rt_node.Children: 
+                if not rt_mapped.SectionNumber in known_mappings:
+                    Modified = True
+                    mapping.AddMapping(rt_mapped.SectionNumber)
+
 
     # Part two, create nodes existing in the RT but not the StosMap
     for rt_node in list(RT.Nodes.values()):
@@ -252,26 +239,57 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Logger):
     return Modified
 
 
-def CreateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
-    '''Figure out which sections should be registered to each other
+def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
+    '''Figure out which sections should be registered to each other.
+    Currently the only correct way to change the center section is to pass the center section
+    to the align pipeline which forwards it to this function
         @BlockNode'''
     NumAdjacentSections = int(Parameters.get('NumAdjacentSections', '1'))
     StosMapName = Parameters.get('OutputStosMapName', 'PotentialRegistrationChain')
 
+    CenterSectionParameter = Parameters.get('CenterSection', None)
+    try:
+        CenterSectionParameter = int(CenterSectionParameter)
+    except:
+        CenterSectionParameter = None
+
     StosMapType = StosMapName + misc.GenNameFromDict(Parameters)
 
     SaveBlock = False
+    CenterChanged = False
     SaveOutputMapping = False
     # Create a node to store the stos mappings
     OutputMappingNode = VolumeManagerETree.XElementWrapper(tag='StosMap', Name=StosMapName, Type=StosMapType)
-    (SaveBlock, OutputMappingNode) = BlockNode.UpdateOrAddChildByAttrib(OutputMappingNode)
+    (NewStosMap, OutputMappingNode) = BlockNode.UpdateOrAddChildByAttrib(OutputMappingNode)
+
+    NonStosSectionNumbersSet = BlockNode.NonStosSectionNumbers
 
     SectionNodeList = list(BlockNode.findall('Section'))
-      
     SectionNodeList.sort(key=SectionNumberKey)
+    # Add sections which do not have the correct channels or filters to the non-stos section list.  These will not be used as control sections
+    MissingChannelOrFilterSections = [s for s in SectionNodeList if False == s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)]
+    MissingChannelOrFilterSectionNumbers = [s.SectionNumber for s in MissingChannelOrFilterSections]
+    NonStosSectionNumbersSet = NonStosSectionNumbersSet.union(MissingChannelOrFilterSectionNumbers)
+
+    #Identify the sections that can be control sections
+    StosControlSectionNumbers = frozenset([SectionNumberKey(s) for s in SectionNodeList]).difference(NonStosSectionNumbersSet)
+
+    if not NewStosMap:
+        if CenterSectionParameter in NonStosSectionNumbersSet:
+            AdjustedCenterSectionParameter = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)
+            Logger.warn("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParamter, AdjustedCenterSectionParameter))
+            CenterSectionParameter = AdjustedCenterSectionParameter  
+
+        CenterChanged = CenterSectionParameter != OutputMappingNode.CenterSection
+        if CenterChanged:
+            #We are changing the center section, so remove all of the section mappings
+            Logger.warn("Requested center section %1d has changed from current value of %2d.  Replacing existing mappings." % (CenterSectionParameter, OutputMappingNode.CenterSection))
+            OutputMappingNode.CenterSection = CenterSectionParameter
 
     CenterSectionNumber = _GetCenterSection(Parameters, OutputMappingNode)
-    DefaultRT = _CreateDefaultRegistrationTree(BlockNode, CenterSectionNumber, NumAdjacentSections, Logger)
+
+    DefaultRT = registrationtree.RegistrationTree.CreateRegistrationTree(StosControlSectionNumbers, adjacentThreshold=NumAdjacentSections, center=CenterSectionNumber)
+    DefaultRT.AddNonControlSections(BlockNode.NonStosSectionNumbers)
 
     if(DefaultRT.IsEmpty):
         return None
@@ -279,20 +297,14 @@ def CreateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, FiltersR
     if OutputMappingNode.CenterSection is None:
         OutputMappingNode.CenterSection = list(DefaultRT.RootNodes.values())[0].SectionNumber
 
-    NonStosSectionNumbers = BlockNode.NonStosSectionNumbers
-    
-    # Add sections which do not have the correct channels or filters to the non-stos section list.  These will not be used as control sections
-    MissingChannelOrFilterSections = [s for s in SectionNodeList if False == s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)]
-    MissingChannelOrFilterSectionNumbers = [s.SectionNumber for s in MissingChannelOrFilterSections]
-    
-    NonStosSectionNumbers += MissingChannelOrFilterSectionNumbers
-        
-    if OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbers):
+    if OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbersSet):
         SaveOutputMapping = True
 
-    if UpdateStosMapWithRegistrationTree(OutputMappingNode, DefaultRT, Logger):
+    if UpdateStosMapWithRegistrationTree(OutputMappingNode, DefaultRT, CenterChanged, Logger):
         SaveOutputMapping = True
-        
+
+    SaveBlock = SaveBlock or NewStosMap
+
     if SaveBlock:
         return BlockNode
     elif SaveOutputMapping:

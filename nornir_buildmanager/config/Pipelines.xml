@@ -1331,7 +1331,7 @@
 		</Arguments>
 
 		<Select VariableName="BlockNode" XPath="Block" />
-		<PythonCall Function="block.CreateSectionToSectionMapping"
+		<PythonCall Function="block.CreateOrUpdateSectionToSectionMapping"
 			ChannelsRegEx="#ChannelsRegEx" FiltersRegEx="#FiltersRegEx"
 			OutputStosMapName="#OutputStosMap">
 			<Parameters>
