@@ -402,14 +402,14 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
         Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
 
     stosNode = StosGroup.GetStosTransformNode(ControlFilter, MappedFilter)
-    if stosNode:
+    if stosNode is not None:
         if StosGroup.AreStosInputImagesOutdated(stosNode, ControlFilter, MappedFilter, MaskRequired=UseMasks):
             stosNode.Clean("Input Images are Outdated")
             stosNode = None
         else:
             #Check if the manual stos file exists and is different than the output file        
             ManualStosFileFullPath = StosGroup.PathToManualTransform(stosNode.FullPath)
-            ManualFileExists = os.path.exists(ManualStosFileFullPath)
+            ManualFileExists = ManualStosFileFullPath is not None
             ManualInputChecksum = None
             if ManualFileExists:
                 if 'InputTransformChecksum' in stosNode.attrib:
@@ -1838,14 +1838,18 @@ def _GetStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformN
     added = False
     if OutputTransformNode is None:
         # Create transform node for the output
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type="MosaicToVolume", Path=OutputTransformName + '.mosaic')
+        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type="MosaicToVolume_Untranslated", Path=OutputTransformName + '.mosaic')
         TransformNode.Parent.AddChild(OutputTransformNode)
         added = True
         
     return (added, OutputTransformNode)
 
 
+
 def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformName, Logger, **kwargs):
+    '''
+    return: Transform node if there was an create/update.  None if no change
+    '''
 
     MappedFilterNode = TransformNode.FindParent('Filter')
 
@@ -1987,7 +1991,6 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms, OutputStosMosaicTransformNam
             output_transform_node.Name = OutputStosMosaicTransformName
             output_transform_node.Path = OutputStosMosaicTransformName + '.mosaic'
             
-            
             channel_node.AddChild(output_transform_node)
         else:
             if not output_transform_node.IsInputTransformMatched(input_transform_node):
@@ -1997,6 +2000,7 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms, OutputStosMosaicTransformNam
         output_transform_list.append(output_transform_node)
         
         # Always copy so our offset calculation is based on untranslated transforms
+        output_transform_node.Type = "MosaicToVolume"
         output_transform_node.SetTransform(input_transform_node)
         shutil.copy(input_transform_node.FullPath, output_transform_node.FullPath)              
             
