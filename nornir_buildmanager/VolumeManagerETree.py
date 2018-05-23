@@ -17,6 +17,7 @@ from nornir_imageregistration.files import *
 import nornir_imageregistration.transforms.registrationtree
 import nornir_shared.checksum
 import nornir_shared.files
+from nornir_imageregistration.core import GetImageSize
 
 import VolumeManagerHelpers as VMH
 import nornir_buildmanager.operations.tile as tile
@@ -3198,6 +3199,10 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                                                                                     'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
                                                                                     'postfix' : FilePostfix})
             if(os.path.exists(MatchString)):
+                [YSize, XSize] = GetImageSize(MatchString)
+                if YSize != self.TileYDim or XSize != self.TileXDim:
+                    return [False, "Image size does not match meta-data"]
+                
                 return [True, "Last column of tileset found"]
 
             MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' :  FilePrefix,
@@ -3205,6 +3210,10 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                                                                                     'Y' : iY,
                                                                                     'postfix' : FilePostfix})
             if(os.path.exists(MatchString)):
+                [YSize, XSize] = GetImageSize(MatchString)
+                if YSize != self.TileYDim or XSize != self.TileXDim:
+                    return [False, "Image size does not match meta-data"]
+                
                 return [True, "Last column of tileset found"]
 
         return [False, "Last column of tileset not found"]

@@ -1726,9 +1726,10 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
             # TestOutputFileFullPath = os.path.join(NextLevelNode.FullPath, 'Test_' + OutputFile)
 
             cmd_template = 'magick montage %(TopLeft)s %(TopRight)s %(BottomLeft)s %(BottomRight)s -geometry %(TileXDim)dx%(TileYDim)d ' + \
-                           '-set colorspace RGB -mode Concatenate -tile 2x2 -background black -depth 8 -type Grayscale -define png:format=png8 %(OutputFile)s'
+                           '-set colorspace RGB -mode Concatenate -tile 2x2 -background black -depth 8 -type Grayscale pgm:- | ' \
+                           'magick convert pgm:- -resize 512x512 -set colorspace RGB -type Grayscale -define png:format=png8 %(OutputFile)s'
 
-            montageBugFixCmd_template = 'magick convert %(OutputFile)s -set colorspace RGB -type Grayscale %(OutputFile)s'
+            # montageBugFixCmd_template = 'magick convert %(OutputFile)s -set colorspace RGB -type Grayscale -resize %(TileXDim)dx%(TileYDim)d %(OutputFile)s'
 
             cmd = cmd_template % {'TopLeft': TopLeft,
                                   'TopRight': TopRight,
@@ -1740,10 +1741,13 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
 
 
             #montageBugFixCmd_ = 'magick ' + OutputFileFullPath + ' -set colorspace RGB -type Grayscale ' + OutputFileFullPath
-            montageBugFixCmd = montageBugFixCmd_template % {'OutputFile': OutputFileFullPath}
+            #montageBugFixCmd = montageBugFixCmd_template % {'OutputFile': OutputFileFullPath,
+            #                                                'TileXDim': TileDim[1],
+            #                                                'TileYDim': TileDim[0]}
 
             #montageBugFixCmd_template = 
-            task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
+            #task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
+            task = Pool.add_process(cmd, cmd + " && exit", shell=True)
 
             if FirstTaskForRow is None:
                 FirstTaskForRow = task
