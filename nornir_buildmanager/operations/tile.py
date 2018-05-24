@@ -1726,8 +1726,8 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
             # TestOutputFileFullPath = os.path.join(NextLevelNode.FullPath, 'Test_' + OutputFile)
 
             cmd_template = 'magick montage %(TopLeft)s %(TopRight)s %(BottomLeft)s %(BottomRight)s -geometry %(TileXDim)dx%(TileYDim)d ' + \
-                           '-set colorspace RGB -mode Concatenate -tile 2x2 -background black -depth 8 -type Grayscale pgm:- | ' \
-                           'magick convert pgm:- -resize 512x512 -set colorspace RGB -type Grayscale -define png:format=png8 %(OutputFile)s'
+                           '-mode Concatenate -tile 2x2 -background black -type Grayscale tif:- | ' \
+                           'magick convert tif:- -depth 8 -resize %(TileXDim)dx%(TileYDim)d -set colorspace Gray -type Grayscale -define png:format=png8 %(OutputFile)s'
 
             # montageBugFixCmd_template = 'magick convert %(OutputFile)s -set colorspace RGB -type Grayscale -resize %(TileXDim)dx%(TileYDim)d %(OutputFile)s'
 
