@@ -57,6 +57,7 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
 
         match = re.match(RegExStr, Attrib, flags)
         if not match is None:
+            VolumeManager.VolumeManager.WrapElement(MatchObj)
             Matches.append(MatchObj)
 
     return Matches

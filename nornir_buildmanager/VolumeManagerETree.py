@@ -892,8 +892,10 @@ class XElementWrapper(ElementTree.Element):
                 subContainerMatches = m.findall(RemainingXPath)
                 if subContainerMatches is not None:
                     for m in subContainerMatches:
+                        VolumeManager.WrapElement(m)
                         yield m
             else:
+                VolumeManager.WrapElement(m)
                 yield m
 
     def LoadAllLinkedNodes(self):
@@ -1543,6 +1545,9 @@ class ChannelNode(XNamedContainerElementWrapped):
         ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
                                                              'UnitsPerPixel' : str(scaleValueInNm)}))
         return (added, ScaleObj)
+    
+    def __str__(self):
+        return "Channel: %s Section: %d" % (self.Name, self.Parent.Number)
 
     def __init__(self, Name, Path=None, attrib=None, **extra):
         super(ChannelNode, self).__init__(tag='Channel', Name=Name, Path=Path, attrib=attrib, **extra)
