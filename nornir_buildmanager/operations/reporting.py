@@ -681,7 +681,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
 
         # nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
         # if not os.path.exists(ThumbnailOutputFullPath):
-        cmd = "Convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
+        cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
         Pool = nornir_pools.GetGlobalProcessPool()
         Pool.add_process(cmd, cmd + " && exit", shell=True)
 
