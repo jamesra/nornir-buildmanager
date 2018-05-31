@@ -262,7 +262,12 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     OutputMappingNode = VolumeManagerETree.XElementWrapper(tag='StosMap', Name=StosMapName, Type=StosMapType)
     (NewStosMap, OutputMappingNode) = BlockNode.UpdateOrAddChildByAttrib(OutputMappingNode)
 
-    NonStosSectionNumbersSet = BlockNode.NonStosSectionNumbers
+    #Ensure we do not have banned control sections in the output map
+    if not NewStosMap:
+        NonStosSectionNumbersSet = BlockNode.NonStosSectionNumbers
+        removedControls = OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbersSet)
+        if removedControls:
+            SaveBlock = True
 
     SectionNodeList = list(BlockNode.findall('Section'))
     SectionNodeList.sort(key=SectionNumberKey)
@@ -860,11 +865,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
 
 def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputStosMapName, Logger, **kwargs):
     '''Figure out which sections should be registered to each other'''
-
-    # SectionMappingsNode
-    Pool = nornir_pools.GetGlobalProcessPool()
-    Pool.wait_completion()
-
+    Pool = None
     # Assess all of the images
     ComparisonImageType = kwargs.get('ComparisonImageType', 'Diff_Brute')
     ImageSearchXPathTemplate = "Image[@InputTransformChecksum='%(InputTransformChecksum)s']"
@@ -876,7 +877,14 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
     # OK, we have the best mapping. Add it to our registration chain.
     # Create a node to store the stos mappings
     OutputStosMapNode = VolumeManagerETree.StosMapNode(Name=OutputStosMapName, Type=OutputStosMapName, CenterSection=str(StosMapNode.CenterSection))
-    (added, OutputStosMapNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosMapNode)
+    (NewStosMap, OutputStosMapNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosMapNode)
+    
+    #Ensure we do not have banned control sections in the output map
+    if not NewStosMap:
+        NonStosSectionNumbersSet = BlockNode.NonStosSectionNumbers
+        removedControls = OutputStosMapNode.ClearBannedControlMappings(NonStosSectionNumbersSet)
+        if removedControls:
+            yield BlockNode
 
     OutputStosGroupNode = VolumeManagerETree.XElementWrapper(tag='StosGroup', attrib=InputGroupNode.attrib)
     (added, OutputStosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosGroupNode, 'Path')
@@ -885,7 +893,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
     # Mappings = list(StosMapNode.findall('Mapping'))
 
     MappedToControlCandidateList = StosMapNode.MappedToControls()
-
+    
 #    for mappingNode in Mappings:
 #        for mappedSection in mappingNode.Mapped:
 #            if mappedSection in MappedToControlCandidateList:
@@ -942,6 +950,9 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
 
                     identifyCmd = 'magick identify -format %[mean] ' + ImageNode.FullPath
 
+                    if Pool is None:
+                        Pool = nornir_pools.GetLocalMachinePool()
+                        
                     task = Pool.add_process(ImageNode.attrib['Path'], identifyCmd + " && exit", shell=True)
                     task.TransformNode = Transform
                     TaskList.append(task)
@@ -982,7 +993,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
         else:
             Logger.info("Created mapping " + str(mappedSection) + ' -> ' + str(controlSection))
 
-    return BlockNode
+    yield BlockNode
 
 
 def __GetOrCreateInputStosFileForRegistration(StosGroupNode, InputTransformNode, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
@@ -1332,6 +1343,10 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, C
 
                             # Remove old stos meta-data and create from scratch to avoid stale data.
                             # OutputSectionMappingNode.remove(stosNode)
+                    elif 'InputTransformChecksum' not in stosNode.attrib:
+                        stosNode.Clean("InputTransformChecksum attribute is required on transform element and was not found")
+                        stosNode = None
+                        
                 if stosNode is None:
                     stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type, OutputPath=OutputFile)
 
