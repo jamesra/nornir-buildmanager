@@ -1873,6 +1873,8 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
     if added_output_transform: 
         OutputTransformNode.SetTransform(StosTransformNode) 
         OutputTransformNode.InputMosaicTransformChecksum = TransformNode.Checksum
+    else:
+        OutputTransformNode.Type = "MosaicToVolume_Untranslated"
      
     if not StosTransformNode is None:
         if not (OutputTransformNode.IsInputTransformMatched(StosTransformNode) and OutputTransformNode.InputMosaicTransformChecksum == TransformNode.Checksum):

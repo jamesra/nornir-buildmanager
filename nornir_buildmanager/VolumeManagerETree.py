@@ -1262,9 +1262,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
         '''Intended to be called on a thread from the save function'''
         try: 
             os.makedirs(self.FullPath)
-        except OSError:
+        except (OSError , WindowsError) as e:
             if not os.path.isdir(self.FullPath):
-                raise
+                raise e
 
         # prettyoutput.Log("Saving %s" % xmlfilename)
 
