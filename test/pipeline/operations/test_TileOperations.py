@@ -149,7 +149,6 @@ class HistogramFilterTest(ImportOnlySetup):
             self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk), "Number of images on disk do not match meta-data")
 
 
-
 class HistogramFilterTest2(ImportOnlySetup):
 
     @property
@@ -210,6 +209,7 @@ class BuildTilePyramidTest(PrepareSetup):
         
         # Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter='Leveled', level=4)       
+
 
 class AutoLevelHistogramTest(PrepareSetup):
 
@@ -367,6 +367,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         self.assertIsNone(ChannelOutput[0])
 
         self.VolumeObj.Save()
+
 
 if __name__ == "__main__":
     # import syssys.argv = ['', 'Test.testName']

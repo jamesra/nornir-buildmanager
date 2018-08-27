@@ -26,6 +26,7 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName):
 
     return (Created, OverlayImageNode)
 
+
 def CreateLevelNodes(ParentNode, DownsampleLevels):
     DownsampleLevels = misc.SortedListFromDelimited(DownsampleLevels)
 
@@ -97,6 +98,7 @@ def MaskImageNodeForImageSet(ImageSetNode, Downsample):
             return MappedMaskSetNode.find(MaskImageXPath)
 
     return None
+
 
 if __name__ == '__main__':
     pass

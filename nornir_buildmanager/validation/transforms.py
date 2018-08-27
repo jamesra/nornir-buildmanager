@@ -24,16 +24,19 @@ def __GetAttribOrDefault(Node, Attribute, Default):
         return OutputValue
     else:
         return Default
+
     
 def NodesWhere(parentNode, findxpath, filter_func):
     nodes = list(parentNode.findall(findxpath))
     return list(filter(filter_func, nodes))
+
     
 def RemoveWhere(parentNode, findxpath, filter_func):
     '''Remove transforms that have an AttribName matching AttribValue'''
     remove_nodes = NodesWhere(parentNode, findxpath, filter_func)
     for n in remove_nodes:
         n.Clean("Failed filtering function") 
+
 
 def IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision=None):
     '''Used to test if the output matches an specified target, where the values can be none, an empty string
@@ -99,6 +102,7 @@ def LoadOrCleanExistingTransformForInputTransform(channel_node, InputTransformNo
                 OutputTransformNode = None
                 
     return OutputTransformNode
+
 
 if __name__ == '__main__':
     pass

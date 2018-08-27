@@ -12,7 +12,6 @@ import xml.etree.ElementTree
 
 
 class TilesetInfo(object):
-    
 
     def __init__(self):
         self._GridDimX = None
@@ -161,12 +160,8 @@ class TilesetInfo(object):
 #                         FilePrefix + '\" FilePostfix=\"' + FilePostfix + '\" /> \n')
         return
 
-#def WriteTilesetXML(XMLOutputPath, XDim, YDim, TileXDim, TileYDim, DownsampleTarget, FilePrefix, FilePostfix=".png"):
-   
+# def WriteTilesetXML(XMLOutputPath, XDim, YDim, TileXDim, TileYDim, DownsampleTarget, FilePrefix, FilePostfix=".png"):
 
-
-
-#def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
-    
+# def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
 
     

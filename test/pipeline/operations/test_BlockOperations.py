@@ -25,7 +25,6 @@ def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection
 
     return Transform
 
-
 #
 # class SliceToSliceRegistrationMosaicToVolume(CopySetupTestBase):
 #
@@ -48,9 +47,6 @@ def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection
 #
 #         TransformNode = self.VolumeObj.find("Block/Section/Channel/Transform[@Name='ChannelToVolume']")
 #         self.assertIsNotNone(TransformNode, "Stos pipeline did not complete")
-
-
-
 
 
 class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
@@ -104,8 +100,6 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         self.assertEqual(numSourceFiles, numTargetFiles)
 
-
-
     def ValidateTransforms(self, AutoOutputTransform, AutoInputTransform, ManualOutputTransform=None, ManualInputTransform=None):
         '''ManualInputTransform can be none after the first refine call since the manual override file does not have a <transform> node.
            On the second pass or later ManualInputTransform refers to the transform that should have replaced the original output in the earlier pass'''
@@ -146,7 +140,6 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.assertEqual(ManualOutputTransform.InputTransformChecksum,
                             ManualInputTransform.Checksum,
                             "Output manual transform InputTransformChecksum should match input transform checksum")
-
 
     def testRefineSectionAlignment(self):
 
@@ -229,7 +222,6 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveAutomaticGridFirstPassTransform,
                                 AutoOutputTransform=SixToFiveAutomaticGridSecondPassTransform)
 
-
         # self.assertEqual(SixToFiveAutomaticGridFirstPassTransform.Checksum,
         # SixToFiveAutomaticGridSecondPassTransform.InputTransformChecksum,
         # "InputChecksum of second pass transform should match checksum of first pass transform")
@@ -303,7 +295,6 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 #        self.assertEqual(SixToFiveRebuiltSliceToVolumeTransform.InputTransformChecksum,
 #                            SixToFiveRebuiltGridSecondPassTransform.Checksum,
 #                             "InputChecksum of second pass transform should match checksum of first pass transform after manual replacement of input stos")
-
 
 ###################
 
@@ -476,6 +467,7 @@ class StosMapTest(EmptyVolumeTestBase):
 
     def testCRUDOperations(self):
         return
+
 
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']

@@ -101,5 +101,4 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
         OutputLevel.GridDimX = GridDimX
         OutputLevel.GridDimY = GridDimY
 
-
     return FilterNode

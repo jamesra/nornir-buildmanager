@@ -11,14 +11,11 @@ import nornir_buildmanager
 
 class TestValidation(unittest.TestCase):
 
-
     def setUp(self):
         pass
 
-
     def tearDown(self):
         pass
-
 
     def testValidation(self):
         
@@ -32,7 +29,6 @@ class TestValidation(unittest.TestCase):
         self.assertTrue(nornir_buildmanager.validation.transforms.IsValueMatched(OutputNode=hint_node, OutputAttribute="UserRequestedGamma", TargetValue=1, Precision=1))
         self.assertTrue(nornir_buildmanager.validation.transforms.IsValueMatched(OutputNode=hint_node, OutputAttribute="UserRequestedGamma", TargetValue=1, Precision=2))
         self.assertFalse(nornir_buildmanager.validation.transforms.IsValueMatched(OutputNode=hint_node, OutputAttribute="UserRequestedGamma", TargetValue=1, Precision=3))
-       
     
         self.assertTrue(nornir_buildmanager.validation.transforms.IsValueMatched(OutputNode=hint_node, OutputAttribute="UserRequestedMaxIntensityCutoff", TargetValue=256, Precision=0))
         self.assertTrue(nornir_buildmanager.validation.transforms.IsValueMatched(OutputNode=hint_node, OutputAttribute="UserRequestedMaxIntensityCutoff", TargetValue=255.5, Precision=0))
@@ -73,6 +69,7 @@ class TestValidation(unittest.TestCase):
         self.assertFalse(output_transform.IsInputTransformMatched(wrong_name_input), "Incorrect input name should fail")
         self.assertFalse(output_transform.IsInputTransformMatched(wrong_type_input), "Incorrect input type should fail")
         self.assertFalse(output_transform.IsInputTransformMatched(wrong_cropbox_input), "Incorrect cropbox should fail")
+
         
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']

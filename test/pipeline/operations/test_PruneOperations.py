@@ -42,7 +42,6 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
 
         # Load the prune data and adjust the cutoff, ensure the tiles have been removed and the volume rebuilds properly
 
-
         # filterObj = self.VolumeObj.find("Block/Section[@Number='2']/Channel[@Name='G']/Filter[@Name='Raw8']");
         # pruneObj = filterObj.find("Prune");
         self.LoadMetaData()

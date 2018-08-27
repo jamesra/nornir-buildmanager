@@ -10,8 +10,8 @@ import nornir_shared.images
 import nornir_shared.prettyoutput as PrettyOutput
 import xml.etree.ElementTree as ElementTree
 
-
 HTMLImageTemplate = '<img src="%(src)s" alt="%(AltText)s" width="%(ImageWidth)s" height="%(ImageHeight)s" />'
+
 
 def FindServerFromAboutXML(path, sourceXML=None):
     if sourceXML is None:
@@ -49,6 +49,7 @@ def FindServerFromAboutXML(path, sourceXML=None):
 
     path = path.replace('\\', '/')
     return path
+
 
 def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
     '''Returns an HTML table for a dictionary of row names containing a list of image paths.
@@ -118,9 +119,6 @@ def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
     return HTMLString
 
 
-
-
-
 def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None, **kwargs):
     '''Expects a 'Path' and 'RequiredFiles' keyword argument'
        produces an HTML index of all volumes under the path'''
@@ -143,7 +141,6 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
         for fileStr in  RequiredFileStrs:
             requiredFiles.append(fileStr)
 
-
     ServerHostname = FindServerFromAboutXML(path)
     if ServerHostname is None:
         ServerHostname = ""
@@ -153,8 +150,6 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
     HTMLHeader = "<!DOCTYPE html> \n" + "<html>\n " + "<body>\n"
 
     HTMLFooter = "</body>\n" + "</html>\n"
-
-
 
     HTMLString = HTMLHeader
 
@@ -215,6 +210,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
 
     return None  # HTMLString
 
+
 def EmailIndex(path=None, subject=None, **kwargs):
     import nornir_shared.emaillib
 
@@ -249,7 +245,6 @@ def EmailIndex(path=None, subject=None, **kwargs):
         if not subject is None:
             subject = VolumeName + ": " + subject
             kwargs['subject'] = subject
-
 
     message = 'The following reports are available for this volume\n\n'
 

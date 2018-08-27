@@ -41,6 +41,7 @@ class TestTilesetInfo(test.testbase.TestBase):
         self.assertEqual(info.FilePostfix, loadedInfo.FilePostfix, "FilePostfix mismatch on reload")
         self.assertEqual(info.FilePrefix, loadedInfo.FilePrefix, "FilePrefix mismatch on reload")
 
+
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testTilesetInfo']
     unittest.main()

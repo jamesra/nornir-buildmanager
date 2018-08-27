@@ -24,6 +24,7 @@ from pkg_resources import resource_filename
 import nornir_shared.prettyoutput as prettyoutput
 
 CommandParserDict = {}
+
  
 def ConfigDataPath():
     return resource_filename(__name__, 'config')
@@ -66,8 +67,10 @@ def _AddParserRootArguments(parser):
                         help='Provide additional output',
                         dest='verbose')
 
+
 def _GetPipelineXMLPath():
     return os.path.join(ConfigDataPath(), 'Pipelines.xml')
+
 
 def BuildParserRoot():
 
@@ -123,18 +126,22 @@ def print_help(args):
     else:
         args.parser.print_help()
 
+
 def call_update(args):
     volumeObj = VolumeManagerETree.load(args.volumepath)
     volumeObj.UpdateSubElements()
 
+
 def call_pipeline(args):
     pipelinemanager.PipelineManager.RunPipeline(PipelineXmlFile=args.PipelineXmlFile, PipelineName=args.PipelineName, args=args)
+
     
 def _GetFromNamespace(ns, attribname, default=None):
     if attribname in ns:
         return getattr(ns, attribname)
     else:
         return default
+
 
 def InitLogging(buildArgs):
 
@@ -152,9 +159,10 @@ def InitLogging(buildArgs):
     else:
         SetupLogging(Level=logging.WARN)
 
+
 def Execute(buildArgs=None):
 
-    #Spend more time on each thread before switching
+    # Spend more time on each thread before switching
     sys.setcheckinterval(500)
 
     if buildArgs is None:
@@ -181,7 +189,6 @@ def Execute(buildArgs=None):
         args.func(args)
 
         Timer.End(args.PipelineName)
-        
   
     finally:
         OutStr = str(Timer)
@@ -193,6 +200,7 @@ def Execute(buildArgs=None):
                 OutputFile.close()
         except:
             prettyoutput.Log('Could not write %s' % (timeTextFullPath))
+
 
 if __name__ == '__main__':
     Execute()

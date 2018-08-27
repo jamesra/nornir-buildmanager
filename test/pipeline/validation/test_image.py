@@ -40,7 +40,6 @@ class ImageValidationTest(CopySetupTestBase):
             # GetImageSize returns Height,Width, so we need to flip
             self.assertIsNone(ActualArea, "Actual area should be none if image path is none")
 
-
         return ActualArea
 
     def RunRemoveOnDimensionTest(self, path):
@@ -63,7 +62,6 @@ class ImageValidationTest(CopySetupTestBase):
         ActualArea = (1, 1)
         Removed = image.RemoveOnDimensionMismatch(None, ActualArea)
         self.assertTrue(Removed, "None input should indicate image was removed")
-
 
     def testRemoveOnDimensionMismatch(self):
 

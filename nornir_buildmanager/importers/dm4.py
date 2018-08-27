@@ -26,10 +26,10 @@ import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
 import numpy as np
 
-
 DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Units'))
 
 TileExtension = 'png'  # Pillow does not support 16-bit png files, so we use the npy extension
+
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
@@ -54,8 +54,11 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
                 yield obj
     
     nornir_pools.WaitOnAllPools() 
+
     
 '''Convert a DM4 file to another image format.  Intended to be called from a multithreading pool'''
+
+
 def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
     # (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
     dm4data = DM4FileHandler(dm4FileFullPath)
@@ -108,8 +111,6 @@ class DM4FileHandler():
     def ImageBppTag(self):
         return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_tags['PixelDepth']
     
-    
-    
     def __init__(self, dm4fullpath):
         self._dm4file = dm4reader.DM4File.open(dm4fullpath)
         self._tags = self._dm4file.read_directory()
@@ -127,7 +128,6 @@ class DM4FileHandler():
         YDimensionScale = self._ReadDimensionScaleTag(DM4DimensionTag, 1)
         
         return (XDimensionScale, YDimensionScale)
-    
 
     def ReadImageShape(self): 
         DM4ImageDimensionsTag = self.ImageDimensionsTag
@@ -156,7 +156,6 @@ class DM4FileHandler():
         ''':return: Overlap scalar from 0 to 1.0''' 
         Overlap_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Overlap between images (%)']
         return self.dm4file.read_tag_data(Overlap_tag) / 100.0
-        
     
     def ReadImageBpp(self):
         return int(self.dm4file.read_tag_data(self.ImageBppTag) * 8)
@@ -236,7 +235,6 @@ class DigitalMicrograph4Import(object):
         
         # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
-          
         
         InputImageBpp = dm4data.ReadImageBpp()
         
@@ -277,8 +275,6 @@ class DigitalMicrograph4Import(object):
         TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
         yield TilePyramidObj
         
-        
-        
     @classmethod
     def GetOrCreateStageTransform(cls, channelObj):
         transformObj = channelObj.GetTransform('stage')
@@ -300,7 +296,6 @@ class DigitalMicrograph4Import(object):
             os.makedirs(LevelObj.FullPath)
                  
         return TilePyramidObj
-    
         
     @classmethod
     def ImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
@@ -317,7 +312,6 @@ class DigitalMicrograph4Import(object):
             
         pools = nornir_pools.GetGlobalLocalMachinePool()
         pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
-                
         
     @classmethod
     def AddAndImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
@@ -337,7 +331,6 @@ class DigitalMicrograph4Import(object):
         # DM4FileHandler.ConvertDM4ToPng(dm4FileFullPath, output_fullpath)
         t = pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
         return TilePyramidObj
-
     
     @classmethod
     def AddTileToMosaic(cls, transformObj, dm4data, tile_number):
@@ -386,5 +379,4 @@ class DigitalMicrograph4Import(object):
 #             #pool = nornir_pools.GetGlobalMultithreadingPool()
 #             #pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
 #             plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
-
         
