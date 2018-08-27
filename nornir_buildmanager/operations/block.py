@@ -268,6 +268,8 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
         removedControls = OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbersSet)
         if removedControls:
             SaveBlock = True
+    else:
+        NonStosSectionNumbersSet = frozenset()
 
     SectionNodeList = list(BlockNode.findall('Section'))
     SectionNodeList.sort(key=SectionNumberKey)
@@ -284,6 +286,9 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
             AdjustedCenterSectionParameter = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)
             Logger.warn("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParamter, AdjustedCenterSectionParameter))
             CenterSectionParameter = AdjustedCenterSectionParameter  
+
+        if CenterSectionParameter is None:
+            CenterSectionParameter = OutputMappingNode.CenterSection
 
         CenterChanged = CenterSectionParameter != OutputMappingNode.CenterSection
         if CenterChanged:
