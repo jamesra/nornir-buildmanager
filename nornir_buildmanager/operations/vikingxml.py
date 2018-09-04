@@ -13,6 +13,7 @@ from nornir_imageregistration.files import *
 from nornir_shared.files import RecurseSubdirectories
 import nornir_shared.prettyoutput as prettyoutput
 import xml.etree.ElementTree as ETree
+import nornir_pools
 
 ECLIPSE = 'ECLIPSE' in os.environ
 
@@ -229,31 +230,53 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 def ParseSections(InputVolumeNode, OutputVolumeNode):
 
     # Find all of the section tags
+    Pool = nornir_pools.GetGlobalThreadPool()
+    
+    SectionTasks = []
+    
     print("Adding Sections\n")
     for BlockNode in InputVolumeNode.findall('Block'):
         for SectionNode in BlockNode.Sections:
 
-            if not ECLIPSE:
-                print('\b' * 8)
-
-            print('%g' % SectionNode.Number)
-
-            # Create a section node, or create on if it doesn't exist
             OutputSectionNode = OutputVolumeNode.find("Section[@Number='%d']" % SectionNode.Number)
-            if(OutputSectionNode is None):
-                OutputSectionNode = ETree.SubElement(OutputVolumeNode, 'Section', {'Number' : str(SectionNode.Number),
-                                                         'Path' : os.path.join(BlockNode.Path, SectionNode.Path),
-                                                         'Name' : SectionNode.Name})
+            assert(OutputSectionNode is None)
+            
+            #if not ECLIPSE:
+                #print('\b' * 3)
 
-            ParseChannels(SectionNode, OutputSectionNode)
+            print('Queue %g' % SectionNode.Number)
+            
+            task = Pool.add_task(str(SectionNode.Number), ParseSection, BlockNode.Path, SectionNode)
+            SectionTasks.append(task)
 
-            NotesNodes = SectionNode.findall('Notes')
-            for NoteNode in NotesNodes:
-                # Copy over Notes elements verbatim
-                OutputSectionNode.append(copy.deepcopy(NoteNode))
+    for t in SectionTasks:
+        if not ECLIPSE:
+            print('\b' * 8)
+
+        print('%s' % t.name)
+        
+        OutputSectionNode = t.wait_return()
+        
+        OutputVolumeNode.append(OutputSectionNode)
 
     AllSectionNodes = OutputVolumeNode.findall('Section')
     OutputVolumeNode.attrib['num_sections'] = str(len(AllSectionNodes))
+    
+def ParseSection(BlockPath, SectionNode):
+    
+    # Create a section node, or create on if it doesn't exist
+    OutputSectionNode = ETree.Element('Section', {'Number' : str(SectionNode.Number),
+                                             'Path' : os.path.join(BlockPath, SectionNode.Path),
+                                             'Name' : SectionNode.Name})
+
+    ParseChannels(SectionNode, OutputSectionNode)
+
+    NotesNodes = SectionNode.findall('Notes')
+    for NoteNode in NotesNodes:
+        # Copy over Notes elements verbatim
+        OutputSectionNode.append(copy.deepcopy(NoteNode))
+        
+    return OutputSectionNode
 
 def ParseChannels(SectionNode, OutputSectionNode):
 
