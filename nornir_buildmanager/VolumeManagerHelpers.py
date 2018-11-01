@@ -216,6 +216,9 @@ class InputTransformHandler(object):
     
     def IsInputTransformMatched(self, transform_node):
         '''Return true if the transform node matches our input transform'''
+        if not self.HasInputTransform:
+            return transform_node is None
+        
         return self.InputTransform == transform_node.Name and \
                 self.InputTransformType == transform_node.Type and \
                 self.InputTransformChecksum == transform_node.Checksum and \
