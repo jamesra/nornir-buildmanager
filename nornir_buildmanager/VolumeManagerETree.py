@@ -3334,7 +3334,7 @@ class HistogramBase(VMH.InputTransformHandler, XElementWrapper):
 
         return super(HistogramBase, self).IsValid()
 
-    def __init__(self, tag, attrib, **extra):
+    def __init__(self, tag, attrib=None, **extra):
         super(HistogramBase, self).__init__(tag=tag, attrib=attrib, **extra)
 
 
@@ -3403,7 +3403,7 @@ class AutoLevelHintNode(XElementWrapper):
 
 class HistogramNode(HistogramBase):
 
-    def __init__(self, InputTransformNode, Type, attrib, **extra):
+    def __init__(self, InputTransformNode, Type, attrib = None, **extra):
         super(HistogramNode, self).__init__(tag='Histogram', attrib=attrib, **extra)
         self.SetTransform(InputTransformNode)
         self.attrib['Type'] = Type
