@@ -839,7 +839,26 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.assertEqual(len(OutputPngs), NumImages, "Missing exported images %s" % imageOutputPath)
 
         return volumeNode
-
+    
+    def RunCalculateStosGroupWarpMetrics(self, StosGroup=None, StosMap=None, Downsample=None):
+        
+        if StosGroup is None:
+            StosGroup = "Grid"
+            
+        if Downsample is None:
+            Downsample = 8
+            
+        if StosMap is None:
+            StosMap = "FinalStosMap"
+            
+        buildArgs = self._CreateBuildArgs('CalculateStosGroupWarpMetrics', '-StosGroup', StosGroup,
+                                                          '-Downsample', str(Downsample),
+                                                          '-StosMap', StosMap)
+        
+        volumeNode = self.RunBuild(buildArgs)
+                    
+        pass
+    
     def RunCreateVikingXML(self, OutputFile, StosGroup=None, StosMap=None):
 
         if StosGroup is None:
@@ -988,7 +1007,9 @@ class CopySetupTestBase(PlatformTest):
         if os.path.exists(self.TestOutputPath):
             shutil.rmtree(self.TestOutputPath)
 
-        shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
+        #Temp for faster iteration
+        if not os.path.exists(self.TestOutputPath):
+            shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
 
 class ImportOnlySetup(PlatformTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''

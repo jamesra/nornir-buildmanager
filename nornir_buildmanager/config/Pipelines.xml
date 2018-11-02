@@ -883,7 +883,7 @@
 				help="Downsample level to build assembled image thumbnails from"
 				required="False" />
 			<Argument flag="-Output" dest="OutputPath" type="str"
-				default="ImageReport" help="Name of report html file" required="False" />
+				default="ImageReport.html" help="Name of report html file" required="False" />
 		</Arguments>
 		<Select VariableName="ReportingElement" XPath="Block" />
 		<PythonCall Function="reporting.GenerateTableReport"
@@ -899,12 +899,14 @@
 		<Arguments>
 			<Argument flag="-StosGroup" dest="StosGroup"
 				help="Stos group to pull images from" required="True" />
+			<Argument flag="-Output" dest="OutputPath" type="str"
+				default="StosReport.html" help="Name of report html file" required="False" />
 		</Arguments>
 		<Select VariableName="ReportingElement" XPath="Block/StosGroup[@Name='#StosGroup']" />
 		<PythonCall Function="reporting.GenerateTableReport"
-			OutputFile="StosReport.html" RowXPath="SectionMappings"
+			OutputFile="#OutputPath" RowXPath="SectionMappings"
 			RowLabelAttrib="MappedSectionNumber" MaxImageWidth="512"
-			MaxImageHeight="512" ColumnXPaths="Image,Transform" />
+			MaxImageHeight="512" ColumnXPaths="Image,Transform,Histogram/Image" />
 
 		<PythonCall Module="nornir_buildmanager.VolumeFinder"
 			Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC" />
@@ -1358,7 +1360,7 @@
 	</Pipeline>
 
 	<Pipeline Name="AssembleStosOverlays"
-		Help="Performs slice to slice alignment from scratch to produce an initial 3D volume.  After alignment the best alignment results are selected to create a final stosmap.">
+		Help="Assembles registered images for .stos files in a group.  Typically this is done so quality of registration at that stage can be assessed.">
 		<Arguments>
 			<Argument flag="-StosGroup" default="StosBrute" dest="StosGroup"
 				type="str" help="Stos group to assemble" required="True" />
@@ -1374,6 +1376,26 @@
 		<Select Root="BlockNode" VariableName="StosMapNodeObj"
 			XPath="StosMap[@Name='#StosMap']" />
 		<PythonCall Function="block.AssembleStosOverlays"
+			GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" />
+	</Pipeline>
+	
+	<Pipeline Name="CalculateStosGroupWarpMetrics"
+		Help="Creates images indicating the amount of warping present in each .stos file in a group.  Typically this is done so quality of registration at that stage can be assessed.">
+		<Arguments>
+			<Argument flag="-StosGroup" default="StosBrute" dest="StosGroup"
+				type="str" help="Stos group to assemble" required="True" />
+			<Argument flag="-Downsample" dest="InputDownsample" type="int"
+				help="Downsample level to assemble" required="True" />
+			<Argument flag="-StosMap" default="FinalStosMap" dest="StosMap"
+				type="str" help="Name assigned to generated stos map." required="True" />
+		</Arguments>
+
+		<Select VariableName="BlockNode" XPath="Block" />
+		<Select VariableName="GroupNodeObj" Root="BlockNode"
+			XPath="StosGroup[@Name='#StosGroup#InputDownsample']" />
+		<Select Root="BlockNode" VariableName="StosMapNodeObj"
+			XPath="StosMap[@Name='#StosMap']" />
+		<PythonCall Function="block.CalculateStosGroupWarpMeasurementImages"
 			GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" />
 	</Pipeline>
 
