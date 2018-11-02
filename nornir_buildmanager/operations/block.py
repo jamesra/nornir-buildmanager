@@ -258,7 +258,7 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     CenterChanged = False
     SaveOutputMapping = False
     # Create a node to store the stos mappings
-    OutputMappingNode = VolumeManagerETree.XElementWrapper(tag='StosMap', Name=StosMapName, Type=StosMapType)
+    OutputMappingNode = VolumeManagerETree.StosMapNode(Name=StosMapName, Type=StosMapType)
     (NewStosMap, OutputMappingNode) = BlockNode.UpdateOrAddChildByAttrib(OutputMappingNode)
 
     # Ensure we do not have banned control sections in the output map
@@ -998,7 +998,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
         if removedControls:
             yield BlockNode
 
-    OutputStosGroupNode = VolumeManagerETree.XElementWrapper(tag='StosGroup', attrib=InputGroupNode.attrib)
+    OutputStosGroupNode = VolumeManagerETree.StosGroupNode(**InputGroupNode.attrib)
     (added, OutputStosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosGroupNode, 'Path')
 
     # Look at all of the mappings and create a list of potential control sections for each mapped section
@@ -1385,7 +1385,7 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, C
             OutputDownsample = Downsample
 
             InputSectionMappingNode = InputTransformNode.FindParent('SectionMappings')
-            OutputSectionMappingNode = VolumeManagerETree.XElementWrapper('SectionMappings', InputSectionMappingNode.attrib)
+            OutputSectionMappingNode = VolumeManagerETree.SectionMappingsNode(**InputSectionMappingNode.attrib)
             (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode, 'MappedSectionNumber')
             if added:
                 yield OutputStosGroupNode
@@ -2027,7 +2027,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
             # This is a parallel operation, but the Python GIL is so slow using threads is slower.
             Pool = nornir_pools.GetLocalMachinePool()
     
-            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.items():
+            for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
                 task = Pool.add_task(imagename, triangulation.AddTransforms, StoVTransform, MosaicToSectionTransform)
                 task.imagename = imagename
                 if hasattr(MosaicToSectionTransform, 'gridWidth'):
@@ -2047,7 +2047,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
                     Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
                     pass
         else:
-            for imagename, MosaicToSectionTransform in MosaicTransform.ImageToTransform.items():
+            for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
                 MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)
                 MosaicTransform.ImageToTransform[imagename] = MosaicToVolume
 
