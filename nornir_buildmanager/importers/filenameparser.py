@@ -4,7 +4,6 @@ Created on Apr 15, 2013
 @author: u0490822
 '''
 
-from _abcoll import Mapping
 import os
 import types
 
