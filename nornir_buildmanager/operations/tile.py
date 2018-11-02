@@ -835,12 +835,10 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     ElementCleaned = False
 
     if not HistogramElementCreated:
-        HistogramElement.CleanIfInputTransformMismatched(TransformNode)
-        if HistogramElement.CleanIfInvalid():
+        if HistogramElement.CleanIfInputTransformMismatched(TransformNode):
             HistogramElement = None
             ElementCleaned = True
-        elif HistogramElement.InputTransformChecksum != TransformNode.Checksum:
-            HistogramElement.Clean(reason="Checksum mismatch with requested transform")
+        elif HistogramElement.CleanIfInvalid():
             HistogramElement = None
             ElementCleaned = True
 
