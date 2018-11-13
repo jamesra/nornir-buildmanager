@@ -566,12 +566,19 @@
 				default="Prune" help="Name of the input transform" required="False" />
 			<Argument flag="-OutputTransform" dest="OutputTransformName"
 				default="Grid" help="Name of output transform." required="False" />
-			<Argument flag="-Iterations" default="10" dest="Iterations"
+			<Argument flag="-TranslateIterations" default="150" dest="TranslateIterations"
+                type="int" help="Maximum number of relaxation passes to in translation only placement phase"
+                required="False" />
+			<Argument flag="-RefineIterations" default="10" dest="RefineIterations"
 				type="int" help="Maximum number of refinement passes to run"
 				required="False" />
 			<Argument flag="-Threshold" default="0.25" dest="DisplacementThreshold"
+                type="float"
+                help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
+                required="False" />
+			<Argument flag="-TranslateThreshold" default="1.0" dest="TranslateMaxTensionCutoff"
 				type="float"
-				help="Displacement threshold for control point movement.  Refinement stops below this value"
+				help="Stop iteration of translation phase alignment if the maximum tension vector on any tile is below this value (in pixels)."
 				required="False" />
 			<Argument flag="-CellArea" default="128" dest="CellArea"
 				type="int" help="Size of region around each grid point to register, in pixels"
@@ -592,7 +599,8 @@
 					mosaic -->
 				<PythonCall Function="registration.TranslateTransform"
 					TransformNode="#TransformNode" OutputTransform="Translated_#InputTransformName"
-					FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
+					FilterNode="#FilterNode" RegistrationDownsample="#Downsample"
+					max_relax_iterations="#TranslateIterations" max_relax_tension_cutoff="#TranslateMaxTensionCutoff">
 					<Parameters>
 						<Entry Name="MaxOffsetX" Value="#MaxOffset" />
 					</Parameters>
@@ -612,7 +620,7 @@
 						<Entry Name="MeshHeight" Value="8" />
 						<Entry Name="Cell" Value="#CellArea" />
 						<Entry Name="Threshold" Value="#DisplacementThreshold" />
-						<Entry Name="it" Value="#Iterations" />
+						<Entry Name="it" Value="#RefineIterations" />
 					</Parameters>
 				</PythonCall>
 
