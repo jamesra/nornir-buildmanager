@@ -998,7 +998,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
         if removedControls:
             yield BlockNode
 
-    OutputStosGroupNode = VolumeManagerETree.StosGroupNode(**InputGroupNode.attrib)
+    OutputStosGroupNode = VolumeManagerETree.XElementWrapper(tag='StosGroup', attrib=InputGroupNode.attrib)
     (added, OutputStosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosGroupNode, 'Path')
 
     # Look at all of the mappings and create a list of potential control sections for each mapped section
