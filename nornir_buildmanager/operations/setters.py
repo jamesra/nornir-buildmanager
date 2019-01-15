@@ -7,19 +7,30 @@ Created on Feb 25, 2014
 import logging
 import math
 
+
 def SetFilterLock(Node, Locked):
+    LockChanged = False
     ParentFilter = Node.FindParent('Filter')
     if not ParentFilter is None:
+        LockChanged = ParentFilter.Locked != bool(Locked)
         ParentFilter.Locked = bool(Locked)
+    
+    if LockChanged:
+        return ParentFilter.Parent
+    
+    return
+        
         
 def SetLocked(Node, Locked, **kwargs):
-    Node.Locked = bool(Locked)
-    parent = Node.Parent
-    if not parent is None:
-        return parent
+    LockChanged = Node.Locked != bool(Locked)
+    if LockChanged:
+        Node.Locked = bool(Locked)
+        parent = Node.Parent
+        if not parent is None:
+            return parent
+    else:
+        return
     
-    return None
-
 
 def SetPruneThreshold(PruneNode, Value, **kwargs):
 
@@ -31,7 +42,7 @@ def SetPruneThreshold(PruneNode, Value, **kwargs):
 
     logger.info("Set Prune Threshold to %g on %s" % (Value, PruneNode.Parent.FullPath))
 
-    return PruneNode.FindParent('Filter')
+    return PruneNode.FindParent('Filter').Parent
 
 
 def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs):
@@ -66,7 +77,7 @@ def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs)
 
     logger.info("Set contrast min: %s max: %s, gamma: %s on %s" % (minStr, maxStr, gammaStr, HistogramElement.Parent.FullPath))
 
-    return HistogramElement.FindParent('Filter')
+    return HistogramElement.Parent
 
 
 def PrintContrast(FilterElement, **kwargs):
@@ -88,22 +99,25 @@ def PrintContrast(FilterElement, **kwargs):
         gamma = float('nan')
     
     output = ("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}".format(("{0:d}".format(SectionElement.Number)).ljust(6),
-                                                    ChannelElement.Name.ljust(16), FilterElement.Name.ljust(16), 
+                                                    ChannelElement.Name.ljust(16), FilterElement.Name.ljust(16),
                                                     ("{0:g}".format(minI)).ljust(8),
                                                     ("{0:g}".format(maxI)).ljust(8),
                                                     ("{0:g}".format(gamma)).ljust(8)))
     
     print(output)
+    return 
+
        
 def SetFilterContrastLocked(FilterNode, Locked, **kwargs):
 
     logger = logging.getLogger(__name__ + '.SetFilterContrastLocked')
 
-    FilterNode.Locked = bool(int(Locked))
+    LockChanged = FilterNode.Locked != bool(int(Locked))
+    if LockChanged:
+        FilterNode.Locked = bool(int(Locked))
+        logger.info("Setting filter to locked = " + str(Locked) + "  " + FilterNode.FullPath)
+        return FilterNode.Parent
 
-    logger.info("Setting filter to locked = " + str(Locked) + "  " + FilterNode.FullPath)
-
-    return FilterNode.Parent
 
 def SetFilterMaskName(FilterNode, MaskName, **kwargs):
     
@@ -113,15 +127,18 @@ def SetFilterMaskName(FilterNode, MaskName, **kwargs):
 
     logger.info("Setting filter MaskName to " + MaskName + "  " + FilterNode.FullPath)
 
-    return FilterNode.Parent
+    yield FilterNode.Parent
+
 
 def PrintSectionsDamaged(block_node, **kwargs):
-    print(','.join(list(map(str,block_node.NonStosSectionNumbers))))
-    return None
+    print(','.join(list(map(str, block_node.NonStosSectionNumbers))))
+    return
+
 
 def MarkSectionsAsDamaged(block_node, SectionNumbers, **kwargs):
     block_node.MarkSectionsAsDamaged(SectionNumbers)
     return block_node.Parent
+
     
 def MarkSectionsAsUndamaged(block_node, SectionNumbers, **kwargs):
     block_node.MarkSectionsAsUndamaged(SectionNumbers)

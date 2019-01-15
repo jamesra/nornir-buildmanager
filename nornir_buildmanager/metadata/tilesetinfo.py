@@ -134,8 +134,8 @@ class TilesetInfo(object):
         if self.FilePostfix:
             elem.set('FilePostfix', '%d' % self.FilePostfix)
 
-        with open(XmlFilePath, 'w') as newXML:
-            newXML.write('<?xml version="1.0" ?> \n')
+        with open(XmlFilePath, 'wb') as newXML:
+            newXML.write(b'<?xml version="1.0" ?> \n')
             out = xml.etree.ElementTree.tostring(elem)
             newXML.write(out)
 # 

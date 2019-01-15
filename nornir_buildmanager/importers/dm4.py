@@ -238,7 +238,7 @@ class DigitalMicrograph4Import(object):
         
         InputImageBpp = dm4data.ReadImageBpp()
         
-        BlockObj = BlockNode('SEM')
+        BlockObj = BlockNode.Create('SEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
         if saveBlock:
             yield VolumeObj
@@ -279,7 +279,7 @@ class DigitalMicrograph4Import(object):
     def GetOrCreateStageTransform(cls, channelObj):
         transformObj = channelObj.GetTransform('stage')
         if transformObj is None:
-            return channelObj.UpdateOrAddChildByAttrib(TransformNode(Name='Stage',
+            return channelObj.UpdateOrAddChildByAttrib(TransformNode.Create(Name='Stage',
                                                                              Path='Stage.mosaic',
                                                                              Type='Stage'),
                                                                              'Path')
@@ -292,8 +292,7 @@ class DigitalMicrograph4Import(object):
         TilePyramidObj.NumberOfTiles += 1
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
         
-        if not os.path.exists(LevelObj.FullPath):
-            os.makedirs(LevelObj.FullPath)
+        os.makedirs(LevelObj.FullPath, exist_ok=True)
                  
         return TilePyramidObj
         
@@ -303,11 +302,10 @@ class DigitalMicrograph4Import(object):
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
         filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath, filename)
-        
-        if not os.path.exists(LevelObj.FullPath):
-            os.makedirs(LevelObj.FullPath)
+                
+        os.makedirs(LevelObj.FullPath, exist_ok=True)
             
-        if os.path.exists(LevelObj.FullPath):
+        if os.path.exists(output_fullpath):
             return
             
         pools = nornir_pools.GetGlobalLocalMachinePool()
@@ -319,9 +317,9 @@ class DigitalMicrograph4Import(object):
         filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath, filename)
         
-        if not os.path.exists(LevelObj.FullPath):
-            os.makedirs(LevelObj.FullPath)
-        elif os.path.exists(output_fullpath):
+        os.makedirs(LevelObj.FullPath, exist_ok=True)
+        
+        if os.path.exists(output_fullpath):
             return None
         
         TilePyramidObj.NumberOfTiles += 1

@@ -18,7 +18,7 @@ from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser
 import nornir_shared.files
 
-from filenameparser import ParseFilename, mapping
+from .filenameparser import ParseFilename, mapping
 import nornir_shared.prettyoutput as prettyoutput
 
 imageNameMappings = [mapping('Section', typefunc=int),
@@ -96,20 +96,20 @@ class SectionImage(object):
         if BlockName is None or len(BlockName) == 0:
             BlockName = 'LM'
 
-        BlockObj = BlockNode(BlockName);
+        BlockObj = BlockNode.Create(BlockName);
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj);
 
         if(fileData is None):
             raise Exception("Could not parse section from PMG filename: " + filename)
  
         SectionNumber = fileData.Section
-        sectionObj = SectionNode(SectionNumber)
+        sectionObj = SectionNode.Create(SectionNumber)
 
         [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
 
         ChannelName = fileData.Channel
         ChannelName = ChannelName.replace(' ', '_')
-        channelObj = ChannelNode(ChannelName)
+        channelObj = ChannelNode.Create(ChannelName)
         channelObj.SetScale(scaleValueInNm)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
 
@@ -132,11 +132,7 @@ class SectionImage(object):
         levelNode = ImageSetNode.GetChildByAttrib('Level', 'Downsample', fileData.Downsample)
         imageNode = levelNode.GetChildByAttrib('Image', 'Path', imagebasename)
 
-        if not os.path.exists(os.path.dirname(imageNode.FullPath)):
-            os.makedirs(os.path.dirname(imageNode.FullPath))
-
-        if not os.path.exists(os.path.dirname(imageNode.FullPath)):
-            os.makedirs(os.path.dirname(imageNode.FullPath))
+        os.makedirs(os.path.dirname(imageNode.FullPath), exist_ok=True)
 
         prettyoutput.Log("Copying file: " + imageNode.FullPath)
         shutil.copy(filename, imageNode.FullPath)

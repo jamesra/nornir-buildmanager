@@ -122,7 +122,7 @@ class PruneObj:
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:
-            OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, InputTransformChecksum=InputTransformNode.Checksum)
+            OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Type=MangledName, InputTransformChecksum=InputTransformNode.Checksum)
             TransformParent.append(OutputTransformNode)
         elif os.path.exists(OutputTransformNode.FullPath):
             # The meta-data and output exist, do nothing
@@ -151,7 +151,7 @@ class PruneObj:
                 HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
 
             if HistogramImageNode is None or not os.path.exists(PruneObjInstance.HistogramImageFileFullPath):
-                HistogramImageNode = VolumeManagerETree.ImageNode(HistogramImageFile)
+                HistogramImageNode = VolumeManagerETree.ImageNode.Create(HistogramImageFile)
                 (added, HistogramImageNode) = PruneNode.UpdateOrAddChild(HistogramImageNode)
                 if not added:
                     #Handle the case where the path is different, such as when we change the extension type
@@ -245,15 +245,15 @@ class PruneObj:
                 PruneMapElement = transforms.RemoveOnMismatch(PruneMapElement, 'NumImages', LevelNode.TilesValidated)
 
         if PruneMapElement is None:
-            PruneMapElement = VolumeManagerETree.PruneNode(Overlap=Overlap, Type=MangledName)
+            PruneMapElement = VolumeManagerETree.PruneNode.Create(Overlap=Overlap, Type=MangledName)
             [SaveRequired, PruneMapElement] = FilterNode.UpdateOrAddChildByAttrib(PruneMapElement, 'Overlap')
         else:
             # If meta-data and the data file exist, nothing to do
             if os.path.exists(PruneMapElement.DataFullPath):
-                return None
+                return
 
         # Create file holders for the .xml and .png files
-        PruneDataNode = VolumeManagerETree.DataNode(OutputFile)
+        PruneDataNode = VolumeManagerETree.DataNode.Create(OutputFile)
         [added, PruneDataNode] = PruneMapElement.UpdateOrAddChild(PruneDataNode)
 
         FullTilePath = LevelNode.FullPath

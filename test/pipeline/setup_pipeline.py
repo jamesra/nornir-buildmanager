@@ -49,16 +49,6 @@ def MatchingSections(SectionNodes, sectionNumberList):
         if sectionNode.Number in sectionNumberList:
             yield sectionNode
             
-            
-def SectionNumberList(SectionNodes=None):
-    '''List of section numbers'''
-    numbers = []
-    for n in SectionNodes:
-        numbers.append(n.Number) 
-    
-    return numbers
-
-
 def FullPathsForNodes(node_list):
     list_full_paths = []
     for n in node_list:
@@ -451,7 +441,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
             Transform = 'Prune'
             
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', Transform, '-InputFilter', Filter, '-OutputTransform', 'Grid', '-Iterations', "3", '-Threshold', "1.0")
+        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', Transform, '-InputFilter', Filter, '-OutputTransform', 'Grid', '-TranslateIterations', "5", '-Threshold', "1.0")
         volumeNode = self.RunBuild(buildArgs)
 
         TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")
@@ -658,7 +648,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def VerifySectionsHaveStosTransform(self, stos_group_node, center_section, sectionNodes):
         '''Ensure that each section in the list is mapped by a transform in the stos group'''
         # Check that there are transforms 
-        sectionNumbers = SectionNumberList(sectionNodes)
+        sectionNumbers = [n.Number for n in sectionNodes]
         self.assertGreater(len(sectionNumbers), 0)
         
         # Remove the center section
@@ -733,9 +723,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter, UseMasks=True):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('RefineSectionAlignment', '-InputGroup', InputGroup,
-                                          '-InputDownsample', str(InputLevel),
+                                          '-InputDownsample', str(int(InputLevel)),
                                           '-OutputGroup', OutputGroup,
-                                          '-OutputDownsample', str(OutputLevel),
+                                          '-OutputDownsample', str(int(OutputLevel)),
                                           '-Filter', 'Leveled',
                                           '-Iterations', "3",
                                           '-Threshold', "1.0")
@@ -753,7 +743,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
     def RunScaleVolumeTransforms(self, InputGroup, InputLevel, OutputLevel=1):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('ScaleVolumeTransforms', '-InputGroup', InputGroup, '-InputDownsample', str(InputLevel), '-OutputDownsample', str(OutputLevel))
+        buildArgs = self._CreateBuildArgs('ScaleVolumeTransforms', '-InputGroup', InputGroup, '-InputDownsample', str(int(InputLevel)), '-OutputDownsample', str(int(OutputLevel)))
         volumeNode = self.RunBuild(buildArgs)
 
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (InputGroup, OutputLevel))

@@ -11,7 +11,7 @@ import re
 import nornir_buildmanager.validation.transforms
 import nornir_shared.misc
 
-import VolumeManagerETree as VolumeManager
+from . import VolumeManagerETree as VolumeManager
 
 
 def IsMatch(in_string, RegExStr, CaseSensitive=False):
@@ -57,7 +57,8 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
 
         match = re.match(RegExStr, Attrib, flags)
         if not match is None:
-            VolumeManager.VolumeManager.WrapElement(MatchObj)
+            (wrapped, MatchObj) = VolumeManager.VolumeManager.WrapElement(MatchObj)
+            assert(wrapped == False)
             Matches.append(MatchObj)
 
     return Matches
@@ -392,7 +393,7 @@ class PyramidLevelHandler(object):
         if not self.HasLevel(Downsample) and GenerateData:
             self.GenerateLevels(Downsample)
 
-        [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode(Downsample), "Downsample")
+        [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode.Create(Downsample), "Downsample")
         return [added, lnode]
 
     def GenerateLevels(self, Levels):

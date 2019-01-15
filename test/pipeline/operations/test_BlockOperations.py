@@ -378,7 +378,7 @@ class StosGroupTest(EmptyVolumeTestBase):
         super(StosGroupTest, self).setUp()
 
         volumeObj = self.LoadOrCreateVolume()
-        BlockObj = VolumeManagerETree.BlockNode('TEM')
+        BlockObj = VolumeManagerETree.BlockNode.Create('TEM')
         [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
         volumeObj.Save()
 
@@ -461,7 +461,7 @@ class StosMapTest(EmptyVolumeTestBase):
         super(StosMapTest, self).setUp()
 
         volumeObj = self.LoadOrCreateVolume()
-        BlockObj = VolumeManagerETree.BlockNode('TEM')
+        BlockObj = VolumeManagerETree.BlockNode.Create('TEM')
         [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
         volumeObj.Save()
 

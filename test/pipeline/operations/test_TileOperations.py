@@ -174,8 +174,11 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertIsNotNone(self.InputLevelNode)
 
         # The first time it is run we should get a filter node with a histogram
-        OutputFilterNode = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
-        self.assertIsNotNone(OutputFilterNode)
+        OutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
+        self.assertIsNotNone(OutputFilterNodes)
+        
+        OutputFilterNodes = list(OutputFilterNodes)
+        OutputFilterNode = OutputFilterNodes[-1]
 
         HistogramNode = OutputFilterNode.find("Histogram")
         self.assertIsNotNone(HistogramNode)
@@ -186,8 +189,11 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertTrue(os.path.exists(HistogramNode.ImageFullPath))
 
         # The second time it is run we should not regenerate a histogram and None should be returned
-        SecondOutputFilterNode = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
-        self.assertIsNone(SecondOutputFilterNode)
+        SecondOutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
+        self.assertIsNotNone(SecondOutputFilterNodes)
+        
+        SecondOutputFilterNodesList = list(SecondOutputFilterNodes)
+        self.assertEqual(len(SecondOutputFilterNodesList), 0, "No elements should require saving after an identical call")
 
         self.assertIsNotNone(HistogramNode)
         self.assertIsNotNone(HistogramNode.DataNode)

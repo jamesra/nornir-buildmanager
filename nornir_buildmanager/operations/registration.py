@@ -35,7 +35,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                        RegistrationDownsample,
                        max_relax_iterations=None,
                        max_relax_tension_cutoff=None, 
-                       Logger, **kwargs):
+                       Logger=None, **kwargs):
     '''@ChannelNode'''
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
     InputTransformNode = TransformNode
@@ -52,7 +52,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
 
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:
@@ -138,7 +138,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 # 
 #     OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
 #     if OutputTransformNode is None:
-#         OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+#         OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
 #         OutputTransformNode.SetTransform(InputTransformNode)
 #         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
 #     elif OutputTransformNode.Locked:
@@ -232,7 +232,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:
@@ -244,7 +244,11 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         cmd = CmdLineTemplate % {'InputMosaic' : InputTransformNode.FullPath, 'OutputMosaic' : OutputTransformNode.FullPath, 'ImageDir' : LevelNode.FullPath}
         prettyoutput.CurseString('Cmd', cmd)
         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-        ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
+        output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
+        
+        if len(output) == 0:
+            raise RuntimeError("No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
+        
         OutputTransformNode.cmd = cmd
         SaveRequired = True
 

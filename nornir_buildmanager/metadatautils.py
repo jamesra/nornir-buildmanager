@@ -24,7 +24,7 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=
                 OverlayImageNode = None
 
     if OverlayImageNode is None:
-        OverlayImageNode = VolumeManagerETree.ImageNode(os.path.basename(OutputImageName))
+        OverlayImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(OutputImageName))
         OverlayImageNode.SetTransform(InputTransformNode)
         ParentNode.append(OverlayImageNode)
         Created = True
@@ -46,11 +46,11 @@ def GetOrCreateHistogramNodeHelper(ParentNode, DataPath, ImagePath, InputTransfo
                 histogramNode = None
 
     if histogramNode is None:
-        histogramNode = VolumeManagerETree.HistogramNode(InputTransformNode, None)
-        DataNode = VolumeManagerETree.DataNode(os.path.basename(DataPath))
+        histogramNode = VolumeManagerETree.HistogramNode.Create(InputTransformNode, None)
+        DataNode = VolumeManagerETree.DataNode.Create(os.path.basename(DataPath))
         histogramNode.append(DataNode)
         
-        ImageNode = VolumeManagerETree.ImageNode(os.path.basename(ImagePath))
+        ImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(ImagePath))
         histogramNode.append(ImageNode)
         
         histogramNode.SetTransform(InputTransformNode)
@@ -79,12 +79,11 @@ def CreateLevelNodes(ParentNode, DownsampleLevels):
     for level in DownsampleLevels:
         LevelNode = ParentNode.GetChildByAttrib('Level', 'Downsample', level)
         if LevelNode is None:
-            LevelNode = VolumeManagerETree.LevelNode(level)
+            LevelNode = VolumeManagerETree.LevelNode.Create(level)
             [added, LevelNode] = ParentNode.UpdateOrAddChildByAttrib(LevelNode, 'Downsample')
             LevelsCreated.append(LevelNode)
 
-        if not os.path.exists(LevelNode.FullPath):
-            os.makedirs(LevelNode.FullPath)
+        os.makedirs(LevelNode.FullPath, exist_ok=True)
 
     return LevelsCreated
 
@@ -98,11 +97,10 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
         Type = attribs['Type']
         del attribs['Type']
 
-    ImageSetNode = VolumeManagerETree.ImageSetNode(Type, attrib=attribs);
+    ImageSetNode = VolumeManagerETree.ImageSetNode.Create(Type, attrib=attribs);
     [NewImageSetNode, ImageSetNode] = ParentNode.UpdateOrAddChildByAttrib(ImageSetNode, 'Path');
 
-    if not os.path.exists(ImageSetNode.FullPath):
-        os.makedirs(ImageSetNode.FullPath)
+    os.makedirs(ImageSetNode.FullPath, exist_ok=True)
 
     CreateLevelNodes(ImageSetNode, Downsample)
 
@@ -110,7 +108,7 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
 
     imagePath = os.path.basename(ImageFullPath)
 
-    imagenode = VolumeManagerETree.ImageNode(imagePath)
+    imagenode = VolumeManagerETree.ImageNode.Create(imagePath)
     [nodecreated, imagenode] = LevelNode.UpdateOrAddChildByAttrib(imagenode, 'Path')
 
     return ImageSetNode

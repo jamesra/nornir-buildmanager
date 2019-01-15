@@ -129,12 +129,8 @@ class HTMLPaths(object):
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
 
     def CreateOutputDirs(self):
-
-        if not os.path.exists(self.OutputDir):
-            os.makedirs(self.OutputDir)
-
-        if not os.path.exists(self.ThumbnailDir):
-            os.makedirs(self.ThumbnailDir)
+        os.makedirs(self.OutputDir, exist_ok=True)
+        os.makedirs(self.ThumbnailDir, exist_ok=True)
 
     @classmethod
     def __StripLeadingPathSeperator(cls, path):
@@ -217,8 +213,7 @@ def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
 
     logger = logging.getLogger(__name__ + '.CopyFiles')
 
-    if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)
+    os.makedirs(OutputDir, exist_ok=True)
 
     if os.path.exists(DataNode.FullPath):
 
@@ -254,8 +249,7 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
     OutputDir = _AbsoluePathFromRelativePath(FilterNode, OutputDir)
     logger = logging.getLogger(__name__ + '.CopyImage')
 
-    if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)
+    os.makedirs(OutputDir, exist_ok=True)
 
     # Find the imageset for the DataNode
     saveImageSet = False
@@ -288,8 +282,7 @@ def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
     if OutputDir is None:
         return
 
-    if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)
+    os.makedirs(OutputDir, exist_ok=True)
 
     if os.path.exists(DataNode.FullPath):
         shutil.move(DataNode.FullPath, OutputDir)
@@ -666,8 +659,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
         Scale = max(float(Width) / MaxImageWidth, float(Height) / MaxImageHeight)
         Scale = 1 / Scale
 
-        if not os.path.exists(HtmlPaths.ThumbnailDir):
-            os.makedirs(HtmlPaths.ThumbnailDir)
+        os.makedirs(HtmlPaths.ThumbnailDir, exist_ok=True)
 
         ThumbnailFilename = GetTempFileSaltString() + ImageNode.Path
         ImgSrcPath = os.path.join(HtmlPaths.ThumbnailRelative, ThumbnailFilename)

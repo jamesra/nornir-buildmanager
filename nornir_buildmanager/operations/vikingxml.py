@@ -274,7 +274,7 @@ def ParseSection(BlockPath, SectionNode):
     NotesNodes = SectionNode.findall('Notes')
     for NoteNode in NotesNodes:
         # Copy over Notes elements verbatim
-        OutputSectionNode.append(copy.deepcopy(NoteNode))
+        OutputSectionNode.append(NoteNode.Copy())
         
     return OutputSectionNode
 

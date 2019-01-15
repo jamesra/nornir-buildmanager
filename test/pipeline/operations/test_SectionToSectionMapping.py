@@ -250,7 +250,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
         # Add some extra stosmap nodes and make sure they get cleaned up
 
-        ExtraMapNode = VolumeManagerETree.MappingNode(4, 10)
+        ExtraMapNode = VolumeManagerETree.MappingNode.Create(4, 10)
         StosMapNode.append(ExtraMapNode)
 
         removed = StosMapNode.RemoveDuplicateControlEntries(3)

@@ -123,8 +123,7 @@ def ImportStos(InputStosFullpath, BlockNode, GroupName,
     
     # Copy the original stos file to a subdirectory under the StosGroup
     OriginalsFullPath = os.path.join(StosGroup.FullPath, 'Originals') 
-    if not os.path.exists(OriginalsFullPath):
-        os.makedirs(OriginalsFullPath)
+    os.makedirs(OriginalsFullPath, exist_ok=True)
         
     OriginalCopyFullPath = os.path.join(OriginalsFullPath, os.path.basename(InputStosFullpath))
     shutil.copy(InputStosFullpath, OriginalCopyFullPath)

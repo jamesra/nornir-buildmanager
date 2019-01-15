@@ -20,7 +20,7 @@ def LoadHistogramCutoffs(filename):
     if not os.path.exists(filename):
         return Values
     
-    with open(filename, 'rb') as contrastFile:
+    with open(filename, 'r') as contrastFile:
         csvReader = csv.reader(contrastFile, delimiter=' ', skipinitialspace=True,)
         for line in csvReader:
             if len(line) == 0:

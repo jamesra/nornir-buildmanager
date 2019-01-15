@@ -17,7 +17,7 @@ import nornir_shared.files
 import nornir_shared.misc
 
 import nornir_buildmanager.importers.pmg as pmg
-import setup_pipeline
+from . import setup_pipeline
 
 
 PMGData = {"6750_10677D_WDF_20x_02_G.pmg" : PMGInfo(Slide=6750,

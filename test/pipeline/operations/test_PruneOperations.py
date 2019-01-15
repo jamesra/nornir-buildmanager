@@ -98,7 +98,7 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
 
         Scores.sort()
 
-        MeanScore = Scores[len(Scores) / 2]
+        MeanScore = Scores[len(Scores) // 2]
 
         NewThreshold = MeanScore - 0.01
 

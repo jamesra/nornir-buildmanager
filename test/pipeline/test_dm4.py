@@ -19,7 +19,7 @@ import nornir_shared.misc
 
 import nornir_buildmanager.build as build
 import nornir_buildmanager.importers.idoc as idoc
-import setup_pipeline
+from . import setup_pipeline
 
 
 class DM4Test(setup_pipeline.PlatformTest):

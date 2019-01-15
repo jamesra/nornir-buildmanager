@@ -30,7 +30,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
         return
 
     if FilterNode.HasTileset:
-        TileSetNode = FilterNode.Imageset
+        TileSetNode = FilterNode.Tileset
  
 #         if files.IsOutdated(ImageNode.FullPath, TileSetNode.Levels[0].FullPath):
 #             TileSetNode.Clean("Input image was newer than tileset")
@@ -38,7 +38,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
 #             return
 
     if not FilterNode.HasTileset:
-        TileSetNode = nornir_buildmanager.VolumeManager.TilesetNode()
+        TileSetNode = nornir_buildmanager.VolumeManager.TilesetNode.Create()
         [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
 
         TileSetNode.TileXDim = TileWidth
@@ -47,9 +47,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
         TileSetNode.FilePrefix = FilterNode.Name + '_'
         TileSetNode.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
 
-    if not os.path.exists(TileSetNode.FullPath):
-        Logger.info("Creating Directory: " + TileSetNode.FullPath)
-        os.makedirs(TileSetNode.FullPath)
+    os.makedirs(TileSetNode.FullPath, exist_ok=True)
 
     # OK, check if the first level of the tileset exists
     (added_outputlevel, OutputLevel) = TileSetNode.GetOrCreateLevel(InputLevelNode.Downsample, GenerateData=False)
@@ -80,8 +78,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
 
         GridTileNameTemplate = nornir_buildmanager.templates.Current.GridTileNameTemplate
 
-        if not os.path.exists(OutputLevel.FullPath):
-            os.makedirs(OutputLevel.FullPath)
+        os.makedirs(OutputLevel.FullPath, exist_ok=True)
 
         iFile = 0
         for iY in range(0, GridDimY):

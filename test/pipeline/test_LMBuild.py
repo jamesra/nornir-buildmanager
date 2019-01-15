@@ -8,7 +8,7 @@ import unittest
 from nornir_buildmanager.VolumeManagerETree import *
 
 import nornir_buildmanager.build as build
-import setup_pipeline
+from . import setup_pipeline
 
 
 class LMBuildTest(setup_pipeline.PlatformTest):

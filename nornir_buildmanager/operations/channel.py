@@ -42,7 +42,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
     # STOPPED HERE.  NEED TO CREATE A FILTER  #
     ###########################################
     SaveFilterNode = False
-    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(FilterNode(Name=OutputFilterName), "Name")
+    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(FilterNode.Create(Name=OutputFilterName), "Name")
 
     # DownsampleSearchTemplate = "Level[@Downsample='%(Level)d']/Image"
 
@@ -52,12 +52,11 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
 
     # OutputImageSet.
 
-    # BlobSetNode = VolumeManagerETree.ImageSetNode('blob', MangledName, 'blob', {'MaskName' :  ImageSetNode.MaskName})
+    # BlobSetNode = VolumeManagerETree.ImageSetNode.Create('blob', MangledName, 'blob', {'MaskName' :  ImageSetNode.MaskName})
     # [added, BlobSetNode] = FilterNode.UpdateOrAddChildByAttrib(BlobSetNode, 'Path')
     # BlobSetNode.MaskName = ImageSetNode.MaskName
 
-    if not os.path.exists(BlobImageSet.FullPath):
-        os.makedirs(BlobImageSet.FullPath)
+    os.makedirs(BlobImageSet.FullPath, exist_ok=True)
 
     # BlobSetNode.Type = ImageSetNode.Type + '_' + MangledName
 
@@ -94,8 +93,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
 
     if not os.path.exists(BlobImageNode.FullPath):
 
-        if not os.path.exists(os.path.dirname(BlobImageNode.FullPath)):
-            os.makedirs(os.path.dirname(BlobImageNode.FullPath))
+        os.makedirs(os.path.dirname(BlobImageNode.FullPath), exist_ok=True)
 
         cmd = irblobtemplate % {'OutputImageFile' : BlobImageNode.FullPath,
                                 'InputFile' : InputImageNode.FullPath} + MaskStr
@@ -103,9 +101,10 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         prettyoutput.Log(cmd)
         proc = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (stdout, stderr) = proc.communicate()
-        if proc.returncode < 0:
+        if proc.returncode < 0 or not os.path.exists(BlobImageNode.FullPath):
             SaveFilterNode = False 
             prettyoutput.LogErr("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
+            raise RuntimeError("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
         else:
             SaveFilterNode = True
 

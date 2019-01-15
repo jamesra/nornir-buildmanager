@@ -58,7 +58,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if extension is None:
         extension = 'idoc'
         
-    #TODO, set the defaults at the volume level in the meta-data and pull from there
+    # TODO, set the defaults at the volume level in the meta-data and pull from there
     
     MinCutoff = float(kwargs.get('Min'))
     MaxCutoff = float(kwargs.get('Max'))
@@ -93,6 +93,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
+
               
 def try_remove_spaces_from_dirname(sectionDir):
     ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
@@ -105,8 +106,8 @@ def try_remove_spaces_from_dirname(sectionDir):
         sectionDir = sectionDirNoSpaces
         return sectionDir 
     
-    
     return None
+
 
 class SerialEMIDocImport(object):
     
@@ -121,7 +122,6 @@ class SerialEMIDocImport(object):
         idocFileFullPath = os.path.join(sectionDir, idocFilename)
         
         return idocFileFullPath
-        
     
     @classmethod
     def GetDirectories(cls, idocFileFullPath):
@@ -199,8 +199,7 @@ class SerialEMIDocImport(object):
         if OutputPath is None:
             OutputPath = os.path.join(idocFilePath, "..")
 
-        if not os.path.exists(OutputPath):
-            os.makedirs(OutputPath)
+        os.makedirs(OutputPath, exist_ok=True)
 
         logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
 
@@ -210,7 +209,7 @@ class SerialEMIDocImport(object):
         SectionNumber = 0
         (ParentDir, sectionDir) = cls.GetDirectories(idocFileFullPath)
           
-        BlockObj = BlockNode('TEM')
+        BlockObj = BlockNode.Create('TEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
          
         # If the parent directory doesn't have the section number in the name, change it
@@ -231,7 +230,6 @@ class SerialEMIDocImport(object):
             SectionNumber = ExistingSectionInfo[0]
 
         prettyoutput.CurseString('Section', str(SectionNumber))
- 
 
         # Check for underscores.  If there is an underscore and the first part is the sectionNumber, then use everything after as the section name
         SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber
@@ -244,7 +242,7 @@ class SerialEMIDocImport(object):
         except:
             pass
 
-        sectionObj = SectionNode(SectionNumber,
+        sectionObj = SectionNode.Create(SectionNumber,
                                               SectionName,
                                               SectionPath)
 
@@ -252,7 +250,7 @@ class SerialEMIDocImport(object):
         sectionObj.Name = SectionName
 
         # Create a channel group 
-        [saveChannel, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode('TEM'), 'Name')
+        [saveChannel, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode.Create('TEM'), 'Name')
   
         ChannelPath = channelObj.FullPath
         OutputSectionPath = os.path.join(OutputPath, ChannelPath)
@@ -287,11 +285,9 @@ class SerialEMIDocImport(object):
         # Set the scale
         [added, ScaleObj] = cls.CreateScaleNode(IDocData, channelObj) 
 
-
         FilterName = 'Raw' + str(TargetBpp)
         if(TargetBpp is None):
             FilterName = 'Raw'
-
 
         histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
         source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles ]
@@ -305,7 +301,7 @@ class SerialEMIDocImport(object):
         ImageConversionRequired = False
 
         # Create a channel for the Raw data 
-        [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode(Name=FilterName), 'Name')
+        [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
         if added_filter:
             ImageConversionRequired = True
 
@@ -319,29 +315,25 @@ class SerialEMIDocImport(object):
         # Check to make sure our supertile mosaic file is valid
         RemoveOutdatedFile(idocFilePath, SupertilePath)
 
-        [added_transform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
+        [added_transform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode.Create(Name=SupertileName,
                                                                          Path=SupertileTransform,
                                                                          Type='Stage'),
                                                                          'Path')
 
-
-        [added_tilepyramid, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
+        [added_tilepyramid, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode.Create(Type='stage',
                                                                             NumberOfTiles=IDocData.NumTiles),
                                                                             'Path')
 
         [added_level, LevelObj] = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
 
-
         Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
-
 
         # Parse the images
         ImageBpp = cls.GetImageBpp(IDocData, sectionDir)
 
-
         # Make sure the target LevelObj is verified        
         if not os.path.exists(LevelObj.FullPath):
-            os.makedirs(LevelObj.FullPath)
+            os.makedirs(LevelObj.FullPath, exist_ok=True)
         else:
             VerifyTiles(filterObj.TilePyramid.GetLevel(1))
             Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
@@ -358,7 +350,7 @@ class SerialEMIDocImport(object):
             Invert = False 
             filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
-            #andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
+            # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
             nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
 
         elif(Tileset.ImageMoveRequired):
@@ -390,7 +382,6 @@ class SerialEMIDocImport(object):
         else:
             return channelObj
 
-
     @classmethod
     def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, ContrastCutoffs, SourceImagesFullPaths, histogramFullPath):
         '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
@@ -405,7 +396,6 @@ class SerialEMIDocImport(object):
             (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], histogramFullPath)
 
         return (ActualMosaicMin, ActualMosaicMax, Gamma)
-
 
     @classmethod
     def GetImageBpp(cls, IDocData, sectionDir):
@@ -457,6 +447,7 @@ class SerialEMIDocImport(object):
             andValue = andValue + pow(2, i)
             
         return andValue
+
     
 def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, histogramFullPath=None):
     
@@ -477,14 +468,15 @@ def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, histogramFullPath=Non
 
     # I am willing to clip 1 pixel every hundred thousand on the dark side, and one every ten thousand on the light
     return histogramObj.AutoLevel(MinCutoff, MaxCutoff)
+
     
 def _PlotHistogram(histogramFullPath, sectionNumber, minCutoff, maxCutoff):    
     HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
     ImageRemoved = RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
     if ImageRemoved or not os.path.exists(HistogramImageFullPath):
         pool = nornir_pools.GetGlobalMultithreadingPool()
-        pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
-        #plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
 
 
 class NornirTileset():
@@ -570,11 +562,10 @@ class NornirTileset():
         
     def __init__(self, OutputImageExt):
         self._tiles = []
-        self._MissingInputImages = False #True if some of the IDocImages are missing from the disk
-        self._ImageMoveRequired = False #True if there are images that can be moved
-        self._ImageConversionRequired = False #True if there are images that need to be converted
+        self._MissingInputImages = False  # True if some of the IDocImages are missing from the disk
+        self._ImageMoveRequired = False  # True if there are images that can be moved
+        self._ImageConversionRequired = False  # True if there are images that need to be converted
         self._OutputImageExt = OutputImageExt
-                
         
     @classmethod
     def CreateTilesFromIDocTileData(cls, tiles, InputTileDir, OutputTileDir, OutputImageExt):
@@ -582,7 +573,7 @@ class NornirTileset():
         :param tiles IDocTileData: List of tiles to build dictionaries from
         '''
         
-        #SerialEM begins numbering file names from zero.  So we will too. 
+        # SerialEM begins numbering file names from zero.  So we will too. 
         ImageNumber = -1
         
         obj = NornirTileset(OutputImageExt)
@@ -614,14 +605,14 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
 
     # Copy the idoc file to the output directory
     idocPath = os.path.basename(idocFullPath)
-    IDocNodeObj = DataNode(Path=idocPath, attrib={'Name' : 'IDoc'})
+    IDocNodeObj = DataNode.Create(Path=idocPath, attrib={'Name' : 'IDoc'})
     containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'IDoc')
     [added, IDocNodeObj] = containerObj.UpdateOrAddChildByAttrib(IDocNodeObj, 'Name')
 
     CopiedFileFullPath = os.path.join(containerObj.FullPath, idocPath)
     if not os.path.exists(CopiedFileFullPath):
-        if not os.path.exists(containerObj.FullPath):
-            os.makedirs(containerObj.FullPath)
+        os.makedirs(containerObj.FullPath, exist_ok=True)
+        
         shutil.copyfile(idocFullPath, CopiedFileFullPath)
 
     # Copy over attributes from the idoc
@@ -674,8 +665,7 @@ def TryAddNotes(containerObj, InputPath, logger):
                 NotesFilename = os.path.basename(filename)
                 CopiedNotesFullPath = os.path.join(containerObj.FullPath, NotesFilename)
                 if not os.path.exists(CopiedNotesFullPath):
-                    if not os.path.exists(containerObj.FullPath):
-                        os.makedirs(containerObj.FullPath)
+                    os.makedirs(containerObj.FullPath, exist_ok=True)
                     shutil.copyfile(filename, CopiedNotesFullPath)
                     NotesAdded = True
 
@@ -684,7 +674,7 @@ def TryAddNotes(containerObj, InputPath, logger):
                     [base, ext] = os.path.splitext(filename)
                     encoding = "utf-8"
                     ext = ext.lower()
-                    notesTxt = notesTxt.encode(encoding)
+                    # notesTxt = notesTxt.encode(encoding)
 
                     notesTxt = notesTxt.replace('\0', '')
 
@@ -694,7 +684,7 @@ def TryAddNotes(containerObj, InputPath, logger):
                         XMLnotesTxt = escape(notesTxt)
 
                         # Create a Notes node to save the notes into
-                        NotesNodeObj = NotesNode(Text=XMLnotesTxt, SourceFilename=NotesFilename)
+                        NotesNodeObj = NotesNode.Create(Text=XMLnotesTxt, SourceFilename=NotesFilename)
                         containerObj.RemoveOldChildrenByAttrib('Notes', 'SourceFilename', NotesFilename)
                         [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
 
@@ -726,8 +716,8 @@ def TryAddLogs(containerObj, InputPath, logger):
             NotesFilename = os.path.basename(filename)
             CopiedLogsFullPath = os.path.join(containerObj.FullPath, NotesFilename)
             if not os.path.exists(CopiedLogsFullPath):
-                if not os.path.exists(containerObj.FullPath):
-                    os.makedirs(containerObj.FullPath)
+                os.makedirs(containerObj.FullPath, exist_ok=True)
+                
                 shutil.copyfile(filename, CopiedLogsFullPath)
                 LogsAdded = True
 
@@ -738,7 +728,7 @@ def TryAddLogs(containerObj, InputPath, logger):
                     pass
 
                 # Create a Notes node to save the logs into
-                LogNodeObj = DataNode(Path=NotesFilename, attrib={'Name':'Log'})
+                LogNodeObj = DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
                 containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
                 [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')
                 LogsAdded = LogsAdded or added
@@ -754,10 +744,7 @@ def TryAddLogs(containerObj, InputPath, logger):
     return LogsAdded
 
 
-
 class IDocTileData():
-
-
 
     def __init__(self, ImageName):
         '''Populate all known SerialEM Idoc meta-data'''
@@ -862,7 +849,6 @@ class IDoc():
                                 except ValueError:
                                     convVal = parts[1]
 
-
                             values = ConvertedValues
                             if len(values) == 1:
                                 value = values[0]
@@ -880,7 +866,7 @@ class IDoc():
         return None
 
 
-class LogTileData():
+class LogTileData(object):
     '''Data for each individual tile in a capture'''
 
     @property
@@ -922,7 +908,6 @@ class LogTileData():
 
         return None
 
-
     def __str__(self):
         text = ""
         if not self.number is None:
@@ -943,10 +928,10 @@ class LogTileData():
         self.stageStopTime = None  # Time when the stage stopped moving
 
         self.driftStamps = []  # Contains tuples of time after stage move completion and measured drift
-        self.settleTime = None  # Time required to capture the tile after the stage stopped moving.
         self.number = None  # The tile number in the capture
         self.driftUnits = None  # nm/sec
         self.coordinates = None
+
 
 class SerialEMLog(object):
 
@@ -983,7 +968,6 @@ class SerialEMLog(object):
 
         return total / count
 
-
     @property
     def FastestTileTime(self):
         '''Shortest time to capture a tile in seconds'''
@@ -1017,7 +1001,6 @@ class SerialEMLog(object):
                 mindrift = min(mindrift, t.driftStamps[-1][1])
 
         return mindrift
-
 
     @property
     def NumTiles(self):
@@ -1117,7 +1100,6 @@ class SerialEMLog(object):
             if not obj is None:
                 return obj
 
-
         Data = SerialEMLog()
         NextTile = None  # The tile we are currently moving the stage, focusing on, and setting up an aquisition for.
         AcquiredTile = None  # The tile which we have an image for, but has not been read from the CCD and saved to disk yet
@@ -1209,7 +1191,6 @@ class SerialEMLog(object):
                                 Y = int(Coords[1].strip())
                                 AcquiredTile.coordinates = (X, Y)
 
-
                         Data.tileData[AcquiredTile.number] = AcquiredTile
                         AcquiredTile = None
 
@@ -1261,7 +1242,7 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
     Data = __argToSerialEMLog(DataSource)
 
     lines = []
-    maxdrift = None
+    maxdrift = 0
     NumTiles = int(0)
     for t in list(Data.tileData.values()):
         if not (t.dwellTime is None or t.drift is None):
@@ -1286,9 +1267,9 @@ def PlotDriftGrid(DataSource, OutputImageFile):
     Data = __argToSerialEMLog(DataSource)
 
     lines = []
-    maxdrift = None
+    maxdrift = -1
     NumTiles = int(0)
-    fastestTime = None
+    fastestTime = float('inf')
     colors = ['black', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
 
     DriftGrid = []
@@ -1322,7 +1303,7 @@ def PlotDriftGrid(DataSource, OutputImageFile):
 #    print "Fastest Capture: %g" % fastestTime
 #
 
-    #PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
+    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
 
     x = []
     y = []
@@ -1353,15 +1334,14 @@ if __name__ == "__main__":
 
     print("%d tiles" % len(Data.tileData))
 
-    print( "Average drift: %g nm/sec" % Data.AverageTileDrift)
-    print( "Min drift: %g nm/sec" % Data.MinTileDrift)
-    print( "Max drift: %g nm/sec" % Data.MaxTileDrift)
-    print( "Average tile time: %g sec" % Data.AverageTileTime)
-    print( "Fastest tile time: %g sec" % Data.FastestTileTime)
-    print( "Total time: %s" % str(dtime))
-    print( "Total tiles: %d" % Data.NumTiles)
+    print("Average drift: %g nm/sec" % Data.AverageTileDrift)
+    print("Min drift: %g nm/sec" % Data.MinTileDrift)
+    print("Max drift: %g nm/sec" % Data.MaxTileDrift)
+    print("Average tile time: %g sec" % Data.AverageTileTime)
+    print("Fastest tile time: %g sec" % Data.FastestTileTime)
+    print("Total time: %s" % str(dtime))
+    print("Total tiles: %d" % Data.NumTiles)
 
     PlotDriftGrid(datapath, os.path.join(outdir, outfile + "_driftgrid.svg"))
     PlotDriftSettleTime(datapath, os.path.join(outdir, outfile + "_settletime.svg"))
-
 

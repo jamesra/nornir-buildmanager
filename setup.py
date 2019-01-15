@@ -37,6 +37,9 @@ if __name__ == '__main__':
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
+    
+    classifiers = ['Programming Language :: Python :: 3.7',
+                   'Topic :: Scientific/Engineering']
 
     scripts = glob.glob(os.path.join('scripts', '*.py'))
 
@@ -48,7 +51,8 @@ if __name__ == '__main__':
 
     setup(name='nornir_buildmanager',
           zip_safe=True,
-          version='1.3.4',
+          classifiers=classifiers,
+          version='1.4.0',
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",
