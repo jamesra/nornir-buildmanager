@@ -1148,7 +1148,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         loaded_element = self._load_link_element(SubContainerPath)
         if loaded_element is None:
             self.remove(link_node)
-            prettyoutput.log("Deleting unloadable link element {0}".format(str(link_node)))
+            prettyoutput.Log("Deleting unloadable link element {0}".format(str(link_node)))
             return None
         
         self._ReplaceChildElementInPlace(old=link_node, new=loaded_element)
