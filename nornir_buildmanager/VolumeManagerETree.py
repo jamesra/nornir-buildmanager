@@ -494,7 +494,13 @@ class XElementWrapper(ElementTree.Element):
 
         '''Called when an attribute lookup has not found the attribute in the usual places (i.e. it is not an instance attribute nor is it found in the class tree for self). name is the attribute name. This method should return the (computed) attribute value or raise an AttributeError exception.
 
-        Note that if the attribute is found through the normal mechanism, __getattr__() is not called. (This is an intentional asymmetry between __getattr__() and __setattr__().) This is done both for efficiency reasons and because otherwise __getattr__() would have no way to access other attributes of the instance. Note that at least for instance variables, you can fake total control by not inserting any values in the instance attribute dictionary (but instead inserting them in another object). See the __getattribute__() method below for a way to actually get total control in new-style classes.'''
+        Note that if the attribute is found through the normal mechanism, __getattr__() is not called. (This
+        is an intentional asymmetry between __getattr__() and __setattr__().) This is done both for
+        efficiency reasons and because otherwise __getattr__() would have no way to access other attributes
+        of the instance. Note that at least for instance variables, you can fake total control by not
+        inserting any values in the instance attribute dictionary (but instead inserting them in another
+        object). See the __getattribute__() method below for a way to actually get total control in
+         new-style classes.'''
         if(name in self.attrib):
             return self.attrib[name]
 
@@ -1118,9 +1124,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
         try:
             XMLTree = ElementTree.parse(Filename)
         except Exception as e:
-            logger.error("Parse error for " + Filename)
-            logger.error(str(e))
-            return None
+            logger.error("Parse error for linked XML file: " + Filename)
+#            logger.error(str(e))
+            raise e
 
         XMLElement = XMLTree.getroot()
 
@@ -1141,6 +1147,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
         SubContainerPath = os.path.join(fullpath, link_node.attrib["Path"])
         loaded_element = self._load_link_element(SubContainerPath)
         if loaded_element is None:
+            self.remove(link_node)
+            prettyoutput.log("Deleting unloadable link element {0}".format(str(link_node)))
             return None
         
         self._ReplaceChildElementInPlace(old=link_node, new=loaded_element)

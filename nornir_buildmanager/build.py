@@ -15,6 +15,14 @@ import os
 import sys
 import time
 
+import matplotlib 
+#Nornir build must use a backend that does not allocate windows in the GUI should be used. 
+#Otherwise bugs will appear in multi-threaded environments
+matplotlib.use('Agg') 
+
+import matplotlib.pyplot as plt
+plt.ioff()
+
 from nornir_buildmanager import *
 from nornir_imageregistration.files import *
 from nornir_shared.misc import SetupLogging, lowpriority
@@ -153,7 +161,7 @@ def InitLogging(buildArgs):
 
     if 'volumepath' in args:
         if _GetFromNamespace(args, 'debug', False):
-            SetupLogging(args.volumepath, Level=logging.DEBUG)
+            SetupLogging(OutputPath=args.volumepath, Level=logging.DEBUG)
         else:
             SetupLogging(Level=logging.WARN)
     else:
@@ -181,7 +189,7 @@ def Execute(buildArgs=None):
         lowpriority()
         print("Warning, using low priority flag.  This can make builds much slower")
         
-    # SetupLogging(args.volumepath)
+    # SetupLogging(OutputPath=args.volumepath)
     
     try:  
         Timer.Start(args.PipelineName)

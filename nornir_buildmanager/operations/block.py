@@ -321,7 +321,7 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     return None
 
 
-def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath, ControlMaskImageFullPath=None, MappedMaskImageFullPath=None, AngleSearchRange=None, argstring=None, Logger=None):
+def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath, ControlMaskImageFullPath=None, MappedMaskImageFullPath=None, AngleSearchRange=None, TestForFlip=True, argstring=None, Logger=None):
     '''Call the stos-brute version from nornir-imageregistration'''
 
     alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageFullPath,
@@ -404,7 +404,7 @@ def GetOrCreateRegistrationImageNodes(filter_node, Downsample, GetMask, Logger=N
     return (image_node, mask_image_node)
         
 
-def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, OutputType, OutputPath, UseMasks, AngleSearchRange=None, Logger=None, argstring=None):
+def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, OutputType, OutputPath, UseMasks, AngleSearchRange=None, TestForFlip=True, Logger=None, argstring=None):
     '''Create a transform node, populate, and generate the transform'''
 
     if Logger is None:
@@ -455,9 +455,14 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
             SetStosFileMasks(stosNode.FullPath, ControlFilter, MappedFilter, UseMasks, StosGroup.Downsample)
             stosNode.InputTransformChecksum = ManualInputChecksum
         elif not (ControlMaskImageNode is None and MappedMaskImageNode is None):
-            __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode.FullPath, MappedImageNode.FullPath, ControlMaskImageNode.FullPath, MappedMaskImageNode.FullPath, AngleSearchRange=AngleSearchRange)
+            __CallNornirStosBrute(stosNode, StosGroup.Downsample, 
+                                  ControlImageNode.FullPath, MappedImageNode.FullPath,
+                                  ControlMaskImageNode.FullPath, MappedMaskImageNode.FullPath,
+                                  AngleSearchRange=AngleSearchRange, TestForFlip=TestForFlip)
         else:
-            __CallNornirStosBrute(stosNode, StosGroup.Downsample, ControlImageNode.FullPath, MappedImageNode.FullPath, AngleSearchRange=AngleSearchRange)
+            __CallNornirStosBrute(stosNode, StosGroup.Downsample,
+                                  ControlImageNode.FullPath, MappedImageNode.FullPath,
+                                  AngleSearchRange=AngleSearchRange, TestForFlip=TestForFlip)
 
         CmdRan = True
             # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
@@ -487,6 +492,9 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
     OutputStosGroupName = kwargs.get('OutputGroup', 'Brute')
     OutputStosType = kwargs.get('Type', 'Brute')
     AngleSearchRange = kwargs.get('AngleSearchRange', None)
+    NoFlipCheck = bool(kwargs.get('NoFlipCheck', False))
+    
+    TestForFlip = not NoFlipCheck
     
     # Argparse value for 
     if(AngleSearchRange == "None"): 
@@ -547,7 +555,9 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
                                                 OutputType=OutputStosType,
                                                 OutputPath=OutputFile,
                                                 UseMasks=UseMasks,
-                                                AngleSearchRange=AngleSearchRange)
+                                                AngleSearchRange=AngleSearchRange,
+                                                TestForFlip=TestForFlip
+                                                )
 
                 if not stosNode is None:
                     (yield stosNode.Parent)

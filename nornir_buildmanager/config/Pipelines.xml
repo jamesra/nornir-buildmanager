@@ -1338,6 +1338,9 @@
 			<Argument flag="-OutputStosMap" default="PotentialRegistrationChain"
 				dest="OutputStosMap" type="str" help="Name assigned to generated stos map."
 				required="False" />
+			<Argument flag="-NoFlipCheck" action="store_true" dest="NoFlipCheck"
+                help="Do not check for flipped sections.  Use this option if it is impossible for images to be flipped.  Doubles execution speed."
+                required="False" />
 		</Arguments>
 
 		<Select VariableName="BlockNode" XPath="Block" />
@@ -1362,6 +1365,7 @@
 					<Entry Name="refine" />
 					<Entry Name="regularize" />
 					<Entry Name="UseMasks" Value="#UseMasks" />
+					<Entry Name="NoFlipCheck" Value="#NoFlipCheck"/>
 				</Parameters>
 			</PythonCall>
 		</Iterate>

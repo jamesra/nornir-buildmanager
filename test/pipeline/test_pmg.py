@@ -205,7 +205,7 @@ class PMGBuildTest(PMGTest):
         BruteLevel = 8
    
         self.RunCreateBlobFilter(Channels="*", Levels=[8, 16, BruteLevel], Filter="Leveled")
-        self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
+        self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel, NoFlipCheck=True)
            
         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')

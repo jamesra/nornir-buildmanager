@@ -665,16 +665,18 @@ class PipelineManager(object):
             if(SelectedVolumeElem is None):
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
-            (IsValid, Reason) = SelectedVolumeElem.IsValid() 
-            if not IsValid:
-                # Check if the node is locked, otherwise clean it and look for another node
-                if 'Locked' in SelectedVolumeElem.attrib:
-                    if SelectedVolumeElem.Locked:
-                        break
-                    
-                SelectedVolumeElem.Clean(Reason)
-                PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
-                SelectedVolumeElem = None
+            #Containers will be tested at load time.  The load linked element code checks containers
+            if not isinstance(SelectedVolumeElem, VolumeManagerETree.XContainerElementWrapper):
+                (IsValid, Reason) = SelectedVolumeElem.IsValid()
+                if not IsValid:
+                    # Check if the node is locked, otherwise clean it and look for another node
+                    if 'Locked' in SelectedVolumeElem.attrib:
+                        if SelectedVolumeElem.Locked:
+                            break
+                        
+                    SelectedVolumeElem.Clean(Reason)
+                    PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
+                    SelectedVolumeElem = None
 
         if not SelectedVolumeElem is None:
             self.AddPipelineNodeVariable(PipelineNode, SelectedVolumeElem, ArgSet)

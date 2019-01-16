@@ -624,7 +624,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.VerifyFilesLastModifiedDateUnchanged(transform_last_modified)
         
 
-    def RunAlignSections(self, Channels, Filters, Levels, Angles=None, Center=None, UseMasks=True):
+    def RunAlignSections(self, Channels, Filters, Levels, Angles=None, Center=None, UseMasks=True, NoFlipCheck=False):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-Downsample', str(Levels), '-Channels', Channels)
         if not Center is None:
@@ -632,6 +632,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
             
         if UseMasks:
             buildArgs.append('-UseMasks')
+            
+        if NoFlipCheck:
+            buildArgs.append('-NoFlipCheck')
             
         if Angles:
             buildArgs.append('-AngleRange')
@@ -995,11 +998,10 @@ class CopySetupTestBase(PlatformTest):
         self.assertTrue(os.path.exists(self.PlatformFullPath))
 
         if os.path.exists(self.TestOutputPath):
-            shutil.rmtree(self.TestOutputPath)
+            shutil.rmtree(self.TestOutputPath, ignore_errors=True)
 
         #Temp for faster iteration
-        if not os.path.exists(self.TestOutputPath):
-            shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
+        shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
 
 class ImportOnlySetup(PlatformTest):
     '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
