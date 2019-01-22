@@ -43,8 +43,8 @@ import nornir_buildmanager
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser, GetFlipList
 from nornir_buildmanager.operations.tile import VerifyTiles
+import nornir_imageregistration
 from nornir_imageregistration import image_stats
-import nornir_imageregistration.core
 from nornir_imageregistration.files import mosaicfile
 import nornir_shared.files
 from nornir_shared.images import *
