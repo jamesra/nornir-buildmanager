@@ -1704,6 +1704,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                 if not os.path.exists(OutputTransform.FullPath):
                     Logger.info(" %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
                     shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
+                    OutputTransform.ResetChecksum()
                     # OutputTransform.Checksum = MappedToControlTransform.Checksum
                     OutputTransform.SetTransform(MappedToControlTransform)
                     
