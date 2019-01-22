@@ -329,6 +329,7 @@ def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImag
                                                   FixedImageMaskPath=ControlMaskImageFullPath,
                                                   WarpedImageMaskPath=MappedMaskImageFullPath,
                                                   AngleSearchRange=AngleSearchRange,
+                                                  TestFlip=TestForFlip,
                                                   Cluster=False)
 
     stos = alignment.ToStos(ControlImageFullPath,

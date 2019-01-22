@@ -72,16 +72,17 @@ def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
       
     InputImageBpp = dm4data.ReadImageBpp()
     im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
-    im.save(temp_output_fullpath)
+    im = im.convert(mode='I')
+    im.save(output_fullpath)
     
-    cmd = "magick convert %s %s" % (temp_output_fullpath, output_fullpath)
+    #cmd = "magick convert %s %s" % (temp_output_fullpath, output_fullpath)
     
-    pools = nornir_pools.GetGlobalLocalMachinePool()
-    pools.add_process(output_fullpath, cmd)
-    pools.wait_completion()
+    #pools = nornir_pools.GetGlobalLocalMachinePool()
+    #pools.add_process(output_fullpath, cmd)
+    #pools.wait_completion()
     
-    os.remove(temp_output_fullpath)
-    os.removedirs(tempdir)
+    #os.remove(temp_output_fullpath)
+    #os.removedirs(tempdir)
     
 
 class DM4FileHandler():

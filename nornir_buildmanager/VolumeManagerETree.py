@@ -17,7 +17,6 @@ from nornir_imageregistration.files import *
 import nornir_imageregistration.transforms.registrationtree
 import nornir_shared.checksum
 import nornir_shared.files
-from nornir_imageregistration.core import GetImageSize
 
 from . import VolumeManagerHelpers as VMH
 import nornir_buildmanager.operations.tile as tile
@@ -2761,8 +2760,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         if 'InputImageChecksum' in SourceImage.attrib:
             OutputImage.InputImageChecksum = SourceImage.InputImageChecksum
 
-        ShrinkP = nornir_shared.images.Shrink(SourceImage.FullPath, OutputImage.FullPath, float(Downsample) / float(SourceDownsample))
-        ShrinkP.wait()
+        nornir_imageregistration.Shrink(SourceImage.FullPath, OutputImage.FullPath, float(SourceDownsample) / float(Downsample))
         
         return OutputImage
 
@@ -3251,7 +3249,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                                                                                     'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
                                                                                     'postfix' : FilePostfix})
             if(os.path.exists(MatchString)):
-                [YSize, XSize] = GetImageSize(MatchString)
+                [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
                 if YSize != self.TileYDim or XSize != self.TileXDim:
                     return [False, "Image size does not match meta-data"]
                 
@@ -3262,7 +3260,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                                                                                     'Y' : iY,
                                                                                     'postfix' : FilePostfix})
             if(os.path.exists(MatchString)):
-                [YSize, XSize] = GetImageSize(MatchString)
+                [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
                 if YSize != self.TileYDim or XSize != self.TileXDim:
                     return [False, "Image size does not match meta-data"]
                 

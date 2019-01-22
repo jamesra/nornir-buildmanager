@@ -3,10 +3,12 @@ import subprocess
 import math
 import shutil
 
-from nornir_shared import *
+import nornir_shared
+import nornir_shared.prettyoutput as prettyoutput 
 import nornir_imageregistration
 import nornir_pools
 import nornir_buildmanager
+
  
 
 def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger=None, **kwargs):
@@ -54,7 +56,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
     
     added_outputlevel = True
     if(added_outputlevel):
-        [XDim, YDim] = images.GetImageSize(ImageNode.FullPath)
+        [YDim, XDim] = nornir_shared.images.GetImageSize(ImageNode.FullPath)
 
         tile_output = os.path.join(TileSetNode.FullPath, 'Tile%d.png')
 

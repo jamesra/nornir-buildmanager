@@ -14,7 +14,7 @@ import subprocess
 
 import nornir_imageregistration
 from nornir_buildmanager.exceptions import NornirUserException
-import nornir_buildmanager.templates
+import nornir_buildmanager.templates 
 from nornir_buildmanager.validation import transforms, image
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
@@ -38,26 +38,6 @@ ContrastMinCutoffDefault = 0.1
 ContrastMaxCutoffDefault = 0.5
 
 DefaultImageExtension = '.png'
-
-def _ShrinkNumpyImageFile(Pool, InFile, OutFile, ShrinkFactor):
-    image = nornir_imageregistration.LoadImage(InFile)
-    resized_image = nornir_imageregistration.ResizeImage(image, ShrinkFactor)
-    nornir_imageregistration.SaveImage(OutFile, resized_image)
-
-# Shrinks the passed image file, return procedure handle of invoked command
-def Shrink(Pool, InFile, OutFile, ShrinkFactor):
-    (root, ext) = os.path.splitext(InFile)
-    if ext == '.npy':
-        image = nornir_imageregistration.LoadImage(InFile)
-        resized_image = nornir_imageregistration.ResizeImage(image, 1 / float(ShrinkFactor))
-        nornir_imageregistration.SaveImage(OutFile, resized_image)
-        return Pool.add_task(_ShrinkNumpyImageFile, InFile, OutFile, ShrinkFactor)
-    else:
-        Percentage = (1 / float(ShrinkFactor)) * 100.0
-        cmd = "magick convert " + InFile + " -scale \"" + str(Percentage) + "%\" -quality 106  -colorspace gray " + OutFile
-        # prettyoutput.CurseString('Cmd', cmd)
-        # NewP = subprocess.Popen(cmd + " && exit", shell=True)
-        return Pool.add_process('Shrink: ' + InFile, cmd)
 
 
 def VerifyImages(TilePyramidNode, **kwargs):
@@ -1435,9 +1415,8 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
             buildLevel = True
 
         if buildLevel:
-            scale = thisLevel / SourceLevel
-            NewP = images.Shrink(SourceImageNode.FullPath, TargetImageNode.FullPath, scale)
-            NewP.wait()
+            scale = SourceLevel / thisLevel 
+            nornir_imageregistration.Shrink(SourceImageNode.FullPath, TargetImageNode.FullPath, scale)
             SaveImageSet = True
 
             if 'InputImageChecksum' in SourceImageNode.attrib:
@@ -1497,7 +1476,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
         upLevelPathStr = LevelFormatStr % upLevel
         thisLevePathlStr = LevelFormatStr % thisLevel
 
-        shrinkFactor = float(thisLevel) / float(upLevel)
+        shrinkFactor = float(upLevel) / float(thisLevel) 
 
         upLevelNode = nb.VolumeManager.LevelNode.Create(upLevel)
         [LevelNodeCreated, upLevelNode] = PyramidNode.UpdateOrAddChildByAttrib(upLevelNode, "Downsample")
@@ -1556,13 +1535,14 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                 continue
 
             if Pool is None:
-                Pool = nornir_pools.GetGlobalClusterPool()
+                Pool = nornir_pools.GetGlobalThreadPool()
 
             if not LevelHeaderPrinted:
        #         prettyoutput.Log(str(upLevel) + ' -> ' + str(thisLevel) + '\n')
                 LevelHeaderPrinted = True
 
-            task = Shrink(Pool, inputFile, outputFile, shrinkFactor)
+            taskStr = "{0} -> {1}".format(inputFile, outputFile)
+            task = Pool.add_task(taskStr, nornir_imageregistration.Shrink, inputFile, outputFile, shrinkFactor)
             task.inputFile = inputFile
             taskList.append(task)
 
@@ -1818,13 +1798,13 @@ if __name__ == "__main__":
     BadTestImage = os.path.join(TestImageDir, 'Bad101.png')
     BadTestImageOut = os.path.join(TestImageDir, 'Bad101Shrink.png')
 
-    task = Shrink(Pool, BadTestImage, BadTestImageOut, 0.5)
+    task = nornir_imageregistration.Shrink(BadTestImage, BadTestImageOut, 0.5)
     print(('Bad image return value: ' + str(task.returncode)))
     Pool.wait_completion()
 
     GoodTestImage = os.path.join(TestImageDir, '400.png')
     GoodTestImageOut = os.path.join(TestImageDir, '400Shrink.png')
 
-    task = Shrink(Pool, GoodTestImage, GoodTestImageOut, 0.5)
+    task = nornir_imageregistration.Shrink(GoodTestImage, GoodTestImageOut, 0.5)
     Pool.wait_completion()
     print(('Good image return value: ' + str(task.returncode)))

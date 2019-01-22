@@ -239,7 +239,7 @@ class PMGImport(object):
                 InputTileToOutputTile[InputTileFullPath] = OutputTileFullPath
     
             PngTiles[pngMosaicTile] = Tiles[inputTile]
-            (Height, Width) = nornir_imageregistration.core.GetImageSize(InputTileFullPath)
+            (Height, Width) = nornir_imageregistration.GetImageSize(InputTileFullPath)
             imageSize.append((Width, Height))
     
         ConvertImagesInDict(InputTileToOutputTile, Flip=False, Bpp=TargetBpp)
@@ -332,7 +332,7 @@ def ParsePMG(filename, TileOverlapPercent=None):
 
         if(TileWidth == 0):
             try:
-                [TileHeight, TileWidth] = nornir_imageregistration.core.GetImageSize(TileFullPath)
+                [TileHeight, TileWidth] = nornir_imageregistration.GetImageSize(TileFullPath)
                 if(DEBUG):
                     prettyoutput.Log(str(TileWidth) + ',' + str(TileHeight) + " " + TileFilename)
             except:

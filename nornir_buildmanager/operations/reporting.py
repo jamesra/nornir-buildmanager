@@ -9,7 +9,7 @@ import logging
 import os
 import shutil
 
-from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet
+from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet 
 import nornir_imageregistration.core
 import nornir_shared.images
 import nornir_shared.plot
@@ -650,14 +650,14 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     Height = MaxImageHeight
     Width = MaxImageWidth
     try:
-        [Height, Width] = nornir_imageregistration.core.GetImageSize(ImageNode.FullPath)
+        [Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
     except IOError:
         return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
 
     # Create a thumbnail if needed
     if Width > MaxImageWidth or Height > MaxImageHeight:
         Scale = max(float(Width) / MaxImageWidth, float(Height) / MaxImageHeight)
-        Scale = 1 / Scale
+        #Scale = 1 / Scale
 
         os.makedirs(HtmlPaths.ThumbnailDir, exist_ok=True)
 
@@ -668,9 +668,12 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
 
         # nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
         # if not os.path.exists(ThumbnailOutputFullPath):
-        cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
-        Pool = nornir_pools.GetGlobalProcessPool()
-        Pool.add_process(cmd, cmd + " && exit", shell=True)
+        Pool = nornir_pools.GetGlobalThreadPool()
+        
+        Pool.add_task(ImageNode.FullPath, nornir_imageregistration.Shrink, ImageNode.FullPath, ThumbnailOutputFullPath, Scale)
+        #cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
+        
+        #Pool.add_process(cmd, cmd + " && exit", shell=True)
 
         Width = int(Width * Scale)
         Height = int(Height * Scale)
