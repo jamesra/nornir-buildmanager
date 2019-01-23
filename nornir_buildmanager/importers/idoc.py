@@ -63,6 +63,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     MinCutoff = float(kwargs.get('Min'))
     MaxCutoff = float(kwargs.get('Max'))
     ContrastCutoffs = (MinCutoff, MaxCutoff)
+    CameraBpp = kwargs.get('CameraBpp',None)
         
     if MinCutoff < 0.0 or MinCutoff > 1.0:
         raise ValueError("Min must be between 0 and 1: %f" % MinCutoff)
@@ -89,7 +90,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
             DataFound = True
-            yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, ContrastCutoffs, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap)
+            yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, ContrastCutoffs, VolumeElement.FullPath, FlipList=FlipList, CameraBpp=CameraBpp, ContrastMap=ContrastMap)
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
@@ -169,7 +170,7 @@ class SerialEMIDocImport(object):
         return [SectionNumber, SectionName, Downsample]
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
+    def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, CameraBpp=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -265,7 +266,7 @@ class SerialEMIDocImport(object):
         if(Flip):
             prettyoutput.Log("Found in FlipList.txt, flopping images")
 
-        IDocData = IDoc.Load(idocFilePath)
+        IDocData = IDoc.Load(idocFilePath, CameraBpp=CameraBpp)
 
         assert(hasattr(IDocData, 'PixelSpacing'))
         assert(hasattr(IDocData, 'DataMode'))
@@ -283,18 +284,29 @@ class SerialEMIDocImport(object):
         AddIdocNode(channelObj, idocFilePath, IDocData, logger)
 
         # Set the scale
-        [added, ScaleObj] = cls.CreateScaleNode(IDocData, channelObj) 
+        [added, ScaleObj] = cls.CreateScaleNode(IDocData, channelObj)
+        
+        # Parse the images
+        ImageBpp = IDocData.GetImageBpp()            
+        if ImageBpp is None:
+            ImageBpp = cls.GetImageBpp(IDocData, sectionDir) 
 
         FilterName = 'Raw' + str(TargetBpp)
         if(TargetBpp is None):
             FilterName = 'Raw'
 
         histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
+        
+        IDocData.RemoveMissingTiles(sectionDir)
         source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles ]
-        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, ContrastCutoffs, source_tile_list, histogramFullPath)
+          
+        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, ContrastCutoffs, source_tile_list, IDocData, histogramFullPath)
         ActualMosaicMax = numpy.around(ActualMosaicMax)
         ActualMosaicMin = numpy.around(ActualMosaicMin)
-        _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+        
+        Pool = nornir_pools.GetGlobalThreadPool()
+        #_PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+        Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
 
         channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
 
@@ -328,8 +340,7 @@ class SerialEMIDocImport(object):
 
         Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
 
-        # Parse the images
-        ImageBpp = cls.GetImageBpp(IDocData, sectionDir)
+        
 
         # Make sure the target LevelObj is verified        
         if not os.path.exists(LevelObj.FullPath):
@@ -383,7 +394,7 @@ class SerialEMIDocImport(object):
             return channelObj
 
     @classmethod
-    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, ContrastCutoffs, SourceImagesFullPaths, histogramFullPath):
+    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, ContrastCutoffs, SourceImagesFullPaths, idoc_data, histogramFullPath):
         '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
         ActualMosaicMin = None
         ActualMosaicMax = None
@@ -393,7 +404,7 @@ class SerialEMIDocImport(object):
             ActualMosaicMax = ContrastMap[SectionNumber].Max
             Gamma = ContrastMap[SectionNumber].Gamma
         else:
-            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], histogramFullPath)
+            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], idoc_data, histogramFullPath)
 
         return (ActualMosaicMin, ActualMosaicMax, Gamma)
 
@@ -449,7 +460,7 @@ class SerialEMIDocImport(object):
         return andValue
 
     
-def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, histogramFullPath=None):
+def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, idoc_data, histogramFullPath=None):
     
     histogramObj = None
     if not histogramFullPath is None:
@@ -458,10 +469,15 @@ def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, histogramFullPath=Non
 
     if histogramObj is None:
         prettyoutput.Log("Collecting mosaic min/max data")
-        Bpp = nornir_shared.images.GetImageBpp(listfilenames[0])
-        histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, Scale=.125, numBins=2048)
+        
+        Bpp = idoc_data.GetImageBpp()
+        if Bpp is None:
+            Bpp = nornir_shared.images.GetImageBpp(listfilenames[0])
+        
+        histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, MinVal=idoc_data.Min, MaxVal=idoc_data.Max)
 
         if not histogramFullPath is None:
+            histogramObj = _CleanOutliersFromIDocHistogram(histogramObj)
             histogramObj.Save(histogramFullPath)
 
     assert(not histogramObj is None)
@@ -469,6 +485,26 @@ def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, histogramFullPath=Non
     # I am willing to clip 1 pixel every hundred thousand on the dark side, and one every ten thousand on the light
     return histogramObj.AutoLevel(MinCutoff, MaxCutoff)
 
+
+def _CleanOutliersFromIDocHistogram(hObj):
+    '''
+    For Max-Value outliers this is a legacy function that supports old versions of SerialEM that falsely reported
+    maxint for some pixels even though the camera was a 14-bit camera.  This applies to the original RC1 data. 
+    By the time RC2 was collected in March 2018 this bug was fixed
+    
+    However this function is worth retaining because Max and Min outliers can rarely occur if a tile is removed 
+    from the input before import but remain in the iDoc data.  
+    '''
+    
+    hNew = nornir_shared.histogram.Histogram.TryRemoveMaxValueOutlier(hObj)
+    if hNew is not None:
+        hObj = hNew
+        
+    hNew = nornir_shared.histogram.Histogram.TryRemoveMinValueOutlier(hObj)
+    if hNew is not None:
+        hObj = hNew
+    
+    return hObj
     
 def _PlotHistogram(histogramFullPath, sectionNumber, minCutoff, maxCutoff):    
     HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
@@ -759,12 +795,45 @@ class IDocTileData():
         self.ImageShift = None
         self.RotationAngle = None
         self.ExposureTime = None
-        self.MinMaxMean = None
+        self._MinMaxMean = None
         self.TargetDefocus = None
+        
+        self._Min = None
+        self._Max = None
+        self._Mean = None
 
     def __str__(self):
         return self.Image
-
+    
+    @property
+    def Min(self):
+        return self._Min
+    
+    @property
+    def Max(self):
+        return self._Max
+    
+    @Max.setter
+    def Max(self, val):
+        self._Max = val
+    
+    @property
+    def Mean(self):
+        return self._Mean
+    
+    @property
+    def MinMaxMean(self):
+        return self._MinMaxMean
+    
+    @MinMaxMean.setter
+    def MinMaxMean(self, val):
+        '''Expects to be set to a three part list with integer or float values'''
+        self._MinMaxMean = val
+        
+        self._Min = val[0]
+        self._Max = val[1]
+        self._Mean = val[2]
+         
 
 class IDoc():
     '''Class that parses a SerialEM idoc file'''
@@ -778,7 +847,28 @@ class IDoc():
         self.PixelSpacing = None
         self.ImageSize = None
         self.tiles = []
+        self._CameraBpp = None
         pass
+            
+    def _SetCameraBpp(self, bpp):
+        '''Ensure the maximum intensity reported for tiles does not exceed the known capability of the camera'''
+        self._CameraBpp = bpp
+        
+        if self._CameraBpp is not None:
+            maxPossible = 1 << bpp
+            for t in self.tiles:
+                if t.Max > maxPossible:
+                    t.Max = maxPossible
+
+    
+    def RemoveMissingTiles(self, dir):
+        existingTiles = []
+        for t in self.tiles: 
+            tFullPath = os.path.join(dir, t.Image)
+            if os.path.exists(tFullPath):
+                existingTiles.append(t)
+                
+        self.tiles = existingTiles
 
     def GetImageBpp(self):
         ''':return: Bits per pixel if specified in the IDoc, otherwise None'''
@@ -790,24 +880,45 @@ class IDoc():
                 ImageBpp = 16
             elif self.DataMode == 6:
                 ImageBpp = 16
+                
+        if self._CameraBpp is not None:
+            ImageBpp = min(ImageBpp, self._CameraBpp)
 
         return ImageBpp
+    
+    @property
+    def Max(self):
+        ''':return: Max pixel value across all tiles'''
+        return max([t.Max for t in self.tiles])
+    
+    @property
+    def Min(self):
+        ''':return: Max pixel value across all tiles'''
+        return min([t.Min for t in self.tiles])
+    
+    @property
+    def Mean(self):
+        ''':return: Max pixel value across all tiles'''
+        return numpy.mean([t.Mean for t in self.tiles])
 
     @classmethod
-    def Load(cls, idocfullPath):
+    def Load(cls, idocfullPath, CameraBpp=None):
+        '''
+        :param int CameraBpp: Forces the maximum value of tiles to not exceed the known bits-per-pixel capability of the camera, ignored if None
+        '''
         assert(os.path.exists(idocfullPath))
 
         with open(idocfullPath, 'r') as hIDoc:
             idocText = hIDoc.read()
 
-            obj = IDoc()
+            idocObj = IDoc()
 
             imageStartIndicies = [m.start for m in re.finditer('\[Image', idocText)]
             NumImages = len(imageStartIndicies)
 
             lines = idocText.split('\n')
 
-            TileData = None  # Set to the last image name we've read in, if None we are reading montage properties
+            tileObj = None  # Set to the last image name we've read in, if None we are reading montage properties
 
             for iLine in range(0, len(lines)):
                 line = lines[iLine]
@@ -823,8 +934,8 @@ class IDoc():
                 # If we find an image tag, create a new tiledata
                 if(attribute == 'Image'):
                     imageFilename = parts[1].strip()
-                    TileData = IDocTileData(imageFilename)
-                    obj.tiles.append(TileData)
+                    tileObj = IDocTileData(imageFilename)
+                    idocObj.tiles.append(tileObj)
                 else:
                     value = None
                     if(len(parts) > 1):
@@ -836,19 +947,22 @@ class IDoc():
                             # Find out how many attributes we have.
                             # Try to convert to ints, then to float
                             ConvertedValues = []
-                            try:
-                                for v in values:
-                                    convVal = int(v.strip())
-                                    ConvertedValues.append(convVal)
-                            except ValueError:
-
+                            for v in values:
+                                v = v.strip()
+                                convVal = None
+                                
                                 try:
-                                    for v in values:
-                                        convVal = float(v.strip())
-                                        ConvertedValues.append(convVal)
+                                    convVal = int(v)
                                 except ValueError:
-                                    convVal = parts[1]
-
+                                    try:
+                                        convVal = float(v)
+                                    except:
+                                        convVal = v
+                                        pass
+                                    pass
+                                                                    
+                                ConvertedValues.append(convVal)
+                                
                             values = ConvertedValues
                             if len(values) == 1:
                                 value = values[0]
@@ -856,12 +970,14 @@ class IDoc():
                                 value = values
 
                     if not value is None:
-                        if TileData is None:
-                            obj.__dict__[attribute] = value
+                        if tileObj is None:
+                            setattr(idocObj, attribute, value)
+                            #idocObj.__dict__[attribute] = value
                         else:
-                            TileData.__dict__[attribute] = value
-
-            return obj
+                            setattr(tileObj, attribute, value) 
+                            
+            idocObj._SetCameraBpp(CameraBpp)
+            return idocObj
 
         return None
 

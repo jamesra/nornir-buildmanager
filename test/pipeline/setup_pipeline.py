@@ -969,6 +969,7 @@ class PlatformTest(NornirBuildTestBase):
 
     def RunIDocImport(self):
         buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
+        buildArgs.extend(['-CameraBpp', '14'])
         self.RunBuild(buildArgs)
 
     def RunPMGImport(self):
