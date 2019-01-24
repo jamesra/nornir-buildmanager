@@ -11,6 +11,7 @@ import math
 import os
 import shutil
 import subprocess
+import multiprocessing
 
 import nornir_imageregistration
 from nornir_buildmanager.exceptions import NornirUserException
@@ -1535,7 +1536,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                 continue
 
             if Pool is None:
-                Pool = nornir_pools.GetGlobalThreadPool()
+                Pool = nornir_pools.GetThreadPool('BuildTilePyramids {0}'.format(OutputTileDir), multiprocessing.cpu_count() * 2)
 
             if not LevelHeaderPrinted:
        #         prettyoutput.Log(str(upLevel) + ' -> ' + str(thisLevel) + '\n')
@@ -1547,16 +1548,34 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
             taskList.append(task)
 
         if not Pool is None:
-            Pool.wait_completion()
 
             for task in taskList:
+                RemoveSource = False
                 if hasattr(task, 'returncode'):
                     if task.returncode > 0:
+                        RemoveSource = True
                         prettyoutput.LogErr('\n*** Suspected bad input file to pyramid, deleting the source image.  Rerun scripts to attempt adding the file again.\n')
                         try:
                             os.remove(task.inputFile)
                         except:
                             pass
+                else:
+                    try:
+                        task.wait() # We do this to ensure any exeptions are raised
+                        RemoveSource = False
+                    except:
+                        RemoveSource = True
+                        
+                if RemoveSource:
+                    if not nornir_shared.images.IsValidImage(task.inputFile): 
+                        prettyoutput.LogErr('\n*** Suspected bad input file to pyramid, deleting the source image.  Rerun scripts to attempt adding the file again.\n')
+                        try:
+                            os.remove(task.inputFile)
+                        except:
+                            pass
+                        
+    Pool.shutdown()
+    Pool = None                    
 
     if SavePyramidNode:
         return PyramidNode
