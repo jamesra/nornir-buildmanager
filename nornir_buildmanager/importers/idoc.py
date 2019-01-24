@@ -888,7 +888,13 @@ class IDoc():
     
     @property
     def Max(self):
-        ''':return: Max pixel value across all tiles'''
+        '''
+        For Max-Value outliers old versions of SerialEM falsely reported
+        maxint for some pixels even though the camera was a 14-bit camera.  This applies to the original RC1 data. 
+        By the time RC2 was collected in March 2012 this bug was fixed
+            :return: Max pixel value across all tiles
+        '''
+        
         return max([t.Max for t in self.tiles])
     
     @property
