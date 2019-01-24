@@ -171,7 +171,7 @@ def InitLogging(buildArgs):
 def Execute(buildArgs=None):
 
     # Spend more time on each thread before switching
-    sys.setcheckinterval(500)
+    #sys.setswitchinterval(500)
 
     if buildArgs is None:
         buildArgs = sys.argv[1:]
