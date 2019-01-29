@@ -2261,10 +2261,8 @@ class StosMapNode(XElementWrapper):
 
     def FindAllControlsForMapped(self, MappedSection):
         '''Given a section to be mapped, return the first control section found'''
-        for m in self:
-            if not m.tag == 'Mapping':
-                continue
-
+        for m in self.findall('Mapping'):
+            
             if(MappedSection in m.Mapped):
                 yield m.Control
 
