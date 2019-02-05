@@ -558,10 +558,6 @@
 			<Argument flag="-RegistrationDownsample" dest="Downsample"
 				default="4" type="int" help="Downsample level to use for ir-tools"
 				required="False" />
-			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5"
-				type="float"
-				help="Comma separated list of downsample levels used for assembling output images"
-				required="False" />
 			<Argument flag="-InputFilter" dest="InputFilter" default="Raw8"
 				help="Filter to use for registration" required="True" />
 			<Argument flag="-InputTransform" dest="InputTransformName"
@@ -577,6 +573,14 @@
 			<Argument flag="-Threshold" default="0.25" dest="DisplacementThreshold"
                 type="float"
                 help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
+                required="False" />
+            <Argument flag="-MinOverlap" default="0.05" dest="min_overlap"
+                type="float"
+                help="Minimum amount of overlap tiles must have to contribute to the final mosaic."
+                required="False" />
+            <Argument flag="-MinFeatureScore" default="0.35" dest="feature_score_threshold"
+                type="float"
+                help="Minimum average FFT power spectral density.  Determines if overlapping have enough texture for registration to be accurate."
                 required="False" />
 			<Argument flag="-TranslateThreshold" default="1.0" dest="TranslateMaxTensionCutoff"
 				type="float"
@@ -602,11 +606,16 @@
 				<PythonCall Function="registration.TranslateTransform"
 					TransformNode="#TransformNode" OutputTransform="Translated_#InputTransformName"
 					FilterNode="#FilterNode" RegistrationDownsample="#Downsample"
+					min_overlap="#min_overlap" feature_score_threshold="#feature_score_threshold"
 					max_relax_iterations="#TranslateIterations" max_relax_tension_cutoff="#TranslateMaxTensionCutoff">
 					<Parameters>
-						<Entry Name="MaxOffsetX" Value="#MaxOffset" />
-					</Parameters>
+                        <Entry Name="MinOverlap" Value="#min_overlap"/>
+                        <Entry Name="FeatureScore" Value="#feature_score_threshold"/>
+                        <Entry Name="it" Value="#TranslateIterations"/>
+                        <Entry Name="TensionCutoff" Value="#TranslateMaxTensionCutoff"/>
+                    </Parameters>
 				</PythonCall>
+				
 
 				<!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping 
 					tiles -->

@@ -33,6 +33,8 @@ def TransformNodeToZeroOrigin(transform_node, **kwargs):
 
 def TranslateTransform(Parameters, TransformNode, FilterNode,
                        RegistrationDownsample,
+                       min_overlap=None,
+                       feature_score_threshold=None,
                        max_relax_iterations=None,
                        max_relax_tension_cutoff=None, 
                        Logger=None, **kwargs):
@@ -78,17 +80,14 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             mosaicToLoadPath = tempMosaicFullPath
             
         mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
-        firstpass_translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(LevelNode.FullPath,
-                                                                   max_relax_iterations=max_relax_iterations / 10.0,
-                                                                   max_relax_tension_cutoff=max_relax_tension_cutoff)
+        firstpass_translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(tiles_path=LevelNode.FullPath,
+                                                                             image_scale=1.0/RegistrationDownsample,
+                                                                             min_overlap=min_overlap,
+                                                                             feature_score_threshold=feature_score_threshold,
+                                                                             max_relax_iterations=max_relax_iterations / 10.0,
+                                                                             max_relax_tension_cutoff=max_relax_tension_cutoff)
         
-        #There are cases where the stage is very innacurate and the overlapping regions used to align tiles are suboptimal.
-        #As a workaround we run a short initial translate phase, then run the full translate phase using the updated positions
-        
-        secondpass_translated_mosaicObj = firstpass_translated_mosaicObj.ArrangeTilesWithTranslate(LevelNode.FullPath,
-                                                                   max_relax_iterations=max_relax_iterations,
-                                                                   max_relax_tension_cutoff=max_relax_tension_cutoff)
-        secondpass_translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
+        firstpass_translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
 
         SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
         

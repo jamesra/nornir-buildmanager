@@ -520,7 +520,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return volumeNode
     
-    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=1, Shape=[512, 512]):
+    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=2, Shape=[512, 512]):
         if Filter is None:
             Filter = "Leveled"
             

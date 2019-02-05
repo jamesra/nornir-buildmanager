@@ -12,6 +12,8 @@ import os
 import shutil
 import subprocess
 import multiprocessing
+import numpy
+from PIL import Image
 
 import nornir_imageregistration
 from nornir_buildmanager.exceptions import NornirUserException
@@ -1744,6 +1746,152 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
 
     if not Pool is None:
         Pool.wait_completion()
+        
+def BuildTilesetLevelWithPillow(SourcePath, DestPath, DestGridDimensions, TileDim, FilePrefix, FilePostfix, Pool=None, **kwargs):
+    '''
+    :param tuple SourceGridDimensions: (GridDimY,GridDimX) Number of tiles along each axis
+    :param ndarray TileDim: Dimensions of tile (Y,X)
+    
+    '''
+    
+    os.makedirs(DestPath, exist_ok=True)
+        
+    if Pool is None:
+        #Pool = nornir_pools.GetGlobalLocalMachinePool()
+        Pool = nornir_pools.GetGlobalThreadPool()
+
+    # Merge all the tiles we can find into tiles of the same size
+    for iY in range(0, DestGridDimensions[0]):
+
+        '''We wait for the last task we queued for each row so we do not swamp the ProcessPool but are not waiting for the entire pool to empty'''
+        FirstTaskForRow = None
+
+        for iX in range(0, DestGridDimensions[1]):
+
+            X1 = iX * 2
+            X2 = X1 + 1
+            Y1 = iY * 2
+            Y2 = Y1 + 1
+
+            # OutputFile = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % iX + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY + FilePostfix
+            OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : iX,
+                                                 'Y' : iY,
+                                                 'postfix' : FilePostfix }
+
+            OutputFileFullPath = os.path.join(DestPath, OutputFile)
+
+            # Skip if file already exists
+            # if(os.path.exists(OutputFileFullPath)):
+            #    continue
+
+            # TopLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
+            # TopRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
+            # BottomLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
+            # BottomRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
+            TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X1,
+                                                 'Y' : Y1,
+                                                 'postfix' : FilePostfix }
+            TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X2,
+                                                 'Y' : Y1,
+                                                 'postfix' : FilePostfix }
+            BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X1,
+                                                 'Y' : Y2,
+                                                 'postfix' : FilePostfix }
+            BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : FilePrefix,
+                                                 'X' : X2,
+                                                 'Y' : Y2,
+                                                 'postfix' : FilePostfix }
+
+            TopLeft = os.path.join(SourcePath, TopLeft)
+            TopRight = os.path.join(SourcePath, TopRight)
+            BottomLeft = os.path.join(SourcePath, BottomLeft)
+            BottomRight = os.path.join(SourcePath, BottomRight)
+
+            task = Pool.add_task(OutputFileFullPath, __CreateOneTilesetTileWithPillow, TileDim,
+                           TopLeft=TopLeft, TopRight=TopRight,
+                           BottomLeft=BottomLeft, BottomRight=BottomRight,
+                           OutputFileFullPath=OutputFileFullPath)
+            
+            if FirstTaskForRow is None:
+                FirstTaskForRow = task
+
+        # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
+        # prettyoutput.CurseProgress(TaskString, iY + 1, newYDim)
+
+        # We can easily saturate the pool with hundreds of thousands of tasks.
+        # If the pool has a reasonable number of tasks then we should wait for
+        # a task from a row to complete before queueing more.
+        if hasattr(Pool, 'tasks'):
+            if Pool.tasks.qsize() > 256:
+                FirstTaskForRow.wait()
+                FirstTaskForRow = None
+        elif hasattr(Pool, 'ActiveTasks'):
+            if Pool.ActiveTasks > 512:
+                FirstTaskForRow.wait()
+                FirstTaskForRow = None
+
+        prettyoutput.Log("\nBeginning Row %d of %d" % (iY + 1, DestGridDimensions[0]))
+
+    if not Pool is None:
+        Pool.wait_completion()
+        
+
+def __CreateOneTilesetTileWithPillow(TileDims, TopLeft, TopRight, BottomLeft, BottomRight, OutputFileFullPath ):
+    '''Create a single tile by merging four tiles from a higher resolution and downsampling
+    :param tuple TileDims: (Height, Width) of tiles'''
+    
+    TileSize = numpy.asarray((TileDims[1], TileDims[0]), dtype=numpy.int64) #Pillow uses the opposite ordering of axis
+    DoubleTileSize = TileSize * 2 #Double the size 
+    
+    imComposite = None
+            
+    try:
+        with Image.open(TopLeft) as imTopLeft:
+            if imComposite is None:
+                imComposite = Image.new(imTopLeft.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0) 
+            imComposite.paste(imTopLeft, box=(0,0))
+    except IOError as e:
+        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
+        pass
+    
+    try:
+        with Image.open(TopRight) as imTopRight:
+            if imComposite is None:
+                imComposite = Image.new(imTopRight.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0)
+            imComposite.paste(imTopRight, box=(TileSize[0],0))
+    except IOError as e:
+        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
+        pass
+    
+    try:
+        with Image.open(BottomLeft) as imBottomLeft:
+            if imComposite is None:
+                imComposite = Image.new(imBottomLeft.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0)
+            imComposite.paste(imBottomLeft, box=(0,TileSize[1]))
+    except IOError as e:
+        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
+        pass
+    
+    try:
+        with Image.open(BottomRight) as imBottomRight:
+            if imComposite is None:
+                imComposite = Image.new(imBottomRight.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0)
+            imComposite.paste(imBottomRight, box=(TileSize[0],TileSize[1]))
+    except IOError as e:
+        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
+        pass
+    
+    if imComposite is not None:    
+        with imComposite.resize(imTopLeft.size, resample=Image.LANCZOS) as imFinal:                    
+            imFinal.save(OutputFileFullPath)
+            
+        del imComposite
+    
+    return 
     
 
 # OK, now build/check the remaining levels of the tile pyramids
@@ -1789,7 +1937,7 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
         [Valid, Reason] = NextLevelNode.IsValid()
         if not Valid:
             # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
-            BuildTilesetLevel(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
+            BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
                                DestGridDimensions=(newYDim, newXDim),
                                TileDim=(TileSetNode.TileYDim, TileSetNode.TileXDim),
                                FilePrefix=TileSetNode.FilePrefix,
