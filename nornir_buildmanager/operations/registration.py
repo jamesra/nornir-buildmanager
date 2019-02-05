@@ -50,8 +50,10 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = added_level
-    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
-    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
+    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, "_Max0.5") #The hardcoded string is legacy to prevent duplicate transform elements
+    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode,
+                                                                                   InputTransformNode=InputTransformNode,
+                                                                                   OutputTransformPath=OutputTransformPath)
 
     if OutputTransformNode is None:
         OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
@@ -84,7 +86,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                                                                              image_scale=1.0/RegistrationDownsample,
                                                                              min_overlap=min_overlap,
                                                                              feature_score_threshold=feature_score_threshold,
-                                                                             max_relax_iterations=max_relax_iterations / 10.0,
+                                                                             max_relax_iterations=max_relax_iterations,
                                                                              max_relax_tension_cutoff=max_relax_tension_cutoff)
         
         firstpass_translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
