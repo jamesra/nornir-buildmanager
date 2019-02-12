@@ -3165,30 +3165,30 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
     @FilePostfix.setter
     def FilePostfix(self, val):
         self.attrib['FilePostfix'] = val
-# 
-#     @property
-#     def TileXDim(self):
-#         val = self.attrib.get('TileXDim')
-#         if not val is None:
-#             val = int(val)
-#             
-#         return val
-# 
-#     @TileXDim.setter
-#     def TileXDim(self, val):
-#         self.attrib['TileXDim'] = '%d' % int(val)
-# 
-#     @property
-#     def TileYDim(self):
-#         val = self.attrib.get('TileYDim')
-#         if not val is None:
-#             val = int(val)
-#             
-#         return val
-# 
-#     @TileYDim.setter
-#     def TileYDim(self, val):
-#         self.attrib['TileYDim'] = '%d' % int(val)
+ 
+    @property
+    def TileXDim(self):
+        val = self.attrib.get('TileXDim',None)
+        if not val is None:
+            val = int(val)
+             
+        return val
+ 
+    @TileXDim.setter
+    def TileXDim(self, val):
+        self.attrib['TileXDim'] = '%d' % int(val)
+ 
+    @property
+    def TileYDim(self):
+        val = self.attrib.get('TileYDim',None)
+        if not val is None:
+            val = int(val)
+             
+        return val
+ 
+    @TileYDim.setter
+    def TileYDim(self, val):
+        self.attrib['TileYDim'] = '%d' % int(val)
 
     
         
