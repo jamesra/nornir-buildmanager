@@ -1440,7 +1440,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
                                                  'Y' : iRow,
                                                  'postfix' : TileSetNode.FilePostfix }
             output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-            pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=output_tile_fullpath, image=tile_image)
+            pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=output_tile_fullpath, image=tile_image, optimize=True)
         
         #Wait for the tiles to save
         pool.wait_completion()
@@ -1983,7 +1983,7 @@ def __CreateOneTilesetTileWithPillow(TileDims, TopLeft, TopRight, BottomLeft, Bo
     
     if imComposite is not None:    
         with imComposite.resize(imTopLeft.size, resample=Image.LANCZOS) as imFinal:                    
-            imFinal.save(OutputFileFullPath)
+            imFinal.save(OutputFileFullPath, optimize=True)
             
         del imComposite
     
