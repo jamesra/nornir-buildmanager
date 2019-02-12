@@ -520,7 +520,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return volumeNode
     
-    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=2, Shape=[512, 512]):
+    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=2, Shape=[512, 512], max_working_image_area=None):
         if Filter is None:
             Filter = "Leveled"
             
@@ -535,6 +535,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
             buildArgs = self._CreateBuildArgs('AssembleTiles', '-Channels', Channels, '-Transform', TransformName, '-Filters', Filter, '-HighestDownsample', str(Levels), '-Shape', ShapeStr)
         else:
             buildArgs = self._CreateBuildArgs('AssembleTiles', '-Transform', TransformName, '-Filters', Filter, '-HighestDownsample', str(Levels), '-Shape', ShapeStr)
+            
+        if max_working_image_area is not None:
+            buildArgs.extend(['-MaxWorkingImageArea', str(max_working_image_area)])
             
         volumeNode = self.RunBuild(buildArgs)
  
@@ -870,11 +873,11 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.assertTrue(os.path.exists(os.path.join(volumeNode.FullPath, OutputFile + ".VikingXML")), "No vikingxml file created")
         
     
-    def __GetLevelNode(self, section_number=691, channel='TEM', filter='Leveled', level=1):
+    def __GetLevelNode(self, section_number=691, channel='TEM', filter_name ='Leveled', level=1):
         
         volumeNode = self.LoadVolume()
         
-        filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (section_number, channel, filter))                                     
+        filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (section_number, channel, filter_name))                                     
         self.assertIsNotNone(filterNode, "Missing filter node")
         
         levelNode = filterNode.TilePyramid.GetLevel(level)
@@ -882,12 +885,12 @@ class NornirBuildTestBase(test.testbase.TestBase):
         
         return levelNode
         
-    def RemoveTileFromPyramid(self, section_number=691, channel='TEM', filter='Leveled', level=1):
+    def RemoveTileFromPyramid(self, section_number=691, channel='TEM', filter_name='Leveled', level=1):
         '''Remove a single image from an image pyramid
         :return: Filename that was deleted
         '''
 
-        levelNode = self.__GetLevelNode(section_number, channel, filter, level)
+        levelNode = self.__GetLevelNode(section_number, channel, filter_name, level)
         self.assertIsNotNone(levelNode, "Missing level %d" % (level))
 
         # Choose a random tile and remove it
@@ -899,9 +902,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return chosenPngFile
 
-    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter='Leveled', level=1,):
+    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter_name='Leveled', level=1,):
         '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
-        removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter, level)
+        removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter_name, level)
 
         RegenFunction(**RegenKwargs)
 

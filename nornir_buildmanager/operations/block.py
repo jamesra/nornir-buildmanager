@@ -2138,9 +2138,9 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms, OutputStosMosaicTransformNam
     if mosaicToVolume.IsOriginAtZero():
         return None
 
-    mosaicToVolume.TranslateToZeroOrigin()
+    new_bbox = mosaicToVolume.TranslateToZeroOrigin()
 
-    (minY, minX, maxY, maxX) = mosaicToVolume.VolumeBounds
+    (minY, minX, maxY, maxX) = new_bbox.ToTuple()
 
     maxX = int(math.ceil(maxX))
     maxY = int(math.ceil(maxY))

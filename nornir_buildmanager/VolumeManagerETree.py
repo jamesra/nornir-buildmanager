@@ -3165,38 +3165,32 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
     @FilePostfix.setter
     def FilePostfix(self, val):
         self.attrib['FilePostfix'] = val
+# 
+#     @property
+#     def TileXDim(self):
+#         val = self.attrib.get('TileXDim')
+#         if not val is None:
+#             val = int(val)
+#             
+#         return val
+# 
+#     @TileXDim.setter
+#     def TileXDim(self, val):
+#         self.attrib['TileXDim'] = '%d' % int(val)
+# 
+#     @property
+#     def TileYDim(self):
+#         val = self.attrib.get('TileYDim')
+#         if not val is None:
+#             val = int(val)
+#             
+#         return val
+# 
+#     @TileYDim.setter
+#     def TileYDim(self, val):
+#         self.attrib['TileYDim'] = '%d' % int(val)
 
-    @property
-    def TileXDim(self):
-        return int(self.attrib['TileXDim'])
-
-    @TileXDim.setter
-    def TileXDim(self, val):
-        self.attrib['TileXDim'] = '%d' % int(val)
-
-    @property
-    def TileYDim(self):
-        return int(self.attrib['TileYDim'])
-
-    @TileYDim.setter
-    def TileYDim(self, val):
-        self.attrib['TileYDim'] = '%d' % int(val)
-
-    @property
-    def GridDimX(self):
-        return int(self.attrib['GridDimX'])
-
-    @GridDimX.setter
-    def GridDimX(self, val):
-        self.attrib['GridDimX'] = '%d' % int(val)
-
-    @property
-    def GridDimY(self):
-        return int(self.attrib['GridDimY'])
-
-    @GridDimY.setter
-    def GridDimY(self, val):
-        self.attrib['GridDimY'] = '%d' % int(val)
+    
         
     @classmethod
     def Create(cls):
@@ -3221,12 +3215,15 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         :param str level_full_path: The path to the directories containing the image files
         :return: (Bool, String) containing whether all tiles exist and a reason string
         '''
-
+        if GridDimX is None or GridDimY is None:
+            return (False, "No grid dimensions found in tileset") 
+        
+        GridXDim = GridDimX - 1#int(GridDimX) - 1
+        GridYDim = GridDimY - 1#int(GridDimY) - 1
+        
         FilePrefix = self.FilePrefix
-        FilePostfix = self.FilePostfix
-        GridXDim = int(GridDimX) - 1
-        GridYDim = int(GridDimY) - 1
-
+        FilePostfix = self.FilePostfix 
+        
         GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
         # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
         MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
@@ -3299,6 +3296,38 @@ class LevelNode(XContainerElementWrapper):
     @Downsample.setter
     def Downsample(self, Value):
         self.attrib['Downsample'] = '%g' % Value
+        
+    @property
+    def GridDimX(self):
+        val = self.attrib.get('GridDimX', None)
+        if not val is None:
+            val = int(val)
+            
+        return val
+
+    @GridDimX.setter
+    def GridDimX(self, val):
+        if val is None:
+            if 'GridDimX' in self.attrib:
+                del self.attrib['GridDimX']
+        else:
+            self.attrib['GridDimX'] = '%d' % int(val)
+
+    @property
+    def GridDimY(self):
+        val = self.attrib.get('GridDimY', None)
+        if not val is None:
+            val = int(val)
+            
+        return val
+
+    @GridDimY.setter
+    def GridDimY(self, val):
+        if val is None:
+            if 'GridDimY' in self.attrib:
+                del self.attrib['GridDimY']
+        else:
+            self.attrib['GridDimY'] = '%d' % int(val)
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''

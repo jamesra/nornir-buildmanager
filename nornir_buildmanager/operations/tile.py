@@ -352,7 +352,7 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
     else:
         correctionImage = nornir_imageregistration.LoadImage(OutputImageNode.FullPath)
 
-    tiles.ShadeCorrect(InputTiles, correctionImage, OutputLevelNode.FullPath, type=correctionType)
+    tiles.ShadeCorrect(InputTiles, correctionImage, OutputLevelNode.FullPath, correction_type=correctionType)
     if SaveFilterParent:
         return FilterParent
 
@@ -1333,6 +1333,8 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
         # The output file name is used as a prefix for the tiles written
         OutputPath = os.path.join(LevelOne.FullPath, FilterNode.Name + '.png')
         OutputXML = os.path.join(LevelOne.FullPath, FilterNode.Name + '.xml')
+        
+        
 
         assembleTemplate = 'ir-assemble -load %(transform)s -save %(LevelPath)s -image_dir %(ImageDir)s -feathering %(feathering)s -load_as_needed -tilesize %(width)d %(height)d -sp 1'
         cmd = assembleTemplate % {'transform' : InputTransformNode.FullPath,
@@ -1359,6 +1361,100 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
         Info = nornir_buildmanager.metadata.tilesetinfo.TilesetInfo.Load(OutputXML, Logger=Logger)
         LevelOne.GridDimX = Info.GridDimX
         LevelOne.GridDimY = Info.GridDimY
+
+    return FilterNode
+
+
+
+def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, TileShape, TileSetName=None, max_temp_image_area=None, Logger=None, **kwargs):
+    '''Create full resolution tiles of specfied size for the mosaics
+       @FilterNode
+       @TransformNode'''
+    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")   
+
+    TileWidth = TileShape[0]
+    TileHeight = TileShape[1]
+    
+    downsample_level = 1
+    
+    tile_dims = numpy.asarray((TileWidth, TileHeight), dtype=numpy.int64)
+
+#    Feathering = Parameters.get('Feathering', 'binary')
+
+    InputTransformNode = TransformNode
+    FilterNode = PyramidNode.FindParent('Filter')
+    
+    SectionNode = FilterNode.FindParent('Section')
+
+    if(TileSetName is None):
+        TileSetName = 'Tileset'
+
+    InputLevelNode = PyramidNode.GetLevel(1)
+    if InputLevelNode is None:
+        Logger.warning("No input tiles found for assembletiles")
+        return
+
+    TileSetNode = nb.VolumeManager.TilesetNode.Create()
+    [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path') 
+    #TODO: Validate that the tileset is populated in a more robust way
+    
+    TileSetNode.TileXDim = str(TileWidth)
+    TileSetNode.TileYDim = str(TileHeight)
+    TileSetNode.FilePostfix = '.png'
+    TileSetNode.FilePrefix = FilterNode.Name + '_'
+    TileSetNode.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
+
+    os.makedirs(TileSetNode.FullPath, exist_ok=True)
+
+    # OK, check if the first level of the tileset exists
+    LevelOne = TileSetNode.GetChildByAttrib('Level', 'Downsample', downsample_level)
+    if(LevelOne is None):
+        # Need to call ir-assemble
+        LevelOne = nb.VolumeManager.LevelNode.Create(Level=1)
+        [added, LevelOne] = TileSetNode.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
+
+        os.makedirs(LevelOne.FullPath, exist_ok=True)
+
+        # The output file name is used as a prefix for the tiles written
+        #OutputPath = os.path.join(LevelOne.FullPath, FilterNode.Name + '.png')
+        #OutputXML = os.path.join(LevelOne.FullPath, FilterNode.Name + '.xml')
+        
+        pool = nornir_pools.GetGlobalThreadPool()
+        
+        mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
+        expected_scale = 1.0 / LevelOne.Downsample
+        scaled_fixed_bounding_box_shape = numpy.ceil(mosaic.FixedBoundingBox.shape / (1 / expected_scale)).astype(numpy.int64)
+        expected_grid_dims = nornir_imageregistration.TileGridShape(scaled_fixed_bounding_box_shape,
+                                                                    tile_size=tile_dims)
+         
+        prettyoutput.Log("Section {4}: Generating a {0}x{1} grid of {2}x{3} tiles".format(expected_grid_dims[1], expected_grid_dims[0], tile_dims[1], tile_dims[0], SectionNode.Number))
+        for tile in mosaic.GenerateOptimizedTiles(tilesPath=InputLevelNode.FullPath, 
+                                                                      requiredScale=1.0/InputLevelNode.Downsample,
+                                                                      tile_dims=tile_dims,
+                                                                      max_temp_image_area=max_temp_image_area,
+                                                                      usecluster=True):
+            (iRow, iCol, tile_image) = tile
+            
+            tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : TileSetNode.FilePrefix,
+                                                 'X' : iCol,
+                                                 'Y' : iRow,
+                                                 'postfix' : TileSetNode.FilePostfix }
+            output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
+            pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=output_tile_fullpath, image=tile_image)
+        
+        #Wait for the tiles to save
+        pool.wait_completion()
+        prettyoutput.Log("Generation of tileset complete")
+#         else:
+#             Logger.info("Assemble tiles output already exists")
+
+        #if not os.path.exists(OutputXML):
+            # Something went wrong, do not save
+        #    return None
+
+        #Info = nornir_buildmanager.metadata.tilesetinfo.TilesetInfo.Load(OutputXML, Logger=Logger)
+        LevelOne.GridDimX = expected_grid_dims[1]
+        LevelOne.GridDimY = expected_grid_dims[0]
 
     return FilterNode
 
@@ -1605,7 +1701,7 @@ def _SortedNumberListFromLevelsParameter(Levels=None):
     return sorted(Levels)
 
 # def UpdateNode(Parameters, Logger, Node):
- #    '''This is a placeholder for patching up volume.xml files on a case-by-case basis'''
+  #    '''This is a placeholder for patching up volume.xml files on a case-by-case basis'''
     # return
 
 

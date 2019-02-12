@@ -4,7 +4,9 @@ Created on Jan 9, 2019
 @author: u0490822
 '''
 
-class Buidl(Exception):
+import os
+
+class Build(Exception):
     '''An expected node did not exist'''
 
 

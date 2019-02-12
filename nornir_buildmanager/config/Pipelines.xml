@@ -817,7 +817,9 @@
 			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair"
 				help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions"
 				required="False" />
-
+			<Argument flag="-MaxWorkingImageArea" dest="max_temp_image_area" type="float"
+			     help="Determines the amount of memory the system should use to generate the tiles.  Suggested value is total system memory in bytes divided by four"
+			     required="False"/> 
 		</Arguments>
 
 		<Iterate VariableName="section_node" XPath="Block/Section">
@@ -832,7 +834,7 @@
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx" />
 
 					<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid" />
-					<PythonCall Function="tile.AssembleTileset" TileShape="#shape" />
+					<PythonCall Function="tile.AssembleTilesetNumpy" TileShape="#shape" max_temp_image_area="#max_temp_image_area"  />
 
 					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset" />
 					<PythonCall Function="tile.BuildTilesetPyramid"
