@@ -38,8 +38,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                        min_translate_iterations=None,
                        offset_acceptance_threshold=None,
                        max_relax_iterations=None,
-                       max_relax_tension_cutoff=None, 
-                       
+                       max_relax_tension_cutoff=None,
                        Logger=None, **kwargs):
     '''@ChannelNode'''
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
