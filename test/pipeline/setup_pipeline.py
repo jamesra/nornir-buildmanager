@@ -441,7 +441,13 @@ class NornirBuildTestBase(test.testbase.TestBase):
             Transform = 'Prune'
             
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', Transform, '-InputFilter', Filter, '-OutputTransform', 'Grid', '-TranslateIterations', "5", '-Threshold', "1.0")
+        buildArgs = self._CreateBuildArgs('Mosaic',
+                                          '-InputTransform', Transform,
+                                          '-InputFilter', Filter,
+                                          '-OutputTransform', 'Grid',
+                                          '-MinTranslateIterations', "5",
+                                          '-OffsetChangeTolerance', '1',
+                                          '-RelaxThreshold', "1.0")
         volumeNode = self.RunBuild(buildArgs)
 
         TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")

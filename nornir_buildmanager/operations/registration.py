@@ -35,8 +35,11 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                        RegistrationDownsample,
                        min_overlap=None,
                        feature_score_threshold=None,
+                       min_translate_iterations=None,
+                       offset_acceptance_threshold=None,
                        max_relax_iterations=None,
                        max_relax_tension_cutoff=None, 
+                       
                        Logger=None, **kwargs):
     '''@ChannelNode'''
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
@@ -86,6 +89,8 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                                                                              image_scale=1.0/RegistrationDownsample,
                                                                              min_overlap=min_overlap,
                                                                              feature_score_threshold=feature_score_threshold,
+                                                                             min_translate_iterations=min_translate_iterations,
+                                                                             offset_acceptance_threshold=offset_acceptance_threshold,
                                                                              max_relax_iterations=max_relax_iterations,
                                                                              max_relax_tension_cutoff=max_relax_tension_cutoff)
         
