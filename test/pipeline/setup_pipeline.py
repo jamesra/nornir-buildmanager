@@ -908,7 +908,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return chosenPngFile
 
-    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter_name='Leveled', level=1,):
+    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter_name='Leveled', level=1):
         '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
         removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter_name, level)
 

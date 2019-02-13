@@ -347,7 +347,7 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
     InputTiles = glob.glob(os.path.join(InputLevelNode.FullPath, '*' + InputPyramidNode.ImageFormatExt))
 
     if not os.path.exists(OutputImageNode.FullPath):
-        correctionImage = tiles.CalculateShadeImage(InputTiles, type=correctionType)
+        correctionImage = tiles.CalculateShadeImage(InputTiles, correction_type=correctionType)
         nornir_imageregistration.SaveImage(OutputImageNode.FullPath, correctionImage)
     else:
         correctionImage = nornir_imageregistration.LoadImage(OutputImageNode.FullPath)
@@ -1125,7 +1125,10 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        (mosaicImage, maskImage) = mosaic.AssembleTiles(ImageDir, FixedRegion=RequestedBoundingBox, usecluster=True)
+        (mosaicImage, maskImage) = mosaic.AssembleImage(ImageDir,
+                                                        FixedRegion=RequestedBoundingBox,
+                                                        usecluster=True,
+                                                        requiredScale=1.0/thisLevel)
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)

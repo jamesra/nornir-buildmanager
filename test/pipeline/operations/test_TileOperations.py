@@ -87,7 +87,7 @@ class ShadeCorrectionTest(ImportOnlySetup):
         OutputTiles = glob.glob(os.path.join(LevelNode.FullPath, '*.png'))
         self.assertEqual(len(SourceTiles), len(OutputTiles), "Number of shading corrected tiles does not match number of input tiles")
 
-        # image = tiles.CalculateShadeImage(OutputTiles, type=tiles.ShadeCorrectionTypes.BRIGHTFIELD)
+        # image = tiles.CalculateShadeImage(OutputTiles, correction_type=tiles.ShadeCorrectionTypes.BRIGHTFIELD)
 
         # self.assertEqual(np.max(image), 0, "We already corrected shading, the next shading corrected image should be all zeros")
 
@@ -214,7 +214,7 @@ class BuildTilePyramidTest(PrepareSetup):
         volumeNode = self.RunAdjustContrast(Sections=690)
         
         # Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
-        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter='Leveled', level=4)       
+        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter_name='Leveled', level=4)       
 
 
 class AutoLevelHistogramTest(PrepareSetup):
