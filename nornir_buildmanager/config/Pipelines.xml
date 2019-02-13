@@ -616,7 +616,7 @@
 					TransformNode="#TransformNode" OutputTransform="Translated_#InputTransformName"
 					FilterNode="#FilterNode" RegistrationDownsample="#Downsample"
 					min_overlap="#min_overlap" feature_score_threshold="#feature_score_threshold"
-					min_translate_iterations="min_translate_iterations" offset_acceptance_threshold="#offset_acceptance_threshold"
+					min_translate_iterations="#min_translate_iterations" offset_acceptance_threshold="#offset_acceptance_threshold"
 					max_relax_iterations="#max_relax_iterations" max_relax_tension_cutoff="#max_relax_tension_cutoff">
 					<Parameters>
                         <Entry Name="MinOverlap" Value="#min_overlap"/>
