@@ -581,7 +581,7 @@
                 type="float"
                 help="Minimum average FFT power spectral density.  Determines if overlapping have enough texture for registration to be accurate."
                 required="False" />
-            <Argument flag="-MinTranslateIterations" default="150" dest="min_translate_iterations"
+            <Argument flag="-MinTranslateIterations" default="5" dest="min_translate_iterations"
                 type="int" help="Minimum number of iterations phase correlation and relaxation"
                 required="False" />
             <Argument flag="-RelaxIterations" default="150" dest="max_relax_iterations"
