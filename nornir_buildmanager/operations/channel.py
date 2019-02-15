@@ -108,9 +108,9 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         else:
             SaveFilterNode = True
 
-    if(not 'InputImageChecksum' in BlobImageNode):
+    if not hasattr(BlobImageNode, 'InputImageChecksum'):
         BlobImageNode.InputImageChecksum = InputImageNode.Checksum
-        SaveFilterNode = True
+        SaveFilterNode = True 
 
     BlobPyramidImageSet = nornir_buildmanager.operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
     SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
