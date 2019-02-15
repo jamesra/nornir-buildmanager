@@ -17,6 +17,7 @@ from nornir_imageregistration.files import *
 import nornir_imageregistration.transforms.registrationtree
 import nornir_shared.checksum
 import nornir_shared.files
+import nornir_pools
 
 from . import VolumeManagerHelpers as VMH
 import nornir_buildmanager.operations.tile as tile
@@ -122,14 +123,14 @@ class VolumeManager():
         return VolumeRoot
         # return cls.__init__(VolumeData, Filename)
 
-    @classmethod
-    def WrapElement(cls, e):
+    @staticmethod
+    def WrapElement(e):
         '''
         Returns a new class that represents the passed XML element
         :param ElementTree.Element e: Element to be represented by a class
         :return: (bool, An object inheriting from XElementWrapper) Returns true if the element had to be wrapped
         '''
-         
+        
         OverrideClassName = e.tag + 'Node'
         OverrideClass = reflection.get_module_class('nornir_buildmanager.VolumeManagerETree', OverrideClassName, LogErrIfNotFound=False)
         
@@ -148,8 +149,8 @@ class VolumeManager():
         else:
             return (True, OverrideClass.wrap(e))
         
-    @classmethod
-    def __SetElementParent__(cls, Element, ParentElement=None):
+    @staticmethod
+    def __SetElementParent__(Element, ParentElement=None):
         Element.Parent = ParentElement
 
         for i in range(len(Element) - 1, -1, -1):
@@ -474,7 +475,7 @@ class XElementWrapper(ElementTree.Element):
 
         if(isinstance(newElement, XContainerElementWrapper)):
             if(not 'Path' in newElement.attrib):
-                print(newElement.ToElementString() + " no path attribute but being set as container")
+                prettyoutput.Log(newElement.ToElementString() + " no path attribute but being set as container")
             assert('Path' in newElement.attrib)
 
         return newElement
@@ -724,6 +725,8 @@ class XElementWrapper(ElementTree.Element):
         return None
     
     def _ReplaceChildElementInPlace(self, old, new):
+        
+        #print("Removing {0}".format(str(old)))
         i = self.indexofchild(old)
         
         self[i] = new
@@ -828,10 +831,14 @@ class XElementWrapper(ElementTree.Element):
         LinkMatches = list(super(XElementWrapper, self).findall(LinkedElementsXPath))
         if LinkMatches is None:
             return  # matches
-
-        for link_node in LinkMatches:
-            self._replace_link(link_node)
-
+        
+        num_matches = len(LinkMatches)
+        if num_matches > 0:
+            if num_matches > 1:
+                prettyoutput.Log("Need to load {0} links".format(num_matches))
+                
+            self._replace_links(LinkMatches)
+            
         # return matches
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
 
@@ -859,9 +866,9 @@ class XElementWrapper(ElementTree.Element):
                             # sm = VolumeManager.WrapElement(sm)
                             # m.insert(sm)
                             
-                        yield sm
+                        (yield sm)
             else: 
-                yield m
+                (yield m)
 
     def LoadAllLinkedNodes(self):
         '''Recursively load all of the linked nodes on this element'''
@@ -1100,7 +1107,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     continue
 
                 # Load the VolumeData.xml, take the root element name and create a link in our element
-                loadedElement = self._load_link_element(volumeDataFullPath)
+                loadedElement = self._load_and_wrap_link_element(volumeDataFullPath)
                 if loadedElement is not None:
                     self.append(loadedElement)
 
@@ -1110,25 +1117,20 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         self.CleanIfInvalid()
         self.Save(recurse=False)
-
-    def _load_link_element(self, fullpath):
-        '''Loads an xml file containing a subset of our meta-data referred to by a LINK element.  Wraps the loaded XML in the correct meta-data class'''
-        logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+    
+    @staticmethod 
+    def _load_link_element(fullpath):
+        '''Loads an XML file from the file system and returns the root element'''
         Filename = os.path.join(fullpath, "VolumeData.xml")
-        if not os.path.exists(Filename):
-            logger.error(Filename + " does not exist")
-            return None
+         
+        XMLTree = ElementTree.parse(Filename)
+        
+        return XMLTree.getroot()
 
-        # print Filename
-        try:
-            XMLTree = ElementTree.parse(Filename)
-        except Exception as e:
-            logger.error("Parse error for linked XML file: " + Filename)
-#            logger.error(str(e))
-            raise e
-
-        XMLElement = XMLTree.getroot()
-
+    def _load_and_wrap_link_element(self, fullpath):
+        '''Loads an xml file containing a subset of our meta-data referred to by a LINK element.  Wraps the loaded XML in the correct meta-data class'''
+        
+        XMLElement = XContainerElementWrapper._load_link_element(fullpath)
         (wrapped, NewElement) = VolumeManager.WrapElement(XMLElement)
         # SubContainer = XContainerElementWrapper.wrap(XMLElement)
 
@@ -1137,6 +1139,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         return NewElement
     
+            
     def _replace_link(self, link_node, fullpath=None):
         '''Load the linked node.  Remove link node and replace with loaded node.  Checks that the loaded node is valid'''
         
@@ -1144,12 +1147,23 @@ class XContainerElementWrapper(XResourceElementWrapper):
             fullpath = self.FullPath
         
         SubContainerPath = os.path.join(fullpath, link_node.attrib["Path"])
-        loaded_element = self._load_link_element(SubContainerPath)
-        if loaded_element is None:
-            self.remove(link_node)
-            prettyoutput.Log("Deleting unloadable link element {0}".format(str(link_node)))
-            return None
         
+        try:
+            loaded_element = self._load_and_wrap_link_element(SubContainerPath)
+        except IOError as e:
+            self.remove(link_node)
+            logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            logger.error("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            return None
+        except ElementTree.ParseError as e:
+            logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            return None
+        except Exception as e:
+            logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            return None
+              
         self._ReplaceChildElementInPlace(old=link_node, new=loaded_element)
         
         # Check to ensure the newly loaded element is valid
@@ -1158,6 +1172,64 @@ class XContainerElementWrapper(XResourceElementWrapper):
             return None
         
         return loaded_element
+    
+    def _replace_links(self, link_nodes, fullpath=None):
+        '''Load the linked nodes.  Remove link node and replace with loaded node.  Checks that the loaded node is valid'''
+        
+        #Ensure we are actually working on a list
+        if len(link_nodes) == 0:
+            return None
+        elif len(link_nodes) == 1:
+            return self._replace_link(link_nodes[0], fullpath=fullpath)
+        
+        if fullpath is None:
+            fullpath = self.FullPath
+        
+        SubContainerPaths = [os.path.join(fullpath, link_node.attrib["Path"]) for link_node in link_nodes]
+        
+        loaded_elements = []
+        
+        pool = nornir_pools.GetGlobalThreadPool()
+        
+        tasks = []
+        for i, fullpath in enumerate(SubContainerPaths):
+            t = pool.add_task("Load " + fullpath, XContainerElementWrapper._load_link_element, fullpath)
+            t.link_node = link_nodes[i]
+            tasks.append(t)
+            
+        for task in tasks:
+            try:
+                link_node = task.link_node
+                loaded_element = task.wait_return()
+            except IOError as e:
+                self.remove(link_node)
+                logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                logger.error("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                return None
+            except ElementTree.ParseError as e:
+                logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                return None
+            except Exception as e:
+                logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                return None
+            
+            (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
+            # SubContainer = XContainerElementWrapper.wrap(XMLElement)
+    
+            if wrapped: 
+                VolumeManager.__SetElementParent__(wrapped_loaded_element, self)
+            
+            self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
+            
+            # Check to ensure the newly loaded element is valid
+            Cleaned = wrapped_loaded_element.CleanIfInvalid()
+            if not Cleaned:
+                loaded_elements.append(wrapped_loaded_element)
+                
+        return loaded_elements
+    
 
     def __init__(self, tag, attrib=None, **extra):
 
