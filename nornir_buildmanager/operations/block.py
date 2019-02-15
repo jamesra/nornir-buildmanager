@@ -749,11 +749,10 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
     '''Executre ir-stom on a provided .stos file'''
 
     oldDir = os.getcwd()
-    TransformXPathTemplate = "SectionMappings[@MappedSectionNumber='%(MappedSection)d']/Transform[@ControlSectionNumber='%(ControlSection)d']"
-
-    SaveRequired = False
-    BlockNode = StosMapNode.FindParent('Block')
-
+    #TransformXPathTemplate = "SectionMappings[@MappedSectionNumber='%(MappedSection)d']/Transform[@ControlSectionNumber='%(ControlSection)d']"
+  
+    SectionMappingSaveRequired = False
+    
     try:
         for MappingNode in StosMapNode.findall('Mapping'):
             MappedSectionList = MappingNode.Mapped
@@ -764,6 +763,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                 #                                           'ControlSection' : MappingNode.Control}
 
                 # StosTransformNode = GroupNode.find(TransformXPath)
+                 
                 StosTransformNodes = GroupNode.TransformsForMapping(MappedSection, MappingNode.Control)
                 if StosTransformNodes is None:
                     Logger.warn("No transform found for mapping: " + str(MappedSection) + " -> " + str(MappingNode.Control))
@@ -791,6 +791,8 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                     DiffImageNode.Type = 'Diff_' + StosTransformNode.Type
                     (created_warped, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
                     WarpedImageNode.Type = 'Warped_' + StosTransformNode.Type
+                    
+                    SectionMappingSaveRequired = SectionMappingSaveRequired or created_overlay or created_diff or created_warped
 
                     stosImages = StosImageNodes(StosTransformNode, GroupNode.Downsample)
 
@@ -850,7 +852,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
                                                                                                                    DiffFilename=DiffImageNode.FullPath,
                                                                                                                    WarpedFilename=WarpedImageNode.FullPath))
 
-                        SaveRequired = True
+                        SectionMappingSaveRequired = True
 
                         OverlayImageNode.SetTransform(StosTransformNode)
                         DiffImageNode.SetTransform(StosTransformNode)
@@ -863,18 +865,17 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
             # except:
                 # pass
 
-        Pool = nornir_pools.GetGlobalProcessPool()
-        Pool.wait_completion()
+        #Pool = nornir_pools.GetGlobalProcessPool()
+        #Pool.wait_completion()
     finally:
-        if os.path.exists('Temp'):
-            shutil.rmtree('Temp')
+        shutil.rmtree('Temp', ignore_errors=True)
 
         os.chdir(oldDir)
 
-    if SaveRequired:
-        return BlockNode
-    else:
+    if SectionMappingSaveRequired:
         return GroupNode
+    
+    return None
     
 
 def CalculateStosGroupWarpMeasurementImages(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
