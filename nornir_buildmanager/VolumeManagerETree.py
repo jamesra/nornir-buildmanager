@@ -834,9 +834,8 @@ class XElementWrapper(ElementTree.Element):
         
         num_matches = len(LinkMatches)
         if num_matches > 0:
-            if num_matches > 1:
-                prettyoutput.Log("Need to load {0} links".format(num_matches))
-                
+            #if num_matches > 1:
+            #    prettyoutput.Log("Need to load {0} links".format(num_matches))
             self._replace_links(LinkMatches)
             
         # return matches
