@@ -48,7 +48,7 @@ def PrintContrastValues(node, **kwargs):
 def PrintIfMissingTileset(filter_node, **kwargs):
     '''Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count'''
     
-    if filter_node.HasTileset():
+    if filter_node.HasTileset:
         return
 
     section_node = filter_node.GetParent("Section")        
