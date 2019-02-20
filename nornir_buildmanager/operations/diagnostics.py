@@ -51,8 +51,8 @@ def PrintIfMissingTileset(filter_node, **kwargs):
     if filter_node.HasTileset:
         return
 
-    section_node = filter_node.GetParent("Section")        
-    channel_node = filter_node.GetParent("Channel")
+    section_node = filter_node.FindParent("Section")        
+    channel_node = filter_node.FindParent("Channel")
             
     print("{0:04d}\t{1}\t{2}".format(section_node.Number, channel_node.Name, filter_node.Name))
 
