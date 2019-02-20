@@ -54,7 +54,7 @@ def PrintIfMissingTileset(filter_node, **kwargs):
     section_node = filter_node.GetParent("Section")        
     channel_node = filter_node.GetParent("Channel")
             
-    print("%s\t%s\t%s\t%s" % (section_node.Number, channel_node.Name, filter_node.Name))
+    print("{0:04d}\t{1}\t{2}".format(section_node.Number, channel_node.Name, filter_node.Name))
 
 def PrintAttributes(node, attribs=None, tab_indent_count=None, **kwargs):
     '''Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count'''
