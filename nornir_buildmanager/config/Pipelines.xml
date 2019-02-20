@@ -480,7 +480,7 @@
                 <Iterate VariableName="FilterNode" XPath="Filter">
                     <RequireMatch Attribute="Name" RegEx="#FiltersRegEx" />
                     <PythonCall Function="diagnostics.PrintIfMissingTileset"
-                        node="#FilterNode" />
+                        filter_node="#FilterNode" />
                 </Iterate>
             </Iterate>
         </Iterate>
