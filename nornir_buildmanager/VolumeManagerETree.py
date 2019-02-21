@@ -1188,7 +1188,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         loaded_elements = []
         
-        pool = nornir_pools.GetGlobalThreadPool()
+        #Use a different threadpool so that if callars are already on a thread we don't create deadlocks where they are waiting for load tasks to be returned from the Queue
+        pool = nornir_pools.GetThreadPool('ReplaceLinks')
         
         tasks = []
         for i, fullpath in enumerate(SubContainerPaths):
@@ -1196,7 +1197,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
             t.link_node = link_nodes[i]
             tasks.append(t)
             
-        for task in tasks:
+        while len(tasks) > 0:
+            task = tasks.pop(0)
             try:
                 link_node = task.link_node
                 loaded_element = task.wait_return()
