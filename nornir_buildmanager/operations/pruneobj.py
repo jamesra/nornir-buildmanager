@@ -77,7 +77,7 @@ class PruneObj:
 
         Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
         if not Threshold is None:
-            Threshold = round(Threshold, threshold_precision)
+            Threshold = TransformNode.round_precision_value(Threshold)#round(Threshold, threshold_precision)
 
         cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Threshold)
 

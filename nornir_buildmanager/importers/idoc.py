@@ -362,7 +362,8 @@ class SerialEMIDocImport(object):
             filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
-            nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
+            #nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
+            nornir_imageregistration.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=ImageBpp, OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)
 
         elif(Tileset.ImageMoveRequired):
             for f in SourceToMissingTargetMap:

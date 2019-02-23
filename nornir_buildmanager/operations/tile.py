@@ -352,7 +352,7 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
     else:
         correctionImage = nornir_imageregistration.LoadImage(OutputImageNode.FullPath)
 
-    tiles.ShadeCorrect(InputTiles, correctionImage, OutputLevelNode.FullPath, correction_type=correctionType)
+    tiles.ShadeCorrect(InputTiles, correctionImage, OutputLevelNode.FullPath, correction_type=correctionType, bpp=OutputFilterNode.BitsPerPixel)
     if SaveFilterParent:
         return FilterParent
 
@@ -406,7 +406,7 @@ def _CorrectTilesDeprecated(Parameters, FilterNode=None, ImageNode=None, OutputF
 
     ZeroedImageNode = _CreateMinCorrectionImage(ImageNode, 'Zeroed' + ImageNode.Name)
 
-    Pool = nornir_pools.GetGlobalClusterPool()
+    Pool = nornir_pools.GetGlobalProcessPool()
 
     for InputTileFullPath in InputTiles:
         inputTile = os.path.basename(InputTileFullPath)
@@ -591,7 +591,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
 
     (HistogramElementRemoved, HistogramElement) = _ClearInvalidHistogramElements(InputFilter, InputTransformNode.Checksum)
     if HistogramElementRemoved:
-        yield InputFilter
+        (yield InputFilter)
         
     if HistogramElement is None:
         raise nb.NornirUserException("No histograms available for autoleveling of section: %s" % InputFilter.FullPath)
@@ -621,16 +621,16 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
         
         if ChannelNode.RemoveFilterOnContrastMismatch(OutputFilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
             EntireTilePyramidNeedsBuilding = True
-            yield ChannelNode.Parent
+            (yield ChannelNode.Parent)
             
             (added_filter, OutputFilterNode) = ChannelNode.GetOrCreateFilter(OutputFilterName)
             OutputFilterNode.SetContrastValues(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
-            yield ChannelNode
+            (yield ChannelNode)
         elif FilterPopulated:
             # Nothing to do, contrast matches and the filter is populated
             return 
     else:
-        yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
+        (yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True))
         
     # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
 #     DictAttributes = {'BitsPerPixel' : 8,
@@ -685,13 +685,13 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
             if not os.path.exists(PredictedOutput):
                 TilesToBuild.append(InputTile)
 
-    Pool = None
-    if len(TilesToBuild) > 0:
-        Pool = nornir_pools.GetGlobalClusterPool()
+    #Pool = None
+    #if len(TilesToBuild) > 0:
+    #    Pool = nornir_pools.GetGlobalClusterPool()
 
     if InputFilter.BitsPerPixel == 8:
-        MinIntensityCutoff16bpp = MinIntensityCutoff * 256
-        MaxIntensityCutoff16bpp = MaxIntensityCutoff * 256
+        MinIntensityCutoff16bpp = MinIntensityCutoff
+        MaxIntensityCutoff16bpp = MaxIntensityCutoff
     else:
         MinIntensityCutoff16bpp = MinIntensityCutoff
         MaxIntensityCutoff16bpp = MaxIntensityCutoff
@@ -703,36 +703,41 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
         MinIntensityCutoff16bpp = temp
 
     SampleCmdPrinted = False
+    TilesToConvert = {}
     for imageFile in TilesToBuild:
         InputImageFullPath = os.path.join(InputLevelNode.FullPath, imageFile)
         ImageSaveFilename = os.path.join(OutputImageDir, os.path.basename(imageFile))
-
-#         cmd = 'convert \"' + InputImageFullPath + '\" ' + \
-#                '-level ' + str(MinIntensityCutoff16bpp) + \
-#                ',' + str(MaxIntensityCutoff16bpp) + \
-#                ' -gamma ' + str(Gamma) + \
-#                ' -colorspace Gray -depth 8 -type optimize ' + \
-#                ' \"' + ImageSaveFilename + '\"'
-
-        cmd_template = 'magick convert %(InputFile)s -level %(min)d,%(max)d -gamma %(gamma)f -colorspace Gray -depth 8 -type optimize %(OutputFile)s'
-        cmd = cmd_template % {'InputFile': InputImageFullPath,
-                              'min': MinIntensityCutoff16bpp,
-                              'max': MaxIntensityCutoff16bpp,
-                              'gamma': Gamma,
-                              'OutputFile': ImageSaveFilename};
-
-        if not SampleCmdPrinted:
-            SampleCmdPrinted = True
-            prettyoutput.CurseString('Cmd', cmd)
-        Pool.add_process('AutoLevel: ' + cmd, cmd)
-
-    if not Pool is None:
-        Pool.wait_completion()
+        
+        TilesToConvert[InputImageFullPath] = ImageSaveFilename
+    
+    nornir_imageregistration.ConvertImagesInDict(TilesToConvert, MinMax=(MinIntensityCutoff16bpp, MaxIntensityCutoff16bpp), Gamma=Gamma)
+#     
+# #         cmd = 'convert \"' + InputImageFullPath + '\" ' + \
+# #                '-level ' + str(MinIntensityCutoff16bpp) + \
+# #                ',' + str(MaxIntensityCutoff16bpp) + \
+# #                ' -gamma ' + str(Gamma) + \
+# #                ' -colorspace Gray -depth 8 -type optimize ' + \
+# #                ' \"' + ImageSaveFilename + '\"'
+# 
+#         cmd_template = 'magick convert %(InputFile)s -level %(min)d,%(max)d -gamma %(gamma)f -colorspace Gray -depth 8 -type optimize %(OutputFile)s'
+#         cmd = cmd_template % {'InputFile': InputImageFullPath,
+#                               'min': MinIntensityCutoff16bpp,
+#                               'max': MaxIntensityCutoff16bpp,
+#                               'gamma': Gamma,
+#                               'OutputFile': ImageSaveFilename};
+# 
+#         if not SampleCmdPrinted:
+#             SampleCmdPrinted = True
+#             prettyoutput.CurseString('Cmd', cmd)
+#         Pool.add_process('AutoLevel: ' + cmd, cmd)
+# 
+#     if not Pool is None:
+#         Pool.wait_completion()
 
     OutputPyramidNode.NumberOfTiles = len(ImageFiles)
 
     # Save the channel node so the new filter is recorded
-    yield ChannelNode
+    (yield ChannelNode)
 
 
 def InvertFilter(Parameters, InputFilterNode, OutputFilterName, **kwargs):
@@ -768,14 +773,29 @@ def InvertFilter(Parameters, InputFilterNode, OutputFilterName, **kwargs):
 
     InputTiles = glob.glob(os.path.join(InputLevelNode.FullPath, '*' + InputPyramidNode.ImageFormatExt))
     OutputLevelFullPath = OutputLevelNode.FullPath
+    
+    pool = nornir_pools.GetGlobalThreadPool()
 
-    TileMappingDict = {}
+    tasks = []
     for InputTileFullPath in InputTiles:
         Basename = os.path.basename(InputTileFullPath)
         OutputTileFullPath = os.path.join(OutputLevelFullPath, Basename)
-        TileMappingDict[InputTileFullPath] = OutputTileFullPath
-
-    tilesConverted = nornir_shared.images.ConvertImagesInDict(TileMappingDict, Invert=True, Bpp=InputFilterNode.BitsPerPixel)
+        t = pool.add_task("Invert {0}".format(InputTileFullPath), nornir_shared.images.InvertImage(InputTileFullPath, OutputTileFullPath))
+        tasks.append(t)
+        tilesConverted = True
+        
+    while len(tasks) > 0:
+        t = tasks.pop(0)
+        try:
+            t.wait()
+            tilesConverted = True
+        except OSError as e:
+            prettyoutput.LogErr("Unable to invert {0}\n{1}".format(t.name, e))
+            pass
+        except IOError as e:
+            prettyoutput.LogErr("Unable to invert {0}\n{1}".format(t.name, e))
+            pass
+            
     if tilesConverted:
         yield InputFilterNode.Parent
 

@@ -867,6 +867,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
 
         #Pool = nornir_pools.GetGlobalProcessPool()
         #Pool.wait_completion()
+        nornir_pools.WaitOnAllPools()
     finally:
         shutil.rmtree('Temp', ignore_errors=True)
 
@@ -2043,9 +2044,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransfor
                     task.dimY = MosaicToSectionTransform.gridHeight
     
                 Tasks.append(task)
-                
-            Pool.wait_completion()
-    
+                   
             for task in Tasks:
                 try:
                     MosaicToVolume = task.wait_return()

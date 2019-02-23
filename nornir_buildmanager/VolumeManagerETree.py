@@ -1696,9 +1696,11 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
 
     @property
     def BitsPerPixel(self):
-        if 'BitsPerPixel' in self.attrib:
-            return int(self.attrib['BitsPerPixel'])
-        return None
+        val = self.attrib.get('BitsPerPixel', None)
+        if val is not None:
+            val = int(val)
+        
+        return val
 
     @BitsPerPixel.setter
     def BitsPerPixel(self, val):
@@ -2583,13 +2585,17 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
             
         super(TransformNode, self).__init__(tag=tag, attrib=attrib, **extra)
         
-    @classmethod
-    def get_threshold_format(cls):
-        return "%2.4g"
+    @staticmethod
+    def get_threshold_format():
+        return "%.2f"
     
-    @classmethod
-    def get_threshold_precision(cls):
+    @staticmethod
+    def get_threshold_precision():
         return 2  # Number of digits to save in XML file
+    
+    @staticmethod
+    def round_precision_value(value):
+        return  float(TransformNode.get_threshold_format() % value) # Number of digits to save in XML file
     
     @classmethod 
     def Create(cls, Name, Type, Path=None, attrib=None, **extra):

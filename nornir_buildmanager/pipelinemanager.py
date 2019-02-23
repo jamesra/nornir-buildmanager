@@ -506,7 +506,7 @@ class PipelineManager(object):
 
         self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
         
-        nornir_pools.ClosePools()
+        nornir_pools.WaitOnAllPools()
 
     def ExecuteChildPipelines(self, ArgSet, VolumeElem, PipelineNode):
         '''Run all of the child pipeline elements on the volume element'''
