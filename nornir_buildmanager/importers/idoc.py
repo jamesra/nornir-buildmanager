@@ -874,7 +874,10 @@ class IDoc():
     def GetImageBpp(self):
         ''':return: Bits per pixel if specified in the IDoc, otherwise None'''
         ImageBpp = None
-        if (hasattr(self, 'DataMode')):
+        
+        if not self.Max is None:
+            ImageBpp = math.ceil(math.log2(self.Max)) 
+        elif (hasattr(self, 'DataMode')):
             if self.DataMode == 0:
                 ImageBpp = 8
             elif self.DataMode == 1:
