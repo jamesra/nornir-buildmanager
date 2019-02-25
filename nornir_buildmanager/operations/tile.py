@@ -92,7 +92,8 @@ def VerifyTiles(LevelNode=None, **kwargs):
         logger.info('Tiles already validated')
         return None
 
-    InvalidTiles = nornir_shared.images.IsValidImage(LevelFiles, TileImageDir)
+    InvalidTiles = nornir_shared.images.AreValidImages(LevelFiles, TileImageDir) 
+        
     for InvalidTile in InvalidTiles:
         InvalidTilePath = os.path.join(TileImageDir, InvalidTile)
         if os.path.exists(InvalidTilePath):
