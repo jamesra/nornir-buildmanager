@@ -756,11 +756,24 @@ class XElementWrapper(ElementTree.Element):
             self._ReplaceChildElementInPlace(child, wrappedElement)
             
         return wrappedElement
+    
+    
 
     # replacement for find function that loads subdirectory xml files
     def find(self, xpath):
 
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(xpath)
+        
+        if isinstance(self, XContainerElementWrapper): # Only containers have linked elements
+            LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
+            if LinkMatches is None:
+                return None
+            
+            num_matches = len(LinkMatches)
+            if num_matches > 0:
+                #if num_matches > 1:
+                #    prettyoutput.Log("Need to load {0} links".format(num_matches))
+                self._replace_links(LinkMatches)
 
         matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
         for match in matchiterator:
@@ -780,46 +793,10 @@ class XElementWrapper(ElementTree.Element):
                     return foundChild
             else:
                 return match
-
-        if not isinstance(self, XContainerElementWrapper):  # Only containers have linked elements, so return none and do not search for links
-            return None
-
-        SubContainersIterator = super(XElementWrapper, self).findall(LinkedElementsXPath)
-
-        if SubContainersIterator is None:
-            return None
-
-        # Run in a loop because the match may not exist on the first element returned by find
-        for SubContainer in SubContainersIterator: 
-            
-            SubContainerElement = self._replace_link(SubContainer)
-            if SubContainerElement is None:
-                continue
-
-            if len(RemainingXPath) > 0:
-                result = SubContainerElement.find(RemainingXPath)
-                if not result is None:
-                    return result
-            else:
-                return SubContainerElement
-
+ 
         return None
 
-    def __ElementLinkNameFromXPath(self, xpath):
-        # OK, check if we have a linked element to load.
-
-        if '\\' in xpath:
-            Logger = logging.getLogger(__name__ + '.' + '__ElementLinkNameFromXPath')
-            Logger.warn("Backslash found in xpath query, is this intentional or should it be a forward slash?")
-            Logger.warn("XPath: " + xpath)
-
-        parts = xpath.split('/')
-        UnlinkedElementsXPath = parts[0]
-        SubContainerName = UnlinkedElementsXPath.split('[')[0]
-        LinkedSubContainerName = SubContainerName + "_Link"
-        LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1)
-        RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
-        return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath)
+    
 
     def findall(self, match):
 
@@ -868,6 +845,22 @@ class XElementWrapper(ElementTree.Element):
                         (yield sm)
             else: 
                 (yield m)
+                
+    def __ElementLinkNameFromXPath(self, xpath):
+        # OK, check if we have a linked element to load.
+
+        if '\\' in xpath:
+            Logger = logging.getLogger(__name__ + '.' + '__ElementLinkNameFromXPath')
+            Logger.warn("Backslash found in xpath query, is this intentional or should it be a forward slash?")
+            Logger.warn("XPath: " + xpath)
+
+        parts = xpath.split('/')
+        UnlinkedElementsXPath = parts[0]
+        SubContainerName = UnlinkedElementsXPath.split('[')[0]
+        LinkedSubContainerName = SubContainerName + "_Link"
+        LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1)
+        RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
+        return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath)
 
     def LoadAllLinkedNodes(self):
         '''Recursively load all of the linked nodes on this element'''
