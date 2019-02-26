@@ -194,6 +194,8 @@ class SerialEMIDocImport(object):
         if ContrastMap is None:
             ContrastMap = {}
             
+        SaveChannel = False
+        
         idocFilePath = cls.GetIDocPathWithoutSpaces(idocFileFullPath)
 
         # Default to the directory above ours if an output path is not specified
@@ -304,13 +306,14 @@ class SerialEMIDocImport(object):
         ActualMosaicMax = numpy.around(ActualMosaicMax)
         ActualMosaicMin = numpy.around(ActualMosaicMin)
         
+        contrast_mismatch = channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
+    
         Pool = nornir_pools.GetGlobalThreadPool()
         #_PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-        Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-
-        channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
-
-        ImageConversionRequired = False
+        Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax, force_recreate=contrast_mismatch)
+        
+        
+        ImageConversionRequired = contrast_mismatch
 
         # Create a channel for the Raw data 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
@@ -346,8 +349,8 @@ class SerialEMIDocImport(object):
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath, exist_ok=True)
         else:
-            VerifyTiles(filterObj.TilePyramid.GetLevel(1))
             Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
+            VerifyTiles(filterObj.TilePyramid.GetLevel(1))
 
         SourceToMissingTargetMap = Tileset.GetSourceToMissingTargetMap()
 
@@ -355,7 +358,7 @@ class SerialEMIDocImport(object):
         if len(SourceToMissingTargetMap) == 0:
             ImageConversionRequired = False
         else:
-            ImageConversionRequired = (not ImageBpp == TargetBpp) or (ImageConversionRequired | Tileset.ImageConversionRequired)
+            ImageConversionRequired = (not ImageBpp == TargetBpp) or (ImageConversionRequired or Tileset.ImageConversionRequired)
 
         if(ImageConversionRequired):
             Invert = False 
@@ -383,6 +386,7 @@ class SerialEMIDocImport(object):
  
             Mosaic.TranslateMosaicFileToZeroOrigin(SupertilePath)
             transformObj.ResetChecksum()
+            SaveChannel = True
             # transformObj.Checksum = MFile.Checksum
 
         if saveBlock:
@@ -391,8 +395,9 @@ class SerialEMIDocImport(object):
             return BlockObj
         elif saveChannel:
             return sectionObj
-        else:
+        elif  added_transform or added_tilepyramid or added_level or ImageConversionRequired or SaveChannel or contrast_mismatch:
             return channelObj
+        return None
 
     @classmethod
     def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, ContrastCutoffs, SourceImagesFullPaths, idoc_data, histogramFullPath):
@@ -516,11 +521,11 @@ def _CleanOutliersFromIDocHistogram(hObj):
     
     return hObj
     
-def _PlotHistogram(histogramFullPath, sectionNumber, minCutoff, maxCutoff):    
+def _PlotHistogram(histogramFullPath, sectionNumber, minCutoff, maxCutoff, force_recreate):    
     HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
     ImageRemoved = RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
-    if ImageRemoved or not os.path.exists(HistogramImageFullPath):
-        pool = nornir_pools.GetGlobalMultithreadingPool()
+    if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath):
+#        pool = nornir_pools.GetGlobalMultithreadingPool()
         # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
         plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
 
@@ -594,7 +599,7 @@ class NornirTileset():
                 
     def RemoveStaleTilesFromOutputDir(self, SupertilePath):
         for t in self._tiles:
-            if not os.path.exists(t.SourceImageFullPath):
+            if os.path.exists(t.SourceImageFullPath):
                 RemoveOutdatedFile(t.SourceImageFullPath, SupertilePath)
                 RemoveOutdatedFile(t.SourceImageFullPath, t.TargetImageFullPath)
     
@@ -888,15 +893,17 @@ class IDoc():
         ''':return: Bits per pixel if specified in the IDoc, otherwise None'''
         ImageBpp = None
         
-        if not self.Max is None:
-            ImageBpp = math.ceil(math.log2(self.Max)) 
-        elif (hasattr(self, 'DataMode')):
+        
+        if (hasattr(self, 'DataMode')):
             if self.DataMode == 0:
                 ImageBpp = 8
             elif self.DataMode == 1:
                 ImageBpp = 16
             elif self.DataMode == 6:
                 ImageBpp = 16
+        else:
+            if not self.Max is None:
+                ImageBpp = math.ceil(math.log2(self.Max)) 
 
         return ImageBpp
     
