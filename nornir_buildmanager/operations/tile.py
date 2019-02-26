@@ -325,7 +325,9 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
 
     # Find out if the output filter already exists
     [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(nb.VolumeManager.FilterNode.Create(OutputFilterName, OutputFilterName))
-    OutputFilterNode.BitsPerPixel = FilterNode.BitsPerPixel
+    
+    if SaveFilterParent:
+        OutputFilterNode.BitsPerPixel = FilterNode.BitsPerPixel
 
     # Check if the output node exists
     OutputPyramidNode = nb.VolumeManager.TilePyramidNode.Create(Type=InputPyramidNode.Type,
@@ -349,7 +351,7 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
 
     if not os.path.exists(OutputImageNode.FullPath):
         correctionImage = tiles.CalculateShadeImage(InputTiles, correction_type=correctionType)
-        nornir_imageregistration.SaveImage(OutputImageNode.FullPath, correctionImage)
+        nornir_imageregistration.SaveImage(OutputImageNode.FullPath, correctionImage, bpp=OutputFilterNode.BitsPerPixel)
     else:
         correctionImage = nornir_imageregistration.LoadImage(OutputImageNode.FullPath)
 
@@ -1090,6 +1092,12 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     (added_output_filter, OutputFilterNode) = OutputChannelNode.GetOrCreateFilter(FilterNode.Name)
     (added_output_mask_filter, OutputMaskFilterNode) = OutputChannelNode.GetOrCreateFilter(InputFilterMaskName)
     
+    if added_output_filter:
+        OutputFilterNode.BitsPerPixel = FilterNode.BitsPerPixel
+        
+    if added_output_mask_filter:
+        OutputMaskFilterNode.BitsPerPixel = 1
+    
     PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
     OutputImageNameTemplate = FilterNode.DefaultImageName(image_ext)
@@ -1165,7 +1173,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
             mosaicImage = nornir_imageregistration.CropImage(mosaicImage, Xo, Yo, Width, Height)
             maskImage = nornir_imageregistration.CropImage(maskImage, Xo, Yo, Width, Height)
 
-        nornir_imageregistration.SaveImage(tempOutputFullPath, mosaicImage)
+        nornir_imageregistration.SaveImage(tempOutputFullPath, mosaicImage, bpp=OutputFilterNode.BitsPerPixel)
         nornir_imageregistration.SaveImage(tempMaskOutputFullPath, maskImage)
 
         # Run convert on the output to make sure it is interlaced
@@ -1432,6 +1440,9 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
 
     # OK, check if the first level of the tileset exists
     LevelOne = TileSetNode.GetChildByAttrib('Level', 'Downsample', downsample_level)
+    
+    bpp = FilterNode.BitsPerPixel()
+    
     if(LevelOne is None):
         # Need to call ir-assemble
         LevelOne = nb.VolumeManager.LevelNode.Create(Level=1)
@@ -1464,7 +1475,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
                                                  'Y' : iRow,
                                                  'postfix' : TileSetNode.FilePostfix }
             output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-            pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=output_tile_fullpath, image=tile_image, optimize=True)
+            pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
         
         #Wait for the tiles to save
         pool.wait_completion()
