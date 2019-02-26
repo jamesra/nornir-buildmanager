@@ -475,7 +475,16 @@ def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, idoc_data, histogramF
         if Bpp is None:
             Bpp = nornir_shared.images.GetImageBpp(listfilenames[0])
         
-        histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, MinVal=idoc_data.Min, MaxVal=idoc_data.Max)
+        numBins = 256
+        if Bpp >= 11:
+            numBins = 2048
+            
+        maxVal = idoc_data.Max
+        if idoc_data.CameraBpp is not None:
+            if (1 << idoc_data.CameraBpp) - 1 < maxVal:
+                maxVal = (1 << idoc_data.CameraBpp) - 1
+            
+        histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, MinVal=idoc_data.Min, MaxVal=idoc_data.Max, numBins=numBins)
 
         if not histogramFullPath is None:
             histogramObj = _CleanOutliersFromIDocHistogram(histogramObj)
@@ -842,6 +851,10 @@ class IDoc():
     @property
     def NumTiles(self):
         return len(self.tiles)
+    
+    @property
+    def CameraBpp(self):
+        return self._CameraBpp
 
     def __init__(self):
         self.DataMode = None
@@ -884,9 +897,6 @@ class IDoc():
                 ImageBpp = 16
             elif self.DataMode == 6:
                 ImageBpp = 16
-                
-        if self._CameraBpp is not None:
-            ImageBpp = min(ImageBpp, self._CameraBpp)
 
         return ImageBpp
     
