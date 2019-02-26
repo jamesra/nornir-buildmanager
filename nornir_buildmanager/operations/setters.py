@@ -6,14 +6,21 @@ Created on Feb 25, 2014
 
 import logging
 import math
+import nornir_buildmanager
+import nornir_shared.prettyoutput
 
 
 def SetFilterLock(Node, Locked):
     LockChanged = False
-    ParentFilter = Node.FindParent('Filter')
+    ParentFilter = Node 
+    if not isinstance(Node, nornir_buildmanager.VolumeManager.FilterNode):
+        ParentFilter = Node.FindParent('Filter')
+    
     if not ParentFilter is None:
         LockChanged = ParentFilter.Locked != bool(Locked)
         ParentFilter.Locked = bool(Locked)
+    else:
+        nornir_shared.prettyoutput.LogErr("Unable to find filter for node {0}".format(str(Node)))
     
     if LockChanged:
         return ParentFilter.Parent
