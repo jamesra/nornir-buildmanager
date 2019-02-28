@@ -2939,8 +2939,34 @@ class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
     
     @property
     def Dimensions(self):
-        ''':return: (height, width)'''
-        return nornir_imageregistration.GetImageSize(self.FullPath)
+        '''
+        :return: (height, width)
+        '''
+        dims = self.attrib.get('Dimensions', None)
+        if dims is None:
+            dims = nornir_imageregistration.GetImageSize(self.FullPath)
+            self.attrib['Dimensions'] = "{0:d} {1:d}".format(dims[1],dims[0])
+        else:
+            dims = dims.split(' ')
+            dims = (int(dims[1]), int(dims[0]))
+            
+            #Todo: Remove after initial testing 
+            actual_dims = nornir_imageregistration.GetImageSize(self.FullPath)
+            assert(actual_dims[0] == dims[0])
+            assert(actual_dims[1] == dims[1])
+            
+        return dims
+    
+    @Dimensions.setter
+    def Dimensions(self, dims):
+        '''
+        :param tuple val: (height, width) or None
+        '''
+        if dims is None:
+            if 'Dimensions' in self.attrib:
+                del self.attrib['Dimensions']
+        else:
+            self.attrib['Dimensions'] = "{0} {1}".format(dims[1],dims[0])
 
 
 class DataNode(XFileElementWrapper):
