@@ -576,7 +576,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftSettleThumbnailOutputFullPath)
         # if not os.path.exists(DriftSettleThumbnailOutputFullPath):
-        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime, Data, DriftSettleThumbnailOutputFullPath)
+        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime, logFilePath, DriftSettleThumbnailOutputFullPath)
 
         DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
         DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
@@ -584,7 +584,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftGridThumbnailFilename)
         # if not os.path.exists(DriftGridThumbnailFilename):
-        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid, Data, DriftGridThumbnailOutputFullPath)
+        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid, logFilePath, DriftGridThumbnailOutputFullPath)
 
         # Build a histogram of drift settings
 #        x = []
@@ -650,14 +650,15 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     Height = MaxImageHeight
     Width = MaxImageWidth
     try:
-        [Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
+        (Height, Width) = ImageNode.Dimensions
+        #[Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
     except IOError:
         return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
 
     # Create a thumbnail if needed
     if Width > MaxImageWidth or Height > MaxImageHeight:
         Scale = max(float(Width) / MaxImageWidth, float(Height) / MaxImageHeight)
-        #Scale = 1 / Scale
+        Scale = 1.0 / Scale
 
         os.makedirs(HtmlPaths.ThumbnailDir, exist_ok=True)
 
@@ -669,7 +670,6 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
         # nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
         # if not os.path.exists(ThumbnailOutputFullPath):
         Pool = nornir_pools.GetGlobalThreadPool()
-        
         Pool.add_task(ImageNode.FullPath, nornir_imageregistration.Shrink, ImageNode.FullPath, ThumbnailOutputFullPath, Scale)
         #cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
         

@@ -511,11 +511,11 @@ def _CleanOutliersFromIDocHistogram(hObj):
     from the input before import but remain in the iDoc data.  
     '''
     
-    hNew = nornir_shared.histogram.Histogram.TryRemoveMaxValueOutlier(hObj)
+    hNew = nornir_shared.histogram.Histogram.TryRemoveMaxValueOutlier(hObj, TrimOnly=True)
     if hNew is not None:
         hObj = hNew
         
-    hNew = nornir_shared.histogram.Histogram.TryRemoveMinValueOutlier(hObj)
+    hNew = nornir_shared.histogram.Histogram.TryRemoveMinValueOutlier(hObj, TrimOnly=True)
     if hNew is not None:
         hObj = hNew
     
@@ -1083,7 +1083,7 @@ class SerialEMLog(object):
         '''Used for knowing when to ignore a pickled file'''
 
         # Version 2 fixes missing tile drift times for the first tile in a hemisphere
-        return 2
+        return 4
 
     @property
     def TotalTime(self):
@@ -1092,67 +1092,66 @@ class SerialEMLog(object):
 
     @property
     def AverageTileTime(self):
-        total = 0.0
-        for t in list(self.tileData.values()):
-            total = total + t.totalTime
-
-        return total / len(self.tileData)
+        
+        if self._avg_tile_time is None:
+            TotalTimes = [t.totalTilme for t in self.tileData.values()]
+            total = sum(TotalTimes)
+            self._avg_tile_time = total / len(self.tileData)  
+            
+        return self._avg_tile_time
 
     @property
     def AverageTileDrift(self):
-        total = 0.0
-        count = 0
-        for t in list(self.tileData.values()):
-            if t.drift is None:
-                continue
-
-            count = count + 1
-            total = total + t.drift
-
-        return total / count
+        
+        if self._avg_tile_drift is None:
+            drift_time = [t.drift for t in self.tideData.values() if t is not None]
+            self._avg_tile_drift = sum(drift_time) / len(drift_time)
+    
+        return self._avg_tile_drift
 
     @property
     def FastestTileTime(self):
         '''Shortest time to capture a tile in seconds'''
 
-        fastestTime = None
-        for t in list(self.tileData.values()):
-            if not (t.dwellTime is None or t.drift is None):
-                if fastestTime is None:
-                    fastestTime = t.totalTime
-                else:
-                    fastestTime = min(fastestTime, t.totalTime)
+        if self._fastestTime is None:
+            for t in list(self.tileData.values()):
+                if not (t.dwellTime is None or t.drift is None):
+                    if self._fastestTime is None:
+                        self._fastestTime = t.totalTime
+                    else:
+                        self._fastestTime = min(self._fastestTime, t.totalTime)
 
-        return fastestTime
+        return self._fastestTime
 
     @property
     def MaxTileDrift(self):
         '''Largest drift for a tile in seconds'''
-        maxdrift = 0
-        for t in list(self.tileData.values()):
-            if not (t.dwellTime is None or t.drift is None):
-                maxdrift = max(maxdrift, t.driftStamps[-1][1])
+        if self._maxdrift is None:
+            self._maxdrift = 0
+            for t in list(self.tileData.values()):
+                if not (t.dwellTime is None or t.drift is None):
+                    self._maxdrift = max(self._maxdrift, t.driftStamps[-1][1])
 
-        return maxdrift
+        return self._maxdrift
 
     @property
     def MinTileDrift(self):
         '''Largest drift for a tile in seconds'''
-        mindrift = self.MaxTileDrift + 1
-        for t in list(self.tileData.values()):
-            if not (t.dwellTime is None or t.drift is None):
-                mindrift = min(mindrift, t.driftStamps[-1][1])
+        if self._mindrift is None:
+            self._mindrift = self.MaxTileDrift + 1
+            for t in list(self.tileData.values()):
+                if not (t.dwellTime is None or t.drift is None):
+                    self._mindrift = min(self._mindrift, t.driftStamps[-1][1])
 
-        return mindrift
+        return self._mindrift
 
     @property
-    def NumTiles(self):
-        NumTiles = 0
-        for t in list(self.tileData.values()):
-            if not (t.dwellTime is None or t.drift is None):
-                NumTiles = NumTiles + 1
-
-        return NumTiles
+    def NumTiles(self): 
+        if self._num_tiles is None: 
+            IsTile = [not (t.dwellTime is None or t.drift is None) for t in self.tileData.values()]
+            self._num_tiles = sum(IsTile)
+        
+        return self._num_tiles
 
     @property
     def Startup(self):
@@ -1169,6 +1168,14 @@ class SerialEMLog(object):
         self.PropertiesVersion = None  # Timestamp of properties file, if known
         self.MontageStart = None  # timestamp when acquire began
         self.MontageEnd = None  # timestamp when acquire ended
+        
+        #Cached calculations
+        self._avg_tile_time = None
+        self._avg_tile_drift = None
+        self._num_tiles = None
+        self._fastestTime = None
+        self._maxdrift = None
+        self._mindrift = None
 
         self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()
 
@@ -1204,7 +1211,7 @@ class SerialEMLog(object):
 
         try:
             with open(picklePath, 'w') as filehandle:
-                pickle.dump(self, filehandle, protocol=0)
+                pickle.dump(self, filehandle)
         except:
             try:
                 os.remove(picklePath)
