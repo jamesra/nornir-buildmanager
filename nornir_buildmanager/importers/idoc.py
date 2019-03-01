@@ -405,13 +405,15 @@ class SerialEMIDocImport(object):
         ActualMosaicMin = None
         ActualMosaicMax = None
         Gamma = 1.0
+        
+        #We don't have to run this step, but it ensures the histogram is up to date
+        (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], idoc_data, histogramFullPath)
+        
         if SectionNumber in ContrastMap:
             ActualMosaicMin = ContrastMap[SectionNumber].Min
             ActualMosaicMax = ContrastMap[SectionNumber].Max
             Gamma = ContrastMap[SectionNumber].Gamma
-        else:
-            (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], idoc_data, histogramFullPath)
-
+        
         return (ActualMosaicMin, ActualMosaicMax, Gamma)
 
     @classmethod
