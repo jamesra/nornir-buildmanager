@@ -1104,7 +1104,7 @@ class SerialEMLog(object):
     def AverageTileDrift(self):
         
         if self._avg_tile_drift is None:
-            drift_time = [t.drift for t in self.tideData.values() if t is not None]
+            drift_time = [t.drift for t in self.tileData.values() if t is not None]
             self._avg_tile_drift = sum(drift_time) / len(drift_time)
     
         return self._avg_tile_drift
