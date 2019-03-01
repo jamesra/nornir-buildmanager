@@ -789,7 +789,7 @@ def TryAddLogs(containerObj, InputPath, logger):
 
             except:
                 (etype, evalue, etraceback) = sys.exc_info()
-                prettyoutput.Log("Attempt to include logs from " + filename + " failed.\n" + evalue.message)
+                prettyoutput.Log("Attempt to include logs from " + filename + " failed.\n" + str(evalue))
                 prettyoutput.Log(str(etraceback))
 
     return LogsAdded
@@ -1094,7 +1094,7 @@ class SerialEMLog(object):
     def AverageTileTime(self):
         
         if self._avg_tile_time is None:
-            TotalTimes = [t.totalTilme for t in self.tileData.values()]
+            TotalTimes = [t.totalTime for t in self.tileData.values()]
             total = sum(TotalTimes)
             self._avg_tile_time = total / len(self.tileData)  
             
