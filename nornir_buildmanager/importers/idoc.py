@@ -513,11 +513,11 @@ def _CleanOutliersFromIDocHistogram(hObj):
     from the input before import but remain in the iDoc data.  
     '''
     
-    hNew = nornir_shared.histogram.Histogram.TryRemoveMaxValueOutlier(hObj, TrimOnly=True)
+    hNew = nornir_shared.histogram.Histogram.TryRemoveMaxValueOutlier(hObj, TrimOnly=False)
     if hNew is not None:
         hObj = hNew
         
-    hNew = nornir_shared.histogram.Histogram.TryRemoveMinValueOutlier(hObj, TrimOnly=True)
+    hNew = nornir_shared.histogram.Histogram.TryRemoveMinValueOutlier(hObj, TrimOnly=False)
     if hNew is not None:
         hObj = hNew
     
