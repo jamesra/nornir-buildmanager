@@ -1459,6 +1459,9 @@
 				help="Downsample level to assemble" required="True" />
 			<Argument flag="-StosMap" default="FinalStosMap" dest="StosMap"
 				type="str" help="Name assigned to generated stos map." required="True" />
+			MaxReportedAngle
+			<Argument flag="-MaxAngle" default="FinalStosMap" dest="MaxReportedAngle"
+                type="float" help="Maximum angle value, in degrees, in output image heatmaps.  Defaults to max angle found for each section, 15-30 degrees is usually a reasonable value." required="False" />
 		</Arguments>
 
 		<Select VariableName="BlockNode" XPath="Block" />
@@ -1467,7 +1470,7 @@
 		<Select Root="BlockNode" VariableName="StosMapNodeObj"
 			XPath="StosMap[@Name='#StosMap']" />
 		<PythonCall Function="block.CalculateStosGroupWarpMeasurementImages"
-			GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" />
+			GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" MaxReportedAngle="#MaxReportedAngle" />
 	</Pipeline>
 
 	<Pipeline Name="SelectBestRegistrationChain"
