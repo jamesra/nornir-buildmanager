@@ -1465,7 +1465,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
          
         prettyoutput.Log("Section {4}: Generating a {0}x{1} grid of {2}x{3} tiles".format(expected_grid_dims[1], expected_grid_dims[0], tile_dims[1], tile_dims[0], SectionNode.Number))
         for tile in mosaic.GenerateOptimizedTiles(tilesPath=InputLevelNode.FullPath, 
-                                                                      requiredScale=1.0/InputLevelNode.Downsample,
+                                                                      target_space_scale=1.0/InputLevelNode.Downsample,
                                                                       tile_dims=tile_dims,
                                                                       max_temp_image_area=max_temp_image_area,
                                                                       usecluster=True):

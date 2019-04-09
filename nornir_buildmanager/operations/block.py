@@ -883,6 +883,7 @@ def CalculateStosGroupWarpMeasurementImages(Parameters, StosMapNode, GroupNode, 
     '''Executre ir-stom on a provided .stos file'''
 
     maxReportedAngle = kwargs.get('MaxReportedAngle', None)
+    RenderToSourceSpace = kwargs.get('RenderToSourceSpace', True)
     
     # oldDir = os.getcwd()
     TransformXPathTemplate = "SectionMappings[@MappedSectionNumber='%(MappedSection)d']/Transform[@ControlSectionNumber='%(ControlSection)d']"
@@ -955,7 +956,7 @@ def CalculateStosGroupWarpMeasurementImages(Parameters, StosMapNode, GroupNode, 
                     if twarpView is None:
                         twarpView = TransformWarpView(StosTransformNode.FullPath)
                     
-                    twarpView.GenerateWarpImage(outputfullpath=WarpImageNode.FullPath,  title=str(MappedSection) + " -> " + str(MappingNode.Control), maxAngle=maxReportedAngle)
+                    twarpView.GenerateWarpImage(outputfullpath=WarpImageNode.FullPath, RenderToSourceSpace=RenderToSourceSpace, title=str(MappedSection) + " -> " + str(MappingNode.Control), maxAngle=maxReportedAngle)
                     WarpImageNode.SetTransform(StosTransformNode)
                     SaveRequired = True
                     
