@@ -1459,7 +1459,7 @@
 				help="Downsample level to assemble" required="True" />
 			<Argument flag="-StosMap" default="FinalStosMap" dest="StosMap"
 				type="str" help="Name assigned to generated stos map." required="True" /> 
-			<Argument flag="-MaxAngle" default="FinalStosMap" dest="MaxReportedAngle"
+			<Argument flag="-MaxAngle" dest="MaxReportedAngle"
                 type="float" help="Maximum angle value, in degrees, in output image heatmaps.  Defaults to max angle found for each section.  Specify a value to ensure consistent heatmap ranges for each transform.  15-30 degrees is usually a reasonable value." required="False" />
 		</Arguments>
 

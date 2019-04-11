@@ -15,7 +15,7 @@ import nornir_shared.images
 import nornir_shared.plot
 import nornir_shared.prettyoutput
 
-import nornir_buildmanager.importers.idoc as idoc
+import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_pools
 import nornir_shared.files as nfiles
 
@@ -560,7 +560,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
     logFilePath = DataNode.FullPath
     if os.path.exists(logFilePath):
 
-        Data = idoc.SerialEMLog.Load(logFilePath)
+        Data = serialemlog.SerialEMLog.Load(logFilePath)
 
         RelPath = htmlpaths.GetSubNodeRelativePath(DataNode)
 
@@ -576,7 +576,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftSettleThumbnailOutputFullPath)
         # if not os.path.exists(DriftSettleThumbnailOutputFullPath):
-        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime, logFilePath, DriftSettleThumbnailOutputFullPath)
+        TPool.add_task(DriftSettleThumbnailFilename, serialemlog.PlotDriftSettleTime, logFilePath, DriftSettleThumbnailOutputFullPath)
 
         DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
         DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
@@ -584,7 +584,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftGridThumbnailFilename)
         # if not os.path.exists(DriftGridThumbnailFilename):
-        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid, logFilePath, DriftGridThumbnailOutputFullPath)
+        TPool.add_task(DriftGridThumbnailFilename, serialemlog.PlotDriftGrid, logFilePath, DriftGridThumbnailOutputFullPath)
 
         # Build a histogram of drift settings
 #        x = []

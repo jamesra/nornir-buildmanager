@@ -1157,7 +1157,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         (mosaicImage, maskImage) = mosaic.AssembleImage(ImageDir,
                                                         FixedRegion=RequestedBoundingBox,
                                                         usecluster=True,
-                                                        requiredScale=1.0/thisLevel)
+                                                        target_space_scale=1.0/thisLevel,
+                                                        source_space_scale=1.0/thisLevel)
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)

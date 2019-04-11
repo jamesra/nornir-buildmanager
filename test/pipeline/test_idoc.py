@@ -12,12 +12,13 @@ import unittest
 
 from nornir_buildmanager.VolumeManagerETree import VolumeManager 
 import nornir_buildmanager.importers
-from nornir_buildmanager.importers.idoc import SerialEMLog
+from nornir_buildmanager.importers.serialemlog import SerialEMLog
 from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
 import nornir_shared.misc
 
 import nornir_buildmanager.build as build
+import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.idoc as idoc
 from . import setup_pipeline
 
@@ -684,8 +685,8 @@ class LogReaderTest(IDocTest):
         outputGrid = os.path.join(self.TestOutputPath, 'Grid_' + os.path.basename(logFile) + '.png')
         outputDrift = os.path.join(self.TestOutputPath, 'Drift_' + os.path.basename(logFile) + '.png')
 
-        idoc.PlotDriftGrid(cachedLogData, outputGrid)
-        idoc.PlotDriftSettleTime(cachedLogData, outputDrift)
+        serialemlog.PlotDriftGrid(cachedLogData, outputGrid)
+        serialemlog.PlotDriftSettleTime(cachedLogData, outputDrift)
         return
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@ import collections
 import csv
 import os
 
-
 ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
 DefaultHistogramFilename = "ContrastOverrides.txt"
 
