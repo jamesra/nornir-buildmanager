@@ -384,8 +384,8 @@ class IDocSingleSectionImportTest(IDocTest):
         self.VerifyFilterContrast(TargetMinIntensity, TargetMaxIntensity, Gamma=TargetGamma)
         
         # Check that the histogram has the new target values
-        self.RunHistogram()
-        self.LoadMetaData() 
+        self.RunHistogram(Transform='Stage')
+        self.LoadMetaData()
         # self.assertFalse(self.RawFilterObj.GetHistogram().IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma))
         
         self.RunAdjustContrast(Transform='Stage')
