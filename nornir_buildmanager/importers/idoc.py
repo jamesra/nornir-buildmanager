@@ -95,78 +95,11 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         raise ValueError("No data found in ImportPath %s" % ImportPath)
 
               
-def try_remove_spaces_from_dirname(sectionDir):
-    ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
-    sectionDirNoSpaces = sectionDir.replace(' ', '_')
-    ParentDir = os.path.dirname(sectionDir)
-    if(sectionDirNoSpaces != sectionDir):
-        sectionDirNoSpacesFullPath = os.path.join(ParentDir, sectionDirNoSpaces)
-        shutil.move(sectionDir, sectionDirNoSpacesFullPath)
-
-        sectionDir = sectionDirNoSpaces
-        return sectionDir 
-    
-    return None
 
 
 class SerialEMIDocImport(object):
     
-    @classmethod 
-    def _Update_idoc_path_on_rename(cls, idocFileFullPath, new_section_dir):
-        '''Return the correct paths if we move the directory a section lives in'''
-        
-        idocFilename = os.path.basename(idocFileFullPath)
-        (ParentDir, sectionDir) = cls.GetDirectories(idocFileFullPath)
-        
-        sectionDir = os.path.join(ParentDir, new_section_dir)
-        idocFileFullPath = os.path.join(sectionDir, idocFilename)
-        
-        return idocFileFullPath
     
-    @classmethod
-    def GetDirectories(cls, idocFileFullPath):
-        sectionDir = os.path.dirname(idocFileFullPath)
-        ParentDir = os.path.dirname(sectionDir)
-        return (ParentDir, sectionDir)
-    
-    @classmethod
-    def GetIDocPathWithoutSpaces(cls, idocFileFullPath):
-        sectionDir = os.path.dirname(idocFileFullPath)
-        fixed_sectionDir = try_remove_spaces_from_dirname(sectionDir)
-        if fixed_sectionDir is None:
-            return idocFileFullPath
-        else:
-            return cls._Update_idoc_path_on_rename(idocFileFullPath, fixed_sectionDir)
-
-    @classmethod
-    def GetSectionInfo(cls, fileName):
-        fileName = os.path.basename(fileName)
-
-        # Make sure extension is present in the filename
-        [fileName, ext] = os.path.splitext(fileName)
-
-        SectionNumber = -1
-        Downsample = 1
-        parts = fileName.split("_")
-        try:
-            SectionNumber = int(parts[0])
-        except:
-            # We really can't recover from this, so maybe an exception should be thrown instead
-            SectionNumber = -1
-
-        try:
-            SectionName = parts[1]
-        except:
-            SectionName = str(SectionNumber)
-
-        # If we don't have a valid downsample value we assume 1
-        try:
-            DownsampleStrings = parts[2].split(".")
-            Downsample = int(DownsampleStrings[0])
-        except:
-            Downsample = 1
-
-        return [SectionNumber, SectionName, Downsample]
 
     @classmethod
     def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputPath=None, Extension=None, OutputImageExt=None, TargetBpp=None, FlipList=None, ContrastMap=None, CameraBpp=None, debug=None):
@@ -401,8 +334,6 @@ class SerialEMIDocImport(object):
     @classmethod
     def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, ContrastCutoffs, SourceImagesFullPaths, idoc_data, histogramFullPath):
         '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
-        ActualMosaicMin = None
-        ActualMosaicMax = None
         Gamma = 1.0
         
         #We don't have to run this step, but it ensures the histogram is up to date
