@@ -70,7 +70,7 @@ def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
     
     image_data = dm4data.ReadImage()
       
-    InputImageBpp = dm4data.ReadImageBpp()
+    InputImageBpp = dm4data.image_bpp()
     im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
     im = im.convert(mode='I')
     im.save(output_fullpath)
@@ -130,36 +130,54 @@ class DM4FileHandler():
         
         return (XDimensionScale, YDimensionScale)
 
-    def ReadImageShape(self): 
+    def ReadImageShape(self):
+        ''':return: Image shape as array, [YDim,XDim] as uint64''' 
         DM4ImageDimensionsTag = self.ImageDimensionsTag
         XDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[0])
         YDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[1])
         
-        return (YDim, XDim)
+        return np.asarray((YDim, XDim), dtype=np.uint64)
     
-    def ReadImage(self): 
+    def ReadImage(self):
         image_shape = self.ReadImageShape()     
-        np_array = np.array(self.dm4file.read_tag_data(self.ImageDataTag), dtype=np.uint16)
+        np_array = np.array(self.dm4file.read_tag_data(self.ImageDataTag), dtype=self.image_dtype)
         np_array = np.reshape(np_array, image_shape)
         
         return np_array
 
     def ReadMontageGridSize(self):
+        ''':return: Image grid dimensions as array, [YDim,XDim] as uint64''' 
         XDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of X Steps']
         YDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of Y Steps']
     
         XDim = self.dm4file.read_tag_data(XDim_tag)
         YDim = self.dm4file.read_tag_data(YDim_tag)
         
-        return (YDim, XDim)
+        return np.asarray((YDim, XDim), dtype=np.uint64)
     
     def ReadMontageOverlap(self):
-        ''':return: Overlap scalar from 0 to 1.0''' 
+        ''':return: Overlap scalar array, [Y,X] from 0 to 1.0''' 
         Overlap_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Overlap between images (%)']
-        return self.dm4file.read_tag_data(Overlap_tag) / 100.0
+        overlap = self.dm4file.read_tag_data(Overlap_tag) / 100.0
+        return np.asarray((overlap, overlap), dtype=np.float32)  
     
-    def ReadImageBpp(self):
+    @property
+    def image_bpp(self):
         return int(self.dm4file.read_tag_data(self.ImageBppTag) * 8)
+    
+    @property
+    def image_dtype(self):
+        bpp = self.image_bpp
+        if 8 >= bpp:
+            return np.uint8
+        elif 16 >= bpp:
+            return np.uint16
+        elif 32 >= bpp: 
+            return np.uint32
+        elif 64 >= bpp:
+            return np.uint64
+        else:  
+            raise ValueError("Unexpectedly large bits-per-pixel value")
         
 
 class DigitalMicrograph4Import(object):
@@ -218,7 +236,7 @@ class DigitalMicrograph4Import(object):
         return os.path.join(dirname, root + '_histogram.png')
             
     @classmethod
-    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
+    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None, **kwargs):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -237,7 +255,7 @@ class DigitalMicrograph4Import(object):
         # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
         
-        InputImageBpp = dm4data.ReadImageBpp()
+        InputImageBpp = dm4data.image_bpp
         
         BlockObj = BlockNode.Create('SEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
@@ -336,7 +354,7 @@ class DigitalMicrograph4Import(object):
         tile_filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) 
         (YDim, XDim) = dm4data.ReadMontageGridSize()
         
-        (ImageHeight, ImageWidth) = dm4data.ReadImageShape()
+        image_shape = dm4data.ReadImageShape()
         
         grid_position = (tile_number % XDim, tile_number // XDim)
         assert(grid_position[1] < YDim)  # Make sure the grid position is not off the grid
@@ -347,15 +365,14 @@ class DigitalMicrograph4Import(object):
         else:
             mosaicObj = nornir_imageregistration.Mosaic()
             
-        overlapScalar = dm4data.ReadMontageOverlap()
+        overlapScalars = dm4data.ReadMontageOverlap()
         
-        PerGridXOffset = ImageWidth * (1.0 - overlapScalar)
-        PerGridYOffset = ImageHeight * (1.0 - overlapScalar)
+        PerGridOffset = image_shape * (1.0 - overlapScalars)
         
-        XPosition = grid_position[0] * PerGridXOffset
-        YPosition = grid_position[1] * PerGridYOffset
+        Position = grid_position * PerGridOffset
+         
         
-        tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform((ImageHeight, ImageWidth), (ImageHeight, ImageWidth), 0, (YPosition, XPosition))
+        tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform(image_shape, image_shape, 0, Position)
         
         mosaicObj.ImageToTransform[tile_filename] = tile_transform
         
@@ -364,7 +381,7 @@ class DigitalMicrograph4Import(object):
 #     @classmethod
 #     def CreateImageHistogram(cls, dm4data, dm4fullpath):
 #         histogramdatafullpath = cls.GetHistogramDataFullPath(dm4fullpath)
-#         InputImageBpp = dm4data.ReadImageBpp()
+#         InputImageBpp = dm4data.image_bpp()
 #         histogramObj = nornir_imageregistration.image_stats.__HistogramFileSciPy__(Bpp=InputImageBpp, Scale=.125, numBins=2048)
 #         if not histogramdatafullpath is None:
 #             histogramObj.Save(histogramdatafullpath)       
