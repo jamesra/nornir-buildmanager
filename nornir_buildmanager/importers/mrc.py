@@ -43,6 +43,15 @@ class MRCImport(object):
         Constructor
         '''
         
+    def CreateMosaic(self, mrcfile):
+        mosaic = nornir_imageregistration.Mosaic()
+        
+        pixel_position = [t.pixel_coords ]
+        for t in mrcfile.tile_meta:
+            
+        
+        pass 
+    
 class MRCFile(object):
     '''
     Reads a SerialEM mrc file
@@ -104,9 +113,7 @@ class MRCFile(object):
         obj.img_origin = numpy.asarray((img_origin_x,img_origin_y,img_origin_z), numpy.float32)
         
         for i in range(obj.num_tiles):
-            tile_meta = cls.ReadTileMeta(mrc, i,
-                                        tile_header_size=obj.tile_header_size,
-                                        tile_header_flags=obj.tile_header_flags)
+            tile_meta = obj.ReadTileMeta(mrc, i)
             obj.tile_meta.append(tile_meta)
         
         return obj
@@ -166,9 +173,7 @@ class MRCFile(object):
             
         
         return dtype
-            
-        
-        
+             
     def GetTileImage(self, mrc, iTile):
         first_image_offset = MRCFile.HeaderLength + self.extended_header_size
         image_byte_size = self.img_shape.prod() * self.BytesPerPixel
@@ -181,16 +186,18 @@ class MRCFile(object):
         
         img = numpy.frombuffer(image_bytes, dtype=self.pixel_dtype, count=self.img_shape.prod()).reshape(self.img_shape)
         return img
+          
+    def ReadTileMeta(self, mrc, iTile):
+        mrc.seek(MRCFile.HeaderLength + (iTile * self.tile_header_size))
+        TileHeader = mrc.read(self.tile_header_size) 
+        while len(TileHeader) < self.tile_header_size:
+            TileHeader = TileHeader + mrc.read(self.tile_header_size - len(TileHeader));
+        
+        return MRCTileHeader.Load(iTile, TileHeader,
+                                  tile_flags=self.tile_header_flags,
+                                  nm_per_pixel=self.pixel_spacing[0:2],
+                                  big_endian=self.IsBigEndian)
          
-    @classmethod
-    def ReadTileMeta(cls, mrc, iTile, tile_header_size, tile_header_flags):
-        mrc.seek(MRCFile.HeaderLength + (iTile * tile_header_size))
-        TileHeader = mrc.read(tile_header_size) 
-        while len(TileHeader) < tile_header_size:
-            TileHeader = TileHeader + mrc.read(obj.tile_header_size - len(TileHeader));
-        
-        return MRCTileHeader.Load(TileHeader, tile_flags=tile_header_flags)
-        
     @property
     def img_shape(self): 
         return numpy.asarray((self.img_XDim, self.img_YDim), dtype=numpy.int32)
@@ -233,20 +240,22 @@ class MRCTileHeaderFlags(enum.IntFlag):
     
 class MRCTileHeader(object):
     
-    @property
-    def pixel_coords(self):
-        if self.stage_coords is None:
-            return None
-        
-        
-        
     @staticmethod
-    def Load(header, tile_flags, big_endian=False):
+    def calculate_pixel_coords(stage_coords, nm_per_pixel):
+        
+        #stage_coords is in um, so convert to nm and then pixels
+        nm_coord = stage_coords.astype(numpy.float64) * 1000.0 #Convert to nm
+        pixel_coord = nm_coord / nm_per_pixel #convert to pixels
+        return pixel_coord
+         
+    @staticmethod
+    def Load(tile_id, header, tile_flags, nm_per_pixel, big_endian=False):
         '''
+        :param tile_id: Arbitrary name for the tile we will load
         :param header: MRC File header
         :param int tile_number: Tile Number to read header for
         '''
-        obj = MRCTileHeader()
+        obj = MRCTileHeader(tile_id, nm_per_pixel)
         offset = 0
         
         Endian = '<'
@@ -266,6 +275,7 @@ class MRCTileHeader(object):
         if(tile_flags & MRCTileHeaderFlags.StageCoord):
             (sx,sy,) = struct.unpack(Endian + 'HH', header[offset:offset+4])
             obj.stage_coords = numpy.asarray((sx,sy), dtype=numpy.float32) / 25.0
+            obj.pixel_coords = MRCTileHeader.calculate_pixel_coords(obj.stage_coords, nm_per_pixel)
             offset += 4
             
         if(tile_flags & MRCTileHeaderFlags.Magnification):
@@ -284,13 +294,25 @@ class MRCTileHeader(object):
         
         return obj
           
-    def __init__(self):
+    def __init__(self, ID, nm_per_pixel):
+        self.ID = ID
+        self.nm_per_pixel = nm_per_pixel
         self.tilt_angle = None
         self.piece_coords = None
         self.stage_coords = None #In Microns
         self.mag = None
         self.intensity = None
         self.exposure = None
+        
+        self.pixel_coords = None #Calculated value
+        
+    def __str__(self, *args, **kwargs):
+        output = str(self.ID)
+        
+        if self.stage_coords is not None:
+            output = output + " Stage: {0},{1}".format(self.stage_coords[0], self.stage_coords[1])
+        
+        return output
         
 if __name__ == '__main__':
     #obj = MRCFile.Load('C:/Data/RC1/0022_150X.mrc')
