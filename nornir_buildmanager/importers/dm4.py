@@ -30,6 +30,8 @@ DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Uni
 
 TileExtension = 'png'  # Pillow does not support 16-bit png files, so we use the npy extension
 
+mosaics_loaded = {} # A cache of mosaics we've already loaded during import
+
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
@@ -301,11 +303,10 @@ class DigitalMicrograph4Import(object):
             yield FilterObj
             
         [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
+        saveTransformObj = saveTransformObj or cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
         if(saveTransformObj):
             yield ChannelObj
             
-        cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
-        
         # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
         # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
         
@@ -377,8 +378,11 @@ class DigitalMicrograph4Import(object):
         assert(grid_position[1] < YDim)  # Make sure the grid position is not off the grid
         
         mosaicObj = None
-        if os.path.exists(transformObj.FullPath):
+        if transformObj.FullPath in mosaics_loaded:
+            mosaicObj = mosaics_loaded[transformObj.FullPath]
+        elif os.path.exists(transformObj.FullPath):
             mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(transformObj.FullPath)
+            mosaics_loaded[transformObj.FullPath] = mosaicObj
         else:
             mosaicObj = nornir_imageregistration.Mosaic()
             
@@ -391,9 +395,16 @@ class DigitalMicrograph4Import(object):
          
         tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform(image_shape, image_shape, 0, Position)
         
-        mosaicObj.ImageToTransform[tile_filename] = tile_transform
+        if tile_filename in mosaicObj.ImageToTransform:
+            transform_changed = mosaicObj.ImageToTransform[tile_filename] == tile_transform
+        else:  
+            transform_changed = True
         
-        mosaicObj.SaveToMosaicFile(transformObj.FullPath)
+        if transform_changed:
+            mosaicObj.ImageToTransform[tile_filename] = tile_transform 
+            mosaicObj.SaveToMosaicFile(transformObj.FullPath)
+            
+        return transform_changed
 #         
 #     @classmethod
 #     def CreateImageHistogram(cls, dm4data, dm4fullpath):
