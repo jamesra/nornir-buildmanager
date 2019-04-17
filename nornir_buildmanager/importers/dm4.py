@@ -40,6 +40,11 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if not os.path.exists(ImportPath):
         raise Exception("Import directory not found: " + ImportPath)
         return
+    
+    tile_overlap = kwargs.get('tile_overlap', None)
+    if tile_overlap is not None:
+        #Convert the percentage parameter to a 0-1.0 float, and reverse the X,Y ordering to match the rest of Nornir
+        tile_overlap = np.asarray((tile_overlap[1], tile_overlap[0]), np.float32) / 100.0
         
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
@@ -50,7 +55,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.dm4')):
-            for obj in DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap):
+            for obj in DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap):
                 yield obj
     
     nornir_pools.WaitOnAllPools() 
@@ -63,16 +68,18 @@ def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
     # (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
     dm4data = DM4FileHandler(dm4FileFullPath)
                    
-    tempdir = tempfile.mkdtemp(prefix="DM4")
+    #tempdir = tempfile.mkdtemp(prefix="DM4")
      
-    tempfilename = os.path.basename(output_fullpath + '.tif')  # cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG.  We save to TIF and convert
-    temp_output_fullpath = os.path.join(tempdir, tempfilename)
+    #tempfilename = os.path.basename(output_fullpath + '.tif')  # cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG.  We save to TIF and convert
+    #temp_output_fullpath = os.path.join(tempdir, tempfilename)
     
-    image_data = dm4data.ReadImage()
-      
-    InputImageBpp = dm4data.image_bpp()
-    im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
-    im = im.convert(mode='I')
+    #image_data = dm4data.ReadImage()
+    #InputImageBpp = dm4data.image_bpp
+    #im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
+    #im = im.convert(mode='I')
+    #im.save(output_fullpath)
+    
+    im = dm4data.ReadImageAsPIL()
     im.save(output_fullpath)
     
     #cmd = "magick convert %s %s" % (temp_output_fullpath, output_fullpath)
@@ -138,12 +145,19 @@ class DM4FileHandler():
         
         return np.asarray((YDim, XDim), dtype=np.uint64)
     
-    def ReadImage(self):
+    def ReadImageAsNumpy(self):
         image_shape = self.ReadImageShape()     
         np_array = np.array(self.dm4file.read_tag_data(self.ImageDataTag), dtype=self.image_dtype)
         np_array = np.reshape(np_array, image_shape)
         
         return np_array
+    
+    def ReadImageAsPIL(self):
+        image_shape = self.ReadImageShape()     
+        im = PIL.Image.frombytes(data=self.dm4file.read_tag_data(self.ImageDataTag).tobytes(), mode='I;%d' % self.image_bpp, size=(image_shape[1], image_shape[0]))
+        im = im.convert(mode='I')
+    
+        return im
 
     def ReadMontageGridSize(self):
         ''':return: Image grid dimensions as array, [YDim,XDim] as uint64''' 
@@ -236,26 +250,30 @@ class DigitalMicrograph4Import(object):
         return os.path.join(dirname, root + '_histogram.png')
             
     @classmethod
-    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None, **kwargs):
+    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, tile_overlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
         TargetBpp is calculated based on the number of bits required to encode the values
         between the median min and max values
+        :param tuple tile_overlap: Tuple of percentages of overlap in (X,Y) for each tile, or None to read from DM4 file
         :param list FlipList: List of section numbers which should have images flipped
         :param dict ContrastMap: Dictionary mapping section number to (Min, Max, Gamma) tuples 
         '''
-        
+         
         logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
-        
         prettyoutput.CurseString('Stage', "Digital Micrograph to Mosaic " + str(dm4FileFullPath))
         
         (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
         
         # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
-        
         InputImageBpp = dm4data.image_bpp
+        
+        if tile_overlap is not None:
+            tile_overlap = np.asarray(tile_overlap, dtype=np.float32)
+        else:
+            tile_overlap = dm4data.ReadMontageOverlap()
         
         BlockObj = BlockNode.Create('SEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
@@ -286,13 +304,13 @@ class DigitalMicrograph4Import(object):
         if(saveTransformObj):
             yield ChannelObj
             
-        cls.AddTileToMosaic(transformObj, dm4data, tile_number)
+        cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
         
         # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
         # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
         
         TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
-        yield TilePyramidObj
+        (yield TilePyramidObj)
         
     @classmethod
     def GetOrCreateStageTransform(cls, channelObj):
@@ -345,12 +363,11 @@ class DigitalMicrograph4Import(object):
         TilePyramidObj.ImageFormatExt = '.' + TileExtension
                     
         pools = nornir_pools.GetGlobalLocalMachinePool()
-        # DM4FileHandler.ConvertDM4ToPng(dm4FileFullPath, output_fullpath)
-        t = pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
+        pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
         return TilePyramidObj
     
     @classmethod
-    def AddTileToMosaic(cls, transformObj, dm4data, tile_number):
+    def AddTileToMosaic(cls, transformObj, dm4data, tile_number, tile_overlap=None):
         tile_filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) 
         (YDim, XDim) = dm4data.ReadMontageGridSize()
         
@@ -365,13 +382,13 @@ class DigitalMicrograph4Import(object):
         else:
             mosaicObj = nornir_imageregistration.Mosaic()
             
-        overlapScalars = dm4data.ReadMontageOverlap()
+        if tile_overlap is None:
+            tile_overlap = dm4data.ReadMontageOverlap()
         
-        PerGridOffset = image_shape * (1.0 - overlapScalars)
+        PerGridOffset = image_shape * (1.0 - tile_overlap)
         
         Position = grid_position * PerGridOffset
          
-        
         tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform(image_shape, image_shape, 0, Position)
         
         mosaicObj.ImageToTransform[tile_filename] = tile_transform

@@ -65,16 +65,17 @@
 			<Argument flag="ImportDir" help="Directory to import from" />
 			<Argument flag="-ext" dest="extension" default="dm4"
 				help="Extension of digital micrograph version 4 files, default is dm4" />
+			<Argument flag="-overlap" dest="tile_overlap" required="False" type="FloatPair" help="Overlap of tiles as a percentage, either a single value or a comma-delimited pair (X%,Y%).\n\tex: 15 would be a 15 overlap on both axis.\n\tex:  10,20 would be a 10% X overlap and 20% Y overlap." />
 		</Arguments>
 
 		<PythonCall Module="nornir_buildmanager.importers.dm4"
-			Function="Import" ImportPath="#ImportDir" extension="#extension" />
+			Function="Import" ImportPath="#ImportDir" extension="#extension" tile_overlap="#tile_overlap" />
 	</Pipeline>
 
 	<Pipeline Name="Prune"
 		Help="Removes tiles without enough features for proper alignment.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -144,7 +145,7 @@
 		<Arguments>
 			<Argument flag="-Value" dest="PruneVal" type="float"
 				help="Prune threshold to set" required="True" default="0" />
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="True" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"
@@ -182,7 +183,7 @@
 	<Pipeline Name="ShadeCorrect"
 		Help="Brightfield microscopy shading correction.  Uses the max tile intensity across all tiles to determine the shading gradient.  Produces an inverted output filter with the shading subtracted.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -221,7 +222,7 @@
 
 	<Pipeline Name="InvertFilter" Help="Produce a new filter, inverted from the input">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -271,7 +272,7 @@
 		channel_node="#ChannelNode"> </PythonCall> </Iterate> </Pipeline> <Pipeline 
 		Name="ListOutdatedImagesets" Help="Print a list of all image sets that have 
 		older timestamps than the input tile pyramid."> <Arguments> <Argument flag="-Sections" 
-		dest="Sections" type="NumberList" help="Section numbers to process. If omitted 
+		dest="Sections" type="IntegerList" help="Section numbers to process. If omitted 
 		all sections are processed. Values are separated with commas and ranges are 
 		indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]" required="False"/> <Argument 
 		flag="-Channels" default="*" dest="ChannelsRegEx" type="str" help="Regular 
@@ -334,7 +335,7 @@
 	<Pipeline Name="Histogram"
 		Help="Calculates the histogram from all tiles in a mosaic">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -375,7 +376,7 @@
 	<Pipeline Name="AdjustContrast"
 		Help="Creates a new filter with adjusted contrast.  The cutoffs can be adjusted within the meta-data by altering the AutoLevelHint element of the input filters volume.xml meta-data file.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -429,7 +430,7 @@
 	<Pipeline Name="ListFilterContrast"
 		Help="Print a list of the contrast settings used for all sections.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -459,7 +460,7 @@
 	<Pipeline Name="ListMissingTilesets"
         Help="Print a list of filters without tilesets">
         <Arguments>
-            <Argument flag="-Sections" dest="Sections" type="NumberList"
+            <Argument flag="-Sections" dest="Sections" type="IntegerList"
                 help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
                 required="False" />
             <Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -497,7 +498,7 @@
 				default="NaN" />
 			<Argument flag="-Gamma" dest="GammaValue" type="float"
 				help="Gamma adjustment" required="False" default="NaN" />
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="True" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"
@@ -522,7 +523,7 @@
 
 	<Pipeline Name="PrintContrast" Help="Print the contrast parameters for a filter">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="True" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"
@@ -549,7 +550,7 @@
 		<Arguments>
 			<Argument flag="-Locked" dest="Locked" type="int"
 				help="Lock value, 0 = unlocked, 1 = locked" required="True" />
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="True" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"
@@ -578,7 +579,7 @@
 	<Pipeline Name="Mosaic"
 		Help="Aligns tiles of a filter into a single mosaic.  Produces an assembled mosaic image.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -692,7 +693,7 @@
 	<Pipeline Name="MosaicNoTranslate"
 		Help="Aligns tiles of a filter into a single mosaic.  Produces an assembled mosaic image.  Assumes stage coordinates are correct and refines distortions only without translating tiles.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" default="*" dest="ChannelsRegEx"
@@ -760,7 +761,7 @@
 		<Arguments>
 			<Argument flag="-Locked" dest="Locked" type="int"
 				help="Lock value, 0 = unlocked, 1 = locked" required="True" />
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="True" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"
@@ -790,7 +791,7 @@
 	<Pipeline Name="Assemble"
 		Help="Creates an assembled image from a transform and filter. Optionally creates a new channel for output.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Downsample" dest="Levels" default="1"
@@ -845,7 +846,7 @@
 	<Pipeline Name="AssembleTiles"
 		Help="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"
@@ -860,7 +861,7 @@
 				type="int"
 				help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile."
 				required="False" />
-			<Argument flag="-Shape" dest="shape" default="256,256" type="NumberPair"
+			<Argument flag="-Shape" dest="shape" default="256,256" type="IntegerPair"
 				help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions"
 				required="False" />
 			<Argument flag="-MaxWorkingImageArea" dest="max_temp_image_area" type="float"
@@ -893,7 +894,7 @@
 	<Pipeline Name="AssembleTilesFromImage"
 		Help="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded.  Uses the filter image as source instead of transforms.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"
@@ -906,7 +907,7 @@
 				type="int"
 				help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile."
 				required="False" />
-			<Argument flag="-Shape" dest="shape" default="512,512" type="NumberPair"
+			<Argument flag="-Shape" dest="shape" default="512,512" type="IntegerPair"
 				help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions"
 				required="False" />
 
@@ -1027,7 +1028,7 @@
 			<Argument flag="-Block" default="*" dest="BlockRegEx" type="str"
 				help="Regular expression describing blocks to include, * processes all blocks"
 				required="False" />
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers that should not be used as control sections.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 		</Arguments>
@@ -1044,7 +1045,7 @@
 			<Argument flag="-Block" default="*" dest="BlockRegEx" type="str"
 				help="Regular expression describing blocks to include, * processes all blocks"
 				required="False" />
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to remove from the damaged list.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 		</Arguments>
@@ -1284,7 +1285,7 @@
 
 	<Pipeline Name="Cleanup" Help="Clean common errors from the volume meta-data">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 		</Arguments>
@@ -1328,7 +1329,7 @@
 	<Pipeline Name="CreateBlobFilter"
 		Help="Create a blob filter from an input filter.  Blobbing can make brute slice-to-slice alignment more reliable for downsampled mosaics with fine textures.">
 		<Arguments>
-			<Argument flag="-Sections" dest="Sections" type="NumberList"
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
 				help="Section to execute blob on.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
 				required="False" />
 			<Argument flag="-Channels" dest="ChannelRegEx" default="*"

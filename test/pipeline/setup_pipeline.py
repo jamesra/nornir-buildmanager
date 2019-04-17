@@ -14,7 +14,7 @@ import unittest
 
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
-from nornir_buildmanager.argparsexml import NumberList
+from nornir_buildmanager.argparsexml import IntegerList
 from nornir_buildmanager.validation import transforms
 import nornir_imageregistration.files
 from nornir_imageregistration.files.mosaicfile import *
@@ -121,7 +121,7 @@ def ConvertLevelsToList(Levels):
         if not isinstance(Levels, list):
             Levels = [Levels]
     else:
-        Levels = NumberList(Levels)
+        Levels = IntegerList(Levels)
         
     return Levels
 
@@ -135,7 +135,7 @@ def ConvertLevelsToString(Levels):
             Levels = [Levels]
     else:
         LevelStr = Levels
-        Levels = NumberList(LevelStr)
+        Levels = IntegerList(LevelStr)
         
     return LevelStr
 
@@ -363,7 +363,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         LockedVal = bool(int(Locked))
         volumeNode = self.RunBuild(buildArgs)
 
-        sectionNumbers = NumberList(sectionListStr)
+        sectionNumbers = IntegerList(sectionListStr)
         Sections = list(MatchingSections(volumeNode.findall("Block/Section"), sectionNumbers))
 
         self.assertEqual(len(Sections), len(sectionNumbers), "Did not find all of the expected sections")
