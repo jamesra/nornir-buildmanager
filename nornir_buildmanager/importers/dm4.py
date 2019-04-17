@@ -373,7 +373,7 @@ class DigitalMicrograph4Import(object):
         
         image_shape = dm4data.ReadImageShape()
         
-        grid_position = (tile_number % XDim, tile_number // XDim)
+        grid_position = (tile_number // XDim, tile_number % XDim) #Position as (Y,X)
         assert(grid_position[1] < YDim)  # Make sure the grid position is not off the grid
         
         mosaicObj = None
