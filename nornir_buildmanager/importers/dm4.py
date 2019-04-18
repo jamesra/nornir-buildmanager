@@ -31,6 +31,7 @@ DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Uni
 TileExtension = 'png'  # Pillow does not support 16-bit png files, so we use the npy extension
 
 mosaics_loaded = {} # A cache of mosaics we've already loaded during import
+transforms_changed = {} # A cache of transforms that need updated checksums
 
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
@@ -56,11 +57,21 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
     for path in DirList:
+        prettyoutput.CurseString("DM4Import", "Importing *.dm4 from {0}".format(path))
         for idocFullPath in glob.glob(os.path.join(path, '*.dm4')):
             for obj in DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap):
                 yield obj
     
     nornir_pools.WaitOnAllPools() 
+    
+    for transform_fullpath in mosaics_loaded:
+        mosaicObj = mosaics_loaded[transform_fullpath]
+        mosaicObj.SaveToMosaicFile(transform_fullpath)
+        
+    for transform_fullpath in transforms_changed:
+        transformObj = transforms_changed[transform_fullpath]
+        transformObj.ResetChecksum()
+        yield transformObj.Parent
 
     
 '''Convert a DM4 file to another image format.  Intended to be called from a multithreading pool'''
@@ -264,7 +275,7 @@ class DigitalMicrograph4Import(object):
         '''
          
         logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
-        prettyoutput.CurseString('Stage', "Digital Micrograph to Mosaic " + str(dm4FileFullPath))
+     #   prettyoutput.CurseString('Stage', "Digital Micrograph to Mosaic " + str(dm4FileFullPath))
         
         (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
         
@@ -303,15 +314,17 @@ class DigitalMicrograph4Import(object):
             yield FilterObj
             
         [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
-        saveTransformObj = saveTransformObj or cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
-        if(saveTransformObj):
+        if saveTransformObj:            
             yield ChannelObj
+            
+        cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
             
         # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
         # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
         
         TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
-        (yield TilePyramidObj)
+        if TilePyramidObj is not None:
+            yield TilePyramidObj
         
     @classmethod
     def GetOrCreateStageTransform(cls, channelObj):
@@ -385,6 +398,7 @@ class DigitalMicrograph4Import(object):
             mosaics_loaded[transformObj.FullPath] = mosaicObj
         else:
             mosaicObj = nornir_imageregistration.Mosaic()
+            mosaics_loaded[transformObj.FullPath] = mosaicObj
             
         if tile_overlap is None:
             tile_overlap = dm4data.ReadMontageOverlap()
@@ -401,8 +415,10 @@ class DigitalMicrograph4Import(object):
             transform_changed = True
         
         if transform_changed:
-            mosaicObj.ImageToTransform[tile_filename] = tile_transform 
-            mosaicObj.SaveToMosaicFile(transformObj.FullPath)
+            mosaicObj.ImageToTransform[tile_filename] = tile_transform
+            if not transformObj.FullPath in transforms_changed:
+                transforms_changed[transformObj.FullPath] = transformObj
+            #mosaicObj.SaveToMosaicFile(transformObj.FullPath)
             
         return transform_changed
 #         
