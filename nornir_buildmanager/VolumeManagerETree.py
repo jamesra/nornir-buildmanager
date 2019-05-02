@@ -232,15 +232,32 @@ class XElementWrapper(ElementTree.Element):
 
     def sort(self):
         '''Order child elements'''
-        if not hasattr(self, '_children'):
+        
+        if not hasattr(self, 'SortKey'):
             return 
         
-        self._children.sort(key=operator.attrgetter('SortKey'))
+        sortkey = self.SortKey
+        if sortkey is None:
+            return None
+        
+        if len(self) <= 1:
+            return 
+        
+        withKeys = filter( lambda child: hasattr(child, 'SortKey'), self)
+        withoutKeys = filter( lambda child: not hasattr(child, 'SortKey'), self)
+        linked = filter( lambda child: child.tag.endswith('_Link'), withoutKeys)
+        other = filter( lambda child: not child.tag.endswith('_Link'), withoutKeys)
+        
+        
+        sorted_withKeys = sorted(withKeys, key=operator.attrgetter('SortKey'))
+        sorted_linked   = sorted(linked,   key=lambda child: child.attrib['Path'])
+        sorted_other    = sorted(other,    key=lambda child: str(child))
+        
+        self[:] = sorted_withKeys + sorted_linked + sorted_other 
+        
+        # self._children.sort(key=operator.attrgetter('SortKey'))
 
-        for c in self._children:
-            if len(c._children) <= 1:
-                continue
-
+        for c in self:
             if isinstance(c, XElementWrapper):
                 c.sort()
 
@@ -726,12 +743,12 @@ class XElementWrapper(ElementTree.Element):
     
     def _ReplaceChildElementInPlace(self, old, new):
         
-        #print("Removing {0}".format(str(old)))
+        # print("Removing {0}".format(str(old)))
         i = self.indexofchild(old)
         
         self[i] = new
-        #self.remove(old)
-        #self.insert(i, new)
+        # self.remove(old)
+        # self.insert(i, new)
         
         VolumeManager.__SetElementParent__(new, self)
 
@@ -756,22 +773,20 @@ class XElementWrapper(ElementTree.Element):
             self._ReplaceChildElementInPlace(child, wrappedElement)
             
         return wrappedElement
-    
-    
 
     # replacement for find function that loads subdirectory xml files
     def find(self, xpath):
 
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(xpath)
         
-        if isinstance(self, XContainerElementWrapper): # Only containers have linked elements
+        if isinstance(self, XContainerElementWrapper):  # Only containers have linked elements
             LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
             if LinkMatches is None:
                 return None
             
             num_matches = len(LinkMatches)
             if num_matches > 0:
-                #if num_matches > 1:
+                # if num_matches > 1:
                 #    prettyoutput.Log("Need to load {0} links".format(num_matches))
                 self._replace_links(LinkMatches)
 
@@ -796,8 +811,6 @@ class XElementWrapper(ElementTree.Element):
  
         return None
 
-    
-
     def findall(self, match):
 
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(match)
@@ -811,7 +824,7 @@ class XElementWrapper(ElementTree.Element):
         
         num_matches = len(LinkMatches)
         if num_matches > 0:
-            #if num_matches > 1:
+            # if num_matches > 1:
             #    prettyoutput.Log("Need to load {0} links".format(num_matches))
             self._replace_links(LinkMatches)
             
@@ -934,7 +947,6 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
             self.__dict__['__fullpath'] = FullPathStr
 
         return FullPathStr
-
 
     def ToElementString(self):
         outStr = self.FullPath
@@ -1130,7 +1142,6 @@ class XContainerElementWrapper(XResourceElementWrapper):
             VolumeManager.__SetElementParent__(NewElement, self)
 
         return NewElement
-    
             
     def _replace_link(self, link_node, fullpath=None):
         '''Load the linked node.  Remove link node and replace with loaded node.  Checks that the loaded node is valid'''
@@ -1168,7 +1179,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def _replace_links(self, link_nodes, fullpath=None):
         '''Load the linked nodes.  Remove link node and replace with loaded node.  Checks that the loaded node is valid'''
         
-        #Ensure we are actually working on a list
+        # Ensure we are actually working on a list
         if len(link_nodes) == 0:
             return None
         elif len(link_nodes) == 1:
@@ -1181,7 +1192,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         loaded_elements = []
         
-        #Use a different threadpool so that if callars are already on a thread we don't create deadlocks where they are waiting for load tasks to be returned from the Queue
+        # Use a different threadpool so that if callars are already on a thread we don't create deadlocks where they are waiting for load tasks to be returned from the Queue
         pool = nornir_pools.GetThreadPool('ReplaceLinks')
         
         tasks = []
@@ -1223,7 +1234,6 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 loaded_elements.append(wrapped_loaded_element)
                 
         return loaded_elements
-    
 
     def __init__(self, tag, attrib=None, **extra):
 
@@ -2588,7 +2598,7 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
     
     @staticmethod
     def round_precision_value(value):
-        return  float(TransformNode.get_threshold_format() % value) # Number of digits to save in XML file
+        return  float(TransformNode.get_threshold_format() % value)  # Number of digits to save in XML file
     
     @classmethod 
     def Create(cls, Name, Type, Path=None, attrib=None, **extra):
@@ -2945,12 +2955,12 @@ class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
         dims = self.attrib.get('Dimensions', None)
         if dims is None:
             dims = nornir_imageregistration.GetImageSize(self.FullPath)
-            self.attrib['Dimensions'] = "{0:d} {1:d}".format(dims[1],dims[0])
+            self.attrib['Dimensions'] = "{0:d} {1:d}".format(dims[1], dims[0])
         else:
             dims = dims.split(' ')
             dims = (int(dims[1]), int(dims[0]))
             
-            #Todo: Remove after initial testing 
+            # Todo: Remove after initial testing 
             actual_dims = nornir_imageregistration.GetImageSize(self.FullPath)
             assert(actual_dims[0] == dims[0])
             assert(actual_dims[1] == dims[1])
@@ -2966,7 +2976,7 @@ class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
             if 'Dimensions' in self.attrib:
                 del self.attrib['Dimensions']
         else:
-            self.attrib['Dimensions'] = "{0} {1}".format(dims[1],dims[0])
+            self.attrib['Dimensions'] = "{0} {1}".format(dims[1], dims[0])
 
 
 class DataNode(XFileElementWrapper):
@@ -3266,7 +3276,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
  
     @property
     def TileXDim(self):
-        val = self.attrib.get('TileXDim',None)
+        val = self.attrib.get('TileXDim', None)
         if not val is None:
             val = int(val)
              
@@ -3278,7 +3288,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
  
     @property
     def TileYDim(self):
-        val = self.attrib.get('TileYDim',None)
+        val = self.attrib.get('TileYDim', None)
         if not val is None:
             val = int(val)
              
@@ -3287,8 +3297,6 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
     @TileYDim.setter
     def TileYDim(self, val):
         self.attrib['TileYDim'] = '%d' % int(val)
-
-    
         
     @classmethod
     def Create(cls):
@@ -3316,8 +3324,8 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if GridDimX is None or GridDimY is None:
             return (False, "No grid dimensions found in tileset") 
         
-        GridXDim = GridDimX - 1#int(GridDimX) - 1
-        GridYDim = GridDimY - 1#int(GridDimY) - 1
+        GridXDim = GridDimX - 1  # int(GridDimX) - 1
+        GridYDim = GridDimY - 1  # int(GridDimY) - 1
         
         FilePrefix = self.FilePrefix
         FilePostfix = self.FilePostfix 
