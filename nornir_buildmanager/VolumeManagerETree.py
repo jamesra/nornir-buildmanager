@@ -518,16 +518,21 @@ class XElementWrapper(ElementTree.Element):
         inserting any values in the instance attribute dictionary (but instead inserting them in another
         object). See the __getattribute__() method below for a way to actually get total control in
          new-style classes.'''
-        if(name in self.attrib):
-            return self.attrib[name]
+        
 
         if name in self.__dict__:
             return self.__dict__[name]
 
         superClass = super(XElementWrapper, self)
         if not superClass is None:
-            if hasattr(superClass, '__getattr__'):
-                return superClass.__getattr__(name)
+            try:
+                if hasattr(superClass, '__getattr__'):
+                    return superClass.__getattr__(name)
+            except AttributeError:
+                pass
+            
+        if(name in self.attrib):
+            return self.attrib[name]
 
         raise AttributeError(name)
 
@@ -2422,7 +2427,7 @@ class MappingNode(XElementWrapper):
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.tag + ' ' + (nornir_buildmanager.templates.Current.SectionTemplate % self.Control)
+        return self.Control #self.tag + ' ' + (nornir_buildmanager.templates.Current.SectionTemplate % self.Control)
 
     @property
     def Control(self):
@@ -2430,9 +2435,12 @@ class MappingNode(XElementWrapper):
 
     @property
     def Mapped(self):
-        mappedList = misc.ListFromAttribute(self.get('Mapped', []))
-        mappedList.sort()
-        return mappedList
+        if self._mapped_cache is None:
+            mappedList = misc.ListFromAttribute(self.attrib.get('Mapped', []))
+            mappedList.sort()
+            self._mapped_cache = mappedList
+            
+        return self._mapped_cache
 
     @Mapped.setter
     def Mapped(self, value):
@@ -2445,30 +2453,40 @@ class MappingNode(XElementWrapper):
             AdjacentSectionString = str(value)
 
         self.attrib['Mapped'] = AdjacentSectionString
+        self._mapped_cache = None
 
     def AddMapping(self, value):
         intval = int(value)
-        Mappings = self.Mapped
-        if intval in Mappings:
+        Mapped = self.Mapped
+        if intval in Mapped:
             return
         else:
-            Mappings.append(value)
-            self.Mapped = Mappings
+            Mapped.append(value)
+            self.Mapped = Mapped
 
     def RemoveMapping(self, value):
         intval = int(value)
-        Mappings = self.Mapped
-        Mappings.remove(intval)
-        self.Mapped = Mappings
+        Mapped = self.Mapped
+        Mapped.remove(intval)
+        self.Mappings = Mapped
 
     def __str__(self):
-        return "%d <- %s" % (self.Control, str(self.Mapped)) 
+        self._mapped_cache = None
+        return "%d <- %s" % (self.Control, str(self.Mappings))
+    
+    def __init__(self, tag=None, attrib=None, **extra):
+        if tag is None:
+            tag = 'Mapping'
+        
+        self._mapped_cache = None
+        super(MappingNode, self).__init__(tag=tag, attrib=attrib, **extra) 
     
     @classmethod
     def Create(cls, ControlNumber, MappedNumbers, attrib=None, **extra):
         obj = MappingNode(tag='Mapping', attrib=attrib, **extra)
 
         obj.attrib['Control'] = str(ControlNumber)
+        obj._mapped_cache = None
 
         if not MappedNumbers is None:
             obj.Mapped = MappedNumbers
