@@ -250,10 +250,11 @@ class XElementWrapper(ElementTree.Element):
         
         
         sorted_withKeys = sorted(withKeys, key=operator.attrgetter('SortKey'))
+        sorted_withoutKeys = sorted(withoutKeys, key=operator.attrgetter('tag'))
         sorted_linked   = sorted(linked,   key=lambda child: child.attrib['Path'])
         sorted_other    = sorted(other,    key=lambda child: str(child))
         
-        self[:] = sorted_withKeys + sorted_linked + sorted_other 
+        self[:] = sorted_withKeys + sorted_linked + sorted_other + sorted_withoutKeys
         
         # self._children.sort(key=operator.attrgetter('SortKey'))
 
@@ -1598,7 +1599,31 @@ class ChannelNode(XNamedContainerElementWrapped):
                 self.logger.warn("Locked filter cannot be removed for contrast mismatch. %s " % filter_node.FullPath)
                 return False 
 
-        return filter_node.RemoveNodeOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
+        if filter_node.RemoveChildrenOnContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+            filter_node.Clean("Contrast mismatch")
+            return True
+        
+        return False
+        
+    
+    def RemoveFilterOnBppMismatch(self, FilterName, expected_bpp):
+        '''
+        Return: true if filter found and removed
+        '''
+
+        filter_node = self.GetFilter(Filter=FilterName)
+        if filter_node is None:
+            return False
+
+        if filter_node.BitsPerPixel != expected_bpp:
+            if filter_node.Locked:
+                self.logger.warn("Locked filter cannot be removed for bits-per-pixel mismatch. %s " % filter_node.FullPath)
+                return False
+            else: 
+                filter_node.Clean("Filter's {0} bpp did not match expected {1} bits-per-pixel".format(filter_node.BitsPerPixel, expected_bpp))
+                return True
+            
+        return False
 
     def GetScale(self):
         return self.find('Scale')
@@ -1712,7 +1737,11 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
 
     @BitsPerPixel.setter
     def BitsPerPixel(self, val):
-        self.attrib['BitsPerPixel'] = '%d' % val
+        if val is None:
+            if 'BitsPerPixel' in self.attrib:
+                del self.attrib['BitsPerPixel']
+        else:
+            self.attrib['BitsPerPixel'] = '%d' % val
 
     def GetOrCreateTilePyramid(self):
         # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
@@ -3609,14 +3638,9 @@ class AutoLevelHintNode(XElementWrapper):
         
         obj = AutoLevelHintNode(attrib=attrib)
         
-        if not MinIntensityCutoff is None:
-            obj.UserRequestedMinIntensityCutoff = MinIntensityCutoff
-        
-        if not MaxIntensityCutoff is None:
-            obj.UserRequestedMaxIntensityCutoff = MaxIntensityCutoff
-            
-        if not Gamma is None:
-            obj.UserRequestedGamma = Gamma
+        obj.UserRequestedMinIntensityCutoff = MinIntensityCutoff
+        obj.UserRequestedMaxIntensityCutoff = MaxIntensityCutoff
+        obj.UserRequestedGamma = Gamma
             
         return obj
                   
@@ -3640,11 +3664,12 @@ class HistogramNode(HistogramBase):
         return self.find('AutoLevelHint')
 
     def GetOrCreateAutoLevelHint(self):
-        if not self.GetAutoLevelHint() is None:
-            return self.GetAutoLevelHint()
+        existing_hint = self.GetAutoLevelHint() 
+        if not existing_hint is None:
+            return existing_hint
         else:
             # Create a new AutoLevelData node using the calculated values as overrides so users can find and edit it later
-            self.UpdateOrAddChild(AutoLevelHintNode())
+            self.UpdateOrAddChild(AutoLevelHintNode.Create())
             return self.GetAutoLevelHint()
 
 

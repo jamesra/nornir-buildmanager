@@ -167,14 +167,13 @@ class ContrastHandler(object):
         
         return False
         
-    def RemoveNodeOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma, NodeToRemove=None):
+    def RemoveChildrenOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma, NodeToRemove=None):
         '''Remove nodeToRemove if the Contrast values do not match the passed parameters on nodeToTest
         :return: TilePyramid node if the node was preserved.  None if the node was removed'''
         
         if NodeToRemove is None:
             NodeToRemove = self
-            
-        
+             
         if isinstance(self, Lockable):
             if self.Locked:
                 if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff, 0) or \
