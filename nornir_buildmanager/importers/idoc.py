@@ -40,6 +40,7 @@ from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration import image_stats
 from nornir_shared.images import *
 import nornir_shared.files as files
+import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.histogram import *
 from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
@@ -49,6 +50,8 @@ import collections
 import nornir_pools
 import numpy
 import nornir_buildmanager.importers.serialemlog as serialemlog
+import nornir_buildmanager.importers.shared as shared
+import nornir_buildmanager.importers.serialem_utils as serialem_utils
 
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
@@ -89,7 +92,13 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     for path in DirList:
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
             DataFound = True
-            yield SerialEMIDocImport.ToMosaic(VolumeElement, idocFullPath, ContrastCutoffs, VolumeElement.FullPath, FlipList=FlipList, CameraBpp=CameraBpp, ContrastMap=ContrastMap)
+            yield SerialEMIDocImport.ToMosaic(VolumeElement,
+                                              idocFullPath,
+                                              ContrastCutoffs=ContrastCutoffs,
+                                              OutputImageExt=None,
+                                              FlipList=FlipList,
+                                              CameraBpp=CameraBpp,
+                                              ContrastMap=ContrastMap)
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
@@ -102,7 +111,7 @@ class SerialEMIDocImport(object):
     
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputPath=None, Extension=None, OutputImageExt=None, TargetBpp=None, FlipList=None, ContrastMap=None, CameraBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputImageExt=None, TargetBpp=None, FlipList=None, ContrastMap=None, CameraBpp=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -113,26 +122,21 @@ class SerialEMIDocImport(object):
         '''
         if(OutputImageExt is None):
             OutputImageExt = 'png'
-
-        if(Extension is None):
-            Extension = 'idoc'
-            
+  
         if TargetBpp is None:
             TargetBpp = 8
-            
+
         if FlipList is None:
             FlipList = []
-            
+
         if ContrastMap is None:
             ContrastMap = {}
-            
+   
         SaveChannel = False
-        
-        idocFilePath = cls.GetIDocPathWithoutSpaces(idocFileFullPath)
 
-        # Default to the directory above ours if an output path is not specified
-        if OutputPath is None:
-            OutputPath = os.path.join(idocFilePath, "..")
+        idocFilePath = serialem_utils.GetPathWithoutSpaces(idocFileFullPath)
+ 
+        OutputPath = VolumeObj.FullPath
 
         os.makedirs(OutputPath, exist_ok=True)
 
@@ -142,13 +146,13 @@ class SerialEMIDocImport(object):
         prettyoutput.CurseString('Stage', "SerialEM to Mosaic " + str(idocFileFullPath))
 
         SectionNumber = 0
-        (ParentDir, sectionDir) = cls.GetDirectories(idocFileFullPath)
-          
+        sectionDir = os.path.dirname(idocFileFullPath) #serialem_utils.GetDirectories(idocFileFullPath)
+
         BlockObj = BlockNode.Create('TEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
-         
+
         # If the parent directory doesn't have the section number in the name, change it
-        ExistingSectionInfo = cls.GetSectionInfo(sectionDir)
+        ExistingSectionInfo = shared.GetSectionInfo(sectionDir)
         if(ExistingSectionInfo[0] < 0):
             i = 5
 #            SectionNumber = SectionNumber + 1
@@ -162,13 +166,13 @@ class SerialEMIDocImport(object):
 #            #Run glob again because the dir changes
 #            idocFiles = glob.glob(os.path.join(InputPath,'*.idoc'))
         else:
-            SectionNumber = ExistingSectionInfo[0]
+            SectionNumber = ExistingSectionInfo.number
 
         prettyoutput.CurseString('Section', str(SectionNumber))
 
         # Check for underscores.  If there is an underscore and the first part is the sectionNumber, then use everything after as the section name
-        SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber
-        SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber
+        SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number
+        SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number
         try:
             parts = sectionDir.partition("_")
             if not parts is None:
@@ -178,17 +182,15 @@ class SerialEMIDocImport(object):
             pass
 
         sectionObj = SectionNode.Create(SectionNumber,
-                                              SectionName,
-                                              SectionPath)
+                                        SectionName,
+                                        SectionPath)
 
         [saveSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
         sectionObj.Name = SectionName
 
         # Create a channel group 
         [saveChannel, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode.Create('TEM'), 'Name')
-  
-        ChannelPath = channelObj.FullPath
-        OutputSectionPath = os.path.join(OutputPath, ChannelPath)
+   
         # Create a channel group for the section
 
         # I started ignoring existing supertile.mosaic files so I could rebuild sections where
@@ -212,8 +214,8 @@ class SerialEMIDocImport(object):
             return
 
         # See if we can find a notes file...
-        TryAddNotes(channelObj, sectionDir, logger)
-        TryAddLogs(channelObj, sectionDir, logger)
+        shared.TryAddNotes(channelObj, sectionDir, logger)
+        serialem_utils.TryAddLogs(channelObj, sectionDir, logger)
 
         AddIdocNode(channelObj, idocFilePath, IDocData, logger)
 
@@ -257,7 +259,7 @@ class SerialEMIDocImport(object):
 
         SupertileName = 'Stage'
         SupertileTransform = SupertileName + '.mosaic'
-        SupertilePath = os.path.join(OutputSectionPath, SupertileTransform)
+        SupertilePath = os.path.join(channelObj.FullPath, SupertileTransform)
 
         # Check to make sure our supertile mosaic file is valid
         RemoveOutdatedFile(idocFilePath, SupertilePath)
@@ -298,7 +300,7 @@ class SerialEMIDocImport(object):
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
             #nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
-            nornir_imageregistration.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=ImageBpp, OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)
+            nornir_imageregistration.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp, OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)
 
         elif(Tileset.ImageMoveRequired):
             for f in SourceToMissingTargetMap:
@@ -637,94 +639,6 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
     return added
 
 
-def TryAddNotes(containerObj, InputPath, logger):
-    NotesFiles = glob.glob(os.path.join(InputPath, '*notes*.*'))
-    NotesAdded = False
-    if len(NotesFiles) > 0:
-        for filename in NotesFiles:
-            try:
-                from xml.sax.saxutils import escape
-
-                NotesFilename = os.path.basename(filename)
-                CopiedNotesFullPath = os.path.join(containerObj.FullPath, NotesFilename)
-                if not os.path.exists(CopiedNotesFullPath):
-                    os.makedirs(containerObj.FullPath, exist_ok=True)
-                    shutil.copyfile(filename, CopiedNotesFullPath)
-                    NotesAdded = True
-
-                with open(filename, 'r') as f:
-                    notesTxt = f.read()
-                    (base, ext) = os.path.splitext(filename)
-                    encoding = "utf-8"
-                    ext = ext.lower()
-                    # notesTxt = notesTxt.encode(encoding)
-
-                    notesTxt = notesTxt.replace('\0', '')
-
-                    if len(notesTxt) > 0:
-                        # XMLnotesTxt = notesTxt
-                        # notesTxt = notesTxt.encode('utf-8')
-                        XMLnotesTxt = escape(notesTxt)
-
-                        # Create a Notes node to save the notes into
-                        NotesNodeObj = NotesNode.Create(Text=XMLnotesTxt, SourceFilename=NotesFilename)
-                        containerObj.RemoveOldChildrenByAttrib('Notes', 'SourceFilename', NotesFilename)
-                        [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
-
-                        if added:
-                            # Try to copy the notes to the output dir if we created a node
-                            if not os.path.exists(CopiedNotesFullPath):
-                                shutil.copyfile(filename, CopiedNotesFullPath)
-
-                        NotesNodeObj.text = XMLnotesTxt
-                        NotesNodeObj.encoding = encoding
-
-                        NotesAdded = NotesAdded or added
-
-            except:
-                (etype, evalue, etraceback) = sys.exc_info()
-                prettyoutput.Log("Attempt to include notes from " + filename + " failed.\n" + evalue.message)
-                prettyoutput.Log(etraceback)
-
-    return NotesAdded
-
-
-def TryAddLogs(containerObj, InputPath, logger):
-    '''Copy log files to output directories, and store select meta-data in the containerObj if it exists'''
-    LogsFiles = glob.glob(os.path.join(InputPath, '*.log'))
-    LogsAdded = False
-    if len(LogsFiles) > 0:
-        for filename in LogsFiles:
-
-            NotesFilename = os.path.basename(filename)
-            CopiedLogsFullPath = os.path.join(containerObj.FullPath, NotesFilename)
-            if not os.path.exists(CopiedLogsFullPath):
-                os.makedirs(containerObj.FullPath, exist_ok=True)
-                
-                shutil.copyfile(filename, CopiedLogsFullPath)
-                LogsAdded = True
-
-            # OK, try to parse the logs
-            try:
-                LogData = serialemlog.SerialEMLog.Load(filename)
-                if LogData is None:
-                    pass
-
-                # Create a Notes node to save the logs into
-                LogNodeObj = DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
-                containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
-                [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')
-                LogsAdded = LogsAdded or added
-                LogNodeObj.AverageTileTime = '%g' % LogData.AverageTileTime
-                LogNodeObj.AverageTileDrift = '%g' % LogData.AverageTileDrift
-                LogNodeObj.CaptureTime = '%g' % (LogData.MontageEnd - LogData.MontageStart)
-
-            except:
-                (etype, evalue, etraceback) = sys.exc_info()
-                prettyoutput.Log("Attempt to include logs from " + filename + " failed.\n" + str(evalue))
-                prettyoutput.Log(str(etraceback))
-
-    return LogsAdded
 
 
 class IDocTileData():

@@ -12,7 +12,7 @@ import unittest
 
 from nornir_buildmanager.VolumeManagerETree import VolumeManager 
 import nornir_buildmanager.importers
-from nornir_buildmanager.importers.idoc import SerialEMLog
+from nornir_buildmanager.importers.serialemlog import SerialEMLog
 from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
 import nornir_shared.misc

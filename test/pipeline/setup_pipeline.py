@@ -433,7 +433,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunMosaic(self, Filter, Transform=None):
+    def RunMosaic(self, Filter, Transform=None, InputDownsample=None):
         if Filter is None:
             Filter = 'Leveled'
         
@@ -447,7 +447,12 @@ class NornirBuildTestBase(test.testbase.TestBase):
                                           '-OutputTransform', 'Grid',
                                           '-MinTranslateIterations', "5",
                                           '-OffsetChangeTolerance', '1',
-                                          '-RelaxThreshold', "1.0")
+                                          '-RelaxThreshold', "0.1",
+                                          '-RefineIterations', "5")
+        
+        if InputDownsample is not None:
+            buildArgs.extend(['-RegistrationDownsample', '{0}'.format(InputDownsample)])
+            
         volumeNode = self.RunBuild(buildArgs)
 
         TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")

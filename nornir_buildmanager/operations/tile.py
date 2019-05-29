@@ -602,13 +602,18 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     MinCutoffPercent = float(Parameters.get('MinCutoff', ContrastMinCutoffDefault)) / 100.0
     MaxCutoffPercent = float(Parameters.get('MaxCutoff', ContrastMaxCutoffDefault)) / 100.0
     Gamma = Parameters.get('Gamma', None)
+    OutputBpp = kwargs.get('OutputBpp')  #None is passed if the user does not specify a value, a default value will never be read
+    
+    if OutputBpp is None:
+        OutputBpp = InputFilter.BitsPerPixel
 
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercent, Gamma, Bpp=InputFilter.BitsPerPixel)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
     (saveFilter, OutputFilterNode) = ChannelNode.GetOrCreateFilter(OutputFilterName)
     if saveFilter:
-        yield OutputFilterNode
+        OutputFilterNode.BitsPerPixel = OutputBpp
+        yield ChannelNode
         
     EntireTilePyramidNeedsBuilding = OutputFilterNode is None
     
@@ -620,18 +625,19 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
             prettyoutput.Log("Skipping contrast on existing locked filter %s" % OutputFilterNode.FullPath)
             return
         
-        yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True)
+        (yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True))
         
-        if ChannelNode.RemoveFilterOnContrastMismatch(OutputFilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+        if ChannelNode.RemoveFilterOnContrastMismatch(OutputFilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma) or ChannelNode.RemoveFilterOnBppMismatch(OutputFilterName, OutputBpp):
             EntireTilePyramidNeedsBuilding = True
             (yield ChannelNode.Parent)
             
             (added_filter, OutputFilterNode) = ChannelNode.GetOrCreateFilter(OutputFilterName)
             OutputFilterNode.SetContrastValues(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
+            OutputFilterNode.BitsPerPixel = OutputBpp
             (yield ChannelNode)
         elif FilterPopulated:
             # Nothing to do, contrast matches and the filter is populated
-            return 
+            return
     else:
         (yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma, Async=True))
         
@@ -645,7 +651,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
     (filter_created, OutputFilterNode) = ChannelNode.GetOrCreateFilter(OutputFilterName)
     os.makedirs(OutputFilterNode.FullPath, exist_ok=True)
         
-    OutputFilterNode.BitsPerPixel = 8
+    OutputFilterNode.BitsPerPixel = OutputBpp
     OutputFilterNode.HistogramChecksum = str(HistogramElement.Checksum)
     OutputFilterNode.SetContrastValues(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
         
@@ -713,7 +719,11 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
         
         TilesToConvert[InputImageFullPath] = ImageSaveFilename
     
-    nornir_imageregistration.ConvertImagesInDict(TilesToConvert, MinMax=(MinIntensityCutoff16bpp, MaxIntensityCutoff16bpp), Gamma=Gamma)
+    nornir_imageregistration.ConvertImagesInDict(TilesToConvert,
+                                                 MinMax=(MinIntensityCutoff16bpp, MaxIntensityCutoff16bpp),
+                                                 Gamma=Gamma,
+                                                 InputBpp=InputFilter.BitsPerPixel,
+                                                 OutputBpp=OutputBpp)
 #     
 # #         cmd = 'convert \"' + InputImageFullPath + '\" ' + \
 # #                '-level ' + str(MinIntensityCutoff16bpp) + \
@@ -869,7 +879,7 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
         for k in list(mosaic.ImageToTransformString.keys()):
             fulltilepaths.append(os.path.join(FullTilePath, k))
 
-        histogramObj = nornir_imageregistration.Histogram(fulltilepaths, Bpp=Bpp)
+        histogramObj = nornir_imageregistration.Histogram(fulltilepaths, Bpp=Bpp, numBins=NumBins)
         histogramObj.Save(DataNode.FullPath)
 
         # Create a data node for the histogram
@@ -887,9 +897,9 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
 
 def GenerateHistogramImageFromPercentage(HistogramElement, MinCutoffPercent=None, MaxCutoffPercent=None, Gamma=1):
     if MinCutoffPercent is None:
-        MinCutoffPercent = ContrastMinCutoffDefault
+        MinCutoffPercent = ContrastMinCutoffDefault / 100.0
     if MaxCutoffPercent is None:
-        MaxCutoffPercent = ContrastMaxCutoffDefault
+        MaxCutoffPercent = ContrastMaxCutoffDefault / 100.0
         
     LineColors = ['green', 'green']
     AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
@@ -1442,7 +1452,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
     # OK, check if the first level of the tileset exists
     LevelOne = TileSetNode.GetChildByAttrib('Level', 'Downsample', downsample_level)
     
-    bpp = FilterNode.BitsPerPixel()
+    bpp = FilterNode.BitsPerPixel
     
     if(LevelOne is None):
         # Need to call ir-assemble

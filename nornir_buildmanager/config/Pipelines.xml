@@ -23,7 +23,7 @@
 				help="Max intensity cutoff.  A value from 0.0 to 1.0" required="False"
 				default=".9999" />
 			<Argument flag="-CameraBpp" dest="CameraBpp" type="int"
-                help="The actual bits-per-pixel of the camera.  Rarely used, but limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data." required="False"/>
+                help="The actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data." required="False"/>
 		</Arguments>
 
 		<PythonCall Module="nornir_buildmanager.importers.idoc"
@@ -44,6 +44,20 @@
 			Function="Import" ImportPath="#ImportDir" extension="#extension"
 			scaleValueInNm="#scaleValueInNm" />
 	</Pipeline>
+	
+	<Pipeline Name="ImportMRC" Help="Import SerialEM MRC files into a volume.">
+        <Arguments>
+            <Argument flag="ImportDir"
+                help="Directory to import from.  The .mrc files in subdirectories should be named with the desired section number after import. i.e. 0005.mrc to import the file as section #5." />
+            <Argument flag="-ext" dest="extension" default="mrc"
+                help="Extension of mrc files, default is mrc" />
+            <Argument flag="-CameraBpp" dest="CameraBpp" type="int"
+                help="The actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data." required="False"/>
+        </Arguments>
+
+        <PythonCall Module="nornir_buildmanager.importers.mrc"
+            Function="Import" ImportPath="#ImportDir" extension="#extension" CameraBpp="#CameraBpp" />
+    </Pipeline>
 
 	<Pipeline Name="ImportImages"
 		Help="Import single images that represent an entire section in a volume">
@@ -395,6 +409,8 @@
 				help="Filter to draw images from" required="True" />
 			<Argument flag="-OutputFilter" dest="OutputFilter" default="Leveled"
 				help="Filter to draw images from" required="False" />
+			<Argument flag="-OutputBpp" dest="OutputBpp" type="int"
+                help="Bits-per-pixel of output filter images" required="False" />
 			<Argument flag="-InputTransform" dest="InputTransform"
 				default="Prune"
 				help="Mosaic transform to prune.  The transform provides the list of tiles in the mosaic."
@@ -412,7 +428,7 @@
 
 				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']" />
 				<PythonCall Function="tile.AutolevelTiles" InputFilter="#FilterNode"
-					OutputFilterName="#OutputFilter">
+					OutputFilterName="#OutputFilter" OutputBpp="#OutputBpp">
 					<Parameters>
 						<Entry Name="Gamma" Value="#Gamma" />
 						<Entry Name="MinCutoff" Value="#MinCutoff" />
@@ -598,7 +614,7 @@
 			<Argument flag="-RefineIterations" default="10" dest="RefineIterations"
 				type="int" help="Maximum number of refinement passes to run"
 				required="False" />
-			<Argument flag="-Threshold" default="0.25" dest="DisplacementThreshold"
+			<Argument flag="-Threshold" default="0.1" dest="DisplacementThreshold"
                 type="float"
                 help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
                 required="False" />
@@ -606,9 +622,15 @@
                 type="float"
                 help="Minimum amount of overlap tiles must have to contribute to the final mosaic."
                 required="False" />
-            <Argument flag="-ExpandOverlapScalar" default="1.5" dest="excess_scalar"
+            <Argument flag="-ExpandOverlapScalar" default="3.0" dest="excess_scalar"
                 type="float"
-                help="How much additional area should we pad the overlapping regions with.  Increase this value if you don't trust the stage.  This value is doubled during the first pass."
+                help="How much additional area should we pad the overlapping regions with.  Must be at least 3 to ensure all overlaps can be detected."
+                required="False" />
+            <Argument flag="-first_pass_inter_tile_distance" default="0.5" dest="first_pass_inter_tile_distance" type="float"
+                help="A value from 0 to 1 that scales the distance between the centers of the two tiles.  A value of 0 considers the full images when registering.  A value of 1.0 only considers the overlapping regions according to the tile transforms.  Reduce this value in the first registration pass to increase the search area."
+                required="False" />
+            <Argument flag="-inter_tile_distance" default="1" dest="inter_tile_distance" type="float"
+                help="A value from 0 to 1 that scales the distance between the centers of the two tiles.  A value of 0 considers the full images when registering.  A value of 1.0 only considers the overlapping regions according to the tile transforms.  Reduce this value in early registration passes to increase the search area."
                 required="False" />
             <Argument flag="-MinFeatureScore" default="0.35" dest="feature_score_threshold"
                 type="float"
@@ -617,14 +639,14 @@
             <Argument flag="-MinTranslateIterations" default="5" dest="min_translate_iterations"
                 type="int" help="Minimum number of iterations phase correlation and relaxation"
                 required="False" />
-            <Argument flag="-RelaxIterations" default="150" dest="max_relax_iterations"
+            <Argument flag="-RelaxIterations" default="500" dest="max_relax_iterations"
                 type="int" help="Maximum number of relaxation passes to in translation only placement phase"
                 required="False" />
-            <Argument flag="-OffsetChangeTolerance" default="1.0" dest="offset_acceptance_threshold"
+            <Argument flag="-OffsetChangeTolerance" default="1" dest="offset_acceptance_threshold"
                 type="float"
                 help="Do not re-register (recalculate phase correlation of) a pair of overlapping tiles if the change in overlap position compared to the previous iteration is less than this distance in pixels."
                 required="False" />
-			<Argument flag="-RelaxThreshold" default="1.0" dest="max_relax_tension_cutoff"
+			<Argument flag="-RelaxThreshold" default="0.1" dest="max_relax_tension_cutoff"
 				type="float"
 				help="Stop iteration of relaxation phase if the maximum tension vector on any tile is below this value (in pixels)."
 				required="False" />
@@ -651,7 +673,7 @@
 					excess_scalar="#excess_scalar"
 					min_overlap="#min_overlap" feature_score_threshold="#feature_score_threshold"
 					min_translate_iterations="#min_translate_iterations" offset_acceptance_threshold="#offset_acceptance_threshold"
-					max_relax_iterations="#max_relax_iterations" max_relax_tension_cutoff="#max_relax_tension_cutoff">
+					max_relax_iterations="#max_relax_iterations" max_relax_tension_cutoff="#max_relax_tension_cutoff" inter_tile_distance="inter_tile_distance">
 					<Parameters>
                         <Entry Name="MinOverlap" Value="#min_overlap"/>
                         <Entry Name="FeatureScore" Value="#feature_score_threshold"/>
@@ -660,6 +682,7 @@
                         <Entry Name="accept_threshold" Value="#offset_acceptance_threshold"/>
                         <Entry Name="relax" Value="#max_relax_iterations"/>
                         <Entry Name="TensionCutoff" Value="#max_relax_tension_cutoff"/>
+                        <Entry Name="itd" Value="#inter_tile_distance"/>
                     </Parameters>
 				</PythonCall>
 				

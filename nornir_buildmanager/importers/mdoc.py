@@ -1,7 +1,8 @@
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.images import *
+import nornir_buildmanager.importers.shared as shared
 
-from . import idoc;
+from . import idoc
 
 
 class SerialEMMDocImport(idoc.SerialEMIDocImport):
@@ -40,7 +41,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         # ok, try to find the .st file
         for mdoc in mdocFiles:
             basename = os.path.basename(mdoc);
-            [SectionNumber, SectionName, Downsample] = idoc.SerialEMIDocImport.GetSectionInfo(basename);
+            [SectionNumber, SectionName, Downsample] = shared.GetSectionInfo(basename);
 
             MDocImportDir = str(SectionNumber);
 

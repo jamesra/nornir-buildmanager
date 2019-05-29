@@ -40,6 +40,8 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                        offset_acceptance_threshold=None,
                        max_relax_iterations=None,
                        max_relax_tension_cutoff=None,
+                       first_pass_inter_tile_distance_scale=None,
+                       inter_tile_distance_scale=None,
                        Logger=None, **kwargs):
     '''@ChannelNode'''
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
@@ -93,7 +95,9 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                                                                              min_translate_iterations=min_translate_iterations,
                                                                              offset_acceptance_threshold=offset_acceptance_threshold,
                                                                              max_relax_iterations=max_relax_iterations,
-                                                                             max_relax_tension_cutoff=max_relax_tension_cutoff)
+                                                                             max_relax_tension_cutoff=max_relax_tension_cutoff,
+                                                                             first_pass_inter_tile_distance_scale=first_pass_inter_tile_distance_scale,
+                                                                             inter_tile_distance_scale=inter_tile_distance_scale)
         
         firstpass_translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
 

@@ -25,6 +25,7 @@ import nornir_shared.files as files
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
 import numpy as np
+from . import GetFileNameForTileNumber
 
 DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Units'))
 
@@ -59,10 +60,9 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     for path in DirList:
         prettyoutput.CurseString("DM4Import", "Importing *.dm4 from {0}".format(path))
         for idocFullPath in glob.glob(os.path.join(path, '*.dm4')):
-            for obj in DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap):
-                yield obj
+            yield from DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap)
     
-    nornir_pools.WaitOnAllPools() 
+    nornir_pools.WaitOnAllPools()
     
     for transform_fullpath in mosaics_loaded:
         mosaicObj = mosaics_loaded[transform_fullpath]
@@ -245,10 +245,6 @@ class DigitalMicrograph4Import(object):
         return data_tag
     
     @classmethod
-    def GetFileNameForTileNumber(cls, tile_number, ext):
-        return (nornir_buildmanager.templates.Current.TileCoordFormat % tile_number) + '.' + ext
-    
-    @classmethod
     def GetHistogramDataFullPath(cls, dm4fullpath):
         dirname = os.path.dirname(dm4fullpath)
         filename = os.path.basename(dm4fullpath)
@@ -351,7 +347,7 @@ class DigitalMicrograph4Import(object):
     def ImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
         '''Adds a DM4 file to the tile pyramid directory without updating the meta-data'''
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
-        filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
+        filename = GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath, filename)
                 
         os.makedirs(LevelObj.FullPath, exist_ok=True)
@@ -365,12 +361,12 @@ class DigitalMicrograph4Import(object):
     @classmethod
     def AddAndImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
         [created, LevelObj] = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
-        filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
+        filename = GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath, filename)
         
         os.makedirs(LevelObj.FullPath, exist_ok=True)
         
-        if os.path.exists(output_fullpath):
+        if nornir_shared.images.IsValidImage(output_fullpath):
             return None
         
         TilePyramidObj.NumberOfTiles += 1
@@ -382,7 +378,7 @@ class DigitalMicrograph4Import(object):
     
     @classmethod
     def AddTileToMosaic(cls, transformObj, dm4data, tile_number, tile_overlap=None):
-        tile_filename = cls.GetFileNameForTileNumber(tile_number, ext=TileExtension) 
+        tile_filename = GetFileNameForTileNumber(tile_number, ext=TileExtension) 
         (YDim, XDim) = dm4data.ReadMontageGridSize()
         
         image_shape = dm4data.ReadImageShape()
@@ -407,7 +403,7 @@ class DigitalMicrograph4Import(object):
         
         Position = grid_position * PerGridOffset
          
-        tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform(image_shape, image_shape, 0, Position)
+        tile_transform = nornir_imageregistration.transforms.RigidNoRotation(Position)
         
         if tile_filename in mosaicObj.ImageToTransform:
             transform_changed = mosaicObj.ImageToTransform[tile_filename] == tile_transform

@@ -242,7 +242,7 @@ class PMGImport(object):
             (Height, Width) = nornir_imageregistration.GetImageSize(InputTileFullPath)
             imageSize.append((Width, Height))
     
-        nornir_imageregistration.ConvertImagesInDict(InputTileToOutputTile, Flip=False, Bpp=TargetBpp)
+        nornir_imageregistration.ConvertImagesInDict(InputTileToOutputTile, Flip=False, OutputBpp=TargetBpp)
     
         if not os.path.exists(transformObj.FullPath):
             mosaicfile.MosaicFile.Write(transformObj.FullPath, PngTiles, Flip=Flip, ImageSize=imageSize)
