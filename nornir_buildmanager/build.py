@@ -18,7 +18,8 @@ import time
 import matplotlib 
 #Nornir build must use a backend that does not allocate windows in the GUI should be used. 
 #Otherwise bugs will appear in multi-threaded environments
-matplotlib.use('Agg') 
+if not 'DEBUG' in os.environ: 
+    matplotlib.use('Agg') 
 
 import matplotlib.pyplot as plt
 plt.ioff()
