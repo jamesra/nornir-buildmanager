@@ -39,3 +39,4 @@ nosetests.xml
 /.externalToolBuilders/
 /StosBrute8/
 /StosBrute32/
+/__pycache__/
