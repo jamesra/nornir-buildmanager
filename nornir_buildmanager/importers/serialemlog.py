@@ -380,8 +380,10 @@ class SerialEMLog(object):
 
 def __argToSerialEMLog(arg):
     Data = None
-    if isinstance(arg, str):
+    if arg is None:
         Data = SerialEMLog.Load(sys.argv[1])
+    elif isinstance(arg, str):
+        Data = SerialEMLog.Load(arg)
     elif isinstance(arg, SerialEMLog):
         Data = arg
     else:
