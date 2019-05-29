@@ -407,7 +407,9 @@ def GetOrCreateRegistrationImageNodes(filter_node, Downsample, GetMask, Logger=N
 
 def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, OutputType, OutputPath, UseMasks, AngleSearchRange=None, TestForFlip=True, Logger=None, argstring=None):
     '''Create a transform node, populate, and generate the transform'''
-
+    CmdRan = False
+    ManualFileExists = False
+    
     if Logger is None:
         Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
 
@@ -443,10 +445,18 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
 
         # We just created this, so remove any old files
         if os.path.exists(stosNode.FullPath):
-            os.remove(stosNode.FullPath) 
+            #Uncomment to leave the file in place and update the meta-data
+#             stosNode.ResetChecksum()
+#             
+#             if ManualFileExists:
+#                 stosNode.InputTransformChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+#             
+#             StosGroup.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
+#             return stosNode
+            os.remove(stosNode.FullPath)
 
     # print OutputFileFullPath
-    CmdRan = False
+    
     if not os.path.exists(stosNode.FullPath):
         ManualStosFileFullPath = StosGroup.PathToManualTransform(stosNode.FullPath)
         if ManualStosFileFullPath:
@@ -454,6 +464,9 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
             # Ensure we add or remove masks according to the parameters
             SetStosFileMasks(stosNode.FullPath, ControlFilter, MappedFilter, UseMasks, StosGroup.Downsample)
+            if ManualInputChecksum is None:
+                ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+                
             stosNode.InputTransformChecksum = ManualInputChecksum
         elif not (ControlMaskImageNode is None and MappedMaskImageNode is None):
             __CallNornirStosBrute(stosNode, StosGroup.Downsample, 
@@ -483,7 +496,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     if CmdRan:
         return stosNode
 
-    return None
+    return
 
 
 def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
@@ -987,7 +1000,7 @@ def CalculateStosGroupWarpMeasurementImages(Parameters, StosMapNode, GroupNode, 
         return GroupNode
     
 
-def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputStosMapName, Logger, **kwargs):
+def SelectBestRegistrationChain(Parameters, InputGroupNode, InputStosMapNode, OutputStosMapName, Logger, **kwargs):
     '''Figure out which sections should be registered to each other'''
     Pool = None
     # Assess all of the images
@@ -1000,7 +1013,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
 
     # OK, we have the best mapping. Add it to our registration chain.
     # Create a node to store the stos mappings
-    OutputStosMapNode = VolumeManagerETree.StosMapNode.Create(Name=OutputStosMapName, Type=OutputStosMapName, CenterSection=str(StosMapNode.CenterSection))
+    OutputStosMapNode = VolumeManagerETree.StosMapNode.Create(Name=OutputStosMapName, Type=OutputStosMapName, CenterSection=str(InputStosMapNode.CenterSection))
     (NewStosMap, OutputStosMapNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosMapNode)
     
     # Ensure we do not have banned control sections in the output map
@@ -1014,9 +1027,9 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, StosMapNode, OutputS
     (added, OutputStosGroupNode) = BlockNode.UpdateOrAddChildByAttrib(OutputStosGroupNode, 'Path')
 
     # Look at all of the mappings and create a list of potential control sections for each mapped section
-    # Mappings = list(StosMapNode.findall('Mapping'))
+    # Mappings = list(InputStosMapNode.findall('Mapping'))
 
-    MappedToControlCandidateList = StosMapNode.MappedToControls()
+    MappedToControlCandidateList = InputStosMapNode.MappedToControls()
     
 #    for mappingNode in Mappings:
 #        for mappedSection in mappingNode.Mapped:
@@ -1465,6 +1478,12 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, C
                     elif 'InputTransformChecksum' not in stosNode.attrib:
                         stosNode.Clean("InputTransformChecksum attribute is required on transform element and was not found")
                         stosNode = None
+                        ### Uncomment to preserve the existing file and simply update the meta-data
+                        #stosNode.ResetChecksum()
+                        #stosNode.SetTransform(InputTransformNode)
+                        #stosNode.InputTransformChecksum = InputStosFileChecksum
+                        #yield OutputSectionMappingNode
+                        #return
                         
                 if stosNode is None:
                     stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type, OutputPath=OutputFile)
