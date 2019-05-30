@@ -1518,7 +1518,7 @@
 		<Select Root="BlockNode" VariableName="StosMapNodeObj"
 			XPath="StosMap[@Name='#InputStosMap']" />
 		<PythonCall Function="block.SelectBestRegistrationChain"
-			InputGroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj"
+			InputGroupNode="#GroupNodeObj" InputStosMapNode="#StosMapNodeObj"
 			OutputStosMapName="#OutputStosMap" />
 	</Pipeline>
 

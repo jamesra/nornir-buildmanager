@@ -117,7 +117,7 @@ class TilesetInfo(object):
         return Info
 
     def Save(self, XmlFilePath, Logger=None):
-         # Write a new XML file
+        # Write a new XML file
         if Logger:
             Logger.info('Stage', "WriteTilesetXML : " + XmlFilePath)
 
