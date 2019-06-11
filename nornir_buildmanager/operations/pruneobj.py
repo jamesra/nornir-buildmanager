@@ -184,13 +184,12 @@ class PruneObj:
         if not os.path.exists(OutputMosaicFullPath):
             try:
                 PruneObjInstance.WritePruneMosaic(PruneNodeParent.FullPath, InputTransformNode.FullPath, OutputMosaicFullPath, Tolerance=Threshold)
-            except KeyError:
+            except (KeyError, ValueError):
                 os.remove(PruneDataNode.FullPath)
                 PruneNode.remove(PruneDataNode)
                 prettyoutput.LogErr("Remove prune data for section " + PruneDataNode.FullPath)
                 return PruneNodeParent
                 
-
         OutputTransformNode.Type = MangledName
         OutputTransformNode.Name = OutputTransformName
 
@@ -385,7 +384,10 @@ class PruneObj:
     def WritePruneMosaic(self, path, SourceMosaic, TargetMosaic='prune.mosaic', Tolerance='5'):
         '''
         Remove tiles from the source mosaic with scores less than Tolerance and
-        write the new mosaic to TargetMosaic
+        write the new mosaic to TargetMosaic.
+        Raises a key error if image in prude scores does not exist in .mosaic file
+        Raises a value error if the threshold removes all tiles in the mosaic.
+        :return: Number of tiles removed
         '''
 
         if(not isinstance(Tolerance, float)):
@@ -418,8 +420,9 @@ class PruneObj:
                 numRemoved = numRemoved + 1
 
         if(len(mosaic.ImageToTransformString) <= 0):
-            prettyoutput.LogErr("All tiles removed when using threshold = " + str(Tolerance) + "\nThe prune request was ignored")
-            return
+            errMsg = "All tiles removed when using threshold = " + str(Tolerance) + "\nThe prune request was ignored"
+            prettyoutput.LogErr(errMsg)
+            raise ValueError(errMsg) 
         else:
             prettyoutput.Log("Removed " + str(numRemoved) + " tiles pruning mosaic " + TargetMosaic)
 
