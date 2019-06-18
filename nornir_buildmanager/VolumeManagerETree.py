@@ -1167,6 +1167,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         except ElementTree.ParseError as e:
             logger = logging.getLogger(__name__ + '.' + '_load_link_element')
             logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            self.remove(link_node)
             return None
         except Exception as e:
             logger = logging.getLogger(__name__ + '.' + '_load_link_element')
@@ -1220,6 +1221,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             except ElementTree.ParseError as e:
                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                 logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                self.remove(link_node)
                 return None
             except Exception as e:
                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
@@ -1296,7 +1298,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 linktag = child.tag + '_Link'
                 
                 # Sanity check to prevent duplicate link bugs
-                assert(SaveElement.find(linktag + "[@Path='{0}']".format(child.Path)) is None)
+                if __debug__:
+                    existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
+                    if existingNode is not None:
+                        raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(ElementTree.tostring(SaveElement, encoding="utf-8"), ElementTree.tostring(existingNode, encoding="utf-8")))
                 
                 LinkElement = XElementWrapper(linktag, attrib=child.attrib)
                 # SaveElement.append(LinkElement)
