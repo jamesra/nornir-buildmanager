@@ -10,7 +10,6 @@ import os
 from ez_setup import use_setuptools
 from setuptools import setup, find_packages
 
-
 # This if test prevents an infinite recursion running tests from "python setup.py test"
 if __name__ == '__main__':
 
@@ -31,9 +30,9 @@ if __name__ == '__main__':
 
     provides = ["nornir_buildmanager"]
 
-    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.3.3",
-                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.3.3",
-                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.3.3"]
+    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.4.0",
+                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.4.0",
+                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.4.0"]
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
