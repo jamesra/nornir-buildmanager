@@ -24,7 +24,7 @@ from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.tileset import ShadeCorrectionTypes
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
-from nornir_shared.files import RemoveOutdatedFile, OutdatedFile
+from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile
 from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
 import nornir_shared.plot
@@ -1536,8 +1536,10 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
         TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel, SourceImageNode.Path, GenerateData=False)
         os.makedirs(TargetImageNode.Parent.FullPath, exist_ok=True)
         
-        RemoveOutdatedFile(SourceImageNode.FullPath, TargetImageNode.FullPath)
-        
+        if os.path.exists(TargetImageNode.FullPath):
+            RemoveOutdatedFile(SourceImageNode.FullPath, TargetImageNode.FullPath)
+            RemoveInvalidImageFile(TargetImageNode.FullPath)  
+            
         buildLevel = False
         if os.path.exists(TargetImageNode.FullPath):
             if 'InputImageChecksum' in SourceImageNode.attrib:
@@ -1668,7 +1670,9 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
             except:
                 continue
 
-            RemoveOutdatedFile(inputFile, outputFile)
+            if os.path.exists(outputFile):
+                RemoveOutdatedFile(inputFile, outputFile)
+                RemoveInvalidImageFile(outputFile)
 
             if(os.path.exists(outputFile)):
                 continue
