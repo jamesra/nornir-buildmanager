@@ -277,8 +277,6 @@ class SerialEMIDocImport(object):
 
         Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
 
-        
-
         # Make sure the target LevelObj is verified        
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath, exist_ok=True)
@@ -767,7 +765,11 @@ class IDoc():
     @property
     def Min(self):
         ''':return: Max pixel value across all tiles'''
-        return min([t.Min for t in self.tiles])
+        minVal = min([t.Min for t in self.tiles])
+        
+        #Sanity check for a bug in SerialEM
+        minVal = max(minVal, 0)
+        return minVal
     
     @property
     def Mean(self):
