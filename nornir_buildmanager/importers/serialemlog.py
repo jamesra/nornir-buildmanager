@@ -97,6 +97,8 @@ class SerialEMLog(object):
 
     @property
     def AverageTileTime(self):
+        if len(self.tileData) == 0:
+            return None
         
         if self._avg_tile_time is None:
             TotalTimes = [t.totalTime for t in self.tileData.values()]
@@ -107,6 +109,8 @@ class SerialEMLog(object):
 
     @property
     def AverageTileDrift(self):
+        if len(self.tileData) == 0:
+            return None
         
         if self._avg_tile_drift is None:
             drift_time = [t.drift for t in self.tileData.values() if t is not None]

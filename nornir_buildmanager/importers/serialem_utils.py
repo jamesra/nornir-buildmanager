@@ -67,10 +67,14 @@ def TryAddLogs(containerObj, InputPath, logger):
             try:
                 LogData = serialemlog.SerialEMLog.Load(filename)
                 if LogData is None:
-                    pass
+                    continue
+                
+                if LogData.NumTiles == 0:
+                    continue
 
                 # Create a Notes node to save the logs into
                 LogNodeObj = DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
+                
                 containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
                 [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')
                 LogsAdded = LogsAdded or added
