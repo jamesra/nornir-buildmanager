@@ -13,6 +13,7 @@ from nornir_buildmanager import *
 from nornir_buildmanager.validation import transforms
 import nornir_imageregistration 
 from nornir_shared import *
+import nornir_pools
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
 
@@ -107,8 +108,11 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
         
         if os.path.exists(tempMosaicFullPath):
             os.remove(tempMosaicFullPath)
+        
+        
  
     if SaveRequired:
+        nornir_pools.ClosePools() #A workaround to avoid running out of memory
         return TransformParentNode
     else:
         return None
