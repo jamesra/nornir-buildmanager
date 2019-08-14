@@ -52,7 +52,9 @@ def TryAddLogs(containerObj, InputPath, logger):
     '''Copy log files to output directories, and store select meta-data in the containerObj if it exists'''
     LogsFiles = glob.glob(os.path.join(InputPath, '*.log'))
     LogsAdded = False
-    if len(LogsFiles) > 0:
+    if len(LogsFiles) == 0:
+        print("NO LOG FILE FOUND FOR CAPTURE: " % InputPath)   
+    elif len(LogsFiles) > 0:
         for filename in LogsFiles:
 
             NotesFilename = os.path.basename(filename)
