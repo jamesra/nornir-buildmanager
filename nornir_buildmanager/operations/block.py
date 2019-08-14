@@ -437,8 +437,12 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
                     stosNode = None
 
     # Get or create the input images
-    (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
-    (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
+    try:
+        (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
+        (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
+    except ValueError as e:
+        prettyoutput.LogErr(str(e))
+        return None
 
     if stosNode is None:
         stosNode = StosGroup.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType, OutputPath)
@@ -464,8 +468,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
             # Ensure we add or remove masks according to the parameters
             SetStosFileMasks(stosNode.FullPath, ControlFilter, MappedFilter, UseMasks, StosGroup.Downsample)
-            if ManualInputChecksum is None:
-                ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+            ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
                 
             stosNode.InputTransformChecksum = ManualInputChecksum
         elif not (ControlMaskImageNode is None and MappedMaskImageNode is None):
