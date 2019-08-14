@@ -618,7 +618,7 @@
                 type="float"
                 help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
                 required="False" />
-            <Argument flag="-MinOverlap" default="0.05" dest="min_overlap"
+            <Argument flag="-MinOverlap" default="0.070" dest="min_overlap"
                 type="float"
                 help="Minimum amount of overlap tiles must have to contribute to the final mosaic."
                 required="False" />
@@ -626,7 +626,7 @@
                 type="float"
                 help="How much additional area should we pad the overlapping regions with.  Must be at least 3 to ensure all overlaps can be detected."
                 required="False" />
-            <Argument flag="-first_pass_inter_tile_distance" default="0.5" dest="first_pass_inter_tile_distance" type="float"
+            <Argument flag="-first_pass_inter_tile_distance" default="1" dest="first_pass_inter_tile_distance" type="float"
                 help="A value from 0 to 1 that scales the distance between the centers of the two tiles.  A value of 0 considers the full images when registering.  A value of 1.0 only considers the overlapping regions according to the tile transforms.  Reduce this value in the first registration pass to increase the search area."
                 required="False" />
             <Argument flag="-inter_tile_distance" default="1" dest="inter_tile_distance" type="float"
