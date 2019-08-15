@@ -554,7 +554,7 @@ class PipelineManager(object):
     def ProcessStageElement(self, VolumeElem, PipelineNode, ArgSet=None):
 
         outStr = PipelineManager.ToElementString(PipelineNode)
-        prettyoutput.CurseString('Section', outStr)
+        #prettyoutput.CurseString('Section', outStr)
 
         
         # prettyoutput.Log("Processing Stage Element: " + outStr)
@@ -735,7 +735,7 @@ class PipelineManager(object):
             PipelineManager.logger.error(errorStr + ElementTree.tostring(PipelineNode, encoding='utf-8'))
             raise PipelineError(VolumeElem=VolumeElem, PipelineNode=PipelineNode, message=errorStr)
         else:
-            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
+            # prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
 
             # TODO: Update args from the element
 
@@ -793,7 +793,7 @@ class PipelineManager(object):
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
                 
-            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
+            #prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
 #           PipelineManager.RemoveParameters(dargs, PipelineNode)
 #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
