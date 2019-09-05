@@ -1217,16 +1217,16 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 self.remove(link_node)
                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                 logger.error("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-                return None
+                continue
             except ElementTree.ParseError as e:
                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                 logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                 self.remove(link_node)
-                return None
+                continue
             except Exception as e:
                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                 logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-                return None
+                continue
             
             (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
             # SubContainer = XContainerElementWrapper.wrap(XMLElement)
