@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import multiprocessing
 import numpy
+import queue
 from PIL import Image
 
 import nornir_imageregistration
@@ -27,12 +28,15 @@ from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile
 from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
-import nornir_shared.plot
+from nornir_imageregistration import tileset_functions
 
 import nornir_buildmanager as nb
 import nornir_imageregistration.spatial as spatial
 import nornir_imageregistration.tileset as tiles
 import nornir_pools
+from nornir_imageregistration import tileset_functions
+ 
+import nornir_imageregistration.tileset_functions
 
 HistogramTagStr = "HistogramData"
 
@@ -1408,6 +1412,12 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
     return FilterNode
 
 
+def _SaveImageAndCopy(ImageFullPath, temp_output_tile_fullpath, tile_image, bpp, optimize=True):
+    '''Used to pass to the thread pool.  Saves the image to a temporary path and copies the image to final output location.
+    '''
+    nornir_imageregistration.SaveImage(ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
+    shutil.copyfile(temp_output_tile_fullpath, ImageFullPath)
+    return
 
 def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, TileShape, TileSetName=None, max_temp_image_area=None, Logger=None, **kwargs):
     '''Create full resolution tiles of specfied size for the mosaics
@@ -1421,6 +1431,14 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
     downsample_level = 1
     
     tile_dims = numpy.asarray((TileWidth, TileHeight), dtype=numpy.int64)
+    
+    if max_temp_image_area is None:
+        import psutil 
+        memory_data = psutil.virtual_memory()
+        bytes_per_pixel = int(2) #We use float16 for each pixel
+        num_images_per_tile = int(2) #The assembled image and the distance image
+        num_duplicate_copies_in_memory = int(3) #At most we need the raw tile (and distance image), the assembled individual tile (and distance image), and the full composite image (and distance image) we are building
+        max_temp_image_area = (memory_data.available /  (bytes_per_pixel * num_images_per_tile * num_duplicate_copies_in_memory)) 
 
 #    Feathering = Parameters.get('Feathering', 'binary')
 
@@ -1465,7 +1483,8 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
         #OutputPath = os.path.join(LevelOne.FullPath, FilterNode.Name + '.png')
         #OutputXML = os.path.join(LevelOne.FullPath, FilterNode.Name + '.xml')
         
-        pool = nornir_pools.GetGlobalThreadPool()
+        #pool = nornir_pools.GetGlobalThreadPool()
+        pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
         
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
         expected_scale = 1.0 / LevelOne.Downsample
@@ -1474,6 +1493,10 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
                                                                     tile_size=tile_dims)
          
         prettyoutput.Log("Section {4}: Generating a {0}x{1} grid of {2}x{3} tiles".format(expected_grid_dims[1], expected_grid_dims[0], tile_dims[1], tile_dims[0], SectionNode.Number))
+        
+        temp_level_dir = tileset_functions.GetTempDirForLevelDir(LevelOne.FullPath)
+        os.makedirs(temp_level_dir, exist_ok=True)
+         
         for tile in mosaic.GenerateOptimizedTiles(tilesPath=InputLevelNode.FullPath, 
                                                                       target_space_scale=1.0/InputLevelNode.Downsample,
                                                                       tile_dims=tile_dims,
@@ -1485,8 +1508,11 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
                                                  'X' : iCol,
                                                  'Y' : iRow,
                                                  'postfix' : TileSetNode.FilePostfix }
+            temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename) #A temporary output file, this is cached for building pyramids later, and allows moving to a network location in one step
             output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-            pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
+            #pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
+
+            pool.add_task(tilename, _SaveImageAndCopy, ImageFullPath=output_tile_fullpath, temp_output_tile_fullpath=temp_output_tile_fullpath,  tile_image=tile_image, bpp=bpp, optimize=True)
         
         #Wait for the tiles to save
         pool.wait_completion()
@@ -1765,7 +1791,7 @@ def BuildTilesetLevel(SourcePath, DestPath, DestGridDimensions, TileDim, FilePre
     os.makedirs(DestPath, exist_ok=True)
         
     if Pool is None:
-        Pool = nornir_pools.GetGlobalLocalMachinePool()
+        Pool = nornir_pools.GetGlobalThreadPool()
 
     # Merge all the tiles we can find into tiles of the same size
     for iY in range(0, DestGridDimensions[0]):
@@ -1903,10 +1929,16 @@ def BuildTilesetLevelWithPillow(SourcePath, DestPath, DestGridDimensions, TileDi
     os.makedirs(DestPath, exist_ok=True)
         
     if Pool is None:
-        #Pool = nornir_pools.GetGlobalLocalMachinePool()
-        Pool = nornir_pools.GetGlobalThreadPool()
+        #Pool = nornir_pools.GetMultithreadingPool("IOPool", num_threads=multiprocessing.cpu_count() * 16)
+        #Pool = nornir_pools.GetGlobalMultithreadingPool()
+        #Pool = nornir_pools.GetGlobalThreadPool()
+        Pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
+        #Pool = nornir_pools.GetGlobalSerialPool()
 
     # Merge all the tiles we can find into tiles of the same size
+    
+    #tile_params = []
+     
     for iY in range(0, DestGridDimensions[0]):
 
         '''We wait for the last task we queued for each row so we do not swamp the ProcessPool but are not waiting for the entire pool to empty'''
@@ -1956,14 +1988,22 @@ def BuildTilesetLevelWithPillow(SourcePath, DestPath, DestGridDimensions, TileDi
             TopRight = os.path.join(SourcePath, TopRight)
             BottomLeft = os.path.join(SourcePath, BottomLeft)
             BottomRight = os.path.join(SourcePath, BottomRight)
+            
+#             tile_params.append([TileDim,
+#                            TopLeft, TopRight,
+#                            BottomLeft, BottomRight,
+#                            OutputFileFullPath])
 
-            task = Pool.add_task(OutputFileFullPath, __CreateOneTilesetTileWithPillow, TileDim,
-                           TopLeft=TopLeft, TopRight=TopRight,
-                           BottomLeft=BottomLeft, BottomRight=BottomRight,
-                           OutputFileFullPath=OutputFileFullPath)
+            #task = Pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillow, TileDim,
+            task = Pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillowOverNetwork, TileDim,
+                            TopLeft=TopLeft, TopRight=TopRight,
+                            BottomLeft=BottomLeft, BottomRight=BottomRight,
+                            OutputFileFullPath=OutputFileFullPath)
             
             if FirstTaskForRow is None:
                 FirstTaskForRow = task
+                
+    #Pool.starmap_async(name=DestPath, func=tileset_functions.CreateOneTilesetTileWithPillow, iterable=tile_params)
 
         # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
         # prettyoutput.CurseProgress(TaskString, iY + 1, newYDim)
@@ -1971,74 +2011,25 @@ def BuildTilesetLevelWithPillow(SourcePath, DestPath, DestGridDimensions, TileDi
         # We can easily saturate the pool with hundreds of thousands of tasks.
         # If the pool has a reasonable number of tasks then we should wait for
         # a task from a row to complete before queueing more.
-        if hasattr(Pool, 'tasks'):
-            if Pool.tasks.qsize() > 256:
-                FirstTaskForRow.wait()
-                FirstTaskForRow = None
-        elif hasattr(Pool, 'ActiveTasks'):
-            if Pool.ActiveTasks > 512:
-                FirstTaskForRow.wait()
-                FirstTaskForRow = None
+#             if hasattr(Pool, 'num_active_tasks'):
+#                 if Pool.num_active_tasks > 2048:#multiprocessing.cpu_count() * 8:
+#                     FirstTaskForRow.wait()
+#                     FirstTaskForRow = None
+#         elif hasattr(Pool, 'tasks') and isinstance(Pool.tasks, queue.Queue):
+#             if Pool.num_active_tasks > multiprocessing.cpu_count() * 8:
+#                 FirstTaskForRow.wait()
+#                 FirstTaskForRow = None
+#         elif hasattr(Pool, 'ActiveTasks'):
+#             if Pool.num_active_tasks > multiprocessing.cpu_count() * 8:
+#                 FirstTaskForRow.wait()
+#                 FirstTaskForRow = None 
 
-        prettyoutput.Log("\nBeginning Row %d of %d" % (iY + 1, DestGridDimensions[0]))
+        #prettyoutput.Log("\nBeginning Row %d of %d" % (iY + 1, DestGridDimensions[0]))
 
     if not Pool is None:
-        Pool.wait_completion()
-        
+        Pool.wait_completion() 
+        #Pool.shutdown()
 
-def __CreateOneTilesetTileWithPillow(TileDims, TopLeft, TopRight, BottomLeft, BottomRight, OutputFileFullPath ):
-    '''Create a single tile by merging four tiles from a higher resolution and downsampling
-    :param tuple TileDims: (Height, Width) of tiles'''
-    
-    TileSize = numpy.asarray((TileDims[1], TileDims[0]), dtype=numpy.int64) #Pillow uses the opposite ordering of axis
-    DoubleTileSize = TileSize * 2 #Double the size 
-    
-    imComposite = None
-            
-    try:
-        with Image.open(TopLeft) as imTopLeft:
-            if imComposite is None:
-                imComposite = Image.new(imTopLeft.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0) 
-            imComposite.paste(imTopLeft, box=(0,0))
-    except IOError as e:
-        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
-        pass
-    
-    try:
-        with Image.open(TopRight) as imTopRight:
-            if imComposite is None:
-                imComposite = Image.new(imTopRight.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0)
-            imComposite.paste(imTopRight, box=(TileSize[0],0))
-    except IOError as e:
-        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
-        pass
-    
-    try:
-        with Image.open(BottomLeft) as imBottomLeft:
-            if imComposite is None:
-                imComposite = Image.new(imBottomLeft.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0)
-            imComposite.paste(imBottomLeft, box=(0,TileSize[1]))
-    except IOError as e:
-        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
-        pass
-    
-    try:
-        with Image.open(BottomRight) as imBottomRight:
-            if imComposite is None:
-                imComposite = Image.new(imBottomRight.mode, size=(DoubleTileSize[0], DoubleTileSize[1]), color=0)
-            imComposite.paste(imBottomRight, box=(TileSize[0],TileSize[1]))
-    except IOError as e:
-        prettyoutput.Log("Missing input file {0}".format(TopLeft)) 
-        pass
-    
-    if imComposite is not None:    
-        with imComposite.resize(imTopLeft.size, resample=Image.LANCZOS) as imFinal:                    
-            imFinal.save(OutputFileFullPath, optimize=True)
-            
-        del imComposite
-    
-    return 
-    
 
 # OK, now build/check the remaining levels of the tile pyramids
 def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs):
@@ -2046,19 +2037,21 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
     
     MinResolutionLevel = TileSetNode.MinResLevel
 
+    temp_level_paths = [tileset_functions.GetTempDirForLevelDir(MinResolutionLevel.FullPath)] #Paths to levels we generate to ensure temp directories are cleaned later
+    
     while not MinResolutionLevel is None:
         
         # The grid attributes are missing if the meta-data was created but there are no tiles
         if not (hasattr(MinResolutionLevel, 'GridDimX') and hasattr(MinResolutionLevel, 'GridDimY')):
             prettyoutput.Log("Tileset incomplete: " + TileSetNode.FullPath)
-            return 
+            break 
             
         # If the tileset is already a single tile, then do not downsample
         if(MinResolutionLevel.GridDimX == 1 and MinResolutionLevel.GridDimY == 1):
-            return
+            break
         
-        if HighestDownsample and MinResolutionLevel.Downsample >= float(HighestDownsample):
-            return
+        if HighestDownsample is not None and (MinResolutionLevel.Downsample >= float(HighestDownsample)):
+            break
 
         ShrinkFactor = 0.5
         newYDim = float(MinResolutionLevel.GridDimY) * ShrinkFactor
@@ -2069,7 +2062,7 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
     
         # If there is only one tile in the next level, try to find a thumbnail image and change the downsample level
         if(newXDim == 1 and newYDim == 1):
-            return
+            break
     
         # Need to call ir-assemble
         NextLevelNode = nb.VolumeManager.LevelNode.Create(MinResolutionLevel.Downsample * 2)
@@ -2082,6 +2075,7 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
         # Check to make sure the level hasn't already been generated and we've just missed the
         [Valid, Reason] = NextLevelNode.IsValid()
         if not Valid:
+            temp_level_paths.append(NextLevelNode.FullPath)
             # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
             BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
                                DestGridDimensions=(newYDim, newXDim),
@@ -2096,6 +2090,9 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
             logging.info("Level was already generated " + str(TileSetNode))
     
         MinResolutionLevel = TileSetNode.MinResLevel
+        
+    tileset_functions.ClearTempDirectories(temp_level_paths)
+    return
 
 
 if __name__ == "__main__":

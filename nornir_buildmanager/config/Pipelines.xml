@@ -618,7 +618,7 @@
                 type="float"
                 help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
                 required="False" />
-            <Argument flag="-MinOverlap" default="0.070" dest="min_overlap"
+            <Argument flag="-MinOverlap" default="0.080" dest="min_overlap"
                 type="float"
                 help="Minimum amount of overlap tiles must have to contribute to the final mosaic."
                 required="False" />
@@ -726,6 +726,16 @@
 			<Argument flag="-RegistrationDownsample" dest="Downsample"
 				default="4" type="int" help="Downsample level to use for ir-tools"
 				required="False" />
+			<Argument flag="-RefineIterations" default="10" dest="RefineIterations"
+                type="int" help="Maximum number of refinement passes to run"
+                required="False" />
+            <Argument flag="-CellArea" default="128" dest="CellArea"
+                type="int" help="Size of region around each grid point to register, in pixels"
+                required="False" />
+            <Argument flag="-Threshold" default="0.1" dest="DisplacementThreshold"
+                type="float"
+                help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
+                required="False" />
 			<Argument flag="-MaxOffset" dest="MaxOffset" default="0.5"
 				type="float"
 				help="Comma separated list of downsample levels used for assembling output images"
@@ -763,11 +773,12 @@
 					OutputTransform="#OutputTransformName" TransformNode="#TransformNode"
 					FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
 					<Parameters>
-						<Entry Name="MeshWidth" Value="8" />
-						<Entry Name="MeshHeight" Value="8" />
-						<Entry Name="Cell" Value="96" />
-						<Entry Name="Threshold" Value="0.5" />
-					</Parameters>
+                        <Entry Name="MeshWidth" Value="8" />
+                        <Entry Name="MeshHeight" Value="8" />
+                        <Entry Name="Cell" Value="#CellArea" />
+                        <Entry Name="Threshold" Value="#DisplacementThreshold" />
+                        <Entry Name="it" Value="#RefineIterations" />
+                    </Parameters>
 				</PythonCall>
 
 				<Select VariableName="RefinedTransformNode" Root="ChannelNode"

@@ -24,7 +24,8 @@ if __name__ == '__main__':
                         "nornir_imageregistration>=1.3.4",
                         "numpy>=1.9.1",
                         "scipy>=0.13.2",
-                        "matplotlib"]
+                        "matplotlib",
+                        "psutil"]
 
     packages = find_packages()
 
