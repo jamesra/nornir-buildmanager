@@ -19,9 +19,9 @@ if __name__ == '__main__':
     
     #Starting with 1.3.4 Image Magick 7 is required
 
-    install_requires = ["nornir_pools>=1.3.3",
-                        "nornir_shared>=1.3.4", 
-                        "nornir_imageregistration>=1.3.4",
+    install_requires = ["nornir_pools>=1.4.1",
+                        "nornir_shared>=1.4.1", 
+                        "nornir_imageregistration>=1.4.1",
                         "numpy>=1.9.1",
                         "scipy>=0.13.2",
                         "matplotlib",
@@ -31,9 +31,9 @@ if __name__ == '__main__':
 
     provides = ["nornir_buildmanager"]
 
-    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.4.0",
-                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.4.0",
-                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.4.0"]
+    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.4.1",
+                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.4.1",
+                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.4.1"]
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     setup(name='nornir_buildmanager',
           zip_safe=True,
           classifiers=classifiers,
-          version='1.4.0',
+          version='1.4.1',
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",
