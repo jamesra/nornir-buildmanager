@@ -6,7 +6,7 @@ Created on Feb 22, 2013
 import glob
 import unittest
 
-from setup_pipeline import *
+from .setup_pipeline import *
 
 
 class PrepareThenMosaicTest(PrepareThroughAssembleSetup):

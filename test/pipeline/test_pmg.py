@@ -17,7 +17,7 @@ import nornir_shared.files
 import nornir_shared.misc
 
 import nornir_buildmanager.importers.pmg as pmg
-import setup_pipeline
+from . import setup_pipeline
 
 
 PMGData = {"6750_10677D_WDF_20x_02_G.pmg" : PMGInfo(Slide=6750,
@@ -195,7 +195,7 @@ class PMGBuildTest(PMGTest):
         self.RunPrune(Filter="ShadingCorrected", Downsample=2)
         self.RunHistogram(Filter="ShadingCorrected", Downsample=4)
         self.RunAdjustContrast(Sections=None, Filter="ShadingCorrected", Gamma=1.0)
-        self.RunMosaic(Filter="Leveled")
+        self.RunMosaic(Filter="Leveled", InputDownsample=2)
         self.RunAssemble(Levels=[1])
         self.RunAssemble(Filter="ShadingCorrected", Levels=1)
         self.RunExportImages(Channels="(?!Registered)", Filters="Leveled", AssembleLevel=1, Output="Mosaics")
@@ -205,7 +205,7 @@ class PMGBuildTest(PMGTest):
         BruteLevel = 8
    
         self.RunCreateBlobFilter(Channels="*", Levels=[8, 16, BruteLevel], Filter="Leveled")
-        self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
+        self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel, NoFlipCheck=True)
            
         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
@@ -352,7 +352,7 @@ class ParsePMG(PMGTest):
 
             self.assertTrue(len(FilesDict) == pmgData.NumberOfImages)
 
-            for f in FilesDict.keys():
+            for f in list(FilesDict.keys()):
                 self.assertTrue(os.path.exists(os.path.join(pmgDir, f)))
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ import re
 import nornir_buildmanager.validation.transforms
 import nornir_shared.misc
 
-import VolumeManagerETree as VolumeManager
+from . import VolumeManagerETree as VolumeManager
 
 
 def IsMatch(in_string, RegExStr, CaseSensitive=False):
@@ -57,6 +57,8 @@ def SearchCollection(Objects, AttribName, RegExStr, CaseSensitive=False):
 
         match = re.match(RegExStr, Attrib, flags)
         if not match is None:
+            (wrapped, MatchObj) = VolumeManager.VolumeManager.WrapElement(MatchObj)
+            assert(wrapped == False)
             Matches.append(MatchObj)
 
     return Matches
@@ -165,14 +167,13 @@ class ContrastHandler(object):
         
         return False
         
-    def RemoveNodeOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma, NodeToRemove=None):
+    def RemoveChildrenOnContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma, NodeToRemove=None):
         '''Remove nodeToRemove if the Contrast values do not match the passed parameters on nodeToTest
         :return: TilePyramid node if the node was preserved.  None if the node was removed'''
         
         if NodeToRemove is None:
             NodeToRemove = self
-            
-        
+             
         if isinstance(self, Lockable):
             if self.Locked:
                 if not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MinIntensityCutoff', MinIntensityCutoff, 0) or \
@@ -215,6 +216,9 @@ class InputTransformHandler(object):
     
     def IsInputTransformMatched(self, transform_node):
         '''Return true if the transform node matches our input transform'''
+        if not self.HasInputTransform:
+            return transform_node is None
+        
         return self.InputTransform == transform_node.Name and \
                 self.InputTransformType == transform_node.Type and \
                 self.InputTransformChecksum == transform_node.Checksum and \
@@ -388,7 +392,7 @@ class PyramidLevelHandler(object):
         if not self.HasLevel(Downsample) and GenerateData:
             self.GenerateLevels(Downsample)
 
-        [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode(Downsample), "Downsample")
+        [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode.Create(Downsample), "Downsample")
         return [added, lnode]
 
     def GenerateLevels(self, Levels):

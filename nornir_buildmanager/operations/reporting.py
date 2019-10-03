@@ -9,16 +9,15 @@ import logging
 import os
 import shutil
 
-from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet
+from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet 
 import nornir_imageregistration.core
 import nornir_shared.images
 import nornir_shared.plot
 import nornir_shared.prettyoutput
 
-import nornir_buildmanager.importers.idoc as idoc
+import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_pools
 import nornir_shared.files as nfiles
-
 
 # import Pipelines.VolumeManagerETree as VolumeManager
 if __name__ == '__main__':
@@ -119,7 +118,6 @@ class HTMLPaths(object):
         if not isinstance(RootElementPath, str):
             self._SourceRootDir = RootElementPath.Path
 
-
         self._OutputDir = os.path.dirname(OutputFileFullPath)
         self._OutputDir.strip()
         if len(self.OutputDir) == 0:
@@ -130,14 +128,9 @@ class HTMLPaths(object):
 
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
 
-
     def CreateOutputDirs(self):
-
-        if not os.path.exists(self.OutputDir):
-            os.makedirs(self.OutputDir)
-
-        if not os.path.exists(self.ThumbnailDir):
-            os.makedirs(self.ThumbnailDir)
+        os.makedirs(self.OutputDir, exist_ok=True)
+        os.makedirs(self.ThumbnailDir, exist_ok=True)
 
     @classmethod
     def __StripLeadingPathSeperator(cls, path):
@@ -145,7 +138,6 @@ class HTMLPaths(object):
             path = path[1:]
 
         return path
-
 
     def GetSubNodeRelativePath(self, subpath):
 
@@ -204,6 +196,7 @@ HTMLAnchorTemplate = '<a href="%(href)s">%(body)s</a>'
 # We add this to thumbnails and other generated files to prevent name collisions
 TempFileSalt = 0
 
+
 def GetTempFileSaltString():
     global TempFileSalt
 
@@ -213,7 +206,6 @@ def GetTempFileSaltString():
     return saltString
 
 
-
 def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
 
     if OutputDir is None:
@@ -221,8 +213,7 @@ def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
 
     logger = logging.getLogger(__name__ + '.CopyFiles')
 
-    if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)
+    os.makedirs(OutputDir, exist_ok=True)
 
     if os.path.exists(DataNode.FullPath):
 
@@ -258,8 +249,7 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
     OutputDir = _AbsoluePathFromRelativePath(FilterNode, OutputDir)
     logger = logging.getLogger(__name__ + '.CopyImage')
 
-    if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)
+    os.makedirs(OutputDir, exist_ok=True)
 
     # Find the imageset for the DataNode
     saveImageSet = False
@@ -287,12 +277,12 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
     
     return None
 
+
 def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
     if OutputDir is None:
         return
 
-    if not os.path.exists(OutputDir):
-        os.makedirs(OutputDir)
+    os.makedirs(OutputDir, exist_ok=True)
 
     if os.path.exists(DataNode.FullPath):
         shutil.move(DataNode.FullPath, OutputDir)
@@ -331,6 +321,7 @@ def __RemoveRTFBracket(rtfStr):
     else:
         return rtfStr[rbracket + 1:]
 
+
 def __RTFToHTML(rtfStr):
     '''Crudely convert a rich-text string to html'''
 
@@ -345,7 +336,7 @@ def __RTFToHTML(rtfStr):
 
     HTMLOut.Add('<p>')
 
-    translatekeys = translationTable.keys()
+    translatekeys = list(translationTable.keys())
     translatekeys = sorted(translatekeys, key=len, reverse=True)
 
     while len(rtfStr) > 0:
@@ -418,7 +409,6 @@ def __ExtractLogDataText(Data):
     TimeRows = RowList()
     MetaRows = RowList()
     Columns = ColumnList()
-
 
     if hasattr(Data, 'AverageTileDrift'):
         DriftRows.append(['Avg. tile drift:', '<b>%.3g nm/sec</b>' % float(Data.AverageTileDrift)])
@@ -548,7 +538,6 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
      RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
     '''
 
-
     rows = __ExtractIDocDataText(DataNode)
     rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
 
@@ -571,7 +560,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
     logFilePath = DataNode.FullPath
     if os.path.exists(logFilePath):
 
-        Data = idoc.SerialEMLog.Load(logFilePath)
+        Data = serialemlog.SerialEMLog.Load(logFilePath)
 
         RelPath = htmlpaths.GetSubNodeRelativePath(DataNode)
 
@@ -587,7 +576,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftSettleThumbnailOutputFullPath)
         # if not os.path.exists(DriftSettleThumbnailOutputFullPath):
-        TPool.add_task(DriftSettleThumbnailFilename, idoc.PlotDriftSettleTime, Data, DriftSettleThumbnailOutputFullPath)
+        TPool.add_task(DriftSettleThumbnailFilename, serialemlog.PlotDriftSettleTime, logFilePath, DriftSettleThumbnailOutputFullPath)
 
         DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
         DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
@@ -595,7 +584,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftGridThumbnailFilename)
         # if not os.path.exists(DriftGridThumbnailFilename):
-        TPool.add_task(DriftGridThumbnailFilename, idoc.PlotDriftGrid, Data, DriftGridThumbnailOutputFullPath)
+        TPool.add_task(DriftGridThumbnailFilename, serialemlog.PlotDriftGrid, logFilePath, DriftGridThumbnailOutputFullPath)
 
         # Build a histogram of drift settings
 #        x = []
@@ -608,7 +597,6 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 #        ThumbnailFilename = GetTempFileSaltString() + "Drift.png"
 #        ImgSrcPath = os.path.join(ThumbnailDirectoryRelPath, ThumbnailFilename)
 #        ThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, ThumbnailFilename)
-
 
                 # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
         HTMLDriftSettleImage = HTMLImageTemplate % {'src' : DriftSettleImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
@@ -662,17 +650,17 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     Height = MaxImageHeight
     Width = MaxImageWidth
     try:
-        [Height, Width] = nornir_imageregistration.core.GetImageSize(ImageNode.FullPath)
+        (Height, Width) = ImageNode.Dimensions
+        #[Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
     except IOError:
         return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
 
     # Create a thumbnail if needed
     if Width > MaxImageWidth or Height > MaxImageHeight:
         Scale = max(float(Width) / MaxImageWidth, float(Height) / MaxImageHeight)
-        Scale = 1 / Scale
+        Scale = 1.0 / Scale
 
-        if not os.path.exists(HtmlPaths.ThumbnailDir):
-            os.makedirs(HtmlPaths.ThumbnailDir)
+        os.makedirs(HtmlPaths.ThumbnailDir, exist_ok=True)
 
         ThumbnailFilename = GetTempFileSaltString() + ImageNode.Path
         ImgSrcPath = os.path.join(HtmlPaths.ThumbnailRelative, ThumbnailFilename)
@@ -681,9 +669,11 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
 
         # nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
         # if not os.path.exists(ThumbnailOutputFullPath):
-        cmd = "Convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
-        Pool = nornir_pools.GetGlobalProcessPool()
-        Pool.add_process(cmd, cmd + " && exit", shell=True)
+        Pool = nornir_pools.GetGlobalThreadPool()
+        Pool.add_task(ImageNode.FullPath, nornir_imageregistration.Shrink, ImageNode.FullPath, ThumbnailOutputFullPath, Scale)
+        #cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
+        
+        #Pool.add_process(cmd, cmd + " && exit", shell=True)
 
         Width = int(Width * Scale)
         Height = int(Height * Scale)
@@ -691,7 +681,6 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
         ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
         
     return (ImgSrcPath, Height, Width)
-    
 
 
 def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
@@ -735,8 +724,6 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
     
     return str(HTML)
     
-    
-    
 
 def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
     '''Create the HTML to display an image with an anchor to the full image.
@@ -762,6 +749,7 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
     HTMLAnchor = HTMLAnchorTemplate % {'href' : ImgSrcPath, 'body' : HTMLImage }
 
     return HTMLAnchor
+
 
 def __anchorStringForHeader(Text):
     return '<a id="%(id)s"><b>%(id)s</b></a>' % {'id' : Text}
@@ -840,6 +828,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     
     return ColumnBodyList
 
+
 def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
     '''Create an HTML table that uses the RowXPath as the root for searches listed under ColumnXPaths
        ColumnXPaths are a list of comma delimited XPath searches.  Each XPath search results in a new column for the row
@@ -911,6 +900,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
     CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
     return None
 
+
 def CreateHTMLDoc(OutputFile, HTMLBody):
     HTMLHeader = "<!DOCTYPE html> \n" + "<html>\n " + "<body>\n"
     HTMLFooter = "</body>\n" + "</html>\n"
@@ -929,8 +919,10 @@ def CreateHTMLDoc(OutputFile, HTMLBody):
 def __IndentString(IndentLevel):
     return ' ' * IndentLevel
 
+
 def __AppendHTML(html, newHtml, IndentLevel):
     html.append(__IndentString(IndentLevel) + newHtml)
+
     
 def __ValueToTableRow(value, IndentLevel):
     HTML = HTMLBuilder(IndentLevel)
@@ -949,6 +941,7 @@ def __ValueToTableRow(value, IndentLevel):
     HTML.Add("</tr>\n")
     
     return HTML
+
 
 def __ValueToTableCell(value, IndentLevel):
     '''Converts a value to a table cell'''
@@ -979,7 +972,6 @@ def __ValueToTableCell(value, IndentLevel):
         HTML.Dedent()
     else:
         HTML.Add("Unknown type passed to __ValueToHTML")
-
 
     HTML.Add("</td>\n")
 
@@ -1037,7 +1029,6 @@ def __ListToTableRows(listColumns, IndentLevel):
     return HTML
 
 
-
 def __ListToUnorderedList(listEntries, IndentLevel):
     '''Convert a list to a set of <tf> columns in a table'''
 
@@ -1055,7 +1046,6 @@ def __ListToUnorderedList(listEntries, IndentLevel):
     return HTML
 
 
-
 def DictToTable(RowDict=None, IndentLevel=None):
 
     HTML = HTMLBuilder(IndentLevel)
@@ -1066,7 +1056,7 @@ def DictToTable(RowDict=None, IndentLevel=None):
         HTML.Add("<table>\n")
     HTML.Indent()
 
-    keys = RowDict.keys()
+    keys = list(RowDict.keys())
     keys.sort(reverse=True)
 
     for row in keys: 
@@ -1078,8 +1068,6 @@ def DictToTable(RowDict=None, IndentLevel=None):
     HTML.Dedent()
     HTML.Add("</table>\n")
 
-
-
     return HTML
 
 
@@ -1090,7 +1078,6 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
         IndentLevel = 0
 
     HTML = ' ' * IndentLevel + "<table>\n"
-
 
     for columnList in RowBodyList:
         HTML = HTML + ' ' * IndentLevel + '<tr>\n'
@@ -1121,6 +1108,7 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
 
     return HTML
 
+
 def GenerateImageReport(xpaths, VolumeElement, Logger, OutputFile=None, **kwargs):
 
     if(OutputFile is None):
@@ -1139,7 +1127,8 @@ def GenerateImageReport(xpaths, VolumeElement, Logger, OutputFile=None, **kwargs
     Dictionary = dict()
     HTMLString = RecursiveReportGenerator(VolumeElement, xpaths, Logger)
 
-    print HTMLString
+    print(HTMLString)
+
 
 def RecursiveReportGenerator(VolumeElement, xpaths, Logger=None):
     List = []

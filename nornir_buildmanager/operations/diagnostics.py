@@ -9,20 +9,23 @@ import os
 import nornir_shared.files 
 
 
-num_contrast_pad_chars = 64
+num_contrast_pad_chars = 32
+
+def Print(val, **kwargs):
+    '''Allows the Pipelines.xml to print an arbitrary string to the console'''
+    print(val)
+    return None
 
 def PrintContrastValuesHeader(**kwargs):
     global num_contrast_pad_chars
-    print("Path%sMin    \tMax    \tGamma" % (' ' * num_contrast_pad_chars))
+    #print("Path%sMin    \tMax    \tGamma" % (' ' * num_contrast_pad_chars))
+    print('{0: <{fill}} {1: <7} {2: <7} {3: <5}'.format('Path', "Min", 'Max', 'Gamma', fill=num_contrast_pad_chars))
     return None
 
 def PrintContrastValues(node, **kwargs):
     '''Print the contrast values used to generated the filter'''
     global num_contrast_pad_chars
-    pathstr = node.FullPath
-    num_pad_chars = num_contrast_pad_chars - len(pathstr)
-    if num_pad_chars > 0:
-        pathstr += ' ' * num_pad_chars
+    pathstr = node.FullPath 
         
     minStr = "None"
     maxStr = "None"
@@ -37,8 +40,41 @@ def PrintContrastValues(node, **kwargs):
     if not node.Gamma is None:
         gammaStr = "%4g" % node.Gamma 
     
-    print("%s\t%s\t%s\t%s" % (pathstr, minStr, maxStr, gammaStr))
+    #print("%s\t%s\t%s\t%s" % (pathstr, minStr, maxStr, gammaStr))
+    print('{0: <{fill}} {1: <7} {2: <7} {3: <5}'.format(pathstr, minStr, maxStr, gammaStr, fill=num_contrast_pad_chars))
     return None
+
+def PrintIfMissingTileset(filter_node, **kwargs):
+    '''Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count'''
+    
+    if filter_node.HasTileset:
+        return
+
+    section_node = filter_node.FindParent("Section")        
+    channel_node = filter_node.FindParent("Channel")
+            
+    print("{0:04d}\t{1}\t{2}".format(section_node.Number, channel_node.Name, filter_node.Name))
+
+def PrintAttributes(node, attribs=None, tab_indent_count=None, **kwargs):
+    '''Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count'''
+    
+    attrib_list = attribs.split(',')
+    
+    if tab_indent_count is None:
+        tab_indent_count = 0
+        
+    tabs = '\t' * tab_indent_count
+    
+    output_str = tabs
+    
+    for attrib in attrib_list:
+        if attrib in node:
+            val = getattr(node, attrib)
+            output_str.append("\t{0}".format(str(val)))
+        else:
+            output_str.append("\t\t".format(str(val))) 
+        
+    print(output_str)
 
 def GetNewestTile(level_node):
     files = sorted([os.path.join(level_node.FullPath, x) for x in os.listdir(level_node.FullPath)], key=os.path.getctime, reverse=True)

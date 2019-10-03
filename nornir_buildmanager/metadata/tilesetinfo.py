@@ -12,7 +12,6 @@ import xml.etree.ElementTree
 
 
 class TilesetInfo(object):
-    
 
     def __init__(self):
         self._GridDimX = None
@@ -118,7 +117,7 @@ class TilesetInfo(object):
         return Info
 
     def Save(self, XmlFilePath, Logger=None):
-         # Write a new XML file
+        # Write a new XML file
         if Logger:
             Logger.info('Stage', "WriteTilesetXML : " + XmlFilePath)
 
@@ -135,8 +134,8 @@ class TilesetInfo(object):
         if self.FilePostfix:
             elem.set('FilePostfix', '%d' % self.FilePostfix)
 
-        with open(XmlFilePath, 'w') as newXML:
-            newXML.write('<?xml version="1.0" ?> \n')
+        with open(XmlFilePath, 'wb') as newXML:
+            newXML.write(b'<?xml version="1.0" ?> \n')
             out = xml.etree.ElementTree.tostring(elem)
             newXML.write(out)
 # 
@@ -161,12 +160,8 @@ class TilesetInfo(object):
 #                         FilePrefix + '\" FilePostfix=\"' + FilePostfix + '\" /> \n')
         return
 
-#def WriteTilesetXML(XMLOutputPath, XDim, YDim, TileXDim, TileYDim, DownsampleTarget, FilePrefix, FilePostfix=".png"):
-   
+# def WriteTilesetXML(XMLOutputPath, XDim, YDim, TileXDim, TileYDim, DownsampleTarget, FilePrefix, FilePostfix=".png"):
 
-
-
-#def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
-    
+# def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
 
     

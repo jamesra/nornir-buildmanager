@@ -10,8 +10,8 @@ import unittest
 import nornir_buildmanager.VolumeManagerETree
 
 import nornir_buildmanager.importers.sectionimage as sectionimage
-from setup_pipeline import VolumeEntry
-import setup_pipeline
+from .setup_pipeline import VolumeEntry
+from . import setup_pipeline
 
 
 class ImportLMImages(setup_pipeline.PlatformTest):

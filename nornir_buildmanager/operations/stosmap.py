@@ -30,11 +30,11 @@ def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
 
     mappings = StosMap.Mappings
     if ControlSection:
-        mappings = filter(lambda m: m.Control == ControlSection, mappings)
+        mappings = [m for m in mappings if m.Control == ControlSection]
 
     for mapping in sorted(mappings, key=lambda m: m.Control):
         print("{0:s}{1:s}".format(repr(mapping.Control).ljust(10),
-              ', '.join(map(lambda n: str(n), sorted(mapping.Mapped))))) 
+              ', '.join([str(n) for n in sorted(mapping.Mapped)]))) 
 
     print('');
     return

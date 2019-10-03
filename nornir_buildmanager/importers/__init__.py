@@ -1,7 +1,7 @@
 import collections
 import csv
 import os
-
+import nornir_buildmanager
 
 ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
 DefaultHistogramFilename = "ContrastOverrides.txt"
@@ -20,7 +20,7 @@ def LoadHistogramCutoffs(filename):
     if not os.path.exists(filename):
         return Values
     
-    with open(filename, 'rb') as contrastFile:
+    with open(filename, 'r') as contrastFile:
         csvReader = csv.reader(contrastFile, delimiter=' ', skipinitialspace=True,)
         for line in csvReader:
             if len(line) == 0:
@@ -75,3 +75,10 @@ def GetFlipList(path):
         FlippedSections.append(sectionNumber)
 
     return FlippedSections
+
+def GetFileNameForTileNumber(tile_number, ext):
+    if ext[0] == '.':
+        ext = ext[1:]
+    
+    return (nornir_buildmanager.templates.Current.TileCoordFormat % tile_number) + '.' + ext
+    

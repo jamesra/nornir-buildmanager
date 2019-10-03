@@ -21,7 +21,7 @@ class MosaicVolume(volume.Volume):
     @classmethod
     def LoadVolume(cls, StosMapNode, StosGroupNode, BlockNode, ChannelsRegEx, TransformsRegEx):
         StosMosaicTransformNodes = nornir_buildmanager.operations.block.FetchVolumeTransforms(StosMapNode, BlockNode, ChannelsRegEx, TransformsRegEx)
-        StosMosaicTransforms = map(lambda tnode: tnode.FullPath, StosMosaicTransformNodes)
+        StosMosaicTransforms = [tnode.FullPath for tnode in StosMosaicTransformNodes]
         return MosaicVolume.Load(StosMosaicTransforms)
 
     @classmethod
@@ -54,7 +54,7 @@ class MosaicVolume(volume.Volume):
 
     def Save(self):
 
-        for key, mosaicObj in self.SectionToVolumeTransforms.items():
+        for key, mosaicObj in list(self.SectionToVolumeTransforms.items()):
 
             transformNode = mosaicObj.transformNode
 

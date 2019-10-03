@@ -14,7 +14,7 @@ import unittest
 
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
-from nornir_buildmanager.argparsexml import NumberList
+from nornir_buildmanager.argparsexml import IntegerList
 from nornir_buildmanager.validation import transforms
 import nornir_imageregistration.files
 from nornir_imageregistration.files.mosaicfile import *
@@ -49,16 +49,6 @@ def MatchingSections(SectionNodes, sectionNumberList):
         if sectionNode.Number in sectionNumberList:
             yield sectionNode
             
-            
-def SectionNumberList(SectionNodes=None):
-    '''List of section numbers'''
-    numbers = []
-    for n in SectionNodes:
-        numbers.append(n.Number) 
-    
-    return numbers
-
-
 def FullPathsForNodes(node_list):
     list_full_paths = []
     for n in node_list:
@@ -131,7 +121,7 @@ def ConvertLevelsToList(Levels):
         if not isinstance(Levels, list):
             Levels = [Levels]
     else:
-        Levels = NumberList(Levels)
+        Levels = IntegerList(Levels)
         
     return Levels
 
@@ -145,7 +135,7 @@ def ConvertLevelsToString(Levels):
             Levels = [Levels]
     else:
         LevelStr = Levels
-        Levels = NumberList(LevelStr)
+        Levels = IntegerList(LevelStr)
         
     return LevelStr
 
@@ -378,7 +368,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         LockedVal = bool(int(Locked))
         volumeNode = self.RunBuild(buildArgs)
 
-        sectionNumbers = NumberList(sectionListStr)
+        sectionNumbers = IntegerList(sectionListStr)
         Sections = list(MatchingSections(volumeNode.findall("Block/Section"), sectionNumbers))
 
         self.assertEqual(len(Sections), len(sectionNumbers), "Did not find all of the expected sections")
@@ -448,7 +438,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return volumeNode
 
-    def RunMosaic(self, Filter, Transform=None):
+    def RunMosaic(self, Filter, Transform=None, InputDownsample=None):
         if Filter is None:
             Filter = 'Leveled'
         
@@ -456,7 +446,18 @@ class NornirBuildTestBase(test.testbase.TestBase):
             Transform = 'Prune'
             
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('Mosaic', '-InputTransform', Transform, '-InputFilter', Filter, '-OutputTransform', 'Grid', '-Iterations', "3", '-Threshold', "1.0")
+        buildArgs = self._CreateBuildArgs('Mosaic',
+                                          '-InputTransform', Transform,
+                                          '-InputFilter', Filter,
+                                          '-OutputTransform', 'Grid',
+                                          '-MinTranslateIterations', "5",
+                                          '-OffsetChangeTolerance', '1',
+                                          '-RelaxThreshold', "0.1",
+                                          '-RefineIterations', "5")
+        
+        if InputDownsample is not None:
+            buildArgs.extend(['-RegistrationDownsample', '{0}'.format(InputDownsample)])
+            
         volumeNode = self.RunBuild(buildArgs)
 
         TransformNode = volumeNode.find("Block/Section/Channel/Transform[@Name='Grid']")
@@ -535,7 +536,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return volumeNode
     
-    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=1, Shape=[512, 512]):
+    def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=2, Shape=[512, 512], max_working_image_area=None):
         if Filter is None:
             Filter = "Leveled"
             
@@ -550,6 +551,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
             buildArgs = self._CreateBuildArgs('AssembleTiles', '-Channels', Channels, '-Transform', TransformName, '-Filters', Filter, '-HighestDownsample', str(Levels), '-Shape', ShapeStr)
         else:
             buildArgs = self._CreateBuildArgs('AssembleTiles', '-Transform', TransformName, '-Filters', Filter, '-HighestDownsample', str(Levels), '-Shape', ShapeStr)
+            
+        if max_working_image_area is not None:
+            buildArgs.extend(['-MaxWorkingImageArea', str(max_working_image_area)])
             
         volumeNode = self.RunBuild(buildArgs)
  
@@ -639,7 +643,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.VerifyFilesLastModifiedDateUnchanged(transform_last_modified)
         
 
-    def RunAlignSections(self, Channels, Filters, Levels, Angles=None, Center=None, UseMasks=True):
+    def RunAlignSections(self, Channels, Filters, Levels, Angles=None, Center=None, UseMasks=True, NoFlipCheck=False):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters, '-Downsample', str(Levels), '-Channels', Channels)
         if not Center is None:
@@ -647,6 +651,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
             
         if UseMasks:
             buildArgs.append('-UseMasks')
+            
+        if NoFlipCheck:
+            buildArgs.append('-NoFlipCheck')
             
         if Angles:
             buildArgs.append('-AngleRange')
@@ -663,7 +670,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def VerifySectionsHaveStosTransform(self, stos_group_node, center_section, sectionNodes):
         '''Ensure that each section in the list is mapped by a transform in the stos group'''
         # Check that there are transforms 
-        sectionNumbers = SectionNumberList(sectionNodes)
+        sectionNumbers = [n.Number for n in sectionNodes]
         self.assertGreater(len(sectionNumbers), 0)
         
         # Remove the center section
@@ -677,7 +684,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def VerifyFilesLastModifiedDateUnchanged(self, file_last_modified_map):
         '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
         
-        for (file_path, last_modified_reference) in file_last_modified_map.items():
+        for (file_path, last_modified_reference) in list(file_last_modified_map.items()):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
             self.assertEqual(last_modified_reference, disk_modified_time, "Last modified date for %s should not be different" % (file_path))
             
@@ -685,7 +692,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def VerifyFilesLastModifiedDateChanged(self, file_last_modified_map):
         '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
         
-        for (file_path, last_modified_reference) in file_last_modified_map.items():
+        for (file_path, last_modified_reference) in list(file_last_modified_map.items()):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
             self.assertGreater(disk_modified_time, last_modified_reference, "Last modified date for %s is %s, should be later than %s" % (file_path, str(disk_modified_time), str(last_modified_reference)))
             
@@ -738,9 +745,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def RunRefineSectionAlignment(self, InputGroup, InputLevel, OutputGroup, OutputLevel, Filter, UseMasks=True):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('RefineSectionAlignment', '-InputGroup', InputGroup,
-                                          '-InputDownsample', str(InputLevel),
+                                          '-InputDownsample', str(int(InputLevel)),
                                           '-OutputGroup', OutputGroup,
-                                          '-OutputDownsample', str(OutputLevel),
+                                          '-OutputDownsample', str(int(OutputLevel)),
                                           '-Filter', 'Leveled',
                                           '-Iterations', "3",
                                           '-Threshold', "1.0")
@@ -758,7 +765,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
     def RunScaleVolumeTransforms(self, InputGroup, InputLevel, OutputLevel=1):
         # Build Mosaics
-        buildArgs = self._CreateBuildArgs('ScaleVolumeTransforms', '-InputGroup', InputGroup, '-InputDownsample', str(InputLevel), '-OutputDownsample', str(OutputLevel))
+        buildArgs = self._CreateBuildArgs('ScaleVolumeTransforms', '-InputGroup', InputGroup, '-InputDownsample', str(int(InputLevel)), '-OutputDownsample', str(int(OutputLevel)))
         volumeNode = self.RunBuild(buildArgs)
 
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (InputGroup, OutputLevel))
@@ -844,7 +851,26 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.assertEqual(len(OutputPngs), NumImages, "Missing exported images %s" % imageOutputPath)
 
         return volumeNode
-
+    
+    def RunCalculateStosGroupWarpMetrics(self, StosGroup=None, StosMap=None, Downsample=None):
+        
+        if StosGroup is None:
+            StosGroup = "Grid"
+            
+        if Downsample is None:
+            Downsample = 8
+            
+        if StosMap is None:
+            StosMap = "FinalStosMap"
+            
+        buildArgs = self._CreateBuildArgs('CalculateStosGroupWarpMetrics', '-StosGroup', StosGroup,
+                                                          '-Downsample', str(Downsample),
+                                                          '-StosMap', StosMap)
+        
+        volumeNode = self.RunBuild(buildArgs)
+                    
+        pass
+    
     def RunCreateVikingXML(self, OutputFile, StosGroup=None, StosMap=None):
 
         if StosGroup is None:
@@ -863,11 +889,11 @@ class NornirBuildTestBase(test.testbase.TestBase):
         self.assertTrue(os.path.exists(os.path.join(volumeNode.FullPath, OutputFile + ".VikingXML")), "No vikingxml file created")
         
     
-    def __GetLevelNode(self, section_number=691, channel='TEM', filter='Leveled', level=1):
+    def __GetLevelNode(self, section_number=691, channel='TEM', filter_name ='Leveled', level=1):
         
         volumeNode = self.LoadVolume()
         
-        filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (section_number, channel, filter))                                     
+        filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (section_number, channel, filter_name))                                     
         self.assertIsNotNone(filterNode, "Missing filter node")
         
         levelNode = filterNode.TilePyramid.GetLevel(level)
@@ -875,12 +901,12 @@ class NornirBuildTestBase(test.testbase.TestBase):
         
         return levelNode
         
-    def RemoveTileFromPyramid(self, section_number=691, channel='TEM', filter='Leveled', level=1):
+    def RemoveTileFromPyramid(self, section_number=691, channel='TEM', filter_name='Leveled', level=1):
         '''Remove a single image from an image pyramid
         :return: Filename that was deleted
         '''
 
-        levelNode = self.__GetLevelNode(section_number, channel, filter, level)
+        levelNode = self.__GetLevelNode(section_number, channel, filter_name, level)
         self.assertIsNotNone(levelNode, "Missing level %d" % (level))
 
         # Choose a random tile and remove it
@@ -892,9 +918,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         return chosenPngFile
 
-    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter='Leveled', level=1,):
+    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter_name='Leveled', level=1):
         '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
-        removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter, level)
+        removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter_name, level)
 
         RegenFunction(**RegenKwargs)
 
@@ -962,6 +988,7 @@ class PlatformTest(NornirBuildTestBase):
 
     def RunIDocImport(self):
         buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
+        buildArgs.extend(['-CameraBpp', '14'])
         self.RunBuild(buildArgs)
 
     def RunPMGImport(self):
@@ -991,8 +1018,9 @@ class CopySetupTestBase(PlatformTest):
         self.assertTrue(os.path.exists(self.PlatformFullPath))
 
         if os.path.exists(self.TestOutputPath):
-            shutil.rmtree(self.TestOutputPath)
+            shutil.rmtree(self.TestOutputPath, ignore_errors=True)
 
+        #Temp for faster iteration
         shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
 
 class ImportOnlySetup(PlatformTest):

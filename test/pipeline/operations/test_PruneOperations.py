@@ -42,7 +42,6 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
 
         # Load the prune data and adjust the cutoff, ensure the tiles have been removed and the volume rebuilds properly
 
-
         # filterObj = self.VolumeObj.find("Block/Section[@Number='2']/Channel[@Name='G']/Filter[@Name='Raw8']");
         # pruneObj = filterObj.find("Prune");
         self.LoadMetaData()
@@ -94,12 +93,12 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
 
         # OK, change the prune threshold in the meta-data, verify the prune.mosaic is updated
         Scores = []
-        for f in pruneObj.MapImageToScore.keys():
+        for f in list(pruneObj.MapImageToScore.keys()):
             Scores.append(pruneObj.MapImageToScore[f])
 
         Scores.sort()
 
-        MeanScore = Scores[len(Scores) / 2]
+        MeanScore = Scores[len(Scores) // 2]
 
         NewThreshold = MeanScore - 0.01
 

@@ -1,7 +1,8 @@
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.images import *
+import nornir_buildmanager.importers.shared as shared
 
-import idoc;
+from . import idoc
 
 
 class SerialEMMDocImport(idoc.SerialEMIDocImport):
@@ -26,8 +27,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         if OutputPath is None:
             OutputPath = os.path.join(InputPath, "..");
 
-        if not os.path.exists(OutputPath):
-            os.makedirs(OutputPath);
+        os.makedirs(OutputPath, exist_ok=True);
 
         prettyoutput.CurseString('Stage', "MDoc to IDoc " + str(InputPath))
 
@@ -41,7 +41,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         # ok, try to find the .st file
         for mdoc in mdocFiles:
             basename = os.path.basename(mdoc);
-            [SectionNumber, SectionName, Downsample] = idoc.SerialEMIDocImport.GetSectionInfo(basename);
+            [SectionNumber, SectionName, Downsample] = shared.GetSectionInfo(basename);
 
             MDocImportDir = str(SectionNumber);
 
@@ -54,8 +54,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
 
             MDocImportDirFullPath = os.path.join(mdocDirname, MDocImportDir);
 
-            if not os.path.exists(MDocImportDirFullPath):
-                os.makedirs(MDocImportDirFullPath);
+            os.makedirs(MDocImportDirFullPath, exist_ok=True);
 
             idocFilename = os.path.join(mdocDirname, mdocRoot + '.idoc');
             if(os.path.exists(idocFilename)):
@@ -66,8 +65,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
 
             tempDirNameFullPath = os.path.join(InputPath, tempDirName);
 
-            if not os.path.exists(tempDirNameFullPath):
-                os.makedirs(tempDirNameFullPath);
+            os.makedirs(tempDirNameFullPath, exist_ok=True);
 
             # [Image = 10000.tif]
             cmd = "mrc2tif " + stNameFullPath + " " + tempDirNameFullPath;

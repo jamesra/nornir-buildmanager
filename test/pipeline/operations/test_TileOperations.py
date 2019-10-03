@@ -87,7 +87,7 @@ class ShadeCorrectionTest(ImportOnlySetup):
         OutputTiles = glob.glob(os.path.join(LevelNode.FullPath, '*.png'))
         self.assertEqual(len(SourceTiles), len(OutputTiles), "Number of shading corrected tiles does not match number of input tiles")
 
-        # image = tiles.CalculateShadeImage(OutputTiles, type=tiles.ShadeCorrectionTypes.BRIGHTFIELD)
+        # image = tiles.CalculateShadeImage(OutputTiles, correction_type=tiles.ShadeCorrectionTypes.BRIGHTFIELD)
 
         # self.assertEqual(np.max(image), 0, "We already corrected shading, the next shading corrected image should be all zeros")
 
@@ -149,7 +149,6 @@ class HistogramFilterTest(ImportOnlySetup):
             self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk), "Number of images on disk do not match meta-data")
 
 
-
 class HistogramFilterTest2(ImportOnlySetup):
 
     @property
@@ -175,8 +174,11 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertIsNotNone(self.InputLevelNode)
 
         # The first time it is run we should get a filter node with a histogram
-        OutputFilterNode = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
-        self.assertIsNotNone(OutputFilterNode)
+        OutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
+        self.assertIsNotNone(OutputFilterNodes)
+        
+        OutputFilterNodes = list(OutputFilterNodes)
+        OutputFilterNode = OutputFilterNodes[-1]
 
         HistogramNode = OutputFilterNode.find("Histogram")
         self.assertIsNotNone(HistogramNode)
@@ -187,8 +189,11 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertTrue(os.path.exists(HistogramNode.ImageFullPath))
 
         # The second time it is run we should not regenerate a histogram and None should be returned
-        SecondOutputFilterNode = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
-        self.assertIsNone(SecondOutputFilterNode)
+        SecondOutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
+        self.assertIsNotNone(SecondOutputFilterNodes)
+        
+        SecondOutputFilterNodesList = list(SecondOutputFilterNodes)
+        self.assertEqual(len(SecondOutputFilterNodesList), 0, "No elements should require saving after an identical call")
 
         self.assertIsNotNone(HistogramNode)
         self.assertIsNotNone(HistogramNode.DataNode)
@@ -209,7 +214,8 @@ class BuildTilePyramidTest(PrepareSetup):
         volumeNode = self.RunAdjustContrast(Sections=690)
         
         # Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
-        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter='Leveled', level=4)       
+        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter_name='Leveled', level=4)       
+
 
 class AutoLevelHistogramTest(PrepareSetup):
 
@@ -367,6 +373,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         self.assertIsNone(ChannelOutput[0])
 
         self.VolumeObj.Save()
+
 
 if __name__ == "__main__":
     # import syssys.argv = ['', 'Test.testName']

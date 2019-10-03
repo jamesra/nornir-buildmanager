@@ -32,6 +32,7 @@ def DimensionsMatch(imageFullPath, area):
     else:
         return size[1] == area[1] and size[0] == area[0]
 
+
 def RemoveOnDimensionMismatch(imageFullPath, area):
     '''Remove the image file if the area does not match.  Return True if removed '''
     if imageFullPath is None:

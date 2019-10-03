@@ -77,7 +77,7 @@ class PruneObj:
 
         Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
         if not Threshold is None:
-            Threshold = round(Threshold, threshold_precision)
+            Threshold = TransformNode.round_precision_value(Threshold)#round(Threshold, threshold_precision)
 
         cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Threshold)
 
@@ -100,7 +100,7 @@ class PruneObj:
         # Check if there is an existing prune map, and if it exists if it is out of date
         PruneNodeParent = PruneNode.Parent
         
-        transforms.RemoveWhere(TransformParent, 'Transform[@Name="' + OutputTransformName + '"]', lambda t: t.Threshold != Threshold)
+        transforms.RemoveWhere(TransformParent, 'Transform[@Name="' + OutputTransformName + '"]', lambda t: (t.Threshold != Threshold) or (t.Type != MangledName))
         
         '''TODO: Add function to remove duplicate Prune Transforms with different thresholds'''
 
@@ -122,7 +122,7 @@ class PruneObj:
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:
-            OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Type=MangledName, InputTransformChecksum=InputTransformNode.Checksum)
+            OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Type=MangledName, InputTransformChecksum=InputTransformNode.Checksum)
             TransformParent.append(OutputTransformNode)
         elif os.path.exists(OutputTransformNode.FullPath):
             # The meta-data and output exist, do nothing
@@ -151,7 +151,7 @@ class PruneObj:
                 HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
 
             if HistogramImageNode is None or not os.path.exists(PruneObjInstance.HistogramImageFileFullPath):
-                HistogramImageNode = VolumeManagerETree.ImageNode(HistogramImageFile)
+                HistogramImageNode = VolumeManagerETree.ImageNode.Create(HistogramImageFile)
                 (added, HistogramImageNode) = PruneNode.UpdateOrAddChild(HistogramImageNode)
                 if not added:
                     #Handle the case where the path is different, such as when we change the extension type
@@ -184,13 +184,12 @@ class PruneObj:
         if not os.path.exists(OutputMosaicFullPath):
             try:
                 PruneObjInstance.WritePruneMosaic(PruneNodeParent.FullPath, InputTransformNode.FullPath, OutputMosaicFullPath, Tolerance=Threshold)
-            except KeyError:
+            except (KeyError, ValueError):
                 os.remove(PruneDataNode.FullPath)
                 PruneNode.remove(PruneDataNode)
                 prettyoutput.LogErr("Remove prune data for section " + PruneDataNode.FullPath)
                 return PruneNodeParent
                 
-
         OutputTransformNode.Type = MangledName
         OutputTransformNode.Name = OutputTransformName
 
@@ -245,15 +244,15 @@ class PruneObj:
                 PruneMapElement = transforms.RemoveOnMismatch(PruneMapElement, 'NumImages', LevelNode.TilesValidated)
 
         if PruneMapElement is None:
-            PruneMapElement = VolumeManagerETree.PruneNode(Overlap=Overlap, Type=MangledName)
+            PruneMapElement = VolumeManagerETree.PruneNode.Create(Overlap=Overlap, Type=MangledName)
             [SaveRequired, PruneMapElement] = FilterNode.UpdateOrAddChildByAttrib(PruneMapElement, 'Overlap')
         else:
             # If meta-data and the data file exist, nothing to do
             if os.path.exists(PruneMapElement.DataFullPath):
-                return None
+                return
 
         # Create file holders for the .xml and .png files
-        PruneDataNode = VolumeManagerETree.DataNode(OutputFile)
+        PruneDataNode = VolumeManagerETree.DataNode.Create(OutputFile)
         [added, PruneDataNode] = PruneMapElement.UpdateOrAddChild(PruneDataNode)
 
         FullTilePath = LevelNode.FullPath
@@ -262,7 +261,7 @@ class PruneObj:
         TransformObj.RemoveInvalidMosaicImages(FullTilePath)
 
         files = []
-        for f in TransformObj.ImageToTransformString.keys():
+        for f in list(TransformObj.ImageToTransformString.keys()):
             files.append(os.path.join(FullTilePath, f))
 
         TileToScore = Prune(files, Overlap)
@@ -284,7 +283,7 @@ class PruneObj:
 
         with open(MapImageToScoreFile, 'w') as outfile:
 
-            if(len(self.MapImageToScore.keys()) == 0):
+            if(len(list(self.MapImageToScore.keys())) == 0):
                 if(os.path.exists(MapImageToScoreFile)):
                     os.remove(MapImageToScoreFile)
 
@@ -323,20 +322,20 @@ class PruneObj:
         return PruneObj(MapImageToScore)
 
     def CreateHistogram(self, HistogramXMLFile, MapImageToScoreFile=None):
-        if(len(self.MapImageToScore.items()) == 0 and MapImageToScoreFile is not None):
+        if(len(list(self.MapImageToScore.items())) == 0 and MapImageToScoreFile is not None):
    #         prettyoutput.Log( "Reading scores, MapImageToScore Empty " + MapImageToScoreFile)
             PruneObj.ReadPruneMap(MapImageToScoreFile)
    #         prettyoutput.Log( "Read scores complete: " + str(self.MapImageToScore))
  
-        if(len(self.MapImageToScore.items()) == 0):
+        if(len(list(self.MapImageToScore.items())) == 0):
             prettyoutput.Log("No prune scores to create histogram with")
             return 
 
-        scores = [None] * len(self.MapImageToScore.items())
+        scores = [None] * len(list(self.MapImageToScore.items()))
         numScores = len(scores)
 
         i = 0
-        for pair in self.MapImageToScore.items():
+        for pair in list(self.MapImageToScore.items()):
    #         prettyoutput.Log("pair: " + str(pair))
             scores[i] = pair[1]
             i = i + 1
@@ -385,7 +384,10 @@ class PruneObj:
     def WritePruneMosaic(self, path, SourceMosaic, TargetMosaic='prune.mosaic', Tolerance='5'):
         '''
         Remove tiles from the source mosaic with scores less than Tolerance and
-        write the new mosaic to TargetMosaic
+        write the new mosaic to TargetMosaic.
+        Raises a key error if image in prude scores does not exist in .mosaic file
+        Raises a value error if the threshold removes all tiles in the mosaic.
+        :return: Number of tiles removed
         '''
 
         if(not isinstance(Tolerance, float)):
@@ -402,7 +404,7 @@ class PruneObj:
 
         numRemoved = 0
 
-        for item in self.MapImageToScore.items():
+        for item in list(self.MapImageToScore.items()):
             filename = item[0]
             score = item[1]
 
@@ -418,8 +420,9 @@ class PruneObj:
                 numRemoved = numRemoved + 1
 
         if(len(mosaic.ImageToTransformString) <= 0):
-            prettyoutput.LogErr("All tiles removed when using threshold = " + str(Tolerance) + "\nThe prune request was ignored")
-            return
+            errMsg = "All tiles removed when using threshold = " + str(Tolerance) + "\nThe prune request was ignored"
+            prettyoutput.LogErr(errMsg)
+            raise ValueError(errMsg) 
         else:
             prettyoutput.Log("Removed " + str(numRemoved) + " tiles pruning mosaic " + TargetMosaic)
 

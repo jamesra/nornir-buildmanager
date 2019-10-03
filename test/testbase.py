@@ -34,8 +34,7 @@ class PickleHelper(object):
     def SaveVariable(self, var, path):
         fullpath = os.path.join(self.TestCachePath, path)
 
-        if not os.path.exists(os.path.dirname(fullpath)):
-            os.makedirs(os.path.dirname(fullpath))
+        os.makedirs(os.path.dirname(fullpath), exist_ok=True)
 
         with open(fullpath, 'wb') as filehandle:
             print("Saving: " + fullpath)
@@ -133,10 +132,10 @@ class TestBase(unittest.TestCase):
         try:
             if os.path.exists(self.VolumeDir):
                 shutil.rmtree(self.VolumeDir)
-
-            os.makedirs(self.VolumeDir)
         except:
             pass
+        
+        os.makedirs(self.VolumeDir, exist_ok=True)
 
         self.profiler = None
 
@@ -199,7 +198,7 @@ class ImageTestBase(TestBase):
         super(ImageTestBase, self).setUp()
 
 
-class MosaicTestBase(TestBase):
+class TransformTestBase(TestBase):
 
     @property
     def TestName(self):
@@ -207,7 +206,7 @@ class MosaicTestBase(TestBase):
     
     @property
     def TestOutputPath(self):
-        return os.path.join(super(MosaicTestBase, self).TestOutputPath, self.id())
+        return os.path.join(super(TransformTestBase, self).TestOutputPath, self.id())
 
     def GetMosaicFiles(self):
         return glob.glob(os.path.join(self.ImportedDataPath, self.TestName, "*.mosaic"))
@@ -221,10 +220,9 @@ class MosaicTestBase(TestBase):
     def setUp(self):
         self.ImportedDataPath = os.path.join(self.TestInputPath, "Transforms", "Mosaics")
         
-        if not os.path.exists(self.TestOutputPath):
-            os.makedirs(self.TestOutputPath, exist_ok=True)
+        os.makedirs(self.TestOutputPath, exist_ok=True)
 
-        super(MosaicTestBase, self).setUp()
+        super(TransformTestBase, self).setUp()
 
 
 if __name__ == "__main__":

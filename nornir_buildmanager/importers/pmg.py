@@ -43,13 +43,13 @@ import nornir_buildmanager
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.importers import filenameparser, GetFlipList
 from nornir_buildmanager.operations.tile import VerifyTiles
+import nornir_imageregistration
 from nornir_imageregistration import image_stats
-import nornir_imageregistration.core
 from nornir_imageregistration.files import mosaicfile
 import nornir_shared.files
 from nornir_shared.images import *
 
-from filenameparser import ParseFilename, mapping
+from .filenameparser import ParseFilename, mapping
 import nornir_shared.prettyoutput as prettyoutput
 
 
@@ -130,7 +130,7 @@ class PMGImport(object):
         # prettyoutput.CurseString('Stage', "PMGToMosaic " + InputPath)
 
         BlockName = 'TEM'
-        BlockObj = BlockNode('TEM')
+        BlockObj = BlockNode.Create('TEM')
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
 
         ChannelName = None
@@ -144,14 +144,14 @@ class PMGImport(object):
         if PMG.Section is None:
             PMG.Section = PMG.Spot
 
-        sectionObj = SectionNode(PMG.Section)
+        sectionObj = SectionNode.Create(PMG.Section)
 
         [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
 
         # Calculate our output directory.  The scripts expect directories to have section numbers, so use that.
         ChannelName = PMG.Probe
         ChannelName = ChannelName.replace(' ', '_')
-        channelObj = ChannelNode(ChannelName)
+        channelObj = ChannelNode.Create(ChannelName)
         channelObj.SetScale(scaleValueInNm)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')
 
@@ -204,28 +204,27 @@ class PMGImport(object):
         SupertileName = 'Stage'
         SupertileTransform = SupertileName + '.mosaic'
         
-        [addedTransform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode(Name=SupertileName,
+        [addedTransform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode.Create(Name=SupertileName,
                                                                      Path=SupertileTransform,
                                                                      Type='Stage'),
                                                                      'Path')
     
-        [added, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode(Type='stage',
+        [added, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode.Create(Type='stage',
                                                                                      NumberOfTiles=NumImages),
                                                                                      'Path')
     
-        [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode(Level=1), 'Downsample')
+        [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode.Create(Level=1), 'Downsample')
     
         # Make sure the target LevelObj is verified
         VerifyTiles(LevelNode=LevelObj)
      
         OutputImagePath = os.path.join(channelObj.FullPath, filterObj.Path, PyramidNodeObj.Path, LevelObj.Path)
     
-        if not os.path.exists(OutputImagePath):
-            os.makedirs(OutputImagePath)
+        os.makedirs(OutputImagePath, exist_ok=True)
     
         InputTileToOutputTile = {}
         PngTiles = {}
-        TileKeys = Tiles.keys()
+        TileKeys = list(Tiles.keys())
     
     
         imageSize = []
@@ -240,10 +239,10 @@ class PMGImport(object):
                 InputTileToOutputTile[InputTileFullPath] = OutputTileFullPath
     
             PngTiles[pngMosaicTile] = Tiles[inputTile]
-            (Height, Width) = nornir_imageregistration.core.GetImageSize(InputTileFullPath)
+            (Height, Width) = nornir_imageregistration.GetImageSize(InputTileFullPath)
             imageSize.append((Width, Height))
     
-        ConvertImagesInDict(InputTileToOutputTile, Flip=False, Bpp=TargetBpp)
+        nornir_imageregistration.ConvertImagesInDict(InputTileToOutputTile, Flip=False, OutputBpp=TargetBpp)
     
         if not os.path.exists(transformObj.FullPath):
             mosaicfile.MosaicFile.Write(transformObj.FullPath, PngTiles, Flip=Flip, ImageSize=imageSize)
@@ -333,7 +332,7 @@ def ParsePMG(filename, TileOverlapPercent=None):
 
         if(TileWidth == 0):
             try:
-                [TileHeight, TileWidth] = nornir_imageregistration.core.GetImageSize(TileFullPath)
+                [TileHeight, TileWidth] = nornir_imageregistration.GetImageSize(TileFullPath)
                 if(DEBUG):
                     prettyoutput.Log(str(TileWidth) + ',' + str(TileHeight) + " " + TileFilename)
             except:

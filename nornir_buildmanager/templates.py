@@ -72,6 +72,7 @@ class __Config:
 
     # Users calling this library can change this list to adjust the downsample levels used
 
+
 Current = __Config()
 
 if __name__ == '__main__':

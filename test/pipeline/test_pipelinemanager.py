@@ -9,7 +9,6 @@ import nornir_buildmanager.argparsexml as argparsexml
 import nornir_buildmanager.pipelinemanager as pm
 import xml.etree.ElementTree as etree
 
-
 ArgumentXML = '<Arguments> \
                  <Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/> \
                  <Argument flag="-MinCutoff" dest="MinCutoff" default="0.1" help="Min pixel intensity cutoff as a percentage, 0 to 100" required="False"/> \
@@ -38,15 +37,17 @@ PipelineXML = '''<Iterate VariableName="ChannelNode" XPath="Block/Section/Channe
 
 PipelineNode = '<Iterate VariableName="ChannelNode" XPath="Block/Section/Channel"/>'
 
+
 def CreateVariableNameNode(value):
     pipelineNode = etree.Element()
     pipelineNode.attrib['VariableName'] = value
     return pipelineNode
 
+
 def CreateParametersNode(**kwargs):
     arguments = etree.Element()
 
-    for k, v in kwargs.items():
+    for k, v in list(kwargs.items()):
         argNode = etree.Element()
         argNode.attrib['Name'] = k
         argNode.attrib['Value'] = v
@@ -59,16 +60,19 @@ def CreateParametersNode(**kwargs):
 def CreatePipelineNode(**kwargs):
     node = etree.Element()
 
-    for k, v in kwargs.items():
+    for k, v in list(kwargs.items()):
         node.attrib[k] = v
 
     return node
 
+
 def LoadParams(xml):
     return etree.XML(xml)
 
+
 def LoadArguments(xml):
     return etree.XML(xml)
+
 
 def LoadPipeline(xml):
     return etree.XML(xml)
@@ -99,7 +103,7 @@ class Test(unittest.TestCase):
         self.assertTrue('ChannelNode' in argset.Variables)
 
         kwargs = argset.KeyWordArgs()
-        print(repr(kwargs))
+        print((repr(kwargs)))
 
 
 if __name__ == "__main__":

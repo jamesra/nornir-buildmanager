@@ -4,7 +4,6 @@ Created on Jun 7, 2012
 @author: Jamesan
 '''
 
-
 import re
 import sys
 
@@ -13,6 +12,7 @@ import nornir_shared.prettyoutput as prettyoutput
 
 class XSubPath(object):
     '''Represents a level of an XPath string, returned by XPathIterator'''
+
     def __init__(self):
 #        IsAttribute = False;
 #        Name = None;
@@ -24,13 +24,14 @@ class XSubPath(object):
 
     def __str__(self):
         s = "";
-        for item in self.__dict__.items():
+        for item in list(self.__dict__.items()):
             if item[0].startswith('_'):
                 continue;
 
             s = s + (str(item[0]) + " : " + str(item[1]) + '\n');
 
         return s;
+
 
 def XPathIterator(XPath):
         '''A Very limited iterator which takes xpath strings as input and iterates over each subpath.
@@ -69,7 +70,7 @@ def XPathIterator(XPath):
             # Figure out if Value is a string (Starts with quotes)
             Obj = XSubPath();
             Obj.RawPath = subpath;
-            for item in matches.groupdict().items():
+            for item in list(matches.groupdict().items()):
                 Obj.__dict__[item[0]] = item[1];
 
             Obj.IsAttribute = not matches.group('IsAttribute') is None;
@@ -94,6 +95,4 @@ if __name__ == '__main__':
     iterator = XPathIterator(x1);
     for p in iterator:
         prettyoutput.Log(str(p));
-
-
 

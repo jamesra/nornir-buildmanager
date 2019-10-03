@@ -1,0 +1,132 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" DefaultTargets="Build">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{9a8300cb-0471-4d55-861f-fe985644fd07}</ProjectGuid>
+    <ProjectHome />
+    <StartupFile>ez_setup.py</StartupFile>
+    <SearchPath />
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <ProjectTypeGuids>{888888a0-9f3d-457c-b088-3a5042f75d52}</ProjectTypeGuids>
+    <LaunchProvider>Standard Python launcher</LaunchProvider>
+    <InterpreterId />
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'" />
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'" />
+  <PropertyGroup>
+    <VisualStudioVersion Condition=" '$(VisualStudioVersion)' == '' ">10.0</VisualStudioVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="nornir_buildmanager\operations\ImageReport.html" />
+    <Content Include="nornir_buildmanager\operations\Report.html" />
+    <Content Include="readme_setup.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="ez_setup.py" />
+    <Compile Include="nornir_buildmanager\argparsexml.py" />
+    <Compile Include="nornir_buildmanager\build.py" />
+    <Compile Include="nornir_buildmanager\config\__init__.py" />
+    <Compile Include="nornir_buildmanager\exceptions.py" />
+    <Compile Include="nornir_buildmanager\importers\dm4.py" />
+    <Compile Include="nornir_buildmanager\importers\filenameparser.py" />
+    <Compile Include="nornir_buildmanager\importers\idoc.py" />
+    <Compile Include="nornir_buildmanager\importers\mdoc.py" />
+    <Compile Include="nornir_buildmanager\importers\pmg.py" />
+    <Compile Include="nornir_buildmanager\importers\sectionimage.py" />
+    <Compile Include="nornir_buildmanager\importers\__init__.py" />
+    <Compile Include="nornir_buildmanager\metadatautils.py" />
+    <Compile Include="nornir_buildmanager\metadata\tilesetinfo.py" />
+    <Compile Include="nornir_buildmanager\metadata\__init__.py" />
+    <Compile Include="nornir_buildmanager\operations\block.py" />
+    <Compile Include="nornir_buildmanager\operations\channel.py" />
+    <Compile Include="nornir_buildmanager\operations\diagnostics.py" />
+    <Compile Include="nornir_buildmanager\operations\filter.py" />
+    <Compile Include="nornir_buildmanager\operations\general.py" />
+    <Compile Include="nornir_buildmanager\operations\helpers\mosaicvolume.py" />
+    <Compile Include="nornir_buildmanager\operations\helpers\stosgroupvolume.py" />
+    <Compile Include="nornir_buildmanager\operations\helpers\__init__.py" />
+    <Compile Include="nornir_buildmanager\operations\migration.py" />
+    <Compile Include="nornir_buildmanager\operations\pruneobj.py" />
+    <Compile Include="nornir_buildmanager\operations\registration.py" />
+    <Compile Include="nornir_buildmanager\operations\reporting.py" />
+    <Compile Include="nornir_buildmanager\operations\setters.py" />
+    <Compile Include="nornir_buildmanager\operations\stosgroup.py" />
+    <Compile Include="nornir_buildmanager\operations\stosmap.py" />
+    <Compile Include="nornir_buildmanager\operations\tile.py" />
+    <Compile Include="nornir_buildmanager\operations\versions.py" />
+    <Compile Include="nornir_buildmanager\operations\vikingxml.py" />
+    <Compile Include="nornir_buildmanager\operations\__init__.py" />
+    <Compile Include="nornir_buildmanager\pipelinemanager.py" />
+    <Compile Include="nornir_buildmanager\templates.py" />
+    <Compile Include="nornir_buildmanager\validation\image.py" />
+    <Compile Include="nornir_buildmanager\validation\transforms.py" />
+    <Compile Include="nornir_buildmanager\validation\__init__.py" />
+    <Compile Include="nornir_buildmanager\VolumeFinder.py" />
+    <Compile Include="nornir_buildmanager\VolumeManagerETree.py" />
+    <Compile Include="nornir_buildmanager\VolumeManagerHelpers.py" />
+    <Compile Include="nornir_buildmanager\XPath.py" />
+    <Compile Include="nornir_buildmanager\__init__.py" />
+    <Compile Include="setup.py" />
+    <Compile Include="test\pipeline\metadata\test_tilesetinfo.py" />
+    <Compile Include="test\pipeline\metadata\__init__.py" />
+    <Compile Include="test\pipeline\operations\test_BlockOperations.py" />
+    <Compile Include="test\pipeline\operations\test_General.py" />
+    <Compile Include="test\pipeline\operations\test_PruneOperations.py" />
+    <Compile Include="test\pipeline\operations\test_SectionToSectionMapping.py" />
+    <Compile Include="test\pipeline\operations\test_TileOperations.py" />
+    <Compile Include="test\pipeline\operations\__init__.py" />
+    <Compile Include="test\pipeline\setup_pipeline.py" />
+    <Compile Include="test\pipeline\test_argparsexml.py" />
+    <Compile Include="test\pipeline\test_build.py" />
+    <Compile Include="test\pipeline\test_dm4.py" />
+    <Compile Include="test\pipeline\test_idoc.py" />
+    <Compile Include="test\pipeline\test_LMBuild.py" />
+    <Compile Include="test\pipeline\test_pipelinemanager.py" />
+    <Compile Include="test\pipeline\test_pmg.py" />
+    <Compile Include="test\pipeline\test_sectionimage.py" />
+    <Compile Include="test\pipeline\test_VolumeManager.py" />
+    <Compile Include="test\pipeline\validation\test_image.py" />
+    <Compile Include="test\pipeline\validation\test_transform.py" />
+    <Compile Include="test\pipeline\validation\__init__.py" />
+    <Compile Include="test\pipeline\__init__.py" />
+    <Compile Include="test\testbase.py" />
+    <Compile Include="test\validation\validation.py" />
+    <Compile Include="test\validation\__init__.py" />
+    <Compile Include="test\__init__.py" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="nornir_buildmanager" />
+    <Folder Include="nornir_buildmanager\config" />
+    <Folder Include="nornir_buildmanager\importers" />
+    <Folder Include="nornir_buildmanager\metadata" />
+    <Folder Include="nornir_buildmanager\operations" />
+    <Folder Include="nornir_buildmanager\operations\helpers" />
+    <Folder Include="nornir_buildmanager\validation" />
+    <Folder Include="test" />
+    <Folder Include="test\pipeline" />
+    <Folder Include="test\pipeline\metadata" />
+    <Folder Include="test\pipeline\operations" />
+    <Folder Include="test\pipeline\validation" />
+    <Folder Include="test\validation" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\nornir-imageregistration\nornir-imageregistration.pyproj">
+      <Name>nornir-imageregistration</Name>
+      <Project>{f9a77e5a-6d48-488f-bae5-db812178a4e9}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\nornir-pools\nornir-pools.pyproj">
+      <Name>nornir-pools</Name>
+      <Project>{8563d924-0a68-4d31-85eb-02f00220e41b}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\nornir-shared\nornir-shared.pyproj">
+      <Name>nornir-shared</Name>
+      <Project>{84b705d8-97f3-450d-8bec-a8c6d9d19cd2}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+</Project>

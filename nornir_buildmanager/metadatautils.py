@@ -10,7 +10,7 @@ import nornir_buildmanager.VolumeManagerETree as VolumeManagerETree
 import nornir_shared.misc as misc
 
 
-def GetOrCreateImageNodeHelper(ParentNode, OutputImageName):
+def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=None):
     # Create a node in the XML records
     Created = False
     OverlayImageNode = ParentNode.GetChildByAttrib('Image', 'Path', os.path.basename(OutputImageName))
@@ -18,13 +18,59 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName):
         cleaned = OverlayImageNode.CleanIfInvalid()
         if cleaned:
             OverlayImageNode = None
+            
+        if not InputTransformNode is None:
+            if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+                OverlayImageNode = None
 
     if OverlayImageNode is None:
-        OverlayImageNode = VolumeManagerETree.ImageNode(os.path.basename(OutputImageName))
+        OverlayImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(OutputImageName))
+        OverlayImageNode.SetTransform(InputTransformNode)
         ParentNode.append(OverlayImageNode)
         Created = True
 
     return (Created, OverlayImageNode)
+
+
+def GetOrCreateHistogramNodeHelper(ParentNode, DataPath, ImagePath, InputTransformNode=None):
+    # Create a node in the XML records
+    Created = False
+    histogramNode = ParentNode.find('Histogram')
+    if not histogramNode is None:
+        cleaned = histogramNode.CleanIfInvalid()
+        if cleaned:
+            histogramNode = None
+            
+        if not InputTransformNode is None:
+            if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+                histogramNode = None
+
+    if histogramNode is None:
+        histogramNode = VolumeManagerETree.HistogramNode.Create(InputTransformNode, None)
+        DataNode = VolumeManagerETree.DataNode.Create(os.path.basename(DataPath))
+        histogramNode.append(DataNode)
+        
+        ImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(ImagePath))
+        histogramNode.append(ImageNode)
+        
+        histogramNode.SetTransform(InputTransformNode)
+        ParentNode.append(histogramNode)
+        Created = True
+
+    return (Created, histogramNode)
+
+def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, CreateFunc=None, ReplaceFunc=None):
+    '''
+    This function gets or creates a node.  If the node exists and does not pass the criteria function it will be removed.
+    :param Element ParentNode: Element we are creating the node under
+    :param str tag: Element tag name
+    :param str Path: Path to the file resource
+    :param TransformNode InputTransformNode: The transform node the node we are creating is expected to refer to
+    :param function CreateFunc: Function to call if a new node is created and needs to be initialized
+    :param function ReplaceFunc: Function to call if an existing node is found that does not pass the test
+    '''
+    raise NotImplemented()
+    
 
 def CreateLevelNodes(ParentNode, DownsampleLevels):
     DownsampleLevels = misc.SortedListFromDelimited(DownsampleLevels)
@@ -33,12 +79,11 @@ def CreateLevelNodes(ParentNode, DownsampleLevels):
     for level in DownsampleLevels:
         LevelNode = ParentNode.GetChildByAttrib('Level', 'Downsample', level)
         if LevelNode is None:
-            LevelNode = VolumeManagerETree.LevelNode(level)
+            LevelNode = VolumeManagerETree.LevelNode.Create(level)
             [added, LevelNode] = ParentNode.UpdateOrAddChildByAttrib(LevelNode, 'Downsample')
             LevelsCreated.append(LevelNode)
 
-        if not os.path.exists(LevelNode.FullPath):
-            os.makedirs(LevelNode.FullPath)
+        os.makedirs(LevelNode.FullPath, exist_ok=True)
 
     return LevelsCreated
 
@@ -52,11 +97,10 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
         Type = attribs['Type']
         del attribs['Type']
 
-    ImageSetNode = VolumeManagerETree.ImageSetNode(Type, attrib=attribs);
+    ImageSetNode = VolumeManagerETree.ImageSetNode.Create(Type, attrib=attribs);
     [NewImageSetNode, ImageSetNode] = ParentNode.UpdateOrAddChildByAttrib(ImageSetNode, 'Path');
 
-    if not os.path.exists(ImageSetNode.FullPath):
-        os.makedirs(ImageSetNode.FullPath)
+    os.makedirs(ImageSetNode.FullPath, exist_ok=True)
 
     CreateLevelNodes(ImageSetNode, Downsample)
 
@@ -64,7 +108,7 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
 
     imagePath = os.path.basename(ImageFullPath)
 
-    imagenode = VolumeManagerETree.ImageNode(imagePath)
+    imagenode = VolumeManagerETree.ImageNode.Create(imagePath)
     [nodecreated, imagenode] = LevelNode.UpdateOrAddChildByAttrib(imagenode, 'Path')
 
     return ImageSetNode
@@ -97,6 +141,7 @@ def MaskImageNodeForImageSet(ImageSetNode, Downsample):
             return MappedMaskSetNode.find(MaskImageXPath)
 
     return None
+
 
 if __name__ == '__main__':
     pass

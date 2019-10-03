@@ -11,19 +11,16 @@ import subprocess
 
 from nornir_buildmanager import *
 from nornir_buildmanager.validation import transforms
-import nornir_imageregistration
-import nornir_imageregistration.arrange_mosaic
-from nornir_imageregistration.files import *
+import nornir_imageregistration 
 from nornir_shared import *
+import nornir_pools
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
-
-import nornir_imageregistration.mosaic as mosaic
 
 
 def TransformNodeToZeroOrigin(transform_node, **kwargs):
     ''':return: transform_node if the mosaic was adjusted.  None if the transform_node already had a zero origin'''
-    if mosaic.Mosaic.TranslateMosaicFileToZeroOrigin(transform_node.FullPath):
+    if nornir_imageregistration.Mosaic.TranslateMosaicFileToZeroOrigin(transform_node.FullPath):
         transform_node.ResetChecksum()
 
         logger = kwargs.get("Logger", None)
@@ -35,7 +32,18 @@ def TransformNodeToZeroOrigin(transform_node, **kwargs):
     return None
 
 
-def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
+def TranslateTransform(Parameters, TransformNode, FilterNode,
+                       RegistrationDownsample,
+                       min_overlap=None,
+                       excess_scalar=None,
+                       feature_score_threshold=None,
+                       min_translate_iterations=None,
+                       offset_acceptance_threshold=None,
+                       max_relax_iterations=None,
+                       max_relax_tension_cutoff=None,
+                       first_pass_inter_tile_distance_scale=None,
+                       inter_tile_distance_scale=None,
+                       Logger=None, **kwargs):
     '''@ChannelNode'''
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
     InputTransformNode = TransformNode
@@ -48,11 +56,13 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
     TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = added_level
-    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
-    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
+    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, "_Max0.5") #The hardcoded string is legacy to prevent duplicate transform elements
+    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode,
+                                                                                   InputTransformNode=InputTransformNode,
+                                                                                   OutputTransformPath=OutputTransformPath)
 
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:
@@ -65,7 +75,11 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
     
         # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
         tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
-        mfileObj = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
+        mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
+        if mfileObj is None:
+            Logger.warning("Could not load %s" % (InputTransformNode.FullPath))
+            return None
+        
         invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
         
         mosaicToLoadPath = InputTransformNode.FullPath
@@ -74,105 +88,119 @@ def TranslateTransform(Parameters, TransformNode, FilterNode, RegistrationDownsa
             mosaicToLoadPath = tempMosaicFullPath
             
         mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
-        translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(LevelNode.FullPath, usecluster=True)
-        translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
-
-        SaveRequired = os.path.exists(OutputTransformNode.FullPath)
+        firstpass_translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(tiles_path=LevelNode.FullPath,
+                                                                             image_scale=1.0/RegistrationDownsample,
+                                                                             excess_scalar=excess_scalar,
+                                                                             min_overlap=min_overlap,
+                                                                             feature_score_threshold=feature_score_threshold,
+                                                                             min_translate_iterations=min_translate_iterations,
+                                                                             offset_acceptance_threshold=offset_acceptance_threshold,
+                                                                             max_relax_iterations=max_relax_iterations,
+                                                                             max_relax_tension_cutoff=max_relax_tension_cutoff,
+                                                                             first_pass_inter_tile_distance_scale=first_pass_inter_tile_distance_scale,
+                                                                             inter_tile_distance_scale=inter_tile_distance_scale)
         
-        print("%s -> %s" % (OutputTransformNode.FullPath, mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
+        firstpass_translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
+
+        SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
+        
+        print("%s -> %s" % (OutputTransformNode.FullPath, nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
         
         if os.path.exists(tempMosaicFullPath):
             os.remove(tempMosaicFullPath)
+        
+        
  
     if SaveRequired:
+        nornir_pools.ClosePools() #A workaround to avoid running out of memory
         return TransformParentNode
     else:
         return None
 
-
-def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
-    '''@ChannelNode'''
-    MaxOffsetX = Parameters.get('MaxOffsetX', 0.1)
-    MaxOffsetY = Parameters.get('MaxOffsetY', 0.1)
-    BlackMaskX = Parameters.get('BlackMaskX', None)
-    BlackMaskY = Parameters.get('BlackMaskY', None)
-
-    OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
-    InputTransformNode = TransformNode
-
-    [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
-
-    MangledName = misc.GenNameFromDict(Parameters)
-
-    if MaxOffsetX < 1:
-        MaxOffsetX = MaxOffsetX * 100
-
-    if MaxOffsetY < 1:
-        MaxOffsetY = MaxOffsetY * 100
-
-    MaxOffsetString = ''
-    if (not MaxOffsetX is None) and (not MaxOffsetY is None):
-        MaxOffsetString = ' -max_offset ' + str(MaxOffsetX) + '%% ' + str(MaxOffsetY) + '%% '
-
-    BlackMaskString = ''
-    if (not BlackMaskX is None) and (not BlackMaskY is None):
-        BlackMaskString = '-black_mask ' + str(BlackMaskX) + '%% ' + str(BlackMaskY) + '%% '
-
-    # Check if there is an existing prune map, and if it exists if it is out of date
-    TransformParentNode = TransformNode.Parent
-
-    SaveRequired = added_level
-
-    OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
-    if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
-        OutputTransformNode.SetTransform(InputTransformNode)
-        (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
-    elif OutputTransformNode.Locked:
-        Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
-        return None
-
-    if not os.path.exists(OutputTransformNode.FullPath):
-
-        # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
-        try:
-            mosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
-            mfileObj = mosaicfile.MosaicFile.Load(InputTransformNode.FullPath)
-            invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
-            if invalidFiles:
-                mfileObj.Save(mosaicFullPath)
-            else:
-                shutil.copy(InputTransformNode.FullPath, mosaicFullPath)
-
-            CmdLineTemplate = "ir-refine-translate -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s -noclahe  -sp " + str(LevelNode.Downsample) + MaxOffsetString + BlackMaskString
-            cmd = CmdLineTemplate % {'InputMosaic' : mosaicFullPath, 'OutputMosaic' : OutputTransformNode.FullPath, 'ImageDir' : LevelNode.FullPath}
-            prettyoutput.CurseString('Cmd', cmd)
-            NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-            ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
-            OutputTransformNode.cmd = cmd
-
-            if os.path.exists(OutputTransformNode.FullPath):
-                stats = os.stat(OutputTransformNode.FullPath)
-                if stats.st_size == 0:
-                    os.remove(OutputTransformNode.FullPath)
-                    errmsg = "ir-refine-translate output zero size translate file.  Output deleted: " + OutputTransformNode.FullPath
-                    Logger.error(errmsg)
-
-                    # raise Exception(errmsg)
-                else:
-                    # Thigs are OK, translate to a zero origin.
-                    TransformNodeToZeroOrigin(OutputTransformNode)
-
-            SaveRequired = os.path.exists(OutputTransformNode.FullPath)
-
-        finally:
-            if os.path.exists(mosaicFullPath):
-                os.remove(mosaicFullPath)
-
-    if SaveRequired:
-        return TransformParentNode
-    else:
-        return None
+# 
+# def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
+#     '''@ChannelNode'''
+#     MaxOffsetX = Parameters.get('MaxOffsetX', 0.1)
+#     MaxOffsetY = Parameters.get('MaxOffsetY', 0.1)
+#     BlackMaskX = Parameters.get('BlackMaskX', None)
+#     BlackMaskY = Parameters.get('BlackMaskY', None)
+# 
+#     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
+#     InputTransformNode = TransformNode
+# 
+#     [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
+# 
+#     MangledName = misc.GenNameFromDict(Parameters)
+# 
+#     if MaxOffsetX < 1:
+#         MaxOffsetX = MaxOffsetX * 100
+# 
+#     if MaxOffsetY < 1:
+#         MaxOffsetY = MaxOffsetY * 100
+# 
+#     MaxOffsetString = ''
+#     if (not MaxOffsetX is None) and (not MaxOffsetY is None):
+#         MaxOffsetString = ' -max_offset ' + str(MaxOffsetX) + '%% ' + str(MaxOffsetY) + '%% '
+# 
+#     BlackMaskString = ''
+#     if (not BlackMaskX is None) and (not BlackMaskY is None):
+#         BlackMaskString = '-black_mask ' + str(BlackMaskX) + '%% ' + str(BlackMaskY) + '%% '
+# 
+#     # Check if there is an existing prune map, and if it exists if it is out of date
+#     TransformParentNode = TransformNode.Parent
+# 
+#     SaveRequired = added_level
+# 
+#     OutputTransformNode = TransformParentNode.GetChildByAttrib('Transform', 'Path', VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName))
+#     if OutputTransformNode is None:
+#         OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+#         OutputTransformNode.SetTransform(InputTransformNode)
+#         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
+#     elif OutputTransformNode.Locked:
+#         Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+#         return None
+# 
+#     if not os.path.exists(OutputTransformNode.FullPath):
+# 
+#         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
+#         try:
+#             mosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
+#             mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
+#             invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
+#             if invalidFiles:
+#                 mfileObj.Save(mosaicFullPath)
+#             else:
+#                 shutil.copy(InputTransformNode.FullPath, mosaicFullPath)
+# 
+#             CmdLineTemplate = "ir-refine-translate -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s -noclahe  -sp " + str(LevelNode.Downsample) + MaxOffsetString + BlackMaskString
+#             cmd = CmdLineTemplate % {'InputMosaic' : mosaicFullPath, 'OutputMosaic' : OutputTransformNode.FullPath, 'ImageDir' : LevelNode.FullPath}
+#             prettyoutput.CurseString('Cmd', cmd)
+#             NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
+#             ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
+#             OutputTransformNode.cmd = cmd
+# 
+#             if os.path.exists(OutputTransformNode.FullPath):
+#                 stats = os.stat(OutputTransformNode.FullPath)
+#                 if stats.st_size == 0:
+#                     os.remove(OutputTransformNode.FullPath)
+#                     errmsg = "ir-refine-translate output zero size translate file.  Output deleted: " + OutputTransformNode.FullPath
+#                     Logger.error(errmsg)
+# 
+#                     # raise Exception(errmsg)
+#                 else:
+#                     # Thigs are OK, translate to a zero origin.
+#                     TransformNodeToZeroOrigin(OutputTransformNode)
+# 
+#             SaveRequired = os.path.exists(OutputTransformNode.FullPath)
+# 
+#         finally:
+#             if os.path.exists(mosaicFullPath):
+#                 os.remove(mosaicFullPath)
+# 
+#     if SaveRequired:
+#         return TransformParentNode
+#     else:
+#         return None
 
 def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
     '''@ChannelNode'''
@@ -183,6 +211,11 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     Threshold = Parameters.get('Threshold', None)
     
     InputTransformNode = TransformNode
+    
+    (Valid, Reason) = InputTransformNode.IsValid()
+    if not Valid:
+        Logger.warning("Skipping refinement of invalid transform %s\n%s" % (InputTransformNode.FullPath, Reason))
+        return None
 
     [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
 
@@ -214,7 +247,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:
@@ -226,7 +259,11 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         cmd = CmdLineTemplate % {'InputMosaic' : InputTransformNode.FullPath, 'OutputMosaic' : OutputTransformNode.FullPath, 'ImageDir' : LevelNode.FullPath}
         prettyoutput.CurseString('Cmd', cmd)
         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-        ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
+        output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
+        
+        if len(output) == 0:
+            raise RuntimeError("No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
+        
         OutputTransformNode.cmd = cmd
         SaveRequired = True
 
@@ -259,7 +296,7 @@ def CompressTransforms(Parameters, TransformNode, **kwargs):
     TempMosaicFilename = 'Temp_' + MosaicBaseName
     TempMosaicFileFullPath = os.path.join(os.path.dirname(InputFileFullPath), TempMosaicFilename)
 
-    mFile = mosaicfile.MosaicFile.Load(InputFileFullPath)
+    mFile = nornir_imageregistration.MosaicFile.Load(InputFileFullPath)
     mFile.CompressTransforms()
     mFile.Save(TempMosaicFileFullPath)
 
