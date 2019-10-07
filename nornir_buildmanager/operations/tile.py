@@ -21,14 +21,17 @@ from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates 
 from nornir_buildmanager.validation import transforms, image
 from nornir_imageregistration.files import mosaicfile
-from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration.tileset import ShadeCorrectionTypes
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile
 from nornir_shared.histogram import Histogram
-from nornir_shared.misc import SortedListFromDelimited
 from nornir_imageregistration import tileset_functions
+import nornir_shared.misc
+import nornir_shared.images
+import nornir_shared.plot
+import nornir_shared.files
+
 
 import nornir_buildmanager as nb
 import nornir_imageregistration.spatial as spatial
@@ -1112,7 +1115,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     if added_output_mask_filter:
         OutputMaskFilterNode.BitsPerPixel = 1
     
-    PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
+    PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
     OutputImageNameTemplate = FilterNode.DefaultImageName(image_ext)
     OutputImageMaskNameTemplate = InputMaskFilterNode.DefaultImageName(image_ext)  
@@ -1167,7 +1170,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask' + image_ext)
 
         Logger.info("Assembling " + TransformNode.FullPath)
-        mosaic = Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
+        mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
         (mosaicImage, maskImage) = mosaic.AssembleImage(ImageDir,
                                                         FixedRegion=RequestedBoundingBox,
                                                         usecluster=True,
@@ -1231,7 +1234,7 @@ def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, Thum
 
     MangledName = misc.GenNameFromDict(Parameters) + TransformNode.Type
 
-    PyramidLevels = SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
+    PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
     OutputImageNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + FilterNode.Name + ".png"
     OutputImageMaskNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
@@ -1438,7 +1441,9 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
         bytes_per_pixel = int(2) #We use float16 for each pixel
         num_images_per_tile = int(2) #The assembled image and the distance image
         num_duplicate_copies_in_memory = int(3) #At most we need the raw tile (and distance image), the assembled individual tile (and distance image), and the full composite image (and distance image) we are building
-        max_temp_image_area = (memory_data.available /  (bytes_per_pixel * num_images_per_tile * num_duplicate_copies_in_memory)) 
+        safety_factor = int(2)
+        max_temp_image_area = (memory_data.available /  (bytes_per_pixel * num_images_per_tile * num_duplicate_copies_in_memory * safety_factor))
+        prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(float(max_temp_image_area) / float(2 << 20)))
 
 #    Feathering = Parameters.get('Feathering', 'binary')
 
