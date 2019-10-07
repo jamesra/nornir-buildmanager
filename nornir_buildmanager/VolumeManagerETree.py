@@ -222,9 +222,10 @@ class VolumeManager():
         # We cannot include the volume checksum in the calculation because including it changes the checksum'''
         if hasattr(VolumeObj, 'Save'):
             VolumeObj.Save(tabLevel=None)
-        else:
+        elif hasattr(VolumeObj, 'Parent'):
             cls.Save(VolumeObj.Parent)
-            
+        else:
+            raise ValueError("Trying to save element with no Save function or parent {0}".format(str(VolumeObj)))
             
 class XElementWrapper(ElementTree.Element):
 
@@ -1018,9 +1019,10 @@ class XFileElementWrapper(XResourceElementWrapper):
         if not directory is None and len(directory) > 0:
             try: 
                 os.makedirs(directory)
-            except OSError:
+            except (OSError, FileExistsError):
                 if not os.path.isdir(directory):
-                    raise
+                    raise ValueError("{0}.Path property was set to an existing file or non-directory object {1}".format(type.self, self.FullPath))
+                    
 
         if hasattr(self, '__fullpath'):
             del self.__dict__['__fullpath']
@@ -1084,9 +1086,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         try: 
             os.makedirs(self.FullPath)
-        except OSError:
-            if os.path.isfile(self.FullPath): 
-                raise ValueError("{0}.Path property was set to an existing file {1}".format(type.self, self.FullPath))
+        except (OSError, FileExistsError):
+            if not os.path.isdir(self.FullPath): 
+                raise ValueError("{0}.Path property was set to an existing file or non-directory file system object {1}".format(type.self, self.FullPath))
         
         return
 
@@ -1330,10 +1332,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def __SaveXML(self, xmlfilename, SaveElement):
         '''Intended to be called on a thread from the save function'''
         try: 
-            os.makedirs(self.FullPath)
-        except (OSError , WindowsError) as e:
+            os.makedirs(self.FullPath, exist_ok = True)
+        except (OSError, FileExistsError, WindowsError) as e:
             if not os.path.isdir(self.FullPath):
-                raise e
+                raise ValueError("{0} is trying to save to a non directory path {1}\n{2}".format(str(SaveElement), self.FullPath, str(e)))
 
         # prettyoutput.Log("Saving %s" % xmlfilename)
 
