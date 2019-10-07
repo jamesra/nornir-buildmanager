@@ -2074,7 +2074,7 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
         [added, NextLevelNode] = TileSetNode.UpdateOrAddChildByAttrib(NextLevelNode, 'Downsample')
         NextLevelNode.GridDimX = newXDim
         NextLevelNode.GridDimY = newYDim
-        if added:
+        if added == True:
             yield TileSetNode
     
         # Check to make sure the level hasn't already been generated and we've just missed the
