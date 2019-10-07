@@ -54,6 +54,67 @@ def PrintIfMissingTileset(filter_node, **kwargs):
     channel_node = filter_node.FindParent("Channel")
             
     print("{0:04d}\t{1}\t{2}".format(section_node.Number, channel_node.Name, filter_node.Name))
+    
+def PrintNodeTreeAndAttributes(node, attributes, format_str=None, **kwargs):
+    '''
+    Prints a list of attributes found in a node if they exist and the tree of the node containing them
+    :param list attributes: A list of strings representing attribute names to print
+    :param str format_str: optional format string to use to print the entire list
+    '''
+    
+    if attributes is None:
+        raise ValueError("PriteNodeTreeAndAttributes requires list of attributes to display")
+    elif isinstance(attributes, str):
+        attributes = nornir_shared.misc.ListFromDelimited(attributes, ',')
+    
+    out_parent_names = GetNamesToRootString(node)
+    
+    values = []
+    for attrib_name in attributes:
+        value = None
+        if(hasattr(node, attrib_name)):
+            value = getattr(node, attrib_name)
+            
+        values.append(value)
+        
+    value_fill = kwargs.get('values_fill', 8)
+    out_values_str = ''
+    if format_str is not None:
+        out_values_str = format_str.format(*values)
+    else:
+        #value_format_str = '{0: <' + str(value_fill) + '}'
+        for v in values:
+            out_values_str += '{0: <{fill}}'.format(v, fill=value_fill)
+    
+    print(out_parent_names + ' ' + out_values_str)
+    return
+    
+def GetNamesToRootString(node, **kwargs):
+    '''
+    Print a tab delimeted list of element names of parents to the root
+    '''
+    
+    iter_node = node
+    names = []
+    
+    fill = kwargs.get('fill', 12) #Default to 12 character padding for names
+    while(iter_node.Parent is not None):
+        iter_node = iter_node.Parent
+        if hasattr(iter_node, 'Number'):
+            names.insert(0, iter_node.Number)
+        elif hasattr(iter_node, 'Name'):
+            names.insert(0, iter_node.Name)
+        
+            
+    #format_str = '{0: <' + str(fill) + '}'
+    
+    out_str = ''
+    for n in names:
+        out_str += '{0: <{fill}}'.format(n, fill=fill)
+         
+    return out_str
+    
+    
 
 def PrintAttributes(node, attribs=None, tab_indent_count=None, **kwargs):
     '''Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count'''
