@@ -83,6 +83,11 @@ def TryAddLogs(containerObj, InputPath, logger):
                 LogNodeObj.AverageTileTime = '%g' % LogData.AverageTileTime
                 LogNodeObj.AverageTileDrift = '%g' % LogData.AverageTileDrift
                 LogNodeObj.CaptureTime = '%g' % (LogData.MontageEnd - LogData.MontageStart)
+                
+                LogNodeObj.HighMagCookDone = '%i' % (LogData.HighMagCookDone)
+                LogNodeObj.LowMagCookDone = '%i' % (LogData.LowMagCookDone)
+                LogNodeObj.StableFilamentChecked = '%i' % (LogData.StableFilamentChecked)
+                LogNodeObj.ISCalibrationDone = '%i' % (LogData.ISCalibrationDone)
 
             except:
                 (etype, evalue, etraceback) = sys.exc_info()

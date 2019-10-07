@@ -161,6 +161,31 @@ class SerialEMLog(object):
             self._num_tiles = sum(IsTile)
         
         return self._num_tiles
+    
+    @property
+    def ISCalibrationDone(self):
+        return self._IS_change_percentage is not None
+    
+    @property
+    def IS_mean_correlation(self):
+        return self._IS_mean_cc
+    
+    @property
+    def IS_min_correlation(self):
+        return self._IS_min_cc
+    
+    @property
+    def HighMagCookDone(self):
+        return self._HighMagCookDone
+    
+    @property
+    def LowMagCookDone(self):
+        return self._LowMagCookDone
+    
+    @property
+    def StableFilamentChecked(self):
+        return self._stable_filament_checked
+        
 
     @property
     def Startup(self):
@@ -185,7 +210,15 @@ class SerialEMLog(object):
         self._fastestTime = None
         self._maxdrift = None
         self._mindrift = None
-
+        
+        self._IS_change_percentage = None
+        self._IS_mean_cc = None
+        self._IS_min_cc = None
+        
+        self._HighMagCookDone = False
+        self._LowMagCookDone = False
+        self._stable_filament_checked = False
+        
         self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()
 
     @classmethod
@@ -368,7 +401,21 @@ class SerialEMLog(object):
                     Data.MontageEnd = timestamp
                 elif entry.startswith('Started'):
                     Data._startup = entry[len('Started') + 1:].strip()
-
+                elif entry.startswith('This is a change of'): #This is a change of 0.08% from the old directly measured matrix
+                    subentry = entry[len('This is a change of')+1:]
+                    Data._IS_change_percentage = float(subentry.split('%')[0])
+                elif entry.startswith('The mean cross-correlation coefficient was'): #The mean cross-correlation coefficient was 0.763 and the minimum was 0.716
+                    subentry = entry[len('The mean cross-correlation coefficient was')+1:]
+                    parts = subentry.split()
+                    Data._IS_mean_cc = float(parts[0])
+                    Data._IS_mean_cc = float(parts[5])
+                elif entry.startswith('Captured image equally bright as earlier image.  Filament is stable!'):
+                    Data._stable_filament_checked = True
+                elif entry.startswith('Montage Precook Start'):
+                    Data._HighMagCookDone = True
+                elif entry.startswith('BEGIN BURN WOBBLE'):
+                    Data._LowMagCookDone = True
+                    
                 line = hLog.readline(512)
 
                 if(not timestamp is None):
