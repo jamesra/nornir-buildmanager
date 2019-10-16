@@ -657,9 +657,9 @@
                 type="float"
                 help="Minimum amount of overlap tiles must have to contribute to the final mosaic."
                 required="False" />
-            <Argument flag="-ExpandOverlapScalar" default="3.0" dest="excess_scalar"
+            <Argument flag="-ExpandOverlapScalar" default="1.0" dest="excess_scalar"
                 type="float"
-                help="How much additional area should we pad the overlapping regions with.  Must be at least 3 to ensure all overlaps can be detected."
+                help="How much additional area should we pad the overlapping regions with."
                 required="False" />
             <Argument flag="-first_pass_inter_tile_distance" default="1" dest="first_pass_inter_tile_distance" type="float"
                 help="A value from 0 to 1 that scales the distance between the centers of the two tiles.  A value of 0 considers the full images when registering.  A value of 1.0 only considers the overlapping regions according to the tile transforms.  Reduce this value in the first registration pass to increase the search area."
