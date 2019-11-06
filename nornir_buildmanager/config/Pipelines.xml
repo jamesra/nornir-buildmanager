@@ -793,17 +793,6 @@
 				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransformName']" />
 				<Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']" />
 
-				<!-- ir-translate, calculate translation for each tile into the greater 
-					mosaic <PythonCall Function="registration.TranslateTransform" TransformNode="#TransformNode" 
-					OutputTransform="Translated_#InputTransformName" FilterNode="#FilterNode" 
-					RegistrationDownsample="#Downsample"> <Parameters> <Entry Name="MaxOffsetX" 
-					Value="#MaxOffset"/> </Parameters> </PythonCall> -->
-
-				<!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping 
-					tiles -->
-				<!-- <Select VariableName="TranslatedTransformNode" Root="ChannelNode" 
-					XPath="Transform[@Name='Translated_#InputTransformName']"/> -->
-				<!-- <PythonCall Function="registration.CompressTransforms" TransformNode="#TransformNode"/> -->
 				<PythonCall Function="registration.GridTransform"
 					OutputTransform="#OutputTransformName" TransformNode="#TransformNode"
 					FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
