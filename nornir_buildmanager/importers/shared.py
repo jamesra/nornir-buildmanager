@@ -48,7 +48,7 @@ def GetSectionInfo(fileName):
 def TryAddNotes(containerObj, InputPath, logger):
     '''Check the path for a notes.txt file.  If found, add a <Notes> element to the passed containerObj'''
     
-    NotesFiles = glob.glob(os.path.join(InputPath, '*notes*.*'))
+    NotesFiles = glob.glob(os.path.join(InputPath, '*.txt'))
     NotesAdded = False
     if len(NotesFiles) > 0:
         for filename in NotesFiles:
