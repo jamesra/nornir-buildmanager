@@ -75,9 +75,10 @@ class LogTileData(object):
 
         self.stageStopTime = None  # Time when the stage stopped moving
 
-        self.driftStamps = []  # Contains tuples of time after stage move completion and measured drift
+        self.driftStamps = []  # Contains tuples of time after stage move completion, measured drift, and measured defocus
         self.number = None  # The tile number in the capture
         self.driftUnits = None  # nm/sec
+        self.defocusUnits = None # microns
         self.coordinates = None
 
 
@@ -346,21 +347,20 @@ class SerialEMLog(object):
                         # The very first tile does not get a 'finished stage move' message.  Use the start of the autofocus to approximate completion of the stage move
                         if NextTile.stageStopTime is None:
                             NextTile.stageStopTime = LastAutofocusStart
-
-                        iDrift = entry.find('drift')
-                        if iDrift > -1:
-                            DriftStr = entry[iDrift:]  # example: drift = 1.57 nm/sec
-                            iEqual = DriftStr.find('=')
-                            if iEqual > -1:
-                                ValueStr = DriftStr[iEqual + 1:]  # example 1.57 nm/sec
-                                ValueStr = ValueStr.strip()
-                                (Value, Units) = ValueStr.split()
-                                Units = Units.strip()
-                                Value = Value.strip()
-                                floatValue = float(Value)
-                                driftTimestamp = LastAutofocusStart - NextTile.stageStopTime
-                                NextTile.driftStamps.append((driftTimestamp, floatValue))
-                                NextTile.driftUnits = Units
+                            
+                        defocusValueUnits = cls.ParseValueAndUnits(entry, 'defocus')
+                        if defocusValueUnits is not None:
+                            driftTimestamp = LastAutofocusStart - NextTile.stageStopTime
+                            NextTile.driftUnits = defocusValueUnits[1]
+                        else:
+                            defocusValueUnits = (None, None)
+                                
+                        driftValueUnits = cls.ParseValueAndUnits(entry, 'drift')
+                        if driftValueUnits is not None:
+                            driftTimestamp = LastAutofocusStart - NextTile.stageStopTime
+                            NextTile.driftStamps.append((driftTimestamp, driftValueUnits[0], defocusValueUnits[0]))
+                            NextTile.driftUnits = driftValueUnits[1]
+                                
                 elif entry.startswith('SaveImage Saving'):
                     assert(not AcquiredTile is None)  # We should have already recorded a capture event and populated AcquiredTile before seeing this line in the log
                     iEqual = line.find('=')
@@ -427,7 +427,27 @@ class SerialEMLog(object):
 
         Data.__PickleSave(logfullPath)
         return Data
-
+    
+    @classmethod
+    def ParseValueAndUnits(entry, propertyname):
+        '''For log entries with the form 'propertyname = #### units' returns 
+           the value and units'''
+        
+        iProperty = entry.find(propertyname)
+        if iProperty > -1:
+            PropertyStr = entry[iProperty:iProperty+3]  # example: drift = 1.57 nm/sec
+            iEqual = PropertyStr.find('=')
+            if iEqual > -1:
+                ValueStr = PropertyStr[iEqual + 1:]  # example 1.57 nm/sec
+                ValueStr = ValueStr.strip()
+                (Value, Units) = ValueStr.split()
+                Units = Units.strip()
+                Value = Value.strip()
+                floatValue = float(Value)
+                
+                return (floatValue, Units)
+            
+        return None
 
 def __argToSerialEMLog(arg):
     Data = None
@@ -521,6 +541,66 @@ def PlotDriftGrid(DataSource, OutputImageFile):
         s.append(d[2])
 
     title = "Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
+
+    plot.Scatter(x, y, s, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+
+    return
+
+
+def PlotDefocusGrid(DataSource, OutputImageFile):
+
+    Data = __argToSerialEMLog(DataSource)
+
+    lines = []
+    minDefocus = 10000
+    maxDefocus = -10000
+    NumTiles = int(0)
+    fastestTime = float('inf')
+    colors = ['black', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
+
+    DriftGrid = []
+    c = []
+    for t in list(Data.tileData.values()):
+        if not (t.dwellTime is None or t.drift is None):
+            time = []
+            values = []
+
+            for s in t.driftStamps:
+                time.append(s[0])
+                values.append(s[2]) #Read the defocus value
+
+            colorVal = 'black'
+            numPoints = len(t.driftStamps)
+            if  numPoints < len(colors):
+                colorVal = colors[numPoints]
+
+            c.append(colorVal)
+
+            DriftGrid.append((t.coordinates[0], t.coordinates[1], t.driftStamps[-1][2]))
+            maxDefocus = max(maxDefocus, t.driftStamps[-1][2])
+            minDefocus = min(minDefocus, t.driftStamps[-1][2])
+            if fastestTime is None:
+                fastestTime = t.totalTime
+            else:
+                fastestTime = min(fastestTime, t.totalTime)
+
+            lines.append((time, values))
+            NumTiles = NumTiles + 1
+
+#    print "Fastest Capture: %g" % fastestTime
+#
+
+    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
+
+    x = []
+    y = []
+    s = []
+    for d in DriftGrid:
+        x.append(d[0])
+        y.append(d[1])
+        s.append(d[2])
+
+    title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
 
     plot.Scatter(x, y, s, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
 
