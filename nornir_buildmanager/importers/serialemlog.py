@@ -580,64 +580,6 @@ def PlotDriftGrid(DataSource, OutputImageFile):
     return
 
 
-def PlotDefocusGrid(DataSource, OutputImageFile):
-
-    Data = __argToSerialEMLog(DataSource)
-
-    lines = []
-    minDefocus = 10000
-    maxDefocus = -10000
-    NumTiles = int(0)
-    fastestTime = float('inf')
-    colors = ['black', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
-
-    DriftGrid = []
-    c = []
-    for t in list(Data.tileData.values()):
-        if not (t.dwellTime is None or t.drift is None):
-            time = []
-            values = []
-
-            for s in t.driftStamps:
-                time.append(s[0])
-                values.append(s[2]) #Read the defocus value
-
-            colorVal = 'black'
-            numPoints = len(t.driftStamps)
-            if  numPoints < len(colors):
-                colorVal = colors[numPoints]
-
-            c.append(colorVal)
-
-            DriftGrid.append((t.coordinates[0], t.coordinates[1], t.driftStamps[-1][2]))
-            maxDefocus = max(maxDefocus, t.driftStamps[-1][2])
-            minDefocus = min(minDefocus, t.driftStamps[-1][2])
-            if fastestTime is None:
-                fastestTime = t.totalTime
-            else:
-                fastestTime = min(fastestTime, t.totalTime)
-
-            lines.append((time, values))
-            NumTiles = NumTiles + 1
-
-#    print "Fastest Capture: %g" % fastestTime
-#
-
-    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
-
-    x = []
-    y = []
-    s = []
-    for d in DriftGrid:
-        x.append(d[0])
-        y.append(d[1])
-        s.append(d[2])
-
-    title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
-
-    plot.Scatter(x, y, s, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
-
-    return
 
 
 if __name__ == "__main__":

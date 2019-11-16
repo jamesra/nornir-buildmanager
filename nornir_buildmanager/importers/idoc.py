@@ -53,6 +53,9 @@ import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 
+from mpl_toolkits.mplot3d import axes3d
+import matplotlib.pyplot as plt
+
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
@@ -650,7 +653,7 @@ class IDocTileData():
         self.Intensity = None
         self.ExposureDose = None
         self.SpotSize = None
-        self.Defocus = None
+        self._Defocus = None
         self.ImageShift = None
         self.RotationAngle = None
         self.ExposureTime = None
@@ -663,6 +666,14 @@ class IDocTileData():
 
     def __str__(self):
         return self.Image
+    
+    @property
+    def Defocus(self):
+        return self._Defocus
+    
+    @Defocus.setter
+    def Defocus(self, val):
+        self._Defocus = val
     
     @property
     def Min(self):
@@ -704,6 +715,10 @@ class IDoc():
     @property
     def CameraBpp(self):
         return self._CameraBpp
+    
+    @property
+    def Tiles(self):
+        return self.tiles
 
     def __init__(self):
         self.DataMode = None
@@ -855,5 +870,89 @@ class IDoc():
             return idocObj
 
         return None
+    
+def __argToIDoc(arg):
+    Data = None
+    if arg is None:
+        Data = IDoc.Load(sys.argv[1])
+    elif isinstance(arg, str):
+        Data = IDoc.Load(arg)
+    elif isinstance(arg, IDoc):
+        Data = arg
+    else:
+        raise Exception("Invalid argument type to PlotDrifGrid")
 
+    return Data
+
+
+def PlotDefocusSurface(DataSource, OutputImageFile):
+
+    Data = __argToIDoc(DataSource)
+
+    lines = []
+    minDefocus = 10000
+    maxDefocus = -10000
+    NumTiles = int(0)
+    fastestTime = float('inf')
+    colors = ['black', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
+
+    DriftGrid = []
+    c = []
+    x = []
+    y = []
+    z = []
+    for t in list(Data.Tiles):
+        if not t.Defocus is None:
+            
+            x.append(t.StagePosition[0])
+            y.append(t.StagePosition[1])
+            z.append(t.Defocus)
+            
+            maxDefocus = max(maxDefocus, t.Defocus)
+            minDefocus = min(minDefocus, t.Defocus)
+             
+#             colorVal = 'black'
+#             numPoints = len(t.driftStamps)
+#             if  numPoints < len(colors):
+#                 colorVal = colors[numPoints]
+# 
+#             c.append(colorVal)
+# 
+#             DriftGrid.append((t.coordinates[0], t.coordinates[1], t.driftStamps[-1][2]))
+#             
+#             if fastestTime is None:
+#                 fastestTime = t.totalTime
+#             else:
+#                 fastestTime = min(fastestTime, t.totalTime)
+# 
+#             lines.append((time, values))
+#             NumTiles = NumTiles + 1
+
+#    print "Fastest Capture: %g" % fastestTime
+#
+
+    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
+
+    title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
+    
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.plot_trisurf(x, y, z) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+    plt.show()
+    return
+
+if __name__ == "__main__":
+
+    datapath = sys.argv[1]
+
+    basename = os.path.basename(datapath)
+    (outfile, ext) = os.path.splitext(basename)
+    outdir = os.path.dirname(datapath)
+
+    Data = IDoc.Load(datapath)
+
+    print("%d tiles" % Data.NumTiles)
+
+    PlotDefocusSurface(datapath, os.path.join(outdir, outfile + "_defocus.svg"))
 
