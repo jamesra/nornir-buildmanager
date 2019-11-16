@@ -53,8 +53,10 @@ import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 
+import numpy as np
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
+import matplotlib.tri as mtri
 
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
@@ -901,6 +903,8 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
     x = []
     y = []
     z = []
+    
+    points = None
     for t in list(Data.Tiles):
         if not t.Defocus is None:
             
@@ -908,37 +912,48 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
             y.append(t.StagePosition[1])
             z.append(t.Defocus)
             
+            row = np.asarray((t.StagePosition[0],t.StagePosition[1],t.Defocus))
+            #row = np.swapaxes(row, 0, 1)
+            if points is None:
+                points = row
+            else:
+                points = np.vstack((points,row))
+            
             maxDefocus = max(maxDefocus, t.Defocus)
             minDefocus = min(minDefocus, t.Defocus)
              
-#             colorVal = 'black'
-#             numPoints = len(t.driftStamps)
-#             if  numPoints < len(colors):
-#                 colorVal = colors[numPoints]
-# 
-#             c.append(colorVal)
-# 
-#             DriftGrid.append((t.coordinates[0], t.coordinates[1], t.driftStamps[-1][2]))
-#             
-#             if fastestTime is None:
-#                 fastestTime = t.totalTime
-#             else:
-#                 fastestTime = min(fastestTime, t.totalTime)
-# 
-#             lines.append((time, values))
-#             NumTiles = NumTiles + 1
+    tmp_a = points[:,0:2]
+    tmp_a = np.hstack((tmp_a, np.ones((len(z),1))))
+    tmp_b = points[:,-1]
+    
+    b = np.matrix(tmp_b).T
+    A = np.matrix(tmp_a)
+    
+    fit = (A.T * A).I * A.T * b
+    errors = b - A * fit
+    residual = np.linalg.norm(errors)
 
-#    print "Fastest Capture: %g" % fastestTime
-#
+    print( "solution:")
+    print( "%f x + %f y + %f = z" % (fit[0], fit[1], fit[2]))
+    print( "errors:")
+    print( errors)
+    print( "residual:")
+    print( residual)
+    
+    remapped = tmp_a * fit.flat
+    adjusted_z = np.sum(remapped,1)
 
     # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
-
+    z = np.asarray(z)
+    z = z - adjusted_z
     title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
     
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
+    
+    triang = mtri.Triangulation(x, y)
 
-    ax.plot_trisurf(x, y, z) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+    ax.plot_trisurf(triang, z, cmap=plt.cm.CMRmap, shade=True) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
     plt.show()
     return
 
