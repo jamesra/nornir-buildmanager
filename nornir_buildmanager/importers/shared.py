@@ -52,6 +52,10 @@ def TryAddNotes(containerObj, InputPath, logger):
     NotesAdded = False
     if len(NotesFiles) > 0:
         for filename in NotesFiles:
+            
+            if os.path.basename(filename) == 'ContrastOverrides.txt':
+                continue 
+            
             try:
                 from xml.sax.saxutils import escape
 
