@@ -51,8 +51,8 @@ class LogTileData(object):
     def drift(self):
 
         if len(self.driftStamps) > 0:
-            (_, drift) = self.driftStamps[-1]
-            return drift
+            stamp = self.driftStamps[-1]
+            return stamp[1]
 
         return None
 
@@ -363,17 +363,14 @@ class SerialEMLog(object):
                                 
                 elif entry.startswith('SaveImage Saving'):
                     assert(not AcquiredTile is None)  # We should have already recorded a capture event and populated AcquiredTile before seeing this line in the log
-                    iEqual = line.find('=')
-                    if iEqual > -1:
-                        ValueStr = line[iEqual + 1:]  # example 1.57 nm/sec
-                        ValueStr = ValueStr.strip()
-                        FileNumber = int(ValueStr)
+                    FileNumber = cls.ParseValue(entry, 'Z')
+                    if FileNumber is not None:
                         AcquiredTile.number = FileNumber
 
                         # Determine the position in the grid
-                        iAt = line.find('at')
+                        iAt = entry.find('at')
                         if iAt >= 0:
-                            CoordString = line[iAt + 2:]
+                            CoordString = entry[iAt + 2:]
                             iComma = CoordString.find(',')
                             if iComma > 0:
                                 CoordString = CoordString[:iComma]
@@ -428,24 +425,60 @@ class SerialEMLog(object):
         Data.__PickleSave(logfullPath)
         return Data
     
-    @classmethod
+    @staticmethod
     def ParseValueAndUnits(entry, propertyname):
         '''For log entries with the form 'propertyname = #### units' returns 
            the value and units'''
         
         iProperty = entry.find(propertyname)
+        
         if iProperty > -1:
-            PropertyStr = entry[iProperty:iProperty+3]  # example: drift = 1.57 nm/sec
-            iEqual = PropertyStr.find('=')
-            if iEqual > -1:
-                ValueStr = PropertyStr[iEqual + 1:]  # example 1.57 nm/sec
+            entry_parts = entry[iProperty:].split()
+            #PropertyStr = ' '.entry_parts[0:3].join()  # example: drift = 1.57 nm/sec
+            
+            if entry_parts[1] == '=':
+                ValueStr = entry_parts[2]  # example 1.57 nm/sec
                 ValueStr = ValueStr.strip()
-                (Value, Units) = ValueStr.split()
-                Units = Units.strip()
-                Value = Value.strip()
-                floatValue = float(Value)
+                UnitsStr = entry_parts[3]
+                UnitsStr = UnitsStr.strip()
+                #(Value, Units) = ValueStr.split()
+                #Units = Units.strip()
+                #Value = Value.strip()
+                floatValue = float(ValueStr)
                 
-                return (floatValue, Units)
+                return (floatValue, UnitsStr)
+            
+        return None
+    
+    @staticmethod
+    def ParseValue(entry, propertyname):
+        '''For log entries with the form 'propertyname = ####' returns 
+           the value as a number if possible, or as a string'''
+        
+        iProperty = entry.find(propertyname)
+        
+        if iProperty > -1:
+            entry_parts = entry[iProperty:].split()
+            #PropertyStr = ' '.entry_parts[0:3].join()  # example: drift = 1.57 nm/sec
+            
+            if entry_parts[1] == '=':
+                ValueStr = entry_parts[2]  # example 1.57 nm/sec
+                ValueStr = ValueStr.strip()
+                Value = ValueStr;
+                try:
+                        
+                    #(Value, Units) = ValueStr.split()
+                    #Units = Units.strip()
+                    #Value = Value.strip()
+                    Value = int(ValueStr)
+                except ValueError:
+                    try:
+                        Value = float(ValueStr)
+                    except ValueError:
+                        pass
+                    pass
+                
+                return Value
             
         return None
 
