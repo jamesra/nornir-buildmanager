@@ -921,6 +921,8 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
             
             maxDefocus = max(maxDefocus, t.Defocus)
             minDefocus = min(minDefocus, t.Defocus)
+            
+    points = points - np.min(points,0)
              
     tmp_a = points[:,0:2]
     tmp_a = np.hstack((tmp_a, np.ones((len(z),1))))
@@ -944,16 +946,20 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
     adjusted_z = np.sum(remapped,1)
 
     # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
-    z = np.asarray(z)
+    z = points[:,2]
     z = z - adjusted_z
     title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
     
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     
-    triang = mtri.Triangulation(x, y)
+    triang = mtri.Triangulation( points[:,0],  points[:,1])
 
-    ax.plot_trisurf(triang, z, cmap=plt.cm.CMRmap, shade=True) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+    ax.plot_trisurf(triang, z, cmap=plt.cm.CMRmap, shade=True, alpha=0.75) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+    ax.set_title('Defocus deviation from planar fit')
+    ax.set_zlabel('Z (um)')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
     plt.show()
     return
 
