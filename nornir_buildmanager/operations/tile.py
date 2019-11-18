@@ -686,7 +686,7 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
         # If the path does exist make sure it is a directory 
         os.makedirs(OutputImageDir)
         EntireTilePyramidNeedsBuilding = True
-    except (OSError, WindowsError):
+    except (OSError, WindowsError, FileExistsError):
         if not os.path.isdir(OutputImageDir):
             raise
         
@@ -1710,7 +1710,10 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
 
             if Pool is None:
                 # Pool = nornir_pools.GetThreadPool('BuildTilePyramids {0}'.format(OutputTileDir), multiprocessing.cpu_count() * 2)
-                Pool = nornir_pools.GetGlobalLocalMachinePool()
+                num_threads = multiprocessing.cpu_count() * 2
+                if num_threads > len(SourceFiles):
+                    num_threads = len(SourceFiles) + 1
+                Pool = nornir_pools.GetGlobalMultithreadingPool("Shrink", num_threads=num_threads)
 
             if not LevelHeaderPrinted:
        #         prettyoutput.Log(str(upLevel) + ' -> ' + str(thisLevel) + '\n')
@@ -1748,7 +1751,8 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                         except:
                             pass
                         
-        # Pool.shutdown()
+    if not Pool is None:
+        Pool.shutdown()
         Pool = None                    
 
     if SavePyramidNode:
