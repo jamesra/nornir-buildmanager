@@ -936,7 +936,8 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
     residual = np.linalg.norm(errors)
 
     print( "solution:")
-    print( "%f x + %f y + %f = z" % (fit[0], fit[1], fit[2]))
+    defocus_solution = "%f x + %f y + %f = z" % (fit[0], fit[1], fit[2])
+    print( defocus_solution )
     print( "errors:")
     print( errors)
     print( "residual:")
@@ -956,7 +957,7 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
     triang = mtri.Triangulation( points[:,0],  points[:,1])
 
     ax.plot_trisurf(triang, z, cmap=plt.cm.CMRmap, shade=True, alpha=0.75) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
-    ax.set_title('Defocus deviation from planar fit')
+    ax.set_title('Defocus deviation from planar fit\n' + defocus_solution)
     ax.set_zlabel('Z (um)')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
