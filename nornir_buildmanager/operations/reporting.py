@@ -539,10 +539,15 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
      RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
     '''
 
-    #rows = __ExtractIDocDataText(DataNode)
+    
     TableEntries = {}
-    TableEntries['1'] = htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary") 
+    TableEntries['1'] = htmlpaths.GetFileAnchorHTML(DataNode, "Tile data (idoc file)") 
     #rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
+    
+    SummaryStrings = __ExtractIDocDataText(DataNode)
+    
+    if SummaryStrings is not None and len(SummaryStrings) > 0:
+        TableEntries['0'] = SummaryStrings
     
     #TODO: Plot the defocus values for the entire idoc
     idocFilePath = DataNode.FullPath
