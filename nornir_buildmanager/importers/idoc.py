@@ -54,9 +54,12 @@ import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 
 import numpy as np
+import matplotlib
+import matplotlib.colors as mcolors
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
+
 
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
@@ -709,7 +712,12 @@ class IDocTileData():
 
 class IDoc():
     '''Class that parses a SerialEM idoc file'''
+    @staticmethod
+    def __ObjVersion():
+        '''Used for knowing when to ignore a pickled file'''
 
+        return 1
+    
     @property
     def NumTiles(self):
         return len(self.tiles)
@@ -728,7 +736,16 @@ class IDoc():
         self.ImageSize = None
         self.tiles = []
         self._CameraBpp = None
+        
+        self.__IDocPickleVersion = IDoc.__ObjVersion()
         pass
+    
+    @classmethod
+    def VersionCheck(cls, loaded):
+        if loaded.__IDocPickleVersion != cls.__ObjVersion():
+            raise serialem_utils.OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+        
+        return
             
     def _SetCameraBpp(self, bpp):
         '''Ensure the maximum intensity reported for tiles does not exceed the known capability of the camera'''
@@ -794,10 +811,16 @@ class IDoc():
         return numpy.mean([t.Mean for t in self.tiles])
 
     @classmethod
-    def Load(cls, idocfullPath, CameraBpp=None):
+    def Load(cls, idocfullPath, CameraBpp=None, usecache=True):
         '''
         :param int CameraBpp: Forces the maximum value of tiles to not exceed the known bits-per-pixel capability of the camera, ignored if None
         '''
+        if usecache:
+            obj = serialem_utils.PickleLoad(idocfullPath, IDoc.VersionCheck)
+
+            if not obj is None:
+                return obj
+            
         assert(os.path.exists(idocfullPath))
 
         with open(idocfullPath, 'r') as hIDoc:
@@ -869,6 +892,7 @@ class IDoc():
                             setattr(tileObj, attribute, value) 
                             
             idocObj._SetCameraBpp(CameraBpp)
+            serialem_utils.PickleSave(idocObj, idocfullPath)
             return idocObj
 
         return None
@@ -887,19 +911,51 @@ def __argToIDoc(arg):
     return Data
 
 
-def PlotDefocusSurface(DataSource, OutputImageFile):
+class SymmetricNormalize(matplotlib.colors.Normalize):
+    '''
+    Maps colors so the center is 0 on the color map and the normalized absolute value of the distance from center is used to generate the color 
+    '''
+        
+    def __init__(self, vabsmax, vcenter=None, clip=False):
+        if vcenter is None:
+            vcenter = 0
+        
+        self.vcenter = vcenter
+        self.vabsmax = vabsmax
+        
+        if vabsmax is None:
+            matplotlib.colors.Normalize.__init__(self, vmin=None, vmax=None, clip=clip)
+        else:
+            matplotlib.colors.Normalize.__init__(self, vmin=-vabsmax, vmax=vabsmax, clip=clip)
+
+    def __call__(self, value, clip=None):
+        
+        value = value - self.vcenter
+        
+        if self.vabsmax is None:
+            v = np.asarray(value)
+            self.vabsmax = np.max(np.abs((np.min(v), np.max(v))))
+            
+            if self.vabsmax == 0:
+                self.vabsmax = None
+        
+        if self.vabsmax is not None:
+            norm = abs(value) / self.vabsmax
+        else:
+            norm = abs(value)
+            
+        return norm
+
+def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
 
     Data = __argToIDoc(DataSource)
+    
+    if title is None:
+        title = 'Defocus deviation from planar fit'
 
-    lines = []
-    minDefocus = 10000
-    maxDefocus = -10000
-    NumTiles = int(0)
-    fastestTime = float('inf')
-    colors = ['black', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
-
-    DriftGrid = []
-    c = []
+    minDefocus = 1000000
+    maxDefocus = -1000000
+    
     x = []
     y = []
     z = []
@@ -932,16 +988,16 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
     A = np.matrix(tmp_a)
     
     fit = (A.T * A).I * A.T * b
-    errors = b - A * fit
-    residual = np.linalg.norm(errors)
+    #errors = b - A * fit
+    #residual = np.linalg.norm(errors)
 
-    print( "solution:")
+    #print( "solution:")
     defocus_solution = "%f x + %f y + %f = z" % (fit[0], fit[1], fit[2])
-    print( defocus_solution )
-    print( "errors:")
-    print( errors)
-    print( "residual:")
-    print( residual)
+    #print( defocus_solution )
+    #print( "errors:")
+    #print( errors)
+    #print( "residual:")
+    #print( residual)
     
     remapped = tmp_a * fit.flat
     adjusted_z = np.sum(remapped,1)
@@ -949,19 +1005,39 @@ def PlotDefocusSurface(DataSource, OutputImageFile):
     # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
     z = points[:,2]
     z = z - adjusted_z
-    title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
+    #title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
     
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     
     triang = mtri.Triangulation( points[:,0],  points[:,1])
-
-    ax.plot_trisurf(triang, z, cmap=plt.cm.CMRmap, shade=True, alpha=0.75) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
-    ax.set_title('Defocus deviation from planar fit\n' + defocus_solution)
+    
+    #zrange = np.max(np.abs((np.min(z), np.max(z))))
+    
+    #if zrange < 1.0:
+    #    zrange = 1.0
+    
+    offset = SymmetricNormalize(vabsmax=None, vcenter=0.)
+     
+    ax.plot_trisurf(triang, z, cmap=plt.get_cmap('plasma'), shade=True, alpha=0.75, norm=offset) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+    ax.set_title(title + '\n' + defocus_solution)
     ax.set_zlabel('Z (um)')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
-    plt.show()
+    
+    fig.subplotpars.left = 0
+    fig.subplotpars.right = 1
+    fig.subplotpars.bottom = 0
+    fig.subplotpars.top = 1
+    
+    if OutputImageFile is None:
+        plt.show()
+    else:
+        plt.ioff()
+        plt.savefig(OutputImageFile, bbox_inches='tight', dpi=150)
+    
+    plt.close(fig) 
+        
     return
 
 if __name__ == "__main__":
@@ -976,5 +1052,6 @@ if __name__ == "__main__":
 
     print("%d tiles" % Data.NumTiles)
 
-    PlotDefocusSurface(datapath, os.path.join(outdir, outfile + "_defocus.svg"))
+    #PlotDefocusSurface(datapath, os.path.join(outdir, outfile + "_defocus.svg"))
+    PlotDefocusSurface(datapath)
 

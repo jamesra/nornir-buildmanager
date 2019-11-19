@@ -12,6 +12,8 @@ import os
 import datetime
 import nornir_shared.files as files
 import nornir_shared.plot as plot
+from nornir_buildmanager.importers.serialem_utils import OldVersionException
+from nornir_buildmanager.importers import serialem_utils
 
 
 class LogTileData(object):
@@ -84,8 +86,8 @@ class LogTileData(object):
 
 class SerialEMLog(object):
 
-    @classmethod
-    def __ObjVersion(cls):
+    @staticmethod
+    def __ObjVersion():
         '''Used for knowing when to ignore a pickled file'''
 
         # Version 2 fixes missing tile drift times for the first tile in a hemisphere
@@ -221,6 +223,13 @@ class SerialEMLog(object):
         self._stable_filament_checked = False
         
         self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()
+        
+    @classmethod
+    def VersionCheck(cls, loaded):
+        if loaded.__SerialEMLogVersion != cls._SerialEMLog__ObjVersion():
+            raise OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+        
+        return
 
     @classmethod
     def __PickleLoad(cls, logfullPath):
@@ -287,7 +296,7 @@ class SerialEMLog(object):
         # Parsing these logs takes quite a while sometimes
 
         if usecache:
-            obj = cls.__PickleLoad(logfullPath)
+            obj = serialem_utils.PickleLoad(logfullPath, SerialEMLog.VersionCheck)
 
             if not obj is None:
                 return obj
@@ -422,7 +431,7 @@ class SerialEMLog(object):
             if Data.MontageEnd is None and not LastValidTimestamp is None:
                 Data.MontageEnd = LastValidTimestamp
 
-        Data.__PickleSave(logfullPath)
+        serialem_utils.PickleSave(Data, logfullPath)
         return Data
     
     @staticmethod

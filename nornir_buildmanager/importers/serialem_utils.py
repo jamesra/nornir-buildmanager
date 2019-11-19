@@ -2,9 +2,13 @@ import sys
 import os
 import shutil
 import glob
+import pickle
 from . import serialemlog
 from nornir_buildmanager.VolumeManagerETree import DataNode
 import nornir_shared.prettyoutput as prettyoutput
+
+from nornir_shared import files
+
 
 
 def try_remove_spaces_from_dirname(sectionDir):
@@ -95,3 +99,67 @@ def TryAddLogs(containerObj, InputPath, logger):
                 prettyoutput.Log(str(etraceback))
 
     return LogsAdded
+
+class OldVersionException(Exception):
+
+    def __init__(self, text):
+        self.text = text
+        super(OldVersionException, self).__init__()
+        
+    def __str__(self):
+        return repr(self.text)
+ 
+ 
+def PickleLoad(logfullPath, version_func):
+    '''
+    :param version_func func: A callable function that raises an exception if the loaded object is the correct version or not.  Returning false deletes the cached .pickle file
+    '''
+
+    obj = None
+    picklePath = logfullPath + ".pickle"
+
+    files.RemoveOutdatedFile(logfullPath, picklePath)
+
+    if os.path.exists(picklePath):
+        try:
+            with open(picklePath, 'rb') as filehandle:
+                obj = pickle.load(filehandle)
+
+                version_func(obj) #Should raise OldVersionException if the file is stale
+                #if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+                #    raise OldVersionException("Version mismatch in pickled file: " + picklePath)
+        except OldVersionException as e:
+            try:
+                prettyoutput.Log("Removing stale .pickle file: " + str(e))
+                os.remove(picklePath)
+            except Exception:
+                pass
+
+            obj = None
+        
+        except Exception as e:
+            try:
+                prettyoutput.Log("Unexpected exception loading .pickle file: " + picklePath)
+                prettyoutput.Log(str(e))
+                os.remove(picklePath)
+            except Exception:
+                pass
+
+            obj = None
+
+    return obj
+
+
+def PickleSave(obj, logfullPath):
+    
+    picklePath = logfullPath + ".pickle"
+    
+    try:
+        with open(picklePath, 'wb') as filehandle:
+            pickle.dump(obj, filehandle)
+    except Exception as e:
+        prettyoutput.LogErr(str.format("Could not cache {0}: {1}", picklePath, str(e) ) )
+        try:
+            os.remove(picklePath)
+        except:
+            pass

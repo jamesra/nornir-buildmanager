@@ -16,6 +16,7 @@ import nornir_shared.plot
 import nornir_shared.prettyoutput
 
 import nornir_buildmanager.importers.serialemlog as serialemlog
+import nornir_buildmanager.importers.idoc as idoc
 import nornir_pools
 import nornir_shared.files as nfiles
 
@@ -538,10 +539,32 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
      RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
     '''
 
-    rows = __ExtractIDocDataText(DataNode)
-    rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
+    #rows = __ExtractIDocDataText(DataNode)
+    TableEntries = {}
+    TableEntries['1'] = htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary") 
+    #rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
+    
+    #TODO: Plot the defocus values for the entire idoc
+    idocFilePath = DataNode.FullPath
+    if os.path.exists(idocFilePath):
 
-    return rows
+        Data = idoc.IDoc.Load(idocFilePath)
+        RelPath = htmlpaths.GetSubNodeRelativePath(DataNode)
+        
+        TPool = nornir_pools.GetGlobalMultithreadingPool()
+        
+        DefocusThumbnailFilename = GetTempFileSaltString() + "Defocus.svg"
+        DefocusSettleImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DefocusThumbnailFilename)
+        DefocusThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DefocusThumbnailFilename)
+        
+        HTMLDefocusImage  = HTMLImageTemplate % {'src' : DefocusSettleImgSrcPath, 'AltText' : 'Defocus Image', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
+        HTMLDefocusAnchor = HTMLAnchorTemplate % {'href' : DefocusSettleImgSrcPath, 'body' : HTMLDefocusImage }
+
+        
+        TPool.add_task(DefocusThumbnailFilename, idoc.PlotDefocusSurface, idocFilePath, DefocusThumbnailOutputFullPath)
+        TableEntries["2"] = HTMLDefocusAnchor
+        
+    return TableEntries
 
 
 def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
@@ -570,7 +593,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         LogSrcFullPath = os.path.join(RelPath, DataNode.Path)
 
-        DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.png"
+        DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.svg"
         DriftSettleImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftSettleThumbnailFilename)
         DriftSettleThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftSettleThumbnailFilename)
 
@@ -578,7 +601,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
         # if not os.path.exists(DriftSettleThumbnailOutputFullPath):
         TPool.add_task(DriftSettleThumbnailFilename, serialemlog.PlotDriftSettleTime, logFilePath, DriftSettleThumbnailOutputFullPath)
 
-        DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.png"
+        DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.svg"
         DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
         DriftGridThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftGridThumbnailFilename)
 
