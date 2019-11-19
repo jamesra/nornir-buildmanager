@@ -940,9 +940,13 @@ class SymmetricNormalize(matplotlib.colors.Normalize):
                 self.vabsmax = None
         
         if self.vabsmax is not None:
-            norm = abs(value) / self.vabsmax
+            norm = np.absolute(value) / self.vabsmax
         else:
-            norm = abs(value)
+            norm = np.absolute(value)
+        
+        if clip:
+            norm[norm < 0] = 0.0
+            norm[norm > 1] = 1.0
             
         return norm
 
@@ -952,13 +956,13 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
     
     if title is None:
         title = 'Defocus deviation from planar fit'
-
-    minDefocus = 1000000
-    maxDefocus = -1000000
     
     x = []
     y = []
     z = []
+    
+    first_tile = Data.Tiles[0]
+    center = np.asarray((first_tile.StagePosition)) 
     
     points = None
     for t in list(Data.Tiles):
@@ -975,10 +979,9 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
             else:
                 points = np.vstack((points,row))
             
-            maxDefocus = max(maxDefocus, t.Defocus)
-            minDefocus = min(minDefocus, t.Defocus)
-            
-    points = points - np.min(points,0)
+        
+    points[:,0:2] = points[:,0:2] - center  
+    #points = points - np.min(points,0)
              
     tmp_a = points[:,0:2]
     tmp_a = np.hstack((tmp_a, np.ones((len(z),1))))
@@ -1007,38 +1010,67 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
     z = z - adjusted_z
     #title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
     
-    fig = plt.figure()
+    
+    
+    fig = plt.figure(dpi=150)
     ax = fig.add_subplot(111, projection='3d')
     
     triang = mtri.Triangulation( points[:,0],  points[:,1])
     
-    #zrange = np.max(np.abs((np.min(z), np.max(z))))
+    zrange = np.max(np.abs((np.min(z), np.max(z))))
+    AllowedZLimits = [1.0, 2.5, 5.0, 10.0, 25.0, 50, 100]
+    zlim = NearestLimit(zrange, AllowedZLimits)
     
     #if zrange < 1.0:
     #    zrange = 1.0
     
-    offset = SymmetricNormalize(vabsmax=None, vcenter=0.)
+    offset = SymmetricNormalize(vabsmax=AllowedZLimits[0], vcenter=0.)
      
-    ax.plot_trisurf(triang, z, cmap=plt.get_cmap('plasma'), shade=True, alpha=0.75, norm=offset) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+    ax.plot_trisurf(triang, z, cmap=plt.get_cmap('plasma'), shade=True, alpha=1, norm=offset) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
     ax.set_title(title + '\n' + defocus_solution)
     ax.set_zlabel('Z (um)')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
+    ax.set_zlim(-zlim, zlim) 
+    ax.set_xlim(np.min(points[:,0]), np.max(points[:,0]) )
+    ax.set_ylim(np.min(points[:,1]), np.max(points[:,1]) )
     
     fig.subplotpars.left = 0
     fig.subplotpars.right = 1
     fig.subplotpars.bottom = 0
     fig.subplotpars.top = 1
     
-    if OutputImageFile is None:
+    if OutputImageFile is None: 
         plt.show()
-    else:
+    else: 
         plt.ioff()
-        plt.savefig(OutputImageFile, bbox_inches='tight', dpi=150)
+        plt.savefig(OutputImageFile, bbox_inches='tight', dpi=300)
     
     plt.close(fig) 
         
     return
+
+def NearestLimit(value, AllowedValueList):
+    '''
+    Given a value, rounds the value to the next highest value in the AllowedValueList.
+    This is used to provide consistency in the scale of plots
+    '''
+    
+    if AllowedValueList is None or len(AllowedValueList) == 0:
+        raise ValueError("NearestLimit: AllowedValueList parameter must not be None or Empty")
+    
+    AllowedValueList = sorted(AllowedValueList)
+        
+    iNextHighest = 0
+    while iNextHighest < len(AllowedValueList):
+        if AllowedValueList[iNextHighest] >= value:
+            return AllowedValueList[iNextHighest]
+        
+        iNextHighest = iNextHighest + 1
+        
+    #Return the highest value in the list
+    return AllowedValueList[-1]
+    
 
 if __name__ == "__main__":
 
