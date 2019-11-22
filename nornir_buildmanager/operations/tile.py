@@ -1713,7 +1713,8 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                 num_threads = multiprocessing.cpu_count() * 2
                 if num_threads > len(SourceFiles):
                     num_threads = len(SourceFiles) + 1
-                Pool = nornir_pools.GetGlobalMultithreadingPool("Shrink", num_threads=num_threads)
+                # Pool = nornir_pools.GetMultithreadingPool("Shrink", num_threads=num_threads)
+                Pool = nornir_pools.GetMultithreadingPool("Shrink", num_threads=num_threads)
 
             if not LevelHeaderPrinted:
        #         prettyoutput.Log(str(upLevel) + ' -> ' + str(thisLevel) + '\n')
