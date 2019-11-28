@@ -349,8 +349,12 @@ class PruneObj:
         mean = sum(scores) / len(scores)
 
         # prettyoutput.Log("Mean: " + str(mean))
-
-        StdDevScalar = 1.0 / float(numScores - 1.0)
+        
+        StdDevScalar = 1.0
+        if numScores > 1:
+            StdDevScalar = 1.0 / float(numScores - 1.0)
+            return 
+        
         total = 0
         # Calc the std deviation
         for score in scores:
@@ -360,8 +364,10 @@ class PruneObj:
 
         StdDev = math.sqrt(total)
         # prettyoutput.Log("StdDev: " + str(StdDev))
-
-        numBins = int(math.ceil((maxVal - minVal) / (StdDev / 10.0)))
+        
+        numBins = 1
+        if numScores > 1:
+            numBins = int(math.ceil((maxVal - minVal) / (StdDev / 10.0)))
 
         # prettyoutput.Log("NumBins: " + str(numBins))
 
