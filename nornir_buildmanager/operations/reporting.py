@@ -19,6 +19,7 @@ import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.idoc as idoc
 import nornir_pools
 import nornir_shared.files as nfiles
+from nornir_buildmanager.exceptions import NornirUserException
 
 # import Pipelines.VolumeManagerETree as VolumeManager
 if __name__ == '__main__':
@@ -256,7 +257,12 @@ def CopyImage(FilterNode, Downsample=1.0, OutputDir=None, Move=False, **kwargs):
     saveImageSet = False
     ImageNode = FilterNode.GetImage(Downsample)
     if ImageNode is None:
-        ImageNode = FilterNode.GetOrCreateImage(Downsample)
+        try:
+            ImageNode = FilterNode.GetOrCreateImage(Downsample)
+        except NornirUserException as e:
+            logger.warning("Unable to find or generate image to be copied: {0}".format(FilterNode.FullPath))
+            return None
+            
         saveImageSet = True
          
     if os.path.exists(ImageNode.FullPath): 

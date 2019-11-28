@@ -1565,6 +1565,7 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
         thisLevel = PyramidLevels[i]
         assert(SourceLevel != thisLevel)
         TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel, SourceImageNode.Path, GenerateData=False)
+            
         os.makedirs(TargetImageNode.Parent.FullPath, exist_ok=True)
         
         if os.path.exists(TargetImageNode.FullPath):
@@ -1578,9 +1579,9 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
 
                 if TargetImageNode is None:
                     buildLevel = True
-                    # Recreate the node if needed
-                    TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel)
-
+                    # Recreate the node if needed 
+                    TargetImageNode = ImageSetNode.GetOrCreateImage(thisLevel, GenerateData=False)
+                    
     #            RemoveOnMismatch()
     #            if(TargetImageNode.attrib["InputImageChecksum"] != SourceImageNode.InputImageChecksum):
     #                os.remove(TargetImageNode.FullPath)

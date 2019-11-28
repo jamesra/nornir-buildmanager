@@ -1872,6 +1872,7 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
         return self.Imageset.GetImage(Downsample)
 
     def GetOrCreateImage(self, Downsample):
+        '''As described, raises a nornir_buildmanager.NornirUserException if the image cannot be generated'''
         imageset = self.Imageset
         return imageset.GetOrCreateImage(Downsample)
 
@@ -1883,6 +1884,7 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
         return maskFilter.GetImage(Downsample)
 
     def GetOrCreateMaskImage(self, Downsample):
+        '''As described, raises a nornir_buildmanager.NornirUserException if the image cannot be generated'''
         (added_mask_filter, maskFilter) = self.GetOrCreateMaskFilter()
         return maskFilter.GetOrCreateImage(Downsample)
 
@@ -2192,8 +2194,16 @@ class StosGroupNode(XNamedContainerElementWrapped):
         if stosNode is None or ControlFilter is None or MappedFilter is None:
             return True
         
-        ControlImageNode = ControlFilter.GetOrCreateImage(self.Downsample)
-        MappedImageNode = MappedFilter.GetOrCreateImage(self.Downsample)
+        ControlImageNode = None
+        MappedImageNode = None
+        try:
+            ControlImageNode = ControlFilter.GetOrCreateImage(self.Downsample)
+            MappedImageNode = MappedFilter.GetOrCreateImage(self.Downsample)
+        except nornir_buildmanager.NornirUserException as e:
+            logger = logging.getLogger(__name__ + '.' + 'AreStosInputImagesOutdated')
+            logger.warning("Reporting .stos file {0} is outdated after exception raised when finding images:\n{0}".format(stosNode.FullPath, str(e)))
+            prettyoutput.LogErr("Reporting {0} is outdated after exception raised when finding images:\n{0}".format(stosNode.FullPath, str(e)))
+            return True
         
         IsInvalid = False
         
@@ -2814,14 +2824,14 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         return not self.GetImage(Downsample) is None
 
     def GetOrCreateImage(self, Downsample, Path=None, GenerateData=True):
-        '''Returns image node for the specified downsample. Generates image if requested and image is missing.  If unable to generate an image node is returned'''
+        '''Returns image node for the specified downsample. Generates image if requested image is missing.  If unable to generate a ValueError is raised'''
         [added_level, LevelNode] = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
         imageNode = LevelNode.find("Image")
         if imageNode is None:
             
             if GenerateData and not self.CanGenerate(Downsample):
-                raise ValueError("%s Cannot generate downsample %d" % (self.FullPath, Downsample))
+                raise nornir_buildmanager.NornirUserException("%s cannot generate downsample %d image" % (self.FullPath, Downsample))
             
             if Path is None:
                 Path = self.__PredictImageFilename()
@@ -2887,8 +2897,8 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         (SourceImage, SourceDownsample) = self.__GetImageNearestToLevel(Downsample)
 
         if SourceImage is None:
-            # raise Exception("No source image available to generate missing downsample level: " + OutputImage)
-            return None
+            raise nornir_buildmanager.NornirUserException("No source image available to generate missing downsample level {0} : {1}".format(Downsample, OutputImage))
+            #return None
 
         OutputImage.Path = SourceImage.Path
         if 'InputImageChecksum' in SourceImage.attrib:

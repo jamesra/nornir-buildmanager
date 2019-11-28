@@ -19,6 +19,7 @@ from nornir_shared import *
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
+from nornir_buildmanager.exceptions import NornirUserException
 
 
 def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExtension=None, **kwargs):
@@ -67,11 +68,18 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
     # DownsampleSearchString = DownsampleSearchTemplate % {'Level': thisLevel}
     # InputMaskLevelNode = MaskSetNode.find(DownsampleSearchString)
 
-    InputImageNode = InputFilter.GetOrCreateImage(thisLevel)
+    InputImageNode = None
+    
+    try:
+        InputImageNode = InputFilter.GetOrCreateImage(thisLevel)
+    except NornirUserException as e:
+        prettyoutput.LogErr("Missing input level nodes for blob level: " + str(thisLevel))
+        Logger.error("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
+        return
 
     if InputImageNode is None:
-        prettyoutput.Log("Missing input level nodes for blob level: " + str(thisLevel))
-        Logger.warning("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
+        prettyoutput.LogErr("Missing input level nodes for blob level: " + str(thisLevel))
+        Logger.error("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
         return
 
     MaskStr = ""
@@ -89,7 +97,12 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         BlobImageNode = transforms.RemoveOnMismatch(BlobImageNode, "InputImageChecksum", InputImageNode.Checksum)
 
     if BlobImageNode is None:
-        BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName, GenerateData=False)
+        try: 
+            BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName, GenerateData=False)
+        except NornirUserException as e:
+            prettyoutput.Log("Missing input blob image for blob level: " + str(thisLevel))
+            Logger.warning("Missing input blob image for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
+            return
 
     if not os.path.exists(BlobImageNode.FullPath):
 

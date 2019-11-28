@@ -26,6 +26,7 @@ import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
 import nornir_imageregistration.stos_brute as stos_brute
 import nornir_pools
 import nornir_imageregistration
+from nornir_buildmanager.exceptions import NornirUserException
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -440,7 +441,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     try:
         (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
         (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, StosGroup.Downsample, GetMask=UseMasks, Logger=Logger)
-    except ValueError as e:
+    except NornirUserException as e:
         prettyoutput.LogErr(str(e))
         return None
 
@@ -583,6 +584,7 @@ def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, Fil
  
 
 def GetImage(BlockNode, SectionNumber, Channel, Filter, Downsample):
+    '''Will raise a NornirUserException if the image cannot be generated'''
 
     sectionNode = BlockNode.GetSection(SectionNumber)
     if sectionNode is None:
@@ -1439,8 +1441,14 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, C
                 yield OutputStosGroupNode 
                 continue
 
-            (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
-            (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
+            try:
+                #Ensure the input images exist on disk and generate them if not
+                GetOrCreateRegistrationImageNodes(ControlFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
+                GetOrCreateRegistrationImageNodes(MappedFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
+            except NornirUserException as e:
+                #This exception is raised if the input images cannot be generated
+                prettyoutput.LogErr(str(e))
+                continue
 
             OutputFile = VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
             OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
