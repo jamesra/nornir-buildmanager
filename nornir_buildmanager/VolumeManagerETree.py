@@ -312,6 +312,32 @@ class XElementWrapper(ElementTree.Element):
     @Version.setter
     def Version(self, Value):
         self.attrib['Version'] = str(Value)
+        
+    @property
+    def AttributesChanged(self):
+        '''
+        :return: Boolean indicating if an attribute has changed.  Used to indicate
+        the element needs to be saved to disk.
+        :rtype: bool
+        '''
+        return self._AttributesChanged
+
+    @AttributesChanged.setter
+    def AttributesChanged(self, Value):
+        self._AttributesChanged = Value 
+        
+    @property
+    def ChildrenChanged(self):
+        '''
+        :return: Boolean indicating if a child (a direct child, not nested) of this element has changed.  Used to indicate
+        the element needs to be saved to disk.
+        :rtype: bool
+        '''
+        return self._ChildrenChanged
+
+    @ChildrenChanged.setter
+    def ChildrenChanged(self, Value):
+        self._ChildrenChanged = Value 
 
     @property
     def Root(self):
@@ -355,6 +381,9 @@ class XElementWrapper(ElementTree.Element):
         global nid
         self.__dict__['id'] = nid
         nid = nid + 1
+        
+        self._AttributesChanged = False
+        self._ChildrenChanged = False
 
         if(attrib is None):
             attrib = {}
@@ -539,12 +568,14 @@ class XElementWrapper(ElementTree.Element):
         raise AttributeError(name)
 
     def __setattr__(self, name, value):
-
-        '''Called when an attribute assignment is attempted. This is called instead of the normal mechanism (i.e. store the value in the instance dictionary). name is the attribute name, value is the value to be assigned to it.'''
+        '''Called when an attribute assignment is attempted. This is called instead of the 
+           normal mechanism (i.e. store the value in the instance dictionary). name is the
+           attribute name, value is the value to be assigned to it.'''
         if(hasattr(self.__class__, name)):
             attribute = getattr(self.__class__, name)
             if isinstance(attribute, property):
                 if not attribute.fset is None:
+                    self._AttributesChanged = True
                     attribute.fset(self, value)
                     return
                 else:
@@ -558,15 +589,24 @@ class XElementWrapper(ElementTree.Element):
         elif(name[0] == '_'):
             self.__dict__[name] = value
         elif(self.attrib is not None):
+            originalValue = None
+            if name in self.attrib:
+                originalValue = self.attrib[name]
+            
             if not isinstance(value, str):
                 XElementWrapper.logger.info('Setting non string value on <' + str(self.tag) + '>, automatically corrected: ' + name + ' -> ' + str(value))
 
+                strVal = None
                 if isinstance(value, float):
-                    self.attrib[name] = '%g' % value
+                    strVal = '%g' % value
                 else:
-                    self.attrib[name] = str(value)
+                    strVal = str(value)
+                    
+                self.attrib[name] = strVal
+                self._AttributesChanged = self._AttributesChanged or (strVal != originalValue)
             else:
                 self.attrib[name] = value
+                self._AttributesChanged = self._AttributesChanged or (value != originalValue)
 
     def __delattr__(self, name):
 
@@ -574,6 +614,7 @@ class XElementWrapper(ElementTree.Element):
         if(name in self.__dict__):
             self.__dict__.pop(name)
         elif(name in self.attrib):
+            self._AttributesChanged = True
             self.attrib.pop(name)
 
     def CompareAttributes(self, dictAttrib):
@@ -722,9 +763,16 @@ class XElementWrapper(ElementTree.Element):
 
     def append(self, Child):
         assert(not self == Child)
+        self._ChildrenChanged = True
         super(XElementWrapper, self).append(Child)
         Child.Parent = self
         assert(Child in self)
+        
+    def remove(self, Child):
+        assert(not self == Child)
+        self._ChildrenChanged = True
+        super(XElementWrapper, self).remove(Child) 
+        assert(Child not in self)
 
     def FindParent(self, ParentTag):
         '''Find parent with specified tag'''
@@ -772,7 +820,7 @@ class XElementWrapper(ElementTree.Element):
         if isinstance(child, XElementWrapper):
             return child
         
-        assert(child in self) 
+        assert child in self, "ReplaceChildIfUnwrapped: {0} not a child of {1} as expected".format(str(child), str(self))
         
         (wrapped, wrappedElement) = VolumeManager.WrapElement(child)
         
@@ -1260,6 +1308,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def Save(self, tabLevel=None, recurse=True):
         '''If recurse = False we only save this element, no child elements are saved'''
         
+        if self.AttributesChanged == False and self.ChildrenChanged == False:
+            prettyoutput.Log("Saving " + self.FullPath + " but no state change recorded.")
+            
         if tabLevel is None:
             tabLevel = 0
             if hasattr(self, 'FullPath'):
@@ -2354,7 +2405,11 @@ class StosMapNode(XElementWrapper):
         return val
 
     def AddMapping(self, Control, Mapped):
-        '''Create a mapping to a control section'''
+        '''
+        Creates a mapping to a control section by Add/Update a <Mapping> element
+        :param int Control: Control section number
+        :param int Mapped: Mapped section number
+        '''
 
         val = StosMapNode._SectionNumberFromParameter(Mapped)
         Control = StosMapNode._SectionNumberFromParameter(Control)
@@ -2370,6 +2425,9 @@ class StosMapNode(XElementWrapper):
 
     def RemoveMapping(self, Control, Mapped):
         '''Remove a mapping
+        :param int Control: Control section number
+        :param int Mapped: Mapped section number
+        
         :return: True if mapped section is found and removed
         '''
 
@@ -3456,7 +3514,7 @@ class LevelNode(XContainerElementWrapper):
 
     @Name.setter
     def Name(self, Value):
-        assert False  # , "Attempting to set name on LevelNode")
+        assert False, "Attempting to set name on LevelNode"
 
     @property
     def Downsample(self):
