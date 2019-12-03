@@ -1561,20 +1561,65 @@ def __StosMapToRegistrationTree(StosMapNode):
     return rt
 
 
-def __RegistrationTreeToStosMap(rt, StosMapName):
+def __RegistrationTreeToSliceToVolumeMap(rt, StosMapName):
     '''Create a stos map where every mapping transforms to the root of the tree'''
 
     OutputStosMap = VolumeManagerETree.StosMapNode.Create(StosMapName)
 
-    for sectionNumber in list(rt.RootNodes.keys()):
-        rootNode = rt.RootNodes[sectionNumber]
-        __AddRegistrationTreeNodeToStosMap(OutputStosMap, rt, rootNode.SectionNumber)
-
+    for step in rt.GenerateOrderedMappingsToRoots():
+        rootNode = step.RootNode
+        mappedNode = step.MappedNode
+        print("Mapping {0} -> {1}".format(mappedNode.SectionNumber, rootNode.SectionNumber))
+        OutputStosMap.AddMapping(rootNode.SectionNumber, mappedNode.SectionNumber)
+            
     return OutputStosMap
 
-      
-def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
-    '''recursively adds registration tree nodes to the stos map'''
+# 
+# def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
+#     '''
+#     Adds registration tree nodes to the stos map
+#     
+#     :param registrationtree.RegistrationTree rt: Registration Tree
+#     :param int controlSectionNumber: Control Section Number
+#     :param int mappedSectionNumber: Either an int or a RegistrationTreeNode for the Mapped Section Number
+#     '''
+#     
+#     if mappedSectionNumber is None:
+#         mappedSectionNumber = controlSectionNumber
+#      
+#     nodeStack = [mappedSectionNumber]
+#     alreadyMapped = set()
+#         
+#     while len(nodeStack) > 0:
+#         
+#         rtNode = None #Registration tree node
+#         mappedSectionNumber = nodeStack.pop()
+#         
+#         if isinstance(mappedSectionNumber, registrationtree.RegistrationTreeNode):
+#             rtNode = mappedSectionNumber
+#             mappedSectionNumber = mappedSectionNumber.SectionNumber
+#         elif mappedSectionNumber in rt.Nodes:
+#             rtNode = rt.Nodes[mappedSectionNumber]
+#         else:
+#             raise ValueError("Unexpected mappedSectionNumber {0}".format(mappedSectionNumber))
+#             continue #Not sure how we could reach this state
+#                
+#         alreadyMapped.union([mappedSectionNumber])
+#         print("Mapping {0} -> {1}".format(str(mappedSectionNumber), controlSectionNumber))
+#        
+#         # Can loop forever here if a section is mapped twice
+#         for mapped in rtNode.Children:
+#             StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
+#             
+#             if mapped.SectionNumber in rt.Nodes and mapped.SectionNumber not in alreadyMapped:
+#                 nodeStack.append(mapped.SectionNumber)
+#                 
+          
+def __AddRegistrationTreeNodeToStosMapRecursive(StosMapNode, rt, controlSectionNumber, mappedSectionNumber=None):
+    '''recursively adds registration tree nodes to the stos map
+    
+    This function was exceeding the recursion limit so it was replaced
+    '''
  
     if mappedSectionNumber is None:
         mappedSectionNumber = controlSectionNumber
@@ -1594,7 +1639,7 @@ def __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, ma
         StosMapNode.AddMapping(controlSectionNumber, mapped.SectionNumber)
 
         if mapped.SectionNumber in rt.Nodes:
-            __AddRegistrationTreeNodeToStosMap(StosMapNode, rt, controlSectionNumber, mapped.SectionNumber)
+            __AddRegistrationTreeNodeToStosMapRecursive(StosMapNode, rt, controlSectionNumber, mapped.SectionNumber)
 
 
 def TranslateVolumeToZeroOrigin(StosGroupNode, **kwargs):
@@ -1642,7 +1687,7 @@ def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGr
     # build the stos map again if it exists
     BlockNode.RemoveStosMap(map_name=OutputMap) 
     
-    OutputStosMap = __RegistrationTreeToStosMap(rt, OutputMap)
+    OutputStosMap = __RegistrationTreeToSliceToVolumeMap(rt, OutputMap)
     (AddedStosMap, OutputStosMap) = BlockNode.UpdateOrAddChildByAttrib(OutputStosMap)
     OutputStosMap.CenterSection = StosMapNode.CenterSection
 
@@ -1659,7 +1704,147 @@ def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGr
     # the registration tree
     
 
-def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupNode, EnrichTolerance, ControlToVolumeTransform=None):
+def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGroupNode, EnrichTolerance, ControlToVolumeTransform=None):
+    
+    Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
+
+    ControlToVolumeTransform = None 
+    SectionToRootTransformMap = {}
+    for step in rt.GenerateOrderedMappingsToRootNode(rootNode):
+        MappedSectionNode = step.MappedNode
+        IntermediateControlSection = step.ParentNode.SectionNumber
+
+        mappedSectionNumber = MappedSectionNode.SectionNumber
+
+        logStr = "Calculating %s -> %s -> %s" % (str(mappedSectionNumber), str(IntermediateControlSection), str(rootNode.SectionNumber) )
+        #Logger.info(logStr)
+        prettyoutput.Log(logStr)
+        
+        (MappingAdded, OutputSectionMappingsNode) = OutputGroupNode.GetOrCreateSectionMapping(mappedSectionNumber)
+        if MappingAdded:
+            yield OutputGroupNode
+
+        MappedToControlTransforms = InputGroupNode.TransformsForMapping(mappedSectionNumber, IntermediateControlSection)
+
+        if MappedToControlTransforms is None or len(MappedToControlTransforms) == 0:
+            Logger.error(" %s : No transform found:" % (logStr))
+            continue
+
+        # In theory each iteration of this loop could be run in a seperate thread.  Useful when center is in center of volume.
+        for MappedToControlTransform in MappedToControlTransforms:
+
+            ControlSectionNumber = None
+            ControlChannelName = None
+            ControlFilterName = None
+            
+            ControlToVolumeTransform = None
+            ControlToVolumeTransformKey = (rootNode.SectionNumber, IntermediateControlSection)
+            if ControlToVolumeTransformKey in SectionToRootTransformMap:
+                ControlToVolumeTransform = SectionToRootTransformMap[ControlToVolumeTransformKey]
+
+            if ControlToVolumeTransform is None:
+                ControlSectionNumber = MappedToControlTransform.ControlSectionNumber
+                ControlChannelName = MappedToControlTransform.ControlChannelName
+                ControlFilterName = MappedToControlTransform.ControlFilterName
+            else:
+                ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
+                ControlChannelName = ControlToVolumeTransform.ControlChannelName
+                ControlFilterName = ControlToVolumeTransform.ControlFilterName
+
+            OutputTransform = OutputSectionMappingsNode.FindStosTransform(ControlSectionNumber=ControlSectionNumber,
+                                                                               ControlChannelName=ControlChannelName,
+                                                                               ControlFilterName=ControlFilterName,
+                                                                               MappedSectionNumber=MappedToControlTransform.MappedSectionNumber,
+                                                                               MappedChannelName=MappedToControlTransform.MappedChannelName,
+                                                                               MappedFilterName=MappedToControlTransform.MappedFilterName)
+
+            if OutputTransform is None:
+                OutputTransform = VolumeManagerETree.TransformNode(attrib=MappedToControlTransform.attrib)
+                OutputTransform.Name = str(mappedSectionNumber) + '-' + str(IntermediateControlSection)
+                OutputTransform.SetTransform(MappedToControlTransform)
+                OutputTransformAdded = OutputSectionMappingsNode.AddOrUpdateTransform(OutputTransform)
+                OutputTransform.Path = OutputTransform.Name + '.stos' #Path creates directory and the fullpath parameter is missing.  Needs to run after the transform is added                                
+
+                # Remove any residual transform file just in case
+                if os.path.exists(OutputTransform.FullPath):
+                    os.remove(OutputTransform.FullPath)
+
+            if not ControlToVolumeTransform is None:
+                OutputTransform.Path = str(mappedSectionNumber) + '-' + str(ControlToVolumeTransform.ControlSectionNumber) + '.stos'
+
+            if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
+                Logger.info(" %s: Removed outdated transform %s" % (logStr, OutputTransform.Path))
+                if os.path.exists(OutputTransform.FullPath):
+                    os.remove(OutputTransform.FullPath)
+
+            #===================================================================
+            # if not hasattr(OutputTransform, 'InputTransformChecksum'):
+            #     if os.path.exists(OutputTransform.FullPath):
+            #         os.remove(OutputTransform.FullPath)
+            # else:
+            #     if not MappedToControlTransform.Checksum == OutputTransform.InputTransformChecksum:
+            #         if os.path.exists(OutputTransform.FullPath):
+            #             os.remove(OutputTransform.FullPath)
+            #===================================================================
+
+            if ControlToVolumeTransform is None:
+                # This maps directly to the origin, add it to the output stos group
+                # Files.RemoveOutdatedFile(MappedToControlTransform.FullPath, OutputTransform.FullPath )
+
+                if not os.path.exists(OutputTransform.FullPath):
+                    Logger.info(" %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
+                    shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
+                    OutputTransform.ResetChecksum()
+                    # OutputTransform.Checksum = MappedToControlTransform.Checksum
+                    OutputTransform.SetTransform(MappedToControlTransform)
+                    
+                    yield OutputSectionMappingsNode
+
+            else:
+                OutputTransform.ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
+                OutputTransform.ControlChannelName = ControlToVolumeTransform.ControlChannelName
+                OutputTransform.ControlFilterName = ControlToVolumeTransform.ControlFilterName
+
+                if hasattr(OutputTransform, "ControlToVolumeTransformChecksum"):
+                    if not OutputTransform.ControlToVolumeTransformChecksum == ControlToVolumeTransform.Checksum:
+                        Logger.info(" %s: ControlToVolumeTransformChecksum mismatch, removing" % (logStr))
+                        if os.path.exists(OutputTransform.FullPath):
+                            os.remove(OutputTransform.FullPath)
+                elif os.path.exists(OutputTransform.FullPath):
+                    os.remove(OutputTransform.FullPath)
+ 
+                if not os.path.exists(OutputTransform.FullPath):
+                    try:
+                        Logger.info(" %s: Adding transforms" % (logStr))
+                        prettyoutput.Log(logStr)
+                        MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath, ControlToVolumeTransform.FullPath, EnrichTolerance=EnrichTolerance)
+                        MToVStos.Save(OutputTransform.FullPath)
+
+                        OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
+                        OutputTransform.ResetChecksum()
+                        OutputTransform.SetTransform(MappedToControlTransform)
+                        # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
+                    except ValueError as e:
+                        # Probably an invalid transform.  Skip it
+                        OutputTransform.Clean()
+                        OutputTransform = None
+                        continue
+                    yield OutputSectionMappingsNode
+                else:
+                    Logger.info(" %s: is still valid" % (logStr))
+
+            SectionToRootTransformMap[(OutputTransform.ControlSectionNumber, OutputTransform.MappedSectionNumber)] = OutputTransform
+#                 for retval in SliceToVolumeFromRegistrationTreeNode(rt, 
+#                                                                     mappedNode,
+#                                                                     InputGroupNode,
+#                                                                     OutputGroupNode, 
+#                                                                     EnrichTolerance=EnrichTolerance, 
+#                                                                     ControlToVolumeTransform=OutputTransform):
+#                     yield retval
+
+
+
+def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, OutputGroupNode, EnrichTolerance, ControlToVolumeTransform=None):
     ControlSection = Node.SectionNumber
 
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
@@ -1778,7 +1963,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode, OutputGroupN
                 else:
                     Logger.info(" %s: is still valid" % (logStr))
 
-            for retval in SliceToVolumeFromRegistrationTreeNode(rt, mappedNode, InputGroupNode, OutputGroupNode, EnrichTolerance=EnrichTolerance, ControlToVolumeTransform=OutputTransform):
+            for retval in SliceToVolumeFromRegistrationTreeNodeRecursive(rt, mappedNode, InputGroupNode, OutputGroupNode, EnrichTolerance=EnrichTolerance, ControlToVolumeTransform=OutputTransform):
                 yield retval
 
 
