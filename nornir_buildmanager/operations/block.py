@@ -1682,7 +1682,7 @@ def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGr
 
     (AddedGroupNode, OutputGroupNode) = BlockNode.GetOrCreateStosGroup(OutputGroupFullname, InputStosGroupNode.Downsample)
     if AddedGroupNode:
-        yield BlockNode
+        (yield BlockNode)
     
     # build the stos map again if it exists
     BlockNode.RemoveStosMap(map_name=OutputMap) 
@@ -1692,12 +1692,13 @@ def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGr
     OutputStosMap.CenterSection = StosMapNode.CenterSection
 
     if AddedStosMap:
-        yield BlockNode
+        (yield BlockNode)
         
     for sectionNumber in rt.RootNodes:
         Node = rt.Nodes[sectionNumber]
-        for saveNode in SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance, ControlToVolumeTransform=None):
-            yield saveNode
+        yield from SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance, ControlToVolumeTransform=None)
+        #for saveNode in SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance, ControlToVolumeTransform=None):
+        #    (yield saveNode)
 
     # TranslateVolumeToZeroOrigin(OutputGroupNode)
     # Do not use TranslateVolumeToZeroOrigin here because the center of the volume image does not get shifted with the rest of the sections. That is a problem.  We should probably create an identity transform for the root nodes in
@@ -1722,7 +1723,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
         
         (MappingAdded, OutputSectionMappingsNode) = OutputGroupNode.GetOrCreateSectionMapping(mappedSectionNumber)
         if MappingAdded:
-            yield OutputGroupNode
+            (yield OutputGroupNode)
 
         MappedToControlTransforms = InputGroupNode.TransformsForMapping(mappedSectionNumber, IntermediateControlSection)
 
@@ -1738,9 +1739,12 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
             ControlFilterName = None
             
             ControlToVolumeTransform = None
-            ControlToVolumeTransformKey = (rootNode.SectionNumber, IntermediateControlSection)
+            ControlToVolumeTransformKey = (IntermediateControlSection, rootNode.SectionNumber)
             if ControlToVolumeTransformKey in SectionToRootTransformMap:
+                #prettyoutput.Log("Looking for {0}: FOUND".format(str(ControlToVolumeTransformKey)))
                 ControlToVolumeTransform = SectionToRootTransformMap[ControlToVolumeTransformKey]
+            #else:
+                #prettyoutput.Log("Looking for {0}: NOT FOUND".format(str(ControlToVolumeTransformKey)))
 
             if ControlToVolumeTransform is None:
                 ControlSectionNumber = MappedToControlTransform.ControlSectionNumber
@@ -1798,7 +1802,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
                     # OutputTransform.Checksum = MappedToControlTransform.Checksum
                     OutputTransform.SetTransform(MappedToControlTransform)
                     
-                    yield OutputSectionMappingsNode
+                    (yield OutputSectionMappingsNode)
 
             else:
                 OutputTransform.ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
@@ -1814,6 +1818,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
                     os.remove(OutputTransform.FullPath)
  
                 if not os.path.exists(OutputTransform.FullPath):
+                    
                     try:
                         Logger.info(" %s: Adding transforms" % (logStr))
                         prettyoutput.Log(logStr)
@@ -1824,16 +1829,23 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
                         OutputTransform.ResetChecksum()
                         OutputTransform.SetTransform(MappedToControlTransform)
                         # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
+                        
                     except ValueError as e:
                         # Probably an invalid transform.  Skip it
+                        prettyoutput.LogErr(str(e))
+                        print(str(e))
                         OutputTransform.Clean()
                         OutputTransform = None
-                        continue
-                    yield OutputSectionMappingsNode
+                        raise e
+                        #continue
+                    
+                    (yield OutputSectionMappingsNode)
                 else:
                     Logger.info(" %s: is still valid" % (logStr))
 
-            SectionToRootTransformMap[(OutputTransform.ControlSectionNumber, OutputTransform.MappedSectionNumber)] = OutputTransform
+            newTransformKey = (OutputTransform.MappedSectionNumber, ControlToVolumeTransformKey[1])
+            SectionToRootTransformMap[newTransformKey] = OutputTransform
+            #print("Added key {0}".format(newTransformKey))
 #                 for retval in SliceToVolumeFromRegistrationTreeNode(rt, 
 #                                                                     mappedNode,
 #                                                                     InputGroupNode,
