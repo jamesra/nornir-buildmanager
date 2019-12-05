@@ -1308,14 +1308,14 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def Save(self, tabLevel=None, recurse=True):
         '''If recurse = False we only save this element, no child elements are saved'''
         
-        if self.AttributesChanged == False and self.ChildrenChanged == False:
-            prettyoutput.Log("Saving " + self.FullPath + " but no state change recorded.")
+        AnyChangesFound = self.AttributesChanged or self.ChildrenChanged
             
         if tabLevel is None:
             tabLevel = 0
-            if hasattr(self, 'FullPath'):
-                logger = logging.getLogger(__name__ + '.' + 'Save')
-                logger.info("Saving " + self.FullPath)
+            
+#         if hasattr(self, 'FullPath'):
+#             logger = logging.getLogger(__name__ + '.' + 'Save')
+#             logger.info("Saving " + self.FullPath)
 
         self.sort()
 
@@ -1349,6 +1349,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 SaveElement.append(child)
             elif isinstance(child, XContainerElementWrapper):
                 linktag = child.tag + '_Link'
+                #AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
                 
                 # Sanity check to prevent duplicate link bugs
                 if __debug__:
@@ -1367,13 +1368,21 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 # del self[i]
                 # self.append(LinkElement)
             else:
-                if isinstance(SaveElement, XElementWrapper):
+                if isinstance(child, XElementWrapper):
+                    AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
                     ValidateAttributesAreStrings(SaveElement)
-                    SaveElement.sort()
+                    child.sort()
+                    child._AttributesChanged = False
+                    child._ChildrenChanged = False
 
-                SaveElement.append(child)
-
+                SaveElement.append(child) #Note: Elements not converted to an XElementWrapper should not have changed. 
+                 
+        if AnyChangesFound == False:
+            prettyoutput.Log("Saving " + self.FullPath + " but no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
+        
         self.__SaveXML(xmlfilename, SaveElement)
+        self._AttributesChanged = False
+        self._ChildrenChanged = False
 #        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
 
         # If we are the root of all saves then make sure they have all completed before returning
@@ -1392,7 +1401,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
 
-        prettyoutput.Log("Saving %s" % XMLFilename)
+        #prettyoutput.Log("Saving %s" % XMLFilename)
         
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         # print OutputXML
