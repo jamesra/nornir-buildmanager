@@ -983,16 +983,16 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
     points[:,0:2] = points[:,0:2] - center  
     #points = points - np.min(points,0)
              
-    tmp_a = points[:,0:2]
+    tmp_a = points[:,0:2] #XY values
     tmp_a = np.hstack((tmp_a, np.ones((len(z),1))))
-    tmp_b = points[:,-1]
+    tmp_b = points[:,-1] #Z values
     
     b = np.matrix(tmp_b).T
     A = np.matrix(tmp_a)
     
-    fit = (A.T * A).I * A.T * b
-    #errors = b - A * fit
-    #residual = np.linalg.norm(errors)
+    fit = (A.T * A).I * A.T * b #find a linear fit for X + Y = Z
+    errors = b - A * fit
+    residual = np.linalg.norm(errors)
 
     #print( "solution:")
     defocus_solution = "%f x + %f y + %f = z" % (fit[0], fit[1], fit[2])
