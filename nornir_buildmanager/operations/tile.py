@@ -74,12 +74,6 @@ def EstimateMaxTempImageArea():
 
 def VerifyImages(TilePyramidNode, **kwargs):
     '''Eliminate any image files which cannot be parsed by Image Magick's identify command'''
-    logger = kwargs.get('Logger', None)
-
-    if(logger is None):
-        logger.error('VerifyImages. InputPyramidNode not found')
-        return None
-
     PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
     Levels = TilePyramidNode.Levels
