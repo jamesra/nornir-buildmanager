@@ -29,14 +29,43 @@ nosetests.xml
 # Translations
 *.mo
 
-# Mr Developer
+
+#############
+## Python
+#############
+
+*.py[co]
+
+# Packages
+*.egg
+*.egg-info
+dist/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+__pycache__
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+
+#Translations
+*.mo
+
+#Mr Developer
 .mr.developer.cfg
+/Logs/
+/__pycache__/
 .project
 .pydevproject
-/Logs/
 /test_volumemanager/
 /StosBrute16/
 /.externalToolBuilders/
 /StosBrute8/
 /StosBrute32/
-/__pycache__/
