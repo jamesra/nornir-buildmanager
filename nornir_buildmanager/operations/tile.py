@@ -1772,6 +1772,12 @@ def _InsertExistingLevelIfMissing(PyramidNode, Levels):
             raise Exception("No pyramid level available with more detail than %d in %s" % (Levels[0], PyramidNode.FullPath))
 
         Levels.insert(0, MoreDetailedLevel.Downsample)
+    elif PyramidNode.MaxResLevel.Downsample != Levels[0]:
+        #There is an existing level.  We will attempt to add a more detailed level is available we will not throw an exception. , so we will continue. Highest resolution is probably already included.
+        MoreDetailedLevel = PyramidNode.MoreDetailedLevel(Levels[0])
+        if not MoreDetailedLevel is None: 
+            Levels.insert(0, MoreDetailedLevel.Downsample)
+    
 
     return Levels
 
