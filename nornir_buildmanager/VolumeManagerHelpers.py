@@ -321,13 +321,34 @@ class InputTransformHandler(object):
             return [True, ""]
 
         if len(self.InputTransformType) > 0:
+            
+            #Check all of our transforms with a matching type until we find a match that is valid
+            nMatches = 0
             InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
-            if InputTransformNode is None:
-                self.logger.warning('Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
-                return [True, ""]
-
-            if not self.IsInputTransformMatched(InputTransformNode):
+            
+            #If we find a transform of the same type and no matching checksum the input transform is invalid
+            #If there is no input transform we do not call it invalid since the input may exist in a different channel
+            #If we find a transform of the same type and matching checksum the input transform is valid
+            
+            while InputTransformNode is not None:
+                
+                if InputTransformNode is None:
+                    self.logger.warning('Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
+                    return [True, ""]
+                else:
+                    nMatches = nMatches + 1
+                
+                if InputTransformNode.CleanIfInvalid():
+                    InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
+                    continue
+                
+                if self.IsInputTransformMatched(InputTransformNode):
+                    return [True, ""]
+            
+            if nMatches > 0: #If we had at least one hit then delete ourselves    
                 return [False, 'Input Transform mismatch']
+            else:
+                return [True, ""]
 
         return [True, ""]
     
@@ -389,8 +410,19 @@ class PyramidLevelHandler(object):
             :return: Level node for downsample node 
             :rtype LevelNode:
         '''
-        if not self.HasLevel(Downsample) and GenerateData:
-            self.GenerateLevels(Downsample)
+         
+        if GenerateData:
+            existingLevel = self.GetLevel(Downsample)
+            if existingLevel is None: 
+                self.GenerateLevels(Downsample)
+            elif hasattr(self, 'NumberOfTiles'): #If this is a tile pyramid with many images regenerate if the verified tile count != NumberOfTiles.  If there is a mismatch regenerate
+                if existingLevel.TilesValidated is None:
+                    nornir_buildmanager.operations.tile.VerifyTiles(existingLevel)
+                    
+                if self.NumberOfTiles != existingLevel.TilesValidated:
+                    self.GenerateLevels(Downsample) 
+                    nornir_buildmanager.operations.tile.VerifyTiles(existingLevel)
+                    
 
         [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode.Create(Downsample), "Downsample")
         return [added, lnode]

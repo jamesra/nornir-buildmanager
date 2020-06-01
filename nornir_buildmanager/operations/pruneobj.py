@@ -240,7 +240,7 @@ class PruneObj:
         PruneMapElement = transforms.RemoveOnMismatch(PruneMapElement, 'InputTransformChecksum', TransformNode.Checksum)
 
         if not PruneMapElement is None:
-            if hasattr(LevelNode, 'TilesValidated'):
+            if LevelNode.TilesValidated is not None:
                 PruneMapElement = transforms.RemoveOnMismatch(PruneMapElement, 'NumImages', LevelNode.TilesValidated)
 
         if PruneMapElement is None:

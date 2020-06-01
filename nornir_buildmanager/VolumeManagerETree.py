@@ -131,6 +131,8 @@ class VolumeManager():
         :return: (bool, An object inheriting from XElementWrapper) Returns true if the element had to be wrapped
         '''
         
+        assert e.tag.endswith('_Link') == False, "Cannot wrap a link element that has not been loaded"
+        
         OverrideClassName = e.tag + 'Node'
         OverrideClass = reflection.get_module_class('nornir_buildmanager.VolumeManagerETree', OverrideClassName, LogErrIfNotFound=False)
         
@@ -525,6 +527,13 @@ class XElementWrapper(ElementTree.Element):
             if(not 'Path' in newElement.attrib):
                 prettyoutput.Log(newElement.ToElementString() + " no path attribute but being set as container")
             assert('Path' in newElement.attrib)
+            
+        #Also convert all non-link child elements
+        for c in newElement:
+            if c.tag.endswith('_Link'):
+                continue
+            
+            c = newElement._ReplaceChildIfUnwrapped(c)
 
         return newElement
     
@@ -867,7 +876,7 @@ class XElementWrapper(ElementTree.Element):
         return None
 
     def findall(self, match):
-
+        sm = None
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(match)
 
         # TODO: Need to modify to only search one level at a time
@@ -885,6 +894,11 @@ class XElementWrapper(ElementTree.Element):
             
         # return matches
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
+        
+        #Since this is a generator function, we need to load all children that are links before we 
+        #return the first node.  If we do not the caller may load other links
+        #from the parent node and then the matches will no longer be present in the
+        #parent.
 
         for m in matches:
 #             NotValid = m.CleanIfInvalid()
@@ -900,6 +914,8 @@ class XElementWrapper(ElementTree.Element):
             else:
                 m = self._ReplaceChildIfUnwrapped(m)
                 
+        loaded_matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
+        for m in loaded_matches:   
             if len(RemainingXPath) > 0:
                 subContainerMatches = list(m.findall(RemainingXPath))
                 if subContainerMatches is not None:
@@ -1377,8 +1393,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
                 SaveElement.append(child) #Note: Elements not converted to an XElementWrapper should not have changed. 
                  
-        if AnyChangesFound == False:
-            prettyoutput.Log("Saving " + self.FullPath + " but no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
+        #if AnyChangesFound == False:
+        #    prettyoutput.Log("Saving " + self.FullPath + " but no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
         
         self.__SaveXML(xmlfilename, SaveElement)
         self._AttributesChanged = False
@@ -3565,6 +3581,25 @@ class LevelNode(XContainerElementWrapper):
                 del self.attrib['GridDimY']
         else:
             self.attrib['GridDimY'] = '%d' % int(val)
+            
+    @property
+    def TilesValidated(self):
+        '''
+        :return: Returns None if the attribute has not been set, otherwise an integer
+        '''
+        val = self.attrib.get('TilesValidated', None)
+        if not val is None:
+            val = int(val)
+            
+        return val
+    
+    @TilesValidated.setter
+    def TilesValidated(self, val):
+        if val is None:
+            if 'TilesValidated' in self.attrib:
+                del self.attrib['TilesValidated']
+        else:
+            self.attrib['TilesValidated'] = '%d' % int(val)
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
