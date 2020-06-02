@@ -1158,12 +1158,28 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     def IsValid(self):
         ResourcePath = self.FullPath
-        if not os.path.isdir(ResourcePath):
+        
+        if not self.Parent is None: #Don't check for validity if our node has not been added to the tree yet
+            try:
+                files_found = False
+                with os.scandir(ResourcePath) as pathscan:
+                    for item in pathscan:
+                        if item.name[0] == '.': #Avoid the .desktop_ini files of the world
+                            continue
+                        
+                        if item.is_file() or item.is_dir(): 
+                            files_found = True
+                            break
+                    
+                if not files_found:
+                    return [False, 'Directory is empty: {0}' % ResourcePath]
+                
+            except FileNotFoundError:
+                return [False, '{0} does not exist' % ResourcePath]
+            
+        elif not os.path.isdir(ResourcePath):
             return [False, 'Directory does not exist']
-        elif not self.Parent is None:
-            if len(os.listdir(ResourcePath)) == 0:
-                return [False, 'Directory is empty']
-
+        
         return super(XContainerElementWrapper, self).IsValid()
 
     def UpdateSubElements(self):
@@ -1171,9 +1187,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
            Adds discovered nodes into the volume. 
            Removes missing nodes from the volume.'''
 
-        dirNames = os.listdir(self.FullPath)
+        #dirNames = 
         
-        for dirname in dirNames:
+        for dirname in os.listdir(self.FullPath):
             volumeDataFullPath = os.path.join(dirname, "VolumeData.xml")
             if os.path.exists(volumeDataFullPath):
                 # Check to be sure that this is a new node
@@ -2634,8 +2650,10 @@ class MosaicBaseNode(XFileElementWrapper):
         (file, ext) = os.path.splitext(self.Path)
         ext = ext.lower()
 
-        if not os.path.exists(self.FullPath):
-            return None
+        #Checking for the file here is a waste of time
+        #since both stos and mosaic file loaders also check
+        #if not os.path.exists(self.FullPath): 
+            #return None
 
         if ext == '.stos':
             return stosfile.StosFile.LoadChecksum(self.FullPath)
