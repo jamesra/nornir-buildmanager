@@ -14,6 +14,7 @@ import subprocess
 import multiprocessing
 import numpy
 import queue
+import datetime
 from PIL import Image
 
 import nornir_imageregistration
@@ -87,7 +88,15 @@ def VerifyTiles(LevelNode=None, **kwargs):
     TilesValidated = int(InputLevelNode.attrib.get('TilesValidated', 0))
     InputPyramidNode = InputLevelNode.FindParent('TilePyramid')
     TileExt = InputPyramidNode.attrib.get('ImageFormatExt', '.png')
-
+    
+    #Figure out if the directory has been modified since the last validation
+#     level_stats = os.stat(LevelNode.FullPath)
+#     level_last_directory_modification = datetime.datetime.utcfromtimestamp(level_stats.st_mtime)
+#     last_validation = LevelNode.TileValidationTime
+#     expected_number_of_tiles = InputPyramidNode.NumberOfTiles
+    
+#     if level_last_directory_modification <= last_validation:
+    
     TileImageDir = InputLevelNode.FullPath
     LevelFiles = glob.glob(os.path.join(TileImageDir, '*' + TileExt))
 
@@ -110,8 +119,12 @@ def VerifyTiles(LevelNode=None, **kwargs):
 
     if len(InvalidTiles) == 0:
         logger.info('Tiles all valid')
-
+        
+    #We can't just save the directory modified time because it will change when the VolumeData.xml is saved
+     
+    InputLevelNode.TileValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
     InputLevelNode.TilesValidated = len(LevelFiles) - len(InvalidTiles)
+     
 
     return InputLevelNode
 
