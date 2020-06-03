@@ -49,6 +49,9 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     InputTransformNode = TransformNode
 
     [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
+    
+    if added_level or  LevelNode.AttributesChanged:
+        yield LevelNode.Parent
 
     MangledName = misc.GenNameFromDict(Parameters)
 
