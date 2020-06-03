@@ -1199,7 +1199,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     continue
 
                 # Load the VolumeData.xml, take the root element name and create a link in our element
-                loadedElement = self._load_and_wrap_link_element(volumeDataFullPath)
+                loadedElement = self._load_wrap_setparent_link_element(volumeDataFullPath)
                 if loadedElement is not None:
                     self.append(loadedElement)
 
@@ -1218,8 +1218,18 @@ class XContainerElementWrapper(XResourceElementWrapper):
         XMLTree = ElementTree.parse(Filename)
         
         return XMLTree.getroot()
+    
+    @staticmethod 
+    def _load_wrap_link_element(fullpath):
+        '''Loads an xml file containing a subset of our meta-data referred to by a LINK element.  Wraps the loaded XML in the correct meta-data class'''
+        
+        XMLElement = XContainerElementWrapper._load_link_element(fullpath)
+        (wrapped, NewElement) = VolumeManager.WrapElement(XMLElement)
+        # SubContainer = XContainerElementWrapper.wrap(XMLElement)
 
-    def _load_and_wrap_link_element(self, fullpath):
+        return (wrapped, NewElement)
+
+    def _load_wrap_setparent_link_element(self, fullpath):
         '''Loads an xml file containing a subset of our meta-data referred to by a LINK element.  Wraps the loaded XML in the correct meta-data class'''
         
         XMLElement = XContainerElementWrapper._load_link_element(fullpath)
@@ -1240,7 +1250,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         SubContainerPath = os.path.join(fullpath, link_node.attrib["Path"])
         
         try:
-            loaded_element = self._load_and_wrap_link_element(SubContainerPath)
+            loaded_element = self._load_wrap_setparent_link_element(SubContainerPath)
         except IOError as e:
             self.remove(link_node)
             logger = logging.getLogger(__name__ + '.' + '_load_link_element')
@@ -1286,15 +1296,17 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         tasks = []
         for i, fullpath in enumerate(SubContainerPaths):
-            t = pool.add_task("Load " + fullpath, XContainerElementWrapper._load_link_element, fullpath)
+            t = pool.add_task("Load " + fullpath, XContainerElementWrapper._load_wrap_link_element, fullpath)
             t.link_node = link_nodes[i]
             tasks.append(t)
-            
+        
+        clean_tasks = []
+        
         while len(tasks) > 0:
             task = tasks.pop(0)
             try:
                 link_node = task.link_node
-                loaded_element = task.wait_return()
+                (wrapped, wrapped_loaded_element) = task.wait_return()
             except IOError as e:
                 self.remove(link_node)
                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
@@ -1310,18 +1322,28 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                 continue
             
-            (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
+            #(wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
             # SubContainer = XContainerElementWrapper.wrap(XMLElement)
     
             if wrapped: 
                 VolumeManager.__SetElementParent__(wrapped_loaded_element, self)
             
             self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
+
+            t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
+            clean_tasks.append(t)
             
             # Check to ensure the newly loaded element is valid
-            Cleaned = wrapped_loaded_element.CleanIfInvalid()
-            if not Cleaned:
+            #Cleaned = wrapped_loaded_element.CleanIfInvalid()
+        
+        while len(clean_tasks) > 0:
+            task = clean_tasks.pop(0)
+            IsValid = task.wait_return()
+            
+            if IsValid:
                 loaded_elements.append(wrapped_loaded_element)
+            else:
+                wrapped_loaded_element.CleanIfInvalid()
                 
         return loaded_elements
 
@@ -1381,7 +1403,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 SaveElement.append(child)
             elif isinstance(child, XContainerElementWrapper):
                 linktag = child.tag + '_Link'
-                #AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
+                AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
                 
                 # Sanity check to prevent duplicate link bugs
                 if __debug__:
@@ -1409,12 +1431,13 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
                 SaveElement.append(child) #Note: Elements not converted to an XElementWrapper should not have changed. 
                  
-        #if AnyChangesFound == False:
-        #    prettyoutput.Log("Saving " + self.FullPath + " but no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
-        
-        self.__SaveXML(xmlfilename, SaveElement)
-        self._AttributesChanged = False
-        self._ChildrenChanged = False
+        if AnyChangesFound:
+            self.__SaveXML(xmlfilename, SaveElement)
+            self._AttributesChanged = False
+            self._ChildrenChanged = False
+        else:
+            prettyoutput.Log("Skipping " + self.FullPath + ", no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
+            
 #        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
 
         # If we are the root of all saves then make sure they have all completed before returning
@@ -3022,6 +3045,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
 
 class ImageSetNode(ImageSetBaseNode):
+    '''Represents single image at various downsample levels'''
  
     DefaultPath = 'Images'
     
@@ -3313,7 +3337,8 @@ class SectionMappingsNode(XElementWrapper):
     
 
 class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
-
+    '''A collection of images, all downsampled for each levels'''
+    
     DefaultName = 'TilePyramid'
     DefaultPath = 'TilePyramid'
 
@@ -3367,19 +3392,59 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         :return: (Bool, String) containing whether all tiles exist and a reason string
         '''
     
-        globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
-
-        files = glob.glob(globfullpath)
-
-        if(len(files) == 0):
-            return [False, "No files in level"]
-
-        FileNumberMatch = len(files) <= self.NumberOfTiles
-
-        if not FileNumberMatch:
-            return [False, "File count mismatch for level"] 
+        #I've commented this check for existence on the file system because I don't think it can ever occur.
+        #In order for it to run the element must be wrapped, which means it was loaded, and because container
+        #elements are always linked, the directory must have existed and at least contained the VolumeData.xml
+         
+        expectedExtension = self.ImageFormatExt
+        
+        if not self.Parent is None: #Don't check for validity if our node has not been added to the tree yet
+            try:
+                file_count = 0
+                with os.scandir(level_full_path) as pathscan:
+                    for item in pathscan:
+                        if item.is_file() == False:
+                            continue
+                        
+                        if item.name[0] == '.': #Avoid the .desktop_ini files of the world
+                            continue
+                        
+                        (root,ext) = os.path.splitext(item.name)
+                        if ext != expectedExtension:
+                            continue
+                        
+                        file_count = file_count + 1
+                    
+                if file_count == 0:
+                    return [False, 'No images in level: {0}'.format(level_full_path)]
+                
+                FileNumberMatch = file_count <= self.NumberOfTiles
+             
+                if not FileNumberMatch:
+                    return [False, "File count mismatch for level: {0}".format(level_full_path)]
+                
+            except FileNotFoundError:
+                return [False, '{0} directory does not exist'.format(level_full_path)]
+            
+        elif not os.path.isdir(level_full_path):
+            return [False, '{0} directory does not exist'.format(level_full_path)]
         
         return [True, None]
+        
+#         
+#         globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
+# 
+#         files = glob.glob(globfullpath)
+# 
+#         if(len(files) == 0):
+#             return [False, "No files in level"]
+# 
+#         FileNumberMatch = len(files) <= self.NumberOfTiles
+# 
+#         if not FileNumberMatch:
+#             return [False, "File count mismatch for level"] 
+#         
+#         return [True, None]
     
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
@@ -3618,6 +3683,27 @@ class LevelNode(XContainerElementWrapper):
                 del self.attrib['TilesValidated']
         else:
             self.attrib['TilesValidated'] = '%d' % int(val)
+            
+    @property
+    def TileValidationTime(self):
+        '''
+        :return: Returns None if the attribute has not been set, otherwise an integer
+        '''
+        val = self.attrib.get('TileValidationTime', datetime.datetime.min)
+        if not val is None:
+            val = datetime.datetime.fromisoformat(val)
+            
+        return val
+    
+    @TileValidationTime.setter
+    def TileValidationTime(self, val):
+        assert(isinstance(val, datetime.datetime))
+            
+        if val is None:
+            if 'TilesValidated' in self.attrib:
+                del self.attrib['TileValidationTime']
+        else:
+            self.attrib['TileValidationTime'] = str(val)
 
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
