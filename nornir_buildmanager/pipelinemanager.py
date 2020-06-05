@@ -672,6 +672,7 @@ class PipelineManager(object):
                     # Check if the node is locked, otherwise clean it and look for another node
                     if 'Locked' in SelectedVolumeElem.attrib:
                         if SelectedVolumeElem.Locked:
+                            PipelineManager.logger.info("Did not clean locked element {0}\n".format(SelectedVolumeElem.FullPath))
                             break
                         
                     SelectedVolumeElem.Clean(Reason)

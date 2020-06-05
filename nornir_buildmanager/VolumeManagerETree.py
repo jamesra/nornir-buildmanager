@@ -25,7 +25,7 @@ import nornir_buildmanager.operations.versions as versions
 import nornir_shared.misc as misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection as reflection
-import xml.etree.ElementTree as ElementTree 
+import xml.etree.ElementTree as ElementTree  
 
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
@@ -326,7 +326,10 @@ class XElementWrapper(ElementTree.Element):
 
     @AttributesChanged.setter
     def AttributesChanged(self, Value):
-        self._AttributesChanged = Value 
+        self._AttributesChanged = Value
+        
+#         if Value:
+#             self.MarkNonContainerParentChanged() 
         
     @property
     def ChildrenChanged(self):
@@ -339,7 +342,70 @@ class XElementWrapper(ElementTree.Element):
 
     @ChildrenChanged.setter
     def ChildrenChanged(self, Value):
-        self._ChildrenChanged = Value 
+        self._ChildrenChanged = Value
+        
+    @property
+    def ElementHasChangesToSave(self):
+        '''Check this and child elements (which are not linked containers that will save themselves) for changes to save.  We need to note any nested elements that would save with this element'''
+        
+        if self.AttributesChanged or self.ChildrenChanged:
+            return True
+        
+        ReturnValue = False 
+        for child in self:
+            if child.tag.endswith('_Link'):
+                continue
+            
+            if isinstance(child, XContainerElementWrapper):
+                if child.SaveAsLinkedElement == False:
+                    ReturnValue = ReturnValue or child.ElementHasChangesToSave
+            else:
+                ReturnValue = ReturnValue or child.ElementHasChangesToSave
+        
+        return ReturnValue
+    
+    def ResetElementChangeFlags(self):
+        '''Set this and child elements (which are not linked containers that 
+           will save themselves) change flags to false.  Called after the
+           element is saved. for changes to save.'''
+        
+        self._AttributesChanged = False
+        self._ChildrenChanged = False
+             
+        for child in self:
+            if child.tag.endswith('_Link'):
+                continue
+            
+            if isinstance(child, XContainerElementWrapper):
+                if child.SaveAsLinkedElement == False:
+                    child.ResetElementChangeFlags()
+            else:
+                child.ResetElementChangeFlags()
+        
+        return
+        
+#         if Value:
+#             self.MarkNonContainerParentChanged()
+#         
+#     @property
+#     def MarkNonContainerParentChanged(self):
+#         '''
+#         Sets the parent's ChildrenChanged flag to True if the parent is not a ContainerElement or does not have the SaveAsLinkedElement attribute set to True  
+#         '''
+#         
+#         parent = self.Parent
+#         if parent is None:
+#             return
+#         
+#         if not isinstance(parent, XContainerElementWrapper):
+#             parent._ChildrenChanged = True
+#             parent.MarkNonContainerParentChanged()
+#             return
+#         
+#         if parent.SaveAsLinkedElement == False:
+#             parent._ChildrenChanged = True
+#             parent.MarkNonContainerParentChanged()
+#         
 
     @property
     def Root(self):
@@ -374,7 +440,7 @@ class XElementWrapper(ElementTree.Element):
 
     @classmethod
     def __GetCreationTimeString__(cls):
-        now = datetime.datetime.now()
+        now = datetime.datetime.utcnow()
         now = now.replace(microsecond=0)
         return str(now)
 
@@ -405,7 +471,9 @@ class XElementWrapper(ElementTree.Element):
         self._Parent = None
 
         if not self.tag.endswith("_Link"):
-            self.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__()
+            if 'CreationDate' not in self.attrib:
+                self.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__()
+                
             self.Version = versions.GetLatestVersionForNodeType(tag)
 
     @classmethod
@@ -584,7 +652,11 @@ class XElementWrapper(ElementTree.Element):
             attribute = getattr(self.__class__, name)
             if isinstance(attribute, property):
                 if not attribute.fset is None:
-                    self._AttributesChanged = True
+                    #Mark the _AttributesChanged flag if the value has been updated
+                    if not attribute.fget is None:
+                        self._AttributesChanged = attribute.fget(self) != value 
+                    else:
+                        self._AttributesChanged = True
                     attribute.fset(self, value)
                     return
                 else:
@@ -835,6 +907,7 @@ class XElementWrapper(ElementTree.Element):
         
         if wrapped:
             self._ReplaceChildElementInPlace(child, wrappedElement)
+            wrappedElement._AttributesChanged = False #Setting the parent will set this flag, but if we loaded it there was no change
             
         return wrappedElement
 
@@ -1054,7 +1127,7 @@ class XFileElementWrapper(XResourceElementWrapper):
         if not 'Name' in self.attrib:
             return self._GetAttribFromParent('Name')
 
-        return self.attrib['Name']
+        return self.attrib.get('Name', None)
 
     @Name.setter
     def Name(self, value):
@@ -1119,6 +1192,16 @@ class XFileElementWrapper(XResourceElementWrapper):
 class XContainerElementWrapper(XResourceElementWrapper):
     '''XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid'''
 
+    @property
+    def SaveAsLinkedElement(self):
+        '''
+        When set to true, the element will be saved as a link element in the subdirectory
+        It may be set to false to prevent saving meta-data from updating the modification
+        time of the directory.  When set to false the element remains under the 
+        parent element wherever that XML file may be.
+        '''
+        return True
+    
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
@@ -1261,10 +1344,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
             logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
             self.remove(link_node)
             return None
-        except Exception as e:
-            logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-            logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-            return None
+#         except Exception as e:
+#             logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+#             logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+#             return None
               
         self._ReplaceChildElementInPlace(old=link_node, new=loaded_element)
         
@@ -1317,10 +1400,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                 self.remove(link_node)
                 continue
-            except Exception as e:
-                logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-                continue
+#             except Exception as e:
+#                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+#                 logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+#                 continue
             
             #(wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
             # SubContainer = XContainerElementWrapper.wrap(XMLElement)
@@ -1362,7 +1445,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def Save(self, tabLevel=None, recurse=True):
         '''If recurse = False we only save this element, no child elements are saved'''
         
-        AnyChangesFound = self.AttributesChanged or self.ChildrenChanged
+        AnyChangesFound = self.ElementHasChangesToSave
             
         if tabLevel is None:
             tabLevel = 0
@@ -1382,7 +1465,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # logger.info('Saving ' + tabs + str(self))
         xmlfilename = 'VolumeData.xml'
-
+        
+        ValidateAttributesAreStrings(self)
+        
         # Create a copy of ourselves for saving.  If this is not done we have the potential to change a collection during iteration
         # which would break the pipeline manager in subtle ways
         SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
@@ -1391,9 +1476,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             
         if not self.tail is None:
             SaveElement.tail = self.tail
-
-        ValidateAttributesAreStrings(self)
-
+        
         # SaveTree = ElementTree.ElementTree(SaveElement)
 
         # Any child containers we create a link to and remove from our file
@@ -1402,19 +1485,25 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if child.tag.endswith('_Link'):
                 SaveElement.append(child)
             elif isinstance(child, XContainerElementWrapper):
-                linktag = child.tag + '_Link'
-                AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
                 
-                # Sanity check to prevent duplicate link bugs
-                if __debug__:
-                    existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
-                    if existingNode is not None:
-                        raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(ElementTree.tostring(SaveElement, encoding="utf-8"), ElementTree.tostring(existingNode, encoding="utf-8")))
-                
-                LinkElement = XElementWrapper(linktag, attrib=child.attrib)
-                # SaveElement.append(LinkElement)
-                SaveElement.append(LinkElement)
-
+                if child.SaveAsLinkedElement:
+                    linktag = child.tag + '_Link' 
+                    
+                    # Sanity check to prevent duplicate link bugs
+                    if __debug__:
+                        existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
+                        if existingNode is not None:
+                            raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(ElementTree.tostring(SaveElement, encoding="utf-8"), ElementTree.tostring(existingNode, encoding="utf-8")))
+                    
+                    LinkElement = XElementWrapper(linktag, attrib=child.attrib)
+                    # SaveElement.append(LinkElement)
+                    SaveElement.append(LinkElement)
+                else:
+                    ValidateAttributesAreStrings(SaveElement)
+                    child.sort()
+                    SaveElement.append(child)
+                    #No further action because the child is still one of our elements
+                    
                 if(recurse):
                     child.Save(tabLevel + 1)
 
@@ -1423,20 +1512,17 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 # self.append(LinkElement)
             else:
                 if isinstance(child, XElementWrapper):
-                    AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
                     ValidateAttributesAreStrings(SaveElement)
                     child.sort()
-                    child._AttributesChanged = False
-                    child._ChildrenChanged = False
 
                 SaveElement.append(child) #Note: Elements not converted to an XElementWrapper should not have changed. 
                  
-        if AnyChangesFound:
+        if AnyChangesFound and self.SaveAsLinkedElement:
             self.__SaveXML(xmlfilename, SaveElement)
-            self._AttributesChanged = False
-            self._ChildrenChanged = False
-        else:
-            prettyoutput.Log("Skipping " + self.FullPath + ", no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
+            self.ResetElementChangeFlags()
+            #prettyoutput.Log("Saving " + self.FullPath + ", state change recorded in that container or child elements.");
+        #elif not AnyChangesFound:
+            #prettyoutput.Log("Skipping " + self.FullPath + ", no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
             
 #        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
 
@@ -1532,7 +1618,7 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
                 SaveElement.append(child)
                 continue
 
-            if isinstance(child, XContainerElementWrapper):
+            if isinstance(child, XContainerElementWrapper) and child.SaveAsLinkedElement:
                 LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib)
                 # SaveElement.append(LinkElement)
                 SaveElement.append(LinkElement)
@@ -2124,7 +2210,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
       
     @property
     def Downsample(self):
-        return float(self.attrib['Downsample'])
+        return float(self.attrib.get('Downsample', 'NaN'))
 
     @Downsample.setter
     def Downsample(self, val):
@@ -2401,7 +2487,7 @@ class StosMapNode(XElementWrapper):
     @property
     def CenterSection(self):
         if 'CenterSection' in self.attrib:
-            val = self.attrib['CenterSection']
+            val = self.attrib.get('CenterSection', None)
             if len(val) == 0:
                 return None
             else:
@@ -2599,7 +2685,10 @@ class MappingNode(XElementWrapper):
 
     @property
     def Control(self):
-        return int(self.attrib['Control'])
+        if 'Control' in self.attrib:
+            return int(self.attrib['Control'])
+        
+        return None
 
     @property
     def Mapped(self):
@@ -2693,6 +2782,7 @@ class MosaicBaseNode(XFileElementWrapper):
             del self.attrib['Checksum']
 
         self.attrib['Checksum'] = self._CalcChecksum()
+        self._AttributesChanged = True
 
     @property
     def Checksum(self):
@@ -3186,7 +3276,10 @@ class SectionMappingsNode(XElementWrapper):
 
     @property
     def MappedSectionNumber(self):
-        return int(self.attrib['MappedSectionNumber'])
+        if 'MappedSectionNumber' in self.attrib:
+            return int(self.attrib['MappedSectionNumber'])
+        
+        return None
 
     @property
     def Transforms(self):
@@ -3344,7 +3437,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
     @property
     def LevelFormat(self):
-        return self.attrib['LevelFormat']
+        return self.attrib.get('LevelFormat', None)
 
     @LevelFormat.setter
     def LevelFormat(self, val):
@@ -3361,7 +3454,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
     @property
     def ImageFormatExt(self):
-        return self.attrib['ImageFormatExt']
+        return self.attrib.get('ImageFormatExt', None)
 
     @ImageFormatExt.setter
     def ImageFormatExt(self, val):
@@ -3482,7 +3575,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
     @property
     def CoordFormat(self):
-        return self.attrib['CoordFormat']
+        return self.attrib.get('CoordFormat', None)
 
     @CoordFormat.setter
     def CoordFormat(self, val):
@@ -3490,7 +3583,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
     @property
     def FilePrefix(self):
-        return self.attrib['FilePrefix']
+        return self.attrib.get('FilePrefix', None)
 
     @FilePrefix.setter
     def FilePrefix(self, val):
@@ -3498,7 +3591,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
     @property
     def FilePostfix(self):
-        return self.attrib['FilePostfix']
+        return self.attrib.get('FilePostfix', None)
 
     @FilePostfix.setter
     def FilePostfix(self, val):
@@ -3601,6 +3694,17 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
 
 
 class LevelNode(XContainerElementWrapper):
+    
+    @property
+    def SaveAsLinkedElement(self):
+        '''
+        See base class for full description.  This is set to false to
+        prevent saving the LevelNode's VolumeData.xml from changing the
+        directories last modified time.  This allows us to know if a 
+        directory has changed and we need to re-verify any images in the
+        level. 
+        '''
+        return False
 
     @classmethod
     def PredictPath(cls, level):
@@ -3690,7 +3794,7 @@ class LevelNode(XContainerElementWrapper):
         :return: Returns None if the attribute has not been set, otherwise an integer
         '''
         val = self.attrib.get('TileValidationTime', datetime.datetime.min)
-        if not val is None:
+        if not val is None and isinstance(val, str):
             val = datetime.datetime.fromisoformat(val)
             
         return val
@@ -3900,7 +4004,10 @@ class PruneNode(HistogramBase):
 
     @property
     def Overlap(self):
-        return float(self.attrib['Overlap'])
+        if 'Overlap' in self.attrib:
+            return float(self.attrib['Overlap'])
+        
+        return None
 
     @property
     def UserRequestedCutoff(self):
