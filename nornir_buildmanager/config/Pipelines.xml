@@ -650,7 +650,7 @@
 			<Argument flag="-RefineIterations" default="10" dest="RefineIterations"
 				type="int" help="Maximum number of refinement passes to run"
 				required="False" />
-			<Argument flag="-Threshold" default="0.1" dest="DisplacementThreshold"
+			<Argument flag="-Threshold" default="0.25" dest="DisplacementThreshold"
                 type="float"
                 help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
                 required="False" />
