@@ -2,6 +2,7 @@ import copy
 import logging
 import math
 import os.path
+import numpy 
 
 from nornir_buildmanager import VolumeManagerETree
 from nornir_buildmanager.validation import transforms
@@ -78,6 +79,7 @@ class PruneObj:
         Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
         if not Threshold is None:
             Threshold = TransformNode.round_precision_value(Threshold)#round(Threshold, threshold_precision)
+            Parameters['Threshold'] = Threshold #Update the Parameters so the Mangled name is correct
 
         cls._TryUpdateUndefinedThresholdFromParameter(PruneNode, Threshold)
 
@@ -90,9 +92,6 @@ class PruneObj:
         OutputMosaicName = OutputTransformName + nornir_shared.misc.GenNameFromDict(Parameters) + '.mosaic'
 
         MangledName = nornir_shared.misc.GenNameFromDict(Parameters)
-        
-        HistogramXMLFile = PruneObj.HistogramXMLFileTemplate % PruneNode.Type
-        HistogramImageFile = PruneObj.HistogramSVGFileTemplate % PruneNode.Type
 
         MosaicDir = os.path.dirname(InputTransformNode.FullPath)
         OutputMosaicFullPath = os.path.join(MosaicDir, OutputMosaicName)
@@ -125,7 +124,11 @@ class PruneObj:
             OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Type=MangledName, InputTransformChecksum=InputTransformNode.Checksum)
             TransformParent.append(OutputTransformNode)
         elif os.path.exists(OutputTransformNode.FullPath):
-            # The meta-data and output exist, do nothing
+            # The meta-data and output exist, check if the histogram image exists and then move on
+            PruneObjInstance = PruneObj.TryUpdateHistogram(PruneNode, Threshold)
+            if PruneObjInstance is not None:
+                return PruneNodeParent
+            
             return None
 
         OutputTransformNode.SetTransform(InputTransformNode)
@@ -134,44 +137,11 @@ class PruneObj:
         if not Threshold is None:
             OutputTransformNode.Threshold = Threshold
 
-        PruneObjInstance = cls.ReadPruneMap(PruneDataNode.FullPath)
-        PruneObjInstance.Tolerance = Threshold
-
+        PruneObjInstance = PruneObj.TryUpdateHistogram(PruneNode, Threshold)
+        if PruneObjInstance is None:
+            PruneObjInstance = cls.ReadPruneMap(PruneDataNode.FullPath)
+        
         assert(not PruneObjInstance is None)
-
-        PruneObjInstance.HistogramXMLFileFullPath = os.path.join(PruneNodeParent.FullPath, HistogramXMLFile)
-        PruneObjInstance.HistogramImageFileFullPath = os.path.join(PruneNodeParent.FullPath, HistogramImageFile)
-
-        try:
-            RemoveOutdatedFile(PruneDataNode.FullPath, PruneObjInstance.HistogramImageFileFullPath)
-            RemoveOutdatedFile(PruneDataNode.FullPath, PruneObjInstance.HistogramXMLFileFullPath)
-
-            HistogramImageNode = PruneNode.find('Image')
-            if not HistogramImageNode is None:
-                HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
-
-            if HistogramImageNode is None or not os.path.exists(PruneObjInstance.HistogramImageFileFullPath):
-                HistogramImageNode = VolumeManagerETree.ImageNode.Create(HistogramImageFile)
-                (added, HistogramImageNode) = PruneNode.UpdateOrAddChild(HistogramImageNode)
-                if not added:
-                    #Handle the case where the path is different, such as when we change the extension type
-                    if os.path.exists(HistogramImageNode.FullPath):
-                        os.remove(HistogramImageNode.FullPath)
-                    HistogramImageNode.Path = HistogramImageFile
-                    
-                HistogramImageNode.Threshold = Threshold
-                PruneObjInstance.CreateHistogram(PruneObjInstance.HistogramXMLFileFullPath)
-                assert(HistogramImageNode.FullPath == PruneObjInstance.HistogramImageFileFullPath)
-                #if Async:
-                    #pool = nornir_pools.GetMultithreadingPool("Histograms")
-                    #pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title) 
-                #else:
-                plot.Histogram(PruneObjInstance.HistogramXMLFileFullPath, HistogramImageNode.FullPath, LinePosList=PruneObjInstance.Tolerance, Title="Threshold " + str(Threshold))
-                
-                print("Done!")
-        except Exception as E:
-            prettyoutput.LogErr("Exception creating prunemap histogram:" + str(E.message))
-            pass
 
         if(OutputTransformNode is None):
             if(not hasattr(OutputTransformNode, Threshold)):
@@ -199,6 +169,63 @@ class PruneObj:
 
         # OutputTransformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)
         return [TransformParent, PruneNodeParent]
+    
+        
+    @classmethod
+    def TryUpdateHistogram(cls, prune_node, Threshold):
+        '''
+        Updates the prune histogram if needed.
+        :return: If the histogram is updated a PruneObj is loaded and returned
+            otherwise None
+        '''
+        PruneDataNode = prune_node.DataNode
+        if(PruneDataNode is None):
+            Logger = logging.getLogger(__name__ + '.ReadPruneDataNode')
+            Logger.warning("Did not find expected prune data node")
+            return None
+        
+        HistogramXMLFile = PruneObj.HistogramXMLFileTemplate % prune_node.Type
+        HistogramImageFile = PruneObj.HistogramSVGFileTemplate % prune_node.Type
+        HistogramXMLFileFullPath = os.path.join(prune_node.Parent.FullPath, HistogramXMLFile)
+        HistogramImageFileFullPath = os.path.join(prune_node.Parent.FullPath, HistogramImageFile)
+        
+        threshold_precision = VolumeManagerETree.TransformNode.get_threshold_precision() #Number of digits to save in XML file
+
+        try:
+            RemoveOutdatedFile(PruneDataNode.FullPath, HistogramImageFileFullPath)
+            RemoveOutdatedFile(PruneDataNode.FullPath, HistogramXMLFileFullPath)
+
+            HistogramImageNode = prune_node.ImageNode
+            if not HistogramImageNode is None:
+                HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
+            
+            if HistogramImageNode is None or not os.path.exists(HistogramImageFileFullPath):
+                HistogramImageNode = VolumeManagerETree.ImageNode.Create(HistogramImageFile)
+                (added, HistogramImageNode) = prune_node.UpdateOrAddChild(HistogramImageNode)
+                if not added:
+                    #Handle the case where the path is different, such as when we change the extension type
+                    if os.path.exists(HistogramImageNode.FullPath):
+                        os.remove(HistogramImageNode.FullPath)
+                    HistogramImageNode.Path = HistogramImageFile
+                    
+                HistogramImageNode.Threshold = Threshold
+                
+                PruneObjInstance = PruneObj.ReadPruneMap(PruneDataNode.FullPath)
+                
+                PruneObj.CreateHistogram(PruneObjInstance.MapImageToScore, HistogramXMLFileFullPath)
+                assert(HistogramImageNode.FullPath == HistogramImageFileFullPath)
+                #if Async:
+                    #pool = nornir_pools.GetMultithreadingPool("Histograms")
+                    #pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title) 
+                #else:
+                plot.Histogram(HistogramXMLFileFullPath, HistogramImageNode.FullPath, LinePosList=Threshold, Title="Threshold " + str(Threshold))
+                prettyoutput.Log('Generated histogram image {0}'.format(HistogramImageNode.FullPath))
+                
+                return PruneObjInstance
+            
+        except Exception as E:
+            prettyoutput.LogErr("Exception creating prunemap histogram:" + str(E.message))
+            pass 
 
     @classmethod
     def CalculatePruneScores(cls, Parameters, FilterNode, Downsample, TransformNode, OutputFile=None, Logger=None, **kwargs):
@@ -321,21 +348,22 @@ class PruneObj:
 
         return PruneObj(MapImageToScore)
 
-    def CreateHistogram(self, HistogramXMLFile, MapImageToScoreFile=None):
-        if(len(list(self.MapImageToScore.items())) == 0 and MapImageToScoreFile is not None):
+    @staticmethod
+    def CreateHistogram(MapImageToScore, HistogramXMLFile, MapImageToScoreFile=None):
+        if(len(list(MapImageToScore.items())) == 0 and MapImageToScoreFile is not None):
    #         prettyoutput.Log( "Reading scores, MapImageToScore Empty " + MapImageToScoreFile)
             PruneObj.ReadPruneMap(MapImageToScoreFile)
    #         prettyoutput.Log( "Read scores complete: " + str(self.MapImageToScore))
  
-        if(len(list(self.MapImageToScore.items())) == 0):
+        if(len(list(MapImageToScore.items())) == 0):
             prettyoutput.Log("No prune scores to create histogram with")
             return 
 
-        scores = [None] * len(list(self.MapImageToScore.items()))
+        scores = [None] * len(list(MapImageToScore.items()))
         numScores = len(scores)
 
         i = 0
-        for pair in list(self.MapImageToScore.items()):
+        for pair in list(MapImageToScore.items()):
    #         prettyoutput.Log("pair: " + str(pair))
             scores[i] = pair[1]
             i = i + 1
@@ -349,20 +377,19 @@ class PruneObj:
         mean = sum(scores) / len(scores)
 
         # prettyoutput.Log("Mean: " + str(mean))
-        
-        StdDevScalar = 1.0
-        if numScores > 1:
-            StdDevScalar = 1.0 / float(numScores - 1.0)
-            return 
-        
-        total = 0
-        # Calc the std deviation
-        for score in scores:
-            temp = score - mean
-            temp = temp * temp
-            total = total + (temp * StdDevScalar)
+#         
+#         StdDevScalar = 1.0
+#         if numScores > 1:
+#             StdDevScalar = 1.0 / float(numScores - 1.0)
+#         
+#         total = 0
+#         # Calc the std deviation
+#         for score in scores:
+#             temp = score - mean
+#             temp = temp * temp
+#             total = total + (temp * StdDevScalar)
 
-        StdDev = math.sqrt(total)
+        StdDev = numpy.std(scores)
         # prettyoutput.Log("StdDev: " + str(StdDev))
         
         numBins = 1
@@ -387,7 +414,7 @@ class PruneObj:
         
 
 
-    def WritePruneMosaic(self, path, SourceMosaic, TargetMosaic='prune.mosaic', Tolerance='5'):
+    def WritePruneMosaic(self, path, SourceMosaic, TargetMosaic='prune.mosaic', Tolerance=5):
         '''
         Remove tiles from the source mosaic with scores less than Tolerance and
         write the new mosaic to TargetMosaic.

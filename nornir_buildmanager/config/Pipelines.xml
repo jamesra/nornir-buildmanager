@@ -121,10 +121,11 @@
 
 			<Iterate VariableName="ChannelNode" XPath="Channel">
 				<RequireMatch Attribute="Name" RegEx="#ChannelsRegEx" />
-
+<!--
 				<Select VariableName="Pyramid"
 					XPath="Filter[@Name='#InputFilter']/TilePyramid" />
 				<PythonCall Function="tile.VerifyImages" TilePyramidNode="#Pyramid" />
+-->
 
 				<Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']" />
 				<PythonCall Function="registration.CompressTransforms"
