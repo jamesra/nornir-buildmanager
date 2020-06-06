@@ -410,19 +410,13 @@ class PyramidLevelHandler(object):
             :return: Level node for downsample node 
             :rtype LevelNode:
         '''
-         
+
         if GenerateData:
             existingLevel = self.GetLevel(Downsample)
             if existingLevel is None: 
                 self.GenerateLevels(Downsample)
-            elif hasattr(self, 'NumberOfTiles'): #If this is a tile pyramid with many images regenerate if the verified tile count != NumberOfTiles.  If there is a mismatch regenerate
-                if existingLevel.TilesValidated is None:
-                    nornir_buildmanager.operations.tile.VerifyTiles(existingLevel)
-                    
-                if self.NumberOfTiles != existingLevel.TilesValidated:
-                    self.GenerateLevels(Downsample) 
-                    nornir_buildmanager.operations.tile.VerifyTiles(existingLevel)
-                    
+            elif isinstance(self, VolumeManager.TilePyramidNode): #hasattr(self, 'NumberOfTiles'): #If this is a tile pyramid with many images regenerate if the verified tile count != NumberOfTiles.  If there is a mismatch regenerate
+                self.TryToMakeLevelValid(existingLevel)
 
         [added, lnode] = self.UpdateOrAddChildByAttrib(VolumeManager.LevelNode.Create(Downsample), "Downsample")
         return [added, lnode]

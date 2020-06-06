@@ -80,34 +80,44 @@ def VerifyImages(TilePyramidNode, **kwargs):
 
 def VerifyTiles(LevelNode=None, **kwargs):
     ''' @LevelNode
-    Eliminate any image files which cannot be parsed by Image Magick's identify command
+    Eliminate any image files which cannot be parsed by Image Magick's identify command.
+    This function is going to do the work regardless of whether meta-data in the
+    tile pyramid indicates it should and will update the level node with the results
+    
+    :return: A tuple indicating:
+             1. bool - Does the level contains images?
+             2. list - Which tiles were found to be invalid?
+    :rtype: (bool, list)
+                      
     '''
     logger = logging.getLogger(__name__ + '.VerifyTiles')
-
+ 
     InputLevelNode = LevelNode
-    TilesValidated = int(InputLevelNode.attrib.get('TilesValidated', 0))
     InputPyramidNode = InputLevelNode.FindParent('TilePyramid')
     TileExt = InputPyramidNode.attrib.get('ImageFormatExt', '.png')
     
-    expected_number_of_tiles = InputPyramidNode.NumberOfTiles
-    
-    #If we have validated the same number of tiles as we expect and the directory
-    #has not been modified we do not need to verify the tiles again.
-    if TilesValidated == expected_number_of_tiles:
-        #Figure out if the directory has been modified since the last validation
-        
-        try:
-            level_stats = os.stat(LevelNode.FullPath)
-            level_last_directory_modification = datetime.datetime.utcfromtimestamp(level_stats.st_mtime)
-            last_validation = LevelNode.TileValidationTime
-            
-            if level_last_directory_modification <= last_validation:
-                logger.info('Tiles in level {0} already validated'.format(LevelNode.FullPath))
-                return None
-        except FileNotFoundError:
-            prettyoutput.LogErr("Level node not on file system " + LevelNode.FullPath)
-            pass #We can't find the directory... this should have been caught when loading the level node
-    
+#     TilesValidated = int(InputLevelNode.attrib.get('TilesValidated', 0))
+#     
+     
+#     
+#     expected_number_of_tiles = InputPyramidNode.NumberOfTiles
+#     
+#     #If we have validated the same number of tiles as we expect and the directory
+#     #has not been modified we do not need to verify the tiles again.
+#     if TilesValidated == expected_number_of_tiles:
+#         #Figure out if the directory has been modified since the last validation
+#         
+#         try:
+#             level_last_directory_modification = LevelNode.DirectoryModificationTime
+#             last_validation = LevelNode.TileValidationTime
+#             
+#             if level_last_directory_modification <= last_validation:
+#                 logger.info('Tiles in level {0} already validated'.format(LevelNode.FullPath))
+#                 return (True, [])
+#         except FileNotFoundError:
+#             prettyoutput.LogErr("Level node not on file system " + LevelNode.FullPath)
+#             pass #We can't find the directory... this should have been caught when loading the level node
+#     
     TileImageDir = InputLevelNode.FullPath
     LevelFiles = glob.glob(os.path.join(TileImageDir, '*' + TileExt))
 
@@ -115,11 +125,11 @@ def VerifyTiles(LevelNode=None, **kwargs):
         InputLevelNode.TilesValidated = 0
         InputLevelNode.TileValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
         logger.info('No tiles found in level {0}'.format(LevelNode.FullPath))
-        return None
-
-    if TilesValidated == len(LevelFiles):
-        logger.warning('Tiles in level {0} already validated, but we had to check because # validated tiles is not equal to the expected number'.format(LevelNode.FullPath))
-        return None
+        return (False, [])
+# 
+#     if TilesValidated == len(LevelFiles):
+#         logger.warning('Tiles in level {0} already validated, but we had to check because # validated tiles is not equal to the expected number'.format(LevelNode.FullPath))
+#         return None
 
     InvalidTiles = nornir_shared.images.AreValidImages(LevelFiles, TileImageDir) 
         
@@ -132,13 +142,14 @@ def VerifyTiles(LevelNode=None, **kwargs):
 
     if len(InvalidTiles) == 0:
         logger.info('Tiles all valid {0}'.format(LevelNode.FullPath))
-        
+         
     #We can't just save the directory modified time because it will change when the VolumeData.xml is saved
      
-    InputLevelNode.TileValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
+    InputLevelNode.TileValidationTime = LevelNode.DirectoryModificationTime
     InputLevelNode.TilesValidated = len(LevelFiles) - len(InvalidTiles)
       
-    return InputLevelNode
+    InputLevelNode.Save()
+    return (True, InvalidTiles)
 
 
 def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterName):

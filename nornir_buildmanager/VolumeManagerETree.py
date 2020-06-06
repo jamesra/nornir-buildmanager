@@ -252,10 +252,10 @@ class XElementWrapper(ElementTree.Element):
         other = filter( lambda child: not child.tag.endswith('_Link'), withoutKeys)
         
         
-        sorted_withKeys = sorted(withKeys, key=operator.attrgetter('SortKey'))
-        sorted_withoutKeys = sorted(withoutKeys, key=operator.attrgetter('tag'))
-        sorted_linked   = sorted(linked,   key=lambda child: child.attrib['Path'])
-        sorted_other    = sorted(other,    key=lambda child: str(child))
+        sorted_withKeys = sorted(withKeys, key=operator.attrgetter('SortKey'), reverse=True)
+        sorted_withoutKeys = sorted(withoutKeys, key=operator.attrgetter('tag'), reverse=True)
+        sorted_linked   = sorted(linked,   key=lambda child: child.attrib['Path'], reverse=True)
+        sorted_other    = sorted(other,    key=lambda child: str(child), reverse=True)
         
         self[:] = sorted_withKeys + sorted_linked + sorted_other + sorted_withoutKeys
         
@@ -1441,9 +1441,28 @@ class XContainerElementWrapper(XResourceElementWrapper):
         assert('Path' in self.attrib)
         # else:     
         # self.attrib['Path'] = Path
-
+        
     def Save(self, tabLevel=None, recurse=True):
-        '''If recurse = False we only save this element, no child elements are saved'''
+        '''
+        Public version of Save, if this element is not flagged SaveAsLinkedElement 
+        then we need to save the parent to ensure our data is retained
+        '''
+        
+        if self.SaveAsLinkedElement:
+            return self._Save()
+            
+        elif self.Parent is not None:
+            return self.Parent.Save()
+        
+        raise NotImplemented("Cannot save a container node that is not linked without a parent node to save it under")
+
+    def _Save(self, tabLevel=None, recurse=True):
+        '''
+        Called by another Save function.  This function is either called by a 
+        parent element or by ourselves if SaveAsLinkedElement is True.
+        
+        If recurse = False we only save this element, no child elements are saved
+        '''
         
         AnyChangesFound = self.ElementHasChangesToSave
             
@@ -1505,7 +1524,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     #No further action because the child is still one of our elements
                     
                 if(recurse):
-                    child.Save(tabLevel + 1)
+                    child._Save(tabLevel + 1) #Use the internal version to avoid infinite loop
 
                 # logger.warn("Unloading " + child.tag)
                 # del self[i]
@@ -3158,25 +3177,28 @@ class ImageSetNode(ImageSetBaseNode):
             
         return self.MaxResLevel.Downsample
     
-    def IsLevelPopulated(self, level_full_path):
-        '''
-        :param str level_full_path: The path to the directories containing the image files
-        :return: (Bool, String) containing whether all tiles exist and a reason string
-        '''
-    
-        globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
-
-        files = glob.glob(globfullpath)
-
-        if(len(files) == 0):
-            return [False, "No files in level"]
-
-        FileNumberMatch = len(files) <= self.NumberOfTiles
-
-        if not FileNumberMatch:
-            return [False, "File count mismatch for level"] 
-        
-        return [True, None]
+    def IsLevelValid(self, level_node):
+        raise NotImplemented("HasImage is being used.  I considered this a dead code path.")
+#         '''
+#         :param str level_full_path: The path to the directories containing the image files
+#         :return: (Bool, String) containing whether all tiles exist and a reason string
+#         '''
+#         
+#         level_full_path = level_node.FullPath
+#         
+#         globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
+# 
+#         files = glob.glob(globfullpath)
+# 
+#         if(len(files) == 0):
+#             return [False, "No files in level"]
+# 
+#         FileNumberMatch = len(files) <= self.NumberOfTiles
+# 
+#         if not FileNumberMatch:
+#             return [False, "File count mismatch for level"] 
+#         
+#         return [True, None]
     
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
@@ -3479,51 +3501,105 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         else:
             self.attrib['Type'] = val
 
-    def IsLevelPopulated(self, level_full_path):
+    def ImagesInLevel(self, level_node):
+        '''
+        :return: A list of all images contained in the level directory
+        :rtype: list
+        '''
+        
+        level_full_path = level_node.FullPath
+        expectedExtension = self.ImageFormatExt
+         
+        try:
+            images = []
+            with os.scandir(level_full_path) as pathscan:
+                for item in pathscan:
+                    if item.is_file() == False:
+                        continue
+                    
+                    if item.name[0] == '.': #Avoid the .desktop_ini files of the world
+                        continue
+                    
+                    (root,ext) = os.path.splitext(item.name)
+                    if ext != expectedExtension:
+                        continue
+                    
+                    images.add(item.path)
+            
+            return (True, images)
+        
+        except FileNotFoundError:
+            return [] 
+        
+    
+    def IsValid(self):
+        '''Remove level directories without files, or with more files than they should have'''
+        
+        (valid, reason) = super(TilePyramidNode, self).IsValid()
+        if not valid:
+            return (valid, reason)
+        
+        return (valid, reason)
+
+        #Starting with the highest resolution level, we need to check that all 
+        #of the levels are valid
+        
+        
+            
+    def CheckIfLevelTilesExistViaMetaData(self, level_node):
+        '''
+        Using the meta-data, returns whether there is a reasonable belief that 
+        the passed level has all of the tiles and that they are valid
+        :return: True if the level should have its contents validated
+        '''
+        
+        level_full_path = level_node.FullPath
+        
+        if self.Parent is None: #Don't check for validity if our node has not been added to the tree yet
+            if not os.path.isdir(level_full_path):
+                return (False, '{0} directory does not exist'.format(level_full_path))
+            else:
+                return (True, 'Element has not been added to the tree')
+        
+        level_has_changes = level_node.ChangesSinceLastValidation 
+        
+        if level_has_changes is None:
+            return [False, '{0} directory does not exist'.format(level_full_path)]
+        
+        if level_has_changes:
+            prettyoutput.Log('Validating tiles in {0}, directory was modified since last check'.format(level_full_path))
+            nornir_buildmanager.operations.tile.VerifyTiles(level_node)
+    
+        #The "No modifications since last validation case"
+        if self.NumberOfTiles == level_node.TilesValidated:    
+            return (True, "Tiles validated previously, directory has not been modified, and # validated == # in Pyramid")
+        elif self.NumberOfTiles < level_node.TilesValidated:
+            return (True, "More tiles validated than expected in level")
+        else: 
+            return (False, "Fewer tiles validated than expected in level")
+
+    def TryToMakeLevelValid(self, level_node):
         '''
         :param str level_full_path: The path to the directories containing the image files
         :return: (Bool, String) containing whether all tiles exist and a reason string
-        '''
-    
-        #I've commented this check for existence on the file system because I don't think it can ever occur.
-        #In order for it to run the element must be wrapped, which means it was loaded, and because container
-        #elements are always linked, the directory must have existed and at least contained the VolumeData.xml
-         
-        expectedExtension = self.ImageFormatExt
+        ''' 
         
-        if not self.Parent is None: #Don't check for validity if our node has not been added to the tree yet
-            try:
-                file_count = 0
-                with os.scandir(level_full_path) as pathscan:
-                    for item in pathscan:
-                        if item.is_file() == False:
-                            continue
-                        
-                        if item.name[0] == '.': #Avoid the .desktop_ini files of the world
-                            continue
-                        
-                        (root,ext) = os.path.splitext(item.name)
-                        if ext != expectedExtension:
-                            continue
-                        
-                        file_count = file_count + 1
-                    
-                if file_count == 0:
-                    return [False, 'No images in level: {0}'.format(level_full_path)]
-                
-                FileNumberMatch = file_count <= self.NumberOfTiles
-             
-                if not FileNumberMatch:
-                    return [False, "File count mismatch for level: {0}".format(level_full_path)]
-                
-            except FileNotFoundError:
-                return [False, '{0} directory does not exist'.format(level_full_path)]
+        (ProbablyGood, Reason) = self.CheckIfLevelTilesExistViaMetaData(level_node)
+        
+        if ProbablyGood:
+            return (True, Reason)
+          
+        #Attempt to regenerate the level, then we'll check again for validity
+        output = self.GenerateLevels(level_node.Downsample)
+        if output is not None:
+            output.Save()
             
-        elif not os.path.isdir(level_full_path):
-            return [False, '{0} directory does not exist'.format(level_full_path)]
+        (ProbablyGood, Reason) = self.CheckIfLevelTilesExistViaMetaData(level_node)
         
-        return [True, None]
+        if ProbablyGood:
+            return (True, Reason)
         
+        return (ProbablyGood, Reason)      
 #         
 #         globfullpath = os.path.join(level_full_path, '*' + self.ImageFormatExt)
 # 
@@ -3639,13 +3715,16 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if not node is None:
             node.Save()
 
-    def IsLevelPopulated(self, level_full_path, GridDimX, GridDimY):
+    def IsLevelValid(self, level_node, GridDimX, GridDimY):
         '''
         :param str level_full_path: The path to the directories containing the image files
         :return: (Bool, String) containing whether all tiles exist and a reason string
         '''
+        
         if GridDimX is None or GridDimY is None:
-            return (False, "No grid dimensions found in tileset") 
+            return (False, "No grid dimensions found in tileset")
+        
+        level_full_path = level_node.FullPath 
         
         GridXDim = GridDimX - 1  # int(GridDimX) - 1
         GridYDim = GridDimY - 1  # int(GridDimY) - 1
@@ -3808,23 +3887,53 @@ class LevelNode(XContainerElementWrapper):
                 del self.attrib['TileValidationTime']
         else:
             self.attrib['TileValidationTime'] = str(val)
-
+    
+    @property    
+    def DirectoryModificationTime(self):
+        '''
+        :return: The most recent time the level's directory was modified. Used to 
+        indicate that a verification needs to be repeated.  None is returned if the
+        directory does not exist
+        :rtype: datetime.datetime
+        '''
+        try:
+            level_stats = os.stat(self.FullPath)
+            level_last_directory_modification = datetime.datetime.utcfromtimestamp(level_stats.st_mtime)
+            return level_last_directory_modification
+        except FileNotFoundError:
+            return None
+    
+    @property
+    def ChangesSinceLastValidation(self):
+        '''
+        :return: True if the modification time on the directory is later than our last validation time, or None if the path doesn't exist
+        '''
+        dir_mod_time = self.DirectoryModificationTime
+        if dir_mod_time is None:
+            return None
+        
+        return self.TileValidationTime < dir_mod_time
+    
+    
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
 
         if not os.path.isdir(self.FullPath):
             return [False, 'Directory does not exist']
          
+        #We need to be certain to avoid the pathscan that occurs in our parent class,
+        #So we check that our directory exists and call it good
+         
         PyramidNode = self.Parent
         if(isinstance(PyramidNode, TilePyramidNode)):
-            return PyramidNode.IsLevelPopulated(self.FullPath)
+            return PyramidNode.TryToMakeLevelValid(self)
         elif(isinstance(PyramidNode, TilesetNode)):
-            return PyramidNode.IsLevelPopulated(self.FullPath, self.GridDimX, self.GridDimY)
+            return PyramidNode.IsLevelValid(self, self.GridDimX, self.GridDimY)
         elif(isinstance(PyramidNode, ImageSetNode)):
             if not PyramidNode.HasImage(self.Downsample):
                 return (False, "No image node found")
             # Make sure each level has at least one tile from the last column on the disk.
-            
+             
         return (True, None)
     
     @classmethod
@@ -4008,6 +4117,24 @@ class PruneNode(HistogramBase):
             return float(self.attrib['Overlap'])
         
         return None
+    
+    @property
+    def NumImages(self):
+        if 'NumImages' in self.attrib:
+            return int(self.attrib['NumImages'])
+        
+        return None
+    
+    @NumImages.setter
+    def NumImages(self, value):
+        
+        if value is None:
+            if 'NumImages' in self.attrib:
+                del self.attrib['NumImages']
+                return
+        
+        self.attrib['NumImages'] = str(value)
+        return
 
     @property
     def UserRequestedCutoff(self):
