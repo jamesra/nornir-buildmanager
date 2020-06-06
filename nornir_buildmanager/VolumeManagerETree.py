@@ -654,7 +654,7 @@ class XElementWrapper(ElementTree.Element):
                 if not attribute.fset is None:
                     #Mark the _AttributesChanged flag if the value has been updated
                     if not attribute.fget is None:
-                        self._AttributesChanged = attribute.fget(self) != value 
+                        self._AttributesChanged = self._AttributesChanged or attribute.fget(self) != value 
                     else:
                         self._AttributesChanged = True
                     attribute.fset(self, value)
