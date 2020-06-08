@@ -11,6 +11,8 @@ import re
 import nornir_buildmanager.validation.transforms
 import nornir_shared.misc
 
+import nornir_shared.prettyoutput as prettyoutput
+
 from . import VolumeManagerETree as VolumeManager
 
 
@@ -339,11 +341,14 @@ class InputTransformHandler(object):
                     nMatches = nMatches + 1
                 
                 if InputTransformNode.CleanIfInvalid():
+                    prettyoutput.Log('Check input transform of type: {0}'.format(self.InputTransformType))
                     InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
                     continue
                 
                 if self.IsInputTransformMatched(InputTransformNode):
                     return [True, ""]
+                else:
+                    return [False, 'Input Transform mismatch']
             
             if nMatches > 0: #If we had at least one hit then delete ourselves    
                 return [False, 'Input Transform mismatch']

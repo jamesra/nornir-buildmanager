@@ -2832,7 +2832,7 @@ class MosaicBaseNode(XFileElementWrapper):
                 if not knownChecksum == fileChecksum:
                     return [False, "File checksum does not match meta-data"]
 
-        return result 
+        return result
     
     @classmethod
     def Create(cls, tag, Name, Type, Path=None, attrib=None, **extra):
@@ -2980,6 +2980,7 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         
         result = super(MosaicBaseNode, self).IsValid()
+        prettyoutput.Log('Validate: {0}'.format(self.FullPath))
         if result[0]: 
             [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
             if valid:
