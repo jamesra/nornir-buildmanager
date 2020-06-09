@@ -15,13 +15,14 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=
     Created = False
     OverlayImageNode = ParentNode.GetChildByAttrib('Image', 'Path', os.path.basename(OutputImageName))
     if not OverlayImageNode is None:
-        cleaned = OverlayImageNode.CleanIfInvalid()
-        if cleaned:
-            OverlayImageNode = None
-            
-        if not InputTransformNode is None:
-            if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+        if OverlayImageNode.NeedsValidation:
+            cleaned = OverlayImageNode.CleanIfInvalid()
+            if cleaned:
                 OverlayImageNode = None
+                
+            if not InputTransformNode is None:
+                if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+                    OverlayImageNode = None
 
     if OverlayImageNode is None:
         OverlayImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(OutputImageName))
@@ -37,13 +38,14 @@ def GetOrCreateHistogramNodeHelper(ParentNode, DataPath, ImagePath, InputTransfo
     Created = False
     histogramNode = ParentNode.find('Histogram')
     if not histogramNode is None:
-        cleaned = histogramNode.CleanIfInvalid()
-        if cleaned:
-            histogramNode = None
-            
-        if not InputTransformNode is None:
-            if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+        if histogramNode.NeedsValidation:
+            cleaned = histogramNode.CleanIfInvalid()
+            if cleaned:
                 histogramNode = None
+            
+            if not InputTransformNode is None:
+                if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+                    histogramNode = None
 
     if histogramNode is None:
         histogramNode = VolumeManagerETree.HistogramNode.Create(InputTransformNode, None)

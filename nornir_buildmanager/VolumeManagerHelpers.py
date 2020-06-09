@@ -240,10 +240,7 @@ class InputTransformHandler(object):
     
     @property
     def InputTransform(self):
-        if 'InputTransform' in self.attrib:
-            return self.attrib['InputTransform']
-        
-        return None 
+        return self.attrib.get('InputTransform', None) 
     
     @InputTransform.setter
     def InputTransform(self, value):
@@ -257,10 +254,7 @@ class InputTransformHandler(object):
 
     @property
     def InputTransformChecksum(self):
-        if 'InputTransformChecksum' in self.attrib:
-            return self.attrib['InputTransformChecksum']
-        
-        return None
+        return self.attrib.get('InputTransformChecksum', None)
 
     @InputTransformChecksum.setter
     def InputTransformChecksum(self, value):
@@ -273,10 +267,7 @@ class InputTransformHandler(object):
 
     @property
     def InputTransformType(self):
-        if 'InputTransformType' in self.attrib:
-            return self.attrib['InputTransformType']
-        
-        return None 
+        return self.attrib.get('InputTransformType', None)
 
     @InputTransformType.setter
     def InputTransformType(self, value):
@@ -314,9 +305,32 @@ class InputTransformHandler(object):
                 del self.attrib['InputTransformCropBox']
         else:
             raise Exception("Invalid argument passed to InputTransformCropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
-
+        
+    def InputTransformNeedsValidation(self):
+        '''
+        :return: True if the MetaData indicates the input transform has changed
+        and InputTransformIsValid should be called.
+        '''
+        InputTransformType = self.attrib.get('InputTransformType', None)
+        if InputTransformType is None:
+            return [False, "No input transform to validate"]
+        
+        if self.InputTransformType is None:
+            return [False, "No input transform to validate"]
+        
+        if len(self.InputTransformType) == 0:
+            return [False, "No input transform to validate"]
+        
+        InputTransformNodes = self.FindAllFromParent("Transform[@Type='" + self.InputTransformType + "']")
+        
+        for it in InputTransformNodes:
+            if it.NeedsValidation:
+                return (True, "Potential Input Transform needs validation: {0}".format(str(it.FullPath)))
+            
+        return (False, "No Input Transforms found requiring validation")
+             
     def InputTransformIsValid(self):
-        # Verify that the input transform matches the checksum we recorded for the input
+        ''' Verify that the input transform matches the checksum recorded for the input. '''
 
         InputTransformType = self.attrib.get('InputTransformType', None)
         if InputTransformType is None:
@@ -327,6 +341,11 @@ class InputTransformHandler(object):
             #Check all of our transforms with a matching type until we find a match that is valid
             nMatches = 0
             InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
+            
+            #Due to an obnoxious mistake the StosGroupTransforms can have the same input type as the .mosaic files.
+            #To work around this we check that the InputTransform is not ourselves
+            if InputTransformNode == self:
+                return (True, "Could not validate input transform that was equal to self") 
             
             #If we find a transform of the same type and no matching checksum the input transform is invalid
             #If there is no input transform we do not call it invalid since the input may exist in a different channel

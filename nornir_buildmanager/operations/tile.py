@@ -96,34 +96,12 @@ def VerifyTiles(LevelNode=None, **kwargs):
     InputPyramidNode = InputLevelNode.FindParent('TilePyramid')
     TileExt = InputPyramidNode.attrib.get('ImageFormatExt', '.png')
     
-#     TilesValidated = int(InputLevelNode.attrib.get('TilesValidated', 0))
-#     
-     
-#     
-#     expected_number_of_tiles = InputPyramidNode.NumberOfTiles
-#     
-#     #If we have validated the same number of tiles as we expect and the directory
-#     #has not been modified we do not need to verify the tiles again.
-#     if TilesValidated == expected_number_of_tiles:
-#         #Figure out if the directory has been modified since the last validation
-#         
-#         try:
-#             level_last_directory_modification = LevelNode.DirectoryModificationTime
-#             last_validation = LevelNode.TileValidationTime
-#             
-#             if level_last_directory_modification <= last_validation:
-#                 logger.info('Tiles in level {0} already validated'.format(LevelNode.FullPath))
-#                 return (True, [])
-#         except FileNotFoundError:
-#             prettyoutput.LogErr("Level node not on file system " + LevelNode.FullPath)
-#             pass #We can't find the directory... this should have been caught when loading the level node
-#     
     TileImageDir = InputLevelNode.FullPath
     LevelFiles = glob.glob(os.path.join(TileImageDir, '*' + TileExt))
 
     if(len(LevelFiles) == 0):
         InputLevelNode.TilesValidated = 0
-        InputLevelNode.TileValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
+        InputLevelNode.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
         logger.info('No tiles found in level {0}'.format(LevelNode.FullPath))
         return (False, [])
 # 
@@ -145,7 +123,7 @@ def VerifyTiles(LevelNode=None, **kwargs):
          
     #We can't just save the directory modified time because it will change when the VolumeData.xml is saved
      
-    InputLevelNode.TileValidationTime = LevelNode.DirectoryModificationTime
+    InputLevelNode.ValidationTime = LevelNode.LastFileSystemModificationTime
     InputLevelNode.TilesValidated = len(LevelFiles) - len(InvalidTiles)
       
     InputLevelNode.Save()

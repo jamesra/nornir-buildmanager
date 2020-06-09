@@ -490,10 +490,31 @@ class XElementWrapper(ElementTree.Element):
             return True
         else:
             return self.Parent.IsParent(node)
+    
+    @property
+    def NeedsValidation(self):
+        raise NotImplemented("NeedsValidation should be implemented in derived class {0}".format(str(self)))
+    
+    def IsValidLazy(self):
+        '''
+        First checks if the XElement requires validation before invoking IsValid
+        '''
+        
+        if self.NeedsValidation:
+            return self.IsValid()
+        else:
+            return [True, "NeedsValidation flag not set"]
 
     def IsValid(self):
         '''This function should be overridden by derrived classes.  It returns true if the file system or other external 
            resources match the state recorded within the element.
+           
+           IsValid should always do the full work of validation and then update
+           any meta-data, such as ValidationTime, to indicate the validation was
+           done.  NeedsValidation should be used to determine if an element needs
+           an IsValid call or if a check of the XElement state was sufficient to
+           believe it is in a valid state.  IsValidLazy will only call IsValid 
+           on elements whose NeedsValidation call is True.
            
            Returns Tuple of state and a string with a reason'''
 
@@ -877,6 +898,18 @@ class XElementWrapper(ElementTree.Element):
             P = P._Parent
         return None
     
+    def FindAllFromParent(self, xpath):
+        '''Run findall on xpath on each parent, return results only first nearest parent with resuls'''
+#        assert (not ParentTag is None)
+        P = self._Parent
+        while P is not None:
+            result = P.findall(xpath)
+            if not result is None:
+                return result
+
+            P = P._Parent
+        return None
+    
     def _ReplaceChildElementInPlace(self, old, new):
         
         # print("Removing {0}".format(str(old)))
@@ -1091,7 +1124,73 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
             self.__dict__['__fullpath'] = FullPathStr
 
         return FullPathStr
-
+    
+     
+    @property
+    def ValidationTime(self):
+        '''
+        An optional attribute to record the last time we validated the state
+        of the file or directory this element represents.
+        :return: Returns None if the attribute has not been set, otherwise an integer
+        '''
+        val = self.attrib.get('ValidationTime', datetime.datetime.min)
+        if not val is None and isinstance(val, str):
+            val = datetime.datetime.fromisoformat(val)
+            
+        return val
+    
+    @ValidationTime.setter
+    def ValidationTime(self, val):
+        assert(isinstance(val, datetime.datetime))
+            
+        if val is None:
+            if 'ValidationTime' in self.attrib:
+                del self.attrib['ValidationTime']
+        else:
+            self.attrib['ValidationTime'] = str(val)
+            
+    
+    def UpdateValidationTime(self):
+        '''
+        Sets ValidationTime to the LastModified time on the file or directory
+        '''
+            
+        self.ValidationTime = self.LastFileSystemModificationTime
+    
+    @property
+    def ChangesSinceLastValidation(self):
+        '''
+        :return: True if the modification time on the directory is later than our last validation time, or None if the path doesn't exist
+        '''
+        dir_mod_time = self.LastFileSystemModificationTime
+        if dir_mod_time is None:
+            return None
+        
+        return self.ValidationTime < dir_mod_time
+     
+    @property    
+    def LastFileSystemModificationTime(self):
+        '''
+        :return: The most recent time the resource's file or directory was 
+        modified. Used to indicate that a verification needs to be repeated.  
+        None is returned if the file or directory does not exist
+        :rtype: datetime.datetime
+        '''
+        try:
+            level_stats = os.stat(self.FullPath)
+            level_last_filesystem_modification = datetime.datetime.utcfromtimestamp(level_stats.st_mtime)
+            return level_last_filesystem_modification
+        except FileNotFoundError:
+            return None
+        
+    @property
+    def NeedsValidation(self):
+        changes = self.ChangesSinceLastValidation
+        if changes is None:
+            return True
+        
+        return changes
+        
     def ToElementString(self):
         outStr = self.FullPath
         return outStr
@@ -1166,10 +1265,18 @@ class XFileElementWrapper(XResourceElementWrapper):
         return
 
     def IsValid(self):
-        if not os.path.exists(self.FullPath):
+        '''
+        Checks that the file exists by attempting to update the validation time 
+        '''
+        
+        try: 
+            self.ValidationTime = self.LastFileSystemModificationTime
+        except FileNotFoundError:
             return [False, 'File does not exist']
-
-        return super(XFileElementWrapper, self).IsValid()
+        
+        result = super(XFileElementWrapper, self).IsValid()
+            
+        return result;
 
     @classmethod
     def Create(self, tag, Path, attrib, **extra):
@@ -2641,6 +2748,10 @@ class StosMapNode(XElementWrapper):
             XElementWrapper.logger.warn('Moving duplicate mapping ' + str(Control) + ' <- ' + str(mappedSection))
 
         return True
+    
+    @property
+    def NeedsValidation(self):
+        return True #Checking the mapping is easier than checking if volumedata.xml has changed
 
     def IsValid(self):
         '''Check for mappings whose control section is in the non-stos section numbers list'''
@@ -2974,6 +3085,14 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
                 del self.attrib['CropBox']
         else:
             raise Exception("Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
+         
+    @property
+    def NeedsValidation(self):
+        if super(TransformNode, self).NeedsValidation:
+            return True
+        
+        input_needs_validation = VMH.InputTransformHandler.InputTransformNeedsValidation(self)
+        return input_needs_validation[0] 
 
     def IsValid(self):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
@@ -3141,7 +3260,15 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         nornir_imageregistration.Shrink(SourceImage.FullPath, OutputImage.FullPath, float(SourceDownsample) / float(Downsample))
         
         return OutputImage
-
+    
+    @property
+    def NeedsValidation(self):
+        if super(ImageSetBaseNode, self).NeedsValidation:
+            return True
+        
+        input_needs_validation = VMH.InputTransformHandler.InputTransformNeedsValidation(self)
+        return input_needs_validation[0] 
+        
     def IsValid(self):
         [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
         if valid:
@@ -3715,7 +3842,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         node = tile.BuildTilesetPyramid(self)
         if not node is None:
             node.Save()
-
+    
     def IsLevelValid(self, level_node, GridDimX, GridDimY):
         '''
         :param str level_full_path: The path to the directories containing the image files
@@ -3867,54 +3994,7 @@ class LevelNode(XContainerElementWrapper):
                 del self.attrib['TilesValidated']
         else:
             self.attrib['TilesValidated'] = '%d' % int(val)
-            
-    @property
-    def TileValidationTime(self):
-        '''
-        :return: Returns None if the attribute has not been set, otherwise an integer
-        '''
-        val = self.attrib.get('TileValidationTime', datetime.datetime.min)
-        if not val is None and isinstance(val, str):
-            val = datetime.datetime.fromisoformat(val)
-            
-        return val
-    
-    @TileValidationTime.setter
-    def TileValidationTime(self, val):
-        assert(isinstance(val, datetime.datetime))
-            
-        if val is None:
-            if 'TilesValidated' in self.attrib:
-                del self.attrib['TileValidationTime']
-        else:
-            self.attrib['TileValidationTime'] = str(val)
-    
-    @property    
-    def DirectoryModificationTime(self):
-        '''
-        :return: The most recent time the level's directory was modified. Used to 
-        indicate that a verification needs to be repeated.  None is returned if the
-        directory does not exist
-        :rtype: datetime.datetime
-        '''
-        try:
-            level_stats = os.stat(self.FullPath)
-            level_last_directory_modification = datetime.datetime.utcfromtimestamp(level_stats.st_mtime)
-            return level_last_directory_modification
-        except FileNotFoundError:
-            return None
-    
-    @property
-    def ChangesSinceLastValidation(self):
-        '''
-        :return: True if the modification time on the directory is later than our last validation time, or None if the path doesn't exist
-        '''
-        dir_mod_time = self.DirectoryModificationTime
-        if dir_mod_time is None:
-            return None
-        
-        return self.TileValidationTime < dir_mod_time
-    
+           
     
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
@@ -3958,6 +4038,15 @@ class LevelNode(XContainerElementWrapper):
             attrib = {}
  
         super(LevelNode, self).__init__(tag='Level', attrib=attrib, **extra)
+        
+        #Temporary remap for TileValidationTime
+        if 'TileValidationTime' in self.attrib:
+            val = self.attrib.get('TileValidationTime', datetime.datetime.min)
+            if not val is None and isinstance(val, str):
+                val = datetime.datetime.fromisoformat(val)
+            
+            self.ValidationTime = val
+            del self.attrib['TileValidationTime']
 
 
 class HistogramBase(VMH.InputTransformHandler, XElementWrapper):

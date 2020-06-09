@@ -215,8 +215,9 @@ class PMGImport(object):
     
         [added, LevelObj] = PyramidNodeObj.UpdateOrAddChildByAttrib(LevelNode.Create(Level=1), 'Downsample')
     
-        # Make sure the target LevelObj is verified
-        VerifyTiles(LevelNode=LevelObj)
+        # Make sure the target LevelObj is verified if it already existed
+        if not added and LevelObj.NeedsValidation:
+            VerifyTiles(LevelNode=LevelObj)
      
         OutputImagePath = os.path.join(channelObj.FullPath, filterObj.Path, PyramidNodeObj.Path, LevelObj.Path)
     

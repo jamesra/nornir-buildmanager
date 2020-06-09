@@ -290,6 +290,8 @@ class SerialEMIDocImport(object):
             os.makedirs(LevelObj.FullPath, exist_ok=True)
         else:
             Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
+            
+        if not added_level and LevelObj.NeedsValidation:
             VerifyTiles(filterObj.TilePyramid.GetLevel(1))
 
         SourceToMissingTargetMap = Tileset.GetSourceToMissingTargetMap()

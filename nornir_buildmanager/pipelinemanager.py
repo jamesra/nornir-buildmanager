@@ -696,9 +696,10 @@ class PipelineManager(object):
 
         NumProcessed = 0
         for VolumeElemChild in VolumeElemIter:
-            if VolumeElemChild.CleanIfInvalid():
-                PipelineManager._SaveNodes(VolumeElemChild.Parent)
-                continue
+            if VolumeElem.NeedsValidation:
+                if VolumeElemChild.CleanIfInvalid():
+                    PipelineManager._SaveNodes(VolumeElemChild.Parent)
+                    continue
 
             NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
 
