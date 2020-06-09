@@ -667,17 +667,18 @@ class PipelineManager(object):
 
             #Containers will be tested at load time.  The load linked element code checks containers
             if not isinstance(SelectedVolumeElem, VolumeManagerETree.XContainerElementWrapper):
-                (IsValid, Reason) = SelectedVolumeElem.IsValid()
-                if not IsValid:
-                    # Check if the node is locked, otherwise clean it and look for another node
-                    if 'Locked' in SelectedVolumeElem.attrib:
-                        if SelectedVolumeElem.Locked:
-                            PipelineManager.logger.info("Did not clean locked element {0}\n".format(SelectedVolumeElem.FullPath))
-                            break
-                        
-                    SelectedVolumeElem.Clean(Reason)
-                    PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
-                    SelectedVolumeElem = None
+                if SelectedVolumeElem.NeedsValidation:
+                    (IsValid, Reason) = SelectedVolumeElem.IsValid()
+                    if not IsValid:
+                        # Check if the node is locked, otherwise clean it and look for another node
+                        if 'Locked' in SelectedVolumeElem.attrib:
+                            if SelectedVolumeElem.Locked:
+                                PipelineManager.logger.info("Did not clean locked element {0}\n".format(SelectedVolumeElem.FullPath))
+                                break
+                            
+                        SelectedVolumeElem.Clean(Reason)
+                        PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
+                        SelectedVolumeElem = None
 
         if not SelectedVolumeElem is None:
             self.AddPipelineNodeVariable(PipelineNode, SelectedVolumeElem, ArgSet)

@@ -4079,6 +4079,18 @@ class HistogramBase(VMH.InputTransformHandler, XElementWrapper):
             return ""
         else:
             return self.DataNode.Checksum
+        
+    @property
+    def NeedsValidation(self):
+        
+        if self.InputTransformNeedsValidation():
+            return True
+        
+        if self.DataNode is None:
+            return True
+        
+        return DataNode.NeedsValidation
+        
 
     def IsValid(self):
         '''Remove this node if our output does not exist'''
