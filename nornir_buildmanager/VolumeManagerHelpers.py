@@ -296,13 +296,13 @@ class InputTransformHandler(object):
         '''Sets boundaries in fixed space for output from the transform.
         :param bounds tuple:  (Xo, Yo, Width, Height) or (Width, Height)
         '''
-        if len(bounds) == 4:
+        if bounds is None:
+            if 'InputTransformCropBox' in self.attrib:
+                del self.attrib['InputTransformCropBox']
+        elif len(bounds) == 4:
             self.attrib['InputTransformCropBox'] = "%g,%g,%g,%g" % bounds
         elif len(bounds) == 2:
             self.attrib['InputTransformCropBox'] = "0,0,%g,%g" % bounds
-        elif bounds is None:
-            if 'InputTransformCropBox' in self.attrib:
-                del self.attrib['InputTransformCropBox']
         else:
             raise Exception("Invalid argument passed to InputTransformCropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
         
@@ -328,6 +328,7 @@ class InputTransformHandler(object):
                 return (True, "Potential Input Transform needs validation: {0}".format(str(it.FullPath)))
             
         return (False, "No Input Transforms found requiring validation")
+    
              
     def InputTransformIsValid(self):
         ''' Verify that the input transform matches the checksum recorded for the input. '''

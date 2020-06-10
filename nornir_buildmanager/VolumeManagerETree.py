@@ -111,7 +111,7 @@ class VolumeManager():
             VolumeRoot = XMLTree.getroot()
 
         VolumeRoot.attrib['Path'] = VolumePath
-        VolumeRoot = XContainerElementWrapper.wrap(VolumeRoot)
+        VolumeRoot = VolumeNode.wrap(VolumeRoot)
         VolumeManager.__SetElementParent__(VolumeRoot)
         
         if SaveNewVolume:
@@ -959,6 +959,9 @@ class XElementWrapper(ElementTree.Element):
                 # if num_matches > 1:
                 #    prettyoutput.Log("Need to load {0} links".format(num_matches))
                 self._replace_links(LinkMatches)
+                
+                if self.ElementHasChangesToSave:
+                    self.Save()
 
         matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
         for match in matchiterator:
@@ -997,6 +1000,9 @@ class XElementWrapper(ElementTree.Element):
             # if num_matches > 1:
             #    prettyoutput.Log("Need to load {0} links".format(num_matches))
             self._replace_links(LinkMatches)
+            
+            if self.ElementHasChangesToSave:
+                self.Save()
             
         # return matches
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
@@ -1185,6 +1191,11 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
         
     @property
     def NeedsValidation(self):
+        
+        if isinstance(self, XContainerElementWrapper):
+            if self.SaveAsLinkedElement:
+                raise Exception("Container elements ({0}) that save as links must not use directory modification time to check for changes because the meta-data saves in the same directory".format(self.tag))
+        
         changes = self.ChangesSinceLastValidation
         if changes is None:
             return True
@@ -1459,9 +1470,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
         self._ReplaceChildElementInPlace(old=link_node, new=loaded_element)
         
         # Check to ensure the newly loaded element is valid
-        Cleaned = loaded_element.CleanIfInvalid()
-        if Cleaned:
-            return None
+        if loaded_element.NeedsValidation:
+            Cleaned = loaded_element.CleanIfInvalid()
+            if Cleaned:
+                return None
         
         return loaded_element
     
@@ -1520,8 +1532,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
             
             self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
 
-            t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
-            clean_tasks.append(t)
+            if wrapped_loaded_element.NeedsValidation:
+                t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
+                clean_tasks.append(t)
             
             # Check to ensure the newly loaded element is valid
             #Cleaned = wrapped_loaded_element.CleanIfInvalid()
@@ -1768,7 +1781,23 @@ class XLinkedContainerElementWrapper(XContainerElementWrapper):
         # If we are the root of all saves then make sure they have all completed before returning
         # if(tabLevel == 0 or recurse==False):
             # pool.wait_completion()
-
+class VolumeNode(XNamedContainerElementWrapped):
+    '''The root of a volume's XML Meta-data'''
+    
+    @property
+    def Blocks(self):
+        return self.findall('Block')
+    
+    def GetBlock(self, name):
+        return self.GetChildByAttrib('Block', 'Name', name)
+    
+    @property
+    def NeedsValidation(self):
+        return True
+ 
+    @classmethod
+    def Create(cls, Name, Path=None, **extra):
+        return super(VolumeNode, cls).Create(tag='Volume', Name=Name, Path=Path, **extra)
 
 class BlockNode(XNamedContainerElementWrapped):
 
@@ -1889,6 +1918,10 @@ class BlockNode(XNamedContainerElementWrapped):
             StosExemptNode.text = value
         elif isinstance(value, list) or isinstance(value, set) or isinstance(value, frozenset):
             StosExemptNode.text = ','.join(list(map(str, value)))
+            
+    @property
+    def NeedsValidation(self):
+        return True
  
     @classmethod
     def Create(cls, Name, Path=None, **extra):
@@ -1973,6 +2006,10 @@ class ChannelNode(XNamedContainerElementWrapped):
         ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
                                                              'UnitsPerPixel' : str(scaleValueInNm)}))
         return (added, ScaleObj)
+    
+    @property
+    def NeedsValidation(self):
+        return True
     
     def __str__(self):
         return "Channel: %s Section: %d" % (self.Name, self.Parent.Number)
@@ -2217,6 +2254,10 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
 
     def GetHistogram(self):
         return self.find('Histogram')
+    
+    @property
+    def NeedsValidation(self):
+        return True
 
     @classmethod
     def Create(cls, Name, Path=None, **extra):
@@ -2302,6 +2343,10 @@ class SectionNode(XNamedContainerElementWrapped):
                 filterNodes.extend(result)
 
         return filterNodes
+    
+    @property
+    def NeedsValidation(self):
+        return True
     
     @classmethod
     def Create(cls, Number, Name=None, Path=None, attrib=None, **extra):
@@ -3098,19 +3143,18 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         
-        result = super(MosaicBaseNode, self).IsValid()
+        [valid, reason] = super(TransformNode, self).IsValid()
         prettyoutput.Log('Validate: {0}'.format(self.FullPath))
-        if result[0]: 
+        if valid: 
             [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
-            if valid:
-                [valid, reason] = super(TransformNode, self).IsValid()
+            #if valid:
+                #[valid, reason] = super(TransformNode, self).IsValid()
                 
-                if not os.path.exists(self.FullPath):
-                    self.Locked = False
+        #We can delete a locked transform if it does not exist on disk
+        if not valid and not os.path.exists(self.FullPath):
+            self.Locked = False
             
-            return [valid, reason]
-        else:
-            return result
+        return(valid, reason)
          
     @property
     def Threshold(self):
@@ -3263,18 +3307,29 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
     
     @property
     def NeedsValidation(self):
-        if super(ImageSetBaseNode, self).NeedsValidation:
-            return True
+        #if super(ImageSetBaseNode, self).NeedsValidation:
+        #    return True
         
         input_needs_validation = VMH.InputTransformHandler.InputTransformNeedsValidation(self)
         return input_needs_validation[0] 
         
+                
     def IsValid(self):
-        [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
-        if valid:
-            return super(ImageSetBaseNode, self).IsValid()
-        else:
-            return [valid, reason]
+        '''Check if the image set is valid.  Be careful using this, because it only checks the existing meta-data. 
+           If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
+        
+        [valid, reason] = super(ImageSetBaseNode, self).IsValid()
+        prettyoutput.Log('Validate: {0}'.format(self.FullPath))
+        if valid: 
+            [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
+            #if valid:
+                #[valid, reason] = super(TransformNode, self).IsValid()
+                
+        #We can delete a locked transform if it does not exist on disk
+        if not valid and not os.path.exists(self.FullPath):
+            self.Locked = False
+            
+        return(valid, reason)
         
     @property
     def Checksum(self):
@@ -3327,6 +3382,8 @@ class ImageSetNode(ImageSetBaseNode):
 #             return [False, "File count mismatch for level"] 
 #         
 #         return [True, None]
+
+    
     
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
@@ -3658,7 +3715,10 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         
         except FileNotFoundError:
             return [] 
-        
+    
+    @property
+    def NeedsValidation(self):
+        return True
     
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
@@ -3773,7 +3833,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
             node.Save()
 
 
-class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
+class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler, VMH.InputTransformHandler):
 
     DefaultPath = 'Tileset'
 
@@ -3842,6 +3902,36 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         node = tile.BuildTilesetPyramid(self)
         if not node is None:
             node.Save()
+            
+    @property
+    def NeedsValidation(self):
+        #We don't check with the base class' last directory modification because 
+        #we cannot save the metadata without changing the timestamp, so we 
+        #only look at the input transform (which will not exist for volumes built
+        #before June 8th 2020.)  If there is no input transform then no validation
+        #is done and tilesets must be deleted manually to refresh them.
+        #if super(TilesetNode, self).NeedsValidation:
+        #    return True
+        
+        input_needs_validation = VMH.InputTransformHandler.InputTransformNeedsValidation(self)
+        return input_needs_validation[0]
+     
+    def IsValid(self):
+        '''Check if the TileSet is valid.  Be careful using this, because it only checks the existing meta-data. 
+           If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
+        
+        [valid, reason] = super(TilesetNode, self).IsValid()
+        prettyoutput.Log('Validate: {0}'.format(self.FullPath))
+        if valid: 
+            [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
+            #if valid:
+                #[valid, reason] = super(TransformNode, self).IsValid()
+                
+        #We can delete a locked transform if it does not exist on disk
+        if not valid and not os.path.exists(self.FullPath):
+            self.Locked = False
+            
+        return(valid, reason)
     
     def IsLevelValid(self, level_node, GridDimX, GridDimY):
         '''
@@ -3884,6 +3974,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                 if YSize != self.TileYDim or XSize != self.TileXDim:
                     return [False, "Image size does not match meta-data"]
                 
+                level_node.UpdateValidationTime()
                 return [True, "Last column of tileset found"]
 
             MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' :  FilePrefix,
@@ -3895,6 +3986,7 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                 if YSize != self.TileYDim or XSize != self.TileXDim:
                     return [False, "Image size does not match meta-data"]
                 
+                level_node.UpdateValidationTime()
                 return [True, "Last column of tileset found"]
 
         return [False, "Last column of tileset not found"]
