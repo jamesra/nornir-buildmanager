@@ -3145,11 +3145,9 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         
         [valid, reason] = super(TransformNode, self).IsValid()
         prettyoutput.Log('Validate: {0}'.format(self.FullPath))
-        if valid: 
+        if valid:
             [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
-            #if valid:
-                #[valid, reason] = super(TransformNode, self).IsValid()
-                
+                 
         #We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
