@@ -67,7 +67,7 @@ def EstimateMaxTempImageArea():
         num_duplicate_copies_in_memory = int(3) #At most we need the raw tile (and distance image), the assembled individual tile (and distance image), and the full composite image (and distance image) we are building
         safety_factor = int(2)
         estimated_max_temp_image_area = (memory_data.available /  (bytes_per_pixel * num_images_per_tile * num_duplicate_copies_in_memory * safety_factor))
-        prettyoutput.Log("Maximum per-core temporary image size calculated a {0:g}MB limit.".format(float(max_temp_image_area) / float(2 << 20)))
+        prettyoutput.Log("Maximum per-core temporary image size calculated a {0:g}MB limit.".format(float(estimated_max_temp_image_area) / float(2 << 20)))
         
     return estimated_max_temp_image_area
 
