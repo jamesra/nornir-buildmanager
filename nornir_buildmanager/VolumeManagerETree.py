@@ -2427,6 +2427,10 @@ class StosGroupNode(XNamedContainerElementWrapped):
             return []
 
         return sectionMapping.TransformsToSection(ControlSectionNumber)
+    
+    @property
+    def NeedsValidation(self):
+        return True
 
     def GetStosTransformNode(self, ControlFilter, MappedFilter):
         MappedSectionNode = MappedFilter.FindParent("Section")
