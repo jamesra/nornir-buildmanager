@@ -503,7 +503,7 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
     return
 
 
-def StosBrute(Parameters, VolumeNode, MappingNode, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
+def StosBrute(Parameters, MappingNode, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
     '''Create an initial rotation and translation alignment for a pair of unregistered images'''
 
     Downsample = int(Parameters.get('Downsample', 32))
