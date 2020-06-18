@@ -3,7 +3,7 @@ import os
 import shutil
 import glob
 import pickle
-from . import serialemlog
+import nornir_buildmanager.importers.serialemlog
 from nornir_buildmanager.VolumeManagerETree import DataNode
 import nornir_shared.prettyoutput as prettyoutput
 
@@ -71,7 +71,7 @@ def TryAddLogs(containerObj, InputPath, logger):
 
             # OK, try to parse the logs
             try:
-                LogData = serialemlog.SerialEMLog.Load(filename)
+                LogData = nornir_buildmanager.importers.serialemlog.SerialEMLog.Load(filename)
                 if LogData is None:
                     continue
                 
@@ -100,15 +100,6 @@ def TryAddLogs(containerObj, InputPath, logger):
 
     return LogsAdded
 
-class OldVersionException(Exception):
-
-    def __init__(self, text):
-        self.text = text
-        super(OldVersionException, self).__init__()
-        
-    def __str__(self):
-        return repr(self.text)
- 
  
 def PickleLoad(logfullPath, version_func):
     '''

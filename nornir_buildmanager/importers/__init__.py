@@ -6,6 +6,17 @@ import nornir_buildmanager
 ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
 DefaultHistogramFilename = "ContrastOverrides.txt"
 
+
+class OldVersionException(Exception):
+
+    def __init__(self, text):
+        self.text = text
+        super(OldVersionException, self).__init__()
+        
+    def __str__(self):
+        return repr(self.text)
+ 
+
 def CreateDefaultHistogramCutoffFile(histogramFilename):
     with open(histogramFilename, 'w+') as histogramFilehandle:
         histogramFilehandle.write("#Section Min Max Gamma")
