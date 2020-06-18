@@ -14,7 +14,8 @@ import nornir_shared.files as files
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput 
 
-from nornir_buildmanager.importers import serialem_utils, OldVersionException
+from nornir_buildmanager.importers import serialem_utils
+import nornir_buildmanager
 
 
 class LogTileData(object):
@@ -106,8 +107,9 @@ class SerialEMLog(object):
 
     @property
     def TotalTime(self):
-        total = self.MontageEnd - self.MontageStart
-        return total
+        '''Total time to capture, including cooking, filaments warmup, acquisition, etc...'''
+        return self.TotalTileAcquisitionTime + self.LowMagCookTime + self.HighMagCookTime + self.FilamentStabilizationTime
+        
 
     @property
     def AverageTileTime(self):
@@ -125,7 +127,7 @@ class SerialEMLog(object):
         return self._avg_tile_time
      
     @property
-    def AverageTileSettle(self):
+    def AverageSettleTime(self):
         '''
         The average time it takes for a tile to be in-focus and below drift tolerance after a stage move
         '''
@@ -140,7 +142,7 @@ class SerialEMLog(object):
         return self._avg_tile_settle_time
     
     @property
-    def AverageTileAquisition(self):
+    def AverageAcquisitionTime(self):
         '''
         The average time it takes to record a tile after it is in focus and drift tolerance is met
         '''
@@ -178,6 +180,36 @@ class SerialEMLog(object):
                         self._fastestTime = min(self._fastestTime, t.totalTime)
 
         return self._fastestTime
+    
+    @property
+    def FastestSettleTime(self):
+        '''Fastest time to be in focus and under drift limit after stage move'''
+
+        if self._fastest_settle_time is None:
+            for t in list(self.tileData.values()):
+                if not (t.dwellTime is None or t.drift is None):
+                    if self._fastest_settle_time is None:
+                        self._fastest_settle_time = t.settleTime
+                    else:
+                        self._fastest_settle_time = min(self._fastest_settle_time, t.settleTime)
+
+        return self._fastest_settle_time
+     
+    
+    @property
+    def FastestAcquisitionTime(self):
+        '''Fastest time to capture a tile after it is in focus and under drift limit'''
+
+        if self._fastest_settle_time is None:
+            for t in list(self.tileData.values()):
+                if not (t.dwellTime is None or t.drift is None):
+                    if self._fastest_acquisition_time is None:
+                        self._fastest_acquisition_time = t.acquisitionTime
+                    else:
+                        self._fastest_acquisition_time = min(self._fastest_acquisition_time, t.settleTime)
+
+        return self._fastest_acquisition_time
+     
 
     @property
     def MaxTileDrift(self):
@@ -234,6 +266,11 @@ class SerialEMLog(object):
         return self._HighMagCookTime
     
     @property
+    def TotalTileAcquisitionTime(self):
+        '''Total time it took to acquire tiles after all preparation steps such as cooking'''
+        return self.MontageEnd - self.MontageStart
+            
+    @property
     def ISCalibrationDone(self):
         return self._IS_change_percentage is not None
     
@@ -280,6 +317,8 @@ class SerialEMLog(object):
         self._avg_tile_acquisitionTime_time = None
         self._num_tiles = None
         self._fastestTime = None
+        self._fastest_acquisition_time = None
+        self._fastest_settle_time = None
         self._maxdrift = None
         self._mindrift = None
         
@@ -296,7 +335,7 @@ class SerialEMLog(object):
     @classmethod
     def VersionCheck(cls, loaded):
         if loaded.__SerialEMLogVersion != cls._SerialEMLog__ObjVersion():
-            raise OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+            raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
         
         return
 
@@ -817,8 +856,8 @@ if __name__ == "__main__":
     print("Min drift: %g nm/sec" % Data.MinTileDrift)
     print("Max drift: %g nm/sec" % Data.MaxTileDrift)
     print("Fastest tile acquisition time: %g sec" % round(Data.FastestTileTime,2))
-    print("Average tile settle: %g sec" % round(Data.AverageTileSettle,2))
-    print("Average tile acquisition: %g sec" % round(Data.AverageTileAquisition,2))
+    print("Average tile settle: %g sec" % round(Data.AverageSettleTime,2))
+    print("Average tile acquisition: %g sec" % round(Data.AverageAcquisitionTime,2))
     print("Average total time/tile: %g sec" % round(Data.AverageTileTime,2))
     
     #print("Average drift: %g nm/sec" % Data.AverageTileDrift)

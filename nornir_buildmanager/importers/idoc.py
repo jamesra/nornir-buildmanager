@@ -751,7 +751,7 @@ class IDoc():
     @classmethod
     def VersionCheck(cls, loaded):
         if loaded.__IDocPickleVersion != cls.__ObjVersion():
-            raise serialem_utils.OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+            raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
         
         return
             

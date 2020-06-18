@@ -3,6 +3,7 @@ import os
 import shutil
 import glob
 import pickle
+import nornir_buildmanager.importers
 import nornir_buildmanager.importers.serialemlog
 from nornir_buildmanager.VolumeManagerETree import DataNode
 import nornir_shared.prettyoutput as prettyoutput
@@ -84,9 +85,39 @@ def TryAddLogs(containerObj, InputPath, logger):
                 containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
                 [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')
                 LogsAdded = LogsAdded or added
-                LogNodeObj.AverageTileTime = '%g' % LogData.AverageTileTime
-                LogNodeObj.AverageTileDrift = '%g' % LogData.AverageTileDrift
-                LogNodeObj.CaptureTime = '%g' % (LogData.MontageEnd - LogData.MontageStart)
+                
+                if LogData.AverageTileTime is not None:
+                    LogNodeObj.AverageTileTime = '%g' % LogData.AverageTileTime
+                    
+                if LogData.AverageSettleTime is not None:
+                    LogNodeObj.AverageSettleTime = '%g' % LogData.AverageSettleTime
+                
+                if LogData.AverageAcquisitionTime is not None:
+                    LogNodeObj.AverageAcquisitionTime = '%g' % LogData.AverageAcquisitionTime
+                
+                if LogData.FastestTileTime is not None:
+                    LogNodeObj.FastestTileTime = '%g' % LogData.FastestTileTime
+                    
+                if LogData.FastestSettleTime is not None:
+                    LogNodeObj.FastestSettleTime = '%g' % LogData.FastestSettleTime
+                
+                if LogData.FastestAcquisitionTime is not None:
+                    LogNodeObj.FastestAcquisitionTime = '%g' % LogData.FastestAcquisitionTime
+                    
+                if LogData.AverageTileDrift is not None:
+                    LogNodeObj.AverageTileDrift = '%g' % LogData.AverageTileDrift
+                    
+                if LogData.MaxTileDrift is not None:
+                    LogNodeObj.MaxTileDrift = '%g' % LogData.MaxTileDrift
+                    
+                if LogData.MinTileDrift is not None:
+                    LogNodeObj.MinTileDrift = '%g' % LogData.MinTileDrift
+                
+                LogNodeObj.FilamentStabilizationTime = '%g' % (LogData.FilamentStabilizationTime)
+                LogNodeObj.LowMagCookTime = '%g' % (LogData.LowMagCookTime)
+                LogNodeObj.HighMagCookTime = '%g' % (LogData.HighMagCookTime)
+                LogNodeObj.TileAcquisitionTime = '%g' % (LogData.TotalTileAcquisitionTime)
+                LogNodeObj.CaptureTime = '%g' % (LogData.TotalTime)
                 
                 LogNodeObj.HighMagCookDone = '%i' % (LogData.HighMagCookDone)
                 LogNodeObj.LowMagCookDone = '%i' % (LogData.LowMagCookDone)
@@ -119,7 +150,7 @@ def PickleLoad(logfullPath, version_func):
                 version_func(obj) #Should raise OldVersionException if the file is stale
                 #if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
                 #    raise OldVersionException("Version mismatch in pickled file: " + picklePath)
-        except OldVersionException as e:
+        except nornir_buildmanager.importers.OldVersionException as e:
             try:
                 prettyoutput.Log("Removing stale .pickle file: " + str(e))
                 os.remove(picklePath)
