@@ -488,7 +488,7 @@ class SerialEMLog(object):
                     line = nextLine
                     nextLine = None
                     
-                print(line)
+                #print(line)
                     
                 if line is None:  # No more lines in the file
                     break
