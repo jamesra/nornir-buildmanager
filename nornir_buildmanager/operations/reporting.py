@@ -444,7 +444,7 @@ def __ExtractLogDataText(Data):
         AvgTimeRows.append(['Acquisition:', '<b>%.3g sec/tile</b>' % float(Data.AverageAcquisitionTime)])
 
     if hasattr(Data, 'FastestTileTime'):
-        MinTimeRows.append(['Fastest:', '%.3g sec' % Data.FastestTileTime])
+        MinTimeRows.append(['Overall:', '%.3g sec' % Data.FastestTileTime])
         
     if hasattr(Data, 'FastestSettleTime'):
         MinTimeRows.append(['Settle:', '%.3g sec' % Data.FastestSettleTime])
@@ -457,7 +457,11 @@ def __ExtractLogDataText(Data):
 
     if hasattr(Data, 'TotalTime'):
         dtime = datetime.timedelta(seconds=round(float(Data.TotalTime)))
-        MetaRows.append(['Total Capture Time:', '<b>' + str(dtime) + '</b>'])
+        MetaRows.append(['Total Time:', '<b>' + str(dtime) + '</b>'])
+        
+    if hasattr(Data, 'MontageEnd'):
+        dtime = datetime.timedelta(seconds=round(float(Data.MontageEnd - Data.StartupTimeStamp)))
+        MetaRows.append(['Total + Setup:', '<b>' + str(dtime) + '</b>'])
         
     if hasattr(Data, 'StartupDateTime'):
         MetaRows.append(['Capture Date:', '<b>' + str(Data.StartupDateTime) + '</b>'])

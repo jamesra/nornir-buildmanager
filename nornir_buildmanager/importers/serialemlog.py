@@ -206,7 +206,7 @@ class SerialEMLog(object):
                     if self._fastest_acquisition_time is None:
                         self._fastest_acquisition_time = t.acquisitionTime
                     else:
-                        self._fastest_acquisition_time = min(self._fastest_acquisition_time, t.settleTime)
+                        self._fastest_acquisition_time = min(self._fastest_acquisition_time, t.acquisitionTime)
 
         return self._fastest_acquisition_time
      
