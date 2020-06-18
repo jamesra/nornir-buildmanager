@@ -741,6 +741,7 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
 
     lines = []
     maxdrift = 0
+    max_time = 0
     NumTiles = int(0)
     for t in list(Data.tileData.values()):
         if not (t.dwellTime is None or t.drift is None):
@@ -752,10 +753,16 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
                 drift.append(s[1])
 
             maxdrift = max(maxdrift, t.driftStamps[-1][1])
+            max_time = max(max_time, t.driftStamps[-1][0])
             lines.append((time, drift))
             NumTiles = NumTiles + 1
 
-    plot.PolyLine(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=OutputImageFile)
+    plot.PolyLine(lines,
+                   Title="Stage settle time, max drift %g" % maxdrift,
+                   XAxisLabel='Dwell time (sec)',
+                   YAxisLabel="Drift (nm/sec)",
+                   xlim=(0,max_time+(max_time*0.05)),
+                   OutputFilename=OutputImageFile)
 
     return
 
