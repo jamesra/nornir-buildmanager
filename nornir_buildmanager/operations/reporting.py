@@ -413,7 +413,8 @@ def HTMLFromNotesNode(DataNode, htmlPaths, **kwargs):
 def __ExtractLogDataText(Data):
 
     DriftRows = RowList()
-    TimeRows = RowList()
+    AvgTimeRows = RowList()
+    MinTimeRows = RowList()
     MetaRows = RowList()
     Columns = ColumnList()
 
@@ -427,32 +428,49 @@ def __ExtractLogDataText(Data):
         DriftRows.append(['Max tile drift:', '%.3g nm/sec' % float(Data.MaxTileDrift)])
 
     if hasattr(Data, 'AverageTileTime'):
-        TimeRows.append(['Avg. tile time:', '<b>%.3g sec</b>' % float(Data.AverageTileTime)])
+        AvgTimeRows.append(['Avg. sec/tile:', '<b>%.3g sec</b>' % float(Data.AverageTileTime)])
+        
+    if hasattr(Data, 'AverageSettleTime'):
+        AvgTimeRows.append(['Avg. tile settle:', '<b>%.3g sec</b>' % float(Data.AverageSettleTime)])
+        
+    if hasattr(Data, 'AverageAcquisitionTime'):
+        AvgTimeRows.append(['Avg. tile capture:', '<b>%.3g sec</b>' % float(Data.AverageAcquisitionTime)])
 
     if hasattr(Data, 'FastestTileTime'):
-        TimeRows.append(['Fastest tile time:', '%.3g sec' % Data.FastestTileTime])
+        MinTimeRows.append(['Fastest tile time:', '%.3g sec' % Data.FastestTileTime])
+        
+    if hasattr(Data, 'FastestSettleTime'):
+        MinTimeRows.append(['Fastest Settle:', '%.3g sec' % Data.FastestSettleTime])
+        
+    if hasattr(Data, 'FastestAcquisitionTime') and Data.FastestAcquisitionTime is not None:
+        MinTimeRows.append(['Fastest Capture:', '%.3g sec' % Data.FastestAcquisitionTime])
 
     if hasattr(Data, 'NumTiles'):
-        TimeRows.append(['Number of tiles:', str(Data.NumTiles)])
+        MetaRows.append(['Number of tiles:', str(Data.NumTiles)])
 
     if hasattr(Data, 'TotalTime'):
         dtime = datetime.timedelta(seconds=float(Data.TotalTime))
-        TimeRows.append(['Total time:', str(dtime)])
+        MetaRows.append(['Total time:', str(dtime)])
 
     if hasattr(Data, 'Startup'):
         MetaRows.append(['Capture Date:', '<b>' + str(Data.Startup) + '</b>'])
 
     if hasattr(Data, 'Version'):
         MetaRows.append(['Version:', str(Data.Version)])
-
-    if not TimeRows is None:
-        Columns.append(TimeRows)
+        
+    if not MetaRows is None:
+        Columns.append(MetaRows)
+        
+    if not AvgTimeRows is None:
+        Columns.append(AvgTimeRows)
+        
+    if not MinTimeRows is None:
+        Columns.append(MinTimeRows)
 
     if not DriftRows is None:
         Columns.append(DriftRows)
 
-    if not MetaRows is None:
-        Columns.append(MetaRows)
+    
 
     return Columns
 
@@ -564,15 +582,21 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
         
         TPool = nornir_pools.GetGlobalMultithreadingPool()
         
-        DefocusThumbnailFilename = GetTempFileSaltString() + "Defocus.svg"
-        DefocusSettleImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DefocusThumbnailFilename)
+        salt_str = GetTempFileSaltString()
+        
+        DefocusImgFilename = salt_str + "Defocus.svg"
+        DefocusThumbnailFilename = salt_str + "Defocus_Thumbnail.png"
+        
+        DefocusSettleImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DefocusImgFilename)
+        DefocusSettleThumbnailImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DefocusThumbnailFilename)
+        
+        DefocusImgOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DefocusImgFilename)
         DefocusThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DefocusThumbnailFilename)
         
-        HTMLDefocusImage  = HTMLImageTemplate % {'src' : DefocusSettleImgSrcPath, 'AltText' : 'Defocus Image', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
+        HTMLDefocusImage  = HTMLImageTemplate % {'src' : DefocusSettleThumbnailImgSrcPath, 'AltText' : 'Defocus Image', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
         HTMLDefocusAnchor = HTMLAnchorTemplate % {'href' : DefocusSettleImgSrcPath, 'body' : HTMLDefocusImage }
-
-        
-        TPool.add_task(DefocusThumbnailFilename, idoc.PlotDefocusSurface, idocFilePath, DefocusThumbnailOutputFullPath)
+ 
+        TPool.add_task(DefocusThumbnailFilename, idoc.PlotDefocusSurface, idocFilePath, (DefocusThumbnailOutputFullPath, DefocusImgOutputFullPath))
         TableEntries["2"] = HTMLDefocusAnchor
         
     return TableEntries
@@ -603,22 +627,30 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
         TPool = nornir_pools.GetGlobalMultithreadingPool()
 
         LogSrcFullPath = os.path.join(RelPath, DataNode.Path)
+        
+        salt_str = GetTempFileSaltString()
 
-        DriftSettleThumbnailFilename = GetTempFileSaltString() + "DriftSettle.svg"
-        DriftSettleImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftSettleThumbnailFilename)
+        DriftSettleSrcFilename = salt_str + "DriftSettle.svg"
+        DriftSettleThumbnailFilename = salt_str + "DriftSettle_Thumb.png"
+        DriftSettleThumbImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftSettleThumbnailFilename)
+        DriftSettleImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftSettleSrcFilename)
+        DriftSettleImgOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftSettleSrcFilename)
         DriftSettleThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftSettleThumbnailFilename)
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftSettleThumbnailOutputFullPath)
         # if not os.path.exists(DriftSettleThumbnailOutputFullPath):
-        TPool.add_task(DriftSettleThumbnailFilename, serialemlog.PlotDriftSettleTime, logFilePath, DriftSettleThumbnailOutputFullPath)
+        TPool.add_task(DriftSettleThumbnailFilename, serialemlog.PlotDriftSettleTime, logFilePath, (DriftSettleImgOutputFullPath, DriftSettleThumbnailOutputFullPath))
 
-        DriftGridThumbnailFilename = GetTempFileSaltString() + "DriftGrid.svg"
-        DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
+        DriftGridSrcFilename = salt_str + "DriftGrid.svg"
+        DriftGridThumbnailFilename = salt_str + "DriftGrid_Thumb.png"
+        DriftGridThumbImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridThumbnailFilename)
+        DriftGridImgSrcPath = os.path.join(htmlpaths.ThumbnailRelative, DriftGridSrcFilename)
+        DriftGridImgOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftGridSrcFilename)
         DriftGridThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DriftGridThumbnailFilename)
 
         # nfiles.RemoveOutdatedFile(logFilePath, DriftGridThumbnailFilename)
         # if not os.path.exists(DriftGridThumbnailFilename):
-        TPool.add_task(DriftGridThumbnailFilename, serialemlog.PlotDriftGrid, logFilePath, DriftGridThumbnailOutputFullPath)
+        TPool.add_task(DriftGridThumbnailFilename, serialemlog.PlotDriftGrid, logFilePath, (DriftGridImgOutputFullPath, DriftGridThumbnailOutputFullPath))
 
         # Build a histogram of drift settings
 #        x = []
@@ -633,10 +665,10 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 #        ThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, ThumbnailFilename)
 
                 # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
-        HTMLDriftSettleImage = HTMLImageTemplate % {'src' : DriftSettleImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
+        HTMLDriftSettleImage = HTMLImageTemplate % {'src' : DriftSettleThumbImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
         HTMLDriftSettleAnchor = HTMLAnchorTemplate % {'href' : DriftSettleImgSrcPath, 'body' : HTMLDriftSettleImage }
 
-        HTMLDriftGridImage = HTMLImageTemplate % {'src' : DriftGridImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
+        HTMLDriftGridImage = HTMLImageTemplate % {'src' : DriftGridThumbImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
         HTMLDriftGridAnchor = HTMLAnchorTemplate % {'href' : DriftGridImgSrcPath, 'body' : HTMLDriftGridImage }
 
         TableEntries["1"] = HTMLAnchorTemplate % {'href' : LogSrcFullPath, 'body' : "Log File" }

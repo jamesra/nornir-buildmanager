@@ -1052,7 +1052,12 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
         plt.show()
     else: 
         plt.ioff()
-        plt.savefig(OutputImageFile, bbox_inches='tight', dpi=300)
+        
+        if isinstance(OutputImageFile, str):
+            plt.savefig(OutputImageFile, bbox_inches='tight', dpi=300)
+        else:
+            for filename in OutputImageFile:
+                plt.savefig(filename, bbox_inches='tight', dpi=300)
     
     plt.close(fig) 
         

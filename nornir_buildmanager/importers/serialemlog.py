@@ -200,7 +200,7 @@ class SerialEMLog(object):
     def FastestAcquisitionTime(self):
         '''Fastest time to capture a tile after it is in focus and under drift limit'''
 
-        if self._fastest_settle_time is None:
+        if self._fastest_acquisition_time is None:
             for t in list(self.tileData.values()):
                 if not (t.dwellTime is None or t.drift is None):
                     if self._fastest_acquisition_time is None:
@@ -788,7 +788,7 @@ def PlotDriftGrid(DataSource, OutputImageFile):
 
             c.append(colorVal)
 
-            DriftGrid.append((t.coordinates[0], t.coordinates[1], pow(t.dwellTime, 2)))
+            DriftGrid.append((t.coordinates[0], t.coordinates[1], t.dwellTime)) #pow(t.dwellTime, 1.5)))
             maxdrift = max(maxdrift, t.driftStamps[-1][1])
             if fastestTime is None:
                 fastestTime = t.acquisitionTime
@@ -813,7 +813,7 @@ def PlotDriftGrid(DataSource, OutputImageFile):
 
     title = "Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
 
-    plot.Scatter(x, y, s, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+    plot.Scatter(x, y, s, c=c, marker='s', Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
 
     return
 
