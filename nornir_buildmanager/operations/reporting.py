@@ -413,53 +413,95 @@ def HTMLFromNotesNode(DataNode, htmlPaths, **kwargs):
 def __ExtractLogDataText(Data):
 
     DriftRows = RowList()
+    CaptureTime = RowList()
     AvgTimeRows = RowList()
     MinTimeRows = RowList()
     MetaRows = RowList()
     Columns = ColumnList()
 
+    DriftRows.append('<u>Tile Drift</u>')
+    CaptureTime.append('<u>Overall Time')
+    AvgTimeRows.append('<u>Average Tile Time</u>')
+    MinTimeRows.append('<u>Fastest Tile Time</u>')
+    MetaRows.append('<u>Information</u>')
+    
     if hasattr(Data, 'AverageTileDrift'):
-        DriftRows.append(['Avg. tile drift:', '<b>%.3g nm/sec</b>' % float(Data.AverageTileDrift)])
+        DriftRows.append(['Average:', '<b>%.3g nm/sec</b>' % float(Data.AverageTileDrift)])
 
     if hasattr(Data, 'MinTileDrift'):
-        DriftRows.append(['Min tile drift:', '%.3g nm/sec' % float(Data.MinTileDrift)])
+        DriftRows.append(['Min:', '%.3g nm/sec' % float(Data.MinTileDrift)])
 
     if hasattr(Data, 'MaxTileDrift'):
-        DriftRows.append(['Max tile drift:', '%.3g nm/sec' % float(Data.MaxTileDrift)])
+        DriftRows.append(['Max:', '%.3g nm/sec' % float(Data.MaxTileDrift)])
 
     if hasattr(Data, 'AverageTileTime'):
-        AvgTimeRows.append(['Avg. sec/tile:', '<b>%.3g sec</b>' % float(Data.AverageTileTime)])
+        AvgTimeRows.append(['Average:', '<b>%.3g sec/tile</b>' % float(Data.AverageTileTime)])
         
     if hasattr(Data, 'AverageSettleTime'):
-        AvgTimeRows.append(['Avg. tile settle:', '<b>%.3g sec</b>' % float(Data.AverageSettleTime)])
+        AvgTimeRows.append(['Focus & Settle:', '<b>%.3g sec/tile</b>' % float(Data.AverageSettleTime)])
         
     if hasattr(Data, 'AverageAcquisitionTime'):
-        AvgTimeRows.append(['Avg. tile capture:', '<b>%.3g sec</b>' % float(Data.AverageAcquisitionTime)])
+        AvgTimeRows.append(['Acquisition:', '<b>%.3g sec/tile</b>' % float(Data.AverageAcquisitionTime)])
 
     if hasattr(Data, 'FastestTileTime'):
-        MinTimeRows.append(['Fastest tile time:', '%.3g sec' % Data.FastestTileTime])
+        MinTimeRows.append(['Fastest:', '%.3g sec' % Data.FastestTileTime])
         
     if hasattr(Data, 'FastestSettleTime'):
-        MinTimeRows.append(['Fastest Settle:', '%.3g sec' % Data.FastestSettleTime])
+        MinTimeRows.append(['Settle:', '%.3g sec' % Data.FastestSettleTime])
         
     if hasattr(Data, 'FastestAcquisitionTime') and Data.FastestAcquisitionTime is not None:
-        MinTimeRows.append(['Fastest Capture:', '%.3g sec' % Data.FastestAcquisitionTime])
-
+        MinTimeRows.append(['Acquisition:', '%.3g sec' % Data.FastestAcquisitionTime])
+    
     if hasattr(Data, 'NumTiles'):
         MetaRows.append(['Number of tiles:', str(Data.NumTiles)])
 
     if hasattr(Data, 'TotalTime'):
-        dtime = datetime.timedelta(seconds=float(Data.TotalTime))
-        MetaRows.append(['Total time:', str(dtime)])
-
+        dtime = datetime.timedelta(seconds=round(float(Data.TotalTime)))
+        MetaRows.append(['Total Capture Time:', '<b>' + str(dtime) + '</b>'])
+        
     if hasattr(Data, 'Startup'):
         MetaRows.append(['Capture Date:', '<b>' + str(Data.Startup) + '</b>'])
 
     if hasattr(Data, 'Version'):
         MetaRows.append(['Version:', str(Data.Version)])
         
+    if hasattr(Data, 'LowMagCookTime'):
+        time_val = float(Data.LowMagCookTime)
+        if time_val > 0:
+            dtime = datetime.timedelta(seconds=round(time_val))
+            CaptureTime.append(['Low Mag Cook:', str(dtime)])
+        else:
+            CaptureTime.append(['Low Mag Cook:', ''])
+            
+    if hasattr(Data, 'HighMagCookTime'):
+        time_val = float(Data.HighMagCookTime)
+        if time_val > 0:
+            dtime = datetime.timedelta(seconds=round(time_val))
+            CaptureTime.append(['High Mag Cook:', str(dtime)])
+        else:
+            CaptureTime.append(['High Mag Cook:', ''])
+        
+    if hasattr(Data, 'FilamentStabilizationTime'):
+        time_val = float(Data.FilamentStabilizationTime)
+        if time_val > 0:
+            dtime = datetime.timedelta(seconds=round(0))
+            CaptureTime.append(['Filament Stable:', str(dtime)])
+        else:
+            CaptureTime.append(['Filament Stable:', ''])
+        
+    if hasattr(Data, 'TotalTileAcquisitionTime'):
+        time_val = float(Data.TotalTileAcquisitionTime)
+        if time_val > 0:
+            dtime = datetime.timedelta(seconds=round(time_val))
+            CaptureTime.append(['Tile Capture:', str(dtime)])
+        else:
+            CaptureTime.append(['Tile Capture:', ''])
+ 
     if not MetaRows is None:
         Columns.append(MetaRows)
+         
+    if not CaptureTime is None:
+        Columns.append(CaptureTime)
         
     if not AvgTimeRows is None:
         Columns.append(AvgTimeRows)
@@ -469,9 +511,7 @@ def __ExtractLogDataText(Data):
 
     if not DriftRows is None:
         Columns.append(DriftRows)
-
-    
-
+ 
     return Columns
 
 
