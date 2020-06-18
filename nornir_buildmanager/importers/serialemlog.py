@@ -103,7 +103,7 @@ class SerialEMLog(object):
         '''Used for knowing when to ignore a pickled file'''
 
         # Version 2 fixes missing tile drift times for the first tile in a hemisphere
-        return 5
+        return 6
 
     @property
     def TotalTime(self):
@@ -266,6 +266,14 @@ class SerialEMLog(object):
         return self._HighMagCookTime
     
     @property
+    def CaptureSetupTime(self):
+        '''
+        The time from startup to montage start, minus all other known macro activities such as cooking and filament warmup.
+        '''
+        
+        return (self.MontageStart - self.StartupTimeStamp) - (self.LowMagCookTime + self.HighMagCookTime + self.FilamentStabilizationTime)
+    
+    @property
     def TotalTileAcquisitionTime(self):
         '''Total time it took to acquire tiles after all preparation steps such as cooking'''
         return self.MontageEnd - self.MontageStart
@@ -295,8 +303,16 @@ class SerialEMLog(object):
         return self._FilamentStabilizationTime > 0
 
     @property
-    def Startup(self):
+    def StartupDateTime(self):
+        '''The datetime string from the "Started  6/11/2020  11:05:54" entry in the log, if it exists'''
         return self._startup
+    
+    @property
+    def StartupTimeStamp(self):
+        '''The timestamp in seconds for the "1.938: Microscope Startup succeeded" entry.  Defaults to 0'''
+        if self._startup_timestamp is not None:
+            return self._startup_timestamp
+        return 0
 
     @property
     def Version(self):
@@ -304,12 +320,13 @@ class SerialEMLog(object):
 
     def __init__(self):
         self.tileData = {}  # The time required to capture each tile
-        self._startup = None  # SerialEM program Startup time, if known
+        self._startup = None  # SerialEM program Startup time string, if known
+        self._startup_timestamp = 0 #SerialEM 'microscope startup' timestamp, if known
         self._version = None  # SerialEM version, if known
         self.PropertiesVersion = None  # Timestamp of properties file, if known
         self.MontageStart = None  # timestamp when acquire began
         self.MontageEnd = None  # timestamp when acquire ended
-        
+          
         # Cached calculations
         self._avg_tile_time = None
         self._avg_tile_settle_time = None
@@ -335,7 +352,7 @@ class SerialEMLog(object):
     @classmethod
     def VersionCheck(cls, loaded):
         if loaded.__SerialEMLogVersion != cls._SerialEMLog__ObjVersion():
-            raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+            raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion()))
         
         return
 
@@ -591,6 +608,8 @@ class SerialEMLog(object):
                     Data.MontageEnd = timestamp
                 elif entry.startswith('Started'):
                     Data._startup = entry[len('Started') + 1:].strip()
+                elif entry.startswith('Microscope Startup'):
+                    Data._startup_timestamp = timestamp
                 elif entry.startswith('This is a change of'):  # This is a change of 0.08% from the old directly measured matrix
                     subentry = entry[len('This is a change of') + 1:]
                     Data._IS_change_percentage = float(subentry.split('%')[0])

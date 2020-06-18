@@ -459,11 +459,19 @@ def __ExtractLogDataText(Data):
         dtime = datetime.timedelta(seconds=round(float(Data.TotalTime)))
         MetaRows.append(['Total Capture Time:', '<b>' + str(dtime) + '</b>'])
         
-    if hasattr(Data, 'Startup'):
-        MetaRows.append(['Capture Date:', '<b>' + str(Data.Startup) + '</b>'])
+    if hasattr(Data, 'StartupDateTime'):
+        MetaRows.append(['Capture Date:', '<b>' + str(Data.StartupDateTime) + '</b>'])
 
     if hasattr(Data, 'Version'):
         MetaRows.append(['Version:', str(Data.Version)])
+        
+    if hasattr(Data, 'CaptureSetupTime'):
+        time_val = float(Data.CaptureSetupTime)
+        if time_val > 0:
+            dtime = datetime.timedelta(seconds=round(time_val))
+            CaptureTime.append(['Setup (est.):', str(dtime)])
+        else:
+            CaptureTime.append(['Setup (est.):', ''])
         
     if hasattr(Data, 'LowMagCookTime'):
         time_val = float(Data.LowMagCookTime)

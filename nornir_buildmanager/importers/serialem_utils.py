@@ -118,6 +118,7 @@ def TryAddLogs(containerObj, InputPath, logger):
                 LogNodeObj.HighMagCookTime = '%g' % (LogData.HighMagCookTime)
                 LogNodeObj.TileAcquisitionTime = '%g' % (LogData.TotalTileAcquisitionTime)
                 LogNodeObj.CaptureTime = '%g' % (LogData.TotalTime)
+                LogNodeObj.SetupTime = '%g' % (LogData.CaptureSetupTime)
                 
                 LogNodeObj.HighMagCookDone = '%i' % (LogData.HighMagCookDone)
                 LogNodeObj.LowMagCookDone = '%i' % (LogData.LowMagCookDone)
