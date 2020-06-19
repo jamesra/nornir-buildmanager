@@ -305,7 +305,7 @@ class SerialEMLog(object):
     @property
     def StartupDateTime(self):
         '''The datetime string from the "Started  6/11/2020  11:05:54" entry in the log, if it exists'''
-        return self._startup
+        return datetime.datetime.strptime(self._startup, '%m/%d/%Y %H:%M:%S') 
     
     @property
     def StartupTimeStamp(self):
@@ -492,8 +492,12 @@ class SerialEMLog(object):
         timestamp = None  # The timestamp of the log entry
         MontageStart = None
         
+        LegacyFilamentWarmupStartTime = None
+        
         LastAutofocusStart = None
         LastValidTimestamp = None  # Used in case the log ends abruptly to populate MontageEnd value
+        
+        LastElapsedTimeReport = None #The value of the previous "1715.55 seconds elapsed time" row
         
         with open(logfullPath, 'r') as hLog:
             while True:
@@ -527,6 +531,8 @@ class SerialEMLog(object):
 
                 elif entry.startswith('Autofocus Start'):
                     LastAutofocusStart = timestamp
+                elif entry.endswith('seconds elapsed time'): #"1715.55 seconds elapsed time" row
+                    LastElapsedTimeReport = float(entry.split()[0])
                 elif entry.startswith('Measured defocus'):
                     if not NextTile is None:
 
@@ -582,14 +588,28 @@ class SerialEMLog(object):
                     (entry, time) = line.split(':', 1)
                     time = time.strip()
                     Data.PropertiesVersion = time
+                elif entry.startswith('Checking for stable filament'):
+                    if Data.StartupDateTime >= datetime.datetime.strptime('04/03/2020', '%m/%d/%Y'):
+                        continue
+                    else: #The old, less correct, cooking macro that did not reset the timespan measurement from high mag cooking
+                        LegacyFilamentWarmupStartTime = LastElapsedTimeReport
+                        
                 elif entry.find('Filament is stable!') >= 0:
+                        
                     (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
                     try:
                         elapsed_str = nextEntry.split()[0]
                         elapsed = float(elapsed_str)
-                        Data._FilamentStabilizationTime = elapsed
+                        
+                        if LegacyFilamentWarmupStartTime is not None:
+                            Data._FilamentStabilizationTime = elapsed - LegacyFilamentWarmupStartTime
+                        else:
+                            Data._FilamentStabilizationTime = elapsed
                     except:
                         prettyoutput.LogErr("Could not parse filament stabilization time:\n\t{0}\n\t{1}".format(line, nextLine))
+                
+                        
+                        
                 elif entry.find('Cooking done!') >= 0:
                     (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
                     try:
@@ -877,6 +897,9 @@ if __name__ == "__main__":
         print("Filament stabilization: %s" %  str(filament_time))
     else:
         print("No Filament stabilization")
+         
+    setup_time = datetime.timedelta(seconds=round(Data.CaptureSetupTime))
+    print("Setup Time: %s" %  str(setup_time))
 
     print("Average drift: %g nm/sec" % Data.AverageTileDrift)
     print("Min drift: %g nm/sec" % Data.MinTileDrift)
