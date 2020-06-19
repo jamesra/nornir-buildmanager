@@ -308,6 +308,9 @@ class SerialEMLog(object):
         if self._startup is None:
             return None
         
+        if isinstance(self._startup, datetime.datetime):
+            return self._startup
+        
         return datetime.datetime.strptime(self._startup, '%m/%d/%Y %H:%M:%S') 
     
     @property
@@ -502,6 +505,8 @@ class SerialEMLog(object):
         
         LastElapsedTimeReport = None #The value of the previous "1715.55 seconds elapsed time" row
         
+        Data._startup = datetime.datetime.fromtimestamp(os.stat(logfullPath).st_ctime)
+        
         with open(logfullPath, 'r') as hLog:
             while True:
                 if nextLine is None:
@@ -516,6 +521,12 @@ class SerialEMLog(object):
                     
                 if line is None:  # No more lines in the file
                     break
+                
+                #Rarely a log will not have a startup message because it was reset after serialEM was started
+                #In these cases use the earliest timestamp in the file
+                if not timestamp is None:
+                    if Data._startup_timestamp is None:
+                        Data._startup_timestamp = timestamp
                 
                 if entry.startswith('DoNextPiece'):
 
