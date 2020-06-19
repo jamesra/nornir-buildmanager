@@ -305,6 +305,9 @@ class SerialEMLog(object):
     @property
     def StartupDateTime(self):
         '''The datetime string from the "Started  6/11/2020  11:05:54" entry in the log, if it exists'''
+        if self._startup is None:
+            return None
+        
         return datetime.datetime.strptime(self._startup, '%m/%d/%Y %H:%M:%S') 
     
     @property
