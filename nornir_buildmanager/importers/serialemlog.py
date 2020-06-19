@@ -103,7 +103,7 @@ class SerialEMLog(object):
         '''Used for knowing when to ignore a pickled file'''
 
         # Version 2 fixes missing tile drift times for the first tile in a hemisphere
-        return 6
+        return 7
 
     @property
     def TotalTime(self):
