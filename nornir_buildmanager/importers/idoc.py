@@ -744,7 +744,8 @@ class IDoc():
         self.ImageSize = None
         self.tiles = []
         self._CameraBpp = None
-        
+        self.note = None
+
         self.__IDocPickleVersion = IDoc.__ObjVersion()
         pass
     
@@ -806,7 +807,7 @@ class IDoc():
     
     @property
     def Min(self):
-        ''':return: Max pixel value across all tiles'''
+        ''':return: Min pixel value across all tiles'''
         minVal = min([t.Min for t in self.tiles])
         
         #Sanity check for a bug in SerialEM
@@ -815,8 +816,12 @@ class IDoc():
     
     @property
     def Mean(self):
-        ''':return: Max pixel value across all tiles'''
+        ''':return: Mean pixel value across all tiles'''
         return numpy.mean([t.Mean for t in self.tiles])
+
+    @property
+    def Note(self):
+        return self.note
 
     @classmethod
     def Load(cls, idocfullPath, CameraBpp=None, usecache=True):
@@ -859,6 +864,11 @@ class IDoc():
                     imageFilename = parts[1].strip()
                     tileObj = IDocTileData(imageFilename)
                     idocObj.tiles.append(tileObj)
+                # a T tag might contain scope and time information
+                elif(attribute == 'T'):
+                    tValue = parts[1].strip()
+                    if tValue.startswith("SerialEM: "):
+                        idocObj.note = tValue[tValue.index(":")+1:].strip()
                 else:
                     value = None
                     if(len(parts) > 1):
@@ -905,7 +915,7 @@ class IDoc():
 
         return None
     
-def __argToIDoc(arg):
+def ArgToIDoc(arg):
     Data = None
     if arg is None:
         Data = IDoc.Load(sys.argv[1])
@@ -960,7 +970,7 @@ class SymmetricNormalize(matplotlib.colors.Normalize):
 
 def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
 
-    Data = __argToIDoc(DataSource)
+    Data = ArgToIDoc(DataSource)
     
     if title is None:
         title = 'Defocus deviation from planar fit'
