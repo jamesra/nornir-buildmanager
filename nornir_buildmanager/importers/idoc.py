@@ -807,7 +807,7 @@ class IDoc():
     
     @property
     def Min(self):
-        ''':return: Max pixel value across all tiles'''
+        ''':return: Min pixel value across all tiles'''
         minVal = min([t.Min for t in self.tiles])
         
         #Sanity check for a bug in SerialEM
@@ -816,7 +816,7 @@ class IDoc():
     
     @property
     def Mean(self):
-        ''':return: Max pixel value across all tiles'''
+        ''':return: Mean pixel value across all tiles'''
         return numpy.mean([t.Mean for t in self.tiles])
 
     @property
