@@ -905,7 +905,7 @@ class IDoc():
 
         return None
     
-def __argToIDoc(arg):
+def ArgToIDoc(arg):
     Data = None
     if arg is None:
         Data = IDoc.Load(sys.argv[1])
@@ -960,7 +960,7 @@ class SymmetricNormalize(matplotlib.colors.Normalize):
 
 def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
 
-    Data = __argToIDoc(DataSource)
+    Data = ArgToIDoc(DataSource)
     
     if title is None:
         title = 'Defocus deviation from planar fit'
