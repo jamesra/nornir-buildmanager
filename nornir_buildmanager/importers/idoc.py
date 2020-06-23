@@ -744,7 +744,8 @@ class IDoc():
         self.ImageSize = None
         self.tiles = []
         self._CameraBpp = None
-        
+        self.note = None
+
         self.__IDocPickleVersion = IDoc.__ObjVersion()
         pass
     
@@ -818,6 +819,10 @@ class IDoc():
         ''':return: Max pixel value across all tiles'''
         return numpy.mean([t.Mean for t in self.tiles])
 
+    @property
+    def Note(self):
+        return self.note
+
     @classmethod
     def Load(cls, idocfullPath, CameraBpp=None, usecache=True):
         '''
@@ -859,6 +864,11 @@ class IDoc():
                     imageFilename = parts[1].strip()
                     tileObj = IDocTileData(imageFilename)
                     idocObj.tiles.append(tileObj)
+                # a T tag might contain scope and time information
+                elif(attribute == 'T'):
+                    tValue = parts[1].strip()
+                    if tValue.startswith("SerialEM: "):
+                        idocObj.note = tValue[tValue.index(":")+1:].strip()
                 else:
                     value = None
                     if(len(parts) > 1):
