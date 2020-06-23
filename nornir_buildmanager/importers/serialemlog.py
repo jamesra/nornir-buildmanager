@@ -773,7 +773,7 @@ class SerialEMLog(object):
         return None
 
 
-def __argToSerialEMLog(arg, usecache=True):
+def ArgToSerialEMLog(arg, usecache=True):
     Data = None
     if arg is None:
         Data = SerialEMLog.Load(sys.argv[1], usecache)
@@ -790,7 +790,7 @@ def __argToSerialEMLog(arg, usecache=True):
 def PlotDriftSettleTime(DataSource, OutputImageFile):
     '''Create a poly line plot showing how each tiles drift rate changed over time'''
 
-    Data = __argToSerialEMLog(DataSource)
+    Data = ArgToSerialEMLog(DataSource)
 
     lines = []
     maxdrift = 0
@@ -822,7 +822,7 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
 
 def PlotDriftGrid(DataSource, OutputImageFile):
 
-    Data = __argToSerialEMLog(DataSource)
+    Data = ArgToSerialEMLog(DataSource)
 
     lines = []
     maxdrift = -1
@@ -886,7 +886,7 @@ if __name__ == "__main__":
     (outfile, ext) = os.path.splitext(basename)
     outdir = os.path.dirname(datapath)
 
-    Data = __argToSerialEMLog(datapath, usecache=False)
+    Data = ArgToSerialEMLog(datapath, usecache=False)
 
     dtime = datetime.timedelta(seconds=round(Data.MontageEnd - Data.MontageStart,1))
     
