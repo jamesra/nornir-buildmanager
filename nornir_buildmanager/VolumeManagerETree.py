@@ -1147,12 +1147,11 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
     
     @ValidationTime.setter
     def ValidationTime(self, val):
-        assert(isinstance(val, datetime.datetime))
-            
         if val is None:
             if 'ValidationTime' in self.attrib:
                 del self.attrib['ValidationTime']
         else:
+            assert(isinstance(val, datetime.datetime))        
             self.attrib['ValidationTime'] = str(val)
             
     
