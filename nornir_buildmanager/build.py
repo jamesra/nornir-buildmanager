@@ -75,7 +75,25 @@ def _AddParserRootArguments(parser):
                         default=False,
                         help='Provide additional output',
                         dest='verbose')
+    
+#     parser.add_argument('-recover',
+#                         action='store_true',
+#                         required=False,
+#                         default=False,
+#                         help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.',
+#                         dest='verbose')
 
+def _AddRecoverParser(root_parser, subparsers):
+    recover_parser = subparsers.add_parser('RecoverLinks', help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.',)
+    recover_parser.set_defaults(func=call_recover_links, parser=root_parser)
+    
+    recover_parser.add_argument('-save',
+                         action='store_true',
+                         required=False,
+                         default=False,
+                         help='Set this flag to save the VolumeData.xml files with the located linked elements included.',
+                         dest='save_restoration')
+    
 
 def _GetPipelineXMLPath():
     return os.path.join(ConfigDataPath(), 'Pipelines.xml')
@@ -86,7 +104,11 @@ def BuildParserRoot():
     # conflict_handler = 'resolve' replaces old arguments with new if both use the same option flag
     parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve', description='Options available to all build commands.  Specific pipelines may extend the argument list.')
     _AddParserRootArguments(parser)
-
+    
+    pipeline_subparsers = parser.add_subparsers(title='Commands')
+    _AddRecoverParser(parser, pipeline_subparsers);
+    #subparsers = parser.add_subparsers(title='Utilities')
+    
     # subparsers = parser.add_subparsers(title='help')
     # help_parser = subparsers.add_parser('help', help='Print help information')
 # 
@@ -101,7 +123,6 @@ def BuildParserRoot():
 
     # update_parser = subparsers.add_parser('update', help='If directories have been copied directly into the volume this flag is required to detect them')
     
-    pipeline_subparsers = parser.add_subparsers(title='Commands')
     _AddPipelineParsers(pipeline_subparsers)
     
     return parser
@@ -136,9 +157,16 @@ def print_help(args):
         args.parser.print_help()
 
 
-def call_update(args):
-    volumeObj = VolumeManagerETree.load(args.volumepath)
-    volumeObj.UpdateSubElements()
+def call_recover_links(args):
+    '''This function checks for missing link elements in a volume and adds them back to the volume'''
+    volumeObj = VolumeManagerETree.VolumeManager.Load(args.volumepath)
+    volumeObj.RepairMissingLinkElements()
+    
+    if args.save_restoration:
+        volumeObj.Save(recurse=False)
+        prettyoutput.Log("Recovered links saved (if found).")
+    else:
+        prettyoutput.Log("Save flag not set, recovered links not saved.")
 
 
 def call_pipeline(args):
@@ -193,11 +221,13 @@ def Execute(buildArgs=None):
     # SetupLogging(OutputPath=args.volumepath)
     
     try:  
-        Timer.Start(args.PipelineName)
+        if hasattr(args, 'PipelineName'):
+            Timer.Start(args.PipelineName)
 
         args.func(args)
 
-        Timer.End(args.PipelineName)
+        if hasattr(args, 'PipelineName'):
+            Timer.End(args.PipelineName)
   
     finally:
         OutStr = str(Timer)

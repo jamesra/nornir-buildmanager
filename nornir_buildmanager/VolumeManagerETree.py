@@ -947,13 +947,16 @@ class XElementWrapper(ElementTree.Element):
     # replacement for find function that loads subdirectory xml files
     def find(self, xpath):
 
-        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(xpath)
+        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(xpath)
         
         if isinstance(self, XContainerElementWrapper):  # Only containers have linked elements
             LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
             if LinkMatches is None:
                 return None
             
+            if UsedWildcard:
+                LinkMatches = list(filter(lambda e: e.tag.endswith('_Link'), LinkMatches))
+        
             num_matches = len(LinkMatches)
             if num_matches > 0:
                 # if num_matches > 1:
@@ -986,7 +989,7 @@ class XElementWrapper(ElementTree.Element):
 
     def findall(self, match):
         sm = None
-        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath) = self.__ElementLinkNameFromXPath(match)
+        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(match)
 
         # TODO: Need to modify to only search one level at a time
         # OK, check for linked elements that also meet the criteria
@@ -995,8 +998,12 @@ class XElementWrapper(ElementTree.Element):
         if LinkMatches is None:
             return  # matches
         
+        if UsedWildcard:
+            LinkMatches = list(filter(lambda e: e.tag.endswith('_Link'), LinkMatches))
+        
         num_matches = len(LinkMatches)
         if num_matches > 0:
+            
             # if num_matches > 1:
             #    prettyoutput.Log("Need to load {0} links".format(num_matches))
             self._replace_links(LinkMatches)
@@ -1043,7 +1050,13 @@ class XElementWrapper(ElementTree.Element):
                 (yield m)
                 
     def __ElementLinkNameFromXPath(self, xpath):
-        # OK, check if we have a linked element to load.
+        '''
+        :Return: The name to search for the linked and unlinked version of the search term.
+                 If only attributes are specified the Link search term will return all 
+                 elements. (UnlinkedElementPath, LinkedElementPath, RemainingPath, HasWildcard)
+                 If the xpath has a wildcard (HasWildcard) a function searching with LinkedElementPath
+                 must manually check each child element tag to see if it ends in _Link. 
+        '''
 
         if '\\' in xpath:
             Logger = logging.getLogger(__name__ + '.' + '__ElementLinkNameFromXPath')
@@ -1052,11 +1065,27 @@ class XElementWrapper(ElementTree.Element):
 
         parts = xpath.split('/')
         UnlinkedElementsXPath = parts[0]
-        SubContainerName = UnlinkedElementsXPath.split('[')[0]
-        LinkedSubContainerName = SubContainerName + "_Link"
-        LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1)
+        SubContainerParts = UnlinkedElementsXPath.split('[')
+        SubContainerName = SubContainerParts[0]
+        
+        HaveSubContainerName = not (SubContainerName is None or len(SubContainerName) == 0)
+        SubContainerIsWildcard = SubContainerName == '*'
+        
+        if not HaveSubContainerName:
+            SubContainerName = '*'
+            LinkedElementsXPath = SubContainerName + UnlinkedElementsXPath
+            SubContainerIsWildcard = True
+        else: 
+            if not SubContainerIsWildcard:
+                LinkedSubContainerName = SubContainerName + '_Link'
+                LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1)
+            else:
+                #ElementTree does not let use say '*_link' when searching tag names.  So we have to return 
+                #all tags and filter out _links later.
+                LinkedElementsXPath = UnlinkedElementsXPath 
+                
         RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
-        return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath)
+        return (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, SubContainerIsWildcard)
 
     def LoadAllLinkedNodes(self):
         '''Recursively load all of the linked nodes on this element'''
@@ -1382,33 +1411,57 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         return super(XContainerElementWrapper, self).IsValid()
 
-    def UpdateSubElements(self):
-        '''Recursively searches directories for VolumeData.xml files.
-           Adds discovered nodes into the volume. 
-           Removes missing nodes from the volume.'''
 
-        #dirNames = 
+    def RepairMissingLinkElements(self, recurse=True):
+        '''
+        Searches all subdirectories under the element.  Any VolumeData.xml files
+        found are loaded and a link is created for the top level element.  Written
+        to repair the case where a VolumeData.xml is deleted and we want to recover
+        at least some of the data.
+        '''
         
-        for dirname in os.listdir(self.FullPath):
-            volumeDataFullPath = os.path.join(dirname, "VolumeData.xml")
-            if os.path.exists(volumeDataFullPath):
-                # Check to be sure that this is a new node
-                existingChild = self.find("[@Path='" + os.path.basename(dirname) + "']")
-
-                if not existingChild is None:
+        with os.scandir(self.FullPath) as pathscan:
+            for path in pathscan:
+                if path.name[0] == '.': #Avoid the .desktop_ini files of the world
                     continue
-
-                # Load the VolumeData.xml, take the root element name and create a link in our element
-                loadedElement = self._load_wrap_setparent_link_element(volumeDataFullPath)
-                if loadedElement is not None:
-                    self.append(loadedElement)
-
-        for child in self:
-            if hasattr(child, "UpdateSubElements"):
-                child.UpdateSubElements()
-
-        self.CleanIfInvalid()
-        self.Save(recurse=False)
+                
+                if not path.is_dir():
+                    continue
+                
+                for item in os.scandir(path):
+                    if not item.is_file():
+                        continue
+                
+                    if not item.name.lower() == 'volumedata.xml':
+                        continue
+                    
+                    #prettyoutput.Log("Found potential linked element: {0}".format(item.path))
+                    
+                    dirname = os.path.dirname(item.path)
+                    
+                    expected_path = os.path.basename(dirname)
+                    
+                    # Check to be sure that this is a new node
+                    existingChild = self.find("*[@Path='{0}']".format(expected_path))
+                    
+                    if not existingChild is None:
+                        continue
+                
+                    prettyoutput.Log("Found missing linked container {0}".format(dirname))
+                    
+                    # Load the VolumeData.xml, take the root element name and create a link in our element
+                    loadedElement = self._load_wrap_setparent_link_element(dirname)
+                    if loadedElement is not None:
+                        self.append(loadedElement)
+                        prettyoutput.Log("\tAdded: {0}".format(loadedElement))
+    
+                    
+                
+            if recurse:
+                for child in self:
+                    if hasattr(child, "RepairMissingLinkElements"):
+                        child.RepairMissingLinkElements()
+       
     
     @staticmethod 
     def _load_link_element(fullpath):
