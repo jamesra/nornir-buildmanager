@@ -1952,12 +1952,20 @@ class BlockNode(XNamedContainerElementWrapped):
         # Fetch the list of the exempt nodes from the element text
         ExemptString = StosExemptNode.text
 
-        if(ExemptString is None or len(ExemptString) == 0):
+        if ExemptString is None or len(ExemptString) == 0:
             return frozenset([])
 
         # OK, parse the exempt string to a different list
         NonStosSectionNumbers = frozenset(sorted([int(x) for x in ExemptString.split(',')]))
 
+        ##################
+        #Temporary fix for old meta-data that was not sorted.  It can be
+        #deleted after running an align on each legacy volume
+        ExpectedText = BlockNode.NonStosNumbersToString(NonStosSectionNumbers)
+        if ExpectedText != StosExemptNode.text:
+            self.NonStosSectionNumbers = NonStosSectionNumbers
+        ################
+            
         return NonStosSectionNumbers
 
     @NonStosSectionNumbers.setter
@@ -1966,10 +1974,29 @@ class BlockNode(XNamedContainerElementWrapped):
         StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
         (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
 
+        ExpectedText = BlockNode.NonStosNumbersToString(value)
+        if StosExemptNode.text != ExpectedText:
+            StosExemptNode.text = ExpectedText
+            StosExemptNode.AttributesChanged = True
+            
+            
+    @staticmethod
+    def NonStosNumbersToString(value):
+        '''Converts a string, integer, list, set, or frozen set to a comma 
+        delimited string'''
         if isinstance(value, str):
-            StosExemptNode.text = value
-        elif isinstance(value, list) or isinstance(value, set) or isinstance(value, frozenset):
-            StosExemptNode.text = ','.join(list(map(str, value)))
+            return value
+        elif isinstance(value, int):
+            return str(value)
+        elif isinstance(value, list):
+            value.sort()
+            return ','.join(list(map(str, value)))
+        elif isinstance(value, set) or isinstance(value, frozenset):
+            listValue = list(value)
+            listValue.sort()
+            return ','.join(list(map(str, listValue)))
+    
+        raise NotImplementedError()
             
     @property
     def NeedsValidation(self):
@@ -2960,7 +2987,7 @@ class MappingNode(XElementWrapper):
 
     def __str__(self):
         self._mapped_cache = None
-        return "%d <- %s" % (self.Control, str(self.Mappings))
+        return "%d <- %s" % (self.Control, str(self.Mapped))
     
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
