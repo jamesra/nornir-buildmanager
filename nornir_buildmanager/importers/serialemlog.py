@@ -535,7 +535,8 @@ class SerialEMLog(object):
                     if entry.find('capture') >= 0:
                         # We acquired the tile, prepare the next capture
                         if not NextTile is None:
-                            NextTile.endAcquisitionTime = timestamp
+                            if NextTile.endAcquisitionTime is None:
+                                NextTile.endAcquisitionTime = timestamp
                             #
                             assert (AcquiredTile is None)  # We are overwriting an unwritten tile if this assertion fails
                             AcquiredTile = NextTile
@@ -577,7 +578,8 @@ class SerialEMLog(object):
                     FileNumber = cls.ParseValue(entry, 'Z')
                     if FileNumber is not None:
                         AcquiredTile.number = FileNumber
-                        AcquiredTile.endAcquisitionTime = timestamp
+                        if AcquiredTile.endAcquisitionTime is None:
+                            AcquiredTile.endAcquisitionTime = timestamp
 
                         # Determine the position in the grid
                         iAt = entry.find('at')

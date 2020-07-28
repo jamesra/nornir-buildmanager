@@ -306,7 +306,7 @@ def CompressTransforms(Parameters, TransformNode, **kwargs):
     if os.path.exists(TempMosaicFileFullPath):
         shutil.move(TempMosaicFileFullPath, InputFileFullPath)
         TransformNode.ResetChecksum()
-        TransformNode.attrib['Compressed'] = 'True'
+        TransformNode.Compressed = True
 
     return TransformNode.Parent
 

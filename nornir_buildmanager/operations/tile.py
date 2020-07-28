@@ -536,8 +536,11 @@ def TranslateToZeroOrigin(ChannelNode, TransformNode, OutputTransform, Logger, *
         mosaic.ImageToTransformString[imagename] = factory.TransformToIRToolsString(transform)
 
     mosaic.Save(OutputTransformNode.FullPath)
+    #This is a minor optimization to save the trouble of reloading the transform
+    #from disk... I left it but it could be replaced by ResetChecksum.
     OutputTransformNode.attrib['Checksum'] = mosaic.Checksum
-
+    OutputTransformNode._AttributesChanged = True
+    
     return ChannelNode
 
 
@@ -1176,7 +1179,8 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     ImageNode = GetOrCreateCleanedImageNode(OutputFilterNode.Imageset, TransformNode, thisLevel, OutputImageNameTemplate)
     MaskImageNode = GetOrCreateCleanedImageNode(OutputMaskFilterNode.Imageset, TransformNode, thisLevel, OutputImageMaskNameTemplate)
      
-    ImageNode.MaskPath = MaskImageNode.FullPath
+    #We no longer use MaskPath, it is set at the filter level now.
+    #ImageNode.MaskPath = MaskImageNode.FullPath
   
     #===========================================================================
     # if hasattr(ImageNode, 'InputTransformChecksum'):
@@ -1254,124 +1258,124 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
     MaskImageSet = BuildImagePyramid(OutputMaskFilterNode.Imageset, Interlace=Interlace, **kwargs)
     if not MaskImageSet is None:
         yield MaskImageSet
- 
-
-def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
-    '''Assemble a transform using the ir-tools
-       @ChannelNode - TransformNode lives under ChannelNode
-       '''
-    Feathering = Parameters.get('Feathering', 'binary')
-
-    (added_mask_filter, MaskFilterNode) = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
-    ChannelNode = FilterNode.FindParent('Channel')
-    SectionNode = ChannelNode.FindParent('Section')
-
-    NodesToSave = []
-
-    MangledName = misc.GenNameFromDict(Parameters) + TransformNode.Type
-
-    PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
-
-    OutputImageNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + FilterNode.Name + ".png"
-    OutputImageMaskNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
-
-    FilterNode.Imageset.SetTransform(TransformNode)
-    MaskFilterNode.Imageset.SetTransform(TransformNode)
-
-    argstring = misc.ArgumentsFromDict(Parameters)
-    irassembletemplate = 'ir-assemble ' + argstring + ' -sh 1 -sp %(pixelspacing)i -save %(OutputImageFile)s -load %(InputFile)s -mask %(OutputMaskFile)s -image_dir %(ImageDir)s '
-
-    LevelFormatTemplate = FilterNode.TilePyramid.attrib.get('LevelFormat', nornir_buildmanager.templates.Current.LevelFormat)
-
-    thisLevel = PyramidLevels[0]
-
-    # Create a node for this level
-    [added_image_level, ImageLevelNode] = FilterNode.Imageset.GetOrCreateLevel(thisLevel)
-    [added_mask_level, ImageMaskLevelNode] = MaskFilterNode.Imageset.GetOrCreateLevel(thisLevel)
-
-    os.makedirs(ImageLevelNode.FullPath, exist_ok=True)
-    os.makedirs(ImageMaskLevelNode.FullPath, exist_ok=True)
-
-    # Should Replace any child elements
-    ImageNode = ImageLevelNode.find('Image')
-    if(ImageNode is None):
-        ImageNode = nb.VolumeManager.ImageNode.Create(OutputImageNameTemplate)
-        ImageLevelNode.append(ImageNode)
-
-    MaskImageNode = ImageMaskLevelNode.find('Image')
-    if(MaskImageNode is None):
-        MaskImageNode = nb.VolumeManager.ImageNode.Create(OutputImageMaskNameTemplate)
-        ImageMaskLevelNode.append(MaskImageNode)
-
-    ImageNode.MaskPath = MaskImageNode.FullPath
-
-    if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
-        LevelFormatStr = LevelFormatTemplate % thisLevel
-        ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
-
-        tempOutputFullPath = os.path.join(ImageDir, 'Temp.png')
-        tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask.png')
-
-        cmd = irassembletemplate % {'pixelspacing' : thisLevel,
-                                    'OutputImageFile' : tempOutputFullPath,
-                                    'OutputMaskFile' : tempMaskOutputFullPath,
-                                    'InputFile' : TransformNode.FullPath,
-                                    'ImageDir' : ImageDir}
-        prettyoutput.Log(cmd)
-        subprocess.call(cmd + " && exit", shell=True)
-
-        if hasattr(TransformNode, 'CropBox'):
-            cmdTemplate = "magick convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
-            (Xo, Yo, Width, Height) = nornir_shared.misc.ListFromAttribute(TransformNode.CropBox)
-
-            # Figure out the downsample level, adjust the crop box, and crop
-            Xo = Xo / float(thisLevel)
-            Yo = Yo / float(thisLevel)
-            Width = Width / float(thisLevel)
-            Height = Height / float(thisLevel)
-
-            cmd = cmdTemplate % {'Input' : tempOutputFullPath,
-                                 'Output' : tempOutputFullPath,
-                                 'Xo' :-Xo,
-                                 'Yo' :-Yo,
-                                 'width' : Width,
-                                 'height' : Height}
-
-            maskcmd = cmdTemplate % {'Input' : tempMaskOutputFullPath,
-                                 'Output' : tempMaskOutputFullPath,
-                                 'Xo' :-Xo,
-                                 'Yo' :-Yo,
-                                 'width' : Width,
-                                 'height' : Height}
-
-            Logger.warn("Cropping assembled image to volume boundary")
-            # subprocess.call(cmd + " && exit", shell=True)
-            # subprocess.call(maskcmd + " && exit", shell=True)
-
-        # Run convert on the output to make sure it is interlaced
-        if(Interlace):
-            ConvertCmd = 'magick convert ' + tempOutputFullPath + ' -quality 106 -interlace PNG ' + tempOutputFullPath
-            Logger.warn("Interlacing assembled image")
-            subprocess.call(ConvertCmd + " && exit", shell=True)
-
-        if os.path.exists(tempOutputFullPath):
-            shutil.move(tempOutputFullPath, ImageNode.FullPath)
-            shutil.move(tempMaskOutputFullPath, MaskImageNode.FullPath)
-        else:
-            Logger.error("Assemble produced no output " + ImageNode.FullPath)
-
-        # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
-        # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
-    
-    yield FilterNode
-
-    ImageSet = BuildImagePyramid(FilterNode.Imageset, Logger, **kwargs)
-    if not ImageSet is None:
-        yield ImageSet 
-        
-    MaskImageSet = BuildImagePyramid(MaskFilterNode.Imageset, Logger, **kwargs)
-    if not MaskImageSet is None:
-        yield MaskImageSet
+#  
+# 
+# def AssembleTransformIrTools(Parameters, Logger, FilterNode, TransformNode, ThumbnailSize=256, Interlace=True, **kwargs):
+#     '''Assemble a transform using the ir-tools
+#        @ChannelNode - TransformNode lives under ChannelNode
+#        '''
+#     Feathering = Parameters.get('Feathering', 'binary')
+# 
+#     (added_mask_filter, MaskFilterNode) = FilterNode.GetOrCreateMaskFilter(FilterNode.MaskName)
+#     ChannelNode = FilterNode.FindParent('Channel')
+#     SectionNode = ChannelNode.FindParent('Section')
+# 
+#     NodesToSave = []
+# 
+#     MangledName = misc.GenNameFromDict(Parameters) + TransformNode.Type
+# 
+#     PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
+# 
+#     OutputImageNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + FilterNode.Name + ".png"
+#     OutputImageMaskNameTemplate = nornir_buildmanager.templates.Current.SectionTemplate % SectionNode.Number + "_" + ChannelNode.Name + "_" + MaskFilterNode.Name + ".png"
+# 
+#     FilterNode.Imageset.SetTransform(TransformNode)
+#     MaskFilterNode.Imageset.SetTransform(TransformNode)
+# 
+#     argstring = misc.ArgumentsFromDict(Parameters)
+#     irassembletemplate = 'ir-assemble ' + argstring + ' -sh 1 -sp %(pixelspacing)i -save %(OutputImageFile)s -load %(InputFile)s -mask %(OutputMaskFile)s -image_dir %(ImageDir)s '
+# 
+#     LevelFormatTemplate = FilterNode.TilePyramid.attrib.get('LevelFormat', nornir_buildmanager.templates.Current.LevelFormat)
+# 
+#     thisLevel = PyramidLevels[0]
+# 
+#     # Create a node for this level
+#     [added_image_level, ImageLevelNode] = FilterNode.Imageset.GetOrCreateLevel(thisLevel)
+#     [added_mask_level, ImageMaskLevelNode] = MaskFilterNode.Imageset.GetOrCreateLevel(thisLevel)
+# 
+#     os.makedirs(ImageLevelNode.FullPath, exist_ok=True)
+#     os.makedirs(ImageMaskLevelNode.FullPath, exist_ok=True)
+# 
+#     # Should Replace any child elements
+#     ImageNode = ImageLevelNode.find('Image')
+#     if(ImageNode is None):
+#         ImageNode = nb.VolumeManager.ImageNode.Create(OutputImageNameTemplate)
+#         ImageLevelNode.append(ImageNode)
+# 
+#     MaskImageNode = ImageMaskLevelNode.find('Image')
+#     if(MaskImageNode is None):
+#         MaskImageNode = nb.VolumeManager.ImageNode.Create(OutputImageMaskNameTemplate)
+#         ImageMaskLevelNode.append(MaskImageNode)
+# 
+#     ImageNode.MaskPath = MaskImageNode.FullPath
+# 
+#     if not (os.path.exists(ImageNode.FullPath) and os.path.exists(MaskImageNode.FullPath)):
+#         LevelFormatStr = LevelFormatTemplate % thisLevel
+#         ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
+# 
+#         tempOutputFullPath = os.path.join(ImageDir, 'Temp.png')
+#         tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask.png')
+# 
+#         cmd = irassembletemplate % {'pixelspacing' : thisLevel,
+#                                     'OutputImageFile' : tempOutputFullPath,
+#                                     'OutputMaskFile' : tempMaskOutputFullPath,
+#                                     'InputFile' : TransformNode.FullPath,
+#                                     'ImageDir' : ImageDir}
+#         prettyoutput.Log(cmd)
+#         subprocess.call(cmd + " && exit", shell=True)
+# 
+#         if hasattr(TransformNode, 'CropBox'):
+#             cmdTemplate = "magick convert %(Input)s -crop %(width)dx%(height)d%(Xo)+d%(Yo)+d! -background black -flatten %(Output)s"
+#             (Xo, Yo, Width, Height) = nornir_shared.misc.ListFromAttribute(TransformNode.CropBox)
+# 
+#             # Figure out the downsample level, adjust the crop box, and crop
+#             Xo = Xo / float(thisLevel)
+#             Yo = Yo / float(thisLevel)
+#             Width = Width / float(thisLevel)
+#             Height = Height / float(thisLevel)
+# 
+#             cmd = cmdTemplate % {'Input' : tempOutputFullPath,
+#                                  'Output' : tempOutputFullPath,
+#                                  'Xo' :-Xo,
+#                                  'Yo' :-Yo,
+#                                  'width' : Width,
+#                                  'height' : Height}
+# 
+#             maskcmd = cmdTemplate % {'Input' : tempMaskOutputFullPath,
+#                                  'Output' : tempMaskOutputFullPath,
+#                                  'Xo' :-Xo,
+#                                  'Yo' :-Yo,
+#                                  'width' : Width,
+#                                  'height' : Height}
+# 
+#             Logger.warn("Cropping assembled image to volume boundary")
+#             # subprocess.call(cmd + " && exit", shell=True)
+#             # subprocess.call(maskcmd + " && exit", shell=True)
+# 
+#         # Run convert on the output to make sure it is interlaced
+#         if(Interlace):
+#             ConvertCmd = 'magick convert ' + tempOutputFullPath + ' -quality 106 -interlace PNG ' + tempOutputFullPath
+#             Logger.warn("Interlacing assembled image")
+#             subprocess.call(ConvertCmd + " && exit", shell=True)
+# 
+#         if os.path.exists(tempOutputFullPath):
+#             shutil.move(tempOutputFullPath, ImageNode.FullPath)
+#             shutil.move(tempMaskOutputFullPath, MaskImageNode.FullPath)
+#         else:
+#             Logger.error("Assemble produced no output " + ImageNode.FullPath)
+# 
+#         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
+#         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
+#     
+#     yield FilterNode
+# 
+#     ImageSet = BuildImagePyramid(FilterNode.Imageset, Logger, **kwargs)
+#     if not ImageSet is None:
+#         yield ImageSet 
+#         
+#     MaskImageSet = BuildImagePyramid(MaskFilterNode.Imageset, Logger, **kwargs)
+#     if not MaskImageSet is None:
+#         yield MaskImageSet
 
 
 def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShape=None, TileSetName=None, Logger=None, **kwargs):
@@ -1626,7 +1630,7 @@ def BuildImagePyramid(ImageSetNode, Levels=None, Interlace=True, **kwargs):
             SaveImageSet = True
 
             if 'InputImageChecksum' in SourceImageNode.attrib:
-                TargetImageNode.attrib['InputImageChecksum'] = str(SourceImageNode.InputImageChecksum)
+                TargetImageNode.InputImageChecksum = str(SourceImageNode.InputImageChecksum)
 
             Logger.info('Shrunk ' + TargetImageNode.FullPath)
 

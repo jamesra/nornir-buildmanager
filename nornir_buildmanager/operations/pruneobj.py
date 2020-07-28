@@ -133,7 +133,7 @@ class PruneObj:
 
         OutputTransformNode.SetTransform(InputTransformNode)
         OutputTransformNode.InputPruneDataType = PruneNode.Type
-        OutputTransformNode.attrib['InputPruneDataChecksum'] = PruneDataNode.Checksum 
+        OutputTransformNode.InputPruneDataChecksum = PruneDataNode.Checksum 
         if not Threshold is None:
             OutputTransformNode.Threshold = Threshold
 

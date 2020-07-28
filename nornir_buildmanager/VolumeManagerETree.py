@@ -1269,6 +1269,7 @@ class XFileElementWrapper(XResourceElementWrapper):
 
     @Name.setter
     def Name(self, value):
+        assert(isinstance(value, str))
         self.attrib['Name'] = value
 
     @property
@@ -1331,6 +1332,7 @@ class XFileElementWrapper(XResourceElementWrapper):
             if os.path.exists(self.FullPath):
                 checksum = nornir_shared.checksum.FileChecksum(self.FullPath)
                 self.attrib['Checksum'] = str(checksum)
+                self._AttributesChanged = True
 
         return checksum
     
@@ -2545,7 +2547,8 @@ class StosGroupNode(XNamedContainerElementWrapped):
         return (added, stosNode)
     
     def  AddChecksumsToStos(self, stosNode, ControlFilter, MappedFilter):
-            
+        
+        stosNode._AttributesChanged = True
         if MappedFilter.Imageset.HasImage(self.Downsample) or MappedFilter.Imageset.CanGenerate(self.Downsample):
             stosNode.attrib['MappedImageChecksum'] = MappedFilter.Imageset.GetOrCreateImage(self.Downsample).Checksum
         else:
@@ -3177,6 +3180,28 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         else:
             self.attrib['MappedSectionNumber'] = "%d" % value
         return None
+    
+    @property
+    def Compressed(self):
+        '''Indicates if the text representation of this transform has been
+           compressed to save space.  Compressing is done by removing 
+           unnecessary precision in coordinates.  It is done to reduce
+           the time required to parse the transform at load time.
+           '''
+        if 'Compressed' in self.attrib:
+            return bool(self.attrib['Compressed'])
+        
+        return False
+    
+    @Compressed.setter
+    def Compressed(self, value):
+        if value is None:
+            if 'Compressed' in self.attrib:
+                del self.attrib['Compressed']
+        else:
+            assert(isinstance(value, bool))
+            self.attrib['Compressed'] = "%d" % value
+        return None
          
     @property
     def CropBox(self):
@@ -3523,6 +3548,7 @@ class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
         if dims is None:
             dims = nornir_imageregistration.GetImageSize(self.FullPath)
             self.attrib['Dimensions'] = "{0:d} {1:d}".format(dims[1], dims[0])
+            self._AttributesChanged = True
         else:
             dims = dims.split(' ')
             dims = (int(dims[1]), int(dims[0]))
