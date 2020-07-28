@@ -552,25 +552,36 @@ def HTMLFromUnknownDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHei
 def __ExtractIDocDataText(DataNode):
 
     rows = RowList()
-
-    if 'ExposureTime' in DataNode.attrib:
-        rows.append(['Exposure Time:', '%.4g sec' % float(DataNode.ExposureTime)])
-
-    if 'ExposureDose' in DataNode.attrib:
-        rows.append(['Exposure Dose:', '%.4g nm/sec' % float(DataNode.ExposureDose)])
-
-    if 'Magnification' in DataNode.attrib:
-        rows.append(['Magnification:', '%.4g X' % float(DataNode.Magnification)])
-
-    if 'PixelSpacing' in DataNode.attrib:
-        rows.append(['Pixel Spacing:', '%.4g' % float(DataNode.PixelSpacing)])
-
-    if 'SpotSize' in DataNode.attrib:
-        rows.append(['Spot Size:', '%d' % int(DataNode.SpotSize)])
-
-    if 'TargetDefocus' in DataNode.attrib:
-        rows.append(['Target Defocus:', '%.4g' % float(DataNode.TargetDefocus)])
-
+    
+    try:
+    
+        if 'ExposureTime' in DataNode.attrib:
+            rows.append(['Exposure Time:', '%.4g sec' % float(DataNode.ExposureTime)])
+    
+        if 'ExposureDose' in DataNode.attrib:
+            rows.append(['Exposure Dose:', '%.4g nm/sec' % float(DataNode.ExposureDose)])
+    
+        if 'Magnification' in DataNode.attrib:
+            rows.append(['Magnification:', '%.4g X' % float(DataNode.Magnification)])
+    
+        if 'PixelSpacing' in DataNode.attrib:
+            rows.append(['Pixel Spacing:', '%.4g' % float(DataNode.PixelSpacing)])
+    
+        if 'SpotSize' in DataNode.attrib:
+            rows.append(['Spot Size:', '%d' % int(DataNode.SpotSize)])
+    
+        if 'TargetDefocus' in DataNode.attrib:
+            try:
+                rows.append(['Target Defocus:', '%.4g' % float(DataNode.TargetDefocus)])
+            except ValueError:
+                #A SerialEM upgrade in July 2020 removed the TargetDefocus attribute from each tile's idoc entry
+                rows.append(['Target Defocus:', ''])
+                pass
+        
+    except ValueError:
+        nornir_shared.prettyoutput.LogErr("Could not convert IDoc Data from Element: {0}".format(DataNode.FullPath))
+        pass
+    
     return rows
 
 #     ExposureList = []
