@@ -1422,42 +1422,39 @@ class XContainerElementWrapper(XResourceElementWrapper):
         at least some of the data.
         '''
         
+        if self.SaveAsLinkedElement == False:
+            return #This element is not saved as a linked element
+        
         with os.scandir(self.FullPath) as pathscan:
-            for path in pathscan:
-                if path.name[0] == '.': #Avoid the .desktop_ini files of the world
+            for path in filter(lambda p: p.is_dir() and p.name[0] != '.', pathscan):
+                
+                possible_meta_data_path = os.path.join(path, 'VolumeData.XML')
+                
+                if not os.path.exists(possible_meta_data_path):
                     continue
                 
-                if not path.is_dir():
+                #prettyoutput.Log("Found potential linked element: {0}".format(item.path))
+                
+                dirname = os.path.dirname(possible_meta_data_path)
+                
+                expected_path = os.path.basename(dirname)
+                
+                # Check to be sure that this is a new node
+                existingChild = self.find("*[@Path='{0}']".format(expected_path))
+                
+                if not existingChild is None:
                     continue
+            
+                prettyoutput.Log("Found missing linked container {0}".format(dirname))
                 
-                for item in os.scandir(path):
-                    if not item.is_file():
-                        continue
+                # Load the VolumeData.xml, take the root element name and create a link in our element
+                loadedElement = self._load_wrap_setparent_link_element(dirname)
+                if loadedElement is not None:
+                    self.append(loadedElement)
+                    prettyoutput.Log("\tAdded: {0}".format(loadedElement))
+                    self.ChildrenChanged = True
+
                 
-                    if not item.name.lower() == 'volumedata.xml':
-                        continue
-                    
-                    #prettyoutput.Log("Found potential linked element: {0}".format(item.path))
-                    
-                    dirname = os.path.dirname(item.path)
-                    
-                    expected_path = os.path.basename(dirname)
-                    
-                    # Check to be sure that this is a new node
-                    existingChild = self.find("*[@Path='{0}']".format(expected_path))
-                    
-                    if not existingChild is None:
-                        continue
-                
-                    prettyoutput.Log("Found missing linked container {0}".format(dirname))
-                    
-                    # Load the VolumeData.xml, take the root element name and create a link in our element
-                    loadedElement = self._load_wrap_setparent_link_element(dirname)
-                    if loadedElement is not None:
-                        self.append(loadedElement)
-                        prettyoutput.Log("\tAdded: {0}".format(loadedElement))
-    
-                    
                 
             if recurse:
                 for child in self:
