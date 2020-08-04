@@ -312,6 +312,11 @@ class SerialEMLog(object):
             return self._startup
         
         return datetime.datetime.strptime(self._startup, '%m/%d/%Y %H:%M:%S') 
+
+    @property
+    def FinishDateTime(self):
+        '''Datetime when the capture was finished, extrapolated from StartupDateTime and other measured durations.'''
+        return self.StartupDateTime + datetime.timedelta(seconds=self.CaptureSetupTime + self.TotalTime)
     
     @property
     def StartupTimeStamp(self):
