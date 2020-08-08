@@ -22,12 +22,15 @@
 			<Argument flag="-Max" dest="MaxValue" type="float"
 				help="Max intensity cutoff.  A value from 0.0 to 1.0" required="False"
 				default=".9999" />
+			<Argument flag="-Sections" dest="Sections" type="IntegerList"
+                help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
+                required="False" />
 			<Argument flag="-CameraBpp" dest="CameraBpp" type="int"
                 help="The actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data." required="False"/>
 		</Arguments>
 
 		<PythonCall Module="nornir_buildmanager.importers.idoc"
-			Function="Import" ImportPath="#ImportDir" extension="#extension" Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" />
+			Function="Import" ImportPath="#ImportDir" extension="#extension" Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" Sections="#Sections"/>
 	</Pipeline>
 
 	<Pipeline Name="ImportPMG" Help="Import PMG file into a volume">

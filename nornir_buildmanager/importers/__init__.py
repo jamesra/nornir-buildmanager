@@ -3,10 +3,11 @@ import csv
 import os
 import nornir_buildmanager
 
+from . import shared 
+
 ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
 DefaultHistogramFilename = "ContrastOverrides.txt"
-
-
+ 
 class OldVersionException(Exception):
 
     def __init__(self, text):

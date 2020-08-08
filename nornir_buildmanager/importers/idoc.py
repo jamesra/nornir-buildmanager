@@ -59,6 +59,7 @@ import matplotlib.colors as mcolors
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
+from docutils.nodes import section
 
 
 
@@ -69,6 +70,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         extension = 'idoc'
         
     # TODO, set the defaults at the volume level in the meta-data and pull from there
+    DesiredSectionList = kwargs.get('Sections', None)
     
     MinCutoff = float(kwargs.get('Min'))
     MaxCutoff = float(kwargs.get('Max'))
@@ -96,28 +98,67 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
 
     DataFound = False 
+    
+    found_sections = {}
 
     for path in DirList:
+        #The problem with using the directory name is that there could be more than one
+        #.idoc file in a directory if a two-part capture of a section is done.
+        #  However the extensive use of 1.idoc naming
+        #conventions mean we have to use the directory name.
+        #So I build a list of all .idoc files in a directory and later we'll 
+        #run ToMosaic on all of them
+        
+        idocFileList = []
+            
         for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
-            DataFound = True
+            idocFileList.append(idocFullPath)
+            
+        if len(idocFileList) > 0:
+            
+            meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
+            
+            #Skip this section if it is not in the desired range
+            if not DesiredSectionList is None:
+                if not meta_data.number in DesiredSectionList:
+                    continue 
+                
+            if meta_data.number is None:
+                prettyoutput.Log("Could not parse section number from {0} filename", idocFullPath)
+            else:
+                if meta_data.number in found_sections:
+                    (existing, ) = found_sections[meta_data.number]
+                    if existing.version < meta_data.version:
+                        found_sections[meta_data.number] = (meta_data, idocFileList) 
+                else:
+                    found_sections[meta_data.number] = (meta_data, idocFileList)
+            
+    #Todo: Print the list of filenames.  Apply regular expression of desired import range.  Then import.
+    prettyoutput.Log(shared.FileMetaDataStrHeader())
+    for section_entry in found_sections.items():
+        path = section_entry[0]
+        (data,idocFileList) = section_entry[1]
+        
+        prettyoutput.Log(shared.FileMetaDataStr(data))
+    
+    for section_entry in found_sections.items():
+        path = section_entry[0]
+        (data,idocFileList) = section_entry[1]
+        for idocFileFullPath in idocFileList:
             yield SerialEMIDocImport.ToMosaic(VolumeElement,
-                                              idocFullPath,
-                                              ContrastCutoffs=ContrastCutoffs,
-                                              OutputImageExt=None,
-                                              FlipList=FlipList,
-                                              CameraBpp=CameraBpp,
-                                              ContrastMap=ContrastMap)
+                                      idocFileFullPath,
+                                      ContrastCutoffs=ContrastCutoffs,
+                                      OutputImageExt=None,
+                                      FlipList=FlipList,
+                                      CameraBpp=CameraBpp,
+                                      ContrastMap=ContrastMap)
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
 
-              
-
 
 class SerialEMIDocImport(object):
     
-    
-
     @classmethod
     def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputImageExt=None, TargetBpp=None, FlipList=None, ContrastMap=None, CameraBpp=None, debug=None):
         '''
@@ -161,7 +202,7 @@ class SerialEMIDocImport(object):
 
         # If the parent directory doesn't have the section number in the name, change it
         ExistingSectionInfo = shared.GetSectionInfo(sectionDir)
-        if(ExistingSectionInfo[0] < 0):
+        if(ExistingSectionInfo.number < 0):
             i = 5
 #            SectionNumber = SectionNumber + 1
 #            newPathName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber + '_' + sectionDir

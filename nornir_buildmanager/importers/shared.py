@@ -11,38 +11,35 @@ import glob
 from nornir_buildmanager.VolumeManagerETree import NotesNode
 import nornir_shared.prettyoutput as prettyoutput
 import collections
+import re
 
-SectionInfo = collections.namedtuple('SectionInfo', 'number name downsample')
+FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
 MinMaxGamma = collections.namedtuple('MinMaxGamma', 'min max gamma')  
 
-def GetSectionInfo(fileName):
-    fileName = os.path.basename(fileName)
+#Global instance of our parser for filenames that is initialized upon first use
+_InputFileRegExParser = None
 
-    # Make sure extension is present in the filename
-    [fileName, _] = os.path.splitext(fileName)
+def GetSectionInfo(fullpath):
+    '''Given a path or filename returns the meta data we can determine from the name
+       :returns: A named tuple with (fullpath number version name downsample extension)
+    '''
+    fileName = os.path.basename(fullpath)
+    
+    d = ParseMetadataFromFilename(fileName)
+    
+    return FilenameMetadata(fullpath, d['Number'], d['Version'], d['Name'], d['Downsample'], d['Extension'])
 
-    SectionNumber = -1
-    Downsample = 1
-    parts = fileName.split("_")
-    try:
-        SectionNumber = int(parts[0])
-    except:
-        # We really can't recover from this, so maybe an exception should be thrown instead
-        raise ValueError("Could not parse section number from input {0}.  Should begin with a section number and then an underscore".format(fileName))
-
-    try:
-        SectionName = parts[1]
-    except:
-        SectionName = str(SectionNumber)
-
-    # If we don't have a valid downsample value we assume 1
-    try:
-        DownsampleStrings = parts[2].split(".")
-        Downsample = int(DownsampleStrings[0])
-    except:
-        Downsample = 1
-
-    return SectionInfo(SectionNumber, SectionName, Downsample)
+def FileMetaDataStrHeader():
+    output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}\n".format("Path", "#", "Ver", "Name", "Ds", "ext")
+    return output
+    
+def FileMetaDataStr(data):
+    '''Provides a pretty string for a FilenameMetadata tuple'''
+    v = data.version
+    if v == '\0':
+        v = None
+    output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}\n".format(os.path.basename(data.fullpath), str(data.number), str(v), str(data.name), str(data.downsample), str(data.extension))
+    return output
 
 
 def TryAddNotes(containerObj, InputPath, logger):
@@ -105,3 +102,56 @@ def TryAddNotes(containerObj, InputPath, logger):
 
     return NotesAdded
 
+def ParseMetadataFromFilename(string):
+    '''
+    Parses the filename of an input file to determine
+        Number : Section Number
+        Version : A letter indicating whether this is a recapture of the same section. In increasing alphabetical order.  'B' would be a recapture of 'A'
+         
+    '''
+    global _InputFileRegExParser
+    if _InputFileRegExParser is None:
+        _InputFileRegExParser = re.compile(r"""
+            (?P<Number>\d+)?                                           #Section Number
+            \s?                                                        #Possible space between section number and version
+            (?P<Version>[^_|^\s](?=[\s\|_|\.]))?                       #Version letter
+            [_|\s]*                                                    #Divider between section number/version and name
+            (?P<Name>
+              (
+                [a-zA-Z0-9]                                             #Any letters
+                |
+                [ ](?![0-9]+\.)
+              )+                                       #Any spaces not followed by numbers and a period (The downsample value) 
+            )?                                                         #Name
+            [_|\s]*                                                    #Divider between name and downsample/extension
+            (?P<Downsample>\d+)?                                       #Downsample level if present
+            (?P<Extension>\.\w+)?                                     #Extension if present
+            """, re.VERBOSE) 
+    
+    m = _InputFileRegExParser.match(string)
+    if m is not None:
+        
+        d = m.groupdict()
+        section_number = d.get('Number',None)
+        if section_number is not None:
+            d['Number'] = int(section_number)
+            
+        version = d.get('Version',None)
+        if version is None:
+            version = '\0' #Assign a letter that will sort earlier than 'A' in case someone names the first recapture A instead of B...
+            d['Version'] = version
+            
+        ds = d.get('Downsample',None)
+        if ds is not None:
+            d['Downsample'] = int(ds)
+            
+        return d
+    
+    else:
+        return None
+    
+                       
+
+if __name__ == "__main__":
+    pass
+        
