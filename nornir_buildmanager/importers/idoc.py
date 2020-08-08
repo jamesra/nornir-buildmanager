@@ -58,8 +58,7 @@ import matplotlib
 import matplotlib.colors as mcolors
 from mpl_toolkits.mplot3d import axes3d
 import matplotlib.pyplot as plt
-import matplotlib.tri as mtri
-from docutils.nodes import section
+import matplotlib.tri as mtri 
 
 
 
