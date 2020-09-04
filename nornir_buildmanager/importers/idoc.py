@@ -141,6 +141,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         prettyoutput.Log(shared.FileMetaDataStr(data))
     
     for section_entry in found_sections.items():
+        DataFound = True
         path = section_entry[0]
         (data,idocFileList) = section_entry[1]
         for idocFileFullPath in idocFileList:
