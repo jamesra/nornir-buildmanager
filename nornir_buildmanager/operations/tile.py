@@ -839,7 +839,7 @@ def InvertFilter(Parameters, InputFilterNode, OutputFilterName, **kwargs):
     for InputTileFullPath in InputTiles:
         Basename = os.path.basename(InputTileFullPath)
         OutputTileFullPath = os.path.join(OutputLevelFullPath, Basename)
-        t = pool.add_task("Invert {0}".format(InputTileFullPath), nornir_shared.images.InvertImage(InputTileFullPath, OutputTileFullPath))
+        t = pool.add_task("Invert {0}".format(InputTileFullPath), nornir_shared.images.InvertImage, InputTileFullPath, OutputTileFullPath)
         tasks.append(t)
         tilesConverted = True
         
