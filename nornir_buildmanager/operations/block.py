@@ -1717,9 +1717,10 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
 
         mappedSectionNumber = MappedSectionNode.SectionNumber
 
-        logStr = "Calculating %s -> %s -> %s" % (str(mappedSectionNumber), str(IntermediateControlSection), str(rootNode.SectionNumber) )
+        logStr = "{0} -> {1} -> {2}".format(str(mappedSectionNumber), str(IntermediateControlSection), str(rootNode.SectionNumber) )
+        verboseStr = "Mapping {0} -> {1} -> {2} to {0} -> {2}".format(str(mappedSectionNumber), str(IntermediateControlSection), str(rootNode.SectionNumber) )
         #Logger.info(logStr)
-        prettyoutput.Log(logStr)
+        prettyoutput.Log(verboseStr)
         
         (MappingAdded, OutputSectionMappingsNode) = OutputGroupNode.GetOrCreateSectionMapping(mappedSectionNumber)
         if MappingAdded:
@@ -1728,7 +1729,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
         MappedToControlTransforms = InputGroupNode.TransformsForMapping(mappedSectionNumber, IntermediateControlSection)
 
         if MappedToControlTransforms is None or len(MappedToControlTransforms) == 0:
-            Logger.error(" %s : No transform found:" % (logStr))
+            errStr = "{0} -> {1} mapping does not have a .stos transform at {2}".format(mappedSectionNumber, IntermediateControlSection, InputGroupNode.FullPath)
+            prettyoutput.LogErr(errStr)
             continue
 
         # In theory each iteration of this loop could be run in a seperate thread.  Useful when center is in center of volume.
@@ -1743,8 +1745,9 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
             if ControlToVolumeTransformKey in SectionToRootTransformMap:
                 #prettyoutput.Log("Looking for {0}: FOUND".format(str(ControlToVolumeTransformKey)))
                 ControlToVolumeTransform = SectionToRootTransformMap[ControlToVolumeTransformKey]
-            #else:
-                #prettyoutput.Log("Looking for {0}: NOT FOUND".format(str(ControlToVolumeTransformKey)))
+            elif ControlToVolumeTransformKey[0] != ControlToVolumeTransformKey[1]: #Do not bother printing an error if there is no intermediate transform to find
+                errStr = "Could not find {0} -> {1} .stos transform".format(ControlToVolumeTransformKey[0], ControlToVolumeTransformKey[1])
+                prettyoutput.LogErr(errStr)
 
             if ControlToVolumeTransform is None:
                 ControlSectionNumber = MappedToControlTransform.ControlSectionNumber
@@ -1791,18 +1794,33 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
             #             os.remove(OutputTransform.FullPath)
             #===================================================================
 
+            #ControlToVolumeTransform can be none if:
+            # 1) There was an error generating an earlier slice to volume transform,
+            # 2) The .stos transform maps directly to the center without an intermediate.  In which case we need to skip all further steps 
             if ControlToVolumeTransform is None:
-                # This maps directly to the origin, add it to the output stos group
-                # Files.RemoveOutdatedFile(MappedToControlTransform.FullPath, OutputTransform.FullPath )
-
-                if not os.path.exists(OutputTransform.FullPath):
-                    Logger.info(" %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
-                    shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
-                    OutputTransform.ResetChecksum()
-                    # OutputTransform.Checksum = MappedToControlTransform.Checksum
-                    OutputTransform.SetTransform(MappedToControlTransform)
-                    
-                    (yield OutputSectionMappingsNode)
+                
+                #Handle the case of a transform that is mapped directly to the origin.  
+                if ControlToVolumeTransformKey[0] == ControlToVolumeTransformKey[1]:
+                    # This maps directly to the origin, add it to the output stos group
+                    # Files.RemoveOutdatedFile(MappedToControlTransform.FullPath, OutputTransform.FullPath )
+    
+                    if not os.path.exists(OutputTransform.FullPath):
+                        try:
+                            Logger.info(" %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
+                            shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
+                            OutputTransform.ResetChecksum()
+                            # OutputTransform.Checksum = MappedToControlTransform.Checksum
+                            OutputTransform.SetTransform(MappedToControlTransform)
+                        except FileNotFoundError as e:
+                            errorStr = " %s: Unable to copy mapped to volume center stos transform %s:\n%s" % (logStr, OutputTransform.Path, str(e))
+                            Logger.error(errorStr)
+                            prettyoutput.LogErr(errorStr)
+                            continue
+                        
+                        (yield OutputSectionMappingsNode)
+                else:
+                    #If we can't generate a transform we continue.  This allows other mapping to the center of the volume to still generate
+                    continue
 
             else:
                 OutputTransform.ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
@@ -1820,8 +1838,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
                 if not os.path.exists(OutputTransform.FullPath):
                     
                     try:
-                        Logger.info(" %s: Adding transforms" % (logStr))
-                        prettyoutput.Log(logStr)
+                        #Logger.info(" %s: Adding transforms" % (logStr))
+                        prettyoutput.Log("\tCalculating new .stos")
                         MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath, ControlToVolumeTransform.FullPath, EnrichTolerance=EnrichTolerance)
                         MToVStos.Save(OutputTransform.FullPath)
 
@@ -1833,11 +1851,10 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
                     except ValueError as e:
                         # Probably an invalid transform.  Skip it
                         prettyoutput.LogErr(str(e))
-                        print(str(e))
+                        Logger.error(str(e))
                         OutputTransform.Clean()
                         OutputTransform = None
-                        raise e
-                        #continue
+                        continue
                     
                     (yield OutputSectionMappingsNode)
                 else:
@@ -2128,14 +2145,12 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMas
             try:
                 (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)
                 (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)
-            except AttributeError as e:
-                logger = logging.getLogger("ScaleStosGroup")
-                logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+            except AttributeError as e: 
+                prettyoutput.LogErr("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
             
-            if ControlFilter is None or MappedFilter is None:
-                logger = logging.getLogger("ScaleStosGroup")
-                logger.error("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+            if ControlFilter is None or MappedFilter is None: 
+                prettyoutput.LogErr("ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 

@@ -96,8 +96,8 @@ class ArgumentSet():
 
             iEndVar = iEndVar - 1
 
-        logger = logging.getLogger(__name__ + ".ReplaceVariable")
-        logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
+        #logger = logging.getLogger(__name__ + ".ReplaceVariable")
+        #logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         prettyoutput.LogErr("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         sys.exit()
 
@@ -539,8 +539,9 @@ class PipelineManager(object):
                     PipelineManager.logger.info("Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
                     break
                 except PipelineError as e:
-                    PipelineManager.logger.error(str(e))
-                    PipelineManager.logger.error("Unexpected error, exiting pipeline")
+                    errStr = "Unexpected error, exiting pipeline\n" + str(e) 
+                    PipelineManager.logger.error(errStr) 
+                    prettyoutput.LogErr(errStr)
                     sys.exit()
                 finally:
                     prettyoutput.DecreaseIndent()

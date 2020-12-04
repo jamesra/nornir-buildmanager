@@ -856,6 +856,9 @@ class XElementWrapper(ElementTree.Element):
         if wrapped:
             VolumeManager.__SetElementParent__(Child, self)
         # Child.Parent = self
+        
+        if NewNodeCreated:
+            assert self.ChildrenChanged == True, "ChildrenChanged must be true if we report adding a child element"
 
         return (NewNodeCreated, Child)
     
@@ -1505,18 +1508,18 @@ class XContainerElementWrapper(XResourceElementWrapper):
             loaded_element = self._load_wrap_setparent_link_element(SubContainerPath)
         except IOError as e:
             self.remove(link_node)
-            logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-            logger.error("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            prettyoutput.LogErr("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
             return None
         except ElementTree.ParseError as e:
-            logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-            logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
             self.remove(link_node)
             return None
-#         except Exception as e:
-#             logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-#             logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-#             return None
+        except Exception as e:
+            #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            return None
               
         self._ReplaceChildElementInPlace(old=link_node, new=loaded_element)
         
@@ -1562,18 +1565,18 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 (wrapped, wrapped_loaded_element) = task.wait_return()
             except IOError as e:
                 self.remove(link_node)
-                logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                logger.error("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                prettyoutput.LogErr("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                 continue
             except ElementTree.ParseError as e:
-                logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                logger.error("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                 self.remove(link_node)
                 continue
-#             except Exception as e:
-#                 logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-#                 logger.error("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-#                 continue
+            except Exception as e:
+                #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                continue
             
             #(wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
             # SubContainer = XContainerElementWrapper.wrap(XMLElement)
@@ -1644,7 +1647,12 @@ class XContainerElementWrapper(XResourceElementWrapper):
 #             logger = logging.getLogger(__name__ + '.' + 'Save')
 #             logger.info("Saving " + self.FullPath)
 
-        self.sort()
+        #Don't do work sorting children or validating attributes if there is no indication they've changed
+        if self.ChildrenChanged:
+            self.sort()
+            
+        if self.AttributesChanged:
+            ValidateAttributesAreStrings(self)
 
         # pool = Pools.GetGlobalThreadPool()
          
@@ -1666,7 +1674,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             
         if not self.tail is None:
             SaveElement.tail = self.tail
-        
+ 
         # SaveTree = ElementTree.ElementTree(SaveElement)
 
         # Any child containers we create a link to and remove from our file
@@ -1675,37 +1683,44 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if child.tag.endswith('_Link'):
                 SaveElement.append(child)
             elif isinstance(child, XContainerElementWrapper):
+                linktag = child.tag + '_Link'
+                AnyChangesFound = AnyChangesFound or child.AttributesChanged #Since linked elements display the elements attributes, we should update if they've changed
                 
-                if child.SaveAsLinkedElement:
-                    linktag = child.tag + '_Link' 
-                    
-                    # Sanity check to prevent duplicate link bugs
-                    if __debug__:
-                        existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
-                        if existingNode is not None:
-                            raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(ElementTree.tostring(SaveElement, encoding="utf-8"), ElementTree.tostring(existingNode, encoding="utf-8")))
-                    
-                    LinkElement = XElementWrapper(linktag, attrib=child.attrib)
-                    # SaveElement.append(LinkElement)
-                    SaveElement.append(LinkElement)
-                else:
-                    ValidateAttributesAreStrings(SaveElement)
-                    child.sort()
-                    SaveElement.append(child)
-                    #No further action because the child is still one of our elements
-                    
+                #Save the child first so it can validate attributes before we attempt to copy them to a link element
                 if(recurse):
-                    child._Save(tabLevel + 1) #Use the internal version to avoid infinite loop
+                    child.Save(tabLevel + 1)
+                
+                # Sanity check to prevent duplicate link bugs
+                if __debug__:
+                    existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
+                    if existingNode is not None:
+                        raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(ElementTree.tostring(SaveElement, encoding="utf-8"), ElementTree.tostring(existingNode, encoding="utf-8")))
+                
+                LinkElement = XElementWrapper(linktag, attrib=child.attrib)
+                # SaveElement.append(LinkElement)
+                SaveElement.append(LinkElement)
+
+                
 
                 # logger.warn("Unloading " + child.tag)
                 # del self[i]
                 # self.append(LinkElement)
             else:
-                if isinstance(child, XElementWrapper):
-                    ValidateAttributesAreStrings(SaveElement)
-                    child.sort()
+                if isinstance(child, XElementWrapper): #Elements not converted to an XElementWrapper should not have changed.
+                    AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged 
+                                        
+                    #Don't bother doing prep work on the child element if no changes are recorded
+                    if child.AttributesChanged:
+                        ValidateAttributesAreStrings(SaveElement)
+                        
+                    if child.ChildrenChanged: 
+                        child.sort() 
+                                            
+                    child._AttributesChanged = False
+                    child._ChildrenChanged = False
 
-                SaveElement.append(child) #Note: Elements not converted to an XElementWrapper should not have changed. 
+                #Add a reference to the child element to the element we are serializing to XML
+                SaveElement.append(child)  
                  
         if AnyChangesFound and self.SaveAsLinkedElement:
             self.__SaveXML(xmlfilename, SaveElement)
