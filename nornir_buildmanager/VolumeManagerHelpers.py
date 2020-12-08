@@ -457,6 +457,18 @@ class PyramidLevelHandler(object):
         '''
         return len(self.Levels) > 0
     
+    def GetScale(self, Downsample):
+        '''Return the size of a pixel at the specified downsample level'''
+        
+        Parent = self.Parent
+        while Parent is not None:
+            if Parent.hasattr('Scale'):
+                return Parent.Scale
+            
+            Parent = self.Parent
+        
+        return None
+    
     def HasLevel(self, Downsample):
         return not self.GetLevel(Downsample) is None
     

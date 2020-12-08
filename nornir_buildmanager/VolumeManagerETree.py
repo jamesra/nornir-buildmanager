@@ -2086,21 +2086,44 @@ class ChannelNode(XNamedContainerElementWrapped):
                 return True
             
         return False
-
+    
+    @property
+    def Scale(self):
+        if hasattr(self, '_scale') == False:
+            scaleNode = self.find('Scale')
+            self._scale = Scale.Create(scaleNode) if scaleNode is not None else None
+            
+        return self._scale
+     
     def GetScale(self):
-        return self.find('Scale')
+        return self.Scale
 
     def SetScale(self, scaleValueInNm):
         '''Create a scale node for the channel
         :return: ScaleNode object that was created'''
         # TODO: Scale should be its own object and a property
-        [added, ScaleObj] = self.UpdateOrAddChild(ScaleNode.Create())
+        
+        [added, scaleNode] = self.UpdateOrAddChild(ScaleNode.Create())
+        
+        if isinstance(scaleValueInNm, float):
+            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
+                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
+                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
+        elif isinstance(scaleValueInNm, ScaleAxis):
+            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : str(scaleValueInNm.UnitsOfMeasure),
+                                                                 'UnitsPerPixel' : str(scaleValueInNm.UnitsPerPixel)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : str(scaleValueInNm.UnitsOfMeasure),
+                                                                 'UnitsPerPixel' : str(scaleValueInNm.UnitsPerPixel)}))
+        elif isinstance(scaleValueInNm, Scale):
+            (added, scaleNode) = self.UpdateOrAddChild(ScaleNode.CreateFromScale(scaleValueInNm))
+        else:
+            raise NotImplementedError("Unknown type %s" % scaleValueInNm)
+        
+        self._scale = Scale.Create(scaleNode)
+        
+        return (added, scaleNode)
 
-        ScaleObj.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
-                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
-        ScaleObj.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
-                                                             'UnitsPerPixel' : str(scaleValueInNm)}))
-        return (added, ScaleObj)
     
     @property
     def NeedsValidation(self):
@@ -2155,13 +2178,153 @@ class ScaleNode(XElementWrapper):
     @classmethod
     def Create(cls, **extra):
         return cls(**extra)
-
+    
+    @classmethod
+    def CreateFromScale(cls, scale):
+        '''Create a ScaleNode from a Scale object'''
+        if isinstance(scale, Scale) == False:
+            raise NotImplementedError('CreateFromScale got unexpected parameter: %s' % str(scale))
+        
+        output = ScaleNode()
+        output.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : scale.X.UnitsOfMeasure,
+                                                      'UnitsPerPixel' : str(scale.X.UnitsPerPixel)}))
+        output.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : scale.Y.UnitsOfMeasure,
+                                                      'UnitsPerPixel' : str(scale.Y.UnitsPerPixel)}))
+        
+        if output.Z is not None:
+            output.UpdateOrAddChild(XElementWrapper('Z', {'UnitsOfMeasure' : scale.Z.UnitsOfMeasure,
+                                                          'UnitsPerPixel' : str(scale.Z.UnitsPerPixel)}))
+        
+        return output
+        
+    
+class Scale(object):
+    '''
+    A 2/3 dimensional representation of scale.
+    '''
+    
+    @property
+    def X(self):
+        return self._x
+    
+    @X.setter
+    def X(self, val):
+        if isinstance(val, float):
+            self._x = ScaleAxis(val, 'nm')
+        elif isinstance(val, ScaleAxis):
+            self._x = val
+        else:
+            raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
+    
+    @property
+    def Y(self):
+        return self._y
+    
+    @Y.setter
+    def Y(self, val):
+        if isinstance(val, float):
+            self._y = ScaleAxis(val, 'nm')
+        elif isinstance(val, ScaleAxis):
+            self._y = val
+        else:
+            raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
+        
+    @property
+    def Z(self):
+        return self._z
+    
+    @Z.setter
+    def Z(self, val):
+        if isinstance(val, float):
+            self._z = ScaleAxis(val, 'nm')
+        elif isinstance(val, ScaleAxis):
+            self._z = val
+        else:
+            raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
+        
+    def Create(self, ScaleData):
+        '''Create a Scale object from various input types'''
+        if isinstance(ScaleData, ScaleNode):
+            obj = Scale(ScaleData.X, ScaleData.Y, ScaleData.Z)
+            return obj
+        else:
+            raise NotImplementedError("Unexpected type passed to Scale.Create %s" % ScaleData)
+        
+        return None
+    
+    def __truediv__(self, scalar):
+        if not isinstance(scalar, float):
+            raise NotImplementedError("Division for non-floating types is not supported")
+        
+        obj = Scale(self.X / scalar,
+                    self.Y / scalar,
+                    self.Z / scalar if self.Z is not None else None) #Only pass Z if it is not None
+        return obj
+    
+    def __mul__(self, scalar):
+        if not isinstance(scalar, float):
+            raise NotImplementedError("Division for non-floating types is not supported")
+        
+        obj = Scale(self.X * scalar,
+                    self.Y * scalar,
+                    self.Z * scalar if self.Z is not None else None) #Only pass Z if it is not None
+        return obj
+        
+    def __init__(self, X, Y=None, Z=None):
+        '''
+        If only X is passed we assume the scale for X&Y are identical and there is no Z
+        The only way to specify a Z axis scale is to pass it to the constructor
+        '''
+        self._x = None
+        self._y = None
+        self._z = None
+        
+        self.X = X
+        
+        if Y is None:
+            self.Y = X
+        else
+            self.Y = Y
+        
+        if Z is not None
+            self.Z = Z
+    
 
 class ScaleAxis(object):
 
     def __init__(self, UnitsPerPixel, UnitsOfMeasure):
         self.UnitsPerPixel = float(UnitsPerPixel)
         self.UnitsOfMeasure = str(UnitsOfMeasure)
+        
+    
+    def __truediv__(self, scalar):
+        if isinstance(scalar, float):
+            return ScaleAxis(self.UnitsPerPixel / scalar, self.UnitsOfMeasure)
+        elif isinstance(scalar, ScaleAxis):
+            if self.UnitsOfMeasure != scalar.UnitsOfMeasure:
+                raise NotImplementedError("Cannot divide ScaleAxis objects if UnitsOfMeasure do not match")
+            
+            return self.UnitsPerPixel / scalar.UnitsPerPixel #both inputs have units so the units cancel
+        
+        raise NotImplementedError("Division for input type is not supported: %s" % scalar)
+        
+    
+    def __eq__(self, other):
+        if other is None:
+            return False
+        
+        return other.UnitsPerPixel == self.UnitsPerPixel and other.UnitsOfMeasure == self.UnitsOfMeasure
+    
+    def __mul__(self, scalar):
+        if isinstance(scalar, float):
+            return ScaleAxis(self.UnitsPerPixel * scalar, self.UnitsOfMeasure)
+        elif isinstance(scalar, ScaleAxis):
+            if self.UnitsOfMeasure != scalar.UnitsOfMeasure:
+                raise NotImplementedError("Cannot multiply ScaleAxis objects if UnitsOfMeasure do not match")
+            
+            return self.UnitsPerPixel * scalar.UnitsPerPixel #both inputs have units so the units cancel
+        
+        raise NotImplementedError("Multiplication for input type is not supported: %s" % scalar)
     
     def __str__(self):
         return "{0}{1}".format(str(self.UnitsPerPixel), self.UnitsOfMeasure)
@@ -2180,6 +2343,15 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
         InputChannelNode = self.FindParent('Channel')
         section_node = InputChannelNode.FindParent('Section')
         return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
+    
+    @property
+    def Scale(self):
+        '''Returns the scale if it is specified in a parent Channel Node'''
+        channelNode = self.FindParent('Channel')
+        if channelNode is None:
+            return None
+        
+        return channelNode.Scale
 
     @property
     def Histogram(self):
