@@ -1683,25 +1683,27 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if child.tag.endswith('_Link'):
                 SaveElement.append(child)
             elif isinstance(child, XContainerElementWrapper):
-                linktag = child.tag + '_Link'
                 AnyChangesFound = AnyChangesFound or child.AttributesChanged #Since linked elements display the elements attributes, we should update if they've changed
                 
                 #Save the child first so it can validate attributes before we attempt to copy them to a link element
                 if(recurse):
-                    child.Save(tabLevel + 1)
+                    child._Save(tabLevel + 1)
                 
-                # Sanity check to prevent duplicate link bugs
-                if __debug__:
-                    existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
-                    if existingNode is not None:
-                        raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(ElementTree.tostring(SaveElement, encoding="utf-8"), ElementTree.tostring(existingNode, encoding="utf-8")))
-                
-                LinkElement = XElementWrapper(linktag, attrib=child.attrib)
-                # SaveElement.append(LinkElement)
-                SaveElement.append(LinkElement)
-
-                
-
+                if(child.SaveAsLinkedElement):
+                    linktag = child.tag + '_Link'
+                    
+                    # Sanity check to prevent duplicate link bugs
+                    if __debug__:
+                        existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
+                        if existingNode is not None:
+                            raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(ElementTree.tostring(SaveElement, encoding="utf-8"), ElementTree.tostring(existingNode, encoding="utf-8")))
+                    
+                    LinkElement = XElementWrapper(linktag, attrib=child.attrib)
+                    # SaveElement.append(LinkElement)
+                    SaveElement.append(LinkElement)
+                else: 
+                    SaveElement.append(child)
+                    
                 # logger.warn("Unloading " + child.tag)
                 # del self[i]
                 # self.append(LinkElement)
