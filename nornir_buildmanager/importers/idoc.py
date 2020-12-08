@@ -126,7 +126,9 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
                 prettyoutput.Log("Could not parse section number from {0} filename", idocFullPath)
             else:
                 if meta_data.number in found_sections:
-                    (existing, ) = found_sections[meta_data.number]
+                    existing = found_sections[meta_data.number]
+                    if(len(existing) > 1):
+                      existing = existing[0]
                     if existing.version < meta_data.version:
                         found_sections[meta_data.number] = (meta_data, idocFileList) 
                 else:
