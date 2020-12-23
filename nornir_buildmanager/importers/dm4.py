@@ -406,7 +406,7 @@ class DigitalMicrograph4Import(object):
         tile_transform = nornir_imageregistration.transforms.RigidNoRotation(Position)
         
         if tile_filename in mosaicObj.ImageToTransform:
-            transform_changed = mosaicObj.ImageToTransform[tile_filename] == tile_transform
+            transform_changed = mosaicObj.ImageToTransform[tile_filename] != tile_transform
         else:  
             transform_changed = True
         
