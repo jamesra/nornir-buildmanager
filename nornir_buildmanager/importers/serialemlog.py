@@ -827,7 +827,7 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
     return
 
 
-def PlotDriftGrid(DataSource, OutputImageFile):
+def PlotDwellTimeGrid(DataSource, OutputImageFile):
 
     Data = ArgToSerialEMLog(DataSource)
 
@@ -878,11 +878,80 @@ def PlotDriftGrid(DataSource, OutputImageFile):
         y.append(d[1])
         s.append(d[2])
 
-    title = "Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
+    title = "Dwell time at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
 
     plot.Scatter(x, y, s, c=c, marker='s', Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
 
     return
+
+
+def PlotDriftGrid(DataSource, OutputImageFile):
+
+    Data = ArgToSerialEMLog(DataSource)
+
+    lines = []
+    maxdrift = -1
+    NumTiles = int(0)
+    fastestTime = float('inf')
+    colors = ['black', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
+
+    DriftGrid = []
+    c = []
+    for t in list(Data.tileData.values()):
+        if not (t.dwellTime is None or t.drift is None):
+            time = []
+            drift = []
+
+            for s in t.driftStamps:
+                time.append(s[0])
+                drift.append(s[1])
+
+            colorVal = 'black'
+            numPoints = len(t.driftStamps)
+            if  numPoints < len(colors):
+                colorVal = colors[numPoints]
+
+            c.append(colorVal)
+            #c.append((0.0,1.0,0.0))
+
+            DriftGrid.append((t.coordinates[0], t.coordinates[1], t.driftStamps[-1][1]))#max(drift))) #pow(t.dwellTime, 1.5)))
+            maxdrift = max(maxdrift, t.driftStamps[-1][1])
+            if fastestTime is None:
+                fastestTime = t.acquisitionTime
+            else:
+                fastestTime = min(fastestTime, t.acquisitionTime)
+
+            lines.append((time, drift))
+            NumTiles = NumTiles + 1
+
+#    print "Fastest Capture: %g" % fastestTime
+#
+
+    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
+    
+    import math
+    
+    x = []
+    y = []
+    s = []
+    c = []
+    sqrtMaxDrift = math.sqrt(maxdrift)
+    for d in DriftGrid:
+        fraction = math.sqrt(d[2]) / sqrtMaxDrift# / maxdrift
+        
+        x.append(d[0])
+        y.append(d[1])
+        s.append(fraction * sqrtMaxDrift * 3 )
+        
+        #c.append( (fraction, fraction, fraction) )
+        c.append('gray')
+
+    title = "Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
+
+    plot.Scatter(x, y, s, c=c, marker='s', Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile) 
+    return
+
+
 
 
 if __name__ == "__main__":
@@ -936,4 +1005,5 @@ if __name__ == "__main__":
     print("Total tiles: %d" % Data.NumTiles)
 
     PlotDriftGrid(datapath, os.path.join(outdir, outfile + "_driftgrid.svg"))
+    PlotDwellTimeGrid(datapath, os.path.join(outdir, outfile + "_dwellgrid.svg"))
     PlotDriftSettleTime(datapath, os.path.join(outdir, outfile + "_settletime.svg"))

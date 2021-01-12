@@ -322,7 +322,11 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     return None
 
 
-def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath, ControlMaskImageFullPath=None, MappedMaskImageFullPath=None, AngleSearchRange=None, TestForFlip=True, argstring=None, Logger=None):
+def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath, 
+                          ControlMaskImageFullPath=None, MappedMaskImageFullPath=None,
+                          AngleSearchRange=None, TestForFlip=True,
+                          WarpedImageScaleFactors=None,
+                          argstring=None, Logger=None):
     '''Call the stos-brute version from nornir-imageregistration'''
 
     alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageFullPath,
@@ -331,6 +335,7 @@ def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImag
                                                   WarpedImageMaskPath=MappedMaskImageFullPath,
                                                   AngleSearchRange=AngleSearchRange,
                                                   TestFlip=TestForFlip,
+                                                  WarpedImageScaleFactors=WarpedImageScaleFactors
                                                   Cluster=False)
 
     stos = alignment.ToStos(ControlImageFullPath,
@@ -404,7 +409,23 @@ def GetOrCreateRegistrationImageNodes(filter_node, Downsample, GetMask, Logger=N
             return (None, None)
         
     return (image_node, mask_image_node)
-        
+
+def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter):
+    '''Given two filters, determines if scale data is available.  If they are
+       calculates how much to scale the mapped image to ensure it is at the 
+       same scale as the ControlFilter.
+       '''
+    
+    ControlScale = ControlFilter.Scale
+    MappedScale = MappedFilter.Scale 
+    
+    if ControlScale is None or MappedScale is None:
+        return None
+    
+    XScale = ControlScale.X / MappedScale.X  
+    YScale = ControlScale.Y / MappedScale.Y
+    
+    return (XScale, YScale)  
 
 def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, OutputType, OutputPath, UseMasks, AngleSearchRange=None, TestForFlip=True, Logger=None, argstring=None):
     '''Create a transform node, populate, and generate the transform'''
@@ -472,13 +493,16 @@ def FilterToFilterBruteRegistration(StosGroup, ControlFilter, MappedFilter, Outp
             ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
                 
             stosNode.InputTransformChecksum = ManualInputChecksum
-        elif not (ControlMaskImageNode is None and MappedMaskImageNode is None):
-            __CallNornirStosBrute(stosNode, StosGroup.Downsample, 
+        else:
+            #Calculate if both images have the same scale and adjust if needed
+            _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
+            if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
+                __CallNornirStosBrute(stosNode, StosGroup.Downsample, 
                                   ControlImageNode.FullPath, MappedImageNode.FullPath,
                                   ControlMaskImageNode.FullPath, MappedMaskImageNode.FullPath,
                                   AngleSearchRange=AngleSearchRange, TestForFlip=TestForFlip)
-        else:
-            __CallNornirStosBrute(stosNode, StosGroup.Downsample,
+            else:
+                __CallNornirStosBrute(stosNode, StosGroup.Downsample,
                                   ControlImageNode.FullPath, MappedImageNode.FullPath,
                                   AngleSearchRange=AngleSearchRange, TestForFlip=TestForFlip)
 

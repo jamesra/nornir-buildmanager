@@ -687,7 +687,7 @@ class LogReaderTest(IDocTest):
         outputGrid = os.path.join(self.TestOutputPath, 'Grid_' + os.path.basename(logFile) + '.png')
         outputDrift = os.path.join(self.TestOutputPath, 'Drift_' + os.path.basename(logFile) + '.png')
 
-        serialemlog.PlotDriftGrid(cachedLogData, outputGrid)
+        serialemlog.PlotDwellTimeGrid(cachedLogData, outputGrid)
         serialemlog.PlotDriftSettleTime(cachedLogData, outputDrift)
         return
 
