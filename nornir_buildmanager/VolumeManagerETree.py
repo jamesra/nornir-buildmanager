@@ -2283,10 +2283,10 @@ class Scale(object):
         
         if Y is None:
             self.Y = X
-        else
+        else:
             self.Y = Y
         
-        if Z is not None
+        if Z is not None:
             self.Z = Z
     
 
