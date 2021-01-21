@@ -140,9 +140,12 @@ class DM4FileHandler():
         '''Read the scale for a particular index'''
         UnitsPerPixelTag = DM4DimensionTag.unnamed_subdirs[index].named_tags['Scale']
         ScaleUnitsTag = DM4DimensionTag.unnamed_subdirs[index].named_tags['Units']
-        return DimensionScale(self.dm4file.read_tag_data(UnitsPerPixelTag), self.dm4file.read_tag_data(ScaleUnitsTag))
+        ScaleUnitsRawArray = self.dm4file.read_tag_data(ScaleUnitsTag)
+        ScaleUnits = "".join(map(chr, ScaleUnitsRawArray)) #Convert byte array into a string containing unit of measure as a string
+                                 
+        return DimensionScale(self.dm4file.read_tag_data(UnitsPerPixelTag), ScaleUnits)
     
-    def ReadXYUnitsPerPixel(self, tags):
+    def ReadXYUnitsPerPixel(self):
         DM4DimensionTag = self.DimensionScaleTag
         
         XDimensionScale = self._ReadDimensionScaleTag(DM4DimensionTag, 0)
@@ -297,6 +300,18 @@ class DigitalMicrograph4Import(object):
         if saveChannel:
             yield SectionObj
             
+        #Temporary fix for legacy DM4 imports without the scale embedded in the Nornir meta-data
+        if ChannelObj.Scale is None:
+            (XDim,YDim) = dm4data.ReadXYUnitsPerPixel()
+            scalar = 1
+            if XDim.Units == 'µm':
+                scalar = 1000.0
+            elif XDim.Units == 'um':
+                scalar = 1000.0
+            
+            ChannelObj.SetScale(XDim.UnitsPerPixel * scalar)
+            yield SectionObj
+            
         FilterName = 'Raw' + str(InputImageBpp)
         if(InputImageBpp is None):
             FilterName = 'Raw'
@@ -384,7 +399,7 @@ class DigitalMicrograph4Import(object):
         image_shape = dm4data.ReadImageShape()
         
         grid_position = (tile_number // XDim, tile_number % XDim) #Position as (Y,X)
-        assert(grid_position[1] < YDim)  # Make sure the grid position is not off the grid
+        assert(grid_position[1] < YDim), 'Grid position is off the grid'
         
         mosaicObj = None
         if transformObj.FullPath in mosaics_loaded:

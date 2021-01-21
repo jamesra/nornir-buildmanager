@@ -34,7 +34,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         mdocFiles = glob.glob(os.path.join(InputPath, '*.' + Extension));
         if(len(mdocFiles) == 0):
             # This shouldn't happen, but just in case
-            assert len(mdocFiles) > 0, "ToMosaic called without proper target file present in the path: " + str(InputPath);
+            assert (len(mdocFiles) > 0), "ToMosaic called without proper target file present in the path: " + str(InputPath);
             return [None, None];
 
 

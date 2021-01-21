@@ -131,7 +131,7 @@ class VolumeManager():
         :return: (bool, An object inheriting from XElementWrapper) Returns true if the element had to be wrapped
         '''
         
-        assert e.tag.endswith('_Link') == False, "Cannot wrap a link element that has not been loaded"
+        assert (e.tag.endswith('_Link') == False), "Cannot wrap a link element that has not been loaded"
         
         OverrideClassName = e.tag + 'Node'
         OverrideClass = reflection.get_module_class('nornir_buildmanager.VolumeManagerETree', OverrideClassName, LogErrIfNotFound=False)
@@ -858,7 +858,7 @@ class XElementWrapper(ElementTree.Element):
         # Child.Parent = self
         
         if NewNodeCreated:
-            assert self.ChildrenChanged == True, "ChildrenChanged must be true if we report adding a child element"
+            assert (self.ChildrenChanged == True), "ChildrenChanged must be true if we report adding a child element"
 
         return (NewNodeCreated, Child)
     
@@ -937,7 +937,7 @@ class XElementWrapper(ElementTree.Element):
         if isinstance(child, XElementWrapper):
             return child
         
-        assert child in self, "ReplaceChildIfUnwrapped: {0} not a child of {1} as expected".format(str(child), str(self))
+        assert (child in self), "ReplaceChildIfUnwrapped: {0} not a child of {1} as expected".format(str(child), str(self))
         
         (wrapped, wrappedElement) = VolumeManager.WrapElement(child)
         
@@ -2159,7 +2159,7 @@ class ScaleNode(XElementWrapper):
 
     @property
     def Z(self):
-        z_elem = ElementTree.Element.find('Z')  # Bypass the extra cruft in XElementTree since scale uses XML with no link loading or special wrapping of elements
+        z_elem = ElementTree.Element.find(self, 'Z')  # Bypass the extra cruft in XElementTree since scale uses XML with no link loading or special wrapping of elements
 
         if z_elem is None:
             return None
@@ -2173,7 +2173,10 @@ class ScaleNode(XElementWrapper):
         super(ScaleNode, self).__init__(tag=tag, attrib=attrib, **extra)
         
     def __str__(self):
-        return "Scale: X:{0} Y:{1} Z:{2}".format(str(self.X), str(self.Y), str(self.Z))
+        if self.Z is not None:
+            return "X:{0} Y:{1} Z:{2}".format(str(self.X), str(self.Y), str(self.Z))
+        else:
+            return "X:{0} Y:{1}".format(str(self.X), str(self.Y))
         
     @classmethod
     def Create(cls, **extra):
@@ -2241,8 +2244,9 @@ class Scale(object):
             self._z = val
         else:
             raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
-        
-    def Create(self, ScaleData):
+    
+    @staticmethod
+    def Create(ScaleData):
         '''Create a Scale object from various input types'''
         if isinstance(ScaleData, ScaleNode):
             obj = Scale(ScaleData.X, ScaleData.Y, ScaleData.Z)
@@ -2288,6 +2292,12 @@ class Scale(object):
         
         if Z is not None:
             self.Z = Z
+            
+    def __str__(self):
+        if self.Z is not None:
+            return "X:{0} Y:{1} Z:{2}".format(str(self.X), str(self.Y), str(self.Z))
+        else:
+            return "X:{0} Y:{1}".format(str(self.X), str(self.Y))
     
 
 class ScaleAxis(object):
@@ -4318,7 +4328,7 @@ class LevelNode(XContainerElementWrapper):
 
     @Name.setter
     def Name(self, Value):
-        assert False, "Attempting to set name on LevelNode"
+        assert (False), "Attempting to set name on LevelNode"
 
     @property
     def Downsample(self):
