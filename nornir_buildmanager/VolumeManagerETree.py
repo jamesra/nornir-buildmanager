@@ -264,11 +264,11 @@ class XElementWrapper(ElementTree.Element):
         for c in self:
             if isinstance(c, XElementWrapper):
                 c.sort()
-
+                 
     @property
     def CreationTime(self):
         datestr = self.get('CreationDate', datetime.datetime.max)
-        return datetime.datetime.strptime(datestr)
+        return datetime.datetime.fromisoformat(datestr)
 
     @property
     def SortKey(self):
