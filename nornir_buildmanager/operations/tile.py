@@ -1456,7 +1456,7 @@ def _SaveImageAndCopy(ImageFullPath, temp_output_tile_fullpath, tile_image, bpp,
     shutil.copyfile(temp_output_tile_fullpath, ImageFullPath)
     return
 
-def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, TileShape, TileSetName=None, max_temp_image_area=None, Logger=None, **kwargs):
+def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, TileShape, TileSetName=None, max_temp_image_area=None, ignore_stale=False, Logger=None, **kwargs):
     '''Create full resolution tiles of specfied size for the mosaics
        @FilterNode
        @TransformNode'''
@@ -1475,7 +1475,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
     FilterNode = PyramidNode.FindParent('Filter')
     
     SectionNode = FilterNode.FindParent('Section')
-
+    
     if(TileSetName is None):
         TileSetName = 'Tileset'
 
@@ -1485,7 +1485,14 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
         return
 
     TileSetNode = nb.VolumeManager.TilesetNode.Create()
-    [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path') 
+    [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
+    
+    #Check if the tileset is older than the transform we are building from
+    if not added and not ignore_stale and InputTransformNode.CreationTime > TileSetNode.CreationTime:
+        TileSetNode.Clean("Input Transform was created after the existing optimized tileset")
+        TileSetNode = nb.VolumeManager.TilesetNode.Create()
+        [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
+
     #TODO: Validate that the tileset is populated in a more robust way
     
     TileSetNode.TileXDim = str(TileWidth)
@@ -1493,6 +1500,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
     TileSetNode.FilePostfix = '.png'
     TileSetNode.FilePrefix = FilterNode.Name + '_'
     TileSetNode.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
+    TileSetNode.SetTransform(InputTransformNode)
 
     os.makedirs(TileSetNode.FullPath, exist_ok=True)
 
