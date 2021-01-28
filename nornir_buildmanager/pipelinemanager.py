@@ -298,6 +298,9 @@ class PipelineManager(object):
 
         if 'Description' in pipelineData.attrib:
             self._description = pipelineData.attrib['Description']
+            
+        if 'Help' in pipelineData.attrib:
+            self._help = pipelineData.attrib['Help']
 
         if 'Epilog' in pipelineData.attrib:
             self._epilog = pipelineData.attrib['Epilog']
@@ -307,6 +310,13 @@ class PipelineManager(object):
     def Description(self):
         if hasattr(self, '_description'):
             return self._description
+
+        return None
+    
+    @property
+    def Help(self):
+        if hasattr(self, '_help'):
+            return self._help
 
         return None
 

@@ -137,7 +137,7 @@ def _AddPipelineParsers(subparsers):
     for pipeline_name in pipelinemanager.PipelineManager.ListPipelines(PipelineXML):
         pipeline = pipelinemanager.PipelineManager.Load(PipelineXML, pipeline_name)
 
-        pipeline_parser = subparsers.add_parser(pipeline_name, help=pipeline.Description, epilog=pipeline.Epilog)
+        pipeline_parser = subparsers.add_parser(pipeline_name, help=pipeline.Help, epilog=pipeline.Epilog)
 
         pipeline.GetArgParser(pipeline_parser, IncludeGlobals=True)
 
