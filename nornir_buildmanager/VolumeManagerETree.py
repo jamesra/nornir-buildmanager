@@ -1755,7 +1755,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         assert(len(OutputXML)), "Trying to save an entirely empty XML file... why?"
         # print OutputXML
-        with open(XMLFilename, 'w+') as hFile:
+        with open(XMLFilename, 'wb+') as hFile:
             hFile.write(OutputXML)
             hFile.close()
 
