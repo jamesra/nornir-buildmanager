@@ -929,6 +929,10 @@
 			<Argument flag="-MaxWorkingImageArea" dest="max_temp_image_area" type="float"
 			     help="Determines the amount of memory the system should use to generate the tiles.  Suggested value is total system memory in bytes divided by four"
 			     required="False"/> 
+			<Argument flag="-IgnoreStale" dest="ignore_stale" action="store_true"
+                default="False"
+                help="Setting this flag skips testing existing tiles to ensure they were created after the input transform."
+                required="False" />
 		</Arguments>
 
 		<Iterate VariableName="section_node" XPath="Block/Section">
@@ -943,7 +947,7 @@
 					<RequireMatch Attribute="Name" RegEx="#FilterRegEx" />
 
 					<Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid" />
-					<PythonCall Function="tile.AssembleTilesetNumpy" TileShape="#shape" max_temp_image_area="#max_temp_image_area"  />
+					<PythonCall Function="tile.AssembleTilesetNumpy" TileShape="#shape" max_temp_image_area="#max_temp_image_area" ignore_stale="#ignore_stale" />
 
 					<Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset" />
 					<PythonCall Function="tile.BuildTilesetPyramid"
