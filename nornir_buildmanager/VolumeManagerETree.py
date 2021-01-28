@@ -1752,8 +1752,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
         #prettyoutput.Log("Saving %s" % XMLFilename)
         
         OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
+        
+        assert(len(OutputXML)), "Trying to save an entirely empty XML file... why?"
         # print OutputXML
-        with open(XMLFilename, 'wb') as hFile:
+        with open(XMLFilename, 'w+') as hFile:
             hFile.write(OutputXML)
             hFile.close()
 
