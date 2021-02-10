@@ -114,6 +114,9 @@ class PMGImport(object):
 
         ParentDir = os.path.dirname(PMGFullPath)
         sectionDir = os.path.basename(PMGFullPath)
+        
+        #Ensure scale is in a format we understand
+        scaleValueInNm = float(scaleValueInNm)
 
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:

@@ -135,7 +135,7 @@ class ImportPMG(PMGTest):
             pmgData = PMGData[pmgFileKey]
             self.assertIsNotNone(pmgData)
 
-            pmg.PMGImport.ToMosaic(VolumeObj, pmgFile, VolumeObj.FullPath, debug=True)
+            pmg.PMGImport.ToMosaic(VolumeObj, pmgFile, OutputPath=VolumeObj.FullPath, debug=True)
 
             VolumeObj.Save()
             del VolumeObj

@@ -213,9 +213,8 @@ class VolumeManager():
 
         OutputXML = ElementTree.tostring(VolumeObj, encoding="utf-8")
         # print OutputXML
-        with open(xmlfile_fullpath, 'w') as hFile:
+        with open(xmlfile_fullpath, 'wb') as hFile:
             hFile.write(OutputXML)
-            hFile.close()
 
     @classmethod
     def Save(cls, VolumeObj):
@@ -1094,14 +1093,26 @@ class XElementWrapper(ElementTree.Element):
         '''Recursively load all of the linked nodes on this element'''
         
         child_nodes = list(self)
-        for n in child_nodes:
-            if n.tag.endswith('_Link'):
-                n_replaced = self._replace_link(n)
-                if n_replaced is None:
-                    continue
-                n = n_replaced
-
-                n.LoadAllLinkedNodes()
+        linked_nodes = list(filter(lambda x: x.tag.endswith('_Link'), child_nodes))
+                        
+        if len(linked_nodes) > 0:
+            assert (hasattr(self, '_replace_links'), 'Nodes with linked children must implement _replace_links to load those links')
+            
+        if hasattr(self, '_replace_links'):
+            self._replace_links(linked_nodes)
+        
+        #Check all of our child nodes for links
+        for n in self:
+            n.LoadAllLinkedNodes() 
+                              
+#         for n in child_nodes:
+#             if n.tag.endswith('_Link'):
+#                 n_replaced = self._replace_link(n)
+#                 if n_replaced is None:
+#                     continue
+#                 n = n_replaced
+# 
+#                 n.LoadAllLinkedNodes()
 
         return
 
@@ -1536,9 +1547,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         # Ensure we are actually working on a list
         if len(link_nodes) == 0:
-            return None
+            return []
         elif len(link_nodes) == 1:
-            return self._replace_link(link_nodes[0], fullpath=fullpath)
+            return [self._replace_link(link_nodes[0], fullpath=fullpath)]
         
         if fullpath is None:
             fullpath = self.FullPath
@@ -1739,6 +1750,12 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     def __SaveXML(self, xmlfilename, SaveElement):
         '''Intended to be called on a thread from the save function'''
+        OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")        
+        assert(len(OutputXML)), "Trying to save an entirely empty XML file... why?"
+
+        if len(OutputXML) == 0:
+            raise Exception(f"No meta data produced for XML element {SaveElement} writing to {xmlfilename}")
+        
         try: 
             os.makedirs(self.FullPath, exist_ok = True)
         except (OSError, FileExistsError, WindowsError) as e:
@@ -1746,18 +1763,37 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 raise ValueError("{0} is trying to save to a non directory path {1}\n{2}".format(str(SaveElement), self.FullPath, str(e)))
 
         # prettyoutput.Log("Saving %s" % xmlfilename)
-
+        BackupXMLFilename = f"{os.path.basename(xmlfilename)}.backup.xml"
+        BackupXMLFullPath = os.path.join(self.FullPath, BackupXMLFilename)
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
-
+        
+        #If the current VolumeData.xml has data, then create a backup copy
+        #This should prevent us removing valid backups if the current VolumeData.xml
+        #has zero bytes
+        try:
+            statinfo = os.stat(XMLFilename)
+            if statinfo.st_size > 0:
+                        
+                try:
+                    #Attempt to create a backup of the meta-data file before we replace it, just in case
+                    os.remove(BackupXMLFullPath)
+                except FileNotFoundError:
+                    #It is OK if a backup file does not exist
+                    pass
+                
+                #Move the current file to the backup location, write the new data        
+                shutil.move(XMLFilename, BackupXMLFullPath)
+            else:
+                #This is a rare issue where I'd write a file but have zero bytes on disk.  
+                #If this error occurs check into replacing the zero byte file with the backup if it exists
+                prettyoutput.LogErr(f"{XMLFilename} had zero size, did not backup on write")
+        except FileNotFoundError:
+            pass
+        
         #prettyoutput.Log("Saving %s" % XMLFilename)
-        
-        OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
-        
-        assert(len(OutputXML)), "Trying to save an entirely empty XML file... why?"
         # print OutputXML
-        with open(XMLFilename, 'wb+') as hFile:
+        with open(XMLFilename, 'wb') as hFile:
             hFile.write(OutputXML)
-            hFile.close()
 
 
 class XNamedContainerElementWrapped(XContainerElementWrapper):

@@ -24,6 +24,7 @@ if not 'DEBUG' in os.environ:
 import matplotlib.pyplot as plt
 plt.ioff()
 
+import nornir_buildmanager
 from nornir_buildmanager import *
 from nornir_imageregistration.files import *
 from nornir_shared.misc import SetupLogging, lowpriority
@@ -83,6 +84,17 @@ def _AddParserRootArguments(parser):
 #                         help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.',
 #                         dest='verbose')
 
+def _AddRecoverNotesParser(root_parser, subparsers):
+    recover_parser = subparsers.add_parser('RecoverNotes', help='Used to recover or update notes files in a folder.  This searches a path for *.txt files and creates/updates a notes element with the information in the file.',)
+    recover_parser.set_defaults(func=call_recover_import_meta_data, parser=root_parser)
+    
+    recover_parser.add_argument('-save',
+                         action='store_true',
+                         required=False,
+                         default=False,
+                         help='Set this flag to save the VolumeData.xml files with the located linked elements included.',
+                         dest='save_restoration')
+
 def _AddRecoverParser(root_parser, subparsers):
     recover_parser = subparsers.add_parser('RecoverLinks', help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.',)
     recover_parser.set_defaults(func=call_recover_links, parser=root_parser)
@@ -106,7 +118,8 @@ def BuildParserRoot():
     _AddParserRootArguments(parser)
     
     pipeline_subparsers = parser.add_subparsers(title='Commands')
-    _AddRecoverParser(parser, pipeline_subparsers);
+    _AddRecoverParser(parser, pipeline_subparsers)
+    _AddRecoverNotesParser(parser, pipeline_subparsers)
     #subparsers = parser.add_subparsers(title='Utilities')
     
     # subparsers = parser.add_subparsers(title='help')
@@ -167,6 +180,21 @@ def call_recover_links(args):
         prettyoutput.Log("Recovered links saved (if found).")
     else:
         prettyoutput.Log("Save flag not set, recovered links not saved.")
+        
+def call_recover_import_meta_data(args):
+    '''This function checks for missing link elements in a volume and adds them back to the volume'''
+    volumeObj = VolumeManagerETree.VolumeManager.Load(args.volumepath)
+    notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)
+    
+    if not notesAdded:
+        prettyoutput.Log(f"No notes recovered from {volumeObj.FullPath}.")
+        return
+    
+    if notesAdded and args.save_restoration:
+        volumeObj.Save(recurse=False)
+        prettyoutput.Log("Recovered notes file saved.")
+    else:
+        prettyoutput.Log("Save flag not set, recovered notes, but not saved.")
 
 
 def call_pipeline(args):
@@ -219,22 +247,27 @@ def Execute(buildArgs=None):
         print("Warning, using low priority flag.  This can make builds much slower")
         
     # SetupLogging(OutputPath=args.volumepath)
-    
-    try:  
-        if hasattr(args, 'PipelineName'):
-            Timer.Start(args.PipelineName)
+    cmdName = ''
+    if hasattr(args, 'PipelineName'):
+        cmdName = args.PipelineName
+    elif len(buildArgs) >= 2:
+        cmdName = buildArgs[1]
+     
+    try:   
+        if cmdName is not None:
+            Timer.Start(cmdName)
 
-        args.func(args)
-
-        if hasattr(args, 'PipelineName'):
-            Timer.End(args.PipelineName)
-  
+        args.func(args) 
+        
     finally:
+        if cmdName is not None: 
+            Timer.End(cmdName)
+            
         OutStr = str(Timer)
         prettyoutput.Log(OutStr)
         timeTextFullPath = os.path.join(args.volumepath, 'Timing.txt') 
         try:
-            with open(timeTextFullPath, 'w+') as OutputFile:
+            with open(timeTextFullPath, 'a') as OutputFile:
                 OutputFile.writelines(OutStr)
                 OutputFile.close()
         except:
