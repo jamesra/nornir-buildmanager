@@ -1096,7 +1096,7 @@ class XElementWrapper(ElementTree.Element):
         linked_nodes = list(filter(lambda x: x.tag.endswith('_Link'), child_nodes))
                         
         if len(linked_nodes) > 0:
-            assert (hasattr(self, '_replace_links'), 'Nodes with linked children must implement _replace_links to load those links')
+            assert hasattr(self, '_replace_links'), 'Nodes with linked children must implement _replace_links to load those links'
             
         if hasattr(self, '_replace_links'):
             self._replace_links(linked_nodes)
