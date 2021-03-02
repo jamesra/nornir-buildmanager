@@ -153,7 +153,7 @@ class VolumeManager():
         
     @staticmethod
     def __SetElementParent__(Element, ParentElement=None):
-        Element.Parent = ParentElement
+        Element.SetParentNoChangeFlag( ParentElement )
 
         for i in range(len(Element) - 1, -1, -1):
             e = Element[i]
@@ -419,8 +419,19 @@ class XElementWrapper(ElementTree.Element):
     def Parent(self):
         return self._Parent
 
+    def SetParentNoChangeFlag(self, value):
+        '''
+        This is not a setter to avoid triggering the Attribute Changed flag with the
+        __setattr__ override for this class 
+        '''
+        self.__dict__['_Parent'] = value
+        self.OnParentChanged()
+        
     @Parent.setter
     def Parent(self, Value):
+        '''
+        Setting the parent with this method will set the Attribute Changed flag
+        '''
         self.__dict__['_Parent'] = Value
         self.OnParentChanged()
             
@@ -2031,7 +2042,7 @@ class BlockNode(XNamedContainerElementWrapped):
         ExpectedText = BlockNode.NonStosNumbersToString(value)
         if StosExemptNode.text != ExpectedText:
             StosExemptNode.text = ExpectedText
-            StosExemptNode.AttributesChanged = True
+            StosExemptNode._AttributesChanged = True
             
             
     @staticmethod
@@ -3209,18 +3220,23 @@ class MappingNode(XElementWrapper):
 
     def AddMapping(self, value):
         intval = int(value)
-        Mapped = self.Mapped
-        if intval in Mapped:
+        updated_map = list(self.Mapped)
+        if intval in updated_map:
             return
         else:
-            Mapped.append(value)
-            self.Mapped = Mapped
-
+            updated_map.append(value)
+            self.Mapped = updated_map
+            #self._AttributeChanged = True #Handled by setattr of Mapped 
+        
     def RemoveMapping(self, value):
         intval = int(value)
-        Mapped = self.Mapped
-        Mapped.remove(intval)
-        self.Mappings = Mapped
+        updated_map = list(self.Mapped)
+        if intval not in updated_map:
+            return
+        
+        updated_map.remove(intval)
+        self.Mappings = updated_map
+        #self._AttributeChanged = True #Handled by setattr of Mapped
 
     def __str__(self):
         self._mapped_cache = None
