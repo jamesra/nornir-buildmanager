@@ -194,8 +194,8 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
     mappings = list(StosMap.Mappings)
 
     if Mirror:
-        for map in mappings:
-            StosMap.remove(map)
+        for m in mappings:
+            StosMap.remove(m)
             Modified = True
     else:
         for mapping in mappings:
@@ -226,6 +226,7 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
             # Create a mapping
             mappingNode = VolumeManagerETree.MappingNode.Create(rt_node.SectionNumber, None)
             StosMap.append(mappingNode)
+            Logger.info("\tAdded %d <- %d" % (rt_node.SectionNumber, rt_mapped.SectionNumber))
             Modified = True
         else:
             mappingNode = known_mappings[0]
