@@ -104,11 +104,19 @@ class VolumeManager():
             # if not __LoadedVolumeXMLDict__.get(Filename, None) is None and UseCache:
             #    XMLTree = __LoadedVolumeXMLDict__[Filename]
             # else:
-            XMLTree = ElementTree.parse(Filename)
+            
+            #I could use ElementTree.parse here.  However there was a rare
+            #bug where saving the file would encounter a permissions error
+            #loading the file and closing it myself seems to have solved
+            #the problem
+            RawXML = None
+            with open(Filename, 'rb') as hFile:
+                RawXML = hFile.read()
+            VolumeRoot = ElementTree.fromstring(RawXML)
             # VolumeData = Volumes.CreateFromDOM(XMLTree)
             # __LoadedVolumeXMLDict__[Filename] = XMLTree
 
-            VolumeRoot = XMLTree.getroot()
+            #VolumeRoot = XMLTree.getroot()
 
         VolumeRoot.attrib['Path'] = VolumePath
         VolumeRoot = VolumeNode.wrap(VolumeRoot)
