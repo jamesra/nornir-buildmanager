@@ -45,6 +45,8 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         raise Exception("Import directory not found: " + ImportPath)
         return
     
+    DesiredSectionList = kwargs.get('Sections', None)
+    
     tile_overlap = kwargs.get('tile_overlap', None)
     if tile_overlap is not None:
         #Convert the percentage parameter to a 0-1.0 float, and reverse the X,Y ordering to match the rest of Nornir
@@ -60,7 +62,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     for path in DirList:
         prettyoutput.CurseString("DM4Import", "Importing *.dm4 from {0}".format(path))
         for idocFullPath in glob.glob(os.path.join(path, '*.dm4')):
-            yield from DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap)
+            yield from DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap, DesiredSectionList=DesiredSectionList)
     
     nornir_pools.WaitOnAllPools()
     
@@ -262,7 +264,7 @@ class DigitalMicrograph4Import(object):
         return os.path.join(dirname, root + '_histogram.png')
             
     @classmethod
-    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, tile_overlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
+    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, tile_overlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, DesiredSectionList=None, debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -277,6 +279,11 @@ class DigitalMicrograph4Import(object):
      #   prettyoutput.CurseString('Stage', "Digital Micrograph to Mosaic " + str(dm4FileFullPath))
         
         (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
+        
+        #If the user specified a subset of sections to import, check that this section is on the list
+        if DesiredSectionList is not None and len(DesiredSectionList) > 0:
+            if section_number not in DesiredSectionList:
+                return
         
         # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
