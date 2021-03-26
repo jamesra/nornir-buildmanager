@@ -120,23 +120,27 @@ class DM4FileHandler():
     
     @property
     def DimensionScaleTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_subdirs['Calibrations'].named_subdirs['Dimension']
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs['ImageData'].named_subdirs['Calibrations'].named_subdirs['Dimension']
     
     @property
     def ImageDimensionsTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_subdirs['Dimensions']
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs['ImageData'].named_subdirs['Dimensions']
     
     @property
     def ImageDataTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_tags['Data']
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs['ImageData'].named_tags['Data']
     
     @property
     def ImageBppTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_tags['PixelDepth']
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs['ImageData'].named_tags['PixelDepth']
     
     def __init__(self, dm4fullpath):
         self._dm4file = dm4reader.DM4File.open(dm4fullpath)
         self._tags = self._dm4file.read_directory()
+        
+        #This is probably not entirely correct.  I suspect the DM4 file could have multiple images in the ImageSourceList. 
+        #This implementation just reads the first, which covers the use cases I am aware of right now
+        self._imageSourceIndex = int(self.tags.named_subdirs['ImageSourceList'].unnamed_subdirs[0].named_tags['ImageRef'])
         
     def _ReadDimensionScaleTag(self, DM4DimensionTag, index):
         '''Read the scale for a particular index'''
@@ -179,8 +183,8 @@ class DM4FileHandler():
 
     def ReadMontageGridSize(self):
         ''':return: Image grid dimensions as array, [YDim,XDim] as uint64''' 
-        XDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of X Steps']
-        YDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of Y Steps']
+        XDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of X Steps']
+        YDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of Y Steps']
     
         XDim = self.dm4file.read_tag_data(XDim_tag)
         YDim = self.dm4file.read_tag_data(YDim_tag)
@@ -189,7 +193,7 @@ class DM4FileHandler():
     
     def ReadMontageOverlap(self):
         ''':return: Overlap scalar array, [Y,X] from 0 to 1.0''' 
-        Overlap_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Overlap between images (%)']
+        Overlap_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Overlap between images (%)']
         overlap = self.dm4file.read_tag_data(Overlap_tag) / 100.0
         return np.asarray((overlap, overlap), dtype=np.float32)  
     
