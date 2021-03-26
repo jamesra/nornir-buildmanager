@@ -140,7 +140,8 @@ class DM4FileHandler():
         
         #This is probably not entirely correct.  I suspect the DM4 file could have multiple images in the ImageSourceList. 
         #This implementation just reads the first, which covers the use cases I am aware of right now
-        self._imageSourceIndex = int(self.tags.named_subdirs['ImageSourceList'].unnamed_subdirs[0].named_tags['ImageRef'])
+        imageSourceIndexTag= self.tags.named_subdirs['ImageSourceList'].unnamed_subdirs[0].named_tags['ImageRef']
+        self._imageSourceIndex = int(self.dm4file.read_tag_data(imageSourceIndexTag))
         
     def _ReadDimensionScaleTag(self, DM4DimensionTag, index):
         '''Read the scale for a particular index'''
