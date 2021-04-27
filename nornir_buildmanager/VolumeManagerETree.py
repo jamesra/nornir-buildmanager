@@ -19,7 +19,7 @@ import nornir_shared.checksum
 import nornir_shared.files
 import nornir_pools
 
-from . import VolumeManagerHelpers as VMH
+import nornir_buildmanager.VolumeManagerHelpers as VMH
 import nornir_buildmanager.operations.tile as tile
 import nornir_buildmanager.operations.versions as versions
 import nornir_shared.misc as misc
@@ -4736,7 +4736,7 @@ class PruneNode(HistogramBase):
 if __name__ == '__main__':
     VolumeManager.Load("C:\Temp")
 
-    tagdict = XPropertiesElementWrapper.wrap(ElementTree.Element("Tag"))
+    #tagdict = XPropertiesElementWrapper.wrap(ElementTree.Element("Tag"))
     tagdict.V = 5
     tagdict.Path = "path"
 

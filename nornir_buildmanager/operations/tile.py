@@ -14,8 +14,8 @@ import subprocess
 import multiprocessing
 import numpy
 import queue
-import datetime
-from PIL import Image
+import datetime 
+
 
 import nornir_imageregistration
 from nornir_buildmanager.exceptions import NornirUserException
