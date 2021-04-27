@@ -226,7 +226,7 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
             # Create a mapping
             mappingNode = VolumeManagerETree.MappingNode.Create(rt_node.SectionNumber, None)
             StosMap.append(mappingNode)
-            Logger.info("\tAdded %d <- %d" % (rt_node.SectionNumber, rt_mapped.SectionNumber))
+            Logger.info("\tAdded Center %d" % (rt_node.SectionNumber))
             Modified = True
         else:
             mappingNode = known_mappings[0]
