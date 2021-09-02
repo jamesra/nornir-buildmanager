@@ -1596,7 +1596,7 @@
                 required="False" />
             <Argument flag="-Spacing" default="128" dest="GridSpacing"
                 type="int" help="Grid spacing in pixels" required="False" />
-            <Argument flag="-CellArea" default="128" dest="CellArea"
+            <Argument flag="-CellArea" default="256" dest="CellArea"
                 type="int" help="Size of region around each grid point to register, in pixels"
                 required="False" />
             <Argument flag="-Iterations" default="10" dest="Iterations"
