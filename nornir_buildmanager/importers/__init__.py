@@ -4,6 +4,8 @@ import os
 import nornir_buildmanager
 
 from . import shared 
+from . import idoc
+from . import serialemlog
 
 ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
 DefaultHistogramFilename = "ContrastOverrides.txt"
