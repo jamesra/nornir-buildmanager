@@ -285,6 +285,10 @@ class SerialEMIDocImport(object):
         histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
         
         IDocData.RemoveMissingTiles(sectionDir)
+        if(len(IDocData.Tiles) == 0):
+            prettyoutput.Log("After removing missing file names there were no tiles remaining. Do the filename extensions match?" + idocFilePath)
+            return
+        
         source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles ]
           
         (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, ContrastCutoffs, source_tile_list, IDocData, histogramFullPath)
@@ -905,7 +909,13 @@ class IDoc():
                 # If we find an image tag, create a new tiledata
                 if(attribute == 'Image'):
                     imageFilename = parts[1].strip()
-                    tileObj = IDocTileData(imageFilename)
+                    #Hack to import old Williams data
+                    (tile_number_str, ext) = os.path.splitext(imageFilename)
+                    tile_number = int(tile_number_str)
+                    if tile_number >= 10000:
+                        tile_number -= 10000
+                    corrected_tile_name = f'{tile_number:03d}{ext}'
+                    tileObj = IDocTileData(corrected_tile_name)
                     idocObj.tiles.append(tileObj)
                 # a T tag might contain scope and time information
                 elif(attribute == 'T'):
