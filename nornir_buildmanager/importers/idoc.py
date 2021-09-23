@@ -909,13 +909,15 @@ class IDoc():
                 # If we find an image tag, create a new tiledata
                 if(attribute == 'Image'):
                     imageFilename = parts[1].strip()
-                    #Hack to import old Williams data
-                    (tile_number_str, ext) = os.path.splitext(imageFilename)
-                    tile_number = int(tile_number_str)
-                    if tile_number >= 10000:
-                        tile_number -= 10000
-                    corrected_tile_name = f'{tile_number:03d}{ext}'
-                    tileObj = IDocTileData(corrected_tile_name)
+                    ############################################################
+                    #Hack to import old Williams data and any other ancient .idocs
+                    # (tile_number_str, ext) = os.path.splitext(imageFilename)
+                    # tile_number = int(tile_number_str)
+                    # if tile_number >= 10000:
+                    #     tile_number -= 10000
+                    # corrected_tile_name = f'{tile_number:03d}{ext}'
+                    ############################################################
+                    tileObj = IDocTileData(imageFilename)
                     idocObj.tiles.append(tileObj)
                 # a T tag might contain scope and time information
                 elif(attribute == 'T'):
