@@ -6,8 +6,10 @@ Created on Oct 3, 2012
 
 import datetime
 import logging
+import math
 import os
 import shutil
+import validators
 
 from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet 
 import nornir_imageregistration.core
@@ -20,6 +22,7 @@ import nornir_buildmanager.importers.idoc as idoc
 import nornir_pools
 import nornir_shared.files as nfiles
 from nornir_buildmanager.exceptions import NornirUserException
+from math import ceil
 
 # import Pipelines.VolumeManagerETree as VolumeManager
 if __name__ == '__main__':
@@ -102,6 +105,12 @@ class HTMLPaths(object):
     @property
     def OutputFile(self):
         return self._OutputFile
+    
+    def OutputPage(self, page=None):
+        if page is None or page == 0:
+            return self._OutputFile
+        else: 
+            return f"{self._OutputPagePrefix}_{page}.html"
 
     @property
     def ThumbnailDir(self):
@@ -122,11 +131,16 @@ class HTMLPaths(object):
 
         self._OutputDir = os.path.dirname(OutputFileFullPath)
         self._OutputDir.strip()
+        
         if len(self.OutputDir) == 0:
             self._OutputDir = RootElementPath
             self._OutputFile = os.path.basename(OutputFileFullPath)
         else:
             self._OutputFile = os.path.basename(OutputFileFullPath)
+            
+        (filename, _) = os.path.splitext(self._OutputFile)
+        
+        self._OutputPagePrefix = f"{filename}_"; 
 
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
 
@@ -165,7 +179,7 @@ class HTMLPaths(object):
         return FullPath
 
     def __ThumbnailPaths(self):
-        '''Return relative and absolute thumnails for an OutputFile'''
+        '''Return relative and absolute thumbnails for an OutputFile'''
         (ThumbnailDirectory, ext) = os.path.splitext(self.OutputFile)
         ThumbnailDirectoryFullPath = os.path.join(self.OutputDir, ThumbnailDirectory)
 
@@ -187,7 +201,7 @@ class HTMLPaths(object):
 
         if os.path.exists(FullPath):
             SrcFullPath = os.path.join(RelPath, patchedPath)
-            HTML += HTMLAnchorTemplate % {'href' : SrcFullPath, 'body' : text}
+            HTML += HTMLAnchorTemplate % {'href': SrcFullPath, 'body': text}
 
         return HTML
 
@@ -332,9 +346,9 @@ def __RemoveRTFBracket(rtfStr):
 def __RTFToHTML(rtfStr):
     '''Crudely convert a rich-text string to html'''
 
-    translationTable = {'\pard' : '<br\>',
-                        '\par' : '<br\>',
-                        '\viewkind' : ''}
+    translationTable = {'\pard': '<br\>',
+                        '\par': '<br\>',
+                        '\viewkind': ''}
 
     if(rtfStr[0] == '{'):
         rtfStr = rtfStr[1:-2]
@@ -574,7 +588,7 @@ def __ExtractIDocDataText(DataNode):
             try:
                 rows.append(['Target Defocus:', '%.4g' % float(DataNode.TargetDefocus)])
             except ValueError:
-                #A SerialEM upgrade in July 2020 removed the TargetDefocus attribute from each tile's idoc entry
+                # A SerialEM upgrade in July 2020 removed the TargetDefocus attribute from each tile's idoc entry
                 rows.append(['Target Defocus:', ''])
                 pass
         
@@ -625,18 +639,17 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
      ImageSeries="1" Intensity="0.52256" Magnification="5000" Montage="1" Name="IDoc" Path="1.idoc" PixelSpacing="21.76" 
      RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
     '''
-
     
     TableEntries = {}
     TableEntries['1'] = htmlpaths.GetFileAnchorHTML(DataNode, "Tile data (idoc file)") 
-    #rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
+    # rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
     
     SummaryStrings = __ExtractIDocDataText(DataNode)
     
     if SummaryStrings is not None and len(SummaryStrings) > 0:
         TableEntries['0'] = SummaryStrings
     
-    #TODO: Plot the defocus values for the entire idoc
+    # TODO: Plot the defocus values for the entire idoc
     idocFilePath = DataNode.FullPath
     if os.path.exists(idocFilePath):
 
@@ -656,8 +669,8 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
         DefocusImgOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DefocusImgFilename)
         DefocusThumbnailOutputFullPath = os.path.join(htmlpaths.ThumbnailDir, DefocusThumbnailFilename)
         
-        HTMLDefocusImage  = HTMLImageTemplate % {'src' : DefocusSettleThumbnailImgSrcPath, 'AltText' : 'Defocus Image', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
-        HTMLDefocusAnchor = HTMLAnchorTemplate % {'href' : DefocusSettleImgSrcPath, 'body' : HTMLDefocusImage }
+        HTMLDefocusImage = HTMLImageTemplate % {'src': DefocusSettleThumbnailImgSrcPath, 'AltText': 'Defocus Image', 'ImageWidth': MaxImageWidth, 'ImageHeight': MaxImageHeight}
+        HTMLDefocusAnchor = HTMLAnchorTemplate % {'href': DefocusSettleImgSrcPath, 'body': HTMLDefocusImage }
  
         TPool.add_task(DefocusThumbnailFilename, idoc.PlotDefocusSurface, idocFilePath, (DefocusThumbnailOutputFullPath, DefocusImgOutputFullPath))
         TableEntries["2"] = HTMLDefocusAnchor
@@ -728,13 +741,13 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 #        ThumbnailOutputFullPath = os.path.join(ThumbnailDirectory, ThumbnailFilename)
 
                 # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=ThumbnailOutputFullPath)
-        HTMLDriftSettleImage = HTMLImageTemplate % {'src' : DriftSettleThumbImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
-        HTMLDriftSettleAnchor = HTMLAnchorTemplate % {'href' : DriftSettleImgSrcPath, 'body' : HTMLDriftSettleImage }
+        HTMLDriftSettleImage = HTMLImageTemplate % {'src': DriftSettleThumbImgSrcPath, 'AltText': 'Drift scatterplot', 'ImageWidth': MaxImageWidth, 'ImageHeight': MaxImageHeight}
+        HTMLDriftSettleAnchor = HTMLAnchorTemplate % {'href': DriftSettleImgSrcPath, 'body': HTMLDriftSettleImage }
 
-        HTMLDriftGridImage = HTMLImageTemplate % {'src' : DriftGridThumbImgSrcPath, 'AltText' : 'Drift scatterplot', 'ImageWidth' : MaxImageWidth, 'ImageHeight' : MaxImageHeight}
-        HTMLDriftGridAnchor = HTMLAnchorTemplate % {'href' : DriftGridImgSrcPath, 'body' : HTMLDriftGridImage }
+        HTMLDriftGridImage = HTMLImageTemplate % {'src': DriftGridThumbImgSrcPath, 'AltText': 'Drift scatterplot', 'ImageWidth': MaxImageWidth, 'ImageHeight': MaxImageHeight}
+        HTMLDriftGridAnchor = HTMLAnchorTemplate % {'href': DriftGridImgSrcPath, 'body': HTMLDriftGridImage }
 
-        TableEntries["1"] = HTMLAnchorTemplate % {'href' : LogSrcFullPath, 'body' : "Log File" }
+        TableEntries["1"] = HTMLAnchorTemplate % {'href': LogSrcFullPath, 'body': "Log File" }
         TableEntries["3"] = ColumnList([HTMLDriftSettleAnchor, HTMLDriftGridAnchor])
     else:
         TableEntries = []
@@ -780,7 +793,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     Width = MaxImageWidth
     try:
         (Height, Width) = ImageNode.Dimensions
-        #[Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
+        # [Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
     except IOError:
         return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
 
@@ -800,9 +813,9 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
         # if not os.path.exists(ThumbnailOutputFullPath):
         Pool = nornir_pools.GetGlobalThreadPool()
         Pool.add_task(ImageNode.FullPath, nornir_imageregistration.Shrink, ImageNode.FullPath, ThumbnailOutputFullPath, Scale)
-        #cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
+        # cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
         
-        #Pool.add_process(cmd, cmd + " && exit", shell=True)
+        # Pool.add_process(cmd, cmd + " && exit", shell=True)
 
         Width = int(Width * Scale)
         Height = int(Height * Scale)
@@ -874,14 +887,14 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
 
     (ImgSrcPath, Height, Width) = __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth, MaxImageHeight)
 
-    HTMLImage = HTMLImageTemplate % {'src' : ImgSrcPath, 'AltText' : imageFilename, 'ImageWidth' : Width, 'ImageHeight' : Height}
-    HTMLAnchor = HTMLAnchorTemplate % {'href' : ImgSrcPath, 'body' : HTMLImage }
+    HTMLImage = HTMLImageTemplate % {'src': ImgSrcPath, 'AltText': imageFilename, 'ImageWidth': Width, 'ImageHeight': Height}
+    HTMLAnchor = HTMLAnchorTemplate % {'href': ImgSrcPath, 'body': HTMLImage }
 
     return HTMLAnchor
 
 
 def __anchorStringForHeader(Text):
-    return '<a id="%(id)s"><b>%(id)s</b></a>' % {'id' : Text}
+    return '<a id="%(id)s"><b>%(id)s</b></a>' % {'id': Text}
 
 
 def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
@@ -915,6 +928,12 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     ArgSet = ArgumentSet()
 
     ArgSet.AddArguments(kwargs)
+    
+    BobEndpoint = None
+    
+    if RowElement.tag == 'Section' and BobEndpoint is not None:
+        AddBobButtons()
+        
     # CaptionHTML = None
     for ColXPath in ColumnXPaths:
 
@@ -948,7 +967,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
 
             elif ColSubElement.tag == "Notes":
                 ColumnBodyList.caption = '<caption align=bottom>%s</caption>\n' % HTMLFromNotesNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
-
+            
             if not HTML is None:
                 ColumnBodyList.append(HTML)
 
@@ -958,11 +977,31 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     return ColumnBodyList
 
 
-def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
+def AddBobButtons(BobEndpoint):
+    raise NornirUserException('Not Implemented')
+    # Do a python get for Bob server data in javascript
+    #
+    # {
+    #    var IsMerged = jscript.CallAWebsite(BobEndpoint)
+    #    if(
+    # }
+    #
+            
+    # HTML = "<A HREF={BobEndpoint}/Merge/>Merge</A>
+
+
+def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=None, ColumnXPaths=None, RowsPerPage=None, BuilderEndpoint=None, Logger=None, **kwargs):
     '''Create an HTML table that uses the RowXPath as the root for searches listed under ColumnXPaths
        ColumnXPaths are a list of comma delimited XPath searches.  Each XPath search results in a new column for the row
        Much more sophisticated reports would be possible by building a framework similiar to the pipeline manager, but time'''
 
+    if BuilderEndpoint is not None:
+        if not validators.url(BuilderEndpoint):
+            raise NornirUserException(f"Invalid BuilderEndpoint: {BuilderEndpoint}")
+        
+    if RowsPerPage is None:
+        RowsPerPage = 2
+        
     if RowLabelAttrib is None:
         RowLabelAttrib = "Name"
         
@@ -991,7 +1030,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
     RowElements = list(ReportingElement.findall(RowXPath))
     if RowElements is None:
         return None
-
+      
     # Build a 2D list to build the table from later
 
     # pool = nornir_pools.GetGlobalThreadPool()
@@ -1024,17 +1063,226 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
             pass
 
     # HTML = MatrixToTable(RowBodyList=RowBodyList)
-    HTML = DictToTable(tableDict)
-
-    CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
+    Pages = DictToPages(tableDict, Paths, RowsPerPage)
+    
+    for iPage in range(0, len(Pages)):
+        CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputPage(iPage)), HTMLBody=Pages[iPage])
+    # HTML = DictToTable(tableDict) #paginate here
+     
+    # CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
     return None
 
 
-def CreateHTMLDoc(OutputFile, HTMLBody):
-    HTMLHeader = "<!DOCTYPE html> \n" + "<html>\n " + "<body>\n"
-    HTMLFooter = "</body>\n" + "</html>\n"
+def DictToPages(RowDict, Paths, RowsPerPage, IndentLevel=0):
+    ''':return: A list of HTMLBuilder objects, each describing a page'''
+    pages = []
+    
+    if RowDict is None:
+        raise Exception('Missing RowDict')
+    
+    if Paths is None:
+        raise Exception('Missing Paths')
+    
+    keys = list(RowDict.keys())
+    
+    if len(keys) < RowsPerPage:
+        pages.append(DictToTable(RowDict))
+        return pages
+    
+    NumPages = math.ceil(len(keys) / RowsPerPage)
+    if NumPages < 2:
+        HTML = DictToTable(RowDict)  # paginate here
+        CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
+        return
+    
+    keys.sort(reverse=True)
+    
+    for iPage in range(0, NumPages): 
+        HTML = HTMLBuilder(IndentLevel)
+        HTML.Add('<div class="navbar">\n')
+        HTML.Indent()
+        AddPageNavigation(HTML, Paths, keys, NumPages, iPage, RowsPerPage)
+        HTML.Dedent()
+        HTML.Add('</div>\n')
+        
+        HTML.Add('<div class="main">\n')
+        HTML.Indent()
+        DictToPage(HTML, RowDict, Paths, keys, iPage, RowsPerPage)
+        HTML.Dedent()
+        HTML.Add('</div>\n')        
+        
+        pages.append(HTML)
+         
+    return pages
 
-    HTML = HTMLHeader + str(HTMLBody) + HTMLFooter
+
+def __getKeyIndiciesForPage(iPage, RowsPerPage):
+    iStartKey = iPage * RowsPerPage
+    iEndKey = (iPage + 1) * RowsPerPage
+    return (iStartKey, iEndKey)
+
+
+def __getKeysForPage(SortedKeys, iPage, RowsPerPage):
+    (iStartKey, iEndKey) = __getKeyIndiciesForPage(iPage, RowsPerPage)
+    return SortedKeys[iStartKey:iEndKey]
+
+
+def __getFirstAndLastKeysForPage(SortedKeys, iPage, RowsPerPage):
+    subset = __getKeysForPage(SortedKeys, iPage, RowsPerPage)
+    return (subset[0], subset[-1])
+
+
+def DictToPage(HTML, RowDict, Paths, SortedKeys, iPage=0, RowsPerPage=50, IndentLevel=0):
+    '''
+    Create a set of pages with next/prev links to adjacent pages
+    '''
+    
+    if SortedKeys is None:
+        raise Exception('Missing SortedKeys') 
+    
+    # HTML = HTMLBuilder(IndentLevel)
+    
+    if IndentLevel is None:
+        HTML.Add('<table border="border">\n')
+    else:
+        HTML.Add("<table>\n")
+    HTML.Indent() 
+     
+    for row in __getKeysForPage(SortedKeys, iPage, RowsPerPage):
+        HTML.Add(__ValueToTableRow(RowDict[row], HTML.IndentLevel))
+        
+    if hasattr(RowDict, 'caption'):
+        HTML.Add(RowDict.caption)
+        
+    HTML.Dedent()
+    HTML.Add("</table>\n")
+         
+    return HTML
+     
+        
+def AddPageNavigation(HTML, Paths, SortedKeys, NumPages, iPage=0, RowsPerPage=50,):
+    '''Add next/prev buttons and a button for every page number'''
+    if iPage < NumPages:
+        pageRange = __getFirstAndLastKeysForPage(SortedKeys, iPage, RowsPerPage)
+        nextPage = HTMLAnchorTemplate % {'href': Paths.OutputPage(iPage + 1), 'body': f'Next {pageRange[0]} - {pageRange[1]}&nbsp;' }
+        HTML.Add(nextPage)
+        
+    if iPage > 0:
+        pageRange = __getFirstAndLastKeysForPage(SortedKeys, iPage, RowsPerPage)
+        prevPage = HTMLAnchorTemplate % {'href': Paths.OutputPage(iPage - 1), 'body': f'&nbsp;Prev {pageRange[0]} - {pageRange[1]}' }
+        HTML.Add(prevPage)
+        
+    for pagenum in range(0, NumPages): 
+        
+        pageRange = __getFirstAndLastKeysForPage(SortedKeys, pagenum, RowsPerPage)
+        if pagenum == iPage:
+            HTML.Add('<div class="selected">\n')
+            HTML.Add(f'<p>{pageRange[0]} - {pageRange[1]}</p>')
+            HTML.Add('</div>\n')
+        else:
+            pageAnchor = HTMLAnchorTemplate % {'href': Paths.OutputPage(pagenum), 'body': f'&nbsp;{pageRange[0]} - {pageRange[1]}&nbsp;' }
+            HTML.Add(pageAnchor)
+            
+            
+        
+        
+    # TODO: Add a button for every page
+ 
+    return
+
+     
+def DictToTable(RowDict, IndentLevel=None):
+    
+    if RowDict is None:
+        raise Exception('Missing RowDict')
+
+    HTML = HTMLBuilder(IndentLevel)
+
+    if IndentLevel is None:
+        HTML.Add('<table border="border">\n')
+    else:
+        HTML.Add("<table>\n")
+    HTML.Indent()
+
+    keys = list(RowDict.keys())
+    keys.sort(reverse=True)
+
+    for row in keys: 
+        HTML.Add(__ValueToTableRow(RowDict[row], HTML.IndentLevel))
+
+    if hasattr(RowDict, 'caption'):
+        HTML.Add(RowDict.caption)
+
+    HTML.Dedent()
+    HTML.Add("</table>\n")
+
+    return HTML
+
+
+def CreateHTMLDoc(OutputFile, HTMLBody):
+    HTMLHeader = HTMLBuilder()
+    HTMLHeader.Add("<!DOCTYPE html>")
+    HTMLHeader.Add("<html>\n")
+    HTMLHeader.Indent()
+    HTMLHeader.Add("<header>\n")
+    HTMLHeader.Indent()
+    HTMLHeader.Add("<style>\n")
+    HTMLHeader.Indent()
+    HTMLHeader.Add("""
+                        body {margin:0;}
+                        .navbar {
+                          overflow: hidden;
+                          background-color: #333;
+                          position: fixed;
+                          top: 0;
+                          width: 100%;
+                        }
+                        .navbar a {
+                          float: left;
+                          display: block;
+                          color: #f2f2f2;
+                          text-align: center;
+                          padding: 14px 16px;
+                          text-decoration: none;
+                          font-size: 17px;
+                        }
+                        .navbar p {
+                          float: left;
+                          display: block;
+                          color: black;
+                          background: #ddd;
+                          text-align: center;
+                          padding: 14px 16px;
+                          text-decoration: none;
+                          font-size: 20px;
+                        }
+                        
+                        .navbar a:hover {
+                          background: #ddd;
+                          color: black;
+                        }
+                        .main {
+                          padding: 1px;
+                          margin-top: 100px;
+                        }
+                        
+                        .main.selected {
+                          background: #ddd;
+                          color: black;
+                        }""")
+    HTMLHeader.Dedent()
+    HTMLHeader.Add("</style>\n")
+    HTMLHeader.Dedent()
+    HTMLHeader.Add("</header>\n")
+    HTMLHeader.Add("<body>\n")
+    HTMLHeader.Indent()
+    HTMLHeader.Add(HTMLBody)
+    HTMLHeader.Dedent()
+    HTMLHeader.Add("</body>\n")
+    HTMLHeader.Dedent()
+    HTMLHeader.Add("</html>\n")
+
+    HTML = str(HTMLHeader)
 
     if os.path.exists(OutputFile):
         os.remove(OutputFile)
@@ -1171,31 +1419,6 @@ def __ListToUnorderedList(listEntries, IndentLevel):
 
     HTML.Dedent()
     HTML.Add("</ul>\n")
-
-    return HTML
-
-
-def DictToTable(RowDict=None, IndentLevel=None):
-
-    HTML = HTMLBuilder(IndentLevel)
-
-    if IndentLevel is None:
-        HTML.Add('<table border="border">\n')
-    else:
-        HTML.Add("<table>\n")
-    HTML.Indent()
-
-    keys = list(RowDict.keys())
-    keys.sort(reverse=True)
-
-    for row in keys: 
-        HTML.Add(__ValueToTableRow(RowDict[row], HTML.IndentLevel))
-
-    if hasattr(RowDict, 'caption'):
-        HTML.Add(RowDict.caption)
-
-    HTML.Dedent()
-    HTML.Add("</table>\n")
 
     return HTML
 

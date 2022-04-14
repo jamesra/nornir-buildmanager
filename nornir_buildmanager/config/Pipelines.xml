@@ -1019,13 +1019,20 @@
                 type="int" default="1"
                 help="Downsample level to build assembled image thumbnails from"
                 required="False" />
+            <Argument flag="-RowsPerPage" dest="RowsPerPage"
+                type="int" default="50"
+                help="How many rows to place on a page before dividing into multiple pages"
+                required="False" />
             <Argument flag="-Output" dest="OutputPath" type="str"
                 default="ImageReport.html" help="Name of report html file" required="False" />
+            <Argument flag="-BuilderEndpoint" dest="BuilderEndpoint" type="str"
+                help="Endpoint for builder" required="False" />
+                
         </Arguments>
         <Select VariableName="ReportingElement" XPath="Block" />
         <PythonCall Function="reporting.GenerateTableReport"
             OutputFile="#OutputPath" RowXPath="Section" RowLabelAttrib="Number"
-            MaxImageWidth="512" MaxImageHeight="512"
+            MaxImageWidth="512" MaxImageHeight="512" RowsPerPage="#RowsPerPage" BuilderEndpoint="#BuilderEndpoint"
             ColumnXPaths="Channel/Filter[@Name='#AssembleFilter'],Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
         <PythonCall Module="nornir_buildmanager.VolumeFinder"
             Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC" />
