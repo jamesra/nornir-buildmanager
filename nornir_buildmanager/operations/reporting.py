@@ -842,6 +842,9 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
     if filter.HasImageset:
         HTML.Add('<TR><TD colspan="99">')
         requiredLevel = filter.Imageset.FindDownsampleForSize((MaxImageHeight, MaxImageWidth))
+        if requiredLevel is None:
+            return ""
+        
         image_node = filter.GetImage(requiredLevel)
         HTML.Add(ImgTagFromImageNode(image_node, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)) 
         HTML.Add("</TD></TR>")

@@ -3713,6 +3713,10 @@ class ImageSetNode(ImageSetBaseNode):
         
         level = self.MinResLevel 
         while(level.Downsample > self.MaxResLevel.Downsample):
+            levelImg = self.GetImage(level)
+            if levelImg is None:
+                level = self.MoreDetailedLevel(level.Downsample)
+            
             dim = self.GetImage(level).Dimensions
             if isinstance(requested_size, tuple):
                 if dim[0] >= requested_size[0] and dim[1] >= requested_size[1]:
