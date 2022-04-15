@@ -433,11 +433,11 @@ def __ExtractLogDataText(Data):
     MetaRows = RowList()
     Columns = ColumnList()
 
-    DriftRows.append('<u>Tile Drift</u>')
-    CaptureTime.append('<u>Overall Time')
-    AvgTimeRows.append('<u>Average Tile Time</u>')
-    MinTimeRows.append('<u>Fastest Tile Time</u>')
-    MetaRows.append('<u>Information</u>')
+    DriftRows.append('<u class="logheader">Tile Drift</u>')
+    CaptureTime.append('<u class="logheader">Overall Time</u>')
+    AvgTimeRows.append('<u class="logheader">Average Tile Time</u>')
+    MinTimeRows.append('<u class="logheader">Fastest Tile Time</u>')
+    MetaRows.append('<u class="logheader">Information</u>')
     
     if hasattr(Data, 'AverageTileDrift'):
         DriftRows.append(['Average:', '<b>%.3g nm/sec</b>' % float(Data.AverageTileDrift)])
@@ -969,7 +969,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
                 HTML = HTMLFromTransformNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
 
             elif ColSubElement.tag == "Notes":
-                ColumnBodyList.caption = '<caption align=bottom>%s</caption>\n' % HTMLFromNotesNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
+                ColumnBodyList.caption = '<caption align=bottom class="notes">%s</caption>\n' % HTMLFromNotesNode(ColSubElement, HTMLPaths, Logger=Logger, **kwargs)
             
             if not HTML is None:
                 ColumnBodyList.append(HTML)
@@ -1003,7 +1003,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
             raise NornirUserException(f"Invalid BuilderEndpoint: {BuilderEndpoint}")
         
     if RowsPerPage is None:
-        RowsPerPage = 2
+        RowsPerPage = 50
         
     if RowLabelAttrib is None:
         RowLabelAttrib = "Name"
@@ -1095,7 +1095,7 @@ def DictToPages(RowDict, Paths, RowsPerPage, IndentLevel=0):
     NumPages = math.ceil(len(keys) / RowsPerPage)
     if NumPages < 2:
         HTML = DictToTable(RowDict)  # paginate here
-        CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
+        pages.add(HTML)
         return
     
     keys.sort(reverse=True)
@@ -1232,7 +1232,9 @@ def CreateHTMLDoc(OutputFile, HTMLBody):
     HTMLHeader.Add("<style>\n")
     HTMLHeader.Indent()
     HTMLHeader.Add("""
-                        body {margin:0;}
+                        body {margin:0;
+                        font-size:16px
+                        }
                         .navbar {
                           overflow: hidden;
                           background-color: #333;
@@ -1272,7 +1274,16 @@ def CreateHTMLDoc(OutputFile, HTMLBody):
                         .main.selected {
                           background: #ddd;
                           color: black;
-                        }""")
+                        }
+                        
+                        .notes {
+                          background: #E0E0E0;
+                        }
+                        
+                        .logheader { 
+                          font-size:18px;
+                        }
+                        """)
     HTMLHeader.Dedent()
     HTMLHeader.Add("</style>\n")
     HTMLHeader.Dedent()
@@ -1345,6 +1356,10 @@ def __ValueToTableCell(value, IndentLevel):
     elif isinstance(value, RowList):
         HTML.Indent()
         HTML.Add(__ListToTableRows(value, HTML.IndentLevel))
+        HTML.Dedent()
+    elif isinstance(value, ColumnList):
+        HTML.Indent()
+        HTML.Add(__ListToTableColumns(value, HTML.IndentLevel))
         HTML.Dedent()
     elif isinstance(value, list):
         HTML.Indent()
