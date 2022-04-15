@@ -12,6 +12,7 @@ from nornir_buildmanager.VolumeManagerETree import NotesNode
 import nornir_shared.prettyoutput as prettyoutput
 import collections
 import re
+from nornir_buildmanager.exceptions import NornirUserException
 
 FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
 MinMaxGamma = collections.namedtuple('MinMaxGamma', 'min max gamma')  
@@ -125,16 +126,19 @@ def ParseMetadataFromFilename(string):
             )?                                                         #Name
             [_|\s]*                                                    #Divider between name and downsample/extension
             (?P<Downsample>\d+)?                                       #Downsample level if present
-            (?P<Extension>\.\w+)?                                     #Extension if present
+            (?P<Extension>\.\w+)?                                      #Extension if present
             """, re.VERBOSE) 
     
     m = _InputFileRegExParser.match(string)
+    raiseException = m is None
     if m is not None:
         
         d = m.groupdict()
         section_number = d.get('Number',None)
         if section_number is not None:
             d['Number'] = int(section_number)
+        else:
+            raiseException = True
             
         version = d.get('Version',None)
         if version is None:
@@ -145,10 +149,12 @@ def ParseMetadataFromFilename(string):
         if ds is not None:
             d['Downsample'] = int(ds)
             
-        return d
+        if not raiseException:
+            return d
     
-    else:
-        return None
+    if raiseException: 
+        friendlyFormatDescription = "{Section#}[VersionLetter][_Section Name][_Downsample]\n{} => Required\t[] => Optional" 
+        raise NornirUserException(f"{string} cannot be parsed.  File/Directory meta-data is expected to be in the format: {friendlyFormatDescription}")
     
                        
 

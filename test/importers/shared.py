@@ -7,8 +7,22 @@ import unittest
 import collections
 
 import nornir_buildmanager
+from build.lib.nornir_buildmanager.exceptions import NornirUserException
+
 
 class TestShared(unittest.TestCase):
+    
+    def testBasNames(self):
+        test_cases = ["", "B", "Jones_33"]
+        
+        for test_case in test_cases:
+            try:
+                d = nornir_buildmanager.importers.shared.ParseMetadataFromFilename(test_case)
+                self.fail(f"Should not be able to parse invalid section name {test_case}")
+            except NornirUserException:
+                pass
+            except:
+                self.fail(f"Failing to parse an invalid section name {test_case} should raise NornirUserException")
  
     def testName(self):
         
@@ -26,16 +40,15 @@ class TestShared(unittest.TestCase):
             FilenameParserTestCase("8B NameHere.idoc", 8, 'B', 'NameHere', None, '.idoc'),
             FilenameParserTestCase("9 NameHere 32.idoc", 9, None, 'NameHere', 32, '.idoc'),
             FilenameParserTestCase("10B NameHere 32.idoc", 10, 'B', 'NameHere', 32, '.idoc'),
-            FilenameParserTestCase("11 2343.idoc",   11, None, '2343', None, '.idoc'),
-            FilenameParserTestCase("14 B NameHere.idoc",  14, 'B', 'NameHere', None, '.idoc'),
-            FilenameParserTestCase("16 B.idoc",  16, 'B', None, None, '.idoc'),
+            FilenameParserTestCase("11 2343.idoc", 11, None, '2343', None, '.idoc'),
+            FilenameParserTestCase("14 B NameHere.idoc", 14, 'B', 'NameHere', None, '.idoc'),
+            FilenameParserTestCase("16 B.idoc", 16, 'B', None, None, '.idoc'),
             FilenameParserTestCase("18 B_NameHere.idoc", 18, 'B', 'NameHere', None, '.idoc'),
             FilenameParserTestCase("19 B_NameHere 32.idoc", 19, 'B', 'NameHere', 32, '.idoc'),
             FilenameParserTestCase("20 B This is a long description 32.idoc", 20, 'B', "This is a long description", 32, '.idoc'),
             FilenameParserTestCase("21 Long Desc 4 reasons", 21, None, "Long Desc 4 reasons", None, None),
             FilenameParserTestCase("22 Long Desc 4 reasons 32.png", 22, None, "Long Desc 4 reasons", 32, '.png'),
             FilenameParserTestCase("23 2343", 23, None, '2343', None, None),
-            FilenameParserTestCase("Nat", None, None, "Nat", None, None)
             ]
             
         for test_case in test_cases:
@@ -65,10 +78,10 @@ class TestShared(unittest.TestCase):
             v = d['Version']
             expected = test_case.Version
             if expected is None:
-                expected = '\0' #The default value used for sorting purposes
-            self.assertEqual(v, expected, "Unexpected version {0}".format(v) )
+                expected = '\0'  # The default value used for sorting purposes
+            self.assertEqual(v, expected, "Unexpected version {0}".format(v))
         else:
-            self.assertIsNone(test_case.Version,  'Missing Version')
+            self.assertIsNone(test_case.Version, 'Missing Version')
         
         if 'Name' in d:
             n = d['Name']
@@ -90,5 +103,5 @@ class TestShared(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    #import sys;sys.argv = ['', 'Test.testName']
+    # import sys;sys.argv = ['', 'Test.testName']
     unittest.main()
