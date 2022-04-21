@@ -1576,7 +1576,7 @@
     </Pipeline>
 
 
-    <Pipeline Name="RefineSectionAlignment"
+    <Pipeline Name="RefineSectionAlignment-IrTools"
         Help="Refines slice-to-slice alignment at the given downsample level.  This pipeline is often used iteratively at higher and higher resolutions to improve registration quality.">
         <Arguments>
             <Argument flag="-SectionMap" default="FinalStosMap" dest="StosMap"
@@ -1619,7 +1619,7 @@
             XPath="StosGroup[@Name='#InputGroup#InputDownsample']" />
         <Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"
             XPath="Mapping">
-            <PythonCall Function="block.StosGrid" MappingNode="#MappingNodeObj"
+            <PythonCall Function="block.IrStosGridRefine" MappingNode="#MappingNodeObj"
                 OutputStosGroup="#OutputGroup#OutputDownsample" Downsample="#OutputDownsample"
                 ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx"
                 UseMasks="#UseMasks">
@@ -1630,6 +1630,80 @@
                     <Entry Name="fft" Value="2 0.25" />
                     <Entry Name="displacement_threshold" Value="#DisplacementThreshold" />
                 </Parameters>
+            </PythonCall>
+        </Iterate>
+    </Pipeline>
+    
+    <Pipeline Name="RefineSectionAlignment"
+        Help="Refines slice-to-slice alignment at the given downsample level.  This pipeline is often used iteratively at higher and higher resolutions to improve registration quality.">
+        <Arguments>
+            <Argument flag="-SectionMap" default="FinalStosMap" dest="StosMap"
+                type="str" help="Map describing which sections register to each other"
+                required="False" />
+            <Argument flag="-InputGroup" default="StosBrute" dest="InputGroup"
+                type="str" help="Map describing which sections register to each other"
+                required="False" />
+            <Argument flag="-InputDownsample" dest="InputDownsample"
+                type="int" help="Downsample level to use for input" required="True" />
+            <Argument flag="-OutputGroup" default="StosGrid" dest="OutputGroup"
+                type="str" help="Name of output group" required="False" />
+            <Argument flag="-OutputDownsample" dest="OutputDownsample"
+                type="int" help="Downsample level to use for refinement" required="True" />
+            <Argument flag="-Filters" default="(?![M|m]ask)" dest="FiltersRegEx"
+                type="str" help="Regular expression describing filters to be aligned"
+                required="False" />
+            <Argument flag="-UseMasks" action="store_true" dest="UseMasks"
+                help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes."
+                required="False" />
+            <Argument flag="-Threshold" default="0.1" dest="DisplacementThreshold"
+                type="float"
+                help="Displacement threshold for control point movement.  Refinement stops below this value"
+                required="False" />
+            <Argument flag="-Spacing" default="92" dest="GridSpacing"
+                type="int" help="Grid cell spacing in pixels" required="False" />
+            <Argument flag="-CellArea" default="128" dest="cell_size"
+                type="int" help="Area around each grid point to register, in pixels.  It is suggested to have overlap between the cells.  So cells of [128,128] would be spaced [64,64] apart."
+                required="False" />
+            <Argument flag="-Iterations" default="10" dest="Iterations"
+                type="int" help="Maximum number of refinement passes to run"
+                required="False" />
+            <Argument flag="-AngleRange" dest="AngleSearchRange"
+                type="FloatRange" help="Range of angles to check in degrees not radians.  Each cell is rotated by the angle and checked.  The highest scoring registration is used."
+                required="False" />
+            <Argument flag="-MaxCellTravelForFinalize" dest="MaxFinalizeTravel"
+                type="float" help="The maximum amount of travel a cell (point) can have from its predicted position before it is a candidate for finalization which stops attempting to register it further."
+                required="False" />
+            <Argument flag="-MinAlignOverlap" dest="min_alignment_overlap"
+                type="float" help="The minimum amount of overlap a cell (point) must have with its expected position for a registration result to be considered valid."
+                required="False" />
+            <Argument flag="-MinUnmaskedCellArea" dest="min_unmasked_area"
+                type="float" help="Amount of cell area that must be unmasked to attempt registering a given cell"
+                required="False" />
+            <Argument flag="-SaveImages" action="store_true" dest="SaveImages"
+                help="Amount of cell area that must be unmasked to attempt registering a given cell"
+                required="False" />
+            <Argument flag="-SavePlots" action="store_true" dest="SavePlots"
+                help="Amount of cell area that must be unmasked to attempt registering a given cell"
+                required="False" /> 
+        </Arguments>
+
+        <Select VariableName="BlockNode" XPath="Block" />
+        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+            XPath="StosMap[@Name='#StosMap']" />
+
+        <Select VariableName="InputGroupNode" Root="BlockNode"
+            XPath="StosGroup[@Name='#InputGroup#InputDownsample']" />
+        <Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"
+            XPath="Mapping">
+            <PythonCall Function="block.StosGridRefine" MappingNode="#MappingNodeObj"
+                OutputStosGroup="#OutputGroup#OutputDownsample" Downsample="#OutputDownsample"
+                ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx"
+                UseMasks="#UseMasks" num_iterations="#Iterations" cell_size="#cell_size"
+                grid_spacing="#GridSpacing" angles_to_search="#AngleSearchRange"
+                max_travel_for_finalization="#MaxFinalizeTravel" min_alignment_overlap="#min_alignment_overlap"
+                 min_unmasked_area="#min_unmasked_area"
+                SaveImages="SaveImages" SavePlots="#SavePlots"
+                > 
             </PythonCall>
         </Iterate>
     </Pipeline>

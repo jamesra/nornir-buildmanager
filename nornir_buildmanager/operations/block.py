@@ -27,6 +27,7 @@ import nornir_imageregistration.stos_brute as stos_brute
 import nornir_pools
 import nornir_imageregistration
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_imageregistration import local_distortion_correction
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -1401,10 +1402,87 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
         # if os.path.exists(AutomaticInputStosFullPath):
             # os.remove(AutomaticInputStosFullPath)
 
-    return InputStosFullPath
+    return AutomaticInputStosFullPath
 
 
-def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None, Type=None, **kwargs):
+def __RunIrStosGridCmd(InputStosFullPath:str, OutputStosFullPath:str, **kwargs):
+    '''Run SCI's original stos refinement algorithm'''
+    argstring = misc.ArgumentsFromDict(kwargs)
+    StosGridTemplate = 'ir-stos-grid -save %(OutputStosFullPath)s -load %(InputStosFullPath)s ' + argstring
+
+    cmd = StosGridTemplate % {'OutputStosFullPath' : OutputStosFullPath,
+                                   'InputStosFullPath' : InputStosFullPath}
+
+    prettyoutput.Log(cmd)
+    subprocess.call(cmd + " && exit", shell=True)
+    
+def __RunPythonGridRefinementCmd(InputStosFullPath:str, OutputStosFullPath:str, **kwargs):
+    '''Run the native python refinement algorithm'''
+    
+    if 'SaveImages' in kwargs or 'SavePlots' in kwargs:
+        #We need to specify an output directory if we are saving plots
+        kwargs['outputDir'] = os.path.dirname(OutputStosFullPath)
+        
+    local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
+                                               OutputStosPath=OutputStosFullPath,
+                                               **kwargs)
+    
+
+def IrStosGridRefine(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32,
+               ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
+               Type=None):
+    '''
+    Invoke a command to execute a function with an input and output .stos file.  The function
+    is expected to refine the input .stos file and write the output .stos file.  At the time
+    this function was written there was a ir-refine-grid command line program and a native
+    python implementation.
+    '''
+    
+    return RefineInvoker(__RunIrStosGridCmd,
+                    Parameters=Parameters,
+                    MappingNode=MappingNode,
+                    InputGroupNode=InputGroupNode,
+                    UseMasks=UseMasks,
+                    Downsample=Downsample,
+                    ControlFilterPattern=ControlFilterPattern,
+                    MappedFilterPattern=MappedFilterPattern,
+                    OutputStosGroup=OutputStosGroup,
+                    Type=Type
+                    )
+    
+def StosGridRefine(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32,
+               ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
+               Type=None, **kwargs):
+    '''
+    Invoke a command to execute a function with an input and output .stos file.  The function
+    is expected to refine the input .stos file and write the output .stos file.  At the time
+    this function was written there was a ir-refine-grid command line program and a native
+    python implementation.
+    '''
+    
+    return RefineInvoker(__RunPythonGridRefinementCmd,
+                    Parameters=kwargs,
+                    MappingNode=MappingNode,
+                    InputGroupNode=InputGroupNode,
+                    UseMasks=UseMasks,
+                    Downsample=Downsample,
+                    ControlFilterPattern=ControlFilterPattern,
+                    MappedFilterPattern=MappedFilterPattern,
+                    OutputStosGroup=OutputStosGroup,
+                    Type=Type
+                    )
+    
+
+
+def RefineInvoker(RefineFunc, Parameters, MappingNode, InputGroupNode,
+                    UseMasks, Downsample=32, 
+                    ControlFilterPattern=None, MappedFilterPattern=None, 
+                    OutputStosGroup=None, Type=None,  
+                    **kwargs):
+    '''
+    :param func RefineFunc: Function to invoke when we have identified a stos file needing refinement
+    '''
+    
 
     Logger = logging.getLogger(__name__ + '.StosGrid')
 
@@ -1534,14 +1612,8 @@ def StosGrid(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32, C
             if not os.path.exists(OutputStosFullPath):
                 ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
                 if ManualStosFileFullPath is None:
-                    argstring = misc.ArgumentsFromDict(Parameters)
-                    StosGridTemplate = 'ir-stos-grid -save %(OutputStosFullPath)s -load %(InputStosFullPath)s ' + argstring
-
-                    cmd = StosGridTemplate % {'OutputStosFullPath' : OutputStosFullPath,
-                                                   'InputStosFullPath' : InputStosFullPath}
-
-                    prettyoutput.Log(cmd)
-                    subprocess.call(cmd + " && exit", shell=True)
+                     
+                    RefineFunc(InputStosFullPath, OutputStosFullPath, **Parameters)
 
                     if not os.path.exists(OutputStosFullPath):
                         Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
