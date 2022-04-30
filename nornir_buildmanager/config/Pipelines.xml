@@ -1659,7 +1659,7 @@
                 type="float"
                 help="Displacement threshold for control point movement.  Refinement stops below this value"
                 required="False" />
-            <Argument flag="-Spacing" default="92" dest="GridSpacing"
+            <Argument flag="-Spacing" default="96" dest="GridSpacing"
                 type="int" help="Grid cell spacing in pixels" required="False" />
             <Argument flag="-CellArea" default="128" dest="cell_size"
                 type="int" help="Area around each grid point to register, in pixels.  It is suggested to have overlap between the cells.  So cells of [128,128] would be spaced [64,64] apart."
@@ -1702,7 +1702,7 @@
                 grid_spacing="#GridSpacing" angles_to_search="#AngleSearchRange"
                 max_travel_for_finalization="#MaxFinalizeTravel" min_alignment_overlap="#min_alignment_overlap"
                  min_unmasked_area="#min_unmasked_area"
-                SaveImages="SaveImages" SavePlots="#SavePlots"
+                SaveImages="#SaveImages" SavePlots="#SavePlots"
                 > 
             </PythonCall>
         </Iterate>

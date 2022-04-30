@@ -339,6 +339,9 @@ def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImag
                                                   TestFlip=TestForFlip,
                                                   WarpedImageScaleFactors=WarpedImageScaleFactors,
                                                   Cluster=False)
+    
+    #Close pools to prevent threads from sticking around and slowing the rest of the run
+    nornir_pools.ClosePools()
 
     stos = alignment.ToStos(ControlImageFullPath,
                      MappedImageFullPath,
@@ -1613,7 +1616,11 @@ def RefineInvoker(RefineFunc, Parameters, MappingNode, InputGroupNode,
                 ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
                 if ManualStosFileFullPath is None:
                      
-                    RefineFunc(InputStosFullPath, OutputStosFullPath, **Parameters)
+                    try:
+                        RefineFunc(InputStosFullPath, OutputStosFullPath, **Parameters)
+                    except Exception as e:
+                        prettyoutput.Log(f"Exception calling stos refine function {RefineFunc}:\n{e}\n\n")
+                        pass
 
                     if not os.path.exists(OutputStosFullPath):
                         Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
