@@ -695,6 +695,9 @@
             <Argument flag="-CellArea" default="128" dest="CellArea"
                 type="int" help="Size of region around each grid point to register, in pixels"
                 required="False" />
+            <Argument flag="-MeshSize" default="8" dest="MeshSize"
+                type="int" help="How many registration points are spaced along the images, the same value is used for X and Y.  This should be a large enough number to provide 25% or ideally 50% overlap of grid cells for the expected image size."
+                required="False" />
         </Arguments>
 
         <Iterate VariableName="section_node" XPath="Block/Section">
@@ -739,8 +742,8 @@
                     OutputTransform="#OutputTransformName" TransformNode="#TranslatedTransformNode"
                     FilterNode="#FilterNode" RegistrationDownsample="#Downsample">
                     <Parameters>
-                        <Entry Name="MeshWidth" Value="8" />
-                        <Entry Name="MeshHeight" Value="8" />
+                        <Entry Name="MeshWidth" Value="#MeshSize" />
+                        <Entry Name="MeshHeight" Value="#MeshSize" />
                         <Entry Name="Cell" Value="#CellArea" />
                         <Entry Name="Threshold" Value="#DisplacementThreshold" />
                         <Entry Name="it" Value="#RefineIterations" />
