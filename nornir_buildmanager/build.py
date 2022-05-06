@@ -99,6 +99,13 @@ def _AddRecoverParser(root_parser, subparsers):
     recover_parser = subparsers.add_parser('RecoverLinks', help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.',)
     recover_parser.set_defaults(func=call_recover_links, parser=root_parser)
     
+    recover_parser.add_argument('-s',
+                         action='store_true',
+                         required=False,
+                         default=False,
+                         help='Set this flag to include sub-directories',
+                         dest='recurse')
+    
     recover_parser.add_argument('-save',
                          action='store_true',
                          required=False,
@@ -173,7 +180,7 @@ def print_help(args):
 def call_recover_links(args):
     '''This function checks for missing link elements in a volume and adds them back to the volume'''
     volumeObj = VolumeManagerETree.VolumeManager.Load(args.volumepath)
-    volumeObj.RepairMissingLinkElements()
+    volumeObj.RepairMissingLinkElements(recurse=args.recurse)
     
     if args.save_restoration:
         volumeObj.Save(recurse=False)
