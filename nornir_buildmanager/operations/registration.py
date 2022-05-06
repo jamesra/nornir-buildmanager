@@ -59,13 +59,13 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = added_level
-    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, "_Max0.5") #The hardcoded string is legacy to prevent duplicate transform elements
+    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, "_Max0.5")  # The hardcoded string is legacy to prevent duplicate transform elements
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode,
                                                                                    InputTransformNode=InputTransformNode,
                                                                                    OutputTransformPath=OutputTransformPath)
 
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:
@@ -92,7 +92,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             
         mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
         firstpass_translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(tiles_path=LevelNode.FullPath,
-                                                                             image_scale=1.0/RegistrationDownsample,
+                                                                             image_scale=1.0 / RegistrationDownsample,
                                                                              excess_scalar=excess_scalar,
                                                                              min_overlap=min_overlap,
                                                                              feature_score_threshold=feature_score_threshold,
@@ -111,11 +111,9 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
         
         if os.path.exists(tempMosaicFullPath):
             os.remove(tempMosaicFullPath)
-        
-        
  
     if SaveRequired:
-        nornir_pools.ClosePools() #A workaround to avoid running out of memory
+        nornir_pools.ClosePools()  # A workaround to avoid running out of memory
         return TransformParentNode
     else:
         return None
@@ -205,12 +203,13 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 #     else:
 #         return None
 
+
 def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
     '''@ChannelNode'''
     Iterations = Parameters.get('it', 10)
     Cell = Parameters.get('Cell', None)
-    MeshWidth = Parameters.get('MeshWidth', 6)
-    MeshHeight = Parameters.get('MeshHeight', 6)
+    MeshWidth = Parameters.get('MeshWidth', 8)  # These should be large enough nubmers that there is overlap between cells, ~50% though 25% is often used for speed.
+    MeshHeight = Parameters.get('MeshHeight', 8)
     Threshold = Parameters.get('Threshold', None)
     
     InputTransformNode = TransformNode
@@ -250,7 +249,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir' : LevelNode.FullPath})
+        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:
@@ -259,14 +258,14 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
 
     if not os.path.exists(OutputTransformNode.FullPath):
         CmdLineTemplate = "ir-refine-grid -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s " + ThresholdString + ItString + CellString + MeshString + SpacingString
-        cmd = CmdLineTemplate % {'InputMosaic' : InputTransformNode.FullPath, 'OutputMosaic' : OutputTransformNode.FullPath, 'ImageDir' : LevelNode.FullPath}
+        cmd = CmdLineTemplate % {'InputMosaic': InputTransformNode.FullPath, 'OutputMosaic': OutputTransformNode.FullPath, 'ImageDir': LevelNode.FullPath}
         prettyoutput.CurseString('Cmd', cmd)
         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
         output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
         
         if len(output) == 0:
             raise RuntimeError("No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
-        
+
         OutputTransformNode.cmd = cmd
         SaveRequired = True
 
@@ -276,6 +275,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         return TransformParentNode
     else:
         return None
+
 
 def CompressTransforms(Parameters, TransformNode, **kwargs):
     '''Rewrite the provided transform node to represent the same data with less text
