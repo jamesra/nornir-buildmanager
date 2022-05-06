@@ -1539,12 +1539,13 @@ def RefineInvoker(RefineFunc, Parameters, MappingNode, InputGroupNode,
             if ControlFilter is None:
                 Logger.warning("No control filter, skipping refinement")
                 OutputSectionMappingNode.Clean("No control filter found in stos grid")
-                yield OutputStosGroupNode 
-                continue
+                
 
             if MappedFilter is None:
                 Logger.warning("No mapped filter, skipping refinement")
                 OutputSectionMappingNode.Clean("No mapped filter found in stos grid")
+               
+            if ControlFilter is None or MappedFilter is None:
                 yield OutputStosGroupNode 
                 continue
 
@@ -2166,13 +2167,13 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
     section_node = block_node.GetSection(section_number)
      
     if section_node is None:
-        Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
+        Logger = logging.getLogger(__name__ + '.__GetFirstMatchingFilter')
         Logger.warning("Section %s is missing" % (section_number))
         return None
     
     channel_node = section_node.GetChannel(channel_name)
     if channel_node is None:
-        Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
+        Logger = logging.getLogger(__name__ + '.__GetFirstMatchingFilter')
         Logger.warning("Channel %s.%s is missing, skipping grid refinement" % (section_number, channel_node))
         return None
      
@@ -2182,7 +2183,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
                                                           CaseSensitive=True)
     
     if filter_matches is None or len(filter_matches) == 0:
-        Logger = logging.getLogger(__name__ + '.__GetFirstFilter')
+        Logger = logging.getLogger(__name__ + '.__GetFirstMatchingFilter')
         Logger.warning("No %s.%s filters match pattern %s" % (section_number, channel_node, filter_pattern))
         return None
                                                           
