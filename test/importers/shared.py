@@ -6,20 +6,19 @@ Created on Aug 7, 2020
 import unittest
 import collections
 
-import nornir_buildmanager
-from build.lib.nornir_buildmanager.exceptions import NornirUserException
+import nornir_buildmanager 
 
 
 class TestShared(unittest.TestCase):
     
-    def testBasNames(self):
+    def testInvalidNames(self):
         test_cases = ["", "B", "Jones_33"]
         
         for test_case in test_cases:
             try:
                 d = nornir_buildmanager.importers.shared.ParseMetadataFromFilename(test_case)
                 self.fail(f"Should not be able to parse invalid section name {test_case}")
-            except NornirUserException:
+            except nornir_buildmanager.NornirUserException:
                 pass
             except:
                 self.fail(f"Failing to parse an invalid section name {test_case} should raise NornirUserException")
