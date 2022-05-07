@@ -1425,7 +1425,8 @@ def __RunPythonGridRefinementCmd(InputStosFullPath:str, OutputStosFullPath:str, 
     if 'SaveImages' in kwargs or 'SavePlots' in kwargs:
         #We need to specify an output directory if we are saving plots
         kwargs['outputDir'] = os.path.dirname(OutputStosFullPath)
-        
+
+    prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath}')        
     local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
                                                OutputStosPath=OutputStosFullPath,
                                                **kwargs)
