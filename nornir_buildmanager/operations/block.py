@@ -1823,21 +1823,22 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
 
         mappedSectionNumber = MappedSectionNode.SectionNumber
 
-        logStr = "{0} -> {1} -> {2}".format(str(mappedSectionNumber), str(IntermediateControlSection), str(rootNode.SectionNumber) )
-        verboseStr = "Mapping {0} -> {1} -> {2} to {0} -> {2}".format(str(mappedSectionNumber), str(IntermediateControlSection), str(rootNode.SectionNumber) )
+        logStr = f"{mappedSectionNumber:d} -> {IntermediateControlSection:d} -> {rootNode.SectionNumber:d}"
+        verboseStr = f"Mapping {mappedSectionNumber:d} -> {IntermediateControlSection:d} -> {rootNode.SectionNumber:d} to {mappedSectionNumber:d} -> {rootNode.SectionNumber:d}"
         #Logger.info(logStr)
         prettyoutput.Log(verboseStr)
-        
-        (MappingAdded, OutputSectionMappingsNode) = OutputGroupNode.GetOrCreateSectionMapping(mappedSectionNumber)
-        if MappingAdded:
-            (yield OutputGroupNode)
 
         MappedToControlTransforms = InputGroupNode.TransformsForMapping(mappedSectionNumber, IntermediateControlSection)
 
         if MappedToControlTransforms is None or len(MappedToControlTransforms) == 0:
-            errStr = "{0} -> {1} mapping does not have a .stos transform at {2}".format(mappedSectionNumber, IntermediateControlSection, InputGroupNode.FullPath)
+            errStr = f"{mappedSectionNumber} -> {IntermediateControlSection} mapping does not have a .stos transform at {InputGroupNode.FullPath}"
             prettyoutput.LogErr(errStr)
             continue
+        
+        #If we managed to locate an input .stos transform create the mapping
+        (MappingAdded, OutputSectionMappingsNode) = OutputGroupNode.GetOrCreateSectionMapping(mappedSectionNumber)
+        if MappingAdded:
+            (yield OutputGroupNode)
 
         # In theory each iteration of this loop could be run in a seperate thread.  Useful when center is in center of volume.
         for MappedToControlTransform in MappedToControlTransforms:
@@ -1852,7 +1853,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
                 #prettyoutput.Log("Looking for {0}: FOUND".format(str(ControlToVolumeTransformKey)))
                 ControlToVolumeTransform = SectionToRootTransformMap[ControlToVolumeTransformKey]
             elif ControlToVolumeTransformKey[0] != ControlToVolumeTransformKey[1]: #Do not bother printing an error if there is no intermediate transform to find
-                errStr = "Could not find {0} -> {1} .stos transform".format(ControlToVolumeTransformKey[0], ControlToVolumeTransformKey[1])
+                errStr = f"Could not find {ControlToVolumeTransformKey[0]} -> {ControlToVolumeTransformKey[1]} .stos transform"
                 prettyoutput.LogErr(errStr)
 
             if ControlToVolumeTransform is None:
