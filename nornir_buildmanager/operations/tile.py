@@ -172,18 +172,21 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     if OutputLevelNode is None:
         return False
 
-    if not os.path.exists(OutputLevelNode.FullPath):
-        return False
+    #No need to check if OutputLevelNode.FullPath exists, because glob will return
+    #empty list if it does not
+    #if not os.path.exists(OutputLevelNode.FullPath):
+    #    return False
 
     # Find out if the number of predicted images matches the number of actual images
     ImageFiles = glob.glob(OutputLevelNode.FullPath + os.sep + '*' + InputPyramidNode.ImageFormatExt)
-    basenameImageFiles = list(map(os.path.basename, ImageFiles))
-
-    for i in mFile.ImageToTransformString:
-        if not i in basenameImageFiles:
-            # Don't return false unless the input exists
-            if os.path.exists(os.path.join(InputLevelNode.FullPath, i)):
-                return False
+    fileSystemImageFiles = frozenset(map(os.path.basename, ImageFiles))
+    transformImageFiles = frozenset(mFile.ImageToTransformString.keys())
+     
+    missingTransformFiles = transformImageFiles - fileSystemImageFiles
+    for i in missingTransformFiles: 
+        # Don't return false unless the input exists
+        if os.path.exists(os.path.join(InputLevelNode.FullPath, i)):
+            return False
 
 #    FileCountEqual = len(ImageFiles) == OutputPyramidNode.NumberOfTiles
 #    return   FileCountEqual
