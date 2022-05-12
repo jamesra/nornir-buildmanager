@@ -1430,6 +1430,7 @@ def __RunPythonGridRefinementCmd(InputStosFullPath:str, OutputStosFullPath:str, 
     local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
                                                OutputStosPath=OutputStosFullPath,
                                                **kwargs)
+    prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
     
 
 def IrStosGridRefine(Parameters, MappingNode, InputGroupNode, UseMasks, Downsample=32,
