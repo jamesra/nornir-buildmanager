@@ -553,8 +553,7 @@ class XElementWrapper(ElementTree.Element):
             Valid = [Valid, ""]
  
         if not Valid[0]:
-            self.Clean(Valid[1])
-            return True
+            return self.Clean(Valid[1])
         
         return False
 
@@ -1273,7 +1272,7 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
             Logger.warning('Could not delete resource with locked flag set: %s' % self.FullPath)
             if not reason is None:
                 Logger.warning('Reason for attempt: %s' % reason)
-            return
+            return False
             
         '''Remove the contents referred to by this node from the disk'''
         if os.path.exists(self.FullPath):
