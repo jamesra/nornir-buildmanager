@@ -85,7 +85,7 @@
             <Argument flag="-Sections" dest="Sections" type="IntegerList"
                 help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
                 required="False" />
-            <Argument flag="-overlap" dest="tile_overlap" required="False" type="FloatPair" help="Overlap of tiles as a percentage, either a single value or a comma-delimited pair (X%,Y%).\n\tex: 15 would be a 15 overlap on both axis.\n\tex:  10,20 would be a 10% X overlap and 20% Y overlap." />
+            <Argument flag="-overlap" dest="tile_overlap" required="False" type="FloatPair" help="Overlap of tiles as a percentage, either a single value or a comma-delimited pair (X%%,Y%%).\n\tex: 15 would be a 15 overlap on both axis.\n\tex:  10,20 would be a 10%% X overlap and 20%% Y overlap." />
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.dm4"
@@ -445,7 +445,7 @@
                 help="Min pixel intensity cutoff as a percentage, 0 to 100"
                 required="False" />
             <Argument flag="-MaxCutoff" dest="MaxCutoff" default="0.5"
-                help="Max pixel intensity cutoff as a percentage, 0 to 100. Specifying '1' puts the cutoff at 99% of the maximum pixel intensity value."
+                help="Max pixel intensity cutoff as a percentage, 0 to 100. Specifying '1' puts the cutoff at 99%% of the maximum pixel intensity value."
                 required="False" />
             <Argument flag="-InputFilter" dest="InputFilter" default="Raw8"
                 help="Filter to draw images from" required="True" />
@@ -696,7 +696,7 @@
                 type="int" help="Size of region around each grid point to register, in pixels"
                 required="False" />
             <Argument flag="-MeshSize" default="8" dest="MeshSize"
-                type="int" help="How many registration points are spaced along the images, the same value is used for X and Y.  This should be a large enough number to provide 25% or ideally 50% overlap of grid cells for the expected image size."
+                type="int" help="How many registration points are spaced along the images, the same value is used for X and Y.  This should be a large enough number to provide 25%% or ideally 50%% overlap of grid cells for the expected image size."
                 required="False" />
         </Arguments>
 
