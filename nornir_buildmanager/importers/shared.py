@@ -113,20 +113,23 @@ def ParseMetadataFromFilename(string):
     global _InputFileRegExParser
     if _InputFileRegExParser is None:
         _InputFileRegExParser = re.compile(r"""
-            (?P<Number>\d+)?                                           #Section Number
-            \s?                                                        #Possible space between section number and version
-            (?P<Version>[^_|^\s](?=[\s\|_|\.]))?                       #Version letter
-            [_|\s]*                                                    #Divider between section number/version and name
-            (?P<Name>
-              (
-                [a-zA-Z0-9]                                             #Any letters
-                |
-                [ ](?![0-9]+\.)
-              )+                                       #Any spaces not followed by numbers and a period (The downsample value) 
-            )?                                                         #Name
-            [_|\s]*                                                    #Divider between name and downsample/extension
-            (?P<Downsample>\d+)?                                       #Downsample level if present
-            (?P<Extension>\.\w+)?                                      #Extension if present
+            (?P<Number>\d+)                                #Section Number
+            #(?P<VersionSpace>\s)?                          #Possible space between section number and version
+            (?P<Version>\s?[^_|^\s](?=[\s\|_|\.]))?           #Version letter
+            (?P<DetailsSpace>[_|\s]+)?                     #Divider between section number/version and name
+            (?(DetailsSpace)
+                (?P<Name>
+                  (
+                    [a-zA-Z0-9]                            #Any letters
+                    |
+                    [ ](?![0-9]+\.)
+                  )+                                       #Any spaces not followed by numbers and a period (The downsample value) 
+                )?                                         #Name
+                [_|\s]*                                    #Divider between name and downsample/extension
+                (?P<Downsample>\d+)?                       #Downsample level if present
+            )                                              #Match the end of string if NumberOnly is not defined    
+            (?P<Extension>\.\w+)?                          #Extension if present
+            
             """, re.VERBOSE) 
     
     m = _InputFileRegExParser.match(string)
@@ -144,6 +147,8 @@ def ParseMetadataFromFilename(string):
         if version is None:
             version = '\0' #Assign a letter that will sort earlier than 'A' in case someone names the first recapture A instead of B...
             d['Version'] = version
+        else:
+            d['Version'] = str.strip(d['Version'])
             
         ds = d.get('Downsample',None)
         if ds is not None:
@@ -153,8 +158,8 @@ def ParseMetadataFromFilename(string):
             return d
     
     if raiseException: 
-        friendlyFormatDescription = "{Section#}[VersionLetter][_Section Name][_Downsample]\n{} => Required\t[] => Optional" 
-        raise NornirUserException(f"{string} cannot be parsed.  File/Directory meta-data is expected to be in the format: {friendlyFormatDescription}")
+        friendlyFormatDescription = "{Section#}[VersionLetter][_Section Name][_Downsample]\n\t{} => Required\t[] => Optional" 
+        raise NornirUserException(f'\n"{string}" cannot be parsed.\nFile/Directory meta-data is expected to be in the format:\n\t{friendlyFormatDescription}')
     
                        
 

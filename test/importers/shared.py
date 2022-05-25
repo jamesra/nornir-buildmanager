@@ -17,7 +17,7 @@ class TestShared(unittest.TestCase):
         for test_case in test_cases:
             try:
                 d = nornir_buildmanager.importers.shared.ParseMetadataFromFilename(test_case)
-                self.fail(f"Should not be able to parse invalid section name {test_case}")
+                self.fail(f'Should not be able to parse invalid section name {test_case}.\nGot: {d}')
             except nornir_buildmanager.NornirUserException:
                 pass
             except:
@@ -48,6 +48,8 @@ class TestShared(unittest.TestCase):
             FilenameParserTestCase("21 Long Desc 4 reasons", 21, None, "Long Desc 4 reasons", None, None),
             FilenameParserTestCase("22 Long Desc 4 reasons 32.png", 22, None, "Long Desc 4 reasons", 32, '.png'),
             FilenameParserTestCase("23 2343", 23, None, '2343', None, None),
+            FilenameParserTestCase("24 B", 24, 'B', None, None, None), #Two digit section number with a letter
+            FilenameParserTestCase("25B", 25, 'B', None, None, None), #Two digit section number with a letter
             ]
             
         for test_case in test_cases:
@@ -68,8 +70,7 @@ class TestShared(unittest.TestCase):
         '''This is a bit crude because my test case doesn't set expected values...'''
         if 'Number' in d:
             n = d['Number'] 
-            self.assertEqual(n, test_case.Number,
-                             "Unexpected section number {0}".format(n))
+            self.assertEqual(n, test_case.Number, f'Unexpected section number {n} from "{test_case.string}" got {d}')
         else:
             self.assertIsNone(test_case.Number, 'Missing section number')
         
@@ -78,25 +79,25 @@ class TestShared(unittest.TestCase):
             expected = test_case.Version
             if expected is None:
                 expected = '\0'  # The default value used for sorting purposes
-            self.assertEqual(v, expected, "Unexpected version {0}".format(v))
+            self.assertEqual(v, expected, f'Unexpected version {v} from "{test_case.string}" got {d}')
         else:
             self.assertIsNone(test_case.Version, 'Missing Version')
         
         if 'Name' in d:
             n = d['Name']
-            self.assertEqual(n, test_case.Name, "Unexpected name {0}".format(n))
+            self.assertEqual(n, test_case.Name, f'Unexpected name {n} from "{test_case.string}" got {d}')
         else:
             self.assertIsNone(test_case.Name, 'Missing Name')
             
         if 'Downsample' in d:
             ds = d['Downsample']
-            self.assertEqual(ds, test_case.Downsample, "Unexpected downsample {0}".format(ds))
+            self.assertEqual(ds, test_case.Downsample, f'Unexpected downsample {ds} from "{test_case.string}" got {d}')
         else:
             self.assertIsNone(test_case.Downsample, 'Missing Downsample')
             
         if 'Extension' in d:
             ext = d['Extension']
-            self.assertEqual(ext, test_case.Extension, "Unexpected extension {0}".format(ext))
+            self.assertEqual(ext, test_case.Extension, f'Unexpected extension {ext} from "{test_case.string}" got {d}')
         else:
             self.assertIsNone(test_case.Extension, 'Missing Extension')
 
