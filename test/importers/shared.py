@@ -50,6 +50,15 @@ class TestShared(unittest.TestCase):
             FilenameParserTestCase("23 2343", 23, None, '2343', None, None),
             FilenameParserTestCase("24 B", 24, 'B', None, None, None), #Two digit section number with a letter
             FilenameParserTestCase("25B", 25, 'B', None, None, None), #Two digit section number with a letter
+            FilenameParserTestCase("26B ", 26, 'B', None, None, None), #Two digit section number with a letter
+            FilenameParserTestCase("27 B ", 27, 'B', None, None, None), #Two digit section number with a letter
+            FilenameParserTestCase("28_B", 28, 'B', None, None, None), #Two digit section number with a letter
+            FilenameParserTestCase("29_B.idoc", 29, 'B', None, None, '.idoc'), #Two digit section number with a letter
+            FilenameParserTestCase("30 B.idoc", 30, 'B', None, None, '.idoc'), #Two digit section number with a letter
+            FilenameParserTestCase("31 B_NameHere", 31, 'B', 'NameHere', None, None), #Two digit section number with a letter
+            FilenameParserTestCase("32_B_NameHere", 32, 'B', 'NameHere', None, None), #Two digit section number with a letter
+            FilenameParserTestCase("33_B_NameHere.idoc", 33, 'B', 'NameHere', None, '.idoc'), #Two digit section number with a letter
+            FilenameParserTestCase("34_B_NameHere.idoc", 34, 'B', 'NameHere', None, '.idoc'), #Two digit section number with a letter
             ]
             
         for test_case in test_cases:
