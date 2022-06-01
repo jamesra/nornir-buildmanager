@@ -1278,12 +1278,12 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
         if os.path.exists(self.FullPath):
             try:
                 if os.path.isdir(self.FullPath):
-                    shutil.rmtree(self.FullPath)
+                    nornir_shared.files.rmtree(self.FullPath)
                 else:
                     os.remove(self.FullPath)
-            except:
+            except Exception as e:
                 Logger = logging.getLogger(__name__ + '.' + 'Clean')
-                Logger.warning('Could not delete cleaned directory: ' + self.FullPath)
+                Logger.warning('Could not delete cleaned directory: {self.FullPath}\n{e}')
 
         return super(XResourceElementWrapper, self).Clean(reason=reason)
 

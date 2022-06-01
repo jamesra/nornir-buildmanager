@@ -40,7 +40,8 @@ import nornir_imageregistration.tileset as tiles
 import nornir_pools
 from nornir_imageregistration import tileset_functions
  
-import nornir_imageregistration.tileset_functions
+import nornir_imageregistration.tileset_functions 
+from nornir_shared import prettyoutput
 
 HistogramTagStr = "HistogramData"
 
@@ -178,7 +179,7 @@ def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterN
     #    return False
 
     # Find out if the number of predicted images matches the number of actual images
-    ImageFiles = glob.glob(OutputLevelNode.FullPath + os.sep + '*' + InputPyramidNode.ImageFormatExt)
+    ImageFiles = glob.iglob(OutputLevelNode.FullPath + os.sep + '*' + InputPyramidNode.ImageFormatExt)
     fileSystemImageFiles = frozenset(map(os.path.basename, ImageFiles))
     transformImageFiles = frozenset(mFile.ImageToTransformString.keys())
      
@@ -1659,14 +1660,14 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
     prettyoutput.CurseString('Stage', "BuildPyramids")
 
     SavePyramidNode = False
-
-    PyramidLevels = _SortedNumberListFromLevelsParameter(Levels) 
-
     Pool = None
-
+    PyramidLevels = _SortedNumberListFromLevelsParameter(Levels) 
+  
     if(PyramidNode is None):
         prettyoutput.LogErr("No volume element available for BuildTilePyramids")
         return
+    
+    local_thread_pool = nornir_pools.GetThreadPool('BuildTilePyramids')
 
     LevelFormatStr = PyramidNode.attrib.get('LevelFormat', nornir_buildmanager.templates.Current.LevelFormat)
 
@@ -1678,6 +1679,12 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
     
     # Ensure each level is unique
     PyramidLevels = sorted(frozenset(PyramidLevels))
+    
+    #This is the set of files we have generated during this call for a previous
+    #level.  We do not need to interrogate the disk for the validity and 
+    #existence of these files on the assumption we'd have an error earlier if
+    #they failed to generate or write to disk
+    PreviouslyGeneratedOutputFiles = frozenset()
 
     for i in range(1, len(PyramidLevels)):
 
@@ -1706,48 +1713,96 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
 
         InputGlobPattern = os.path.join(InputTileDir, "*" + PyramidNode.ImageFormatExt)
         OutputGlobPattern = os.path.join(OutputTileDir, "*" + PyramidNode.ImageFormatExt)
-
-        SourceFiles = glob.glob(InputGlobPattern)
-
+ 
         taskList = []
+        
+        # Simply a speedup so we aren't constantly hitting the server with exist requests for populated directories
+        SourceFilesTask = local_thread_pool.add_task(f"Get Source Files {InputGlobPattern}", glob.glob, InputGlobPattern)
+        DestFiles = glob.glob(OutputGlobPattern)
+        DestFileBaseNames = frozenset([os.path.basename(x) for x in DestFiles ])
+        SourceFiles = SourceFilesTask.wait_return()
 
         # Create directories if we have source files and the directories are missing
         if(len(SourceFiles) > 0):
             os.makedirs(OutputTileDir, exist_ok=True)
-
-        # Simply a speedup so we aren't constantly hitting the server with exist requests for populated directories
-        DestFiles = glob.glob(OutputGlobPattern)
+        
         if(len(DestFiles) == PyramidNode.NumberOfTiles and
-           len(SourceFiles) == len(DestFiles)):
+            len(SourceFiles) == len(DestFiles)):
             
-            # Double check that the files aren't out of date
+            # If the first pair of files are not out of data assume the 
+            # rest are current and check the next pyramid level 
             if not OutdatedFile(SourceFiles[0], DestFiles[0]):
                 continue
 
-        DestFiles = [os.path.basename(x) for x in DestFiles ]
+        #Use a frozenset to optimize the 'in' keyword use in the upcoming loop
+        SourceFileBaseNames = frozenset([os.path.basename(x) for x in SourceFiles ])
+         
+        MissingDestFiles = SourceFileBaseNames - DestFileBaseNames
+        
+        #Go collect all of the information we are going to need to collect with File I/O using threads
+        ExistingDestFiles = SourceFileBaseNames.intersection(DestFileBaseNames)
+        DestNeedsReplacmentTasks = []
+        
+        for filename in ExistingDestFiles:
+            outputFile = os.path.join(OutputTileDir, filename)
+            inputFile = os.path.join(InputTileDir, filename)
+        
+            t = local_thread_pool.add_task(f'Check if {filename} is valid', lambda: not RemoveOutdatedFile(inputFile, outputFile) and not RemoveInvalidImageFile(outputFile)) 
+            t.filename = filename
+            DestNeedsReplacmentTasks.append(t)
+        
+        DestFileIsValid = [(t.filename, t.wait_return()) for t in DestNeedsReplacmentTasks]
+        del DestNeedsReplacmentTasks
+        DestNeedsReplacment = list(filter(lambda t: not t[1], DestFileIsValid))
+        DestIsValid = set([d[0] for d in filter(lambda t: t[1], DestFileIsValid)])
+        DestNeedsReplacment.extend([(f, True) for f in MissingDestFiles])
+        
+        DestFileNeedsReplacmentSet = frozenset([d[0] for d in DestNeedsReplacment])
+        del DestNeedsReplacment
+        
+        #For the destinations needs replacement, check if the input is valid.
+        #Do not check the output of previous iterations in earlier loops since
+        #we can assume they are valid or we'd get an exception earlier
+        SourceFileIsValidTasks = []
+        for filename in DestFileNeedsReplacmentSet - PreviouslyGeneratedOutputFiles:
+            inputFile = os.path.join(InputTileDir, filename)
+            
+            t = local_thread_pool.add_task(f'Check if {filename} is valid', os.path.getsize, inputFile)
+            t.filename = filename
+            SourceFileIsValidTasks.append(t)
+            
+        SourceFileIsValidSet = set(PreviouslyGeneratedOutputFiles)
+        for t in SourceFileIsValidTasks:
+            try:
+                #Check that the input file has a non-zero size
+                if t.wait_return() > 0:
+                    SourceFileIsValidSet.add(t.filename)
+            except Exception as e:
+                prettyoutput.error(f'Input file getsize excepption {e}')
+         
+        #Files we can update
+        FilesToUpdate = DestFileNeedsReplacmentSet.intersection(SourceFileIsValidSet)
 
-        for f in SourceFiles:
-            filename = os.path.basename(f)
+        for filename in FilesToUpdate:
+            #filename = os.path.basename(f)
 
             outputFile = os.path.join(OutputTileDir, filename)
             inputFile = os.path.join(InputTileDir, filename)
-
-            if(filename in DestFiles):
-                continue
-
-            # Don't process if the input is temp file
-            try:
-                if(os.path.getsize(inputFile) <= 0):
-                    continue
-            except:
-                continue
-
-            if os.path.exists(outputFile):
-                RemoveOutdatedFile(inputFile, outputFile)
-                RemoveInvalidImageFile(outputFile)
-
-            if(os.path.exists(outputFile)):
-                continue
+             
+            #Just because it exists doesn't mean it is valid
+            # DestFileExists = filename in DestFileBaseNames
+            # if DestFileExists:
+            #     DestFileExists = DestFileExists and not RemoveOutdatedFile(inputFile, outputFile) and not RemoveInvalidImageFile(outputFile)
+            #
+            # if DestFileExists:
+            #     continue
+            #
+            # # Don't process if the input is temp file
+            # try:
+            #     if(os.path.getsize(inputFile) <= 0):
+            #         continue
+            # except:
+            #     continue
 
             if Pool is None:
                 # Pool = nornir_pools.GetThreadPool('BuildTilePyramids {0}'.format(OutputTileDir), multiprocessing.cpu_count() * 2)
@@ -1763,6 +1818,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
 
             taskStr = "{0} -> {1}".format(inputFile, outputFile)
             task = Pool.add_task(taskStr, nornir_imageregistration.Shrink, inputFile, outputFile, shrinkFactor)
+            task.filename = filename
             task.inputFile = inputFile
             taskList.append(task)
 
@@ -1773,6 +1829,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                 if hasattr(task, 'returncode'):
                     if task.returncode > 0:
                         RemoveSource = True
+                        DestIsValid.remove(task.filename)
                         prettyoutput.LogErr('\n*** Suspected bad input file to pyramid, deleting the source image.  Rerun scripts to attempt adding the file again.\n')
                         try:
                             os.remove(task.inputFile)
@@ -1782,8 +1839,10 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                     try:
                         task.wait()  # We do this to ensure any exeptions are raised
                         RemoveSource = False
+                        DestIsValid.add(task.filename)
                     except:
                         RemoveSource = True
+                        DestIsValid.remove(task.filename)
                         
                 if RemoveSource:
                     if not nornir_shared.images.IsValidImage(task.inputFile): 
@@ -1793,9 +1852,16 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                         except:
                             pass
                         
+        #Save the list of files we know are good as input the next iteration
+        PreviouslyGeneratedOutputFiles = frozenset(DestIsValid)
+                        
     if not Pool is None:
         Pool.shutdown()
-        Pool = None                    
+        Pool = None      
+        
+    if local_thread_pool is not None:
+        local_thread_pool.shutdown()
+        local_thread_pool = None              
 
     if SavePyramidNode:
         return PyramidNode

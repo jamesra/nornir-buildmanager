@@ -1,5 +1,6 @@
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_shared.images import *
+from nornir_shared.files import rmtree
 import nornir_buildmanager.importers.shared as shared
 
 from . import idoc
@@ -97,7 +98,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
                     prettyoutput.LogErr('Could not rename converted tif file: ' + tiffFile);
                     prettyoutput.LogErr(str(e));
 
-            shutil.rmtree(tempDirNameFullPath);
+            rmtree(tempDirNameFullPath);
 
             [mdocroot, mdocExt] = os.path.splitext(mdoc);
             mdocfilenamebase = os.path.basename(mdocroot);

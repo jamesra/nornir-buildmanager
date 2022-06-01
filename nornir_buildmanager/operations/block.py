@@ -916,7 +916,7 @@ def AssembleStosOverlays(Parameters, StosMapNode, GroupNode, Logger, **kwargs):
         #Pool.wait_completion()
         nornir_pools.WaitOnAllPools()
     finally:
-        shutil.rmtree('Temp', ignore_errors=True)
+        files.rmtree('Temp', ignore_errors=True)
 
         os.chdir(oldDir)
 
