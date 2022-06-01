@@ -22,6 +22,7 @@ import nornir_shared.misc
 import test.testbase
 
 import nornir_buildmanager.build as build
+from abc import abstractproperty
 
 
 def VerifyVolume(test, VolumeObj, listVolumeEntries):
@@ -951,8 +952,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
 class PlatformTest(NornirBuildTestBase):
 
     @property
+    @abstractproperty
     def Platform(self):
-        raise Exception("Platform property not implemented")
+        raise NotImplementedError("Platform property not implemented")
 
     @property
     def PlatformFullPath(self):

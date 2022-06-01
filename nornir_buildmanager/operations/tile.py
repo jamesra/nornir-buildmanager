@@ -22,6 +22,7 @@ from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates 
 from nornir_buildmanager.validation import transforms, image
 from nornir_imageregistration.files import mosaicfile
+from nornir_imageregistration.mosaic_tileset import MosaicTileset
 from nornir_imageregistration.tileset import ShadeCorrectionTypes
 from nornir_imageregistration.transforms import *
 from nornir_shared import *
@@ -1209,11 +1210,11 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        (mosaicImage, maskImage) = mosaic.AssembleImage(ImageDir,
-                                                        FixedRegion=RequestedBoundingBox,
-                                                        usecluster=True,
-                                                        target_space_scale=1.0/thisLevel,
-                                                        source_space_scale=1.0/thisLevel)
+        mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, ImageDir, source_space_scale=1.0/thisLevel)
+        
+        (mosaicImage, maskImage) = mosaicTileset.AssembleImage(FixedRegion=RequestedBoundingBox,
+                                                               usecluster=True,
+                                                               target_space_scale=1.0/thisLevel)
 
         if mosaicImage is None or maskImage is None:
             Logger.error("No output produced assembling " + TransformNode.FullPath)
@@ -1529,7 +1530,11 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
         
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
         expected_scale = 1.0 / LevelOne.Downsample
-        scaled_fixed_bounding_box_shape = numpy.ceil(mosaic.FixedBoundingBox.shape / (1 / expected_scale)).astype(numpy.int64)
+        
+        mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, image_folder=InputLevelNode.FullPath,
+                                                       source_space_scale=expected_scale)
+        
+        scaled_fixed_bounding_box_shape = numpy.ceil(mosaicTileset.FixedBoundingBox.shape / (1 / expected_scale)).astype(numpy.int64)
         expected_grid_dims = nornir_imageregistration.TileGridShape(scaled_fixed_bounding_box_shape,
                                                                     tile_size=tile_dims)
          
@@ -1543,11 +1548,10 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
             prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(float(max_temp_image_area) / float(2 << 20)))
 
          
-        for tile in mosaic.GenerateOptimizedTiles(tilesPath=InputLevelNode.FullPath, 
-                                                                      target_space_scale=1.0/InputLevelNode.Downsample,
-                                                                      tile_dims=tile_dims,
-                                                                      max_temp_image_area=max_temp_image_area,
-                                                                      usecluster=True):
+        for tile in mosaicTileset.GenerateOptimizedTiles(target_space_scale=1.0/InputLevelNode.Downsample,
+                                                  tile_dims=tile_dims,
+                                                  max_temp_image_area=max_temp_image_area,
+                                                  usecluster=True):
             (iRow, iCol, tile_image) = tile
             
             tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' : TileSetNode.FilePrefix,

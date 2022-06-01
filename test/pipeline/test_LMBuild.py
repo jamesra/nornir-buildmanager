@@ -42,7 +42,7 @@ class ShadingCorrectionTest(LMBuildTest):
         ShadingCorrectedFilters = list(self.VolumeObj.findall("Block/Section/Channel/Filter[@Name='ShadingCorrected']"))
         Channels = list(self.VolumeObj.findall("Block/Section/Channel"))
 
-        # We expect each folder to be a seperate channel, so make sure each channel has a ShadingCorrectedFilter
+        # We expect each folder to be a separate channel, so make sure each channel has a ShadingCorrectedFilter
         self.assertEqual(len(ShadingCorrectedFilters), len(os.listdir(self.ImportedDataPath)))
         self.assertEqual(len(ShadingCorrectedFilters), len(Channels))
 

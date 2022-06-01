@@ -94,5 +94,5 @@ def GetFileNameForTileNumber(tile_number, ext):
     if ext[0] == '.':
         ext = ext[1:]
     
-    return (nornir_buildmanager.templates.Current.TileCoordFormat % tile_number) + '.' + ext
+    return f"{nornir_buildmanager.templates.Current.TileCoordFormat % tile_number}.{ext}"
     
