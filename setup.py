@@ -19,8 +19,8 @@ if __name__ == '__main__':
     
     #Starting with 1.3.4 Image Magick 7 is required
 
-    install_requires = ["nornir_pools>=1.4.1",
-                        "nornir_shared>=1.4.1", 
+    install_requires = ["nornir_pools>=1.5.0",
+                        "nornir_shared>=1.5.0", 
                         "nornir_imageregistration>=1.4.1",
                         "numpy>=1.9.1",
                         "scipy>=0.13.2",
@@ -53,7 +53,7 @@ if __name__ == '__main__':
     setup(name='nornir_buildmanager',
           zip_safe=True,
           classifiers=classifiers,
-          version='1.4.1',
+          version='1.5.0',
           scripts=scripts,
           description="Scripts for the construction of 3D volumes from 2D image sets.",
           author="James Anderson",
