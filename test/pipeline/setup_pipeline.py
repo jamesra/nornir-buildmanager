@@ -746,7 +746,8 @@ class NornirBuildTestBase(test.testbase.TestBase):
                                           '-OutputDownsample', str(int(OutputLevel)),
                                           '-Filter', 'Leveled',
                                           '-Iterations', "3",
-                                          '-Threshold', "1.0")
+                                          '-Threshold', "1.0",
+                                          '-MinUnmaskedCellArea', "0.2")
         if UseMasks:
             buildArgs.append('-UseMasks')   
             

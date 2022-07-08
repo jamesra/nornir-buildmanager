@@ -1210,7 +1210,7 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
 
         Logger.info("Assembling " + TransformNode.FullPath)
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
-        mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, ImageDir, source_space_scale=1.0/thisLevel)
+        mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, ImageDir, image_to_source_space_scale=thisLevel)
         
         (mosaicImage, maskImage) = mosaicTileset.AssembleImage(FixedRegion=RequestedBoundingBox,
                                                                usecluster=True,
@@ -1532,9 +1532,9 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
         expected_scale = 1.0 / LevelOne.Downsample
         
         mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, image_folder=InputLevelNode.FullPath,
-                                                       source_space_scale=expected_scale)
+                                                       image_to_source_space_scale=expected_scale)
         
-        scaled_fixed_bounding_box_shape = numpy.ceil(mosaicTileset.FixedBoundingBox.shape / (1 / expected_scale)).astype(numpy.int64)
+        scaled_fixed_bounding_box_shape = numpy.ceil(mosaicTileset.TargetBoundingBox.shape / (1.0 / expected_scale)).astype(numpy.int64)
         expected_grid_dims = nornir_imageregistration.TileGridShape(scaled_fixed_bounding_box_shape,
                                                                     tile_size=tile_dims)
          

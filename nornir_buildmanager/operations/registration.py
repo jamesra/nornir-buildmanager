@@ -91,9 +91,8 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             mosaicToLoadPath = tempMosaicFullPath
             
         mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
-        firstpass_translated_mosaicObj = mosaicObj.ArrangeTilesWithTranslate(tiles_path=LevelNode.FullPath,
-                                                                             image_scale=1.0 / RegistrationDownsample,
-                                                                             excess_scalar=excess_scalar,
+        tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj, image_folder=LevelNode.FullPath, image_to_source_space_scale=LevelNode.Downsample)
+        firstpass_translated_mosaicObj = tileset.ArrangeTilesWithTranslate(  excess_scalar=excess_scalar,
                                                                              min_overlap=min_overlap,
                                                                              feature_score_threshold=feature_score_threshold,
                                                                              min_translate_iterations=min_translate_iterations,
