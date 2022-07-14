@@ -109,12 +109,11 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         #run ToMosaic on all of them
         
         idocFileList = []
-            
-        for idocFullPath in glob.glob(os.path.join(path, '*.idoc')):
-            idocFileList.append(idocFullPath)
+        idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
             
         if len(idocFileList) > 0:
             
+            idocFullPath = idocFileList[0]
             meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
             
             #Skip this section if it is not in the desired range
@@ -157,7 +156,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
-
+     
 
 class SerialEMIDocImport(object):
     
