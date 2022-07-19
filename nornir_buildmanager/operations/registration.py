@@ -92,7 +92,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             
         mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
         tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj, image_folder=LevelNode.FullPath, image_to_source_space_scale=LevelNode.Downsample)
-        firstpass_translated_mosaicObj = tileset.ArrangeTilesWithTranslate(  excess_scalar=excess_scalar,
+        firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(  excess_scalar=excess_scalar,
                                                                              min_overlap=min_overlap,
                                                                              feature_score_threshold=feature_score_threshold,
                                                                              min_translate_iterations=min_translate_iterations,
@@ -102,7 +102,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                                                                              first_pass_inter_tile_distance_scale=first_pass_inter_tile_distance_scale,
                                                                              inter_tile_distance_scale=inter_tile_distance_scale)
         
-        firstpass_translated_mosaicObj.SaveToMosaicFile(OutputTransformNode.FullPath)
+        firstpass_translated_mosaicObj_tileset.SaveMosaic(OutputTransformNode.FullPath)
 
         SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
         
@@ -230,15 +230,15 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
 
     CellString = ''
     if not (Cell  is None):
-        CellString = ' -cell ' + str(Cell) + ' '
+        CellString = f' -cell {Cell} '
 
     ThresholdString = ''
     if not Threshold is None:
         ThresholdString = ' -displacement_threshold %g ' % Threshold
 
-    MeshString = ' -mesh ' + str(MeshWidth) + ' ' + str(MeshHeight) + ' '
-    ItString = ' -it ' + str(Iterations) + ' '
-    SpacingString = ' -sp ' + str(PixelSpacing) + ' '
+    MeshString = f' -mesh {MeshWidth} {MeshHeight} '
+    ItString = f' -it {Iterations} '
+    SpacingString = f' -sp {PixelSpacing} '
 
     # Check if there is an existing prune map, and if it exists if it is out of date
     TransformParentNode = InputTransformNode.Parent
@@ -256,19 +256,38 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         return None
 
     if not os.path.exists(OutputTransformNode.FullPath):
-        CmdLineTemplate = "ir-refine-grid -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s " + ThresholdString + ItString + CellString + MeshString + SpacingString
-        cmd = CmdLineTemplate % {'InputMosaic': InputTransformNode.FullPath, 'OutputMosaic': OutputTransformNode.FullPath, 'ImageDir': LevelNode.FullPath}
-        prettyoutput.CurseString('Cmd', cmd)
-        NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-        output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
-        
-        if len(output) == 0:
-            raise RuntimeError("No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
+        #This is a workaround for ir-refine-grid appearing to reverse the X,Y coordinates from the documented order on ITK's website for Rigid and and CenteredSimiliarity transforms
+        InputMosaic = InputTransformNode.FullPath
+        try:
+            #TempInputMosaic = InputMosaic
 
-        OutputTransformNode.cmd = cmd
-        SaveRequired = True
-
-        TransformNodeToZeroOrigin(OutputTransformNode)
+            TempInputMosaic = os.path.join(os.path.dirname(InputMosaic), f'Corrected_{os.path.basename(InputMosaic)}')
+            mosaic = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
+            #NeedsXYSwap = mosaic.HasTransformsNotUnderstoodByIrTools()
+            workaroundMosaic = mosaic.CreateCorrectedXYMosaicForStupidITKWorkaround()
+            workaroundMosaic.Save(TempInputMosaic)
+            
+            CmdLineTemplate = "ir-refine-grid -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s " + ThresholdString + ItString + CellString + MeshString + SpacingString
+            cmd = CmdLineTemplate % {'InputMosaic': TempInputMosaic, 'OutputMosaic': OutputTransformNode.FullPath, 'ImageDir': LevelNode.FullPath}
+            prettyoutput.CurseString('Cmd', cmd)
+            NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
+            output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
+            
+            if len(output) == 0:
+                raise RuntimeError("No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
+    
+            OutputTransformNode.cmd = cmd
+            SaveRequired = True
+    
+            TransformNodeToZeroOrigin(OutputTransformNode)
+            
+            #if NeedsXYSwap:
+                
+            
+            #Reverse the output of ir-refine-grid on the X,Y axis dues ot 
+        finally:
+            os.remove(TempInputMosaic)
+            pass
 
     if SaveRequired:
         return TransformParentNode
