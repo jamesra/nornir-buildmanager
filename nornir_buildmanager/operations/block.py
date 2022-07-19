@@ -1623,7 +1623,7 @@ def RefineInvoker(RefineFunc, Parameters, MappingNode, InputGroupNode,
                         RefineFunc(InputStosFullPath, OutputStosFullPath, **Parameters)
                     except Exception as e:
                         prettyoutput.Log(f"Exception calling stos refine function {RefineFunc}:\n{e}\n\n")
-                        pass
+                        raise e
 
                     if not os.path.exists(OutputStosFullPath):
                         Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
