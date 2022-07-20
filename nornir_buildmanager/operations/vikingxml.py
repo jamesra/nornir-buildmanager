@@ -10,7 +10,7 @@ import os
 
 import nornir_buildmanager.VolumeManagerETree
 from nornir_imageregistration.files import *
-from nornir_shared.files import RecurseSubdirectories
+from nornir_shared.files import RecurseSubdirectoriesGenerator
 import nornir_shared.prettyoutput as prettyoutput
 import xml.etree.ElementTree as ETree
 import nornir_pools
@@ -19,7 +19,7 @@ ECLIPSE = 'ECLIPSE' in os.environ
 
 def CreateXMLIndex(path, server=None):
 
-    VolumeXMLDirs = RecurseSubdirectories(Path=path, RequiredFiles='Volume.xml')
+    VolumeXMLDirs = RecurseSubdirectoriesGenerator(Path=path, RequiredFiles='Volume.xml')
 
     for directory in VolumeXMLDirs:
 

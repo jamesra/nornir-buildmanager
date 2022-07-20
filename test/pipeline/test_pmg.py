@@ -122,7 +122,7 @@ class ImportPMG(PMGTest):
 
         pmgImportDir = os.path.join(self.PlatformFullPath, "6750")
 
-        pmgSectionDirs = nornir_shared.files.RecurseSubdirectories(pmgImportDir, "*.pmg")
+        pmgSectionDirs = nornir_shared.files.RecurseSubdirectoriesGenerator(pmgImportDir, "*.pmg")
 
         for pmgDir in pmgSectionDirs:
 
@@ -332,8 +332,8 @@ class ParsePMG(PMGTest):
 
         super(PMGTest, self).setUp()
 
-        self.pmgDirs = nornir_shared.files.RecurseSubdirectories(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg")
-        self.pmgDirs.extend(nornir_shared.files.RecurseSubdirectories(os.path.join(self.PlatformFullPath, '6750'), "*.pmg"))
+        self.pmgDirs = nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg")
+        self.pmgDirs.extend(nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg"))
         self.assertTrue(len(self.pmgDirs) > 0, "No test input found")
 
     def runTest(self):
