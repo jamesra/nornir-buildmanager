@@ -51,10 +51,12 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if len(ContrastMap) == 0:
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
         
-    DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
-    for path in DirList:
+    matches = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
+    for m in matches:
+        (path, foundfiles) = m
+        foundfiles = [os.path.join(path, f) for f in foundfiles]
         prettyoutput.CurseString("MRCImport", "Importing *.{0} from {1}".format(extension, path))
-        for file_fullpath in glob.glob(os.path.join(path, '*.{0}'.format(extension))):
+        for file_fullpath in foundfiles:
             yield from MRCImport.ToMosaic(VolumeElement,
                                           file_fullpath,
                                           FlipList=FlipList,

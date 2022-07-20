@@ -42,9 +42,11 @@ def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **k
     if extension is None:
         extension = 'png'
 
-    DirList = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*.%s" % extension)
-    for path in DirList:
-        for idocFullPath in glob.glob(os.path.join(path, '*.' + extension)):
+    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles=f"*.{extension}")
+    for m in matches:
+        (path, foundfiles) = m
+        foundfiles = [os.path.join(path, f) for f in foundfiles]
+        for idocFullPath in foundfiles:
             result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
             if result is not None:
                 yield result
