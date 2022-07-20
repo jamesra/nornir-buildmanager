@@ -94,13 +94,13 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if not os.path.exists(ImportPath):
         raise ValueError("Import Path does not exist: %s" % ImportPath) 
 
-    DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
+    matches = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
 
     DataFound = False 
     
     found_sections = {}
 
-    for path in DirList:
+    for m in matches:
         #The problem with using the directory name is that there could be more than one
         #.idoc file in a directory if a two-part capture of a section is done.
         #  However the extensive use of 1.idoc naming
@@ -108,8 +108,11 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         #So I build a list of all .idoc files in a directory and later we'll 
         #run ToMosaic on all of them
         
-        idocFileList = []
-        idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
+        (path, idocFileList) = m
+        idocFileList = [os.path.join(path, f) for f in idocFileList]
+        
+        #idocFileList = []
+        #idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
             
         if len(idocFileList) > 0:
             

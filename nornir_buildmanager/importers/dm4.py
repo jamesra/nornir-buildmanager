@@ -58,10 +58,12 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if len(ContrastMap) == 0:
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
 
-    DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
-    for path in DirList:
+    matches = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
+    for m in matches:
+        (path, foundfiles) = m
+        foundfiles = [os.path.join(path, f) for f in foundfiles]
         prettyoutput.CurseString("DM4Import", "Importing *.dm4 from {0}".format(path))
-        for idocFullPath in glob.glob(os.path.join(path, '*.dm4')):
+        for idocFullPath in foundfiles:
             yield from DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap, DesiredSectionList=DesiredSectionList)
     
     nornir_pools.WaitOnAllPools()
