@@ -118,7 +118,12 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         if len(idocFileList) > 0:
             
             idocFullPath = idocFileList[0]
-            meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
+            
+            try:
+                meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
+            except nornir_buildmanager.NornirUserException:
+                prettyoutput.LogErr(f"Could not parse required metadata from {idocFullPath}")
+                continue
             
             #Skip this section if it is not in the desired range
             if not DesiredSectionList is None:
@@ -256,7 +261,11 @@ class SerialEMIDocImport(object):
         if(Flip):
             prettyoutput.Log("Found in FlipList.txt, flopping images")
 
-        IDocData = IDoc.Load(idocFilePath, CameraBpp=CameraBpp)
+        try:
+            IDocData = IDoc.Load(idocFilePath, CameraBpp=CameraBpp)
+        except Exception as e:
+            prettyoutput.LogErr(f"Could not load idoc {idocFilePath}")
+            raise e
 
         assert(hasattr(IDocData, 'PixelSpacing'))
         assert(hasattr(IDocData, 'DataMode'))
@@ -363,6 +372,7 @@ class SerialEMIDocImport(object):
             for f in SourceToMissingTargetMap:
                 shutil.copy(f, SourceToMissingTargetMap[f])
         
+        UpdateMosaicFile = False
         try:
             #Check if we need to reimport the stage.mosaic file
             cutoff_time = datetime.datetime(year=2022, month=7, day=18)
