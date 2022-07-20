@@ -31,6 +31,7 @@ Example:
 '''
 
 import re
+import datetime
 import nornir_buildmanager.templates
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.operations.tile import VerifyTiles
@@ -300,7 +301,6 @@ class SerialEMIDocImport(object):
         #_PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
         Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax, force_recreate=contrast_mismatch)
         
-        
         ImageConversionRequired = contrast_mismatch
 
         # Create a channel for the Raw data 
@@ -359,12 +359,26 @@ class SerialEMIDocImport(object):
         elif(Tileset.ImageMoveRequired):
             for f in SourceToMissingTargetMap:
                 shutil.copy(f, SourceToMissingTargetMap[f])
-                
+        
+        try:
+            #Check if we need to reimport the stage.mosaic file
+            cutoff_time = datetime.datetime(year=2022, month=7, day=18)
+            mosaic_fd = os.stat(SupertilePath)
+            file_creation_time = datetime.datetime.utcfromtimestamp(mosaic_fd.st_ctime)
+             
+            if cutoff_time > file_creation_time and 'RC3' in VolumeObj.FullPath:
+                UpdateMosaicFile = True
+            
+        except FileNotFoundError:
+            pass
+                    
         if os.path.exists(SupertilePath):
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
-            UpdateMosaicFile = MFile.NumberOfImages != len(Tileset.Tiles)
+            UpdateMosaicFile = UpdateMosaicFile or MFile.NumberOfImages != len(Tileset.Tiles)
             if MFile.NumberOfImages != len(Tileset.Tiles):
                 prettyoutput.Log("Number of tiles in .mosaic did not match number of tiles in .idoc: " + str(MFile.NumberOfImages) + " vs. " + str(len(Tileset.Tiles)))
+                
+        
 
         # If we wrote new images replace the .mosaic file
         if len(SourceToMissingTargetMap) > 0 or not os.path.exists(SupertilePath) or UpdateMosaicFile:
