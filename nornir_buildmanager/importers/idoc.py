@@ -375,7 +375,7 @@ class SerialEMIDocImport(object):
         UpdateMosaicFile = False
         try:
             #Check if we need to reimport the stage.mosaic file
-            cutoff_time = datetime.datetime(year=2022, month=7, day=18)
+            cutoff_time = datetime.datetime(year=2022, month=7, day=18) #The deployment date of the updated nornir version
             mosaic_fd = os.stat(SupertilePath)
             file_creation_time = datetime.datetime.utcfromtimestamp(mosaic_fd.st_ctime)
              
