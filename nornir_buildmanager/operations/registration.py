@@ -281,9 +281,6 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     
             TransformNodeToZeroOrigin(OutputTransformNode)
             
-            #if NeedsXYSwap:
-                
-            
             #Reverse the output of ir-refine-grid on the X,Y axis dues ot 
         finally:
             os.remove(TempInputMosaic)
