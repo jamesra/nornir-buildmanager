@@ -11,7 +11,6 @@ import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared import files
 
 
-
 def try_remove_spaces_from_dirname(sectionDir):
     ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
     sectionDirNoSpaces = sectionDir.replace(' ', '_')
@@ -25,6 +24,7 @@ def try_remove_spaces_from_dirname(sectionDir):
     
     return None
 
+
 def _Update_path_on_rename(file_fullpath, new_section_dir):
     '''Return the correct paths if we move the directory a section lives in'''
     
@@ -36,6 +36,7 @@ def _Update_path_on_rename(file_fullpath, new_section_dir):
     
     return file_fullpath
 
+
 def GetDirectories(idocFileFullPath):
     '''
     :return: (ParentDir, SectionDir) The directory holding the section directory and the section directory in a tuple 
@@ -43,6 +44,7 @@ def GetDirectories(idocFileFullPath):
     sectionDir = os.path.dirname(idocFileFullPath)
     ParentDir = os.path.dirname(sectionDir)
     return (ParentDir, sectionDir)
+
 
 def GetPathWithoutSpaces(idocFileFullPath):
     sectionDir = os.path.dirname(idocFileFullPath)
@@ -58,7 +60,7 @@ def TryAddLogs(containerObj, InputPath, logger):
     LogsFiles = glob.glob(os.path.join(InputPath, '*.log'))
     LogsAdded = False
     if len(LogsFiles) == 0:
-        print("NO LOG FILE FOUND FOR CAPTURE: " % InputPath)   
+        print(f"NO LOG FILE FOUND FOR CAPTURE: {InputPath}")   
     elif len(LogsFiles) > 0:
         for filename in LogsFiles:
 
@@ -148,8 +150,8 @@ def PickleLoad(logfullPath, version_func):
             with open(picklePath, 'rb') as filehandle:
                 obj = pickle.load(filehandle)
 
-                version_func(obj) #Should raise OldVersionException if the file is stale
-                #if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+                version_func(obj)  # Should raise OldVersionException if the file is stale
+                # if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
                 #    raise OldVersionException("Version mismatch in pickled file: " + picklePath)
         except nornir_buildmanager.importers.OldVersionException as e:
             try:
@@ -181,7 +183,7 @@ def PickleSave(obj, logfullPath):
         with open(picklePath, 'wb') as filehandle:
             pickle.dump(obj, filehandle)
     except Exception as e:
-        prettyoutput.LogErr(str.format("Could not cache {0}: {1}", picklePath, str(e) ) )
+        prettyoutput.LogErr(str.format("Could not cache {0}: {1}", picklePath, str(e)))
         try:
             os.remove(picklePath)
         except:
