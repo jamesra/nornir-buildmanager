@@ -2488,11 +2488,13 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms, OutputStosMosaicTransformNam
 
     # Translate needs to accound for the fact that the mosaics need an origin of 0,0 for assemble to work.  We also need to figure out the largest image dimension
     # and set the CropBox property so each image is the same size after assemble is used.
-    if mosaicToVolume.IsOriginAtZero():
+    translation_to_zero = mosaicToVolume.TranslateToZeroOrigin()
+    
+    if translation_to_zero[0] == 0 and translation_to_zero[1] == 0:
         return None
-
-    new_bbox = mosaicToVolume.TranslateToZeroOrigin()
-
+    
+    new_bbox = mosaicToVolume.VolumeBounds
+    
     (minY, minX, maxY, maxX) = new_bbox.ToTuple()
 
     maxX = int(math.ceil(maxX))
