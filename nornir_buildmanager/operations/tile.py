@@ -15,6 +15,7 @@ import multiprocessing
 import numpy
 import queue
 import datetime 
+import concurrent.futures
 
 
 import nornir_imageregistration
@@ -1746,16 +1747,26 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
         #Go collect all of the information we are going to need to collect with File I/O using threads
         ExistingDestFiles = SourceFileBaseNames.intersection(DestFileBaseNames)
         DestNeedsReplacmentTasks = []
+        DestFileIsValid = []
         
-        for filename in ExistingDestFiles:
-            outputFile = os.path.join(OutputTileDir, filename)
-            inputFile = os.path.join(InputTileDir, filename)
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            tasks = []
+            for filename in ExistingDestFiles:
+                outputFile = os.path.join(OutputTileDir, filename)
+                inputFile = os.path.join(InputTileDir, filename)
+                assert(outputFile != inputFile)
+                
+                task = executor.submit(lambda inputFile, outputFile: not RemoveOutdatedFile(inputFile, outputFile) and not RemoveInvalidImageFile(outputFile), inputFile, outputFile)
+                task.filename = filename
+                tasks.append(task)
+                
+            for t in concurrent.futures.as_completed(tasks):
+                try:
+                    DestFileIsValid.append( (t.filename, t.result()) )
+                except Exception as e:
+                    DestFileIsValid = (t.filename, False)
+                    prettyoutput.error(f'Could not validate tile, regenerating {os.path.join(OutputTileDir, filename)}')
         
-            t = local_thread_pool.add_task(f'Check if {filename} is valid', lambda: not RemoveOutdatedFile(inputFile, outputFile) and not RemoveInvalidImageFile(outputFile)) 
-            t.filename = filename
-            DestNeedsReplacmentTasks.append(t)
-        
-        DestFileIsValid = [(t.filename, t.wait_return()) for t in DestNeedsReplacmentTasks]
         del DestNeedsReplacmentTasks
         DestNeedsReplacment = list(filter(lambda t: not t[1], DestFileIsValid))
         DestIsValid = set([d[0] for d in filter(lambda t: t[1], DestFileIsValid)])
