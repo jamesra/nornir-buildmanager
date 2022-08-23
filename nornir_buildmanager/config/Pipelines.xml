@@ -690,7 +690,7 @@
                 type="float"
                 help="Displacement threshold for control point movement (in pixels).  Refinement stops below this value"
                 required="False" />
-            <Argument flag="-MinOverlap" default="0.080" dest="min_overlap"
+            <Argument flag="-MinOverlap" default="0.05" dest="min_overlap"
                 type="float"
                 help="Minimum amount of overlap tiles must have to contribute to the final mosaic."
                 required="False" />
@@ -708,8 +708,11 @@
                 type="float"
                 help="Minimum average FFT power spectral density.  Determines if overlapping have enough texture for registration to be accurate."
                 required="False" />
-            <Argument flag="-MinTranslateIterations" default="5" dest="min_translate_iterations"
+            <Argument flag="-MinTranslateIterations" default="1" dest="min_translate_iterations"
                 type="int" help="Minimum number of iterations phase correlation and relaxation"
+                required="False" />
+            <Argument flag="-MaxTranslateIterations" default="5" dest="max_translate_iterations"
+                type="int" help="Maximum number of iterations phase correlation and relaxation"
                 required="False" />
             <Argument flag="-RelaxIterations" default="500" dest="max_relax_iterations"
                 type="int" help="Maximum number of relaxation passes to in translation only placement phase"
@@ -747,7 +750,8 @@
                     FilterNode="#FilterNode" RegistrationDownsample="#Downsample"
                     excess_scalar="#excess_scalar"
                     min_overlap="#min_overlap" feature_score_threshold="#feature_score_threshold"
-                    min_translate_iterations="#min_translate_iterations" offset_acceptance_threshold="#offset_acceptance_threshold"
+                    min_translate_iterations="#min_translate_iterations" max_translate_iterations="#max_translate_iterations"
+                    offset_acceptance_threshold="#offset_acceptance_threshold"
                     max_relax_iterations="#max_relax_iterations" max_relax_tension_cutoff="#max_relax_tension_cutoff" inter_tile_distance="inter_tile_distance">
                     <Parameters>
                         <Entry Name="MinOverlap" Value="#min_overlap"/>
