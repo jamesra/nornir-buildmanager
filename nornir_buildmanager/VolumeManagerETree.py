@@ -2166,6 +2166,11 @@ class ChannelNode(XNamedContainerElementWrapped):
                                                                  'UnitsPerPixel' : str(scaleValueInNm)}))
             scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
                                                                  'UnitsPerPixel' : str(scaleValueInNm)}))
+        elif isinstance(scaleValueInNm, int):
+            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
+                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
+                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
         elif isinstance(scaleValueInNm, ScaleAxis):
             scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : str(scaleValueInNm.UnitsOfMeasure),
                                                                  'UnitsPerPixel' : str(scaleValueInNm.UnitsPerPixel)}))
