@@ -293,7 +293,7 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
         CenterChanged = CenterSectionParameter != OutputMappingNode.CenterSection
         if CenterChanged:
             # We are changing the center section, so remove all of the section mappings
-            Logger.warn("Requested center section %1d has changed from current value of %2d.  Replacing existing mappings." % (CenterSectionParameter, OutputMappingNode.CenterSection))
+            Logger.warn(f"Requested center section {CenterSectionParameter} has changed from current value of {OutputMappingNode.CenterSection}.  Replacing existing mappings.")
             OutputMappingNode.CenterSection = CenterSectionParameter
 
     CenterSectionNumber = _GetCenterSection(Parameters, OutputMappingNode)
