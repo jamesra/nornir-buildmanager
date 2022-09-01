@@ -3277,8 +3277,17 @@ class MappingNode(XElementWrapper):
 class MosaicBaseNode(XFileElementWrapper):
 
     @classmethod
-    def GetFilename(cls, Name, Type):
-        Path = Name + Type + '.mosaic'
+    def GetFilename(cls, Name:str, Type:str, Ext:str=None):
+        '''
+        Returns the filename for a given mosaic
+        :param str Name: Name of the mosaic
+        :param str Type: Type/Settings information for the mosaic
+        :param str Ext: Extension to use, defaults to .mosaic
+        :rtype: str
+        '''
+        if Ext is None:
+            Ext = '.mosaic'
+        Path = Name + Type + Ext
         return Path
 
     def _CalcChecksum(self):
