@@ -361,7 +361,7 @@ class SerialEMIDocImport(object):
             ImageConversionRequired = (not ImageBpp == TargetBpp) or (ImageConversionRequired or Tileset.ImageConversionRequired)
 
         if(ImageConversionRequired):
-            Invert = False 
+            Invert = False
             filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
@@ -429,9 +429,9 @@ class SerialEMIDocImport(object):
         (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], idoc_data, histogramFullPath)
         
         if SectionNumber in ContrastMap:
-            ActualMosaicMin = ContrastMap[SectionNumber].Min
-            ActualMosaicMax = ContrastMap[SectionNumber].Max
-            Gamma = ContrastMap[SectionNumber].Gamma
+            ActualMosaicMin = ActualMosaicMin if ContrastMap[SectionNumber].Min is None else ContrastMap[SectionNumber].Min
+            ActualMosaicMax = ActualMosaicMax if ContrastMap[SectionNumber].Max is None else ContrastMap[SectionNumber].Max
+            Gamma = Gamma if ContrastMap[SectionNumber].Gamma is None else ContrastMap[SectionNumber].Gamma
         
         return (ActualMosaicMin, ActualMosaicMax, Gamma)
 
