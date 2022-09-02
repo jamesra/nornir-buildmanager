@@ -3535,7 +3535,7 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         #We write down the result the first time we check if the transform is valid since it is expensive
         try:
             if self._validity_checked is True:
-                return True
+                return [True,"Validity already checked"]
         except AttributeError: 
             pass
         
