@@ -734,7 +734,7 @@
             <Argument flag="-inter_tile_distance" default="1" dest="inter_tile_distance" type="float"
                 help="A value from 0 to 1 that scales the distance between the centers of the two tiles.  A value of 0 considers the full images when registering.  A value of 1.0 only considers the overlapping regions according to the tile transforms.  Reduce this value in early registration passes to increase the search area."
                 required="False" />
-            <Argument flag="-MinFeatureScore" default="0.35" dest="feature_score_threshold"
+            <Argument flag="-MinFeatureScore" dest="feature_score_threshold"
                 type="float"
                 help="Minimum average FFT power spectral density.  Determines if overlapping have enough texture for registration to be accurate."
                 required="False" />
