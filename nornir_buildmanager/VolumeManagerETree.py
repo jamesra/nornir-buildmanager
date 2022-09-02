@@ -3337,6 +3337,7 @@ class MosaicBaseNode(XFileElementWrapper):
     def IsValid(self):
         
         result = super(MosaicBaseNode, self).IsValid()
+    
         
         if result[0]:
             knownChecksum = self.attrib.get('Checksum', None)
@@ -3396,6 +3397,8 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
             tag = 'Transform'
+            
+        self._validity_checked = None
             
         super(TransformNode, self).__init__(tag=tag, attrib=attrib, **extra)
         
@@ -3513,6 +3516,12 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
          
     @property
     def NeedsValidation(self):
+        try: 
+            if self._validity_checked is True:
+                return [False, "Validity already checked"] 
+        except AttributeError:
+            pass
+            
         if super(TransformNode, self).NeedsValidation:
             return True
         
@@ -3523,6 +3532,13 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         
+        #We write down the result the first time we check if the transform is valid since it is expensive
+        try:
+            if self._validity_checked is True:
+                return True
+        except AttributeError: 
+            pass
+        
         [valid, reason] = super(TransformNode, self).IsValid()
         prettyoutput.Log('Validate: {0}'.format(self.FullPath))
         if valid:
@@ -3531,7 +3547,10 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         #We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
-            
+        
+        if valid:
+            self._validity_checked = valid
+
         return(valid, reason)
          
     @property
