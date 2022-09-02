@@ -99,7 +99,7 @@ def RemoveNode(Node):
     #Node.Clean()
     return Parent
 
-def RemoveFilterChildNode(Node, IgnoreLock):
+def RemoveFilterChildNode(Node, IgnoreLock, **kwargs):
     '''Delete a child element of a filter, respecting locks if necessary'''
     Parent = Node.Parent
     
