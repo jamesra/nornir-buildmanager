@@ -686,7 +686,7 @@
                 <Iterate VariableName="TransformNode" XPath="Transform">
                     <RequireMatch Attribute="Name" RegEx="#TransformRegEx" />
 
-                    <PythonCall Function="general.RemoveFilterChildNode" Node="#TransformNode"
+                    <PythonCall Function="general.RemoveChannelChildNode" Node="#TransformNode"
                         IgnoreLock="#IgnoreLock" />
                 </Iterate>
             </Iterate>

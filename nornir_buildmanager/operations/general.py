@@ -99,12 +99,12 @@ def RemoveNode(Node):
     #Node.Clean()
     return Parent
 
-def RemoveFilterChildNode(Node, IgnoreLock, **kwargs):
+def RemoveChannelChildNode(Node, IgnoreLock, **kwargs):
     '''Delete a child element of a filter, respecting locks if necessary'''
     Parent = Node.Parent
     
     if not isinstance(Node, nornir_buildmanager.VolumeManager.FilterNode):
-        ParentFilter = Node.FindParent('Filter')
+        ParentFilter = Node.FindParent('Channel')
         
     if not ParentFilter is None:
         Locked = ParentFilter.Locked
