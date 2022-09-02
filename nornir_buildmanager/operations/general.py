@@ -90,6 +90,37 @@ def RemoveDuplicateLinks(ParentNode, ChildNodeName, ChildAttrib=None, **kwargs):
         return ParentNode
     else:
         return None
+    
+def RemoveNode(Node):
+    '''Simply delete the node'''
+    Parent = Node.Parent
+     
+    prettyoutput.Log(f"Removing {Node}")
+    #Node.Clean()
+    return Parent
+
+def RemoveFilterChildNode(Node, IgnoreLock):
+    '''Delete a child element of a filter, respecting locks if necessary'''
+    Parent = Node.Parent
+    
+    if not isinstance(Node, nornir_buildmanager.VolumeManager.FilterNode):
+        ParentFilter = Node.FindParent('Filter')
+        
+    if not ParentFilter is None:
+        Locked = ParentFilter.Locked
+        if Locked and not IgnoreLock:
+            nornir_shared.prettyoutput.Log(f"Filter Locked. Ignoring: {Node.FullPath}")
+            return
+    else:
+        nornir_shared.prettyoutput.LogErr("Unable to find filter for node {0}".format(str(Node)))
+        
+    if Node.Locked and not IgnoreLock:
+        nornir_shared.prettyoutput.Log(f"Node Locked. Ignoring: {Node.FullPath}")
+        return
+    
+    prettyoutput.Log(f"Removing {Node.FullPath}")
+    #Node.Clean()
+    return Parent
 
 def SaveVolumeDataToSingleFile(VolumeNode, save_filename=None, **kwargs):
 

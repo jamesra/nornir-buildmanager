@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import subprocess
+import json
 
 from nornir_buildmanager import *
 from nornir_buildmanager.validation import transforms
@@ -16,6 +17,7 @@ from nornir_shared import *
 import nornir_pools
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
+import nornir_buildmanager
 
 
 def TransformNodeToZeroOrigin(transform_node, **kwargs):
@@ -34,26 +36,47 @@ def TransformNodeToZeroOrigin(transform_node, **kwargs):
 
 def TranslateTransform(Parameters, TransformNode, FilterNode,
                        RegistrationDownsample,
-                       min_overlap=None,
-                       excess_scalar=None,
-                       feature_score_threshold=None,
-                       min_translate_iterations=None,
-                       max_translate_iterations=None,
-                       offset_acceptance_threshold=None,
-                       max_relax_iterations=None,
-                       max_relax_tension_cutoff=None,
-                       first_pass_inter_tile_distance_scale=None,
-                       inter_tile_distance_scale=None,
+                       min_overlap:float=None,
+                       excess_scalar:float=None,
+                       feature_score_threshold:float=None,
+                       min_translate_iterations:int=None,
+                       max_translate_iterations:int=None,
+                       offset_acceptance_threshold:float=None,
+                       max_relax_iterations:int=None,
+                       max_relax_tension_cutoff:float=None,
+                       first_pass_inter_tile_distance_scale:float=None,
+                       min_offset_weight=None,
+                       max_offset_weight=None,
+                       inter_tile_distance_scale:float=None,
+                       scale_weight_by_feature_score=None,
+                       exclude_diagonal_overlaps=None, 
                        Logger=None, **kwargs):
+    
+    settings = nornir_imageregistration.settings.TranslateSettings(
+        min_overlap=min_overlap,
+         max_relax_iterations=max_relax_iterations,
+         max_relax_tension_cutoff=max_relax_tension_cutoff,
+         feature_score_threshold=feature_score_threshold,
+         offset_acceptance_threshold=offset_acceptance_threshold,
+         min_translate_iterations=min_translate_iterations,
+         max_translate_iterations=max_translate_iterations,
+         inter_tile_distance_scale=inter_tile_distance_scale,
+         first_pass_inter_tile_distance_scale=None,
+         first_pass_excess_scalar=None,
+         min_offset_weight=min_offset_weight,
+         max_offset_weight=max_offset_weight,
+         excess_scalar=excess_scalar,
+         use_feature_score=scale_weight_by_feature_score,
+         exclude_diagonal_overlaps=exclude_diagonal_overlaps,
+         known_offsets=None
+        )
+    
     '''@ChannelNode'''
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
     InputTransformNode = TransformNode
 
     [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
-    
-    if added_level or  LevelNode.AttributesChanged:
-        (yield LevelNode.Parent)
-
+     
     MangledName = misc.GenNameFromDict(Parameters)
 
     # Check if there is an existing prune map, and if it exists if it is out of date
@@ -64,7 +87,24 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode,
                                                                                    InputTransformNode=InputTransformNode,
                                                                                    OutputTransformPath=OutputTransformPath)
-
+    
+    OutputTransformSettingsPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName,"_Settings", Ext=".json")
+    settings_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Path=OutputTransformSettingsPath)
+    [added_transform_settings_node, settings_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(settings_data_node, 'Path')
+    
+    ManualOffsetsPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName,"_ManualOffsets", Ext=".csv")
+    manual_offsets_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Path=ManualOffsetsPath)
+    [added_manual_offsets_node, manual_offsets_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(manual_offsets_data_node, 'Path')
+      
+    settings = nornir_imageregistration.settings.GetOrSaveTranslateSettings(settings, settings_data_node.FullPath)
+      
+    #Now that the settings file exists, check if we have offsets to load
+    if os.path.exists(manual_offsets_data_node.FullPath):
+        mosaic_offsets = nornir_imageregistration.settings.LoadMosaicOffsets(manual_offsets_data_node.FullPath)
+        settings.known_offsets = mosaic_offsets 
+    else:
+        nornir_imageregistration.settings.SaveMosaicOffsets(None, manual_offsets_data_node.FullPath)
+      
     if OutputTransformNode is None:
         OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
@@ -72,9 +112,15 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     elif OutputTransformNode.Locked:
         Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
         return None
+    else:
+        if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):
+            OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} settings file was updated")
+            OutputTransformNode = None
+        elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):
+            OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
+            OutputTransformNode = None
 
-    if not os.path.exists(OutputTransformNode.FullPath):
-
+    if not os.path.exists(OutputTransformNode.FullPath): 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
     
         # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
@@ -93,27 +139,21 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             
         mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
         tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj, image_folder=LevelNode.FullPath, image_to_source_space_scale=LevelNode.Downsample)
-        firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(  excess_scalar=excess_scalar,
-                                                                             min_overlap=min_overlap,
-                                                                             feature_score_threshold=feature_score_threshold,
-                                                                             min_translate_iterations=min_translate_iterations,
-                                                                             max_translate_iterations=max_translate_iterations,
-                                                                             offset_acceptance_threshold=offset_acceptance_threshold,
-                                                                             max_relax_iterations=max_relax_iterations,
-                                                                             max_relax_tension_cutoff=max_relax_tension_cutoff,
-                                                                             first_pass_inter_tile_distance_scale=first_pass_inter_tile_distance_scale,
-                                                                             inter_tile_distance_scale=inter_tile_distance_scale)
+        firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(settings)
         
         firstpass_translated_mosaicObj_tileset.SaveMosaic(OutputTransformNode.FullPath)
 
         SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
         
+        OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
+        OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
+          
         print("%s -> %s" % (OutputTransformNode.FullPath, nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
         
         if os.path.exists(tempMosaicFullPath):
             os.remove(tempMosaicFullPath)
  
-    if SaveRequired:
+    if SaveRequired or added_transform_settings_node or added_manual_offsets_node:
         nornir_pools.ClosePools()  # A workaround to avoid running out of memory
         return TransformParentNode
     else:

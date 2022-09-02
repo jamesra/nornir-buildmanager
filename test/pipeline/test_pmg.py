@@ -122,14 +122,15 @@ class ImportPMG(PMGTest):
 
         pmgImportDir = os.path.join(self.PlatformFullPath, "6750")
 
-        pmgSectionDirs = nornir_shared.files.RecurseSubdirectoriesGenerator(pmgImportDir, "*.pmg")
+        results = nornir_shared.files.RecurseSubdirectoriesGenerator(pmgImportDir, "*.pmg")
 
-        for pmgDir in pmgSectionDirs:
+        for (pmgDir, pmgFiles) in results:
 
             VolumeObj = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
-            pmgFile = glob.glob(os.path.join(pmgDir, "*.pmg"))
+            #pmgFile = glob.glob(os.path.join(pmgDir, "*.pmg"))
+            pmgFile = pmgFiles[0]
             self.assertEqual(len(pmgFile), 1, "Unexpected extra PMG in dir: " + pmgDir)
-            pmgFile = pmgFile[0]
+            #pmgFile = pmgFile[0]
             pmgFileKey = os.path.basename(pmgFile)
 
             pmgData = PMGData[pmgFileKey]
@@ -332,8 +333,9 @@ class ParsePMG(PMGTest):
 
         super(PMGTest, self).setUp()
 
-        self.pmgDirs = nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg")
-        self.pmgDirs.extend(nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg"))
+        (self.pmgDirs, _) = list(nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg"))
+        (extraDirs,_) = nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg")
+        self.pmgDirs.extend(extraDirs)
         self.assertTrue(len(self.pmgDirs) > 0, "No test input found")
 
     def runTest(self):

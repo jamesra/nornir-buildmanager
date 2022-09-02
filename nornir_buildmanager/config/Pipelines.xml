@@ -662,6 +662,36 @@
             </Iterate>
         </Iterate>
     </Pipeline>
+    
+    <Pipeline Name="RemoveTransform"
+        Help="Remove a transform from the volume entirely">
+        <Arguments>
+            <Argument flag="-IgnoreLock" action="store_true" dest="IgnoreLock"
+                help="Ignore Filter and Transform Locks, use with care." required="True" />
+            <Argument flag="-Sections" dest="Sections" type="IntegerList"
+                help="Section numbers to edit.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
+                required="True" />
+            <Argument flag="-Channels" dest="ChannelRegEx" default="*"
+                help="Regular expression describing channels to be edited" required="False" />
+            <Argument flag="-Transform" dest="TransformRegEx" default="*"
+                help="Name of the transform to lock/unlock" required="True" />
+        </Arguments>
+
+        <Iterate VariableName="SectionNode" XPath="Block/Section">
+            <RequireSetMembership Attribute="Number" List="#Sections" />
+
+            <Iterate VariableName="ChannelNode" XPath="Channel">
+                <RequireMatch Attribute="Name" RegEx="#ChannelRegEx" />
+
+                <Iterate VariableName="TransformNode" XPath="Transform">
+                    <RequireMatch Attribute="Name" RegEx="#TransformRegEx" />
+
+                    <PythonCall Function="general.RemoveFilterChildNode" Node="#TransformNode"
+                        IgnoreLock="#IgnoreLock" />
+                </Iterate>
+            </Iterate>
+        </Iterate>
+    </Pipeline>
 
 
     <Pipeline Name="Mosaic"
@@ -731,6 +761,14 @@
             <Argument flag="-MeshSize" default="8" dest="MeshSize"
                 type="int" help="How many registration points are spaced along the images, the same value is used for X and Y.  This should be a large enough number to provide 25%% or ideally 50%% overlap of grid cells for the expected image size."
                 required="False" />
+            <Argument flag="-IncludeDiagonalOverlaps" dest="exclude_diagonal_overlaps" action="store_false"
+                default="True"
+                help="Setting this flag includes tiles that only have a diagonal overlap, that is the center of the tile is outside the X/Y boundaries of the paired tile.  This can introduce extra calculation time and possibly noise but be helpful if the tiles moved considerably during capture or are not laid out on a grid."
+                required="False" />
+            <Argument flag="-ScaleWeightByFeatureScore" dest="scale_weight_by_feature_score" action="store_true"
+                default="False"
+                help="Setting this flag multiplies the alignment weights by the feature score of the overlapping region in the translate phase.  This can sometimes reduce the impact of large featureless areas but seems to introduce noise in many other cases."
+                required="False" />
         </Arguments>
 
         <Iterate VariableName="section_node" XPath="Block/Section">
@@ -752,7 +790,11 @@
                     min_overlap="#min_overlap" feature_score_threshold="#feature_score_threshold"
                     min_translate_iterations="#min_translate_iterations" max_translate_iterations="#max_translate_iterations"
                     offset_acceptance_threshold="#offset_acceptance_threshold"
-                    max_relax_iterations="#max_relax_iterations" max_relax_tension_cutoff="#max_relax_tension_cutoff" inter_tile_distance="inter_tile_distance">
+                    max_relax_iterations="#max_relax_iterations" max_relax_tension_cutoff="#max_relax_tension_cutoff"
+                    inter_tile_distance="#inter_tile_distance"
+                    exclude_diagonal_overlaps="#exclude_diagonal_overlaps"
+                    scale_weight_by_feature_score="#scale_weight_by_feature_score"
+                    >
                     <Parameters>
                         <Entry Name="MinOverlap" Value="#min_overlap"/>
                         <Entry Name="FeatureScore" Value="#feature_score_threshold"/>
