@@ -751,9 +751,9 @@
                 type="float"
                 help="Do not re-register (recalculate phase correlation of) a pair of overlapping tiles if the change in overlap position compared to the previous iteration is less than this distance in pixels."
                 required="False" />
-            <Argument flag="-RelaxThreshold" default="0.1" dest="max_relax_tension_cutoff"
+            <Argument flag="-RelaxThreshold" default="0.5" dest="max_relax_tension_cutoff"
                 type="float"
-                help="Stop iteration of relaxation phase if the maximum tension vector on any tile is below this value (in pixels)."
+                help="Stop iteration of relaxation phase if the maximum weighted tension vector on all tiles is below this value (in pixels)."
                 required="False" />
             <Argument flag="-CellArea" default="128" dest="CellArea"
                 type="int" help="Size of region around each grid point to register, in pixels"
