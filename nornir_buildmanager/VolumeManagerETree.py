@@ -26,6 +26,7 @@ import nornir_shared.misc as misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection as reflection
 import xml.etree.ElementTree as ElementTree  
+import concurrent.futures
 
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
@@ -1577,59 +1578,59 @@ class XContainerElementWrapper(XResourceElementWrapper):
         loaded_elements = []
         
         # Use a different threadpool so that if callars are already on a thread we don't create deadlocks where they are waiting for load tasks to be returned from the Queue
-        pool = nornir_pools.GetThreadPool('ReplaceLinks')
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+        #pool = nornir_pools.GetThreadPool('ReplaceLinks')
         
-        tasks = []
-        for i, fullpath in enumerate(SubContainerPaths):
-            t = pool.add_task("Load " + fullpath, XContainerElementWrapper._load_wrap_link_element, fullpath)
-            t.link_node = link_nodes[i]
-            tasks.append(t)
-        
-        clean_tasks = []
-        
-        while len(tasks) > 0:
-            task = tasks.pop(0)
-            try:
-                link_node = task.link_node
-                (wrapped, wrapped_loaded_element) = task.wait_return()
-            except IOError as e:
-                self.remove(link_node)
-                #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                prettyoutput.LogErr("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-                continue
-            except ElementTree.ParseError as e:
-                #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-                self.remove(link_node)
-                continue
-            except Exception as e:
-                #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
-                continue
+            tasks = []
+            for i, fullpath in enumerate(SubContainerPaths):
+                t = pool.submit(XContainerElementWrapper._load_wrap_link_element, fullpath)
+                t.link_node = link_nodes[i]
+                tasks.append(t)
             
-            #(wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
-            # SubContainer = XContainerElementWrapper.wrap(XMLElement)
+            clean_tasks = []
+            
+            for task in concurrent.futures.as_completed(tasks):
+                try:
+                    link_node = task.link_node
+                    (wrapped, wrapped_loaded_element) = task.result()
+                except IOError as e:
+                    self.remove(link_node)
+                    #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    prettyoutput.LogErr("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                    continue
+                except ElementTree.ParseError as e:
+                    #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                    self.remove(link_node)
+                    continue
+                except Exception as e:
+                    #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                    continue
+                
+                #(wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
+                # SubContainer = XContainerElementWrapper.wrap(XMLElement)
+        
+                if wrapped: 
+                    VolumeManager.__SetElementParent__(wrapped_loaded_element, self)
+                
+                self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
     
-            if wrapped: 
-                VolumeManager.__SetElementParent__(wrapped_loaded_element, self)
-            
-            self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
-
-            if wrapped_loaded_element.NeedsValidation:
-                t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
-                clean_tasks.append(t)
-            
-            # Check to ensure the newly loaded element is valid
-            #Cleaned = wrapped_loaded_element.CleanIfInvalid()
+                if wrapped_loaded_element.NeedsValidation:
+                    t = pool.submit(wrapped_loaded_element.IsValid)
+                    #t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
+                    clean_tasks.append(t)
+                
+                # Check to ensure the newly loaded element is valid
+                #Cleaned = wrapped_loaded_element.CleanIfInvalid()
         
-        while len(clean_tasks) > 0:
-            task = clean_tasks.pop(0)
-            IsValid = task.wait_return()
-            
-            if IsValid:
-                loaded_elements.append(wrapped_loaded_element)
-            else:
-                wrapped_loaded_element.CleanIfInvalid()
+            for clean_task in concurrent.futures.as_completed(clean_tasks):
+                IsValid = clean_task.result()
+                
+                if IsValid:
+                    loaded_elements.append(wrapped_loaded_element)
+                else:
+                    wrapped_loaded_element.CleanIfInvalid()
                 
         return loaded_elements
 
