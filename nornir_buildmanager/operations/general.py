@@ -119,7 +119,7 @@ def RemoveChannelChildNode(Node, IgnoreLock, **kwargs):
         return
     
     prettyoutput.Log(f"Removing {Node.FullPath}")
-    #Node.Clean()
+    Node.Clean()
     return Parent
 
 def SaveVolumeDataToSingleFile(VolumeNode, save_filename=None, **kwargs):
