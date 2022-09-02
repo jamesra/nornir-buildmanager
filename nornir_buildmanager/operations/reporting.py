@@ -809,10 +809,11 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
 
         ThumbnailOutputFullPath = os.path.join(HtmlPaths.ThumbnailDir, ThumbnailFilename)
 
+        if nornir_shared.files.IsOutdated(ReferenceFilename=ImageNode.FullPath, TestFilename=ThumbnailOutputFullPath):
         # nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
         # if not os.path.exists(ThumbnailOutputFullPath):
-        Pool = nornir_pools.GetGlobalThreadPool()
-        Pool.add_task(ImageNode.FullPath, nornir_imageregistration.Shrink, ImageNode.FullPath, ThumbnailOutputFullPath, Scale)
+            Pool = nornir_pools.GetGlobalThreadPool()
+            Pool.add_task(ImageNode.FullPath, nornir_imageregistration.Shrink, ImageNode.FullPath, ThumbnailOutputFullPath, Scale)
         # cmd = "magick convert " + ImageNode.FullPath + " -resize " + str(Scale * 100) + "% " + ThumbnailOutputFullPath
         
         # Pool.add_process(cmd, cmd + " && exit", shell=True)
