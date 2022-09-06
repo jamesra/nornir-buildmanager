@@ -198,6 +198,9 @@ class ContrastHandler(object):
         
 
 class InputTransformHandler(object):
+    '''This can be added as a base class to another element.  It 
+       adds InputTransformChecksum and various option helper attributes.
+    ''' 
     
     @property
     def HasInputTransform(self):

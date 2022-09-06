@@ -3794,7 +3794,7 @@ class ImageSetNode(ImageSetBaseNode):
       
 
 class ImageNode(VMH.InputTransformHandler, XFileElementWrapper):
-
+    '''Refers to an image file'''
     DefaultName = "image.png"
     
     def __init__(self, tag=None, attrib=None, **extra):
@@ -3865,7 +3865,26 @@ class DataNode(XFileElementWrapper):
     @classmethod
     def Create(cls, Path, attrib=None, **extra):
         return cls(tag='Data', Path=Path, attrib=attrib, **extra)
-        
+    
+
+class TransformDataNode(VMH.InputTransformHandler, XFileElementWrapper):
+    '''
+    Represents visualization data associated with a specific transform 
+    '''
+    
+    @classmethod
+    def Create(cls, Path, attrib=None, **extra):
+        return cls(tag='TransformData', Path=Path, attrib=attrib, **extra)
+    
+    def IsValid(self):
+        if not os.path.exists(self.FullPath):
+            return [False, 'File does not exist']
+
+        (valid, reason) = self.InputTransformIsValid()
+        if not valid:
+            return (valid, reason)
+
+        return super(ImageNode, self).IsValid()
 
 class SectionMappingsNode(XElementWrapper):
 
