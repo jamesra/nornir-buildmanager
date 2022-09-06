@@ -197,7 +197,7 @@ def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
     return None
 
 
-def PlotMosaicOverlaps(TransformNode, OutputFilename, InputFilterName=None, ShowFeatureScores=False, **kwargs):
+def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, InputFilterName=None, ShowFeatureScores=False, **kwargs):
     '''
     Plot the tile overlaps of a layout
     '''
@@ -209,10 +209,12 @@ def PlotMosaicOverlaps(TransformNode, OutputFilename, InputFilterName=None, Show
     try:
         if InputFilterName is None:
             # Pick the first Filter we can find
-            LevelNode = ChannelNode.find('Filter/TilePyramid/Level')
+            xpath = 'Filter/TilePyramid/Level' if Downsample is None else f"Filter/TilePyramid/Level[@Downsample='{Downsample}']"
+            LevelNode = ChannelNode.find(xpath)
         else:
             FilterNode = ChannelNode.GetFilter(InputFilterName)
-            LevelNode = FilterNode.TilePyramid.Levels[0]
+            LevelNode = FilterNode.TilePyramid.Levels[0] if Downsample is None else FilterNode.TilePyramid.GetLevel(Downsample)
+                
     except:
         nornir_shared.prettyoutput.LogErr(f"Unable to locate TilePyramid Level to determine downsample for Overlap plot: {TransformNode.FullPath}")
         raise 
