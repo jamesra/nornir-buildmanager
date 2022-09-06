@@ -39,7 +39,7 @@ def ValidateAttributesAreStrings(Element, logger=None):
     # Make sure each attribute is a string
     for k, v in enumerate(Element.attrib):
         assert isinstance(v, str)
-        if not isinstance(v, str):
+        if v is None or not isinstance(v, str):
             if logger is None:
                 logger = logging.getLogger(__name__ + '.' + 'ValidateAttributesAreStrings')
             logger.warning("Attribute is not a string")
@@ -94,7 +94,7 @@ class VolumeManager():
             if(Create):
                 os.makedirs(VolumePath, exist_ok=True)
 
-                VolumeRoot = ElementTree.Element('Volume', {"Name" : os.path.basename(VolumePath), "Path" : VolumePath})
+                VolumeRoot = ElementTree.Element('Volume', {"Name": os.path.basename(VolumePath), "Path": VolumePath})
                 SaveNewVolume = True                
                 # VM =  VolumeManager(VolumeData, Filename)
                 # return VM
@@ -106,10 +106,10 @@ class VolumeManager():
             #    XMLTree = __LoadedVolumeXMLDict__[Filename]
             # else:
             
-            #I could use ElementTree.parse here.  However there was a rare
-            #bug where saving the file would encounter a permissions error
-            #loading the file and closing it myself seems to have solved
-            #the problem
+            # I could use ElementTree.parse here.  However there was a rare
+            # bug where saving the file would encounter a permissions error
+            # loading the file and closing it myself seems to have solved
+            # the problem
             RawXML = None
             with open(Filename, 'rb') as hFile:
                 RawXML = hFile.read()
@@ -117,7 +117,7 @@ class VolumeManager():
             # VolumeData = Volumes.CreateFromDOM(XMLTree)
             # __LoadedVolumeXMLDict__[Filename] = XMLTree
 
-            #VolumeRoot = XMLTree.getroot()
+            # VolumeRoot = XMLTree.getroot()
 
         VolumeRoot.attrib['Path'] = VolumePath
         VolumeRoot = VolumeNode.wrap(VolumeRoot)
@@ -162,7 +162,7 @@ class VolumeManager():
         
     @staticmethod
     def __SetElementParent__(Element, ParentElement=None):
-        Element.SetParentNoChangeFlag( ParentElement )
+        Element.SetParentNoChangeFlag(ParentElement)
 
         for i in range(len(Element) - 1, -1, -1):
             e = Element[i]
@@ -236,6 +236,7 @@ class VolumeManager():
             cls.Save(VolumeObj.Parent)
         else:
             raise ValueError("Trying to save element with no Save function or parent {0}".format(str(VolumeObj)))
+
             
 class XElementWrapper(ElementTree.Element):
 
@@ -254,16 +255,15 @@ class XElementWrapper(ElementTree.Element):
         if len(self) <= 1:
             return 
         
-        withKeys = filter( lambda child: hasattr(child, 'SortKey'), self)
-        withoutKeys = filter( lambda child: not hasattr(child, 'SortKey'), self)
-        linked = filter( lambda child: child.tag.endswith('_Link'), withoutKeys)
-        other = filter( lambda child: not child.tag.endswith('_Link'), withoutKeys)
-        
+        withKeys = filter(lambda child: hasattr(child, 'SortKey'), self)
+        withoutKeys = filter(lambda child: not hasattr(child, 'SortKey'), self)
+        linked = filter(lambda child: child.tag.endswith('_Link'), withoutKeys)
+        other = filter(lambda child: not child.tag.endswith('_Link'), withoutKeys)
         
         sorted_withKeys = sorted(withKeys, key=operator.attrgetter('SortKey'), reverse=True)
         sorted_withoutKeys = sorted(withoutKeys, key=operator.attrgetter('tag'), reverse=True)
-        sorted_linked   = sorted(linked,   key=lambda child: child.attrib['Path'], reverse=True)
-        sorted_other    = sorted(other,    key=lambda child: str(child), reverse=True)
+        sorted_linked = sorted(linked, key=lambda child: child.attrib['Path'], reverse=True)
+        sorted_other = sorted(other, key=lambda child: str(child), reverse=True)
         
         self[:] = sorted_withKeys + sorted_linked + sorted_other + sorted_withoutKeys
         
@@ -635,7 +635,7 @@ class XElementWrapper(ElementTree.Element):
                 prettyoutput.Log(newElement.ToElementString() + " no path attribute but being set as container")
             assert('Path' in newElement.attrib)
             
-        #Also convert all non-link child elements
+        # Also convert all non-link child elements
         for c in newElement:
             if c.tag.endswith('_Link'):
                 continue
@@ -665,7 +665,6 @@ class XElementWrapper(ElementTree.Element):
         inserting any values in the instance attribute dictionary (but instead inserting them in another
         object). See the __getattribute__() method below for a way to actually get total control in
          new-style classes.'''
-        
 
         if name in self.__dict__:
             return self.__dict__[name]
@@ -691,7 +690,7 @@ class XElementWrapper(ElementTree.Element):
             attribute = getattr(self.__class__, name)
             if isinstance(attribute, property):
                 if not attribute.fset is None:
-                    #Mark the _AttributesChanged flag if the value has been updated
+                    # Mark the _AttributesChanged flag if the value has been updated
                     if not attribute.fget is None:
                         self._AttributesChanged = self._AttributesChanged or attribute.fget(self) != value 
                     else:
@@ -776,7 +775,7 @@ class XElementWrapper(ElementTree.Element):
                         self.remove(Child)
 
     def GetChildrenByAttrib(self, ElementName, AttribName, AttribValue):
-        XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
+        XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName, 'AttribName': AttribName, 'AttribValue': AttribValue}
         Children = self.findall(XPathStr)
 
         if Children is None:
@@ -788,9 +787,9 @@ class XElementWrapper(ElementTree.Element):
 
         XPathStr = ""
         if isinstance(AttribValue, float):
-            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName, 'AttribName': AttribName, 'AttribValue': AttribValue}
         else:
-            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName' : ElementName, 'AttribName' : AttribName, 'AttribValue' : AttribValue}
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName, 'AttribName': AttribName, 'AttribValue': AttribValue}
 
         assert(len(XPathStr) > 0)
         Child = self.find(XPathStr)
@@ -829,11 +828,11 @@ class XElementWrapper(ElementTree.Element):
         
         for AttribName in AttribNames: 
             val = Element.attrib[AttribName]
-            attribXPaths.append(attribXPathTemplate % {'AttribName' : AttribName,
-                                                       'AttribValue' : val})
+            attribXPaths.append(attribXPathTemplate % {'AttribName': AttribName,
+                                                       'AttribValue': val})
 
-        XPathStr = "%(ElementName)s[%(QueryString)s]" % {'ElementName' : Element.tag,
-                                                         'QueryString' : ' and '.join(attribXPaths)}
+        XPathStr = "%(ElementName)s[%(QueryString)s]" % {'ElementName': Element.tag,
+                                                         'QueryString': ' and '.join(attribXPaths)}
         return self.UpdateOrAddChild(Element, XPathStr)
 
     def UpdateOrAddChild(self, Element, XPath=None):
@@ -961,7 +960,7 @@ class XElementWrapper(ElementTree.Element):
         
         if wrapped:
             self._ReplaceChildElementInPlace(child, wrappedElement)
-            wrappedElement._AttributesChanged = False #Setting the parent will set this flag, but if we loaded it there was no change
+            wrappedElement._AttributesChanged = False  # Setting the parent will set this flag, but if we loaded it there was no change
             
         return wrappedElement
 
@@ -1035,10 +1034,10 @@ class XElementWrapper(ElementTree.Element):
         # return matches
         matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
         
-        #Since this is a generator function, we need to load all children that are links before we 
-        #return the first node.  If we do not the caller may load other links
-        #from the parent node and then the matches will no longer be present in the
-        #parent.
+        # Since this is a generator function, we need to load all children that are links before we 
+        # return the first node.  If we do not the caller may load other links
+        # from the parent node and then the matches will no longer be present in the
+        # parent.
 
         for m in matches:
 #             NotValid = m.CleanIfInvalid()
@@ -1055,7 +1054,7 @@ class XElementWrapper(ElementTree.Element):
                 m = self._ReplaceChildIfUnwrapped(m)
                 
         loaded_matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
-        for m in loaded_matches:   
+        for m in loaded_matches: 
             if len(RemainingXPath) > 0:
                 subContainerMatches = list(m.findall(RemainingXPath))
                 if subContainerMatches is not None:
@@ -1101,8 +1100,8 @@ class XElementWrapper(ElementTree.Element):
                 LinkedSubContainerName = SubContainerName + '_Link'
                 LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1)
             else:
-                #ElementTree does not let use say '*_link' when searching tag names.  So we have to return 
-                #all tags and filter out _links later.
+                # ElementTree does not let use say '*_link' when searching tag names.  So we have to return 
+                # all tags and filter out _links later.
                 LinkedElementsXPath = UnlinkedElementsXPath 
                 
         RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
@@ -1120,7 +1119,7 @@ class XElementWrapper(ElementTree.Element):
         if hasattr(self, '_replace_links'):
             self._replace_links(linked_nodes)
         
-        #Check all of our child nodes for links
+        # Check all of our child nodes for links
         for n in self:
             n.LoadAllLinkedNodes() 
                               
@@ -1192,7 +1191,6 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
             self.__dict__['__fullpath'] = FullPathStr
 
         return FullPathStr
-    
      
     @property
     def ValidationTime(self):
@@ -1215,7 +1213,6 @@ class XResourceElementWrapper(VMH.Lockable, XElementWrapper):
         else:
             assert(isinstance(val, datetime.datetime))        
             self.attrib['ValidationTime'] = str(val)
-            
     
     def UpdateValidationTime(self):
         '''
@@ -1331,7 +1328,6 @@ class XFileElementWrapper(XResourceElementWrapper):
             except (OSError, FileExistsError):
                 if not os.path.isdir(directory):
                     raise ValueError("{0}.Path property was set to an existing file or non-directory object {1}".format(type.self, self.FullPath))
-                    
 
         if hasattr(self, '__fullpath'):
             del self.__dict__['__fullpath']
@@ -1423,12 +1419,12 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def IsValid(self):
         ResourcePath = self.FullPath
         
-        if not self.Parent is None: #Don't check for validity if our node has not been added to the tree yet
+        if not self.Parent is None:  # Don't check for validity if our node has not been added to the tree yet
             try:
                 files_found = False
                 with os.scandir(ResourcePath) as pathscan:
                     for item in pathscan:
-                        if item.name[0] == '.': #Avoid the .desktop_ini files of the world
+                        if item.name[0] == '.':  # Avoid the .desktop_ini files of the world
                             continue
                         
                         if item.is_file() or item.is_dir(): 
@@ -1446,7 +1442,6 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         return super(XContainerElementWrapper, self).IsValid()
 
-
     def RepairMissingLinkElements(self, recurse=True):
         '''
         Searches all subdirectories under the element.  Any VolumeData.xml files
@@ -1456,7 +1451,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         '''
         
         if self.SaveAsLinkedElement == False:
-            return #This element is not saved as a linked element
+            return  # This element is not saved as a linked element
         
         with os.scandir(self.FullPath) as pathscan:
             for path in filter(lambda p: p.is_dir() and p.name[0] != '.', pathscan):
@@ -1466,7 +1461,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 if not os.path.exists(possible_meta_data_path):
                     continue
                 
-                #prettyoutput.Log("Found potential linked element: {0}".format(item.path))
+                # prettyoutput.Log("Found potential linked element: {0}".format(item.path))
                 
                 dirname = os.path.dirname(possible_meta_data_path)
                 
@@ -1486,14 +1481,11 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     self.append(loadedElement)
                     prettyoutput.Log("\tAdded: {0}".format(loadedElement))
                     self.ChildrenChanged = True
-
-                
                 
             if recurse:
                 for child in self:
                     if hasattr(child, "RepairMissingLinkElements"):
                         child.RepairMissingLinkElements()
-       
     
     @staticmethod 
     def _load_link_element(fullpath):
@@ -1538,16 +1530,16 @@ class XContainerElementWrapper(XResourceElementWrapper):
             loaded_element = self._load_wrap_setparent_link_element(SubContainerPath)
         except IOError as e:
             self.remove(link_node)
-            #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
             prettyoutput.LogErr("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
             return None
         except ElementTree.ParseError as e:
-            #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
             prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
             self.remove(link_node)
             return None
         except Exception as e:
-            #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
             prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
             return None
               
@@ -1579,7 +1571,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         
         # Use a different threadpool so that if callars are already on a thread we don't create deadlocks where they are waiting for load tasks to be returned from the Queue
         with concurrent.futures.ThreadPoolExecutor() as pool:
-        #pool = nornir_pools.GetThreadPool('ReplaceLinks')
+        # pool = nornir_pools.GetThreadPool('ReplaceLinks')
         
             tasks = []
             for i, fullpath in enumerate(SubContainerPaths):
@@ -1595,20 +1587,20 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     (wrapped, wrapped_loaded_element) = task.result()
                 except IOError as e:
                     self.remove(link_node)
-                    #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                     prettyoutput.LogErr("Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                     continue
                 except ElementTree.ParseError as e:
-                    #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                     prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                     self.remove(link_node)
                     continue
                 except Exception as e:
-                    #logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                     prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
                     continue
                 
-                #(wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
+                # (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
                 # SubContainer = XContainerElementWrapper.wrap(XMLElement)
         
                 if wrapped: 
@@ -1618,11 +1610,11 @@ class XContainerElementWrapper(XResourceElementWrapper):
     
                 if wrapped_loaded_element.NeedsValidation:
                     t = pool.submit(wrapped_loaded_element.IsValid)
-                    #t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
+                    # t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
                     clean_tasks.append(t)
                 
                 # Check to ensure the newly loaded element is valid
-                #Cleaned = wrapped_loaded_element.CleanIfInvalid()
+                # Cleaned = wrapped_loaded_element.CleanIfInvalid()
         
             for clean_task in concurrent.futures.as_completed(clean_tasks):
                 IsValid = clean_task.result()
@@ -1677,7 +1669,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 #             logger = logging.getLogger(__name__ + '.' + 'Save')
 #             logger.info("Saving " + self.FullPath)
 
-        #Don't do work sorting children or validating attributes if there is no indication they've changed
+        # Don't do work sorting children or validating attributes if there is no indication they've changed
         if self.ChildrenChanged:
             self.sort()
             
@@ -1713,9 +1705,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if child.tag.endswith('_Link'):
                 SaveElement.append(child)
             elif isinstance(child, XContainerElementWrapper):
-                AnyChangesFound = AnyChangesFound or child.AttributesChanged #Since linked elements display the elements attributes, we should update if they've changed
+                AnyChangesFound = AnyChangesFound or child.AttributesChanged  # Since linked elements display the elements attributes, we should update if they've changed
                 
-                #Save the child first so it can validate attributes before we attempt to copy them to a link element
+                # Save the child first so it can validate attributes before we attempt to copy them to a link element
                 if(recurse):
                     child._Save(tabLevel + 1)
                 
@@ -1738,10 +1730,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 # del self[i]
                 # self.append(LinkElement)
             else:
-                if isinstance(child, XElementWrapper): #Elements not converted to an XElementWrapper should not have changed.
+                if isinstance(child, XElementWrapper):  # Elements not converted to an XElementWrapper should not have changed.
                     AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged 
                                         
-                    #Don't bother doing prep work on the child element if no changes are recorded
+                    # Don't bother doing prep work on the child element if no changes are recorded
                     if child.AttributesChanged:
                         ValidateAttributesAreStrings(SaveElement)
                         
@@ -1751,15 +1743,15 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     child._AttributesChanged = False
                     child._ChildrenChanged = False
 
-                #Add a reference to the child element to the element we are serializing to XML
+                # Add a reference to the child element to the element we are serializing to XML
                 SaveElement.append(child)  
                  
         if AnyChangesFound and self.SaveAsLinkedElement:
             self.__SaveXML(xmlfilename, SaveElement)
             self.ResetElementChangeFlags()
-            #prettyoutput.Log("Saving " + self.FullPath + ", state change recorded in that container or child elements.");
-        #elif not AnyChangesFound:
-            #prettyoutput.Log("Skipping " + self.FullPath + ", no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
+            # prettyoutput.Log("Saving " + self.FullPath + ", state change recorded in that container or child elements.");
+        # elif not AnyChangesFound:
+            # prettyoutput.Log("Skipping " + self.FullPath + ", no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
             
 #        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
 
@@ -1769,14 +1761,19 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     def __SaveXML(self, xmlfilename, SaveElement):
         '''Intended to be called on a thread from the save function'''
-        OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")        
+        try:
+            OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
+        except Exception as e: 
+            prettyoutput.Log(f"Cannot encode output XML:\n{e}")
+            raise e
+                
         assert(len(OutputXML)), "Trying to save an entirely empty XML file... why?"
 
         if len(OutputXML) == 0:
             raise Exception(f"No meta data produced for XML element {SaveElement} writing to {xmlfilename}")
         
         try: 
-            os.makedirs(self.FullPath, exist_ok = True)
+            os.makedirs(self.FullPath, exist_ok=True)
         except (OSError, FileExistsError, WindowsError) as e:
             if not os.path.isdir(self.FullPath):
                 raise ValueError("{0} is trying to save to a non directory path {1}\n{2}".format(str(SaveElement), self.FullPath, str(e)))
@@ -1786,30 +1783,30 @@ class XContainerElementWrapper(XResourceElementWrapper):
         BackupXMLFullPath = os.path.join(self.FullPath, BackupXMLFilename)
         XMLFilename = os.path.join(self.FullPath, xmlfilename)
         
-        #If the current VolumeData.xml has data, then create a backup copy
-        #This should prevent us removing valid backups if the current VolumeData.xml
-        #has zero bytes
+        # If the current VolumeData.xml has data, then create a backup copy
+        # This should prevent us removing valid backups if the current VolumeData.xml
+        # has zero bytes
         try:
             statinfo = os.stat(XMLFilename)
             if statinfo.st_size > 0:
                         
                 try:
-                    #Attempt to create a backup of the meta-data file before we replace it, just in case
+                    # Attempt to create a backup of the meta-data file before we replace it, just in case
                     os.remove(BackupXMLFullPath)
                 except FileNotFoundError:
-                    #It is OK if a backup file does not exist
+                    # It is OK if a backup file does not exist
                     pass
                 
-                #Move the current file to the backup location, write the new data        
+                # Move the current file to the backup location, write the new data        
                 shutil.move(XMLFilename, BackupXMLFullPath)
             else:
-                #This is a rare issue where I'd write a file but have zero bytes on disk.  
-                #If this error occurs check into replacing the zero byte file with the backup if it exists
+                # This is a rare issue where I'd write a file but have zero bytes on disk.  
+                # If this error occurs check into replacing the zero byte file with the backup if it exists
                 prettyoutput.LogErr(f"{XMLFilename} had zero size, did not backup on write")
         except FileNotFoundError:
             pass
         
-        #prettyoutput.Log("Saving %s" % XMLFilename)
+        # prettyoutput.Log("Saving %s" % XMLFilename)
         # print OutputXML
         with open(XMLFilename, 'wb') as hFile:
             hFile.write(OutputXML)
@@ -1924,6 +1921,7 @@ class VolumeNode(XNamedContainerElementWrapped):
     def Create(cls, Name, Path=None, **extra):
         return super(VolumeNode, cls).Create(tag='Volume', Name=Name, Path=Path, **extra)
 
+
 class BlockNode(XNamedContainerElementWrapped):
 
     @property
@@ -2032,8 +2030,8 @@ class BlockNode(XNamedContainerElementWrapped):
         NonStosSectionNumbers = frozenset(sorted([int(x) for x in ExemptString.split(',')]))
 
         ##################
-        #Temporary fix for old meta-data that was not sorted.  It can be
-        #deleted after running an align on each legacy volume
+        # Temporary fix for old meta-data that was not sorted.  It can be
+        # deleted after running an align on each legacy volume
         ExpectedText = BlockNode.NonStosNumbersToString(NonStosSectionNumbers)
         if ExpectedText != StosExemptNode.text:
             self.NonStosSectionNumbers = NonStosSectionNumbers
@@ -2051,7 +2049,6 @@ class BlockNode(XNamedContainerElementWrapped):
         if StosExemptNode.text != ExpectedText:
             StosExemptNode.text = ExpectedText
             StosExemptNode._AttributesChanged = True
-            
             
     @staticmethod
     def NonStosNumbersToString(value):
@@ -2123,7 +2120,6 @@ class ChannelNode(XNamedContainerElementWrapped):
             return True
         
         return False
-        
     
     def RemoveFilterOnBppMismatch(self, FilterName, expected_bpp):
         '''
@@ -2163,20 +2159,20 @@ class ChannelNode(XNamedContainerElementWrapped):
         [added, scaleNode] = self.UpdateOrAddChild(ScaleNode.Create())
         
         if isinstance(scaleValueInNm, float):
-            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
-                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
-            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
-                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scaleValueInNm)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scaleValueInNm)}))
         elif isinstance(scaleValueInNm, int):
-            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : 'nm',
-                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
-            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : 'nm',
-                                                                 'UnitsPerPixel' : str(scaleValueInNm)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scaleValueInNm)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scaleValueInNm)}))
         elif isinstance(scaleValueInNm, ScaleAxis):
-            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : str(scaleValueInNm.UnitsOfMeasure),
-                                                                 'UnitsPerPixel' : str(scaleValueInNm.UnitsPerPixel)}))
-            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : str(scaleValueInNm.UnitsOfMeasure),
-                                                                 'UnitsPerPixel' : str(scaleValueInNm.UnitsPerPixel)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': str(scaleValueInNm.UnitsOfMeasure),
+                                                                 'UnitsPerPixel': str(scaleValueInNm.UnitsPerPixel)}))
+            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': str(scaleValueInNm.UnitsOfMeasure),
+                                                                 'UnitsPerPixel': str(scaleValueInNm.UnitsPerPixel)}))
         elif isinstance(scaleValueInNm, Scale):
             (added, scaleNode) = self.UpdateOrAddChild(ScaleNode.CreateFromScale(scaleValueInNm))
         else:
@@ -2185,7 +2181,6 @@ class ChannelNode(XNamedContainerElementWrapped):
         self._scale = Scale.Create(scaleNode)
         
         return (added, scaleNode)
-
     
     @property
     def NeedsValidation(self):
@@ -2251,14 +2246,14 @@ class ScaleNode(XElementWrapper):
             raise NotImplementedError('CreateFromScale got unexpected parameter: %s' % str(scale))
         
         output = ScaleNode()
-        output.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure' : scale.X.UnitsOfMeasure,
-                                                      'UnitsPerPixel' : str(scale.X.UnitsPerPixel)}))
-        output.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure' : scale.Y.UnitsOfMeasure,
-                                                      'UnitsPerPixel' : str(scale.Y.UnitsPerPixel)}))
+        output.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': scale.X.UnitsOfMeasure,
+                                                      'UnitsPerPixel': str(scale.X.UnitsPerPixel)}))
+        output.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': scale.Y.UnitsOfMeasure,
+                                                      'UnitsPerPixel': str(scale.Y.UnitsPerPixel)}))
         
         if output.Z is not None:
-            output.UpdateOrAddChild(XElementWrapper('Z', {'UnitsOfMeasure' : scale.Z.UnitsOfMeasure,
-                                                          'UnitsPerPixel' : str(scale.Z.UnitsPerPixel)}))
+            output.UpdateOrAddChild(XElementWrapper('Z', {'UnitsOfMeasure': scale.Z.UnitsOfMeasure,
+                                                          'UnitsPerPixel': str(scale.Z.UnitsPerPixel)}))
         
         return output
         
@@ -2324,7 +2319,7 @@ class Scale(object):
         
         obj = Scale(self.X / scalar,
                     self.Y / scalar,
-                    self.Z / scalar if self.Z is not None else None) #Only pass Z if it is not None
+                    self.Z / scalar if self.Z is not None else None)  # Only pass Z if it is not None
         return obj
     
     def __mul__(self, scalar):
@@ -2333,7 +2328,7 @@ class Scale(object):
         
         obj = Scale(self.X * scalar,
                     self.Y * scalar,
-                    self.Z * scalar if self.Z is not None else None) #Only pass Z if it is not None
+                    self.Z * scalar if self.Z is not None else None)  # Only pass Z if it is not None
         return obj
         
     def __init__(self, X, Y=None, Z=None):
@@ -2367,7 +2362,6 @@ class ScaleAxis(object):
     def __init__(self, UnitsPerPixel, UnitsOfMeasure):
         self.UnitsPerPixel = float(UnitsPerPixel)
         self.UnitsOfMeasure = str(UnitsOfMeasure)
-        
     
     def __truediv__(self, scalar):
         if isinstance(scalar, float):
@@ -2376,10 +2370,9 @@ class ScaleAxis(object):
             if self.UnitsOfMeasure != scalar.UnitsOfMeasure:
                 raise NotImplementedError("Cannot divide ScaleAxis objects if UnitsOfMeasure do not match")
             
-            return self.UnitsPerPixel / scalar.UnitsPerPixel #both inputs have units so the units cancel
+            return self.UnitsPerPixel / scalar.UnitsPerPixel  # both inputs have units so the units cancel
         
         raise NotImplementedError("Division for input type is not supported: %s" % scalar)
-        
     
     def __eq__(self, other):
         if other is None:
@@ -2394,7 +2387,7 @@ class ScaleAxis(object):
             if self.UnitsOfMeasure != scalar.UnitsOfMeasure:
                 raise NotImplementedError("Cannot multiply ScaleAxis objects if UnitsOfMeasure do not match")
             
-            return self.UnitsPerPixel * scalar.UnitsPerPixel #both inputs have units so the units cancel
+            return self.UnitsPerPixel * scalar.UnitsPerPixel  # both inputs have units so the units cancel
         
         raise NotImplementedError("Multiplication for input type is not supported: %s" % scalar)
     
@@ -2428,10 +2421,12 @@ class FilterNode(XNamedContainerElementWrapped, VMH.ContrastHandler):
     @property
     def Histogram(self):
         '''Get the image set for the filter, create if missing'''
+        
         # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
         # There should be only one Imageset, so use find
         histogram = self.find('Histogram')
         if histogram is None:
+            raise NotImplementedError("Creation of missing histogram node is deprecated")
             histogram = HistogramNode.Create()
             self.append(histogram)
 
@@ -2844,12 +2839,12 @@ class StosGroupNode(XNamedContainerElementWrapped):
         SectionMappingsNode = self.GetSectionMapping(MappedSectionNode.Number)
         assert(not SectionMappingsNode is None)  # We expect the caller to arrange for a section mappings node in advance
                
-        stosNode = TransformNode.Create(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber' : str(ControlSectionNode.Number),
-                                                                                        'MappedSectionNumber' : str(MappedSectionNode.Number),
-                                                                                        'MappedChannelName' : str(MappedChannelNode.Name),
-                                                                                        'MappedFilterName' : str(MappedFilter.Name),
-                                                                                        'ControlChannelName' : str(ControlChannelNode.Name),
-                                                                                        'ControlFilterName' : str(ControlFilter.Name)})
+        stosNode = TransformNode.Create(str(ControlSectionNode.Number), OutputType, OutputPath, {'ControlSectionNumber': str(ControlSectionNode.Number),
+                                                                                        'MappedSectionNumber': str(MappedSectionNode.Number),
+                                                                                        'MappedChannelName': str(MappedChannelNode.Name),
+                                                                                        'MappedFilterName': str(MappedFilter.Name),
+                                                                                        'ControlChannelName': str(ControlChannelNode.Name),
+                                                                                        'ControlFilterName': str(ControlFilter.Name)})
          
         self.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
 #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
@@ -3140,7 +3135,7 @@ class StosMapNode(XElementWrapper):
     
     @property
     def NeedsValidation(self):
-        return True #Checking the mapping is easier than checking if volumedata.xml has changed
+        return True  # Checking the mapping is easier than checking if volumedata.xml has changed
 
     def IsValid(self):
         '''Check for mappings whose control section is in the non-stos section numbers list'''
@@ -3200,7 +3195,7 @@ class MappingNode(XElementWrapper):
     @property
     def SortKey(self):
         '''The default key used for sorting elements'''
-        return self.Control #self.tag + ' ' + (nornir_buildmanager.templates.Current.SectionTemplate % self.Control)
+        return self.Control  # self.tag + ' ' + (nornir_buildmanager.templates.Current.SectionTemplate % self.Control)
 
     @property
     def Control(self):
@@ -3239,7 +3234,7 @@ class MappingNode(XElementWrapper):
         else:
             updated_map.append(value)
             self.Mapped = updated_map
-            #self._AttributeChanged = True #Handled by setattr of Mapped 
+            # self._AttributeChanged = True #Handled by setattr of Mapped 
         
     def RemoveMapping(self, value):
         intval = int(value)
@@ -3249,7 +3244,7 @@ class MappingNode(XElementWrapper):
         
         updated_map.remove(intval)
         self.Mappings = updated_map
-        #self._AttributeChanged = True #Handled by setattr of Mapped
+        # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def __str__(self):
         self._mapped_cache = None
@@ -3295,10 +3290,10 @@ class MosaicBaseNode(XFileElementWrapper):
         (file, ext) = os.path.splitext(self.Path)
         ext = ext.lower()
 
-        #Checking for the file here is a waste of time
-        #since both stos and mosaic file loaders also check
-        #if not os.path.exists(self.FullPath): 
-            #return None
+        # Checking for the file here is a waste of time
+        # since both stos and mosaic file loaders also check
+        # if not os.path.exists(self.FullPath): 
+            # return None
 
         if ext == '.stos':
             return stosfile.StosFile.LoadChecksum(self.FullPath)
@@ -3337,7 +3332,6 @@ class MosaicBaseNode(XFileElementWrapper):
     def IsValid(self):
         
         result = super(MosaicBaseNode, self).IsValid()
-    
         
         if result[0]:
             knownChecksum = self.attrib.get('Checksum', None)
@@ -3532,10 +3526,10 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         '''Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data. 
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched'''
         
-        #We write down the result the first time we check if the transform is valid since it is expensive
+        # We write down the result the first time we check if the transform is valid since it is expensive
         try:
             if self._validity_checked is True:
-                return [True,"Validity already checked"]
+                return [True, "Validity already checked"]
         except AttributeError: 
             pass
         
@@ -3544,7 +3538,7 @@ class TransformNode(VMH.InputTransformHandler, MosaicBaseNode):
         if valid:
             [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
                  
-        #We can delete a locked transform if it does not exist on disk
+        # We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
         
@@ -3692,7 +3686,7 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
 
         if SourceImage is None:
             raise nornir_buildmanager.NornirUserException("No source image available to generate missing downsample level {0} : {1}".format(Downsample, OutputImage))
-            #return None
+            # return None
 
         OutputImage.Path = SourceImage.Path
         if 'InputImageChecksum' in SourceImage.attrib:
@@ -3704,12 +3698,11 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
     
     @property
     def NeedsValidation(self):
-        #if super(ImageSetBaseNode, self).NeedsValidation:
+        # if super(ImageSetBaseNode, self).NeedsValidation:
         #    return True
         
         input_needs_validation = VMH.InputTransformHandler.InputTransformNeedsValidation(self)
         return input_needs_validation[0] 
-        
                 
     def IsValid(self):
         '''Check if the image set is valid.  Be careful using this, because it only checks the existing meta-data. 
@@ -3719,10 +3712,10 @@ class ImageSetBaseNode(VMH.InputTransformHandler, VMH.PyramidLevelHandler, XCont
         prettyoutput.Log('Validate: {0}'.format(self.FullPath))
         if valid: 
             [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
-            #if valid:
-                #[valid, reason] = super(TransformNode, self).IsValid()
+            # if valid:
+                # [valid, reason] = super(TransformNode, self).IsValid()
                 
-        #We can delete a locked transform if it does not exist on disk
+        # We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
             
@@ -3783,8 +3776,6 @@ class ImageSetNode(ImageSetBaseNode):
 #             return [False, "File count mismatch for level"] 
 #         
 #         return [True, None]
-
-    
     
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
@@ -4104,10 +4095,10 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
                     if item.is_file() == False:
                         continue
                     
-                    if item.name[0] == '.': #Avoid the .desktop_ini files of the world
+                    if item.name[0] == '.':  # Avoid the .desktop_ini files of the world
                         continue
                     
-                    (root,ext) = os.path.splitext(item.name)
+                    (root, ext) = os.path.splitext(item.name)
                     if ext != expectedExtension:
                         continue
                     
@@ -4131,10 +4122,8 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         
         return (valid, reason)
 
-        #Starting with the highest resolution level, we need to check that all 
-        #of the levels are valid
-        
-        
+        # Starting with the highest resolution level, we need to check that all 
+        # of the levels are valid
             
     def CheckIfLevelTilesExistViaMetaData(self, level_node):
         '''
@@ -4145,7 +4134,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         
         level_full_path = level_node.FullPath
         
-        if self.Parent is None: #Don't check for validity if our node has not been added to the tree yet
+        if self.Parent is None:  # Don't check for validity if our node has not been added to the tree yet
             if not os.path.isdir(level_full_path):
                 return (False, '{0} directory does not exist'.format(level_full_path))
             else:
@@ -4160,8 +4149,8 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
             prettyoutput.Log('Validating tiles in {0}, directory was modified since last check'.format(level_full_path))
             nornir_buildmanager.operations.tile.VerifyTiles(level_node)
     
-        #The "No modifications since last validation case"
-        if self.NumberOfTiles == level_node.TilesValidated:    
+        # The "No modifications since last validation case"
+        if self.NumberOfTiles == level_node.TilesValidated: 
             return (True, "Tiles validated previously, directory has not been modified, and # validated == # in Pyramid")
         elif self.NumberOfTiles < level_node.TilesValidated:
             return (True, "More tiles validated than expected in level")
@@ -4179,7 +4168,7 @@ class TilePyramidNode(XContainerElementWrapper, VMH.PyramidLevelHandler):
         if ProbablyGood:
             return (True, Reason)
           
-        #Attempt to regenerate the level, then we'll check again for validity
+        # Attempt to regenerate the level, then we'll check again for validity
         output = self.GenerateLevels(level_node.Downsample)
         if output is not None:
             output.Save()
@@ -4307,12 +4296,12 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler, VMH.InputTr
             
     @property
     def NeedsValidation(self):
-        #We don't check with the base class' last directory modification because 
-        #we cannot save the metadata without changing the timestamp, so we 
-        #only look at the input transform (which will not exist for volumes built
-        #before June 8th 2020.)  If there is no input transform then no validation
-        #is done and tilesets must be deleted manually to refresh them.
-        #if super(TilesetNode, self).NeedsValidation:
+        # We don't check with the base class' last directory modification because 
+        # we cannot save the metadata without changing the timestamp, so we 
+        # only look at the input transform (which will not exist for volumes built
+        # before June 8th 2020.)  If there is no input transform then no validation
+        # is done and tilesets must be deleted manually to refresh them.
+        # if super(TilesetNode, self).NeedsValidation:
         #    return True
         
         input_needs_validation = VMH.InputTransformHandler.InputTransformNeedsValidation(self)
@@ -4326,10 +4315,10 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler, VMH.InputTr
         prettyoutput.Log('Validate: {0}'.format(self.FullPath))
         if valid: 
             [valid, reason] = VMH.InputTransformHandler.InputTransformIsValid(self)
-            #if valid:
-                #[valid, reason] = super(TransformNode, self).IsValid()
+            # if valid:
+                # [valid, reason] = super(TransformNode, self).IsValid()
                 
-        #We can delete a locked transform if it does not exist on disk
+        # We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
             
@@ -4354,10 +4343,10 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler, VMH.InputTr
         
         GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
         # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
-        MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :FilePrefix,
-                                                                                    'X' :  GridXString,
-                                                                                    'Y' : '*',
-                                                                                    'postfix' :  FilePostfix})
+        MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix':FilePrefix,
+                                                                                    'X': GridXString,
+                                                                                    'Y': '*',
+                                                                                    'postfix': FilePostfix})
 
         # Start with the middle because it is more likely to have a match earlier
         TestIndicies = list(range(GridYDim // 2, GridYDim))
@@ -4367,10 +4356,10 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler, VMH.InputTr
             #                           'X' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim +
             #                           '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY +
             #                           FilePostfix)
-            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix' :  FilePrefix,
-                                                                                    'X' : GridXString,
-                                                                                    'Y' : nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
-                                                                                    'postfix' : FilePostfix})
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileMatchStringTemplate % {'prefix': FilePrefix,
+                                                                                    'X': GridXString,
+                                                                                    'Y': nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
+                                                                                    'postfix': FilePostfix})
             if(os.path.exists(MatchString)):
                 [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
                 if YSize != self.TileYDim or XSize != self.TileXDim:
@@ -4379,10 +4368,10 @@ class TilesetNode(XContainerElementWrapper, VMH.PyramidLevelHandler, VMH.InputTr
                 level_node.UpdateValidationTime()
                 return [True, "Last column of tileset found"]
 
-            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix' :  FilePrefix,
-                                                                                    'X' : GridXDim,
-                                                                                    'Y' : iY,
-                                                                                    'postfix' : FilePostfix})
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
+                                                                                    'X': GridXDim,
+                                                                                    'Y': iY,
+                                                                                    'postfix': FilePostfix})
             if(os.path.exists(MatchString)):
                 [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
                 if YSize != self.TileYDim or XSize != self.TileXDim:
@@ -4488,7 +4477,6 @@ class LevelNode(XContainerElementWrapper):
                 del self.attrib['TilesValidated']
         else:
             self.attrib['TilesValidated'] = '%d' % int(val)
-           
     
     def IsValid(self):
         '''Remove level directories without files, or with more files than they should have'''
@@ -4496,8 +4484,8 @@ class LevelNode(XContainerElementWrapper):
         if not os.path.isdir(self.FullPath):
             return [False, 'Directory does not exist']
          
-        #We need to be certain to avoid the pathscan that occurs in our parent class,
-        #So we check that our directory exists and call it good
+        # We need to be certain to avoid the pathscan that occurs in our parent class,
+        # So we check that our directory exists and call it good
          
         PyramidNode = self.Parent
         if(isinstance(PyramidNode, TilePyramidNode)):
@@ -4533,7 +4521,7 @@ class LevelNode(XContainerElementWrapper):
  
         super(LevelNode, self).__init__(tag='Level', attrib=attrib, **extra)
         
-        #Temporary remap for TileValidationTime
+        # Temporary remap for TileValidationTime
         if 'TileValidationTime' in self.attrib:
             val = self.attrib.get('TileValidationTime', datetime.datetime.min)
             if not val is None and isinstance(val, str):
@@ -4584,7 +4572,6 @@ class HistogramBase(VMH.InputTransformHandler, XElementWrapper):
             return True
         
         return DataNode.NeedsValidation
-        
 
     def IsValid(self):
         '''Remove this node if our output does not exist'''
@@ -4664,9 +4651,9 @@ class AutoLevelHintNode(XElementWrapper):
         
     @classmethod
     def Create(cls, MinIntensityCutoff=None, MaxIntensityCutoff=None, Gamma=None):
-        attrib = {'UserRequestedMinIntensityCutoff' : "",
-                  'UserRequestedMaxIntensityCutoff' : "",
-                  'UserRequestedGamma' : ""}
+        attrib = {'UserRequestedMinIntensityCutoff': "",
+                  'UserRequestedMaxIntensityCutoff': "",
+                  'UserRequestedGamma': ""}
         
         obj = AutoLevelHintNode(attrib=attrib)
         
@@ -4773,7 +4760,7 @@ class PruneNode(HistogramBase):
 if __name__ == '__main__':
     VolumeManager.Load("C:\Temp")
 
-    #tagdict = XPropertiesElementWrapper.wrap(ElementTree.Element("Tag"))
+    # tagdict = XPropertiesElementWrapper.wrap(ElementTree.Element("Tag"))
     tagdict.V = 5
     tagdict.Path = "path"
 
