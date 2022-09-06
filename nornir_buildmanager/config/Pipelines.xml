@@ -807,6 +807,15 @@
                     </Parameters>
                 </PythonCall>
                 
+                <PythonCall Function="diagnostics.PlotMosaicOverlaps"
+                    TransformNode="#TransformNode" OutputFilename="#OutputFilename"
+                    InputFilterName="#InputFilterName"
+                    Downsample="#Downsample"
+                    exclude_diagonal_overlaps="#exclude_diagonal_overlaps"
+                    ShowFeatureScores="#scale_weight_by_feature_score"
+                    > 
+                </PythonCall> 
+                
 
                 <!-- ir-refine-grid, lay a mesh over each tile and align points to overlapping 
                     tiles -->
@@ -942,8 +951,8 @@
                 type="str"
                 help="Regular expression describing channels to include, * processes all channels"
                 required="False" />
-            <Argument flag="-RegistrationDownsample" dest="Downsample"
-                default="4" type="int" help="Downsample level to use for ir-tools"
+            <Argument flag="-Downsample" dest="Downsample"
+                type="int" help="Downsample level to use for ir-tools"
                 required="False" />
             <Argument flag="-Filter" dest="InputFilterName" required="False"
                 help="Filter to use for layouts"/>
@@ -979,6 +988,7 @@
                 <PythonCall Function="diagnostics.PlotMosaicOverlaps"
                     TransformNode="#TransformNode" OutputFilename="#OutputFilename"
                     InputFilterName="#InputFilterName"  
+                    Downsample="#Downsample"
                     exclude_diagonal_overlaps="#exclude_diagonal_overlaps"
                     ShowFeatureScores="#ShowFeatureScores"
                     > 
