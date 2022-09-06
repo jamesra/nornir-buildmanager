@@ -122,36 +122,45 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 
     if not os.path.exists(OutputTransformNode.FullPath): 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
-    
-        # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
-        tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
-        mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
-        if mfileObj is None:
-            Logger.warning("Could not load %s" % (InputTransformNode.FullPath))
-            return None
         
-        invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
-        
-        mosaicToLoadPath = InputTransformNode.FullPath
-        if invalidFiles:
-            mfileObj.Save(tempMosaicFullPath)
-            mosaicToLoadPath = tempMosaicFullPath
+        haveTempFile = False
+        try: 
+            # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
+            tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
+            mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
+            if mfileObj is None:
+                Logger.warning("Could not load %s" % (InputTransformNode.FullPath))
+                return None
             
-        mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
-        tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj, image_folder=LevelNode.FullPath, image_to_source_space_scale=LevelNode.Downsample)
-        firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(settings)
-        
-        firstpass_translated_mosaicObj_tileset.SaveMosaic(OutputTransformNode.FullPath)
-
-        SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
-        
-        OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
-        OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
-          
-        print("%s -> %s" % (OutputTransformNode.FullPath, nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
-        
-        if os.path.exists(tempMosaicFullPath):
-            os.remove(tempMosaicFullPath)
+            invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
+            
+            mosaicToLoadPath = InputTransformNode.FullPath
+            if invalidFiles:
+                haveTempFile = True
+                mfileObj.Save(tempMosaicFullPath)
+                mosaicToLoadPath = tempMosaicFullPath
+                
+            mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
+            tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj, image_folder=LevelNode.FullPath, image_to_source_space_scale=LevelNode.Downsample)
+            firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(settings)
+            
+            firstpass_translated_mosaicObj_tileset.SaveMosaic(OutputTransformNode.FullPath)
+    
+            SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
+            
+            OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
+            OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
+              
+            print("%s -> %s" % (OutputTransformNode.FullPath, nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
+        except Exception as e:
+            OutputTransformNode.Clean(f"Exception generating mosaic tile translations:\n{e}")
+            raise
+        finally:
+            try:
+                if haveTempFile:
+                    os.remove(tempMosaicFullPath)
+            except FileNotFoundError:
+                pass 
  
     if SaveRequired or added_transform_settings_node or added_manual_offsets_node:
         nornir_pools.ClosePools()  # A workaround to avoid running out of memory
@@ -324,9 +333,14 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
             TransformNodeToZeroOrigin(OutputTransformNode)
             
             #Reverse the output of ir-refine-grid on the X,Y axis dues ot 
+        except Exception as e:
+            OutputTransformNode.Clean(f"Exception generating mosaic grid transform:\n{e}")
+            raise
         finally:
-            os.remove(TempInputMosaic)
-            pass
+            try:
+                os.remove(TempInputMosaic)
+            except FileNotFoundError:
+                pass
 
     if SaveRequired:
         return TransformParentNode
