@@ -808,8 +808,8 @@
                 </PythonCall>
                 
                 <PythonCall Function="diagnostics.PlotMosaicOverlaps"
-                    TransformNode="#TransformNode" OutputFilename="#OutputFilename"
-                    InputFilterName="#InputFilterName"
+                    TransformNode="#TransformNode" OutputFilename="Layout"
+                    Filter="#FilterNode"
                     Downsample="#Downsample"
                     exclude_diagonal_overlaps="#exclude_diagonal_overlaps"
                     ShowFeatureScores="#scale_weight_by_feature_score"
@@ -987,7 +987,7 @@
                     mosaic -->
                 <PythonCall Function="diagnostics.PlotMosaicOverlaps"
                     TransformNode="#TransformNode" OutputFilename="#OutputFilename"
-                    InputFilterName="#InputFilterName"  
+                    Filter="#InputFilterName"  
                     Downsample="#Downsample"
                     exclude_diagonal_overlaps="#exclude_diagonal_overlaps"
                     ShowFeatureScores="#ShowFeatureScores"
@@ -1178,7 +1178,7 @@
         <PythonCall Function="reporting.GenerateTableReport"
             OutputFile="#OutputPath" RowXPath="Section" RowLabelAttrib="Number"
             MaxImageWidth="512" MaxImageHeight="512" RowsPerPage="#RowsPerPage" BuilderEndpoint="#BuilderEndpoint"
-            ColumnXPaths="Channel/Filter[@Name='#AssembleFilter'],Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
+            ColumnXPaths="Channel/Filter[@Name='#AssembleFilter'],Channel/TransformData,Channel/Notes,Channel/Data,Channel/Filter[@Name='#ContrastFilter']/Histogram/Image,Channel/Filter[@Name='#PruneFilter']/Prune/Image" />
         <PythonCall Module="nornir_buildmanager.VolumeFinder"
             Function="EmailIndex" subject="Volume Report" to="#To" cc="#CC" />
     </Pipeline>

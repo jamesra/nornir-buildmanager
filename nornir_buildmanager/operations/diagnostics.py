@@ -9,6 +9,7 @@ import nornir_imageregistration
 import nornir_shared.files
 import nornir_shared.prettyoutput 
 import nornir_buildmanager
+from nornir_buildmanager.VolumeManagerETree import FilterNode
 
 num_contrast_pad_chars = 32
 
@@ -197,7 +198,7 @@ def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
     return None
 
 
-def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, InputFilterName=None, ShowFeatureScores=False, **kwargs):
+def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, Filter=None, ShowFeatureScores=False, **kwargs):
     '''
     Plot the tile overlaps of a layout
     '''
@@ -207,19 +208,22 @@ def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, InputFilt
     
     LevelNode = None
     try:
-        if InputFilterName is None:
+        if Filter is None:
             # Pick the first Filter we can find
             xpath = 'Filter/TilePyramid/Level' if Downsample is None else f"Filter/TilePyramid/Level[@Downsample='{Downsample}']"
             LevelNode = ChannelNode.find(xpath)
+        elif isinstance(Filter, str):
+            filterNode = ChannelNode.GetFilter(Filter)
+            LevelNode = filterNode.TilePyramid.Levels[0] if Downsample is None else filterNode.TilePyramid.GetLevel(Downsample)
+        elif isinstance(Filter, nornir_buildmanager.VolumeManagerETree.FilterNode):
+            filterNode = Filter
+            LevelNode = filterNode.TilePyramid.Levels[0] if Downsample is None else filterNode.TilePyramid.GetLevel(Downsample)
         else:
-            FilterNode = ChannelNode.GetFilter(InputFilterName)
-            LevelNode = FilterNode.TilePyramid.Levels[0] if Downsample is None else FilterNode.TilePyramid.GetLevel(Downsample)
-                
+            raise NotImplementedError(f"Unknown type of Filter argument {Filter}")
     except:
         nornir_shared.prettyoutput.LogErr(f"Unable to locate TilePyramid Level to determine downsample for Overlap plot: {TransformNode.FullPath}")
         raise 
-    
-    
+     
     OutputFilename = f"{OutputFilename}_{TransformNode.Name}.svg"
     
     (node_added, OutputImageNode) = ChannelNode.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManagerETree.TransformDataNode.Create(Name=TransformNode.Name, Path=OutputFilename))
