@@ -792,6 +792,10 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     Height = MaxImageHeight
     Width = MaxImageWidth
     try:
+        (_, ext) = os.path.splitext(ImageNode.FullPath)
+        if ext == '.svg':
+            return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
+        
         (Height, Width) = ImageNode.Dimensions
         # [Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
     except IOError:
@@ -809,7 +813,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
 
         ThumbnailOutputFullPath = os.path.join(HtmlPaths.ThumbnailDir, ThumbnailFilename)
 
-        if nornir_shared.files.IsOutdated(ReferenceFilename=ImageNode.FullPath, TestFilename=ThumbnailOutputFullPath):
+        if not os.path.exists(ThumbnailOutputFullPath) or nornir_shared.files.IsOutdated(ReferenceFilename=ImageNode.FullPath, TestFilename=ThumbnailOutputFullPath):
         # nfiles.RemoveOutdatedFile(ImageNode.FullPath, ThumbnailOutputFullPath)
         # if not os.path.exists(ThumbnailOutputFullPath):
             Pool = nornir_pools.GetGlobalThreadPool()
@@ -841,13 +845,8 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
         MaxImageHeight = 1024
         
     if filter.HasImageset:
-        HTML.Add('<TR><TD colspan="99">')
-        requiredLevel = filter.Imageset.FindDownsampleForSize((MaxImageHeight, MaxImageWidth))
-        if requiredLevel is None:
-            return ""
-        
-        image_node = filter.GetImage(requiredLevel)
-        HTML.Add(ImgTagFromImageNode(image_node, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)) 
+        HTML.Add('<TR><TD colspan="99">')  
+        HTML.Add(ImgTagFromImageSetNode(filter.Imageset, htmlpaths, MaxImageWidth, MaxImageHeight, **kwargs)) 
         HTML.Add("</TD></TR>")
         
     HTML.Add("<TR>") 
@@ -869,9 +868,29 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
     HTML.Add("</TABLE>")
     
     return str(HTML)
-    
 
-def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
+def ImgTagFromImageSetNode(Imageset, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
+    '''
+    Returns an image tag with an anchor link to the highest resolution image.  Generates a thumbnail matching the Max Width/Height limits using
+    the closest downsample level from the ImageSet for speed.
+    '''
+    
+    if Imageset is None:
+        raise ValueError("Imageset is None")
+    if Logger is None:
+        raise ValueError("Logger is None")
+    
+    requiredLevel = Imageset.FindDownsampleForSize((MaxImageHeight, MaxImageWidth))
+    if requiredLevel is None:
+        return ""
+    
+    maxResImageNode = Imageset.GetImage(Imageset.MaxResLevel.Downsample)
+    AnchorHREF = HtmlPaths.GetSubNodeFullPath(maxResImageNode)
+    image_node = Imageset.GetImage(requiredLevel)
+    return ImgTagFromImageNode(image_node, HtmlPaths, AnchorHREF=AnchorHREF, MaxImageWidth=MaxImageWidth, MaxImageHeight=MaxImageHeight, Logger=Logger, **kwargs) 
+     
+
+def ImgTagFromImageNode(ImageNode, HtmlPaths, AnchorHREF=None, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
     '''Create the HTML to display an image with an anchor to the full image.
        If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute'''
 
@@ -890,9 +909,12 @@ def ImgTagFromImageNode(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight
         return ""
 
     (ImgSrcPath, Height, Width) = __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth, MaxImageHeight)
+    
+    if AnchorHREF is None:
+        AnchorHREF = HtmlPaths.GetSubNodeFullPath(ImageNode)
 
     HTMLImage = HTMLImageTemplate % {'src': ImgSrcPath, 'AltText': imageFilename, 'ImageWidth': Width, 'ImageHeight': Height}
-    HTMLAnchor = HTMLAnchorTemplate % {'href': ImgSrcPath, 'body': HTMLImage }
+    HTMLAnchor = HTMLAnchorTemplate % {'href': AnchorHREF, 'body': HTMLImage }
 
     return HTMLAnchor
 
@@ -959,6 +981,8 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
                     kwargs['MaxImageWidth'] = 448
                     kwargs['MaxImageHeight'] = 448
 
+                HTML = ImgTagFromImageNode(ImageNode=ColSubElement, HtmlPaths=HTMLPaths, Logger=Logger, **kwargs)
+            elif ColSubElement.tag == "TransformData":
                 HTML = ImgTagFromImageNode(ImageNode=ColSubElement, HtmlPaths=HTMLPaths, Logger=Logger, **kwargs)
             elif ColSubElement.tag == "Data":
                 kwargs['MaxImageWidth'] = 364
