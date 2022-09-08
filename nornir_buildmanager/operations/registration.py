@@ -89,12 +89,12 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                                                                                    OutputTransformPath=OutputTransformPath)
     
     OutputTransformSettingsPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName,"_Settings", Ext=".json")
-    settings_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Path=OutputTransformSettingsPath)
-    [added_transform_settings_node, settings_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(settings_data_node, 'Path')
+    settings_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Name="Translate Mosaic Settings", Path=OutputTransformSettingsPath)
+    [added_transform_settings_node, settings_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(settings_data_node, 'Name')
     
     ManualOffsetsPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName,"_ManualOffsets", Ext=".csv")
-    manual_offsets_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Path=ManualOffsetsPath)
-    [added_manual_offsets_node, manual_offsets_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(manual_offsets_data_node, 'Path')
+    manual_offsets_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Name="Manual Offsets", Path=ManualOffsetsPath)
+    [added_manual_offsets_node, manual_offsets_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(manual_offsets_data_node, 'Name')
       
     settings = nornir_imageregistration.settings.GetOrSaveTranslateSettings(settings, settings_data_node.FullPath)
       
