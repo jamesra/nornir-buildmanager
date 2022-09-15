@@ -333,8 +333,8 @@ class ParsePMG(PMGTest):
 
         super(PMGTest, self).setUp()
 
-        (self.pmgDirs, _) = list(nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg"))
-        (extraDirs,_) = nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg")
+        self.pmgDirs = [d[0] for d in nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg")]
+        extraDirs = [d[0] for d in nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg")]
         self.pmgDirs.extend(extraDirs)
         self.assertTrue(len(self.pmgDirs) > 0, "No test input found")
 

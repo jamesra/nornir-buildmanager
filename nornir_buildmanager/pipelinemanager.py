@@ -292,6 +292,7 @@ class PipelineManager(object):
 
     '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
     def __init__(self, pipelinesRoot, pipelineData):
+        self.VolumeTree = None
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
         self.PipelineRoot = pipelinesRoot
@@ -328,16 +329,14 @@ class PipelineManager(object):
         return None
 
     @classmethod
-    def ToElementString(self, element):
+    def ToElementString(cls, element):
         if element.tag == 'Iterate':
-            outStr = "Iterate: " + element.attrib['XPath']
-            return outStr
-        
-        strList = ElementTree.tostringlist(element)
+            return "Iterate: " + element.attrib['XPath']
 
         outStr = ""
+        strList = [s.decode('Utf-8') for s in ElementTree.tostringlist(element)]
         for s in strList:
-            outStr = outStr + " " + s.decode('Utf-8')
+            outStr = outStr + " " + s
             if s == '>':
                 break
 

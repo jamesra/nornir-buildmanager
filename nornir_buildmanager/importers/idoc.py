@@ -257,7 +257,7 @@ class SerialEMIDocImport(object):
         # if(os.path.exists(SupertilePath)):
         #    continue
 
-        Flip = SectionNumber in FlipList;
+        Flip = SectionNumber in FlipList
         if(Flip):
             prettyoutput.Log("Found in FlipList.txt, flopping images")
 
@@ -398,7 +398,7 @@ class SerialEMIDocImport(object):
             # Writing this file indicates import succeeded and we don't need to repeat these steps, writing it will possibly invalidate a lot of downstream data
             # We need to flip the images.  This may be a Utah scope issue, our Y coordinates are inverted relative to the images.  To fix this
             # we flop instead of flip and reverse when writing the coordinates
-            mosaicfile.MosaicFile.Write(SupertilePath, Entries=Tileset.GetPositionsForTargets(), Flip=not Flip, ImageSize=IDocData.ImageSize, Downsample=1);
+            mosaicfile.MosaicFile.Write(SupertilePath, Entries=Tileset.GetPositionsForTargets(), Flip=not Flip, ImageSize=IDocData.ImageSize, Downsample=1)
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
 
             # Sometimes files fail to convert, when this occurs remove them from the .mosaic

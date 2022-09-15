@@ -104,21 +104,25 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
         settings.known_offsets = mosaic_offsets 
     else:
         nornir_imageregistration.settings.SaveMosaicOffsets(None, manual_offsets_data_node.FullPath)
-      
+          
+    
+    if OutputTransformNode is not None:  
+        if OutputTransformNode.Locked:
+            Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+            return None
+        else:
+            if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):
+                OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} settings file was updated")
+                OutputTransformNode = None
+            elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):
+                OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
+                OutputTransformNode = None
+            
     if OutputTransformNode is None:
         OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
-    elif OutputTransformNode.Locked:
-        Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
-        return None
-    else:
-        if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):
-            OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} settings file was updated")
-            OutputTransformNode = None
-        elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):
-            OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
-            OutputTransformNode = None
+    
 
     if not os.path.exists(OutputTransformNode.FullPath): 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate

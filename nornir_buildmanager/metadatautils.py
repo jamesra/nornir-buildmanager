@@ -99,8 +99,8 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
         Type = attribs['Type']
         del attribs['Type']
 
-    ImageSetNode = VolumeManagerETree.ImageSetNode.Create(Type, attrib=attribs);
-    [NewImageSetNode, ImageSetNode] = ParentNode.UpdateOrAddChildByAttrib(ImageSetNode, 'Path');
+    ImageSetNode = VolumeManagerETree.ImageSetNode.Create(Type, attrib=attribs)
+    [NewImageSetNode, ImageSetNode] = ParentNode.UpdateOrAddChildByAttrib(ImageSetNode, 'Path')
 
     os.makedirs(ImageSetNode.FullPath, exist_ok=True)
 

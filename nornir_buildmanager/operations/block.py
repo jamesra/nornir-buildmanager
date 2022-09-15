@@ -284,7 +284,7 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     if not NewStosMap:
         if CenterSectionParameter in NonStosSectionNumbersSet:
             AdjustedCenterSectionParameter = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)
-            Logger.warn("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParamter, AdjustedCenterSectionParameter))
+            Logger.warn("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParameter, AdjustedCenterSectionParameter))
             CenterSectionParameter = AdjustedCenterSectionParameter  
 
         if CenterSectionParameter is None:
@@ -659,8 +659,8 @@ def ValidateSectionMappingPipeline(Parameters, Logger, section_mapping_node, **k
 
     
 def ValidateSectionMapping(section_mapping_node, Logger):
-    save_node = False;
-    save_node |= section_mapping_node.CleanIfInvalid();
+    save_node = False
+    save_node |= section_mapping_node.CleanIfInvalid()
     for t in section_mapping_node.Transforms:
         save_node |= ValidateSectionMappingTransform(t, Logger) is not None
     
@@ -668,8 +668,8 @@ def ValidateSectionMapping(section_mapping_node, Logger):
         save_node |= img.CleanIfInvalid()
         
     if save_node:
-        return section_mapping_node;
-    
+        return section_mapping_node
+
     return None
 
 
@@ -1337,7 +1337,7 @@ def __PredictStosImagePaths(filter_node, Downsample):
     return (imageFullPath, maskFullPath)
 
 
-def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
+def __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks:bool):
     '''Generates a new stos file using the specified filters and scales the transform to match the
        requested downsample as needed.
        :param bool UseMasks: True if masks should be included.  None if we should copy setting from input stos transform

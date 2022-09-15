@@ -18,7 +18,7 @@ def ListBlockStosMaps(BlockNode, **kwargs):
 def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
     StosMap = BlockNode.GetStosMap(StosMapName)
 
-    print('');
+    print('')
 
     if StosMap is None:
         print("No stos map found with name {0}".format(StosMapName))
@@ -36,7 +36,7 @@ def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
         print("{0:s}{1:s}".format(repr(mapping.Control).ljust(10),
               ', '.join([str(n) for n in sorted(mapping.Mapped)]))) 
 
-    print('');
+    print('')
     return
 
 def AddMapping(BlockNode, StosMapName, ControlSection, MappedSection, **kwargs):

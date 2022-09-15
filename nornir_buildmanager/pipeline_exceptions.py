@@ -62,8 +62,7 @@ class PipelineArgumentNotFound(PipelineError):
         self.argname = argname
 
     def __CoreErrorList(self):
-        s = []
-        s.append("Argument Name: " + self.argname)
+        s = ["Argument Name: " + self.argname]
         s.extend(super(PipelineArgumentNotFound, self).__CoreErrorList())
         return s
 

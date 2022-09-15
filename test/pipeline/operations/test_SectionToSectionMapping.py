@@ -44,7 +44,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
     def VolumePath(self):
         return "SectionToSectionMappingTest"
 
-    def _GetResetBlockNode(self):
+    def _GetResetBlockNode(self) -> VolumeManagerETree.BlockNode:
         VolumeObj = self.LoadOrCreateVolume()
         BlockNode = VolumeObj.find("Block")
         self.assertIsNotNone(BlockNode)

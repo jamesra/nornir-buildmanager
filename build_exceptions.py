@@ -31,7 +31,7 @@ class Build(Exception):
         if not self.PipelineNode is None:
             s.append("Pipeline Element: " + ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
         if not self.VolumeElem is None:
-            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
+            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n')
         return s
 
     def ErrorList(self):

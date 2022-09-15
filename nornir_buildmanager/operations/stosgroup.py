@@ -18,34 +18,37 @@ def CreateStosGroup(GroupName, BlockNode, Downsample, **kwargs):
     (created, stos_group) = BlockNode.GetOrCreateStosGroup(GroupName, Downsample)
     if created:
         print("Created stos group {0} with transforms downsampled by {1}".format(GroupName, str(Downsample)))
-        return BlockNode;
+        return BlockNode
     else:
-        print("Stos group {0} already exists".format(GroupName));
-        return None;
+        print("Stos group {0} already exists".format(GroupName))
+        return None
+
 
 def RemoveStosGroup(GroupName, BlockNode, Downsample, **kwargs):
     removed = BlockNode.RemoveStosGroup(GroupName, Downsample)
     if removed:
         print("Removed Stos group {0} with transforms downsampled by {1}".format(GroupName, str(Downsample)))
-        return BlockNode;
+        return BlockNode
     else:
-        print("Stos group {0} did not exist".format(GroupName));
-        return None;
-    
+        print("Stos group {0} did not exist".format(GroupName))
+        return None
+
+
 def ListStosGroups(BlockNode, **kwargs):
     
-    print("Slice-to-Slice Transform Groups");
-    print("");
+    print("Slice-to-Slice Transform Groups")
+    print("")
     sortedGroups = sorted(BlockNode.StosGroups, key=lambda sg: sg.Name)
     
     for group in sortedGroups:
-        print(group.SummaryString);
-    print("");
-    
+        print(group.SummaryString)
+    print("")
+
+
 def ListGroupSectionMappings(BlockNode, GroupName, Downsample, **kwargs):
     
-    print("Slice-to-Slice Transform Groups");
-    print("");
+    print("Slice-to-Slice Transform Groups")
+    print("")
     StosGroup = BlockNode.GetStosGroup(GroupName, Downsample)
     if StosGroup is None:
         print("No stos group found with name {0}".format(GroupName))

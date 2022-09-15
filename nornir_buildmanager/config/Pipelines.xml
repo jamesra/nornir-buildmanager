@@ -1517,15 +1517,28 @@
                 <Iterate VariableName="TransformNode" XPath="Transform">
                     <PythonCall Function="general.CleanNodeIfInvalid" node="#TransformNode" />
                 </Iterate>
-
+                <Iterate VariableName="TransformDataNode" XPath="TransformData">
+                    <PythonCall Function="general.CleanNodeIfInvalid" node="#TransformDataNode" />
+                </Iterate>
+                <Iterate VariableName="ImageNode" XPath="Image">
+                    <PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode" />
+                </Iterate>
+                <Iterate VariableName="DataNode" XPath="Data">
+                    <PythonCall Function="general.CleanNodeIfInvalid" node="#DataNode" />
+                </Iterate>
                 <Iterate VariableName="FilterNode" XPath="Filter">
                     <PythonCall Function="tile.VerifyAssembledImagePathIsCorrect"
                         FilterNode="#FilterNode" />
-
+                    <Iterate VariableName="HistogramNode" XPath="Histogram">
+                        <PythonCall Function="general.CleanNodeIfInvalid" node="#HistogramNode" />
+                    </Iterate>
                     <Iterate VariableName="ImageNode" XPath="ImageSet/Level/Image">
                         <PythonCall Function="general.CleanNodeIfInvalid" node="#ImageNode" />
                     </Iterate>
                     <Iterate VariableName="LevelNode" XPath="ImageSet/Level">
+                        <PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode" />
+                    </Iterate>
+                    <Iterate VariableName="DataNode" XPath="Data">
                         <PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode" />
                     </Iterate>
                 </Iterate>

@@ -37,6 +37,10 @@ class RowList(list):
 class ColumnList(list):
     '''Class used for HTML to place into columns'''
 
+    def __init__(self, *args):
+        self._caption = None
+        self.append(args)
+
     @property
     def caption(self):
         if hasattr(self, '_caption'):
@@ -140,7 +144,7 @@ class HTMLPaths(object):
             
         (filename, _) = os.path.splitext(self._OutputFile)
         
-        self._OutputPagePrefix = f"{filename}_"; 
+        self._OutputPagePrefix = f"{filename}_"
 
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
 
@@ -640,8 +644,7 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
      RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
     '''
     
-    TableEntries = {}
-    TableEntries['1'] = htmlpaths.GetFileAnchorHTML(DataNode, "Tile data (idoc file)") 
+    TableEntries = {'1': htmlpaths.GetFileAnchorHTML(DataNode, "Tile data (idoc file)")}
     # rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
     
     SummaryStrings = __ExtractIDocDataText(DataNode)
@@ -958,7 +961,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     BobEndpoint = None
     
     if RowElement.tag == 'Section' and BobEndpoint is not None:
-        AddBobButtons()
+        AddBobButtons(BobEndpoint=BobEndpoint)
         
     # CaptionHTML = None
     for ColXPath in ColumnXPaths:
@@ -1458,7 +1461,7 @@ def __ListToUnorderedList(listEntries, IndentLevel):
     HTML.Indent()
 
     for entry in listEntries:
-        HTML.Add('<li>' + str(entry) + '</li>\n', HTML.IndentLevel)
+        HTML.Add(' ' * HTML.IndentLevel + '<li>' + str(entry) + '</li>\n')
 
     HTML.Dedent()
     HTML.Add("</ul>\n")

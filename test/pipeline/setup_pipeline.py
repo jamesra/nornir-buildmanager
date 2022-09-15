@@ -12,6 +12,7 @@ import tempfile
 import time
 import unittest
 
+import abc
 from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
 from nornir_buildmanager.argparsexml import IntegerList
@@ -23,7 +24,6 @@ import test.testbase
 
 import nornir_buildmanager.build as build
 from abc import abstractproperty
-
 
 def VerifyVolume(test, VolumeObj, listVolumeEntries):
     '''Walk a list of volume entries and ensure each exists'''
@@ -952,8 +952,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     
 class PlatformTest(NornirBuildTestBase):
 
-    @property
-    @abstractproperty
+    @abc.abstractmethod
     def Platform(self):
         raise NotImplementedError("Platform property not implemented")
 

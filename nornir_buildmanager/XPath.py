@@ -23,14 +23,14 @@ class XSubPath(object):
         return
 
     def __str__(self):
-        s = "";
+        s = ""
         for item in list(self.__dict__.items()):
             if item[0].startswith('_'):
-                continue;
+                continue
 
-            s = s + (str(item[0]) + " : " + str(item[1]) + '\n');
+            s = s + (str(item[0]) + " : " + str(item[1]) + '\n')
 
-        return s;
+        return s
 
 
 def XPathIterator(XPath):
@@ -40,7 +40,7 @@ def XPathIterator(XPath):
            The following XPath syntax elements are supported: / .. . [] @ = '''
 
         # Get the name of the child node we are looking for
-        PathParts = XPath.split('/');
+        PathParts = XPath.split('/')
 
         pat = re.compile(r"""
                         
@@ -52,47 +52,47 @@ def XPathIterator(XPath):
                                 (?P<Value>[^\]]+))?                                
                              \])?
                         
-                        """, re.VERBOSE);
+                        """, re.VERBOSE)
 
         # prettyoutput.Log(XPath);
 
         for subpath in PathParts:
-            StartFromRoot = len(subpath) == 0;
+            StartFromRoot = len(subpath) == 0
             if(StartFromRoot):
-                continue;
+                continue
 
             # prettyoutput.Log("\n" + subpath);
-            matches = pat.match(subpath);
+            matches = pat.match(subpath)
             if matches is None:
-                prettyoutput.LogErr("Error in xpath subpath: " + subpath);
-                sys.exit();
+                prettyoutput.LogErr("Error in xpath subpath: " + subpath)
+                sys.exit()
 
             # Figure out if Value is a string (Starts with quotes)
-            Obj = XSubPath();
-            Obj.RawPath = subpath;
+            Obj = XSubPath()
+            Obj.RawPath = subpath
             for item in list(matches.groupdict().items()):
-                Obj.__dict__[item[0]] = item[1];
+                Obj.__dict__[item[0]] = item[1]
 
-            Obj.IsAttribute = not matches.group('IsAttribute') is None;
+            Obj.IsAttribute = not matches.group('IsAttribute') is None
 
             if(Obj.Value is not None):
                 if Obj.Value[0] == "'" and Obj.Value[-1] == "'" and len(Obj.Value) >= 3:
-                    Obj.Value = Obj.Value[1:-2];
+                    Obj.Value = Obj.Value[1:-2]
                 elif Obj.Value[0] == '"' and Obj.Value[-1] == '"'  and len(Obj.Value) >= 3:
-                    Obj.Value = Obj.Value[1:-2];
+                    Obj.Value = Obj.Value[1:-2]
                 else:
                     try:
-                        Obj.Value = float(Obj.Value);
+                        Obj.Value = float(Obj.Value)
                     except:
                         pass;
 
-            yield Obj;
+            yield Obj
 
 
 if __name__ == '__main__':
-    x1 = '/Volumes/Section/Channel[@Name=\'TEM\']/Filter/Tag[@Name=\'RAW\']/..';
+    x1 = '/Volumes/Section/Channel[@Name=\'TEM\']/Filter/Tag[@Name=\'RAW\']/..'
 
-    iterator = XPathIterator(x1);
+    iterator = XPathIterator(x1)
     for p in iterator:
-        prettyoutput.Log(str(p));
+        prettyoutput.Log(str(p))
 

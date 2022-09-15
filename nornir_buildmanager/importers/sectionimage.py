@@ -91,15 +91,15 @@ class SectionImage(object):
         fileData = filenameparser.ParseFilename(filename, imageNameMappings)
         fileData = FillInMissingImageNameData(fileData)
 
-        imageDir = os.path.dirname(filename);
+        imageDir = os.path.dirname(filename)
         imagebasename = os.path.basename(filename)
 
         BlockName = os.path.basename(imageDir)
         if BlockName is None or len(BlockName) == 0:
             BlockName = 'LM'
 
-        BlockObj = BlockNode.Create(BlockName);
-        [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj);
+        BlockObj = BlockNode.Create(BlockName)
+        [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
 
         if(fileData is None):
             raise Exception("Could not parse section from PMG filename: " + filename)

@@ -815,7 +815,7 @@ def InvertFilter(Parameters, InputFilterNode, OutputFilterName, **kwargs):
     if addedOutputFilter:
         yield InputFilterNode.Parent
 
-    [addedOutputTilePyramid, OutputPyramidNode] = OutputFilterNode.GetOrCreateTilePyramid();
+    [addedOutputTilePyramid, OutputPyramidNode] = OutputFilterNode.GetOrCreateTilePyramid()
     if addedOutputTilePyramid:
         OutputPyramidNode.Type = InputPyramidNode.Type
         OutputPyramidNode.NumberOfTiles = InputPyramidNode.NumberOfTiles
@@ -1081,7 +1081,7 @@ def UpdateImageName(imageNode, ExpectedImageName):
     
     dirname = os.path.dirname(imageNode.FullPath)
     
-    SourceImageFullPath = imageNode.FullPath; 
+    SourceImageFullPath = imageNode.FullPath
     DestImageFullPath = os.path.join(dirname, ExpectedImageName)
     
     shutil.move(SourceImageFullPath, DestImageFullPath)

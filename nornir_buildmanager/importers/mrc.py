@@ -281,7 +281,7 @@ class MRCFile(object):
     @staticmethod
     def IsBigEndian(Header):
         '''Returns true if the mrc header indicates the file is big endian'''
-        (EndianStamp,) = struct.unpack('I', Header[0xD4:0xD8]);
+        (EndianStamp,) = struct.unpack('I', Header[0xD4:0xD8])
         if (EndianStamp == 17):
             return True
         elif(EndianStamp == 68):
@@ -294,10 +294,10 @@ class MRCFile(object):
     def Load(cls, filename):
         '''Read the header of an MRC file from disk and return an object for access'''
          
-        mrc = open(filename, 'rb');
-        
+        mrc = open(filename, 'rb')
+
         # The mrc file header is always 1024, mostly empty space
-        Header = mrc.read(cls.HeaderLength);
+        Header = mrc.read(cls.HeaderLength)
         IsBigEndian = cls.IsBigEndian(Header)
         obj = MRCFile(mrc, IsBigEndian)
           
@@ -449,8 +449,8 @@ class MRCFile(object):
         image_byte_length = self.image_length_in_bytes
         image_bytes = self.mrc.read(image_byte_length)
         while len(image_bytes) < image_byte_length:
-            image_bytes = image_bytes + self.mrc.read(image_byte_length - len(image_bytes));
-        
+            image_bytes = image_bytes + self.mrc.read(image_byte_length - len(image_bytes))
+
         return image_bytes
     
     def _repair_out_of_bounds_pixels(self, iTile, camera_bpp):
@@ -521,8 +521,8 @@ class MRCFile(object):
         mrc.seek(MRCFile.HeaderLength + (iTile * self.tile_header_size))
         TileHeader = mrc.read(self.tile_header_size) 
         while len(TileHeader) < self.tile_header_size:
-            TileHeader = TileHeader + mrc.read(self.tile_header_size - len(TileHeader));
-        
+            TileHeader = TileHeader + mrc.read(self.tile_header_size - len(TileHeader))
+
         return MRCTileHeader.Load(iTile, TileHeader,
                                   tile_flags=self.tile_header_flags,
                                   nm_per_pixel=self.pixel_spacing[0:2],
