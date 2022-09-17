@@ -6,13 +6,12 @@ Created on Apr 2, 2012
 import collections.abc
 import copy
 import logging
-import os
 import re
 import sys
 import traceback
 import platform
-from xml.etree import ElementTree
-from nornir_buildmanager import VolumeManagerETree
+
+import nornir_buildmanager
 
 from .pipeline_exceptions import *
 
@@ -23,6 +22,7 @@ from inspect import isgenerator
 
 from . import argparsexml
 import nornir_shared.prettyoutput as prettyoutput
+from xml.etree import ElementTree
 
 
 # import xml.etree
@@ -504,7 +504,7 @@ class PipelineManager(object):
         ArgSet.AddParameters(PipelineElement)
 
         # Load the Volume.XML file in the output directory
-        self.VolumeTree = VolumeManagerETree.VolumeManager.Load(args.volumepath, Create=True)
+        self.VolumeTree = nornir_buildmanager.volumemanager.VolumeManager.Load(args.volumepath, Create=True)
 
         if(self.VolumeTree is None):
             PipelineManager.logger.critical("Could not load or create volume.xml " + args.outputpath)
@@ -676,7 +676,8 @@ class PipelineManager(object):
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             #Containers will be tested at load time.  The load linked element code checks containers
-            if not isinstance(SelectedVolumeElem, VolumeManagerETree.XContainerElementWrapper):
+            if not isinstance(SelectedVolumeElem,
+                              nornir_buildmanager.volumemanager.xcontainerelementwrapper.XContainerElementWrapper):
                 if SelectedVolumeElem.NeedsValidation:
                     (IsValid, Reason) = SelectedVolumeElem.IsValid()
                     if not IsValid:
@@ -708,7 +709,9 @@ class PipelineManager(object):
         NumProcessed = 0
         for VolumeElemChild in VolumeElemIter:
             if VolumeElem.NeedsValidation:
-                if VolumeElemChild.CleanIfInvalid():
+                (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
+                if cleaned:
+                    prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
                     PipelineManager._SaveNodes(VolumeElemChild.Parent)
                     continue
 
@@ -725,9 +728,9 @@ class PipelineManager(object):
                     if node is None:
                         continue 
                     
-                    VolumeManagerETree.VolumeManager.Save(node)
+                    nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(node)
             else:
-                VolumeManagerETree.VolumeManager.Save(NodesToSave)
+                nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(NodesToSave)
 
     def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
@@ -788,7 +791,7 @@ class PipelineManager(object):
                         PipelineManager.logger.error(errorStr)
                         # prettyoutput.LogErr(errorStr)
 
-                        self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
+                        self.VolumeTree = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
                         return
                          
                         

@@ -5,11 +5,11 @@ Created on May 26, 2015
 ''' 
 import os
 
+import nornir_buildmanager.volumemanager
 import nornir_imageregistration
 import nornir_shared.files
 import nornir_shared.prettyoutput 
 import nornir_buildmanager
-from nornir_buildmanager.VolumeManagerETree import FilterNode
 
 num_contrast_pad_chars = 32
 
@@ -215,7 +215,7 @@ def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, Filter=No
         elif isinstance(Filter, str):
             filterNode = ChannelNode.GetFilter(Filter)
             LevelNode = filterNode.TilePyramid.Levels[0] if Downsample is None else filterNode.TilePyramid.GetLevel(Downsample)
-        elif isinstance(Filter, nornir_buildmanager.VolumeManagerETree.FilterNode):
+        elif isinstance(Filter, nornir_buildmanager.volumemanager.FilterNode):
             filterNode = Filter
             LevelNode = filterNode.TilePyramid.Levels[0] if Downsample is None else filterNode.TilePyramid.GetLevel(Downsample)
         else:
@@ -226,7 +226,8 @@ def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, Filter=No
      
     OutputFilename = f"{OutputFilename}_{TransformNode.Name}.svg"
     
-    (node_added, OutputImageNode) = ChannelNode.UpdateOrAddChildByAttrib(nornir_buildmanager.VolumeManagerETree.TransformDataNode.Create(Name=TransformNode.Name, Path=OutputFilename))
+    (node_added, OutputImageNode) = ChannelNode.UpdateOrAddChildByAttrib(
+        nornir_buildmanager.volumemanager.TransformDataNode.Create(Name=TransformNode.Name, Path=OutputFilename))
     
     if not node_added:
         return

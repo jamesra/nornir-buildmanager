@@ -17,7 +17,7 @@ import queue
 import datetime 
 import concurrent.futures
 
-
+import nornir_buildmanager
 import nornir_imageregistration
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates 
@@ -271,11 +271,12 @@ def Evaluate(Parameters, FilterNode, OutputImageName=None, Level=1, PreEvaluateS
 
     OutputImageNode = FilterNode.GetChildByAttrib('Image', 'Name', OutputImageName)
     if not OutputImageNode is None:
-        if OutputImageNode.CleanIfInvalid():
+        cleaned, reason = OutputImageNode.CleanIfInvalid()
+        if cleaned:
             OutputImageNode = None
 
     # Find out if the output image node exists already
-    OutputImageNode = nb.VolumeManager.ImageNode.Create(Path=FinalTargetPath, attrib={'Name' : OutputImageName})
+    OutputImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(Path=FinalTargetPath, attrib={'Name' : OutputImageName})
     (ImageNodeCreated, OutputImageNode) = FilterNode.UpdateOrAddChildByAttrib(OutputImageNode, 'Name')
 
     prettyoutput.CurseString('Stage', FilterNode.Name + " ImageMagick -Evaluate-Sequence " + EvaluateSequenceArg)
@@ -313,7 +314,7 @@ def _CreateMinCorrectionImage(ImageNode, OutputImageName, **kwargs):
     OutputFile = OutputImageName + ".png"
 
     # Find out if the output image node exists already
-    OutputImageNode = nb.VolumeManager.ImageNode.Create(Path=OutputFile, attrib={'Name' : OutputImageName})
+    OutputImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(Path=OutputFile, attrib={'Name' : OutputImageName})
     (ImageNodeCreated, OutputImageNode) = ParentNode.UpdateOrAddChildByAttrib(OutputImageNode, 'Name')
 
     nornir_shared.files.RemoveOutdatedFile(ImageNode.FullPath, OutputImageNode.FullPath)
@@ -367,27 +368,28 @@ def CorrectTiles(Parameters, CorrectionType, FilterNode=None, OutputFilterName=N
     SaveFilterParent = False
 
     # Find out if the output filter already exists
-    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(nb.VolumeManager.FilterNode.Create(OutputFilterName, OutputFilterName))
+    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(
+        nornir_buildmanager.volumemanager.FilterNode.Create(OutputFilterName, OutputFilterName))
     
     if SaveFilterParent:
         OutputFilterNode.BitsPerPixel = FilterNode.BitsPerPixel
 
     # Check if the output node exists
-    OutputPyramidNode = nb.VolumeManager.TilePyramidNode.Create(Type=InputPyramidNode.Type,
-                                                           NumberOfTiles=InputPyramidNode.NumberOfTiles,
-                                                           LevelFormat=InputPyramidNode.LevelFormat,
-                                                           ImageFormatExt=InputPyramidNode.ImageFormatExt)
+    OutputPyramidNode = nornir_buildmanager.volumemanager.TilePyramidNode.Create(Type=InputPyramidNode.Type,
+                                                                                                 NumberOfTiles=InputPyramidNode.NumberOfTiles,
+                                                                                                 LevelFormat=InputPyramidNode.LevelFormat,
+                                                                                                 ImageFormatExt=InputPyramidNode.ImageFormatExt)
 
     [added, OutputPyramidNode] = OutputFilterNode.UpdateOrAddChildByAttrib(OutputPyramidNode, 'Path')
 
-    OutputLevelNode = nb.VolumeManager.LevelNode.Create(Level=InputLevelNode.Downsample)
+    OutputLevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(Level=InputLevelNode.Downsample)
     [OutputLevelAdded, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
 
     # Make sure the destination directory exists
     correctionImage = None
     os.makedirs(OutputLevelNode.FullPath, exist_ok=True)
 
-    OutputImageNode = nb.VolumeManager.ImageNode.Create(Path='Correction.png', attrib={'Name' : 'ShadeCorrection'})
+    OutputImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(Path='Correction.png', attrib={'Name' : 'ShadeCorrection'})
     (ImageNodeCreated, OutputImageNode) = FilterNode.UpdateOrAddChildByAttrib(OutputImageNode, 'Name')
 
     InputTiles = glob.glob(os.path.join(InputLevelNode.FullPath, '*' + InputPyramidNode.ImageFormatExt))
@@ -429,18 +431,19 @@ def _CorrectTilesDeprecated(Parameters, FilterNode=None, ImageNode=None, OutputF
     SaveFilterParent = False
 
     # Find out if the output filter already exists
-    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(nb.VolumeManager.FilterNode.Create(OutputFilterName, OutputFilterName))
+    [SaveFilterParent, OutputFilterNode] = FilterParent.UpdateOrAddChildByAttrib(
+        nornir_buildmanager.volumemanager.FilterNode.Create(OutputFilterName, OutputFilterName))
     OutputFilterNode.BitsPerPixel = FilterNode.BitsPerPixel
 
     # Check if the output node exists
-    OutputPyramidNode = nb.VolumeManager.TilePyramidNode.Create(Type=InputPyramidNode.Type,
-                                                           NumberOfTiles=InputPyramidNode.NumberOfTiles,
-                                                           LevelFormat=InputPyramidNode.LevelFormat,
-                                                           ImageFormatExt=InputPyramidNode.ImageFormatExt)
+    OutputPyramidNode = nornir_buildmanager.volumemanager.TilePyramidNode.Create(Type=InputPyramidNode.Type,
+                                                                                                 NumberOfTiles=InputPyramidNode.NumberOfTiles,
+                                                                                                 LevelFormat=InputPyramidNode.LevelFormat,
+                                                                                                 ImageFormatExt=InputPyramidNode.ImageFormatExt)
 
     [added, OutputPyramidNode] = OutputFilterNode.UpdateOrAddChildByAttrib(OutputPyramidNode, 'Path')
 
-    OutputLevelNode = nb.VolumeManager.LevelNode.Create(Level=InputLevelNode.Downsample)
+    OutputLevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(Level=InputLevelNode.Downsample)
     [OutputLevelAdded, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
 
     # Make sure the destination directory exists
@@ -617,8 +620,9 @@ def _ClearInvalidHistogramElements(filterObj, checksum):
     while HistogramElement is None:
         HistogramElement = filterObj.find("Histogram[@InputTransformChecksum='" + checksum + "']")
         if HistogramElement is None:
-            raise NornirUserException("Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath) 
-        if HistogramElement.CleanIfInvalid(): 
+            raise NornirUserException("Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath)
+        cleaned, reason = HistogramElement.CleanIfInvalid()
+        if cleaned:
             HistogramElement = None
             HistogramElementRemoved = True
 
@@ -706,12 +710,12 @@ def AutolevelTiles(Parameters, InputFilter, Downsample=1, TransformNode=None, Ou
 
     InputImagePath = InputLevelNode.FullPath
 
-    OutputPyramidNode = nb.VolumeManager.TilePyramidNode.Create(NumberOfTiles=InputPyramidNode.NumberOfTiles,
-                                                         LevelFormat=InputPyramidNode.LevelFormat,
-                                                         ImageFormatExt=InputPyramidNode.ImageFormatExt)
+    OutputPyramidNode = nornir_buildmanager.volumemanager.TilePyramidNode.Create(NumberOfTiles=InputPyramidNode.NumberOfTiles,
+                                                                                                 LevelFormat=InputPyramidNode.LevelFormat,
+                                                                                                 ImageFormatExt=InputPyramidNode.ImageFormatExt)
     [pyramid_created, OutputPyramidNode] = OutputFilterNode.UpdateOrAddChildByAttrib(OutputPyramidNode, 'Path')
 
-    OutputLevelNode = nb.VolumeManager.LevelNode.Create(Level=InputLevelNode.Downsample)
+    OutputLevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(Level=InputLevelNode.Downsample)
     [level_created, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
 
     OutputImageDir = OutputLevelNode.FullPath
@@ -878,24 +882,24 @@ def HistogramFilter(Parameters, FilterNode, Downsample, TransformNode, **kwargs)
     HistogramBaseName = "Histogram" + MangledName
     OutputHistogramXmlFilename = HistogramBaseName + ".xml"
 
-    HistogramElement = nb.VolumeManager.HistogramNode.Create(TransformNode, Type=MangledName, attrib=Parameters)
+    HistogramElement = nornir_buildmanager.volumemanager.HistogramNode.Create(TransformNode, Type=MangledName, attrib=Parameters)
     [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
     ElementCleaned = False
 
     if not HistogramElementCreated:
-        if HistogramElement.CleanIfInputTransformMismatched(TransformNode):
-            HistogramElement = None
-            ElementCleaned = True
-        elif HistogramElement.CleanIfInvalid():
+        cleaned = HistogramElement.CleanIfInputTransformMismatched(TransformNode)
+        if not cleaned:
+            cleaned, _ =  HistogramElement.CleanIfInvalid()
+        if cleaned:
             HistogramElement = None
             ElementCleaned = True
 
     if HistogramElement is None:
-        HistogramElement = nb.VolumeManager.HistogramNode.Create(TransformNode, Type=MangledName, attrib=Parameters)
+        HistogramElement = nornir_buildmanager.volumemanager.HistogramNode.Create(TransformNode, Type=MangledName, attrib=Parameters)
         [HistogramElementCreated, HistogramElement] = FilterNode.UpdateOrAddChildByAttrib(HistogramElement, "Type")
 
-    DataNode = nb.VolumeManager.DataNode.Create(OutputHistogramXmlFilename)
+    DataNode = nornir_buildmanager.volumemanager.DataNode.Create(OutputHistogramXmlFilename)
     [DataElementCreated, DataNode] = HistogramElement.UpdateOrAddChild(DataNode)
 
     AutoLevelDataNode = HistogramElement.GetOrCreateAutoLevelHint()
@@ -982,7 +986,7 @@ def GenerateHistogramImage(HistogramElement, MinValue, MaxValue, Gamma, LineColo
  
     if HistogramImage is None:
         OutputHistogramPngFilename = "Histogram" + HistogramElement.Type + ".png"
-        HistogramImage = nb.VolumeManager.ImageNode.Create(OutputHistogramPngFilename)
+        HistogramImage = nornir_buildmanager.volumemanager.ImageNode.Create(OutputHistogramPngFilename)
         [added, HistogramImage] = HistogramElement.UpdateOrAddChild(HistogramImage)
 
     if not os.path.exists(HistogramImage.FullPath):
@@ -1040,7 +1044,8 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     else:
         return (False, InputChannelNode)
 
-    return InputChannelNode.Parent.UpdateOrAddChildByAttrib(nb.VolumeManager.ChannelNode.Create(OutputName, OutputName))
+    return InputChannelNode.Parent.UpdateOrAddChildByAttrib(
+        nornir_buildmanager.volumemanager.ChannelNode.Create(OutputName, OutputName))
 
 
 def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name):
@@ -1056,7 +1061,7 @@ def GetOrCreateCleanedImageNode(imageset_node, transform_node, level, image_name
     #===========================================================================
             
     if(image_node is None):
-        image_node = nb.VolumeManager.ImageNode.Create(image_name)
+        image_node = nornir_buildmanager.volumemanager.ImageNode.Create(image_name)
         image_level_node.append(image_node)
         
     return image_node
@@ -1400,7 +1405,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
         Logger.warning("No input tiles found for assembletiles")
         return
 
-    TileSetNode = nb.VolumeManager.TilesetNode.Create()
+    TileSetNode = nornir_buildmanager.volumemanager.TilesetNode.Create()
     [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
 
     TileSetNode.TileXDim = str(TileWidth)
@@ -1415,7 +1420,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
     LevelOne = TileSetNode.GetChildByAttrib('Level', 'Downsample', 1)
     if(LevelOne is None):
         # Need to call ir-assemble
-        LevelOne = nb.VolumeManager.LevelNode.Create(Level=1)
+        LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
         [added, LevelOne] = TileSetNode.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
 
         os.makedirs(LevelOne.FullPath, exist_ok=True)
@@ -1490,13 +1495,13 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
         Logger.warning("No input tiles found for assembletiles")
         return
 
-    TileSetNode = nb.VolumeManager.TilesetNode.Create()
+    TileSetNode = nornir_buildmanager.volumemanager.TilesetNode.Create()
     [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
     
     #Check if the tileset is older than the transform we are building from
     if not added and not ignore_stale and InputTransformNode.CreationTime > TileSetNode.CreationTime:
         TileSetNode.Clean("Input Transform was created after the existing optimized tileset")
-        TileSetNode = nb.VolumeManager.TilesetNode.Create()
+        TileSetNode = nornir_buildmanager.volumemanager.TilesetNode.Create()
         [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
 
     #TODO: Validate that the tileset is populated in a more robust way
@@ -1517,7 +1522,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
     
     if(LevelOne is None):
         # Need to call ir-assemble
-        LevelOne = nb.VolumeManager.LevelNode.Create(Level=1)
+        LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
         [added, LevelOne] = TileSetNode.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
 
         os.makedirs(LevelOne.FullPath, exist_ok=True)
@@ -1703,12 +1708,12 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
 
         shrinkFactor = float(upLevel) / float(thisLevel) 
 
-        upLevelNode = nb.VolumeManager.LevelNode.Create(upLevel)
+        upLevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(upLevel)
         [LevelNodeCreated, upLevelNode] = PyramidNode.UpdateOrAddChildByAttrib(upLevelNode, "Downsample")
         if LevelNodeCreated:
             SavePyramidNode = True
 
-        thisLevelNode = nb.VolumeManager.LevelNode.Create(thisLevel)
+        thisLevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(thisLevel)
         [LevelNodeCreated, thisLevelNode] = PyramidNode.UpdateOrAddChildByAttrib(thisLevelNode, "Downsample")
         if LevelNodeCreated:
             SavePyramidNode = True
@@ -2203,7 +2208,7 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
             break
     
         # Need to call ir-assemble
-        NextLevelNode = nb.VolumeManager.LevelNode.Create(MinResolutionLevel.Downsample * 2)
+        NextLevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(MinResolutionLevel.Downsample * 2)
         [added, NextLevelNode] = TileSetNode.UpdateOrAddChildByAttrib(NextLevelNode, 'Downsample')
         NextLevelNode.GridDimX = newXDim
         NextLevelNode.GridDimY = newYDim

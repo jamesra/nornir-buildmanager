@@ -9,7 +9,7 @@ import logging
 import math
 import os
 import shutil
-import validators
+import nornir_buildmanager
 
 from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet 
 import nornir_imageregistration.core

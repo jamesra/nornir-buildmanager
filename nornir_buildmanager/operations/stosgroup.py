@@ -9,7 +9,7 @@ Operations to manipulate or report on the volume.
 import os
 import shutil
 
-from nornir_buildmanager import VolumeManagerETree
+import nornir_buildmanager.volumemanager
 import nornir_imageregistration
 from nornir_imageregistration.files import stosfile
 
@@ -135,7 +135,7 @@ def ImportStos(InputStosFullpath, BlockNode, GroupName,
     ControlFilter = BlockNode.GetSection(ControlSectionNumber).GetChannel(ControlChannelName).GetFilter(ControlFilterName)
     MappedFilter = BlockNode.GetSection(MappedSectionNumber).GetChannel(MappedChannelName).GetFilter(MappedFilterName)
     
-    OutputFilename = VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
+    OutputFilename = nornir_buildmanager.volumemanager.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
     OutputFileFullPath = os.path.join(StosGroup.FullPath, OutputFilename)
     
     # Copy the STOS file into the StosGroup directory

@@ -6,7 +6,9 @@ Created on Apr 15, 2013
 
 import os
 
-import nornir_buildmanager.VolumeManagerETree as VolumeManagerETree
+
+import nornir_buildmanager.volumemanager
+
 import nornir_shared.misc as misc
 
 
@@ -16,7 +18,7 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=
     OverlayImageNode = ParentNode.GetChildByAttrib('Image', 'Path', os.path.basename(OutputImageName))
     if not OverlayImageNode is None:
         if OverlayImageNode.NeedsValidation:
-            cleaned = OverlayImageNode.CleanIfInvalid()
+            cleaned, reason = OverlayImageNode.CleanIfInvalid()
             if cleaned:
                 OverlayImageNode = None
                 
@@ -25,7 +27,7 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=
                     OverlayImageNode = None
 
     if OverlayImageNode is None:
-        OverlayImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(OutputImageName))
+        OverlayImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(os.path.basename(OutputImageName))
         OverlayImageNode.SetTransform(InputTransformNode)
         ParentNode.append(OverlayImageNode)
         Created = True
@@ -39,7 +41,7 @@ def GetOrCreateHistogramNodeHelper(ParentNode, DataPath, ImagePath, InputTransfo
     histogramNode = ParentNode.find('Histogram')
     if not histogramNode is None:
         if histogramNode.NeedsValidation:
-            cleaned = histogramNode.CleanIfInvalid()
+            cleaned, reason = histogramNode.CleanIfInvalid()
             if cleaned:
                 histogramNode = None
             
@@ -48,11 +50,11 @@ def GetOrCreateHistogramNodeHelper(ParentNode, DataPath, ImagePath, InputTransfo
                     histogramNode = None
 
     if histogramNode is None:
-        histogramNode = VolumeManagerETree.HistogramNode.Create(InputTransformNode, None)
-        DataNode = VolumeManagerETree.DataNode.Create(os.path.basename(DataPath))
+        histogramNode = nornir_buildmanager.volumemanager.HistogramNode.Create(InputTransformNode, None)
+        DataNode = nornir_buildmanager.volumemanager.DataNode.Create(os.path.basename(DataPath))
         histogramNode.append(DataNode)
         
-        ImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(ImagePath))
+        ImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(os.path.basename(ImagePath))
         histogramNode.append(ImageNode)
         
         histogramNode.SetTransform(InputTransformNode)
@@ -81,7 +83,7 @@ def CreateLevelNodes(ParentNode, DownsampleLevels):
     for level in DownsampleLevels:
         LevelNode = ParentNode.GetChildByAttrib('Level', 'Downsample', level)
         if LevelNode is None:
-            LevelNode = VolumeManagerETree.LevelNode.Create(level)
+            LevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(level)
             [added, LevelNode] = ParentNode.UpdateOrAddChildByAttrib(LevelNode, 'Downsample')
             LevelsCreated.append(LevelNode)
 
@@ -99,7 +101,7 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
         Type = attribs['Type']
         del attribs['Type']
 
-    ImageSetNode = VolumeManagerETree.ImageSetNode.Create(Type, attrib=attribs)
+    ImageSetNode = nornir_buildmanager.volumemanager.ImageSetNode.Create(Type, attrib=attribs)
     [NewImageSetNode, ImageSetNode] = ParentNode.UpdateOrAddChildByAttrib(ImageSetNode, 'Path')
 
     os.makedirs(ImageSetNode.FullPath, exist_ok=True)
@@ -110,7 +112,7 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
 
     imagePath = os.path.basename(ImageFullPath)
 
-    imagenode = VolumeManagerETree.ImageNode.Create(imagePath)
+    imagenode = nornir_buildmanager.volumemanager.ImageNode.Create(imagePath)
     [nodecreated, imagenode] = LevelNode.UpdateOrAddChildByAttrib(imagenode, 'Path')
 
     return ImageSetNode

@@ -4,21 +4,14 @@ Created on Aug 27, 2013
 @author: u0490822
 '''
 
-import math
-import subprocess
-import sys
-import xml
 
-from nornir_buildmanager import *
-from nornir_buildmanager.VolumeManagerETree import *
+import subprocess
+
+from nornir_buildmanager.volumemanager import *
 import nornir_buildmanager.operations.tile
 from nornir_buildmanager.validation import transforms
-from nornir_imageregistration.files import mosaicfile
-from nornir_imageregistration.transforms import *
+import nornir_shared
 from nornir_shared import *
-from nornir_shared.files import RemoveOutdatedFile
-from nornir_shared.histogram import Histogram
-from nornir_shared.misc import SortedListFromDelimited
 from nornir_buildmanager.exceptions import NornirUserException
 
 

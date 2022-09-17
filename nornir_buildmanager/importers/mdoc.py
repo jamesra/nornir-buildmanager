@@ -1,6 +1,6 @@
-from nornir_buildmanager.VolumeManagerETree import *
+import glob
 from nornir_shared.images import *
-from nornir_shared.files import rmtree
+from nornir_shared.files import rmtree, OutdatedFile
 import nornir_buildmanager.importers.shared as shared
 
 from . import idoc
@@ -18,10 +18,10 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
        The st file is converted to tif's, the mdoc is renamed to an idoc
        and the idoc importer is run.'''
 
-        if(OutputImageExt is None):
+        if OutputImageExt is None:
             OutputImageExt = 'png'
 
-        if(Extension is None):
+        if Extension is None:
             Extension = 'idoc'
 
         # Default to the directory above ours if an output path is not specified
@@ -33,7 +33,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         prettyoutput.CurseString('Stage', "MDoc to IDoc " + str(InputPath))
 
         mdocFiles = glob.glob(os.path.join(InputPath, '*.' + Extension))
-        if(len(mdocFiles) == 0):
+        if len(mdocFiles) == 0:
             # This shouldn't happen, but just in case
             assert (len(mdocFiles) > 0), "ToMosaic called without proper target file present in the path: " + str(InputPath);
             return [None, None]
@@ -49,7 +49,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             mdocBasename = os.path.basename(mdoc)
             (mdocRoot, ext) = os.path.splitext(mdocBasename)
             stNameFullPath = os.path.join(mdocDirname, mdocRoot)
-            if(not os.path.exists(stNameFullPath)):
+            if not os.path.exists(stNameFullPath):
                 continue
 
             MDocImportDirFullPath = os.path.join(mdocDirname, MDocImportDir)
@@ -57,8 +57,8 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             os.makedirs(MDocImportDirFullPath, exist_ok=True)
 
             idocFilename = os.path.join(mdocDirname, mdocRoot + '.idoc')
-            if(os.path.exists(idocFilename)):
-                if(not nornir_shared.Files.OutdatedFile(mdoc, idocFilename)):
+            if os.path.exists(idocFilename):
+                if not OutdatedFile(mdoc, idocFilename):
                     continue
 
             tempDirName = "Unpack" + os.sep

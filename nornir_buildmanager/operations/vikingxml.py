@@ -8,7 +8,7 @@ import copy
 import functools
 import os
 
-import nornir_buildmanager.VolumeManagerETree
+import nornir_buildmanager.volumemanager
 from nornir_imageregistration.files import *
 from nornir_shared.files import RecurseSubdirectoriesGenerator
 import nornir_shared.prettyoutput as prettyoutput
@@ -23,7 +23,7 @@ def CreateXMLIndex(path, server=None):
 
     for directory in VolumeXMLDirs:
 
-        InputVolumeNode = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(directory, Create=False)
+        InputVolumeNode = nornir_buildmanager.volumemanager.VolumeManager.Load(directory, Create=False)
         if not InputVolumeNode is None:
             CreateVikingXML(VolumeNode=InputVolumeNode)
 

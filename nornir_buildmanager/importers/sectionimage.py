@@ -14,7 +14,7 @@ import shutil
 import sys
 
 from nornir_buildmanager import metadatautils
-from nornir_buildmanager.VolumeManagerETree import *
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.importers import filenameparser
 import nornir_shared.files
 

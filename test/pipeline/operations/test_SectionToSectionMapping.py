@@ -3,15 +3,13 @@ Created on May 17, 2018
 
 @author: u0490822
 '''
-
-
+import nornir_buildmanager.volumemanager.blocknode
+import nornir_buildmanager.volumemanager.mappingnode
+import nornir_buildmanager.volumemanager.xelementwrapper
 from nornir_buildmanager.operations.block import *
 from nornir_imageregistration.transforms import registrationtree
-from nornir_buildmanager import VolumeManagerETree, VolumeManagerHelpers
 
-from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
-    CopySetupTestBase, EmptyVolumeTestBase
-
+from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry
 
 import test.pipeline.test_sectionimage as test_sectionimage
 
@@ -44,7 +42,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
     def VolumePath(self):
         return "SectionToSectionMappingTest"
 
-    def _GetResetBlockNode(self) -> VolumeManagerETree.BlockNode:
+    def _GetResetBlockNode(self) -> nornir_buildmanager.volumemanager.blocknode.BlockNode:
         VolumeObj = self.LoadOrCreateVolume()
         BlockNode = VolumeObj.find("Block")
         self.assertIsNotNone(BlockNode)
@@ -53,7 +51,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
     def SetNonStosSectionList(self, BlockNode, NonStosNumberList, **kwargs):
 
-        StosExemptNode = VolumeManagerETree.XElementWrapper(tag='NonStosSectionNumbers')
+        StosExemptNode = nornir_buildmanager.volumemanager.xelementwrapper.XElementWrapper(tag='NonStosSectionNumbers')
         (added, StosExemptNode) = BlockNode.UpdateOrAddChild(StosExemptNode)
 
         # Fetch the list of the exempt nodes from the element text
@@ -250,7 +248,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
         # Add some extra stosmap nodes and make sure they get cleaned up
 
-        ExtraMapNode = VolumeManagerETree.MappingNode.Create(4, 10)
+        ExtraMapNode = nornir_buildmanager.volumemanager.mappingnode.MappingNode.Create(4, 10)
         StosMapNode.append(ExtraMapNode)
 
         removed = StosMapNode.RemoveDuplicateControlEntries(3)

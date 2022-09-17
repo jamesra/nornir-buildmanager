@@ -7,7 +7,6 @@ Converts XML argparser definitions from pipelines and importers into argparsers.
 import argparse
 import copy
 import logging
-import re
 
 from nornir_shared.argparse_helpers import *
 import nornir_shared.misc

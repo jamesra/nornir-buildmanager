@@ -5,8 +5,11 @@ Created on Jan 9, 2019
 '''
 
 import os
+from xml.etree import ElementTree
+from nornir_buildmanager.pipeline_exceptions import PipelineError
 
-class Build(Exception):
+
+class Build(PipelineError):
     '''An expected node did not exist'''
 
 

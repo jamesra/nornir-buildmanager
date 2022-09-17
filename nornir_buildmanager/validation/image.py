@@ -5,7 +5,6 @@ Created on Feb 19, 2014
 '''
 
 import logging
-import math
 import os
 
 import nornir_imageregistration

@@ -4,26 +4,23 @@ Created on Feb 14, 2013
 @author: u0490822
 '''
 import datetime
-import logging
-import os
 import shutil
-import sys
-import tempfile
-import time
 import unittest
 
 import abc
-from nornir_buildmanager.VolumeManagerETree import *
-from nornir_buildmanager.VolumeManagerHelpers import SearchCollection
+import glob
+import math
+
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.argparsexml import IntegerList
-from nornir_buildmanager.validation import transforms
 import nornir_imageregistration.files
 from nornir_imageregistration.files.mosaicfile import *
 import nornir_shared.misc
 import test.testbase
 
 import nornir_buildmanager.build as build
-from abc import abstractproperty
+
 
 def VerifyVolume(test, VolumeObj, listVolumeEntries):
     '''Walk a list of volume entries and ensure each exists'''
@@ -194,7 +191,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
         return VolumeObj
 
     def LoadOrCreateVolume(self):
-        return nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
+        return VolumeManager.Load(self.TestOutputPath, Create=True)
 
     def _CreateBuildArgs(self, pipeline=None, *args):
 

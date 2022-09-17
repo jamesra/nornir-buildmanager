@@ -2,9 +2,8 @@ import copy
 import logging
 import math
 import os.path
-import numpy 
-
-from nornir_buildmanager import VolumeManagerETree
+import numpy
+ 
 from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.image_stats import Prune
 from nornir_imageregistration.files import mosaicfile
@@ -71,7 +70,7 @@ class PruneObj:
         '''@ChannelNode 
            Uses a PruneData node to prune the specified mosaic file'''
 
-        threshold_precision = VolumeManagerETree.TransformNode.get_threshold_precision() #Number of digits to save in XML file
+        threshold_precision = nornir_buildmanager.volumemanager.TransformNode.get_threshold_precision() #Number of digits to save in XML file
 
         if(Logger is None):
             Logger = logging.getLogger(__name__ + '.PruneMosaic')
@@ -121,7 +120,7 @@ class PruneObj:
 
         # Add the Prune Transform node if it is missing
         if OutputTransformNode is None:
-            OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Type=MangledName, InputTransformChecksum=InputTransformNode.Checksum)
+            OutputTransformNode = nornir_buildmanager.volumemanager.TransformNode.Create(Name=OutputTransformName, Type=MangledName, InputTransformChecksum=InputTransformNode.Checksum)
             TransformParent.append(OutputTransformNode)
         elif os.path.exists(OutputTransformNode.FullPath):
             # The meta-data and output exist, check if the histogram image exists and then move on
@@ -178,7 +177,7 @@ class PruneObj:
         :return: If the histogram is updated a PruneObj is loaded and returned
             otherwise None
         '''
-        PruneDataNode = prune_node.DataNode
+        PruneDataNode = nornir_buildmanager.volumemanager.DataNode
         if(PruneDataNode is None):
             Logger = logging.getLogger(__name__ + '.ReadPruneDataNode')
             Logger.warning("Did not find expected prune data node")
@@ -189,18 +188,18 @@ class PruneObj:
         HistogramXMLFileFullPath = os.path.join(prune_node.Parent.FullPath, HistogramXMLFile)
         HistogramImageFileFullPath = os.path.join(prune_node.Parent.FullPath, HistogramImageFile)
         
-        threshold_precision = VolumeManagerETree.TransformNode.get_threshold_precision() #Number of digits to save in XML file
+        threshold_precision = nornir_buildmanager.volumemanager.TransformNode.get_threshold_precision() #Number of digits to save in XML file
 
         try:
             RemoveOutdatedFile(PruneDataNode.FullPath, HistogramImageFileFullPath)
             RemoveOutdatedFile(PruneDataNode.FullPath, HistogramXMLFileFullPath)
 
-            HistogramImageNode = prune_node.ImageNode
+            HistogramImageNode = nornir_buildmanager.volumemanager.ImageNode
             if not HistogramImageNode is None:
                 HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
             
             if HistogramImageNode is None or not os.path.exists(HistogramImageFileFullPath):
-                HistogramImageNode = VolumeManagerETree.ImageNode.Create(HistogramImageFile)
+                HistogramImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(HistogramImageFile)
                 (added, HistogramImageNode) = prune_node.UpdateOrAddChild(HistogramImageNode)
                 if not added:
                     #Handle the case where the path is different, such as when we change the extension type
@@ -224,7 +223,7 @@ class PruneObj:
                 return PruneObjInstance
             
         except Exception as E:
-            prettyoutput.LogErr("Exception creating prunemap histogram:" + str(E.message))
+            prettyoutput.LogErr(f"Exception creating prunemap histogram\n{E}")
             pass 
 
     @classmethod
@@ -271,7 +270,7 @@ class PruneObj:
                 PruneMapElement = transforms.RemoveOnMismatch(PruneMapElement, 'NumImages', LevelNode.TilesValidated)
 
         if PruneMapElement is None:
-            PruneMapElement = VolumeManagerETree.PruneNode.Create(Overlap=Overlap, Type=MangledName)
+            PruneMapElement = nornir_buildmanager.volumemanager.PruneNode.Create(Overlap=Overlap, Type=MangledName)
             [SaveRequired, PruneMapElement] = FilterNode.UpdateOrAddChildByAttrib(PruneMapElement, 'Overlap')
         else:
             # If meta-data and the data file exist, nothing to do
@@ -279,7 +278,7 @@ class PruneObj:
                 return
 
         # Create file holders for the .xml and .png files
-        PruneDataNode = VolumeManagerETree.DataNode.Create(OutputFile)
+        PruneDataNode = nornir_buildmanager.volumemanager.DataNode.Create(OutputFile)
         [added, PruneDataNode] = PruneMapElement.UpdateOrAddChild(PruneDataNode)
 
         FullTilePath = LevelNode.FullPath

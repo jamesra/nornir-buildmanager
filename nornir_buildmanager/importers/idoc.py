@@ -32,10 +32,9 @@ Example:
 
 import re
 import datetime
-import nornir_buildmanager.templates
-from nornir_buildmanager.VolumeManagerETree import *
-from nornir_buildmanager.operations.tile import VerifyTiles
-import nornir_buildmanager.importers
+import nornir_imageregistration
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import *
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration import image_stats
@@ -350,7 +349,7 @@ class SerialEMIDocImport(object):
             Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
             
         if not added_level and LevelObj.NeedsValidation:
-            VerifyTiles(filterObj.TilePyramid.GetLevel(1))
+            nornir_buildmanager.operations.tile.VerifyTiles(filterObj.TilePyramid.GetLevel(1))
 
         SourceToMissingTargetMap = Tileset.GetSourceToMissingTargetMap()
 

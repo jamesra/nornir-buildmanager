@@ -5,15 +5,17 @@ Created on Aug 27, 2013
 '''
 
 import os
-import subprocess
-import sys
+import shutil
+import logging
 
+import nornir_buildmanager.volumemanager
 from nornir_buildmanager import *
-from nornir_buildmanager.VolumeManagerETree import *
 from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
+import nornir_shared
 from nornir_shared import *
+
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import Histogram
 from nornir_shared.misc import SortedListFromDelimited
@@ -54,11 +56,12 @@ def MovePath(Node, NewPath, **kwargs):
     return Node.Parent
 
 
-def CleanNodeIfInvalid(node, **kwargs):
+def CleanNodeIfInvalid(node: nornir_buildmanager.volumemanager.XElementWrapper, **kwargs):
     parent = node.Parent
-    if node.CleanIfInvalid(): 
+    (cleaned, reason) = node.CleanIfInvalid()
+    if cleaned:
         logger = logging.getLogger(__name__ + '.CleanNodeIfInvalid')
-        logger.info("Removing node %s" % (str(node)))
+        logger.info(f"Removing node {node}: {reason}")
         return parent
     return None
 
@@ -103,7 +106,7 @@ def RemoveChannelChildNode(Node, IgnoreLock, **kwargs):
     '''Delete a child element of a filter, respecting locks if necessary'''
     Parent = Node.Parent
     
-    if not isinstance(Node, nornir_buildmanager.VolumeManager.FilterNode):
+    if not isinstance(Node, nornir_buildmanager.volumemanager.FilterNode):
         ParentFilter = Node.FindParent('Channel')
         
     if not ParentFilter is None:

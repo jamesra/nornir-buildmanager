@@ -5,7 +5,6 @@ import glob
 import pickle
 import nornir_buildmanager.importers
 import nornir_buildmanager.importers.serialemlog
-from nornir_buildmanager.VolumeManagerETree import DataNode
 import nornir_shared.prettyoutput as prettyoutput
 
 from nornir_shared import files
@@ -82,7 +81,7 @@ def TryAddLogs(containerObj, InputPath, logger):
                     continue
 
                 # Create a Notes node to save the logs into
-                LogNodeObj = DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
+                LogNodeObj = nornir_buildmanager.volumemanager.DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
                 
                 containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
                 [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')

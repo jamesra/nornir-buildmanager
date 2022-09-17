@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import unittest
 
-from nornir_buildmanager.VolumeManagerETree import *
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.validation import transforms
 import nornir_shared.files
 import nornir_shared.misc

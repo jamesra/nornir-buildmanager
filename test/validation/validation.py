@@ -7,6 +7,8 @@ import tempfile
 import unittest
 
 import nornir_buildmanager
+import nornir_buildmanager.volumemanager.autolevelhintnode
+import nornir_buildmanager.volumemanager.transformnode
 
 
 class TestValidation(unittest.TestCase):
@@ -19,7 +21,7 @@ class TestValidation(unittest.TestCase):
 
     def testValidation(self):
         
-        hint_node = nornir_buildmanager.VolumeManager.AutoLevelHintNode()
+        hint_node = nornir_buildmanager.volumemanager.autolevelhintnode.AutoLevelHintNode()
         hint_node.UserRequestedGamma = 1.001
         hint_node.UserRequestedMaxIntensityCutoff = 255.5
         hint_node.UserRequestedMinIntensityCutoff = 32.2
@@ -46,13 +48,13 @@ class TestValidation(unittest.TestCase):
         valid_checksum = "0123456789"
         invalid_checksum = "012345678"
           
-        input_transform = nornir_buildmanager.VolumeManager.TransformNode.Create(Name="Input", Type="Test_Input")
-        output_transform = nornir_buildmanager.VolumeManager.TransformNode.Create(Name="Output", Type="Test_Output")
+        input_transform = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name="Input", Type="Test_Input")
+        output_transform = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name="Output", Type="Test_Output")
         
-        wrong_checksum_input = nornir_buildmanager.VolumeManager.TransformNode.Create(Name="Input", Type="Test_Input")
-        wrong_name_input = nornir_buildmanager.VolumeManager.TransformNode.Create(Name="Wrong Name Input", Type="Test_Input")
-        wrong_type_input = nornir_buildmanager.VolumeManager.TransformNode.Create(Name="Wrong Name Input", Type="Wrong Type Input")
-        wrong_cropbox_input = nornir_buildmanager.VolumeManager.TransformNode.Create(Name="Wrong Name Input", Type="Wrong cropbox Input")  
+        wrong_checksum_input = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name="Input", Type="Test_Input")
+        wrong_name_input = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name="Wrong Name Input", Type="Test_Input")
+        wrong_type_input = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name="Wrong Name Input", Type="Wrong Type Input")
+        wrong_cropbox_input = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name="Wrong Name Input", Type="Wrong cropbox Input")
         
         input_transform.attrib['Checksum'] = valid_checksum
         wrong_name_input.attrib['Checksum'] = valid_checksum

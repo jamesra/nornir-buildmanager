@@ -8,10 +8,10 @@ import os
 import sys
 import shutil
 import glob
-from nornir_buildmanager.VolumeManagerETree import NotesNode
 import nornir_shared.prettyoutput as prettyoutput
 import collections
 import re
+import nornir_buildmanager
 from nornir_buildmanager.exceptions import NornirUserException
 
 FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
@@ -82,7 +82,7 @@ def TryAddNotes(containerObj, InputPath, logger):
                         XMLnotesTxt = escape(notesTxt)
 
                         # Create a Notes node to save the notes into
-                        NotesNodeObj = NotesNode.Create(Text=XMLnotesTxt, SourceFilename=NotesFilename)
+                        NotesNodeObj = nornir_buildmanager.volumemanager.NotesNode.Create(Text=XMLnotesTxt, SourceFilename=NotesFilename)
                         containerObj.RemoveOldChildrenByAttrib('Notes', 'SourceFilename', NotesFilename)
                         [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
 

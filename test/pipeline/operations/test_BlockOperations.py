@@ -6,6 +6,7 @@ Created on Apr 25, 2013
 import glob
 import unittest
 
+import nornir_buildmanager.volumemanager.blocknode
 from nornir_buildmanager.operations.block import *
 from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
     CopySetupTestBase, EmptyVolumeTestBase
@@ -378,7 +379,7 @@ class StosGroupTest(EmptyVolumeTestBase):
         super(StosGroupTest, self).setUp()
 
         volumeObj = self.LoadOrCreateVolume()
-        BlockObj = VolumeManagerETree.BlockNode.Create('TEM')
+        BlockObj = nornir_buildmanager.volumemanager.blocknode.BlockNode.Create('TEM')
         [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
         volumeObj.Save()
 
@@ -461,7 +462,7 @@ class StosMapTest(EmptyVolumeTestBase):
         super(StosMapTest, self).setUp()
 
         volumeObj = self.LoadOrCreateVolume()
-        BlockObj = VolumeManagerETree.BlockNode.Create('TEM')
+        BlockObj = nornir_buildmanager.volumemanager.blocknode.BlockNode.Create('TEM')
         [saveBlock, BlockObj] = volumeObj.UpdateOrAddChild(BlockObj)
         volumeObj.Save()
 

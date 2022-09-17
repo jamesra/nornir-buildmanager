@@ -11,6 +11,7 @@ import unittest
 
 from nornir_buildmanager.VolumeManagerETree import *
 import nornir_buildmanager.build
+import nornir_buildmanager.volumemanager.datanode
 import nornir_shared.files
 import nornir_shared.misc
 import test.testbase
@@ -161,7 +162,7 @@ class VolumeManagerAppendTest(VolumeManagerTestBase):
             v = HistogramElement.attrib[k]
             print(str(v))
 
-        d = HistogramElement.DataNode
+        d = nornir_buildmanager.volumemanager.datanode.DataNode
 
         self.assertTrue(dataObj in HistogramElement)
 

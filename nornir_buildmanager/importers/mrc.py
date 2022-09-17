@@ -5,31 +5,21 @@ Created on Apr 9, 2019
 '''
 
 import sys
-import re
+
 import struct
 import enum
-import pickle as pickle
-import nornir_buildmanager.templates
-from nornir_buildmanager.VolumeManagerETree import *
-from nornir_buildmanager.operations.tile import VerifyTiles
-import nornir_buildmanager.importers
-from nornir_imageregistration.files import mosaicfile
-from nornir_imageregistration.mosaic import Mosaic
-from nornir_imageregistration import image_stats
+import nornir_imageregistration
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import *
 from nornir_shared.images import *
 import nornir_shared.files as files
 from nornir_shared.histogram import *
-from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
-import nornir_shared.plot as plot
 import logging
-import collections
 import nornir_pools
 import numpy
-import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
-from pyglet.resource import file
 from . import GetFileNameForTileNumber
 
 
@@ -475,7 +465,7 @@ class MRCFile(object):
     def set_pixels(self, iTile, iPixels, new_values, old_values=None):
         '''
         :param int iTile: Index of tile to update
-        :param list iPixles: Indicies of pixels to update
+        :param list iPixels: Indicies of pixels to update
         :param bytes new_values: Values to set on the new pixels, must match length of iPixels * self.bytes_per_pixel
         :param bytes old_values: The current values at the pixels to be corrected.  Function will raise an exception if the expected value doesn't match.  Useful in debugging and development to ensure the correct pixels are being updated 
         '''
@@ -589,7 +579,6 @@ class MRCTileHeader(object):
         '''
         :param tile_id: Arbitrary name for the tile we will load
         :param header: MRC File header
-        :param int tile_number: Tile Number to read header for
         '''
         obj = MRCTileHeader(tile_id, nm_per_pixel)
         offset = 0

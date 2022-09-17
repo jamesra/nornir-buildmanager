@@ -40,7 +40,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
 #             return
 
     if not FilterNode.HasTileset:
-        TileSetNode = nornir_buildmanager.VolumeManager.TilesetNode.Create()
+        TileSetNode = nornir_buildmanager.volumemanager.TilesetNode.Create()
         [added, TileSetNode] = FilterNode.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
 
         TileSetNode.TileXDim = TileWidth

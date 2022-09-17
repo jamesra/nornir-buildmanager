@@ -4,8 +4,6 @@ Created on Jul 2, 2012
 @author: Jamesan
 '''
 
-from nornir_buildmanager.VolumeManagerETree import *
-
 LatestElementVersions = {'PruneData' : 1.2, 'HistogramData' : 1.1}
 
 CompatibleElementVersions = {'PruneData' : 1.2, 'HistogramData' : 1.1}
@@ -19,7 +17,6 @@ DeprecatedNodes = ['PruneData', 'HistogramData']
 
 def GetLatestVersionForNodeType(tag):
     return float(LatestElementVersions.get(tag, 1.0))
-
 
 def IsNodeVersionCompatible(tag, version):
     if tag in CompatibleElementVersions:

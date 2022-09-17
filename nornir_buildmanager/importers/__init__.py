@@ -20,17 +20,17 @@ class OldVersionException(Exception):
         return repr(self.text)
  
 
-def CreateDefaultHistogramCutoffFile(histogramFilename):
+def CreateDefaultHistogramCutoffFile(histogramFilename: str):
     with open(histogramFilename, 'w+') as histogramFilehandle:
         histogramFilehandle.write("#Section Min Max Gamma")
         histogramFilehandle.close()
         
-def LoadHistogramCutoffs(filename):
+def LoadHistogramCutoffs(filename: str):
     '''
     Return a dictionary of section numbers containing named tuples of min,max,gamma values for raw data import
     The file is space delimited, and if a value in a column is not a number then the default calculated value 
     will be used instead of an override
-    :param filename str: Filename of histogram values to open
+    :param str filename: Filename of histogram values to open
     '''
     
     Values = {}

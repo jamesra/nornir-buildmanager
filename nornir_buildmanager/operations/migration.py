@@ -9,6 +9,7 @@ All the code, often throwaway, to migrate from one version to another.
 import glob
 import os
 
+import nornir_buildmanager.volumemanager.inputtransformhandler
 import nornir_imageregistration
 import nornir_imageregistration.files
 
@@ -173,7 +174,7 @@ def MigrateTransforms_1p2_to_1p3(transform_node, **kwargs):
     _MapTransformToCurrentType(transform_node, name='Grid', old_type='_Cel96_Mes8_sp4_Mes8_Thr0.5', new_type='_Cel128_Mes8_Mes8_Thr0.25_it10_sp4')
     
     # All done changing the transforms meta-data.  Now update transforms which depend on us with correct information
-    for dependent in VolumeManagerHelpers.InputTransformHandler.EnumerateTransformDependents(transform_node.Parent, original_checksum, original_type, recursive=True):
+    for dependent in nornir_buildmanager.volumemanager.inputtransformhandler.InputTransformHandler.EnumerateTransformDependents(transform_node.Parent, original_checksum, original_type, recursive=True):
         if dependent.HasInputTransform:
             dependent.SetTransform(transform_node)
             

@@ -32,15 +32,9 @@ Example:
 
 '''
 
-import glob
-import logging
-import os
-import shutil
-import sys
-
 from nornir_buildmanager import templates
-import nornir_buildmanager
-from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager 
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.importers import filenameparser, GetFlipList
 from nornir_buildmanager.operations.tile import VerifyTiles
 import nornir_imageregistration
