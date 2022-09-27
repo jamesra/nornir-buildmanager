@@ -17,7 +17,7 @@ class XNamedContainerElementWrapped(xcontainerelementwrapper.XContainerElementWr
         super(XNamedContainerElementWrapped, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, tag, Name, Path=None, attrib=None, **extra):
+    def Create(cls, tag, Name, Path=None, attrib=None, **extra) -> XNamedContainerElementWrapped:
         if Path is None:
             Path = Name
 

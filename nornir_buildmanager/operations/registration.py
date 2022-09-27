@@ -157,6 +157,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             
             OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
             OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
+            OutputTransformNode.ResetChecksum()
               
             print("%s -> %s" % (OutputTransformNode.FullPath, nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
         except Exception as e:

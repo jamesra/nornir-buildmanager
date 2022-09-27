@@ -70,6 +70,10 @@ def CopyStosGroup(BlockNode, SourceGroupName, TargetGroupName, Downsample, **kwa
     @param Downsample int: The downsample level to copy
     
     Copy the transforms from one stos group to another.  If the target group does not exist it is created.
+    :param BlockNode:
+    :param SourceGroupName:
+    :param TargetGroupName:
+    :param Downsample:
     '''
     # Get or create the TargetGroup
     (created_source, SourceGroup) = BlockNode.GetOrCreateStosGroup(SourceGroupName, Downsample)

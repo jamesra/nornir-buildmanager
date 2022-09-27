@@ -12,7 +12,7 @@ class HistogramNode(HistogramBase):
         super(HistogramNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, InputTransformNode, Type, attrib=None, **extra):
+    def Create(cls, InputTransformNode, Type, attrib=None, **extra) -> HistogramNode:
         obj = HistogramNode(attrib=attrib, **extra)
         obj.SetTransform(InputTransformNode)
         obj.attrib['Type'] = Type

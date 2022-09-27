@@ -259,7 +259,7 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
         
         OutputVolumeNode.append(OutputSectionNode)
 
-    AllSectionNodes = OutputVolumeNode.findall('Section')
+    AllSectionNodes = list(OutputVolumeNode.findall('Section'))
     OutputVolumeNode.attrib['num_sections'] = str(len(AllSectionNodes))
     
 def ParseSection(BlockPath, SectionNode):
@@ -301,8 +301,7 @@ def ParseChannels(SectionNode, OutputSectionNode):
                     AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
                 print("Tileset found for section " + str(SectionNode.attrib["Number"]))    
 
-        NotesNodes = ChannelNode.findall('Notes')
-        for NoteNode in NotesNodes:
+        for NoteNode in ChannelNode.findall('Notes'):
             # Copy over Notes elements verbatim
             OutputNotesNode = ETree.SubElement(OutputSectionNode, 'Notes')
             OutputNotesNode.text = NoteNode.text

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections.abc import Iterable, Generator
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
@@ -9,19 +10,19 @@ from nornir_buildmanager.volumemanager import StosMapNode, \
 class BlockNode(XNamedContainerElementWrapped):
 
     @property
-    def Sections(self) -> [SectionNode]:
+    def Sections(self) -> Generator[SectionNode]:
         return self.findall('Section')
 
     @property
-    def StosGroups(self) -> [StosGroupNode]:
+    def StosGroups(self) -> Generator[StosGroupNode]:
         return self.findall('StosGroup')
 
     @property
-    def StosMaps(self) -> [StosMapNode]:
+    def StosMaps(self) -> Generator[StosMapNode]:
         return self.findall('StosMap')
 
     def GetSection(self, Number: int) -> SectionNode:
-        return self.GetChildByAttrib('Section', 'Number', Number)
+        return self.GetChildByAttrib('Section', 'Number', Number)  # type: SectionNode
 
     def GetOrCreateSection(self, Number: int) -> (bool, SectionNode):
         """
@@ -42,6 +43,7 @@ class BlockNode(XNamedContainerElementWrapped):
             return False, section_obj
 
     def GetStosGroup(self, group_name: str, downsample) -> StosGroupNode | None:
+        stos_group: StosGroupNode
         for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):
             if stos_group.Downsample == downsample:
                 return stos_group
@@ -61,7 +63,7 @@ class BlockNode(XNamedContainerElementWrapped):
         return True, OutputStosGroupNode
 
     def GetStosMap(self, map_name) -> StosMapNode:
-        return self.GetChildByAttrib('StosMap', 'Name', map_name)
+        return self.GetChildByAttrib('StosMap', 'Name', map_name)  # type: StosMapNode
 
     def GetOrCreateStosMap(self, map_name) -> StosMapNode:
         stos_map_node = self.GetStosMap(map_name)
@@ -105,7 +107,7 @@ class BlockNode(XNamedContainerElementWrapped):
         self.NonStosSectionNumbers = existing_set.difference(section_number_list)
 
     @property
-    def NonStosSectionNumbers(self) -> [int]:
+    def NonStosSectionNumbers(self) -> frozenset[int]:
         """A list of integers indicating which section numbers should not be control sections for slice to slice registration"""
         StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
         (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
@@ -130,7 +132,7 @@ class BlockNode(XNamedContainerElementWrapped):
         return NonStosSectionNumbers
 
     @NonStosSectionNumbers.setter
-    def NonStosSectionNumbers(self, value) -> [int]:
+    def NonStosSectionNumbers(self, value: Iterable[int]):
         """A list of integers indicating which section numbers should not be control sections for slice to slice registration"""
         StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
         (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)

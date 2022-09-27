@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Generator
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
@@ -19,7 +20,7 @@ class SectionNode(XNamedContainerElementWrapped):
         return SectionNode.ClassSortKey(self)
 
     @property
-    def Channels(self) -> [ChannelNode]:
+    def Channels(self) -> Generator[ChannelNode]:
         return self.findall('Channel')
 
     @property
@@ -41,26 +42,25 @@ class SectionNode(XNamedContainerElementWrapped):
         else:
             return False, channelObj
 
-    def MatchChannelPattern(self, channelPattern) -> [ChannelNode]:
+    def MatchChannelPattern(self, channelPattern) -> Generator[ChannelNode]:
         return nornir_buildmanager.volumemanager.SearchCollection(self.Channels,
                                     'Name',
                                     channelPattern)
 
-    def MatchChannelFilterPattern(self, channelPattern, filterPattern) -> [ChannelNode]:
-        filterNodes = []
+    def MatchChannelFilterPattern(self, channelPattern, filterPattern) -> Generator[ChannelNode]:
         for channelNode in self.MatchChannelPattern(channelPattern):
             result = channelNode.MatchFilterPattern(filterPattern)
             if result is not None:
-                filterNodes.extend(result)
+                yield from result
 
-        return filterNodes
+        return
 
     @property
     def NeedsValidation(self) -> bool:
         return True
 
     @classmethod
-    def Create(cls, Number, Name=None, Path=None, attrib=None, **extra):
+    def Create(cls, Number, Name=None, Path=None, attrib=None, **extra) -> SectionNode:
 
         if Name is None:
             Name = nornir_buildmanager.templates.Current.SectionTemplate % Number

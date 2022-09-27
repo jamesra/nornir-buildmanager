@@ -25,17 +25,17 @@ def __GetAttribOrDefault(Node, Attribute, Default):
     else:
         return Default
 
-    
+
 def NodesWhere(parentNode, findxpath, filter_func):
     nodes = list(parentNode.findall(findxpath))
     return list(filter(filter_func, nodes))
 
-    
+
 def RemoveWhere(parentNode, findxpath, filter_func):
     '''Remove transforms that have an AttribName matching AttribValue'''
     remove_nodes = NodesWhere(parentNode, findxpath, filter_func)
     for n in remove_nodes:
-        n.Clean("Failed filtering function") 
+        n.Clean("Failed filtering function")
 
 
 def IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision=None):
@@ -44,8 +44,7 @@ def IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision=None):
 
     if OutputNode is None:
         return False
-
-    OutputValue = None
+ 
     OutputValue = __GetAttribOrDefault(OutputNode, OutputAttribute, None)
 
     if isinstance(TargetValue, str):
@@ -69,30 +68,32 @@ def IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision=None):
 
 def RemoveOnMismatch(OutputNode, OutputAttribute, TargetValue, Precision=None, NodeToRemove=None):
     '''Remove an element if the attribute does not have the expected value
+    :param Precision:
     :param object NodeToRemove: The node that should be removed on a mismatch, if None remove the OutputNode
     :param object TargetValue: Value we expect the attribute to have
     :param str OutputAttribute: Name of attribute on OutputNode containing value to check
     :param object OutputNode: Node that must have the attributes'''
- 
+
     if OutputNode is None:
         return None
 
     if IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision):
         return OutputNode
 
-    reasonStr = OutputAttribute + " = " + str(__GetAttribOrDefault(OutputNode, OutputAttribute, "None")) + " unequal to target value of " + str(TargetValue)
+    reasonStr = OutputAttribute + " = " + str(
+        __GetAttribOrDefault(OutputNode, OutputAttribute, "None")) + " unequal to target value of " + str(TargetValue)
     if NodeToRemove is None:
         NodeToRemove = OutputNode
-        
+
     NodeToRemove.Clean(reason=reasonStr)
     return None
 
 
 def LoadOrCleanExistingTransformForInputTransform(channel_node, InputTransformNode, OutputTransformPath):
     '''Return the existing transform node if it exists and if the input transform matches the passed input transform node.  If the transform is locked always return the existing transform node'''
-    
+
     OutputTransformNode = channel_node.GetChildByAttrib('Transform', 'Path', OutputTransformPath)
-    if not OutputTransformNode is None:
+    if OutputTransformNode is not None:
         if not os.path.exists(OutputTransformNode.FullPath):
             OutputTransformNode.Clean("Output transform file does not exist %s" % OutputTransformNode.FullPath)
             OutputTransformNode = None
@@ -100,7 +101,7 @@ def LoadOrCleanExistingTransformForInputTransform(channel_node, InputTransformNo
             if not OutputTransformNode.IsInputTransformMatched(InputTransformNode):
                 OutputTransformNode.Clean("New input transform %s was specified" % InputTransformNode.FullPath)
                 OutputTransformNode = None
-                
+
     return OutputTransformNode
 
 

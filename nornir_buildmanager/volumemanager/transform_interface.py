@@ -1,24 +1,24 @@
 import abc
-from abc import abstractmethod, abstractproperty
+from abc import abstractmethod
 
 
 class IChecksum(abc.ABC):
 
-    @abstractproperty
+    @abstractmethod
     def Checksum(self) -> str:
         raise NotImplementedError()
 
 
 class ITransform(IChecksum, abc.ABC):
     """Interface to a meta-data element that provides a unique signature for a transform"""
-    @abstractproperty
+    @abstractmethod
     def CropBox(self):
         raise NotImplementedError()
 
-    @abstractproperty
+    @abstractmethod
     def Name(self) -> str:
         raise NotImplementedError()
 
-    @abstractproperty
+    @abstractmethod
     def Type(self) -> str:
         raise NotImplementedError()

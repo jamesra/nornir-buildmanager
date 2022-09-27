@@ -26,7 +26,7 @@ from xml.etree import ElementTree
 
 
 # import xml.etree
-class ArgumentSet():
+class ArgumentSet:
     '''Collection of arguments from each source'''
 
     @property
@@ -106,26 +106,26 @@ class ArgumentSet():
         :param str val: The key to lookup
         :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned.'''
         if val is None:
-            return (False, None)
+            return False, None
 
         if len(val) == 0:
-            return (False, None)
+            return False, None
 
         if val[0] == '#':
             if val[1:].find('#') >= 0:
                 # If there are two '#' signs in the string it is a string not an object
-                return (False, None)
+                return False, None
 
             # Find the existing entry in the dargs
             key = val[1:]
 
             try:
                 # If no object found then return None
-                return (True, self.TryGetValueForKey(key))
+                return True, self.TryGetValueForKey(key)
             except KeyError as e:
-                return (False, None)
+                return False, None
 
-        return (False, None)
+        return False, None
 
     def AddArguments(self, args):
         '''Add arguments from the command line'''
@@ -410,7 +410,7 @@ class PipelineManager(object):
             return None
         else:
             SelectedPipeline = XMLDoc.find("Pipeline[@Name='" + PipelineName + "']")
-            if(SelectedPipeline is None):
+            if SelectedPipeline is None:
                 PipelineManager.logger.critical("No pipeline found named " + PipelineName)
                 prettyoutput.LogErr("No pipeline found named " + PipelineName)
                 cls.PrintPipelineEnumeration(XMLDoc)
@@ -430,6 +430,7 @@ class PipelineManager(object):
 
     def GetArgParser(self, parser=None, IncludeGlobals=True):
         '''Create the complete argument parser for the pipeline
+        :param parser:
         :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation
         '''
 
@@ -475,7 +476,7 @@ class PipelineManager(object):
     def GetSearchRoot(cls, VolumeElem, PipelineNode, ArgSet):
         RootIterNodeName = PipelineNode.get('Root', None)
         RootForSearch = VolumeElem
-        if(not RootIterNodeName is None):
+        if not RootIterNodeName is None:
             if not RootIterNodeName in ArgSet.Variables:
                 raise PipelineSearchRootNotFound(argname=RootIterNodeName, PipelineNode=PipelineNode, VolumeElem=VolumeElem)
 
@@ -506,7 +507,7 @@ class PipelineManager(object):
         # Load the Volume.XML file in the output directory
         self.VolumeTree = nornir_buildmanager.volumemanager.VolumeManager.Load(args.volumepath, Create=True)
 
-        if(self.VolumeTree is None):
+        if self.VolumeTree is None:
             PipelineManager.logger.critical("Could not load or create volume.xml " + args.outputpath)
             prettyoutput.LogErr("Could not load or create volume.xml " + args.outputpath)
             sys.exit()
@@ -572,16 +573,16 @@ class PipelineManager(object):
         # Copy dargs so we do not modify what the parent passed us
         # dargs = copy.copy(dargs)
 
-        if(PipelineNode.tag == 'Select'):
+        if PipelineNode.tag == 'Select':
             self.ProcessSelectNode(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'Iterate'):
+        elif PipelineNode.tag == 'Iterate':
             self.ProcessIterateNode(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'RequireSetMembership'):
+        elif PipelineNode.tag == 'RequireSetMembership':
             self.RequireSetMembership(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'RequireMatch'):
+        elif PipelineNode.tag == 'RequireMatch':
             self.ProcessRequireMatchNode(ArgSet, VolumeElem, PipelineNode)
 
         elif PipelineNode.tag == 'PythonCall':
@@ -672,7 +673,7 @@ class PipelineManager(object):
         while SelectedVolumeElem is None:
 
             SelectedVolumeElem = RootForSearch.find(xpath)
-            if(SelectedVolumeElem is None):
+            if SelectedVolumeElem is None:
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             #Containers will be tested at load time.  The load linked element code checks containers
@@ -717,7 +718,7 @@ class PipelineManager(object):
 
             NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
 
-        if(NumProcessed == 0):
+        if NumProcessed == 0:
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
     @classmethod
@@ -741,7 +742,7 @@ class PipelineManager(object):
 
         stageFunc = nornir_shared.reflection.get_module_class(str(PipelineModule), str(PipelineFunction))
 
-        if(ArgSet.Arguments['verbose']):
+        if ArgSet.Arguments['verbose']:
             prettyoutput.Log("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
 
         #PipelineManager.logger.info("CALL " + str(PipelineModule) + "." + str(PipelineFunction))

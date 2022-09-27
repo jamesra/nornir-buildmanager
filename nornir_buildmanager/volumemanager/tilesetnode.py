@@ -59,14 +59,19 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
         self.attrib['TileYDim'] = '%d' % int(val)
 
     @classmethod
-    def Create(cls):
-        return TilesetNode()
+    def Create(cls, attrib: dict = None, **extra) -> TilesetNode:
+        return cls(tag='Tileset', 
+                   attrib=attrib,
+                   **extra)
 
-    def __init__(self, tag=None, attrib=None, **extra):
+    def __init__(self, tag=None, attrib=None, Path=None, **extra):
         if tag is None:
             tag = 'Tileset'
+            
+        if Path is None:
+            Path = TilesetNode.DefaultPath
 
-        super(TilesetNode, self).__init__(tag=tag, Path=TilesetNode.DefaultPath, attrib=attrib, **extra)
+        super(TilesetNode, self).__init__(tag=tag, Path=Path, attrib=attrib, **extra)
 
         if 'Path' not in self.attrib:
             self.attrib['Path'] = TilesetNode.DefaultPath
@@ -108,9 +113,10 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
 
     def IsLevelValid(self, level_node, GridDimX: int, GridDimY: int):
         """
-        :param str level_full_path: The path to the directories containing the image files
-        :return: (Bool, String) containing whether all tiles exist and a reason string
-        """
+        :param level_node:
+        :param GridDimX:
+        :param GridDimY:
+    """
 
         if GridDimX is None or GridDimY is None:
             return False, "No grid dimensions found in tileset"

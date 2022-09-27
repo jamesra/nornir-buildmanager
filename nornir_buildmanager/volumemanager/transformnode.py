@@ -32,7 +32,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         return float(TransformNode.get_threshold_format() % value)  # Number of digits to save in XML file
 
     @classmethod
-    def Create(cls, Name: str, Type: str, Path: str = None, attrib: dict = None, **extra):
+    def Create(cls, Name: str, Type: str, Path: str = None, attrib: dict = None, **extra) -> TransformNode:
 
         if Path is None:
             Path = MosaicBaseNode.GetFilename(Name, Type)

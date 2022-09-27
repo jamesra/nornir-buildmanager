@@ -3,7 +3,9 @@ from __future__ import annotations
 import datetime
 import logging
 import operator
+from typing import *
 from xml.etree import ElementTree as ElementTree
+from collections.abc import Iterable
 
 import nornir_buildmanager 
 from nornir_shared import prettyoutput as prettyoutput
@@ -333,7 +335,7 @@ class XElementWrapper(ElementTree.Element):
         if not Valid[0]:
             return self.Clean(Valid[1])
 
-        return Valid[0] == False, Valid[1] # The return value convention is reversed from IsValid.
+        return Valid[0] == False, Valid[1]  # The return value convention is reversed from IsValid.
 
     def Clean(self, reason=None):
         """Remove node from element tree and remove any external resources such as files"""
@@ -358,7 +360,7 @@ class XElementWrapper(ElementTree.Element):
                 # Sometimes we have not been added to the parent at this point
                 pass
 
-    def Copy(self):
+    def Copy(self) -> Self:
         """Creates a copy of the element"""
         t = type(self)
         cpy = t(tag=self.tag, attrib=self.attrib.copy())
@@ -396,7 +398,7 @@ class XElementWrapper(ElementTree.Element):
     @classmethod
     def wrap(cls, dictElement: XElementWrapper | ElementTree.Element) -> XElementWrapper:
         """Change the class of an ElementTree.Element(PropertyElementName) to add our wrapper functions"""
-        if isinstance(dictElement, cls): #Check if it is already wrapped
+        if isinstance(dictElement, cls):  # Check if it is already wrapped
             return dictElement
 
         newElement = cls.__CreateFromElement(dictElement)
@@ -549,16 +551,12 @@ class XElementWrapper(ElementTree.Element):
                     else:
                         self.remove(Child)
 
-    def GetChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue) -> [XElementWrapper]:
+    def GetChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue) -> Generator[XElementWrapper]:
         XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
                                                                            'AttribName': AttribName,
                                                                            'AttribValue': AttribValue}
-        children = self.findall(XPathStr)
+        return self.findall(XPathStr)
 
-        if children is None:
-            return ()
-
-        return children
 
     def GetChildByAttrib(self, ElementName: str, AttribName: str, AttribValue) -> XElementWrapper | None:
 
@@ -616,7 +614,7 @@ class XElementWrapper(ElementTree.Element):
                                                          'QueryString': ' and '.join(attribXPaths)}
         return self.UpdateOrAddChild(Element, XPathStr)
 
-    def UpdateOrAddChild(self, Element: XElementWrapper, XPath: str = None) -> (bool, XElementWrapper):
+    def UpdateOrAddChild(self, Element: XElementWrapper, XPath: str=None) -> (bool, XElementWrapper):
         """Adds an element using the specified XPath.  If the XPath is unspecified the element name is used
            Returns a tuple with (True/False, Element).
            True indicates the element did not exist and was added.
@@ -699,7 +697,7 @@ class XElementWrapper(ElementTree.Element):
             p = p.Parent
         return None
 
-    def FindAllFromParent(self, xpath: str) -> [XElementWrapper]:
+    def FindAllFromParent(self, xpath: str) -> Generator[XElementWrapper] | None:
         """Run findall on xpath on each parent, return results only first nearest parent with resuls"""
         #        assert (not ParentTag is None)
         p = self.Parent
@@ -790,7 +788,7 @@ class XElementWrapper(ElementTree.Element):
 
         return None
 
-    def findall(self, path, namespaces=None) -> [XElementWrapper]:
+    def findall(self, path, namespaces=None) -> Generator[XElementWrapper]:
         match = path
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(
             match)

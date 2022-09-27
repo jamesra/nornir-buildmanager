@@ -1,18 +1,19 @@
+from typing import Generator, Iterable
 import re
 import nornir_buildmanager
+import xml.etree
 
-from . import xelementwrapper
+from nornir_buildmanager.volumemanager import XElementWrapper
 
-def SearchCollection(Objects, AttribName: str, RegExStr: str, CaseSensitive: bool = False) -> [
-    xelementwrapper.XElementWrapper]:
-    """Search a list of object's attributes using a regular express.
-       Returns list of objects with matching attributes.
-       Returns all entries if RegExStr is None"""
+def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.Element], AttribName: str, RegExStr: str, CaseSensitive: bool = False) -> Generator[XElementWrapper, None, None]:
+    """
+    Search a list of object's attributes using a regular express.
+    Returns a generator of objects with matching attributes.
+    Returns all entries if RegExStr is None
+    """
 
     if RegExStr is None:
-        return Objects
-
-    Matches = []
+        yield from Objects
 
     flags = 0
     if not CaseSensitive:
@@ -27,13 +28,16 @@ def SearchCollection(Objects, AttribName: str, RegExStr: str, CaseSensitive: boo
             continue
 
         if RegExStr == '*':
-            Matches.append(MatchObj)
+            #Matches.append(MatchObj)
+            yield MatchObj
             continue
 
         match = re.match(RegExStr, attrib, flags)
         if match is not None:
             (wrapped, MatchObj) = nornir_buildmanager.volumemanager.WrapElement(MatchObj)
             assert (wrapped is False)
-            Matches.append(MatchObj)
+            yield MatchObj
+            #Matches.append(MatchObj)
 
-    return Matches
+    #return Matches
+    return

@@ -79,7 +79,7 @@ class PyramidLevelHandler(object):
         """
         return not self.MoreDetailedLevel(Downsample) is None
 
-    def CreateLevels(self, levels: [float]):
+    def CreateLevels(self, levels: list[float]):
         assert (isinstance(levels, list))
         for level in levels:
             self.GetOrCreateLevel(level)

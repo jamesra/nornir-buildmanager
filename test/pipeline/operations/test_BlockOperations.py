@@ -165,7 +165,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                      '-Filter', '.*mosaic.*', \
                      '-InputGroup', 'StosBrute', \
                      '-InputDownsample', '16', \
-                     '-OutputDownsample', '16']
+                     '-OutputDownsample', '16', \
+                     '-SectionMap', 'PotentialRegistrationChain']
         self.VolumeObj = self.RunBuild(FirstRefineBuildArgs)
 
         FirstRefineGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='" + groupNames[1] + "']")

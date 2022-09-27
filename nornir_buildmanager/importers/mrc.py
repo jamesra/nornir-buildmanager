@@ -577,6 +577,9 @@ class MRCTileHeader(object):
     @staticmethod
     def Load(tile_id, header, tile_flags, nm_per_pixel, big_endian=False):
         '''
+        :param tile_flags:
+        :param nm_per_pixel:
+        :param big_endian:
         :param tile_id: Arbitrary name for the tile we will load
         :param header: MRC File header
         '''

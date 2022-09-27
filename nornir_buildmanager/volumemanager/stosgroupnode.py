@@ -19,7 +19,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         super(StosGroupNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, Name, Downsample, **extra):
+    def Create(cls, Name, Downsample, **extra) -> StosGroupNode:
         Path = Name
 
         obj = super(StosGroupNode, cls).Create(tag='StosGroup', Name=Name, attrib=None, Path=Path, **extra)
@@ -58,8 +58,8 @@ class StosGroupNode(XNamedContainerElementWrapped):
         return None
 
     @property
-    def SectionMappings(self) -> [SectionMappingsNode]:
-        return list(self.findall('SectionMappings'))
+    def SectionMappings(self) -> Generator[SectionMappingsNode]:
+        return self.findall('SectionMappings')
 
     def GetSectionMapping(self, MappedSectionNumber) -> SectionMappingsNode:
         return self.GetChildByAttrib('SectionMappings', 'MappedSectionNumber', MappedSectionNumber)
@@ -150,6 +150,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
                                 OutputType: str,
                                 OutputPath: str):
         """
+        :param OutputPath:
         :param FilterNode ControlFilter: Filter for control image
         :param FilterNode MappedFilter: Filter for mapped image
         :param str OutputType: Type of stosNode

@@ -66,7 +66,7 @@ class ImageSetNode(ImageSetBaseNode):
         super(ImageSetNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, Type: str = None, attrib: dict = None, **extra):
+    def Create(cls, Type: str = None, attrib: dict = None, **extra) -> ImageSetNode:
         if Type is None:
             Type = ""
 

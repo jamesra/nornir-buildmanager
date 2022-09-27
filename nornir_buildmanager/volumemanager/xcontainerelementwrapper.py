@@ -200,7 +200,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         return loaded_element
 
-    def _replace_links(self, link_nodes: [XElementWrapper], fullpath: str = None):
+    def _replace_links(self, link_nodes: list[XElementWrapper], fullpath: str = None):
         """Load the linked nodes.  Remove link node and replace with loaded node.  Checks that the loaded node is valid"""
 
         # Ensure we are actually working on a list

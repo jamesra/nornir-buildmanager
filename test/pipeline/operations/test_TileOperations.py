@@ -10,7 +10,8 @@ import shutil
 import tempfile
 import unittest
 
-from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import *
 
 import nornir_buildmanager.volumemanager.datanode
 import nornir_buildmanager.volumemanager.imagenode

@@ -3,9 +3,8 @@ Created on May 17, 2018
 
 @author: u0490822
 '''
-import nornir_buildmanager.volumemanager.blocknode
-import nornir_buildmanager.volumemanager.mappingnode
-import nornir_buildmanager.volumemanager.xelementwrapper
+
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.operations.block import *
 from nornir_imageregistration.transforms import registrationtree
 
@@ -200,39 +199,45 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         print("Remove section 7")
         omitSectionNode = BlockNode.GetSection(7)
         self.assertIsNotNone(omitSectionNode)
-        BlockNode.remove(omitSectionNode)
+        try:
+            BlockNode.remove(omitSectionNode)
 
-        GoodSections = [2, 3, 4, 6, 8, 9]
-        BadSections = [1, 5, 10]
+            GoodSections = [2, 3, 4, 6, 8, 9]
+            BadSections = [1, 5, 10]
 
-        self.SetNonStosSectionList(BlockNode, [1, 5, 10])
+            self.SetNonStosSectionList(BlockNode, [1, 5, 10])
 
-        OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(BlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger)
-        self.assertIsNotNone(OutputBlockNode)
+            OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(BlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger)
+            self.assertIsNotNone(OutputBlockNode)
 
-        if center not in GoodSections:
-            center = registrationtree.NearestSection(GoodSections, center)
+            if center not in GoodSections:
+                center = registrationtree.NearestSection(GoodSections, center)
 
-        # OK, add the section back and make sure it is included in the updated stos map
+            # OK, add the section back and make sure it is included in the updated stos map
 
-        print("Add section 7")
-        OutputBlockNode.append(omitSectionNode)
-        GoodSections = [2, 3, 4, 6, 7, 8, 9]
-        BadSections = [1, 5, 10]
+            print("Add section 7")
+            OutputBlockNode.append(omitSectionNode)
+            GoodSections = [2, 3, 4, 6, 7, 8, 9]
+            BadSections = [1, 5, 10]
 
-        expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
+            expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
 
-        # We expect extra mappings for section 8 since section 7 did not exxist in the original
-        if(adjacentThreshold == 1):
-            expectedRT.AddPair(6, 8)
-        elif(adjacentThreshold == 2):
-            expectedRT.AddPair(4, 8)
-            expectedRT.AddPair(6, 9)
-        else:
-            self.fail("Test not tweaked for adjacentThreshold > 2")
+            # We expect extra mappings for section 8 since section 7 did not exxist in the original
+            if(adjacentThreshold == 1):
+                expectedRT.AddPair(6, 8)
+            elif(adjacentThreshold == 2):
+                expectedRT.AddPair(4, 8)
+                expectedRT.AddPair(6, 9)
+            else:
+                self.fail("Test not tweaked for adjacentThreshold > 2")
 
-        OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(OutputBlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger, expectedRT)
-        self.assertIsNotNone(OutputBlockNode)
+            OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(OutputBlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger, expectedRT)
+            self.assertIsNotNone(OutputBlockNode)
+        finally:
+            for map in BlockNode.StosMaps:
+                BlockNode.remove(map)
+
+            BlockNode.Save() #Ensure removed section has been saved for future passes through the test
 
         print("Done!")
 

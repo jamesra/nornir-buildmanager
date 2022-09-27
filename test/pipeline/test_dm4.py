@@ -10,7 +10,7 @@ import shutil
 import time
 import unittest
 
-from nornir_buildmanager.VolumeManagerETree import VolumeManager 
+from nornir_buildmanager import *
 import nornir_buildmanager.importers
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
 from nornir_imageregistration.files.mosaicfile import MosaicFile

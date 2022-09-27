@@ -9,7 +9,21 @@ import nornir_imageregistration
 import nornir_pools
 import nornir_buildmanager
 
- 
+def RemoveTilePyramidIfOutdated(input_filter, output_filter):
+    """
+
+    :param input_filter:
+    :param output_filter:
+    :return: True if the input_filter's TilePyramid is newer than the output_filters tile pyramid.  output_filter TilePyramid will be cleaned if true
+    """
+    output_pyramid = output_filter.TilePyramid
+
+    if input_filter.TilePyramid.CreationTime > output_pyramid.CreationTime:
+        output_pyramid.Clean(f"TilePyramid at {output_pyramid.FullPath} is older than TilePyramid at {input_filter.TilePyramid.FullPath}")
+        return True
+
+    return False
+
 
 def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger=None, **kwargs):
     '''Create full resolution tiles of specfied size for the mosaics'''

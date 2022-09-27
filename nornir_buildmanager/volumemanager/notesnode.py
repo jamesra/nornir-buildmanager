@@ -8,7 +8,7 @@ from . import xresourceelementwrapper
 class NotesNode(xresourceelementwrapper.XResourceElementWrapper):
 
     @classmethod
-    def Create(cls, Text: str = None, SourceFilename: str = None, attrib: dict = None, **extra):
+    def Create(cls, Text: str = None, SourceFilename: str = None, attrib: dict = None, **extra) -> NotesNode:
         obj = NotesNode(tag='Notes', attrib=attrib, **extra)
 
         if Text is not None:

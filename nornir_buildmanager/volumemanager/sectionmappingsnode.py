@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Generator
 
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager import XElementWrapper, TransformNode, ImageNode, BlockNode
@@ -20,12 +21,12 @@ class SectionMappingsNode(XElementWrapper):
         return None
 
     @property
-    def Transforms(self) -> [TransformNode]:
-        return list(self.findall('Transform'))
+    def Transforms(self) -> Generator[TransformNode]:
+        return self.findall('Transform')
 
     @property
-    def Images(self) -> [ImageNode]:
-        return list(self.findall('Image'))
+    def Images(self) -> Generator[ImageNode]:
+        return self.findall('Image')
 
     def TransformsToSection(self, sectionNumber:int):
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
@@ -174,7 +175,7 @@ class SectionMappingsNode(XElementWrapper):
         super(SectionMappingsNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, Path=None, MappedSectionNumber=None, attrib=None, **extra):
+    def Create(cls, Path=None, MappedSectionNumber=None, attrib=None, **extra) -> SectionMappingsNode:
         obj = SectionMappingsNode(attrib=attrib, **extra)
 
         if MappedSectionNumber is not None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
 from nornir_buildmanager.volumemanager import XNamedContainerElementWrapped, ContrastHandler, \
-    ImageNode, ImageSetNode, HistogramNode, TilesetNode, TilePyramidNode
+    ImageNode, ImageSetNode, HistogramNode, TilesetNode, TilePyramidNode, Scale
 
 class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
     DefaultMaskName = "Mask"
@@ -15,7 +15,7 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
 
     @property
-    def Scale(self) -> float | None:
+    def Scale(self) -> Scale | None:
         """Returns the scale if it is specified in a parent Channel Node"""
         channelNode = self.FindParent('Channel')
         if channelNode is None:
@@ -199,7 +199,7 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         return True
 
     @classmethod
-    def Create(cls, Name: str, Path: str = None, **extra):
+    def Create(cls, Name: str, Path: str = None, **extra) -> FilterNode:
         return super(FilterNode, cls).Create(tag='Filter', Name=Name, Path=Path, **extra)
 
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):

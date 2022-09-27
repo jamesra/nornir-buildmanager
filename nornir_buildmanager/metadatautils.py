@@ -123,8 +123,8 @@ def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample):
     InputImageSetXPathTemplate = "Section[@Number='%(SectionNumber)s']/Channel/Filter/ImageSet[@Name='%(ImageSetName)s']"
     InputImageXPathTemplate = "Level[@Downsample='%(Downsample)d']/Image"
 
-    ImageSets = list(BlockNode.findall(InputImageSetXPathTemplate % {'SectionNumber' : SectionNumber,
-                                                                       'ImageSetName' : ImageSetName}))
+    ImageSets = BlockNode.findall(InputImageSetXPathTemplate % {'SectionNumber' : SectionNumber,
+                                                                       'ImageSetName' : ImageSetName})
     for ImageSet in ImageSets:
         ImageXPath = InputImageXPathTemplate % {'Downsample' : Downsample}
         ImageNode = ImageSet.find(ImageXPath)

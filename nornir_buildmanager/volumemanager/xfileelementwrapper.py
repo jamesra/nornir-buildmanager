@@ -68,8 +68,8 @@ class XFileElementWrapper(volumemanager.XResourceElementWrapper):
         return result
 
     @classmethod
-    def Create(cls, tag, Path, attrib, **extra):
-        obj = XFileElementWrapper(tag=tag, attrib=attrib, **extra)
+    def Create(cls, tag, Path, attrib, **extra) -> XFileElementWrapper:
+        obj = cls(tag=tag, attrib=attrib, **extra)
         obj.attrib['Path'] = Path
         return obj
 

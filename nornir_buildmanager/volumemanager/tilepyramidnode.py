@@ -138,9 +138,8 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
 
     def TryToMakeLevelValid(self, level_node):
         """
-        :param str level_full_path: The path to the directories containing the image files
-        :return: (Bool, String) containing whether all tiles exist and a reason string
-        """
+        :param level_node:
+    """
 
         (ProbablyGood, Reason) = self.CheckIfLevelTilesExistViaMetaData(level_node)
 
@@ -181,7 +180,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         super(TilePyramidNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra):
+    def Create(cls, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra) -> TilePyramidNode:
         if LevelFormat is None:
             LevelFormat = nornir_buildmanager.templates.Current.LevelFormat
 

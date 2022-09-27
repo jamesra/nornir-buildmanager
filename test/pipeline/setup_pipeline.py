@@ -236,7 +236,6 @@ class NornirBuildTestBase(test.testbase.TestBase):
         InputTransform = transformNode.Parent.GetChildByAttrib('Transform', 'Name', transformNode.InputTransform)
         self.assertIsNotNone(InputTransform)
 
-        
         self.assertTrue(transformNode.IsInputTransformMatched(InputTransform))
 
         # Check that our reported checksum and actual file checksums match

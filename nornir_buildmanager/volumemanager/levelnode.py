@@ -123,7 +123,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
         return True, None
 
     @classmethod
-    def Create(cls, Level, attrib=None, **extra):
+    def Create(cls, Level, attrib=None, **extra) -> LevelNode:
 
         obj = LevelNode(tag='Level', Path=LevelNode.PredictPath(Level))
 

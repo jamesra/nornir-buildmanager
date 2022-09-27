@@ -49,11 +49,11 @@ class ScaleNode(XElementWrapper):
             return "X:{0} Y:{1}".format(str(self.X), str(self.Y))
 
     @classmethod
-    def Create(cls, **extra):
+    def Create(cls, **extra) -> ScaleNode:
         return cls(**extra)
 
     @classmethod
-    def CreateFromScale(cls, scale):
+    def CreateFromScale(cls, scale: Scale) -> ScaleNode:
         """Create a ScaleNode from a Scale object"""
         if isinstance(scale, Scale) is False:
             raise NotImplementedError('CreateFromScale got unexpected parameter: %s' % str(scale))

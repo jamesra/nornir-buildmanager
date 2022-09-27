@@ -223,15 +223,13 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
             continue
 
         known_mappings = StosMap.GetMappingsForControl(rt_node.SectionNumber)
-        mappingNode = None
-        if len(known_mappings) == 0:
+        mappingNode = next(known_mappings)
+        if mappingNode is None:
             # Create a mapping
             mappingNode = nornir_buildmanager.volumemanager.mappingnode.MappingNode.Create(rt_node.SectionNumber, None)
             StosMap.append(mappingNode)
             Logger.info("\tAdded Center %d" % (rt_node.SectionNumber))
             Modified = True
-        else:
-            mappingNode = known_mappings[0]
 
         for rt_mapped in rt_node.Children:
             if not rt_mapped.SectionNumber in mappingNode.Mapped:
@@ -265,15 +263,18 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     OutputMappingNode = nornir_buildmanager.volumemanager.stosmapnode.StosMapNode.Create(Name=StosMapName, Type=StosMapType)
     (NewStosMap, OutputMappingNode) = BlockNode.UpdateOrAddChildByAttrib(OutputMappingNode)
 
+    SectionNodeList = list(BlockNode.Sections)
+    SectionNodeList.sort(key=SectionNumberKey)
+
     # Ensure we do not have banned control sections in the output map
     NonStosSectionNumbersSet = BlockNode.NonStosSectionNumbers
     if not NewStosMap:
-        removedControls = OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbersSet)
+        existing_sections = [s.Number for s in SectionNodeList]
+        removed_controls = OutputMappingNode.ClearMissingSections(existing_sections)
+        removedControls = removed_controls or OutputMappingNode.ClearBannedControlMappings(NonStosSectionNumbersSet)
         if removedControls:
             SaveBlock = True
 
-    SectionNodeList = list(BlockNode.findall('Section'))
-    SectionNodeList.sort(key=SectionNumberKey)
     # Add sections which do not have the correct channels or filters to the non-stos section list.  These will not be used as control sections
     MissingChannelOrFilterSections = [s for s in SectionNodeList if False == s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)]
     MissingChannelOrFilterSectionNumbers = [s.SectionNumber for s in MissingChannelOrFilterSections]
@@ -285,7 +286,7 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     if not NewStosMap:
         if CenterSectionParameter in NonStosSectionNumbersSet:
             AdjustedCenterSectionParameter = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)
-            Logger.warn("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParameter, AdjustedCenterSectionParameter))
+            Logger.warning("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParameter, AdjustedCenterSectionParameter))
             CenterSectionParameter = AdjustedCenterSectionParameter  
 
         if CenterSectionParameter is None:
@@ -294,13 +295,13 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
         CenterChanged = CenterSectionParameter != OutputMappingNode.CenterSection
         if CenterChanged:
             # We are changing the center section, so remove all of the section mappings
-            Logger.warn(f"Requested center section {CenterSectionParameter} has changed from current value of {OutputMappingNode.CenterSection}.  Replacing existing mappings.")
+            Logger.warning(f"Requested center section {CenterSectionParameter} has changed from current value of {OutputMappingNode.CenterSection}.  Replacing existing mappings.")
             OutputMappingNode.CenterSection = CenterSectionParameter
 
     CenterSectionNumber = _GetCenterSection(Parameters, OutputMappingNode)
 
     DefaultRT = registrationtree.RegistrationTree.CreateRegistrationTree(StosControlSectionNumbers, adjacentThreshold=NumAdjacentSections, center=CenterSectionNumber)
-    DefaultRT.AddNonControlSections(BlockNode.NonStosSectionNumbers)
+    DefaultRT.AddNonControlSections(BlockNode.NonStosSectionNumbers, center=CenterSectionNumber)
 
     if(DefaultRT.IsEmpty):
         return None
@@ -384,8 +385,9 @@ def __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlM
         return None
     
 
-def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumemanager.FilterNode, Downsample, GetMask, Logger=None):
+def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumemanager.FilterNode, Downsample: float, GetMask: bool, Logger=None):
     '''
+    :param Logger:
     :param object filter_node: Filter meta-data to get images for
     :param int Downsample: Resolution of the image node to fetch or create
     :param bool GetMask: True if the mask node should be returned
@@ -429,10 +431,10 @@ def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter : nornir_
     if ControlScale is None or MappedScale is None:
         return None
     
-    XScale = ControlScale.X / MappedScale.X  
-    YScale = ControlScale.Y / MappedScale.Y
+    x_scale = ControlScale.X / MappedScale.X
+    y_scale = ControlScale.Y / MappedScale.Y
     
-    return (XScale, YScale)  
+    return x_scale, y_scale
 
 def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager.StosGroupNode,
                                     ControlFilter : nornir_buildmanager.volumemanager.FilterNode,
@@ -817,7 +819,7 @@ def AssembleStosOverlays(Parameters,
     SectionMappingSaveRequired = False
     
     try:
-        for MappingNode in StosMapNode.findall('Mapping'):
+        for MappingNode in StosMapNode.Mappings:
             MappedSectionList = MappingNode.Mapped
 
             for MappedSection in MappedSectionList:
@@ -1235,6 +1237,11 @@ def SetStosFileMasks(stosFullPath, ControlFilter, MappedFilter, UseMasks, Downsa
 
 def IsStosNodeOutdated(InputTransformNode, OutputTransformNode, ControlFilter, MappedFilter, UseMasks, OutputDownsample):
     '''
+    :param InputTransformNode:
+    :param OutputTransformNode:
+    :param ControlFilter:
+    :param MappedFilter:
+    :param OutputDownsample:
     :param bool UseMasks: True if masks should be included.  None if we should use masks if they exist in the input stos transform
     :Return: true if the output stos transform is stale
     '''
@@ -1284,6 +1291,11 @@ def IsStosNodeOutdated(InputTransformNode, OutputTransformNode, ControlFilter, M
 
 def IsStosFileOutdated(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter, UseMasks):
     '''
+    :param InputTransformNode:
+    :param OutputTransformPath:
+    :param OutputDownsample:
+    :param ControlFilter:
+    :param MappedFilter:
     :param bool UseMasks: True if masks should be included.  None if we should use masks if they exist in the input stos transform
     :return: True if any part of the stos file is out of date compared to the input stos file
     '''
@@ -1501,6 +1513,15 @@ def RefineInvoker(RefineFunc, Parameters, MappingNode, InputGroupNode,
                     OutputStosGroup=None, Type=None,  
                     **kwargs):
     '''
+    :param Parameters:
+    :param MappingNode:
+    :param InputGroupNode:
+    :param UseMasks:
+    :param Downsample:
+    :param ControlFilterPattern:
+    :param MappedFilterPattern:
+    :param OutputStosGroup:
+    :param Type:
     :param func RefineFunc: Function to invoke when we have identified a stos file needing refinement
     '''
     
@@ -1517,17 +1538,13 @@ def RefineInvoker(RefineFunc, Parameters, MappingNode, InputGroupNode,
     if(Type is None):
         Type = 'Grid'
 
-    MappedSectionList = MappingNode.Mapped
-
-    MappedSectionList.sort()
-
     (added, OutputStosGroupNode) = BlockNode.GetOrCreateStosGroup(OutputStosGroupName, Downsample)
     OutputStosGroupNode.CreateDirectories()
 
     if added:
         yield BlockNode
 
-    for MappedSection in MappedSectionList:
+    for MappedSection in MappingNode.Mapped:
         # Find the inputTransformNode in the InputGroupNode
         InputTransformNodes = list(InputGroupNode.TransformsForMapping(MappedSection, MappingNode.Control))
         if(InputTransformNodes is None or len(InputTransformNodes) == 0):
@@ -1779,6 +1796,10 @@ def TranslateVolumeToZeroOrigin(StosGroupNode, **kwargs):
 def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGroupName, Downsample, Enrich, Tolerance, **kwargs):
     '''Build a slice-to-volume transform for each section referenced in the StosMap
 
+    :param StosMapNode:
+    :param StosGroupNode:
+    :param OutputGroupName:
+    :param Downsample:
     :param str OutputMap: Name of the StosMap to create, defaults to StosGroupNode name if None
     :param bool Enrich: True if additional control points should be added if the transformed centroids of delaunay triangles are too far from expected position
     :param float Tolerance: The maximum distance the transformed and actual centroids can be before an additional control point is added at the centroid
@@ -1845,7 +1866,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
         #Logger.info(logStr)
         prettyoutput.Log(verboseStr)
 
-        MappedToControlTransforms = InputGroupNode.TransformsForMapping(mappedSectionNumber, IntermediateControlSection)
+        MappedToControlTransforms = list(InputGroupNode.TransformsForMapping(mappedSectionNumber, IntermediateControlSection))
 
         if MappedToControlTransforms is None or len(MappedToControlTransforms) == 0:
             errStr = f"{mappedSectionNumber} -> {IntermediateControlSection} mapping does not have a .stos transform at {InputGroupNode.FullPath}"
@@ -2120,7 +2141,7 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                 yield retval
 
 
-def RegistrationTreeFromStosMapNode(StosMapNode):
+def RegistrationTreeFromStosMapNode(StosMapNode) -> registrationtree.RegistrationTree():
     rt = registrationtree.RegistrationTree()
 
     for mappingNode in StosMapNode.findall('Mapping'):
@@ -2200,12 +2221,14 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
                                                           'Name', filter_pattern,
                                                            CaseSensitive=True)
     
-    if filter_matches is None or len(filter_matches) == 0:
+    result = next(filter_matches)
+    
+    if result is None:
         Logger = logging.getLogger(__name__ + '.__GetFirstMatchingFilter')
         Logger.warning("No %s.%s filters match pattern %s" % (section_number, channel_node, filter_pattern))
         return None
                                                           
-    return filter_matches[0]
+    return result
 
 # def __MatchMappedFiltersForTransform(InputTransformNode, channelPattern=None, filterPattern=None):
 #

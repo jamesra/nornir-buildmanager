@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import nornir_imageregistration.transforms
-from nornir_buildmanager.volumemanager import XElementWrapper
-from nornir_buildmanager.volumemanager.mappingnode import MappingNode
+
+from nornir_buildmanager.volumemanager import *
 from nornir_shared import misc as misc
 
 
@@ -49,10 +51,10 @@ class StosMapNode(XElementWrapper):
             self.attrib['CenterSection'] = str(val)
 
     @property
-    def Mappings(self) -> [MappingNode]:
-        return list(self.findall('Mapping'))
+    def Mappings(self) -> Generator[MappingNode]:
+        return self.findall('Mapping')
 
-    def MappedToControls(self) -> {int: [int]}:
+    def MappedToControls(self) -> {int: dict[int, list[int]]}:
         """Return dictionary of possible control sections for a given mapped section number"""
         MappedToControlCandidateList = {}
         for mappingNode in self.Mappings:
@@ -64,20 +66,35 @@ class StosMapNode(XElementWrapper):
 
         return MappedToControlCandidateList
 
-    def GetMappingsForControl(self, Control) -> [MappingNode]:
-        mappings = self.findall("Mapping[@Control='" + str(Control) + "']")
-        if mappings is None:
-            return []
+    def GetMappingsForControl(self, Control: int) -> Generator[MappingNode]:
+        return self.findall("Mapping[@Control='" + str(Control) + "']")
 
-        return list(mappings)
+    def ClearMissingSections(self, existing_section_numbers: Iterable[int]):
+        """Remove any control sections that are not in the list of known sections"""
+        good_set = frozenset(existing_section_numbers)
+        missing_controls = filter(lambda m: m.Control not in existing_section_numbers, self.Mappings)
 
-    def ClearBannedControlMappings(self, NonStosSectionNumbers):
+        missing_section_numbers = frozenset([mc.Control for mc in missing_controls])
+        for control_mapping in missing_controls:
+            self.remove(control_mapping)
+
+        missing_mappings = filter(lambda m: m.Mapped & missing_section_numbers, self.Mappings)
+        found_missing_mappings = False
+        for missing_mapping in missing_mappings:
+            for missing_section in missing_mapping.Mapped & missing_section_numbers:
+                missing_mapping.RemoveMapping(missing_section)
+                found_missing_mappings = True
+
+        return missing_section_numbers or found_missing_mappings
+
+
+    def ClearBannedControlMappings(self, numbers_to_remove: Iterable[int]):
         """Remove any control sections from a mapping which cannot be a control"""
 
         removed = False
-        for InvalidControlSection in NonStosSectionNumbers:
-            mapNodes = self.GetMappingsForControl(InvalidControlSection)
-            for mapNode in mapNodes:
+        for invalid_section_number in numbers_to_remove:
+            map_nodes = self.GetMappingsForControl(invalid_section_number)
+            for mapNode in map_nodes:
                 removed = True
                 self.remove(mapNode)
 
@@ -118,10 +135,10 @@ class StosMapNode(XElementWrapper):
                 child_mapping.AddMapping(val)
         return
 
-    def RemoveMapping(self, Control, Mapped):
+    def RemoveMapping(self, Control: int, Mapped: int | None = None):
         """Remove a mapping
         :param int Control: Control section number
-        :param int Mapped: Mapped section number
+        :param int Mapped: Mapped section number, if none, all mappings are removed
 
         :return: True if mapped section is found and removed
         """
@@ -131,26 +148,29 @@ class StosMapNode(XElementWrapper):
 
         childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
         if childMapping is not None:
-            if Mapped in childMapping.Mapped:
-                childMapping.RemoveMapping(Mapped)
+            if Mapped is not None:
+                if Mapped in childMapping.Mapped:
+                    childMapping.RemoveMapping(Mapped)
 
-                if len(childMapping.Mapped) == 0:
-                    self.remove(childMapping)
+                    if len(childMapping.Mapped) == 0:
+                        self.remove(childMapping)
 
+                    return True
+            else:
+                self.remove(childMapping)
                 return True
 
         return False
 
-    def FindAllControlsForMapped(self, MappedSection):
+    def FindAllControlsForMapped(self, MappedSection: int) -> Iterable[MappingNode]:
         """Given a section to be mapped, return the first control section found"""
-        for m in self.findall('Mapping'):
-
+        for m in self.Mappings:
             if MappedSection in m.Mapped:
                 yield m.Control
 
         return
 
-    def RemoveDuplicateControlEntries(self, Control):
+    def RemoveDuplicateControlEntries(self, Control: int):
         """If there are two entries with the same control number we merge the mapping list and delete the duplicate"""
 
         mappings = list(self.GetMappingsForControl(Control))
@@ -169,7 +189,7 @@ class StosMapNode(XElementWrapper):
         return True
 
     @property
-    def NeedsValidation(self):
+    def NeedsValidation(self) -> bool:
         return True  # Checking the mapping is easier than checking if volumedata.xml has changed
 
     def IsValid(self) -> (bool, str):
@@ -203,7 +223,7 @@ class StosMapNode(XElementWrapper):
                 XElementWrapper.logger.warning('Mappings for control section ' + str(
                     mapping_node.Control) + ' removed due to existence in NonStosSectionNumbers element')
             else:
-                mapped_sections = mapping_node.Mapped
+                mapped_sections = list(mapping_node.Mapped)
                 for isection in range(len(mapped_sections) - 1, -1, -1):
                     mapped_section = mapped_sections[isection]
                     if mapped_section in AlreadyMappedSections and not self.AllowDuplicates:
@@ -223,6 +243,6 @@ class StosMapNode(XElementWrapper):
         return super(StosMapNode, self).IsValid()
 
     @classmethod
-    def Create(cls, Name, attrib=None, **extra):
+    def Create(cls, Name, attrib=None, **extra) -> StosMapNode:
         obj = StosMapNode(tag='StosMap', Name=Name, attrib=attrib, **extra)
         return obj

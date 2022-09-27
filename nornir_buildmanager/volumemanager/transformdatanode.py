@@ -12,7 +12,7 @@ class TransformDataNode(InputTransformHandler, XFileElementWrapper):
     """
 
     @classmethod
-    def Create(cls, Path: str, attrib: dict = None, **extra):
+    def Create(cls, Path: str, attrib: dict = None, **extra) -> TransformDataNode:
         return cls(tag='TransformData', Path=Path, attrib=attrib, **extra)
 
     def IsValid(self) -> (bool, str):

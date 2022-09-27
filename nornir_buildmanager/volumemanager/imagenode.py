@@ -17,7 +17,7 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
         super(ImageNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, Path: str, attrib=None, **extra):
+    def Create(cls, Path: str, attrib=None, **extra) -> ImageNode:
         return ImageNode(tag='Image', Path=Path, attrib=attrib, **extra)
 
     def IsValid(self) -> (bool, str):

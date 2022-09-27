@@ -33,9 +33,9 @@ class ChannelNode(XNamedContainerElementWrapped):
     def GetTransform(self, transform_name) -> TransformNode | None:
         return self.GetChildByAttrib('Transform', 'Name', transform_name)
 
-    def RemoveFilterOnContrastMismatch(self, FilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+    def RemoveFilterOnContrastMismatch(self, FilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma) -> bool:
         """
-        Return: true if filter found and removed
+        :return: true if filter found and removed
         """
 
         filter_node = self.GetFilter(Filter=FilterName)
@@ -53,9 +53,9 @@ class ChannelNode(XNamedContainerElementWrapped):
 
         return False
 
-    def RemoveFilterOnBppMismatch(self, FilterName, expected_bpp):
+    def RemoveFilterOnBppMismatch(self, FilterName, expected_bpp) -> bool:
         """
-        Return: true if filter found and removed
+        "return: true if filter found and removed
         """
 
         filter_node = self.GetFilter(Filter=FilterName)
@@ -76,17 +76,17 @@ class ChannelNode(XNamedContainerElementWrapped):
         return False
 
     @property
-    def Scale(self):
+    def Scale(self) -> Scale:
         if hasattr(self, '_scale') is False:
             scaleNode = self.find('Scale')
             self._scale = Scale.Create(scaleNode) if scaleNode is not None else None
 
         return self._scale
 
-    def GetScale(self):
+    def GetScale(self) -> Scale:
         return self.Scale
 
-    def SetScale(self, scaleValueInNm):
+    def SetScale(self, scaleValueInNm: float):
         """Create a scale node for the channel
         :return: ScaleNode object that was created"""
         # TODO: Scale should be its own object and a property
@@ -125,5 +125,5 @@ class ChannelNode(XNamedContainerElementWrapped):
         return "Channel: %s Section: %d" % (self.Name, self.Parent.Number)
 
     @classmethod
-    def Create(cls, Name, Path=None, **extra):
+    def Create(cls, Name, Path=None, **extra) -> ChannelNode:
         return super(ChannelNode, cls).Create(tag='Channel', Name=Name, Path=Path, **extra)

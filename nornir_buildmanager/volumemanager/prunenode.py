@@ -56,7 +56,7 @@ class PruneNode(HistogramBase):
         super(PruneNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, Type: str, Overlap: float, attrib=None, **extra):
+    def Create(cls, Type: str, Overlap: float, attrib=None, **extra) -> PruneNode:
 
         obj = cls(attrib=attrib, **extra)
         obj.attrib['Type'] = Type

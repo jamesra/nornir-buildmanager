@@ -26,8 +26,7 @@ if __name__ == '__main__':
                         "scipy>=0.13.2",
                         "matplotlib",
                         "psutil",
-                        "validators",
-                        "psutil"]
+                        "validators"]
 
     packages = find_packages()
 

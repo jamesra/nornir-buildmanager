@@ -6,7 +6,6 @@ from nornir_shared import misc as misc
 
 class MappingNode(XElementWrapper):
 
-
     @property
     def SortKey(self):
         """The default key used for sorting elements"""
@@ -20,26 +19,32 @@ class MappingNode(XElementWrapper):
         return None
 
     @property
-    def Mapped(self) -> int:
+    def Mapped(self) -> frozenset[int]:
         if self._mapped_cache is None:
-            mappedList = misc.ListFromAttribute(self.attrib.get('Mapped', []))
-            mappedList.sort()
-            self._mapped_cache = mappedList
+            mapped_list = misc.ListFromAttribute(self.attrib.get('Mapped', []))
+            self._mapped_cache = frozenset(mapped_list)
 
         return self._mapped_cache
 
     @Mapped.setter
-    def Mapped(self, value):
-        AdjacentSectionString = ''
+    def Mapped(self, value: frozenset[int] | int):
+        AdjacentSectionString = None
         if isinstance(value, list):
             value.sort()
             AdjacentSectionString = ','.join(str(x) for x in value)
-        else:
-            assert (isinstance(value, int))
+            self._mapped_cache = frozenset(value)
+        elif isinstance(value, int):
             AdjacentSectionString = str(value)
+            self._mapped_cache = frozenset([value])
+        elif value is None:
+            if 'Mapped' in self.attrib:
+                del self.attrib['Mapped']
+                self._mapped_cache = None
+            return
+        else:
+            raise ValueError(f"Unexpected type passed to Mapped {value}")
 
         self.attrib['Mapped'] = AdjacentSectionString
-        self._mapped_cache = None
 
     def AddMapping(self, value: int):
         intval = int(value)
@@ -58,12 +63,12 @@ class MappingNode(XElementWrapper):
             return
 
         updated_map.remove(intval)
-        self.Mappings = updated_map
+        self.Mapped = updated_map
         # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def __str__(self):
         self._mapped_cache = None
-        return "%d <- %s" % (self.Control, str(self.Mapped))
+        return f"{self.Control} <- {', '.join([str(m) for m in self.Mapped])}"
 
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
@@ -71,11 +76,10 @@ class MappingNode(XElementWrapper):
         
         super(MappingNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
-        self.Mappings = None
         self._mapped_cache = None
 
     @classmethod
-    def Create(cls, ControlNumber, MappedNumbers, attrib=None, **extra):
+    def Create(cls, ControlNumber, MappedNumbers, attrib=None, **extra) -> MappingNode:
         obj = MappingNode(tag='Mapping', attrib=attrib, **extra)
 
         obj.attrib['Control'] = str(ControlNumber)
