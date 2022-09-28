@@ -808,7 +808,8 @@
                 </PythonCall>
                 
                 <PythonCall Function="diagnostics.PlotMosaicOverlaps"
-                    TransformNode="#TransformNode" OutputFilename="Layout"
+                    ChannelNode="#ChannelNode"
+                    Transform="Translated_#InputTransformName" OutputFilename="Layout_Translated_#InputTransformName"
                     Filter="#FilterNode"
                     Downsample="#Downsample"
                     exclude_diagonal_overlaps="#exclude_diagonal_overlaps"
@@ -986,7 +987,8 @@
                 <!-- ir-translate, calculate translation for each tile into the greater 
                     mosaic -->
                 <PythonCall Function="diagnostics.PlotMosaicOverlaps"
-                    TransformNode="#TransformNode" OutputFilename="#OutputFilename"
+                    ChannelNode="#ChannelNode"
+                    Transform="#TransformNode" OutputFilename="#OutputFilename"
                     Filter="#InputFilterName"  
                     Downsample="#Downsample"
                     exclude_diagonal_overlaps="#exclude_diagonal_overlaps"

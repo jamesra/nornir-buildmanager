@@ -198,12 +198,24 @@ def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
     return None
 
 
-def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, Filter=None, ShowFeatureScores=False, **kwargs):
+def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, Filter=None, ShowFeatureScores=False,label_overlaps=False, **kwargs):
     '''
     Plot the tile overlaps of a layout
     '''
-    
-    ChannelNode = TransformNode.FindParent('Channel')
+    TransformNode = None
+    try:
+        if isinstance(Transform, str):
+            TransformNode = ChannelNode.GetTransform(transform_name=Transform)
+            if TransformNode is None:
+                raise ValueError(f"Could not locate transform {Transform} in {ChannelNode.FullPath}")
+        elif isinstance(Transform, nornir_buildmanager.VolumeManagerETree.TransformNode):
+            TransformNode = Transform
+        else:
+            raise ValueError(f"Unexpected Transform parameter: {Transform}.")
+    except:
+        nornir_shared.prettyoutput.LogErr(f"Unable to locate Transform {TransformNode}")
+        raise 
+     
     mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
     
     LevelNode = None
@@ -253,7 +265,8 @@ def PlotMosaicOverlaps(TransformNode, OutputFilename, Downsample=None, Filter=No
         
     nornir_imageregistration.views.plot_tile_overlaps(new_overlaps,
                                                       colors=None,
-                                                      OutputFilename=OutputFullPath)
+                                                      OutputFilename=OutputFullPath,
+                                                      label_overlaps=label_overlaps)
     
     if node_added:
         return ChannelNode
