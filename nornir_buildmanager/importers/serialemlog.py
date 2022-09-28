@@ -761,7 +761,7 @@ class SerialEMLog(object):
             if entry_parts[1] == '=':
                 ValueStr = entry_parts[2]  # example 1.57 nm/sec
                 ValueStr = ValueStr.strip()
-                Value = ValueStr;
+                Value = ValueStr
                 try:
                         
                     # (Value, Units) = ValueStr.split()

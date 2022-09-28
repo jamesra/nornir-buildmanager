@@ -4,14 +4,11 @@ Created on May 17, 2018
 @author: u0490822
 '''
 
-
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.operations.block import *
 from nornir_imageregistration.transforms import registrationtree
-from nornir_buildmanager import VolumeManagerETree, VolumeManagerHelpers
 
-from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
-    CopySetupTestBase, EmptyVolumeTestBase
-
+from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry
 
 import test.pipeline.test_sectionimage as test_sectionimage
 
@@ -44,7 +41,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
     def VolumePath(self):
         return "SectionToSectionMappingTest"
 
-    def _GetResetBlockNode(self):
+    def _GetResetBlockNode(self) -> nornir_buildmanager.volumemanager.blocknode.BlockNode:
         VolumeObj = self.LoadOrCreateVolume()
         BlockNode = VolumeObj.find("Block")
         self.assertIsNotNone(BlockNode)
@@ -53,7 +50,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
     def SetNonStosSectionList(self, BlockNode, NonStosNumberList, **kwargs):
 
-        StosExemptNode = VolumeManagerETree.XElementWrapper(tag='NonStosSectionNumbers')
+        StosExemptNode = nornir_buildmanager.volumemanager.xelementwrapper.XElementWrapper(tag='NonStosSectionNumbers')
         (added, StosExemptNode) = BlockNode.UpdateOrAddChild(StosExemptNode)
 
         # Fetch the list of the exempt nodes from the element text
@@ -125,7 +122,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
     
     def CheckMappings(self, StosMapNode, controlNumber, expectedMappings):
-        controlMappings = StosMapNode.GetMappingsForControl(controlNumber)
+        controlMappings = list(StosMapNode.GetMappingsForControl(controlNumber))
         self.assertTrue(len(controlMappings) == 1, "Unexpected number of mappings for control section %d" % controlNumber)
         mapped = frozenset(controlMappings[0].Mapped)
         self.assertTrue(len(mapped) == len(expectedMappings))
@@ -202,39 +199,45 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         print("Remove section 7")
         omitSectionNode = BlockNode.GetSection(7)
         self.assertIsNotNone(omitSectionNode)
-        BlockNode.remove(omitSectionNode)
+        try:
+            BlockNode.remove(omitSectionNode)
 
-        GoodSections = [2, 3, 4, 6, 8, 9]
-        BadSections = [1, 5, 10]
+            GoodSections = [2, 3, 4, 6, 8, 9]
+            BadSections = [1, 5, 10]
 
-        self.SetNonStosSectionList(BlockNode, [1, 5, 10])
+            self.SetNonStosSectionList(BlockNode, [1, 5, 10])
 
-        OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(BlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger)
-        self.assertIsNotNone(OutputBlockNode)
+            OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(BlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger)
+            self.assertIsNotNone(OutputBlockNode)
 
-        if center not in GoodSections:
-            center = registrationtree.NearestSection(GoodSections, center)
+            if center not in GoodSections:
+                center = registrationtree.NearestSection(GoodSections, center)
 
-        # OK, add the section back and make sure it is included in the updated stos map
+            # OK, add the section back and make sure it is included in the updated stos map
 
-        print("Add section 7")
-        OutputBlockNode.append(omitSectionNode)
-        GoodSections = [2, 3, 4, 6, 7, 8, 9]
-        BadSections = [1, 5, 10]
+            print("Add section 7")
+            OutputBlockNode.append(omitSectionNode)
+            GoodSections = [2, 3, 4, 6, 7, 8, 9]
+            BadSections = [1, 5, 10]
 
-        expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
+            expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
 
-        # We expect extra mappings for section 8 since section 7 did not exxist in the original
-        if(adjacentThreshold == 1):
-            expectedRT.AddPair(6, 8)
-        elif(adjacentThreshold == 2):
-            expectedRT.AddPair(4, 8)
-            expectedRT.AddPair(6, 9)
-        else:
-            self.fail("Test not tweaked for adjacentThreshold > 2")
+            # We expect extra mappings for section 8 since section 7 did not exxist in the original
+            if(adjacentThreshold == 1):
+                expectedRT.AddPair(6, 8)
+            elif(adjacentThreshold == 2):
+                expectedRT.AddPair(4, 8)
+                expectedRT.AddPair(6, 9)
+            else:
+                self.fail("Test not tweaked for adjacentThreshold > 2")
 
-        OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(OutputBlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger, expectedRT)
-        self.assertIsNotNone(OutputBlockNode)
+            OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(OutputBlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger, expectedRT)
+            self.assertIsNotNone(OutputBlockNode)
+        finally:
+            for map in BlockNode.StosMaps:
+                BlockNode.remove(map)
+
+            BlockNode.Save() #Ensure removed section has been saved for future passes through the test
 
         print("Done!")
 
@@ -250,7 +253,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
         # Add some extra stosmap nodes and make sure they get cleaned up
 
-        ExtraMapNode = VolumeManagerETree.MappingNode.Create(4, 10)
+        ExtraMapNode = nornir_buildmanager.volumemanager.mappingnode.MappingNode.Create(4, 10)
         StosMapNode.append(ExtraMapNode)
 
         removed = StosMapNode.RemoveDuplicateControlEntries(3)
@@ -259,7 +262,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         removed = StosMapNode.RemoveDuplicateControlEntries(4)
         self.assertTrue(removed, "Duplicate should be removed and return true")
 
-        listMapFour = StosMapNode.GetMappingsForControl(4)
+        listMapFour = list(StosMapNode.GetMappingsForControl(4))
         self.assertEqual(len(listMapFour), 1, "Duplicate StosMap was not removed")
 
         expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)

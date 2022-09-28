@@ -5,31 +5,21 @@ Created on Apr 9, 2019
 '''
 
 import sys
-import re
+
 import struct
 import enum
-import pickle as pickle
-import nornir_buildmanager.templates
-from nornir_buildmanager.VolumeManagerETree import *
-from nornir_buildmanager.operations.tile import VerifyTiles
-import nornir_buildmanager.importers
-from nornir_imageregistration.files import mosaicfile
-from nornir_imageregistration.mosaic import Mosaic
-from nornir_imageregistration import image_stats
+import nornir_imageregistration
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import *
 from nornir_shared.images import *
 import nornir_shared.files as files
 from nornir_shared.histogram import *
-from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
-import nornir_shared.plot as plot
 import logging
-import collections
 import nornir_pools
 import numpy
-import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
-from pyglet.resource import file
 from . import GetFileNameForTileNumber
 
 
@@ -281,7 +271,7 @@ class MRCFile(object):
     @staticmethod
     def IsBigEndian(Header):
         '''Returns true if the mrc header indicates the file is big endian'''
-        (EndianStamp,) = struct.unpack('I', Header[0xD4:0xD8]);
+        (EndianStamp,) = struct.unpack('I', Header[0xD4:0xD8])
         if (EndianStamp == 17):
             return True
         elif(EndianStamp == 68):
@@ -294,10 +284,10 @@ class MRCFile(object):
     def Load(cls, filename):
         '''Read the header of an MRC file from disk and return an object for access'''
          
-        mrc = open(filename, 'rb');
-        
+        mrc = open(filename, 'rb')
+
         # The mrc file header is always 1024, mostly empty space
-        Header = mrc.read(cls.HeaderLength);
+        Header = mrc.read(cls.HeaderLength)
         IsBigEndian = cls.IsBigEndian(Header)
         obj = MRCFile(mrc, IsBigEndian)
           
@@ -449,8 +439,8 @@ class MRCFile(object):
         image_byte_length = self.image_length_in_bytes
         image_bytes = self.mrc.read(image_byte_length)
         while len(image_bytes) < image_byte_length:
-            image_bytes = image_bytes + self.mrc.read(image_byte_length - len(image_bytes));
-        
+            image_bytes = image_bytes + self.mrc.read(image_byte_length - len(image_bytes))
+
         return image_bytes
     
     def _repair_out_of_bounds_pixels(self, iTile, camera_bpp):
@@ -475,7 +465,7 @@ class MRCFile(object):
     def set_pixels(self, iTile, iPixels, new_values, old_values=None):
         '''
         :param int iTile: Index of tile to update
-        :param list iPixles: Indicies of pixels to update
+        :param list iPixels: Indicies of pixels to update
         :param bytes new_values: Values to set on the new pixels, must match length of iPixels * self.bytes_per_pixel
         :param bytes old_values: The current values at the pixels to be corrected.  Function will raise an exception if the expected value doesn't match.  Useful in debugging and development to ensure the correct pixels are being updated 
         '''
@@ -521,8 +511,8 @@ class MRCFile(object):
         mrc.seek(MRCFile.HeaderLength + (iTile * self.tile_header_size))
         TileHeader = mrc.read(self.tile_header_size) 
         while len(TileHeader) < self.tile_header_size:
-            TileHeader = TileHeader + mrc.read(self.tile_header_size - len(TileHeader));
-        
+            TileHeader = TileHeader + mrc.read(self.tile_header_size - len(TileHeader))
+
         return MRCTileHeader.Load(iTile, TileHeader,
                                   tile_flags=self.tile_header_flags,
                                   nm_per_pixel=self.pixel_spacing[0:2],
@@ -587,9 +577,11 @@ class MRCTileHeader(object):
     @staticmethod
     def Load(tile_id, header, tile_flags, nm_per_pixel, big_endian=False):
         '''
+        :param tile_flags:
+        :param nm_per_pixel:
+        :param big_endian:
         :param tile_id: Arbitrary name for the tile we will load
         :param header: MRC File header
-        :param int tile_number: Tile Number to read header for
         '''
         obj = MRCTileHeader(tile_id, nm_per_pixel)
         offset = 0

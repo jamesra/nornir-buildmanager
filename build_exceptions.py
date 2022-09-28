@@ -5,8 +5,11 @@ Created on Jan 9, 2019
 '''
 
 import os
+from xml.etree import ElementTree
+from nornir_buildmanager.pipeline_exceptions import PipelineError
 
-class Build(Exception):
+
+class Build(PipelineError):
     '''An expected node did not exist'''
 
 
@@ -31,7 +34,7 @@ class Build(Exception):
         if not self.PipelineNode is None:
             s.append("Pipeline Element: " + ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
         if not self.VolumeElem is None:
-            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
+            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n')
         return s
 
     def ErrorList(self):

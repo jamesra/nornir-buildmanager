@@ -13,7 +13,8 @@ class FilenameInfo(object):
 
     def __init__(self, **kwargs):
         if not kwargs is None:
-            self.__dict__.update(kwargs);
+            self.__dict__.update(kwargs)
+
 
 class mapping():
 
@@ -64,36 +65,35 @@ def __NumRequriedArgsForMapping(mappingList):
     return NumRequiredArgs
 
 def ParseFilename(filePath, mappinglist):
-
- #   Logger = logging.getLogger("Parse filename");
-
-    fileBase = os.path.basename(filePath);
-
+    
+    #   Logger = logging.getLogger("Parse filename");
+    
+    fileBase = os.path.basename(filePath)
+    
     # Make sure there are no spaces in the filename
-
-    (fileName, ext) = os.path.splitext(fileBase);
-
-    parts = fileName.split("_");
-
-    Output = FilenameInfo();
-
+    
+    (fileName, ext) = os.path.splitext(fileBase)
+    
+    parts = fileName.split("_")
+    Output = FilenameInfo()
+    
     if len(parts) < __NumRequriedArgsForMapping(mappinglist):
         print(__MappingUsageString(mappinglist))
-        raise Exception("Insufficient arguments in filename " + fileName);
+        raise Exception("Insufficient arguments in filename " + fileName)
     elif len(parts) > len(mappinglist) + 1:
         print(__MappingUsageString(mappinglist))
-        raise Exception("Too many underscores in filename " + fileName);
+        raise Exception("Too many underscores in filename " + fileName)
 
     for mappingObj in mappinglist:
         try:
             value = parts[0]
             mapfunc = mappingObj.typefunc
-            convValueList = list(map(mapfunc, [value]));
-
-            ConvValue = convValueList[0];
-
-            setattr(Output, mappingObj.attribute, ConvValue);
-
+            convValueList = list(map(mapfunc, [value]))
+            
+            ConvValue = convValueList[0]
+            
+            setattr(Output, mappingObj.attribute, ConvValue)
+            
             del parts[0]
         except:
             if not hasattr(mappingObj, 'default'):
@@ -103,7 +103,7 @@ def ParseFilename(filePath, mappinglist):
                 defaultVal = mappingObj.default
                 if callable(mappingObj.default):
                     defaultVal = defaultVal()
-
+        
                 setattr(Output, mappingObj.attribute, defaultVal)
-
+    
     return Output

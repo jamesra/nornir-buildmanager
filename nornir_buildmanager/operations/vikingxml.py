@@ -8,7 +8,7 @@ import copy
 import functools
 import os
 
-import nornir_buildmanager.VolumeManagerETree
+import nornir_buildmanager.volumemanager
 from nornir_imageregistration.files import *
 from nornir_shared.files import RecurseSubdirectoriesGenerator
 import nornir_shared.prettyoutput as prettyoutput
@@ -23,7 +23,7 @@ def CreateXMLIndex(path, server=None):
 
     for directory in VolumeXMLDirs:
 
-        InputVolumeNode = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(directory, Create=False)
+        InputVolumeNode = nornir_buildmanager.volumemanager.VolumeManager.Load(directory, Create=False)
         if not InputVolumeNode is None:
             CreateVikingXML(VolumeNode=InputVolumeNode)
 
@@ -259,7 +259,7 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
         
         OutputVolumeNode.append(OutputSectionNode)
 
-    AllSectionNodes = OutputVolumeNode.findall('Section')
+    AllSectionNodes = list(OutputVolumeNode.findall('Section'))
     OutputVolumeNode.attrib['num_sections'] = str(len(AllSectionNodes))
     
 def ParseSection(BlockPath, SectionNode):
@@ -301,8 +301,7 @@ def ParseChannels(SectionNode, OutputSectionNode):
                     AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
                 print("Tileset found for section " + str(SectionNode.attrib["Number"]))    
 
-        NotesNodes = ChannelNode.findall('Notes')
-        for NoteNode in NotesNodes:
+        for NoteNode in ChannelNode.findall('Notes'):
             # Copy over Notes elements verbatim
             OutputNotesNode = ETree.SubElement(OutputSectionNode, 'Notes')
             OutputNotesNode.text = NoteNode.text

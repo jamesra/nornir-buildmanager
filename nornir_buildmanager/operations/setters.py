@@ -7,13 +7,14 @@ Created on Feb 25, 2014
 import logging
 import math
 import nornir_buildmanager
+import nornir_buildmanager.volumemanager
 import nornir_shared.prettyoutput
 
 
 def SetFilterLock(Node, Locked):
     LockChanged = False
     ParentFilter = Node 
-    if not isinstance(Node, nornir_buildmanager.VolumeManager.FilterNode):
+    if not isinstance(Node, nornir_buildmanager.volumemanager.FilterNode):
         ParentFilter = Node.FindParent('Filter')
     
     if not ParentFilter is None:

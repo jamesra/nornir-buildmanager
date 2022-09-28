@@ -5,7 +5,6 @@ import shutil
 import tempfile
 import unittest
 
-from nornir_buildmanager.VolumeManagerETree import *
 import nornir_shared.files
 import nornir_shared.misc
 from test.pipeline.setup_pipeline import *

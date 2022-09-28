@@ -22,17 +22,17 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
         return "PMG"
 
     def LoadMetaData(self):
-        self.ChannelNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel");
-        self.assertIsNotNone(self.ChannelNode);
+        self.ChannelNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel")
+        self.assertIsNotNone(self.ChannelNode)
 
-        self.FilterNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel/Filter");
-        self.assertIsNotNone(self.FilterNode);
+        self.FilterNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel/Filter")
+        self.assertIsNotNone(self.FilterNode)
 
         self.TilePyramidNode = self.FilterNode.find("TilePyramid")
-        self.assertIsNotNone(self.TilePyramidNode);
+        self.assertIsNotNone(self.TilePyramidNode)
 
         self.LevelNode = self.TilePyramidNode.GetChildByAttrib('Level', 'Downsample', 1)
-        self.assertIsNotNone(self.LevelNode);
+        self.assertIsNotNone(self.LevelNode)
 
         self.StageTransformNode = self.ChannelNode.GetChildByAttrib('Transform', 'Name', 'Stage')
         self.assertIsNotNone(self.StageTransformNode)
@@ -46,28 +46,28 @@ class PruneTest(test.pipeline.setup_pipeline.ImportOnlySetup):
         # pruneObj = filterObj.find("Prune");
         self.LoadMetaData()
 
-        PruneFileFullPath = os.path.join(self.FilterNode.FullPath, 'PruneData.txt');
+        PruneFileFullPath = os.path.join(self.FilterNode.FullPath, 'PruneData.txt')
 
         # Call calculate prune scores
         OutputFilterNode = PruneObj.CalculatePruneScores({}, self.FilterNode, 2, self.StageTransformNode, OutputFile='PruneData', Logger=self.Logger)
-        self.assertIsNotNone(OutputFilterNode);
+        self.assertIsNotNone(OutputFilterNode)
 
-        PruneNode = OutputFilterNode.find('Prune');
-        self.assertIsNotNone(PruneNode);
+        PruneNode = OutputFilterNode.find('Prune')
+        self.assertIsNotNone(PruneNode)
 
-        PruneDataNode = PruneNode.find('Data');
-        self.assertIsNotNone(PruneDataNode);
-        self.assertTrue(os.path.exists(PruneDataNode.FullPath));
+        PruneDataNode = PruneNode.find('Data')
+        self.assertIsNotNone(PruneDataNode)
+        self.assertTrue(os.path.exists(PruneDataNode.FullPath))
 
-        pruneObj = PruneObj.ReadPruneMap(PruneDataNode.FullPath);
-        self.assertIsNotNone(pruneObj);
+        pruneObj = PruneObj.ReadPruneMap(PruneDataNode.FullPath)
+        self.assertIsNotNone(pruneObj)
 
         # Make sure we have an entry for every tile
-        self.assertEqual(len(pruneObj.MapImageToScore), self.TilePyramidNode.NumberOfTiles);
+        self.assertEqual(len(pruneObj.MapImageToScore), self.TilePyramidNode.NumberOfTiles)
 
         # Call again and make sure it does not regenerate the output
         OutputFilterNode = PruneObj.CalculatePruneScores({}, self.FilterNode, 2, self.StageTransformNode, OutputFile=PruneFileFullPath, Logger=self.Logger)
-        self.assertIsNone(OutputFilterNode);
+        self.assertIsNone(OutputFilterNode)
 
         # OK, try to see what .mosaic we get with the prune scores
         (TransformParent, PruneParent) = PruneObj.PruneMosaic({}, PruneNode=PruneNode, TransformNode=self.StageTransformNode, OutputTransformName='Prune', Logger=self.Logger)

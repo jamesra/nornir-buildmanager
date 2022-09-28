@@ -6,9 +6,7 @@ Created on Apr 15, 2013
 import glob
 import os
 import unittest
-
-import nornir_buildmanager.VolumeManagerETree
-
+  
 import nornir_buildmanager.importers.sectionimage as sectionimage
 from .setup_pipeline import VolumeEntry
 from . import setup_pipeline

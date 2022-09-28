@@ -7,7 +7,6 @@ Converts XML argparser definitions from pipelines and importers into argparsers.
 import argparse
 import copy
 import logging
-import re
 
 from nornir_shared.argparse_helpers import *
 import nornir_shared.misc
@@ -57,7 +56,7 @@ def _AddArgumentNodeToParser(parser, argNode):
                 logger = logging.getLogger(__name__ + "._AddArgumentNodeToParser")
                 logger.error('Type not found in __builtins__ or module __dict__' + val)
                 prettyoutput.LogErr('Type not found in __builtins__ or module __dict__ ' + val)
-                raise Exception(message="%s type specified by argument node is not present in __builtins__ or module dictionary.  Must use a standard python type." % val)
+                raise Exception(f"{val} type specified by argument node is not present in __builtins__ or module dictionary.  Must use a standard python type.")
                 continue
 
             attribDictCopy[key] = val
@@ -68,7 +67,9 @@ def _AddArgumentNodeToParser(parser, argNode):
         elif key == 'choices':
             listOfChoices = nornir_shared.misc.ListFromDelimited(val)
             if len(listOfChoices) < 2:
-                raise Exception(message="Flag %s does not specify multiple choices.  Must use a comma delimited list to provide multiple choice options.\nCurrent choice string is: %s" % (attribDictCopy['flag'], val))
+                raise Exception(f"Flag {attribDictCopy['flag']} does not specify multiple choices.  Must use "
+                                        f"a comma delimited list to provide multiple choice options.\nCurrent choice "
+                                        f"string is: {val}")
 
             attribDictCopy[key] = listOfChoices
 

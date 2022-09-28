@@ -10,7 +10,11 @@ import shutil
 import tempfile
 import unittest
 
-from nornir_buildmanager.VolumeManagerETree import *
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import *
+
+import nornir_buildmanager.volumemanager.datanode
+import nornir_buildmanager.volumemanager.imagenode
 from nornir_buildmanager.operations.tile import *
 from nornir_buildmanager.validation import transforms
 import nornir_shared.files
@@ -182,8 +186,8 @@ class HistogramFilterTest2(ImportOnlySetup):
 
         HistogramNode = OutputFilterNode.find("Histogram")
         self.assertIsNotNone(HistogramNode)
-        self.assertIsNotNone(HistogramNode.DataNode)
-        self.assertIsNotNone(HistogramNode.ImageNode)
+        self.assertIsNotNone(nornir_buildmanager.volumemanager.datanode.DataNode)
+        self.assertIsNotNone(nornir_buildmanager.volumemanager.imagenode.ImageNode)
 
         self.assertTrue(os.path.exists(HistogramNode.DataFullPath))
         self.assertTrue(os.path.exists(HistogramNode.ImageFullPath))
@@ -196,8 +200,8 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertEqual(len(SecondOutputFilterNodesList), 0, "No elements should require saving after an identical call")
 
         self.assertIsNotNone(HistogramNode)
-        self.assertIsNotNone(HistogramNode.DataNode)
-        self.assertIsNotNone(HistogramNode.ImageNode)
+        self.assertIsNotNone(nornir_buildmanager.volumemanager.datanode.DataNode)
+        self.assertIsNotNone(nornir_buildmanager.volumemanager.imagenode.ImageNode)
 
 
 class BuildTilePyramidTest(PrepareSetup):

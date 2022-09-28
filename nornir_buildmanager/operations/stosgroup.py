@@ -9,7 +9,7 @@ Operations to manipulate or report on the volume.
 import os
 import shutil
 
-from nornir_buildmanager import VolumeManagerETree
+import nornir_buildmanager.volumemanager
 import nornir_imageregistration
 from nornir_imageregistration.files import stosfile
 
@@ -18,34 +18,37 @@ def CreateStosGroup(GroupName, BlockNode, Downsample, **kwargs):
     (created, stos_group) = BlockNode.GetOrCreateStosGroup(GroupName, Downsample)
     if created:
         print("Created stos group {0} with transforms downsampled by {1}".format(GroupName, str(Downsample)))
-        return BlockNode;
+        return BlockNode
     else:
-        print("Stos group {0} already exists".format(GroupName));
-        return None;
+        print("Stos group {0} already exists".format(GroupName))
+        return None
+
 
 def RemoveStosGroup(GroupName, BlockNode, Downsample, **kwargs):
     removed = BlockNode.RemoveStosGroup(GroupName, Downsample)
     if removed:
         print("Removed Stos group {0} with transforms downsampled by {1}".format(GroupName, str(Downsample)))
-        return BlockNode;
+        return BlockNode
     else:
-        print("Stos group {0} did not exist".format(GroupName));
-        return None;
-    
+        print("Stos group {0} did not exist".format(GroupName))
+        return None
+
+
 def ListStosGroups(BlockNode, **kwargs):
     
-    print("Slice-to-Slice Transform Groups");
-    print("");
+    print("Slice-to-Slice Transform Groups")
+    print("")
     sortedGroups = sorted(BlockNode.StosGroups, key=lambda sg: sg.Name)
     
     for group in sortedGroups:
-        print(group.SummaryString);
-    print("");
-    
+        print(group.SummaryString)
+    print("")
+
+
 def ListGroupSectionMappings(BlockNode, GroupName, Downsample, **kwargs):
     
-    print("Slice-to-Slice Transform Groups");
-    print("");
+    print("Slice-to-Slice Transform Groups")
+    print("")
     StosGroup = BlockNode.GetStosGroup(GroupName, Downsample)
     if StosGroup is None:
         print("No stos group found with name {0}".format(GroupName))
@@ -67,6 +70,10 @@ def CopyStosGroup(BlockNode, SourceGroupName, TargetGroupName, Downsample, **kwa
     @param Downsample int: The downsample level to copy
     
     Copy the transforms from one stos group to another.  If the target group does not exist it is created.
+    :param BlockNode:
+    :param SourceGroupName:
+    :param TargetGroupName:
+    :param Downsample:
     '''
     # Get or create the TargetGroup
     (created_source, SourceGroup) = BlockNode.GetOrCreateStosGroup(SourceGroupName, Downsample)
@@ -132,7 +139,7 @@ def ImportStos(InputStosFullpath, BlockNode, GroupName,
     ControlFilter = BlockNode.GetSection(ControlSectionNumber).GetChannel(ControlChannelName).GetFilter(ControlFilterName)
     MappedFilter = BlockNode.GetSection(MappedSectionNumber).GetChannel(MappedChannelName).GetFilter(MappedFilterName)
     
-    OutputFilename = VolumeManagerETree.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
+    OutputFilename = nornir_buildmanager.volumemanager.StosGroupNode.GenerateStosFilename(ControlFilter, MappedFilter)
     OutputFileFullPath = os.path.join(StosGroup.FullPath, OutputFilename)
     
     # Copy the STOS file into the StosGroup directory

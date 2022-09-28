@@ -9,7 +9,7 @@ import shutil
 import tempfile
 import unittest
 
-from nornir_buildmanager.VolumeManagerETree import *
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.validation import transforms
 import nornir_shared.files
 import nornir_shared.misc
@@ -75,14 +75,22 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             
             prechecksum = tNode.Checksum
 
+            original_stat = os.stat(tNode.FullPath)
             os.remove(tNode.FullPath)
-            self.Logger.info("Removing transform to see if it regenerates: " + tNode.FullPath)
+            self.Logger.info(f"Removing transform to see if it regenerates: {tNode.FullPath}")
 
             InputTransform = tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.InputTransform)
             self.assertIsNotNone(InputTransform)
 
             # Find a transform that depends on the transform we just deleted, if it exists
             OutputTransform = tNode.Parent.GetChildByAttrib('Transform', 'InputTransform', tNode.Name)
+
+
+            original_output_stat = None
+            output_fullpath = None
+            if OutputTransform is not None:
+                original_output_stat = os.stat(OutputTransform.FullPath)
+                output_fullpath = OutputTransform.FullPath
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
@@ -98,20 +106,35 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             # Load the meta-data from the volumedata.xml file again
             self.LoadMetaData()
 
+            if not os.path.exists(tNode.FullPath):
+                raise ValueError(f"Transform {tNode.FullPath} did not regenerate itself")
+
+            if os.stat(tNode.FullPath).st_mtime <= original_stat.st_mtime:
+                raise ValueError(f"Transform {tNode.FullPath} did not regenerate itself")
+
             # Make sure the transforms are still consistent
             self.ValidateAllTransforms(self.ChannelData)
             
-            RefreshedTransform = tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.Name)
+            RefreshedTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', tNode.Name) #  tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.Name)
             self.assertIsNotNone(RefreshedTransform)
 
             # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
             if not OutputTransform is None:
-                if prechecksum == RefreshedTransform.Checksum:
+                new_output_stat = os.stat(output_fullpath)
+                output_should_regenerate = prechecksum != RefreshedTransform.Checksum
+                if output_should_regenerate:
+                    # If the regenerated checksum is equal to the original checksum the downstream transforms should not regenerate
+
                     # Translated transform involves random numbers, so the odds of a matching checksum are low, which triggers a regeneration of grid transform
-                    self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
+                    if new_output_stat.st_mtime <= original_output_stat.st_mtime:
+                        raise ValueError(f"Transform {output_fullpath} did not regenerate itself")
+                    self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath),
+                                     OutputTransform.FullPath)
                 else:
-                    # This is for translate results, so we'll special case this
-                    self.assertTrue('translate' in RefreshedTransform.Name, "Translate should be the only transform with a different checksum after regeneration")
+                    if new_output_stat.st_mtime > original_output_stat.st_mtime:
+                        raise ValueError(f"Transform {output_fullpath} regenerated itself when the input checksum was unchanged")
+                    #The regenerated transform should be the newest, but the downstream transform should not regenerate because checksum is matched
+                    self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
 
             self.Logger.info("Transform regenerates successfully: " + tNode.FullPath)
 

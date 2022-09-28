@@ -15,7 +15,10 @@ import os
 import sys
 import time
 
-import matplotlib 
+import matplotlib
+
+import nornir_buildmanager.volumemanager.volumemanager
+
 #Nornir build must use a backend that does not allocate windows in the GUI should be used. 
 #Otherwise bugs will appear in multi-threaded environments
 if not 'DEBUG' in os.environ: 
@@ -179,7 +182,7 @@ def print_help(args):
 
 def call_recover_links(args):
     '''This function checks for missing link elements in a volume and adds them back to the volume'''
-    volumeObj = VolumeManagerETree.VolumeManager.Load(args.volumepath)
+    volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
     volumeObj.RepairMissingLinkElements(recurse=args.recurse)
     
     if args.save_restoration:
@@ -190,7 +193,7 @@ def call_recover_links(args):
         
 def call_recover_import_meta_data(args):
     '''This function checks for missing link elements in a volume and adds them back to the volume'''
-    volumeObj = VolumeManagerETree.VolumeManager.Load(args.volumepath)
+    volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
     notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)
     
     if not notesAdded:

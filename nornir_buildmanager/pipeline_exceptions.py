@@ -5,6 +5,7 @@ Created on Jan 9, 2019
 '''
 
 import os
+from typing import List, Any
 from xml.etree import ElementTree as ElementTree
  
 # from nornir_buildmanager.Data import Volumes
@@ -13,8 +14,8 @@ class PipelineError(Exception):
     '''An expected node did not exist'''
 
 
-    def __init__(self, VolumeElem=None, PipelineNode=None, message=None, **kwargs):
-        super(PipelineError, self).__init__(**kwargs)
+    def __init__(self, VolumeElem=None, PipelineNode=None, message=None, *args):
+        super(PipelineError, self).__init__(*args)
 
         self.PipelineNode = PipelineNode
         self.VolumeElem = VolumeElem
@@ -28,6 +29,7 @@ class PipelineError(Exception):
     def __ErrorFooter(self):
         return os.linesep + "*"*80 + os.linesep
 
+    @property
     def __CoreErrorList(self):
         '''return a list of error strings'''
         s = []
@@ -38,18 +40,17 @@ class PipelineError(Exception):
         return s
 
     def ErrorList(self):
-        s = []
+        s: list[str | Any] = []
         s.extend([self.__ErrorHeader])
         if not self.message is None:
             s.extend([self.message])
 
-        s.extend(self.__CoreErrorList())
+        s.extend(self.__CoreErrorList)
         s.extend([self.__ErrorFooter])
 
         return s
 
-    def __str__(self):
-
+    def __str__(self): 
         return "\n".join(self.ErrorList())
 
 
@@ -61,10 +62,10 @@ class PipelineArgumentNotFound(PipelineError):
 
         self.argname = argname
 
+    @property
     def __CoreErrorList(self):
-        s = []
-        s.append("Argument Name: " + self.argname)
-        s.extend(super(PipelineArgumentNotFound, self).__CoreErrorList())
+        s = ["Argument Name: " + self.argname]
+        s.extend(super(PipelineArgumentNotFound, self).__CoreErrorList)
         return s
 
 
@@ -76,10 +77,10 @@ class PipelineSearchRootNotFound(PipelineArgumentNotFound):
 
         self.argname = argname
 
+    @property
     def __CoreErrorList(self):
-        s = []
-        s.append("Rootname specified in nornir_buildmanager is not available: " + self.argname)
-        s.extend(super(PipelineSearchRootNotFound, self).__CoreErrorList())
+        s = ["Rootname specified in nornir_buildmanager is not available: " + self.argname]
+        s.extend(super(PipelineSearchRootNotFound, self).__CoreErrorList)
         return s
 
 
@@ -92,12 +93,10 @@ class PipelineRegExSearchFailed(PipelineError):
         self.regex = regex
         self.attribValue = attribValue
 
+    @property
     def __CoreErrorList(self):
-        s = []
-        s.append("A search has failed")
-        s.append("Regular Expression: " + self.regex)
-        s.append("Attrib value: " + self.attribValue)
-        s.extend(super(PipelineError, self).__CoreErrorList())
+        s = ["A search has failed", "Regular Expression: " + self.regex, "Attrib value: " + self.attribValue]
+        s.extend(super(PipelineError, self).__CoreErrorList)
         return s
 
 
@@ -117,16 +116,14 @@ class PipelineListIntersectionFailed(PipelineError):
 
     @classmethod
     def GenErrorMessage(cls, list_of_valid, value):
-        s = []
-        s.append("Value was not in list")
-        s.append("  List: " + str(list_of_valid))
-        s.append("  Value: " + str(value))
+        s = ["Value was not in list", "  List: " + str(list_of_valid), "  Value: " + str(value)]
         return s
 
+    @property
     def __CoreErrorList(self):
 
         s = PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=self.listOfValid, value=self.attribValue)
-        s.extend(super(PipelineError, self).__CoreErrorList())
+        s.extend(super(PipelineError, self).__CoreErrorList)
         return s
 
 
@@ -135,14 +132,12 @@ class PipelineSearchFailed(PipelineError):
 
     def __init__(self, xpath, **kwargs):
         super(PipelineSearchFailed, self).__init__(**kwargs)
-
         self.xpath = xpath
 
+    @property
     def __CoreErrorList(self):
-        s = []
-        s.append("A search has failed")
-        s.append("XPath: " + self.xpath)
-        s.extend(super(PipelineError, self).__CoreErrorList())
+        s = ["A search has failed", "XPath: " + self.xpath]
+        s.extend(super(PipelineError, self).__CoreErrorList)
         return s
 
 
@@ -156,9 +151,10 @@ class PipelineSelectFailed(PipelineError):
 
         self.xpath = xpath
 
+    @property
     def __CoreErrorList(self):
         s = []
         s.append("A select statement has failed")
         s.append("XPath: " + self.xpath)
-        s.extend(super(PipelineError, self).__CoreErrorList())
+        s.extend(super(PipelineError, self).__CoreErrorList)
         return s

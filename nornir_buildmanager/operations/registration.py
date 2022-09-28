@@ -10,6 +10,9 @@ import shutil
 import subprocess
 import json
 
+import nornir_buildmanager.volumemanager.datanode
+import nornir_buildmanager.volumemanager.mosaicbasenode
+import nornir_buildmanager.volumemanager.transformnode
 from nornir_buildmanager import *
 from nornir_buildmanager.validation import transforms
 import nornir_imageregistration 
@@ -83,17 +86,17 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = added_level
-    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, "_Max0.5")  # The hardcoded string is legacy to prevent duplicate transform elements
+    OutputTransformPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, "_Max0.5")  # The hardcoded string is legacy to prevent duplicate transform elements
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode,
                                                                                    InputTransformNode=InputTransformNode,
                                                                                    OutputTransformPath=OutputTransformPath)
     
-    OutputTransformSettingsPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName,"_Settings", Ext=".json")
-    settings_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Name="Translate Mosaic Settings", Path=OutputTransformSettingsPath)
+    OutputTransformSettingsPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, "_Settings", Ext=".json")
+    settings_data_node = nornir_buildmanager.volumemanager.datanode.DataNode.Create(Name="Translate Mosaic Settings", Path=OutputTransformSettingsPath)
     [added_transform_settings_node, settings_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(settings_data_node, 'Name')
     
-    ManualOffsetsPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName,"_ManualOffsets", Ext=".csv")
-    manual_offsets_data_node = nornir_buildmanager.VolumeManagerETree.DataNode.Create(Name="Manual Offsets", Path=ManualOffsetsPath)
+    ManualOffsetsPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, "_ManualOffsets", Ext=".csv")
+    manual_offsets_data_node = nornir_buildmanager.volumemanager.datanode.DataNode.Create(Name="Manual Offsets", Path=ManualOffsetsPath)
     [added_manual_offsets_node, manual_offsets_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(manual_offsets_data_node, 'Name')
       
     settings = nornir_imageregistration.settings.GetOrSaveTranslateSettings(settings, settings_data_node.FullPath)
@@ -104,21 +107,25 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
         settings.known_offsets = mosaic_offsets 
     else:
         nornir_imageregistration.settings.SaveMosaicOffsets(None, manual_offsets_data_node.FullPath)
-      
+          
+    
+    if OutputTransformNode is not None:  
+        if OutputTransformNode.Locked:
+            Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+            return None
+        else:
+            if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):
+                OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} settings file was updated")
+                OutputTransformNode = None
+            elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):
+                OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
+                OutputTransformNode = None
+            
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
+        OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
-    elif OutputTransformNode.Locked:
-        Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
-        return None
-    else:
-        if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):
-            OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} settings file was updated")
-            OutputTransformNode = None
-        elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):
-            OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
-            OutputTransformNode = None
+    
 
     if not os.path.exists(OutputTransformNode.FullPath): 
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
@@ -151,6 +158,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             OutputTransformNode.ResetChecksum()
             OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
             OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
+            OutputTransformNode.ResetChecksum()
               
             print("%s -> %s" % (OutputTransformNode.FullPath, nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
         except Exception as e:
@@ -297,10 +305,10 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
 
     SaveRequired = added_level
 
-    OutputTransformPath = VolumeManagerETree.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
+    OutputTransformPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
     if OutputTransformNode is None:
-        OutputTransformNode = VolumeManagerETree.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
+        OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:

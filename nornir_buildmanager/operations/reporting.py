@@ -9,7 +9,7 @@ import logging
 import math
 import os
 import shutil
-import validators
+import nornir_buildmanager
 
 from nornir_buildmanager.pipelinemanager import PipelineManager, ArgumentSet 
 import nornir_imageregistration.core
@@ -36,6 +36,10 @@ class RowList(list):
 
 class ColumnList(list):
     '''Class used for HTML to place into columns'''
+
+    def __init__(self, *args):
+        self._caption = None
+        self.append(args)
 
     @property
     def caption(self):
@@ -140,7 +144,7 @@ class HTMLPaths(object):
             
         (filename, _) = os.path.splitext(self._OutputFile)
         
-        self._OutputPagePrefix = f"{filename}_"; 
+        self._OutputPagePrefix = f"{filename}_"
 
         (self._ThumbnialRootRelative, self._ThumbnailDir) = self.__ThumbnailPaths()
 
@@ -640,8 +644,7 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
      RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
     '''
     
-    TableEntries = {}
-    TableEntries['1'] = htmlpaths.GetFileAnchorHTML(DataNode, "Tile data (idoc file)") 
+    TableEntries = {'1': htmlpaths.GetFileAnchorHTML(DataNode, "Tile data (idoc file)")}
     # rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
     
     SummaryStrings = __ExtractIDocDataText(DataNode)
@@ -958,7 +961,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
     BobEndpoint = None
     
     if RowElement.tag == 'Section' and BobEndpoint is not None:
-        AddBobButtons()
+        AddBobButtons(BobEndpoint=BobEndpoint)
         
     # CaptionHTML = None
     for ColXPath in ColumnXPaths:
@@ -1055,19 +1058,17 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
     Paths.CreateOutputDirs()
 
     # OK, start walking the columns.  Then walk the rows
-    RowElements = list(ReportingElement.findall(RowXPath))
-    if RowElements is None:
-        return None
-      
+    RowElements = ReportingElement.findall(RowXPath)
+
     # Build a 2D list to build the table from later
 
     # pool = nornir_pools.GetGlobalThreadPool()
     tableDict = {}
     tasks = []
 
-    NumRows = len(RowElements)
+    NumRows = 0
     for (iRow, RowElement) in enumerate(RowElements):
-
+        NumRows += 1
         if hasattr(RowElement, RowLabelAttrib):
             RowLabel = getattr(RowElement, RowLabelAttrib)
 
@@ -1081,6 +1082,9 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
         # Threading this caused problems with Matplotlib being called from different threads.  Single threading again for now
         result = RowReport(RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
         tableDict[RowLabel] = result
+
+    if NumRows == 0:
+        return
 
     for iRow, t in enumerate(tasks):
         try:
@@ -1098,7 +1102,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
     # HTML = DictToTable(tableDict) #paginate here
      
     # CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
-    return None
+    return
 
 
 def DictToPages(RowDict, Paths, RowsPerPage, IndentLevel=0):
@@ -1458,7 +1462,7 @@ def __ListToUnorderedList(listEntries, IndentLevel):
     HTML.Indent()
 
     for entry in listEntries:
-        HTML.Add('<li>' + str(entry) + '</li>\n', HTML.IndentLevel)
+        HTML.Add(' ' * HTML.IndentLevel + '<li>' + str(entry) + '</li>\n')
 
     HTML.Dedent()
     HTML.Add("</ul>\n")
@@ -1528,11 +1532,7 @@ def GenerateImageReport(xpaths, VolumeElement, Logger, OutputFile=None, **kwargs
 def RecursiveReportGenerator(VolumeElement, xpaths, Logger=None):
     List = []
     for xpath in xpaths:
-        MatchingChildren = VolumeElement.findall(xpath)
-        if(len(MatchingChildren) == 0):
-            continue
-
-        for element in MatchingChildren:
+        for element in VolumeElement.findall(xpath):
             if not hasattr(element, 'FullPath'):
                 Logger.warning('No fullpath property on element: ' + str(element))
                 continue

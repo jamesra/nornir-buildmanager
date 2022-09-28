@@ -9,8 +9,8 @@ import logging
 import os
 import shutil
 import unittest
-
-import nornir_buildmanager.VolumeManagerETree
+  
+import nornir_buildmanager.volumemanager
 from nornir_buildmanager.importers.pmg import ParsePMGFilename, PMGInfo
 from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
@@ -126,17 +126,17 @@ class ImportPMG(PMGTest):
 
         for (pmgDir, pmgFiles) in results:
 
-            VolumeObj = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
+            VolumeObj = nornir_buildmanager.volumemanager.VolumeManager.Load(self.TestOutputPath, Create=True)
             #pmgFile = glob.glob(os.path.join(pmgDir, "*.pmg"))
+            self.assertEqual(len(pmgFiles), 1, "Unexpected extra PMG in dir: " + pmgDir)
             pmgFile = pmgFiles[0]
-            self.assertEqual(len(pmgFile), 1, "Unexpected extra PMG in dir: " + pmgDir)
             #pmgFile = pmgFile[0]
             pmgFileKey = os.path.basename(pmgFile)
 
             pmgData = PMGData[pmgFileKey]
             self.assertIsNotNone(pmgData)
 
-            pmg.PMGImport.ToMosaic(VolumeObj, pmgFile, scaleValueInNm=100, OutputPath=VolumeObj.FullPath, debug=True)
+            pmg.PMGImport.ToMosaic(VolumeObj, os.path.join(pmgDir, pmgFile), scaleValueInNm=100, OutputPath=VolumeObj.FullPath, debug=True)
 
             VolumeObj.Save()
             del VolumeObj
@@ -148,7 +148,7 @@ class ImportPMG(PMGTest):
         self.assertIsNotNone(pmgData)
 
         '''Ensure the import produced valid meta-data'''
-        VolumeObj = nornir_buildmanager.VolumeManagerETree.VolumeManager.Load(self.TestOutputPath, Create=True)
+        VolumeObj = nornir_buildmanager.volumemanager.VolumeManager.Load(self.TestOutputPath, Create=True)
 
         SectionNumber = pmgData.Section
         if SectionNumber is None:
@@ -333,8 +333,8 @@ class ParsePMG(PMGTest):
 
         super(PMGTest, self).setUp()
 
-        (self.pmgDirs, _) = list(nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg"))
-        (extraDirs,_) = nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg")
+        self.pmgDirs = [d[0] for d in nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg")]
+        extraDirs = [d[0] for d in nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg")]
         self.pmgDirs.extend(extraDirs)
         self.assertTrue(len(self.pmgDirs) > 0, "No test input found")
 

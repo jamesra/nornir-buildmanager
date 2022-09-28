@@ -6,13 +6,12 @@ Created on Apr 2, 2012
 import collections.abc
 import copy
 import logging
-import os
 import re
 import sys
 import traceback
 import platform
-from xml.etree import ElementTree
-from nornir_buildmanager import VolumeManagerETree
+
+import nornir_buildmanager
 
 from .pipeline_exceptions import *
 
@@ -23,10 +22,11 @@ from inspect import isgenerator
 
 from . import argparsexml
 import nornir_shared.prettyoutput as prettyoutput
+from xml.etree import ElementTree
 
 
 # import xml.etree
-class ArgumentSet():
+class ArgumentSet:
     '''Collection of arguments from each source'''
 
     @property
@@ -106,26 +106,26 @@ class ArgumentSet():
         :param str val: The key to lookup
         :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned.'''
         if val is None:
-            return (False, None)
+            return False, None
 
         if len(val) == 0:
-            return (False, None)
+            return False, None
 
         if val[0] == '#':
             if val[1:].find('#') >= 0:
                 # If there are two '#' signs in the string it is a string not an object
-                return (False, None)
+                return False, None
 
             # Find the existing entry in the dargs
             key = val[1:]
 
             try:
                 # If no object found then return None
-                return (True, self.TryGetValueForKey(key))
+                return True, self.TryGetValueForKey(key)
             except KeyError as e:
-                return (False, None)
+                return False, None
 
-        return (False, None)
+        return False, None
 
     def AddArguments(self, args):
         '''Add arguments from the command line'''
@@ -292,6 +292,7 @@ class PipelineManager(object):
 
     '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
     def __init__(self, pipelinesRoot, pipelineData):
+        self.VolumeTree = None
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
         self.PipelineRoot = pipelinesRoot
@@ -328,16 +329,14 @@ class PipelineManager(object):
         return None
 
     @classmethod
-    def ToElementString(self, element):
+    def ToElementString(cls, element):
         if element.tag == 'Iterate':
-            outStr = "Iterate: " + element.attrib['XPath']
-            return outStr
-        
-        strList = ElementTree.tostringlist(element)
+            return "Iterate: " + element.attrib['XPath']
 
         outStr = ""
+        strList = [s.decode('Utf-8') for s in ElementTree.tostringlist(element)]
         for s in strList:
-            outStr = outStr + " " + s.decode('Utf-8')
+            outStr = outStr + " " + s
             if s == '>':
                 break
 
@@ -411,7 +410,7 @@ class PipelineManager(object):
             return None
         else:
             SelectedPipeline = XMLDoc.find("Pipeline[@Name='" + PipelineName + "']")
-            if(SelectedPipeline is None):
+            if SelectedPipeline is None:
                 PipelineManager.logger.critical("No pipeline found named " + PipelineName)
                 prettyoutput.LogErr("No pipeline found named " + PipelineName)
                 cls.PrintPipelineEnumeration(XMLDoc)
@@ -431,6 +430,7 @@ class PipelineManager(object):
 
     def GetArgParser(self, parser=None, IncludeGlobals=True):
         '''Create the complete argument parser for the pipeline
+        :param parser:
         :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation
         '''
 
@@ -476,7 +476,7 @@ class PipelineManager(object):
     def GetSearchRoot(cls, VolumeElem, PipelineNode, ArgSet):
         RootIterNodeName = PipelineNode.get('Root', None)
         RootForSearch = VolumeElem
-        if(not RootIterNodeName is None):
+        if not RootIterNodeName is None:
             if not RootIterNodeName in ArgSet.Variables:
                 raise PipelineSearchRootNotFound(argname=RootIterNodeName, PipelineNode=PipelineNode, VolumeElem=VolumeElem)
 
@@ -505,9 +505,9 @@ class PipelineManager(object):
         ArgSet.AddParameters(PipelineElement)
 
         # Load the Volume.XML file in the output directory
-        self.VolumeTree = VolumeManagerETree.VolumeManager.Load(args.volumepath, Create=True)
+        self.VolumeTree = nornir_buildmanager.volumemanager.VolumeManager.Load(args.volumepath, Create=True)
 
-        if(self.VolumeTree is None):
+        if self.VolumeTree is None:
             PipelineManager.logger.critical("Could not load or create volume.xml " + args.outputpath)
             prettyoutput.LogErr("Could not load or create volume.xml " + args.outputpath)
             sys.exit()
@@ -573,16 +573,16 @@ class PipelineManager(object):
         # Copy dargs so we do not modify what the parent passed us
         # dargs = copy.copy(dargs)
 
-        if(PipelineNode.tag == 'Select'):
+        if PipelineNode.tag == 'Select':
             self.ProcessSelectNode(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'Iterate'):
+        elif PipelineNode.tag == 'Iterate':
             self.ProcessIterateNode(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'RequireSetMembership'):
+        elif PipelineNode.tag == 'RequireSetMembership':
             self.RequireSetMembership(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'RequireMatch'):
+        elif PipelineNode.tag == 'RequireMatch':
             self.ProcessRequireMatchNode(ArgSet, VolumeElem, PipelineNode)
 
         elif PipelineNode.tag == 'PythonCall':
@@ -673,11 +673,12 @@ class PipelineManager(object):
         while SelectedVolumeElem is None:
 
             SelectedVolumeElem = RootForSearch.find(xpath)
-            if(SelectedVolumeElem is None):
+            if SelectedVolumeElem is None:
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             #Containers will be tested at load time.  The load linked element code checks containers
-            if not isinstance(SelectedVolumeElem, VolumeManagerETree.XContainerElementWrapper):
+            if not isinstance(SelectedVolumeElem,
+                              nornir_buildmanager.volumemanager.xcontainerelementwrapper.XContainerElementWrapper):
                 if SelectedVolumeElem.NeedsValidation:
                     (IsValid, Reason) = SelectedVolumeElem.IsValid()
                     if not IsValid:
@@ -709,13 +710,15 @@ class PipelineManager(object):
         NumProcessed = 0
         for VolumeElemChild in VolumeElemIter:
             if VolumeElem.NeedsValidation:
-                if VolumeElemChild.CleanIfInvalid():
+                (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
+                if cleaned:
+                    prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
                     PipelineManager._SaveNodes(VolumeElemChild.Parent)
                     continue
 
             NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
 
-        if(NumProcessed == 0):
+        if NumProcessed == 0:
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
     @classmethod
@@ -726,9 +729,9 @@ class PipelineManager(object):
                     if node is None:
                         continue 
                     
-                    VolumeManagerETree.VolumeManager.Save(node)
+                    nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(node)
             else:
-                VolumeManagerETree.VolumeManager.Save(NodesToSave)
+                nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(NodesToSave)
 
     def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
@@ -739,7 +742,7 @@ class PipelineManager(object):
 
         stageFunc = nornir_shared.reflection.get_module_class(str(PipelineModule), str(PipelineFunction))
 
-        if(ArgSet.Arguments['verbose']):
+        if ArgSet.Arguments['verbose']:
             prettyoutput.Log("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
 
         #PipelineManager.logger.info("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
@@ -789,7 +792,7 @@ class PipelineManager(object):
                         PipelineManager.logger.error(errorStr)
                         # prettyoutput.LogErr(errorStr)
 
-                        self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
+                        self.VolumeTree = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
                         return
                          
                         

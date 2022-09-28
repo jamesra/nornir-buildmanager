@@ -5,14 +5,13 @@ import glob
 import pickle
 import nornir_buildmanager.importers
 import nornir_buildmanager.importers.serialemlog
-from nornir_buildmanager.VolumeManagerETree import DataNode
 import nornir_shared.prettyoutput as prettyoutput
 
 from nornir_shared import files
 
 
 def try_remove_spaces_from_dirname(sectionDir):
-    ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
+    """:return: Renamed directory if there were spaced in the filename, otherwise none"""
     sectionDirNoSpaces = sectionDir.replace(' ', '_')
     ParentDir = os.path.dirname(sectionDir)
     if(sectionDirNoSpaces != sectionDir):
@@ -26,7 +25,7 @@ def try_remove_spaces_from_dirname(sectionDir):
 
 
 def _Update_path_on_rename(file_fullpath, new_section_dir):
-    '''Return the correct paths if we move the directory a section lives in'''
+    """Return the correct paths if we move the directory a section lives in"""
     
     idocFilename = os.path.basename(file_fullpath)
     (ParentDir, sectionDir) = GetDirectories(file_fullpath)
@@ -38,9 +37,9 @@ def _Update_path_on_rename(file_fullpath, new_section_dir):
 
 
 def GetDirectories(idocFileFullPath):
-    '''
-    :return: (ParentDir, SectionDir) The directory holding the section directory and the section directory in a tuple 
-    '''
+    """
+    :return: (ParentDir, SectionDir) The directory holding the section directory and the section directory in a tuple
+    """
     sectionDir = os.path.dirname(idocFileFullPath)
     ParentDir = os.path.dirname(sectionDir)
     return (ParentDir, sectionDir)
@@ -56,7 +55,7 @@ def GetPathWithoutSpaces(idocFileFullPath):
 
 
 def TryAddLogs(containerObj, InputPath, logger):
-    '''Copy log files to output directories, and store select meta-data in the containerObj if it exists'''
+    """Copy log files to output directories, and store select meta-data in the containerObj if it exists"""
     LogsFiles = glob.glob(os.path.join(InputPath, '*.log'))
     LogsAdded = False
     if len(LogsFiles) == 0:
@@ -82,7 +81,7 @@ def TryAddLogs(containerObj, InputPath, logger):
                     continue
 
                 # Create a Notes node to save the logs into
-                LogNodeObj = DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
+                LogNodeObj = nornir_buildmanager.volumemanager.DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
                 
                 containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
                 [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')
@@ -136,9 +135,13 @@ def TryAddLogs(containerObj, InputPath, logger):
 
  
 def PickleLoad(logfullPath, version_func):
-    '''
-    :param version_func func: A callable function that raises an exception if the loaded object is the correct version or not.  Returning false deletes the cached .pickle file
-    '''
+    """
+    :param logfullPath:
+    :param version_func:
+    """
+
+
+
 
     obj = None
     picklePath = logfullPath + ".pickle"
