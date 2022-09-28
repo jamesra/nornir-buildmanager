@@ -702,9 +702,10 @@ class XElementWrapper(ElementTree.Element):
         #        assert (not ParentTag is None)
         p = self.Parent
         while p is not None:
-            results = p.findall(xpath)
-            if next(results) is not None:
+            results = p.findall(xpath) 
+            if next(results, None) is not None:
                 return p.findall(xpath)  # Cannot restart a generator, so have to start it again and return
+       
 
             p = p.Parent
         return None

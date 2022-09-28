@@ -223,7 +223,7 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
             continue
 
         known_mappings = StosMap.GetMappingsForControl(rt_node.SectionNumber)
-        mappingNode = next(known_mappings)
+        mappingNode = next(known_mappings, None)
         if mappingNode is None:
             # Create a mapping
             mappingNode = nornir_buildmanager.volumemanager.mappingnode.MappingNode.Create(rt_node.SectionNumber, None)
@@ -2221,7 +2221,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
                                                           'Name', filter_pattern,
                                                            CaseSensitive=True)
     
-    result = next(filter_matches)
+    result = next(filter_matches, None)
     
     if result is None:
         Logger = logging.getLogger(__name__ + '.__GetFirstMatchingFilter')
