@@ -122,7 +122,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
     
     def CheckMappings(self, StosMapNode, controlNumber, expectedMappings):
-        controlMappings = StosMapNode.GetMappingsForControl(controlNumber)
+        controlMappings = list(StosMapNode.GetMappingsForControl(controlNumber))
         self.assertTrue(len(controlMappings) == 1, "Unexpected number of mappings for control section %d" % controlNumber)
         mapped = frozenset(controlMappings[0].Mapped)
         self.assertTrue(len(mapped) == len(expectedMappings))
@@ -262,7 +262,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         removed = StosMapNode.RemoveDuplicateControlEntries(4)
         self.assertTrue(removed, "Duplicate should be removed and return true")
 
-        listMapFour = StosMapNode.GetMappingsForControl(4)
+        listMapFour = list(StosMapNode.GetMappingsForControl(4))
         self.assertEqual(len(listMapFour), 1, "Duplicate StosMap was not removed")
 
         expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
