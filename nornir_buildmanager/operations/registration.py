@@ -148,6 +148,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
     
             SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
             
+            OutputTransformNode.ResetChecksum()
             OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
             OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
               
@@ -258,7 +259,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     '''@ChannelNode'''
     Iterations = Parameters.get('it', 10)
     Cell = Parameters.get('Cell', None)
-    MeshWidth = Parameters.get('MeshWidth', 8)  # These should be large enough nubmers that there is overlap between cells, ~50% though 25% is often used for speed.
+    MeshWidth = Parameters.get('MeshWidth', 8)  # These should be large enough numbers that there is overlap between cells, ~50% though 25% is often used for speed.
     MeshHeight = Parameters.get('MeshHeight', 8)
     Threshold = Parameters.get('Threshold', None)
     
