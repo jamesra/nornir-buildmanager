@@ -82,11 +82,11 @@ from nornir_buildmanager.volumemanager.imagesetnode import ImageSetNode
 import nornir_buildmanager.volumemanager.stosgroupnode as stosgroupnode
 from nornir_buildmanager.volumemanager.stosgroupnode import StosGroupNode
 
-import nornir_buildmanager.volumemanager.stosmapnode as stosmapnode
-from nornir_buildmanager.volumemanager.stosmapnode import StosMapNode
-
 import nornir_buildmanager.volumemanager.mappingnode as mappingnode
 from nornir_buildmanager.volumemanager.mappingnode import MappingNode
+
+import nornir_buildmanager.volumemanager.stosmapnode as stosmapnode
+from nornir_buildmanager.volumemanager.stosmapnode import StosMapNode
 
 import nornir_buildmanager.volumemanager.scalenode as scalenode
 from nornir_buildmanager.volumemanager.scalenode import ScaleNode, Scale, ScaleAxis

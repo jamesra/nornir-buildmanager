@@ -706,7 +706,6 @@ class XElementWrapper(ElementTree.Element):
             if next(results, None) is not None:
                 return p.findall(xpath)  # Cannot restart a generator, so have to start it again and return
        
-
             p = p.Parent
         return None
 

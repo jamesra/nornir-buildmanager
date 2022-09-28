@@ -1,6 +1,5 @@
 from __future__ import annotations
-
-from collections.abc import Iterable
+from typing import Generator, Iterable
 
 import nornir_imageregistration.transforms
 
