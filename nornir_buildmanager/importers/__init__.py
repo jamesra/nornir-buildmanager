@@ -60,7 +60,7 @@ def LoadHistogramCutoffs(filename):
                     MaxCutoff = None
                 
                 try:
-                    Gamma = None if len(line) < 4 else float(line[4])
+                    Gamma = None if len(line) < 3 else float(line[3])
                 except ValueError:
                     Gamma = None
                 
