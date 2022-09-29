@@ -68,7 +68,7 @@ class InputTransformHandler(object):
             return None
 
     @InputTransformCropBox.setter
-    def InputTransformCropBox(self, bounds: tuple | None):
+    def InputTransformCropBox(self, bounds: tuple[float] | None):
         """Sets boundaries in fixed space for output from the transform.
         :param bounds tuple:  (Xo, Yo, Width, Height) or (Width, Height)
         """
@@ -76,9 +76,9 @@ class InputTransformHandler(object):
             if 'InputTransformCropBox' in self.attrib:
                 del self.attrib['InputTransformCropBox']
         elif len(bounds) == 4:
-            self.attrib['InputTransformCropBox'] = "%g,%g,%g,%g" % bounds
+            self.attrib['InputTransformCropBox'] = ",".join([f'{v:g}' for v in bounds])
         elif len(bounds) == 2:
-            self.attrib['InputTransformCropBox'] = "0,0,%g,%g" % bounds
+            self.attrib['InputTransformCropBox'] = "0,0," + ",".join([f'{v:g}' for v in bounds])
         else:
             raise Exception(
                 "Invalid argument passed to InputTransformCropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
