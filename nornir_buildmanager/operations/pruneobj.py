@@ -177,7 +177,7 @@ class PruneObj:
         :return: If the histogram is updated a PruneObj is loaded and returned
             otherwise None
         '''
-        PruneDataNode = nornir_buildmanager.volumemanager.DataNode
+        PruneDataNode = prune_node.DataNode
         if(PruneDataNode is None):
             Logger = logging.getLogger(__name__ + '.ReadPruneDataNode')
             Logger.warning("Did not find expected prune data node")
@@ -194,7 +194,7 @@ class PruneObj:
             RemoveOutdatedFile(PruneDataNode.FullPath, HistogramImageFileFullPath)
             RemoveOutdatedFile(PruneDataNode.FullPath, HistogramXMLFileFullPath)
 
-            HistogramImageNode = nornir_buildmanager.volumemanager.ImageNode
+            HistogramImageNode = prune_node.ImageNode
             if not HistogramImageNode is None:
                 HistogramImageNode = transforms.RemoveOnMismatch(HistogramImageNode, 'Threshold', Threshold, Precision=threshold_precision)
             
