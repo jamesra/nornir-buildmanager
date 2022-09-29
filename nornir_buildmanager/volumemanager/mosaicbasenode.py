@@ -88,33 +88,13 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         return obj
 
     @property
-    def InputTransformName(self) -> str:
-        return self.get('InputTransformName', '')
-
-    @InputTransformName.setter
-    def InputTransformName(self, Value):
-        self.attrib['InputTransformName'] = Value
-
-    @property
-    def InputImageDir(self) -> str:
-        return self.get('InputTransform', '')
-
-    @InputImageDir.setter
-    def InputImageDir(self, Value):
-        self.attrib['InputImageDir'] = Value
-
-    @property
-    def InputTransformChecksum(self) -> str:
-        return self.get('InputTransformChecksum', '')
-
-    @InputTransformChecksum.setter
-    def InputTransformChecksum(self, Value):
-        self.attrib['InputTransformChecksum'] = Value
-
-    @property
     def Type(self) -> str:
         return self.attrib.get('Type', '')
 
     @Type.setter
-    def Type(self, Value):
-        self.attrib['Type'] = Value
+    def Type(self, value: str):
+        if value is None:
+            if 'Type' in self.attrib:
+                del self.attrib['Type']
+        else:
+            self.attrib['Type'] = value

@@ -65,7 +65,7 @@ def BuildPathToModifiedDateMap(path_list):
     return  file_to_modified_time
 
 
-def EnumerateFilters(SectionNodes, Channels, Filters):
+def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels, Filters):
     '''Generator which returns a list of matching filters contained under a list of section nodes
     :param list SectionNodes: List of sections to search
     :param str Channels: Regular expression for channel names 
@@ -86,17 +86,20 @@ def EnumerateFilters(SectionNodes, Channels, Filters):
 def EnumerateImageSets(testObj, volumeNode, Channels, Filter, RequireMasks=True):
     '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
 
-    sections = list(volumeNode.findall("Block/Section"))
+    sections = volumeNode.findall("Block/Section")
     filters = EnumerateFilters(sections, Channels, Filter)
 
     for f in filters:
         if RequireMasks:
             testObj.assertTrue(f.HasMask, "Mask expected for filters")
 
-        image_sets = list(f.findall('ImageSet'))
-        testObj.assertIsNotNone(image_sets, "ImageSet node not found")
-        testObj.assertEqual(len(image_sets), 1, "Multiple ImageSet nodes found")
-        yield image_sets[0]
+        image_sets = f.findall('ImageSet')
+        image_set = next(image_sets, None)
+        testObj.assertIsNotNone(image_set, "ImageSet node not found")
+
+        next_image_set = next(image_sets, None)
+        testObj.assertIsNone(next_image_set, f"Multiple ImageSet nodes found in {f.FullPath}")
+        yield image_set
 
 def EnumerateTileSets(testObj, volumeNode, Channels, Filter=None):
     '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
@@ -104,14 +107,16 @@ def EnumerateTileSets(testObj, volumeNode, Channels, Filter=None):
     if Filter is None:
         Filter = '(?![M|m]ask)'
 
-    sections = list(volumeNode.findall("Block/Section"))
+    sections = volumeNode.findall("Block/Section")
     filters = EnumerateFilters(sections, Channels, Filter)
 
     for f in filters:
-        tile_sets = list(f.findall('Tileset'))
-        testObj.assertIsNotNone(tile_sets, "Tileset node not found")
-        testObj.assertEqual(len(tile_sets), 1, "Multiple Tileset nodes found")
-        yield tile_sets[0]
+        tile_sets = f.findall('Tileset')
+        tile_set = next(tile_sets, None)
+        testObj.assertIsNotNone(tile_set, "Tileset node not found")
+        next_tile_set = next(tile_sets, None)
+        testObj.assertIsNone(next_tile_set, f"Multiple Tileset nodes found in {f.FullPath}")
+        yield tile_set
 
 
 def ConvertLevelsToList(Levels):
@@ -458,14 +463,14 @@ class NornirBuildTestBase(test.testbase.TestBase):
         return volumeNode
         
     
-    def _VerifyInputTransformIsCorrect(self, InputTransformChecksumNode, InputTransformName):
+    def _VerifyInputTransformIsCorrect(self, InputTransformChecksumNode, input_transform_name: str):
         '''Check that the checksum for a transform matches the recorded input transform checksum for a node under a channel'''
         
         ChannelNode = InputTransformChecksumNode.FindParent('Channel')
         self.assertIsNotNone(ChannelNode, "Test requires the node be under a channel element")
         
-        TransformNode = ChannelNode.GetTransform(InputTransformName)
-        self.assertIsNotNone(TransformNode, "Could not locate transform with the correct name: %s" % (InputTransformName))
+        TransformNode = ChannelNode.GetTransform(input_transform_name)
+        self.assertIsNotNone(TransformNode, "Could not locate transform with the correct name: %s" % (input_transform_name))
         
         self.assertEqual(InputTransformChecksumNode.InputTransform, TransformNode.Name, "Transform name does not match the transform.")
         self.assertEqual(InputTransformChecksumNode.InputTransformChecksum, TransformNode.Checksum, "Checksum does not match the transform")
@@ -478,7 +483,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
     def _VerifyImageSetMatchesTransform(self, image_set_node, transform_name):
         
         self.assertEqual(image_set_node.InputTransform, transform_name, "InputTransform for ImageSet does not match transform used for assemble")
-        self._VerifyInputTransformIsCorrect(image_set_node, InputTransformName=transform_name)
+        self._VerifyInputTransformIsCorrect(image_set_node, input_transform_name=transform_name)
         
     
     def _VerifyPyramidHasExpectedLevels(self, pyramid_node, expected_levels):
@@ -928,7 +933,7 @@ class NornirBuildTestBase(test.testbase.TestBase):
 
         volumeNode = self.LoadVolume()
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s']" % StosGroupName)
-        self.assertIsNotNone(StosGroupNode)
+        self.assertIsNotNone(StosGroupNode, f"Could not find stos group: {StosGroupName}")
         ManualStosDir = os.path.join(StosGroupNode.FullPath, 'Manual')
 
         # os.remove(ManualStosDir)

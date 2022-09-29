@@ -5,9 +5,9 @@ Created on Apr 15, 2013
 '''
 
 import os
+from typing import Generator
 
-
-import nornir_buildmanager.volumemanager
+import nornir_buildmanager.volumemanager 
 
 import nornir_shared.misc as misc
 
@@ -118,7 +118,7 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
     return ImageSetNode
 
 
-def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample):
+def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample) -> Generator[nornir_buildmanager.volumemanager.ImageSetNode, None, None]:
     '''Find the first image matching the criteria'''
     InputImageSetXPathTemplate = "Section[@Number='%(SectionNumber)s']/Channel/Filter/ImageSet[@Name='%(ImageSetName)s']"
     InputImageXPathTemplate = "Level[@Downsample='%(Downsample)d']/Image"
@@ -130,7 +130,8 @@ def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample):
         ImageNode = ImageSet.find(ImageXPath)
         return ImageSet
 
-    return None
+    yield
+    return
 
 
 def MaskImageNodeForImageSet(ImageSetNode, Downsample):

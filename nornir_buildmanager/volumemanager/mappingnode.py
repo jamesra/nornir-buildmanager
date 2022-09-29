@@ -1,8 +1,7 @@
 from __future__ import annotations
-
-from nornir_buildmanager.volumemanager import XElementWrapper
 from nornir_shared import misc as misc
 
+from nornir_buildmanager.volumemanager import XElementWrapper
 
 class MappingNode(XElementWrapper):
 

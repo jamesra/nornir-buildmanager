@@ -2479,11 +2479,11 @@ def BuildMosaicToVolumeTransforms(StosMapNode, StosGroupNode, BlockNode, Channel
             continue
 
         NodeToSave = BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, transformNode, UntranslatedOutputTransformName, Logger, **kwargs)
-        if not NodeToSave is None:
+        if NodeToSave is not None:
             yield NodeToSave
 
         OutputTransformNode = channelNode.GetChildByAttrib('Transform', 'Name', UntranslatedOutputTransformName)
-        if not OutputTransformNode is None:
+        if OutputTransformNode is not None:
             StosMosaicTransforms.append(OutputTransformNode)
 
     if len(StosMosaicTransforms) == 0:

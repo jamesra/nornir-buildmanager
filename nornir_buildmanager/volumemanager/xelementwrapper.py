@@ -492,7 +492,9 @@ class XElementWrapper(ElementTree.Element):
             if name in self.attrib:
                 originalValue = self.attrib[name]
 
-            if not isinstance(value, str):
+            if value is None:
+                raise ValueError("Setting None on XML Element attribute: {name}")
+            elif not isinstance(value, str):
                 XElementWrapper.logger.info('Setting non string value on <' + str(
                     self.tag) + '>, automatically corrected: ' + name + ' -> ' + str(value))
 
@@ -695,6 +697,7 @@ class XElementWrapper(ElementTree.Element):
                 return result
 
             p = p.Parent
+
         return None
 
     def FindAllFromParent(self, xpath: str) -> Generator[XElementWrapper] | None:
@@ -704,10 +707,12 @@ class XElementWrapper(ElementTree.Element):
         while p is not None:
             results = p.findall(xpath) 
             if next(results, None) is not None:
-                return p.findall(xpath)  # Cannot restart a generator, so have to start it again and return
-       
+                yield from p.findall(xpath)  # Cannot restart a generator, so have to start it again and return
+                return
+
             p = p.Parent
-        return None
+
+        return
 
     def _ReplaceChildElementInPlace(self, old, new):
 

@@ -416,7 +416,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         except Exception as e:
             prettyoutput.Log(f"Cannot encode output XML:\n{e}")
-            raise e
+            raise
 
         assert (len(OutputXML)), "Trying to save an entirely empty XML file... why?"
 

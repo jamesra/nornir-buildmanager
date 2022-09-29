@@ -7,7 +7,7 @@ class PyramidLevelHandler(object):
 
     @property
     def Levels(self) -> [volumemanager.LevelNode]:
-        return sorted(list(self.findall('Level')), key=attrgetter('Downsample'))
+        return sorted(self.findall('Level'), key=attrgetter('Downsample'))
 
     @property
     def MaxResLevel(self) -> volumemanager.LevelNode:
