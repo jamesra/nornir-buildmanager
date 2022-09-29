@@ -333,7 +333,7 @@ class XElementWrapper(ElementTree.Element):
             Valid = (Valid, "")
 
         if not Valid[0]:
-            return self.Clean(Valid[1])
+            self.Clean(Valid[1])
 
         return Valid[0] == False, Valid[1]  # The return value convention is reversed from IsValid.
 
