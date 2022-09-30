@@ -3,7 +3,7 @@ from typing import Generator, Iterable
 
 import nornir_imageregistration.transforms
 
-from nornir_buildmanager.volumemanager import *
+from nornir_buildmanager.volumemanager import XElementWrapper, MappingNode
 from nornir_shared import misc as misc
 
 
@@ -11,7 +11,7 @@ class StosMapNode(XElementWrapper):
 
     @property
     def Name(self) -> str:
-        return self.get('Name', '')
+        return self.attrib.get('Name', '')
 
     @Name.setter
     def Name(self, Value):
@@ -66,11 +66,11 @@ class StosMapNode(XElementWrapper):
         return MappedToControlCandidateList
 
     def GetMappingsForControl(self, Control: int) -> Generator[MappingNode]:
-        return self.findall("Mapping[@Control='" + str(Control) + "']")
+        return self.findall("Mapping[@Control='{Control}']")   
 
     def ClearMissingSections(self, existing_section_numbers: Iterable[int]):
         """Remove any control sections that are not in the list of known sections"""
-        good_set = frozenset(existing_section_numbers)
+        # good_set = frozenset(existing_section_numbers)
         missing_controls = filter(lambda m: m.Control not in existing_section_numbers, self.Mappings)
 
         missing_section_numbers = frozenset([mc.Control for mc in missing_controls])
@@ -85,7 +85,6 @@ class StosMapNode(XElementWrapper):
                 found_missing_mappings = True
 
         return missing_section_numbers or found_missing_mappings
-
 
     def ClearBannedControlMappings(self, numbers_to_remove: Iterable[int]):
         """Remove any control sections from a mapping which cannot be a control"""
@@ -104,8 +103,9 @@ class StosMapNode(XElementWrapper):
         return bool(self.attrib.get('AllowDuplicates', True))
 
     @classmethod
-    def _SectionNumberFromParameter(cls, input_value):
-        val = None
+    def _SectionNumberFromParameter(cls,
+                                    input_value: nornir_imageregistration.transforms.registrationtree.RegistrationTreeNode | int) -> int:
+        val: int
         if isinstance(input_value, nornir_imageregistration.transforms.registrationtree.RegistrationTreeNode):
             val = input_value.SectionNumber
         elif isinstance(input_value, int):
@@ -134,22 +134,22 @@ class StosMapNode(XElementWrapper):
                 child_mapping.AddMapping(val)
         return
 
-    def RemoveMapping(self, Control: int, Mapped: int | None = None):
+    def RemoveMapping(self, control: int, mapped: int | None = None) -> bool:
         """Remove a mapping
-        :param int Control: Control section number
-        :param int Mapped: Mapped section number, if none, all mappings are removed
+        :param int control: Control section number
+        :param int mapped: Mapped section number, if none, all mappings are removed
 
         :return: True if mapped section is found and removed
         """
 
-        Mapped = StosMapNode._SectionNumberFromParameter(Mapped)
-        Control = StosMapNode._SectionNumberFromParameter(Control)
+        mapped = StosMapNode._SectionNumberFromParameter(mapped)
+        control = StosMapNode._SectionNumberFromParameter(control)
 
-        childMapping = self.GetChildByAttrib('Mapping', 'Control', Control)
+        childMapping = self.GetChildByAttrib('Mapping', 'Control', control)
         if childMapping is not None:
-            if Mapped is not None:
-                if Mapped in childMapping.Mapped:
-                    childMapping.RemoveMapping(Mapped)
+            if mapped is not None:
+                if mapped in childMapping.Mapped:
+                    childMapping.RemoveMapping(mapped)
 
                     if len(childMapping.Mapped) == 0:
                         self.remove(childMapping)
@@ -161,7 +161,7 @@ class StosMapNode(XElementWrapper):
 
         return False
 
-    def FindAllControlsForMapped(self, MappedSection: int) -> Iterable[MappingNode]:
+    def FindAllControlsForMapped(self, MappedSection: int) -> Generator[MappingNode]:
         """Given a section to be mapped, return the first control section found"""
         for m in self.Mappings:
             if MappedSection in m.Mapped:
@@ -169,23 +169,23 @@ class StosMapNode(XElementWrapper):
 
         return
 
-    def RemoveDuplicateControlEntries(self, Control: int):
+    def RemoveDuplicateControlEntries(self, control: int) -> bool:
         """If there are two entries with the same control number we merge the mapping list and delete the duplicate"""
-
-        mappings = list(self.GetMappingsForControl(Control))
-        if len(mappings) < 2:
+        mappings_merged = False
+        mappings = self.GetMappingsForControl(control)
+        merge_mapping = next(mappings, None)
+        if merge_mapping is None:
             return False
 
-        mergeMapping = mappings[0]
-        for i in range(1, len(mappings)):
-            mappingNode = mappings[i]
-            for mappedSection in mappingNode.Mapped:
-                mergeMapping.AddMapping(mappedSection)
-                XElementWrapper.logger.warning('Moving duplicate mapping ' + str(Control) + ' <- ' + str(mappedSection))
+        for i, mappingNode in enumerate(mappings):
+            for mapped_section in mappingNode.Mapped:
+                merge_mapping.AddMapping(mapped_section)
+                XElementWrapper.logger.warning(f'Moving duplicate mapping {control} <- {mapped_section}')
+                mappings_merged = True
 
             self.remove(mappingNode)
 
-        return True
+        return mappings_merged
 
     @property
     def NeedsValidation(self) -> bool:
