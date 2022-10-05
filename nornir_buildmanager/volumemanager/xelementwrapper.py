@@ -801,19 +801,19 @@ class XElementWrapper(ElementTree.Element):
         # TODO: Need to modify to only search one level at a time
         # OK, check for linked elements that also meet the criteria
 
-        LinkMatches = list(super(XElementWrapper, self).findall(LinkedElementsXPath))
-        if LinkMatches is None:
+        link_matches = list(super(XElementWrapper, self).findall(LinkedElementsXPath))
+        if link_matches is None:
             return  # matches
 
         if UsedWildcard:
-            LinkMatches = list(filter(lambda e: e.tag.endswith('_Link'), LinkMatches))
+            link_matches = list(filter(lambda e: e.tag.endswith('_Link'), link_matches))
 
-        num_matches = len(LinkMatches)
+        num_matches = len(link_matches)
         if num_matches > 0:
 
             # if num_matches > 1:
             #    prettyoutput.Log("Need to load {0} links".format(num_matches))
-            self._replace_links(LinkMatches)
+            self._replace_links(link_matches)
 
             if self.ElementHasChangesToSave:
                 self.Save()
