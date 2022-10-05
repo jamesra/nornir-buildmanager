@@ -38,8 +38,8 @@ from nornir_buildmanager.volumemanager import *
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration import image_stats
+import nornir_shared
 from nornir_shared.images import *
-import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.histogram import *
 from nornir_shared.mathhelper import ListMedian
@@ -94,7 +94,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if not os.path.exists(ImportPath):
         raise ValueError("Import Path does not exist: %s" % ImportPath) 
 
-    matches = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
+    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
 
     DataFound = False 
     
