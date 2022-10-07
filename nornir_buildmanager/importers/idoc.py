@@ -914,7 +914,7 @@ class IDoc():
         if usecache:
             obj = serialem_utils.PickleLoad(idocfullPath, IDoc.VersionCheck)
 
-            if not obj is None:
+            if obj is not None:
                 return obj
             
         assert(os.path.exists(idocfullPath))
