@@ -39,7 +39,7 @@ class ColumnList(list):
 
     def __init__(self, *args):
         self._caption = None
-        self.append(args)
+        self.extend(args)
 
     @property
     def caption(self):
@@ -808,9 +808,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     if Width > MaxImageWidth or Height > MaxImageHeight:
         Scale = max(float(Width) / MaxImageWidth, float(Height) / MaxImageHeight)
         Scale = 1.0 / Scale
-
-        os.makedirs(HtmlPaths.ThumbnailDir, exist_ok=True)
-
+  
         ThumbnailFilename = GetTempFileSaltString() + ImageNode.Path
         ImgSrcPath = os.path.join(HtmlPaths.ThumbnailRelative, ThumbnailFilename)
 
@@ -1395,7 +1393,7 @@ def __ValueToTableCell(value, IndentLevel):
         HTML.Add(__ListToTableColumns(value, HTML.IndentLevel))
         HTML.Dedent()
     else:
-        HTML.Add("Unknown type passed to __ValueToHTML")
+        HTML.Add(f"Unknown type passed to __ValueToHTML: {value}")
 
     HTML.Add("</td>\n")
 
