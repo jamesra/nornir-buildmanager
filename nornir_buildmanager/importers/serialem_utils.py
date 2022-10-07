@@ -146,34 +146,37 @@ def PickleLoad(logfullPath, version_func):
     obj = None
     picklePath = logfullPath + ".pickle"
 
-    files.RemoveOutdatedFile(logfullPath, picklePath)
+    removed = files.RemoveOutdatedFile(logfullPath, picklePath)
+    if removed is True:
+        return None
 
-    if os.path.exists(picklePath):
+    
+    try:
+        with open(picklePath, 'rb') as filehandle:
+            obj = pickle.load(filehandle)
+
+            version_func(obj)  # Should raise OldVersionException if the file is stale
+            # if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+            #    raise OldVersionException("Version mismatch in pickled file: " + picklePath)
+    except nornir_buildmanager.importers.OldVersionException as e:
         try:
-            with open(picklePath, 'rb') as filehandle:
-                obj = pickle.load(filehandle)
+            prettyoutput.Log("Removing stale .pickle file: " + str(e))
+            os.remove(picklePath)
+        except Exception:
+            pass
 
-                version_func(obj)  # Should raise OldVersionException if the file is stale
-                # if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
-                #    raise OldVersionException("Version mismatch in pickled file: " + picklePath)
-        except nornir_buildmanager.importers.OldVersionException as e:
-            try:
-                prettyoutput.Log("Removing stale .pickle file: " + str(e))
-                os.remove(picklePath)
-            except Exception:
-                pass
+        obj = None
+    except FileNotFoundError as e:
+        return None
+    except Exception as e:
+        try:
+            prettyoutput.Log("Unexpected exception loading .pickle file: " + picklePath)
+            prettyoutput.Log(str(e))
+            os.remove(picklePath)
+        except Exception:
+            pass
 
-            obj = None
-        
-        except Exception as e:
-            try:
-                prettyoutput.Log("Unexpected exception loading .pickle file: " + picklePath)
-                prettyoutput.Log(str(e))
-                os.remove(picklePath)
-            except Exception:
-                pass
-
-            obj = None
+        obj = None
 
     return obj
 
