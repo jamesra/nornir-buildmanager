@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from numpy.typing import NDArray
 import os
 
 import nornir_imageregistration
@@ -35,11 +36,12 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
         if checksum is None:
             checksum = nornir_shared.checksum.FilesizeChecksum(self.FullPath)
             self.attrib['Checksum'] = str(checksum)
+            self._AttributesChanged = True
 
         return checksum
 
     @property
-    def Dimensions(self):
+    def Dimensions(self) -> tuple[float, float]:
         """
         :return: (height, width)
         """
@@ -50,17 +52,17 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
             self._AttributesChanged = True
         else:
             dims = dims.split(' ')
-            dims = (int(dims[1]), int(dims[0]))
+            dims = (int(dims[1]), int(dims[0]))  # Report as [YDim, XDim]
 
             # Todo: Remove after initial testing
-            actual_dims = nornir_imageregistration.GetImageSize(self.FullPath)
-            assert (actual_dims[0] == dims[0])
-            assert (actual_dims[1] == dims[1])
+            # actual_dims = nornir_imageregistration.GetImageSize(self.FullPath)
+            # assert (actual_dims[0] == dims[0])
+            # assert (actual_dims[1] == dims[1])
 
         return dims
 
     @Dimensions.setter
-    def Dimensions(self, dims):
+    def Dimensions(self, dims: NDArray[int] | tuple[int, int] | None):
         """
         :param tuple dims: (height, width) or None
         """
@@ -68,4 +70,4 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
             if 'Dimensions' in self.attrib:
                 del self.attrib['Dimensions']
         else:
-            self.attrib['Dimensions'] = "{0} {1}".format(dims[1], dims[0])
+            self.attrib['Dimensions'] = f"{dims[1]} {dims[0]}"

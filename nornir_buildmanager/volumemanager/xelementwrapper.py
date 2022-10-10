@@ -19,14 +19,7 @@ class XElementWrapper(ElementTree.Element):
 
     def sort(self):
         """Order child elements"""
-
-        if not hasattr(self, 'SortKey'):
-            return
-
-        sortkey = self.SortKey
-        if sortkey is None:
-            return None
-
+  
         if len(self) <= 1:
             return
 

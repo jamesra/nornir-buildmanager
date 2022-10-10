@@ -12,7 +12,7 @@ class SectionNode(XNamedContainerElementWrapped):
     @classmethod
     def ClassSortKey(cls, self):
         """Required for objects derived from XContainerElementWrapper"""
-        return "Section " + (nornir_buildmanager.templates.Current.SectionTemplate % int(self.Number))
+        return f"Section {self.Number:04d}"
 
     @property
     def SortKey(self):
