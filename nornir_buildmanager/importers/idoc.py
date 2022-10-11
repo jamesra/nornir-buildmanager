@@ -169,7 +169,9 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 class SerialEMIDocImport(object):
     
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath, ContrastCutoffs, OutputImageExt=None, TargetBpp=None, FlipList=None, ContrastMap=None, CameraBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj, idocFileFullPath: str, ContrastCutoffs, OutputImageExt: str = None,
+                TargetBpp:int = None, FlipList=None, ContrastMap=None, CameraBpp: int = None,
+                debug=None):
         """
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -281,6 +283,10 @@ class SerialEMIDocImport(object):
         if IDocData.NumTiles == 0:
             prettyoutput.Log("No tiles found in IDoc: " + idocFilePath)
             return
+        
+        #Try to clean old nodes first if this is a reimport
+        saveChannel |= shared.TryCleanNotes(channelObj, sectionDir, logger, ExistingSectionInfo)
+        saveChannel |= shared.TryCleanIdocCaptureData(channelObj, sectionDir, logger, ExistingSectionInfo)
 
         # See if we can find a notes file...
         shared.TryAddNotes(channelObj, sectionDir, logger)

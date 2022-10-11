@@ -11,16 +11,30 @@ import glob
 import nornir_shared.prettyoutput as prettyoutput
 import collections
 import re
-import nornir_buildmanager
+from typing import Iterable, NamedTuple
+import nornir_buildmanager 
 from nornir_buildmanager.exceptions import NornirUserException
 
-FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
-MinMaxGamma = collections.namedtuple('MinMaxGamma', 'min max gamma')  
+class FilenameMetadata(NamedTuple):
+    fullpath: str
+    number: int
+    version: str
+    name: str
+    downsample: int
+    extension: str
+    
+class MinMaxGamma(NamedTuple):
+    min: float
+    max: float
+    gamma: float = 1.0
+
+#FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
+#MinMaxGamma = collections.namedtuple('MinMaxGamma', 'min max gamma')  
 
 #Global instance of our parser for filenames that is initialized upon first use
 _InputFileRegExParser = None
 
-def GetSectionInfo(fullpath):
+def GetSectionInfo(fullpath) -> FilenameMetadata:
     '''Given a path or filename returns the meta data we can determine from the name
        :returns: A named tuple with (fullpath number version name downsample extension)
     '''
@@ -42,64 +56,118 @@ def FileMetaDataStr(data):
     output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}\n".format(os.path.basename(data.fullpath), str(data.number), str(v), str(data.name), str(data.downsample), str(data.extension))
     return output
 
+def _TryCleanDataWithNotInCurrentImport(input_path: str,
+                                        elements: Iterable[nornir_buildmanager.volumemanager.XElementWrapper],
+                                        new_section_info: FilenameMetadata | None = None) -> str:
+     
+    removed = False
+    for elem in elements:
+        try:
+            old_section_info = GetSectionInfo(elem.Path)
+        except NornirUserException:
+            continue #Do not remove information that doesn't have a parsable path
+        
+        if new_section_info is None:
+            new_section_info = GetSectionInfo(input_path)
+        
+        if new_section_info.number != old_section_info.number:
+            continue
+          
+        elem_file_path = os.path.join(input_path, elem.Path)
+        if not os.path.exists(elem_file_path):
+            elem.Clean(f"Removing <{elem.tag}> element created {elem.CreationTime}.  Source file not found in current import folder {elem_file_path}")
+            removed = True
+        
+    return removed
 
-def TryAddNotes(containerObj, InputPath, logger):
-    '''Check the path for a notes.txt file.  If found, add a <Notes> element to the passed containerObj'''
+def TryCleanNotes(containerObj, input_path: str, logger, new_section_info: FilenameMetadata | None = None) -> bool:
+    """
+    Remove notes elements whose files do not exist in the input path
+    :param new_section_info: Section information for the section we are importing notes from
+    :return: True if a Note element was removed
+    """
+         
+    notes = containerObj.findall('Notes')
+    return _TryCleanDataWithNotInCurrentImport(input_path, notes, new_section_info)
+        
+
+def TryCleanIdocCaptureData(containerObj, input_path: str, logger, new_section_info: FilenameMetadata | None = None) -> bool:
+    """
+    Remove Data elements whose files do not exist in the input path
+    :param new_section_info: Section information for the section we are importing notes from
+    :return: True if an element was removed
+    """
+    data_elements = containerObj.findall('Data')
+    filtered_list = []
+    for data in data_elements:
+        _, ext = os.path.splitext(data.Path)
+        if ext == '.log' or ext == '.idoc':
+            filtered_list.append(data)
+        
+    return _TryCleanDataWithNotInCurrentImport(input_path, filtered_list, new_section_info)
+
+
+def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: FilenameMetadata | None = None):
+    '''Check the path for a notes.txt file.  If found, add a <Notes> element to the passed containerObj
+    :param new_section_info: Section information for the section we are importing notes from
+    '''
     
-    NotesFiles = glob.glob(os.path.join(InputPath, '*.txt'))
-    NotesAdded = False
-    if len(NotesFiles) > 0:
-        for filename in NotesFiles:
-            
-            if os.path.basename(filename) == 'ContrastOverrides.txt':
-                continue 
-            
-            if os.path.basename(filename) == 'Timing.txt':
-                continue 
-            
-            try:
-                from xml.sax.saxutils import escape
+    if new_section_info is None:
+        new_section_info = GetSectionInfo(InputPath)
+    
+    NotesFiles = glob.iglob(os.path.join(InputPath, '*.txt'))
+    NotesAdded = False 
+    for filename in NotesFiles:
+        
+        if os.path.basename(filename) == 'ContrastOverrides.txt':
+            continue 
+        
+        if os.path.basename(filename) == 'Timing.txt':
+            continue 
+        
+        try:
+            from xml.sax.saxutils import escape
 
-                NotesFilename = os.path.basename(filename)
-                CopiedNotesFullPath = os.path.join(containerObj.FullPath, NotesFilename)
-                if not os.path.exists(CopiedNotesFullPath):
-                    os.makedirs(containerObj.FullPath, exist_ok=True)
-                    shutil.copyfile(filename, CopiedNotesFullPath)
-                    NotesAdded = True
+            NotesFilename = os.path.basename(filename)
+            CopiedNotesFullPath = os.path.join(containerObj.FullPath, NotesFilename)
+            if not os.path.exists(CopiedNotesFullPath):
+                os.makedirs(containerObj.FullPath, exist_ok=True)
+                shutil.copyfile(filename, CopiedNotesFullPath)
+                NotesAdded = True
 
-                with open(filename, 'r') as f:
-                    notesTxt = f.read()
-                    (base, ext) = os.path.splitext(filename)
-                    encoding = "utf-8"
-                    ext = ext.lower()
-                    # notesTxt = notesTxt.encode(encoding)
+            with open(filename, 'r') as f:
+                notesTxt = f.read()
+                (base, ext) = os.path.splitext(filename)
+                encoding = "utf-8"
+                ext = ext.lower()
+                # notesTxt = notesTxt.encode(encoding)
 
-                    notesTxt = notesTxt.replace('\0', '')
+                notesTxt = notesTxt.replace('\0', '')
 
-                    if len(notesTxt) > 0:
-                        # XMLnotesTxt = notesTxt
-                        # notesTxt = notesTxt.encode('utf-8')
-                        XMLnotesTxt = escape(notesTxt)
+                if len(notesTxt) > 0:
+                    # XMLnotesTxt = notesTxt
+                    # notesTxt = notesTxt.encode('utf-8')
+                    XMLnotesTxt = escape(notesTxt)
 
-                        # Create a Notes node to save the notes into
-                        NotesNodeObj = nornir_buildmanager.volumemanager.NotesNode.Create(Text=XMLnotesTxt, SourceFilename=NotesFilename)
-                        containerObj.RemoveOldChildrenByAttrib('Notes', 'SourceFilename', NotesFilename)
-                        [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
+                    # Create a Notes node to save the notes into
+                    NotesNodeObj = nornir_buildmanager.volumemanager.NotesNode.Create(Text=XMLnotesTxt, SourceFilename=NotesFilename)
+                    containerObj.RemoveOldChildrenByAttrib('Notes', 'Path', NotesFilename)
+                    [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
 
-                        if added:
-                            # Try to copy the notes to the output dir if we created a node
-                            if not os.path.exists(CopiedNotesFullPath):
-                                shutil.copyfile(filename, CopiedNotesFullPath)
+                    if added:
+                        # Try to copy the notes to the output dir if we created a node
+                        if not os.path.exists(CopiedNotesFullPath):
+                            shutil.copyfile(filename, CopiedNotesFullPath)
 
-                        NotesNodeObj.text = XMLnotesTxt
-                        NotesNodeObj.encoding = encoding
+                    NotesNodeObj.text = XMLnotesTxt
+                    NotesNodeObj.encoding = encoding
 
-                        NotesAdded = NotesAdded or added
+                    NotesAdded = NotesAdded or added
 
-            except:
-                (etype, evalue, etraceback) = sys.exc_info()
-                prettyoutput.Log("Attempt to include notes from " + filename + " failed.\n" + evalue.message)
-                prettyoutput.Log(etraceback)
+        except:
+            (etype, evalue, etraceback) = sys.exc_info()
+            prettyoutput.Log("Attempt to include notes from " + filename + " failed.\n" + evalue.message)
+            prettyoutput.Log(etraceback)
 
     return NotesAdded
 
