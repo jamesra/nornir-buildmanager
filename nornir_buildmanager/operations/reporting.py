@@ -217,13 +217,36 @@ HTMLAnchorTemplate = '<a href="%(href)s">%(body)s</a>'
 TempFileSalt = 0
 
 
-def GetTempFileSaltString():
-    global TempFileSalt
-
-    saltString = str(TempFileSalt) + "_"
-    TempFileSalt = TempFileSalt + 1
-
-    return saltString
+def GetTempFileSaltString(node=None) -> str:
+    saltString = None
+        
+    if isinstance(node, nornir_buildmanager.volumemanager.XElementWrapper):
+        b_node = node.FindParent('Block')
+        s_node = node.FindParent('Section')
+        c_node = node.FindParent('Channel')
+        f_node = node.FindParent('Filter')
+        
+        if b_node is not None: 
+            saltString = b_node.Name
+        if s_node is not None: 
+            saltString += f"_{s_node.Number}"
+        if c_node is not None: 
+            saltString += f"_{c_node.Name}"
+        if f_node is not None: 
+            saltString += f"_{f_node.Name}"
+        
+        if hasattr(node, 'Checksum'):
+            saltString += "_" + node.Checksum + "_"
+            
+        return saltString
+            
+    if saltString is None:
+        global TempFileSalt
+    
+        saltString = str(TempFileSalt) + "_"
+        TempFileSalt = TempFileSalt + 1
+    
+        return saltString
 
 
 def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
@@ -661,7 +684,7 @@ def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight
         
         TPool = nornir_pools.GetGlobalMultithreadingPool()
         
-        salt_str = GetTempFileSaltString()
+        salt_str = GetTempFileSaltString(DataNode)
         
         DefocusImgFilename = salt_str + "Defocus.svg"
         DefocusThumbnailFilename = salt_str + "Defocus_Thumbnail.png"
@@ -707,7 +730,7 @@ def HTMLFromLogDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=
 
         LogSrcFullPath = os.path.join(RelPath, DataNode.Path)
         
-        salt_str = GetTempFileSaltString()
+        salt_str = GetTempFileSaltString(DataNode)
 
         DriftSettleSrcFilename = salt_str + "DriftSettle.svg"
         DriftSettleThumbnailFilename = salt_str + "DriftSettle_Thumb.png"
@@ -809,7 +832,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
         Scale = max(float(Width) / MaxImageWidth, float(Height) / MaxImageHeight)
         Scale = 1.0 / Scale
   
-        ThumbnailFilename = GetTempFileSaltString() + ImageNode.Path
+        ThumbnailFilename = GetTempFileSaltString(ImageNode) + ImageNode.Path
         ImgSrcPath = os.path.join(HtmlPaths.ThumbnailRelative, ThumbnailFilename)
 
         ThumbnailOutputFullPath = os.path.join(HtmlPaths.ThumbnailDir, ThumbnailFilename)
