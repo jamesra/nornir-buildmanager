@@ -1071,9 +1071,8 @@ def GenerateHistogramImage(HistogramElement: HistogramNode,
 
 def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True,
                       ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
-    for yieldval in AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix,
-                                           UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, **kwargs):
-        yield yieldval
+    return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix,
+                                           UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, **kwargs)
 
 
 def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
@@ -1168,6 +1167,7 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
         if UpdateImageName(imageNode, ExpectedImageName):
             Logger.warn("Renamed image file: %s -> %s " % (original_image_name, ExpectedImageName))
             yield imageSet
+
 
 
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True,

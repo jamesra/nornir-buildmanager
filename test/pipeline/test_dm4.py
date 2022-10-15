@@ -108,14 +108,14 @@ class StosRebuildHelper(object):
         return updatedTransform
       
       
-    def ForceStosRebuild(self, Grid32ManualStosFullPath, BruteLevel):
+    def ForceStosRebuildFromBruteLevel(self, manual_stos_file_path, BruteLevel):
         '''Add a manual transform to the grid32 level.  Ensure the entire stack is regenerated'''
           
         StosGroupName = 'Grid32'
         
           
         # OK, part two is to change a mosaic, and ensure that every file downstream is updated
-        transformList = self.CopyManualStosFiles(Grid32ManualStosFullPath, StosGroupName=StosGroupName)
+        transformList = self.CopyManualStosFiles(manual_stos_file_path, StosGroupName=StosGroupName)
         self.assertGreater(len(transformList), 0, "Transform list should not be empty")
           
         grid32TransformList = self.RunPipelineToRefreshStosGroupTransforms(transformList,
@@ -317,7 +317,7 @@ class DM4BuildTest(DM4Test, StosRebuildHelper):
         self.RunExportImages(Channels="SEM", Filters="Leveled", AssembleLevel=8, Output="MosaicExport")
           
 #         #TODO, this failed.  Fix it
-#         self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)  
+#         self.ForceStosRebuildFromBruteLevel(self.Grid32ManualStosFullPath, BruteLevel)  
   
 #   
 # class DM4BuildTest(setup_pipeline.CopySetupTestBase, StosRebuildHelper):
@@ -400,7 +400,7 @@ class DM4BuildTest(DM4Test, StosRebuildHelper):
 #         self.RunExportImages(Channels="SEM", Filters="Leveled", AssembleLevel=8, Output="MosaicExport")
 #           
 #         #TODO, this failed.  Fix it
-#         self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)  
+#         self.ForceStosRebuildFromBruteLevel(self.Grid32ManualStosFullPath, BruteLevel)  
 # 
 #             
               

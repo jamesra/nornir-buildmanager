@@ -18,7 +18,7 @@ import nornir_shared.misc
 
 import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.idoc as idoc
-from . import setup_pipeline
+import setup_pipeline
 
 
 class IDocTest(setup_pipeline.PlatformTest):
@@ -110,23 +110,30 @@ class StosRebuildHelper(object):
 
         return updatedTransform
 
-    def ForceStosRebuild(self, Grid32ManualStosFullPath, BruteLevel):
-        '''Add a manual transform to the grid32 level.  Ensure the entire stack is regenerated'''
+    def ForceStosRebuildFromBruteLevel(self, manual_stos_file_path, BruteLevel, GridOneLevel=None, GridTwoLevel=None, StosGroupName=None):
+        '''Add a manual transform to the brute level.  Ensure the entire stack is regenerated'''
+        
+        if GridOneLevel is None:
+            GridOneLevel = 32
+            
+        if GridTwoLevel is None:
+            GridTwoLevel = 8
 
-        StosGroupName = 'Grid32'
+        if StosGroupName is None:
+            StosGroupName = f'StosBrute{BruteLevel}'
 
         # OK, part two is to change a mosaic, and ensure that every file downstream is updated
-        transformList = self.CopyManualStosFiles(Grid32ManualStosFullPath, StosGroupName=StosGroupName)
+        transformList = self.CopyManualStosFiles(manual_stos_file_path, StosGroupName=f'Grid{GridOneLevel}')
         self.assertGreater(len(transformList), 0, "Transform list should not be empty")
 
         grid32TransformList = self.RunPipelineToRefreshStosGroupTransforms(transformList,
-                                                                           stos_group_name='Grid32',
+                                                                           stos_group_name=f'Grid{GridOneLevel}',
                                                                            func=self.RunRefineSectionAlignment,
                                                                            func_args_dict={
                                                                                'InputGroup': "StosBrute",
                                                                                'InputLevel': BruteLevel,
                                                                                'OutputGroup': "Grid",
-                                                                               'OutputLevel': BruteLevel,
+                                                                               'OutputLevel': GridOneLevel,
                                                                                'Filter': "Leveled"}
                                                                            )
 
@@ -135,13 +142,13 @@ class StosRebuildHelper(object):
         self.assertGreater(len(originalGrid8TransformList), 0, "Transform list should not be empty")
 
         grid8TransformList = self.RunPipelineToRefreshStosGroupTransforms(originalGrid8TransformList,
-                                                                          stos_group_name='Grid8',
+                                                                          stos_group_name=f'Grid{GridTwoLevel}',
                                                                           func=self.RunRefineSectionAlignment,
                                                                           func_args_dict={
                                                                               'InputGroup': "Grid",
-                                                                              'InputLevel': BruteLevel,
+                                                                              'InputLevel': GridOneLevel,
                                                                               'OutputGroup': "Grid",
-                                                                              'OutputLevel': BruteLevel / 4,
+                                                                              'OutputLevel': GridTwoLevel,
                                                                               'Filter': "Leveled"}
                                                                           )
 
@@ -154,7 +161,7 @@ class StosRebuildHelper(object):
                                                                           func=self.RunScaleVolumeTransforms,
                                                                           func_args_dict={
                                                                               'InputGroup': "Grid",
-                                                                              'InputLevel': BruteLevel / 4,
+                                                                              'InputLevel': GridTwoLevel,
                                                                               'OutputLevel': 1}
                                                                           )
 
@@ -425,6 +432,9 @@ class IDocSingleSectionImportTest(IDocTest):
 
 class IDocBuildTest(IDocTest, StosRebuildHelper):
 
+    def StosGridManualStosFullPath(self, level: int):
+        return os.path.join(self.PlatformFullPath, f"IDocBuildTest_Grid{level}Manual")
+
     def runTest(self):
         self.RunImport()
         self.RunPrune()
@@ -488,7 +498,7 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
         self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 
         # TODO, this failed.  Fix it
-        self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)
+        self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne), BruteLevel, GridLevelOne)
 
         self.RunCalculateStosGroupWarpMetrics()
 
@@ -506,70 +516,72 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
 #     def Platform(self):
 #         return "Temp"
 #
-#     @property
-#     def Grid32ManualStosFullPath(self):
-#         return os.path.join(self.PlatformFullPath, "IDocBuildTest_Grid32Manual")
+#     def StosBruteManualStosFullPath(self, level: int):
+#         return os.path.join(self.PlatformFullPath, f"IDocBuildTest_Brute{level}Manual")
+#
+#     def StosGridManualStosFullPath(self, level: int):
+#         return os.path.join(self.PlatformFullPath, f"IDocBuildTest_Grid{level}Manual")
 #
 #     def runTest(self):
-#         self.RunImport()
-#         self.RunPrune()
-#
-#         self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
-#
-#         self.RunHistogram()
-#
-#         self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
-#
-#         self.RunAdjustContrast()
-#
-#         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
-#         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=2)
-#         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)
-#
-#         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
-#         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
+# #         self.RunImport()
+# #         self.RunPrune()
 # #
-#         self.RunMosaic(Filter="Leveled")
-# #        self.RunMosaicReport()
-#         self.RunAssemble(Channels='TEM', Levels=[8, 16])
-# #                        
-#         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
-#         self.RunMosaicReport()
+# #         self.RunSetPruneCutoff(Value="7.5", Section="693", Channels="*", Filters="Raw8")
+# #
+# #         self.RunHistogram()
+# #
+# #         self.RunSetContrast(MinValue="125", MaxValue="NaN", GammaValue="NaN", Section="693", Channels="*", Filters="Raw8")
+# #
+# #         self.RunAdjustContrast()
+# #
+# #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=1)
+# #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=2)
+# #         self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 691}, section_number=691, channel='TEM', filter='Leveled', level=4)
+# #
+# #         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
+# #         self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
+# # #
+# #         self.RunMosaic(Filter="Leveled")
+# # #        self.RunMosaicReport()
+# #         self.RunAssemble(Channels='TEM', Levels=[8, 16])
+# # #                        
+# #         self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
+# #         self.RunMosaicReport()
 #
 # #        Copy output here to run IDocAlignTest
 #
-# BruteLevel = 16
+#         BruteLevel = 16
 #
-#         self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
-# self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
+#         #self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
+#         #self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
 #
-# self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
-# self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+#         #self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+#         #self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
 #
-# GridLevelOne = 16
-# GridLevelTwo = 8
+#         GridLevelOne = 16
+#         GridLevelTwo = 8
 #
-# self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=GridLevelOne, Filter="Leveled")
-# self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid", OutputLevel=GridLevelTwo, Filter="Leveled")
+#         #self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=GridLevelOne, Filter="Leveled")
+#         #self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid", OutputLevel=GridLevelTwo, Filter="Leveled")
 #
-# # Copy output here to run IDocAlignOutputTest
+#         # Copy output here to run IDocAlignOutputTest
 #
-# self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=GridLevelTwo, OutputLevel=1)
-# self.RunSliceToVolume()
-# self.RunMosaicToVolume()
-# self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
-# self.RunAssembleMosaicToVolume(Channels="TEM")
-# self.RunMosaicReport(OutputFile='VolumeReport')
-# self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=GridLevelOne)
+#         #self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=GridLevelTwo, OutputLevel=1)
+#         #self.RunSliceToVolume()
+#         # self.RunMosaicToVolume()
+#         # self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
+#         # self.RunAssembleMosaicToVolume(Channels="TEM")
+#         # self.RunMosaicReport(OutputFile='VolumeReport')
+#         # self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=GridLevelOne)
+#         #
+#         # self.RunAssemble(Channels='TEM', Levels=[1])
+#         # self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 #
-# self.RunAssemble(Channels='TEM', Levels=[1])
-# self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
-#
-# # TODO, this failed.  Fix it
-# self.ForceStosRebuild(self.Grid32ManualStosFullPath, BruteLevel)
-#
-#
-# self.RunCalculateStosGroupWarpMetrics()
+#         # TODO, this failed.  Fix it
+#         # self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne), BruteLevel, GridLevelOne)
+#         #
+#         #
+#         # self.RunCalculateStosGroupWarpMetrics()
 
 #           
 #            
