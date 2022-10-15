@@ -1419,13 +1419,15 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath, ManualInpu
         return AutomaticInputStosFullPath
 
     # If we haven't generated an automatic file and a manual file exists, use the manual file.  Delete the automatic if it also exists.
-    InputStosFullPath = AutomaticInputStosFullPath
+    #InputStosFullPath = AutomaticInputStosFullPath
     if os.path.exists(ManualInputStosFullPath):
-        InputStosFullPath = ManualInputStosFullPath
+        # InputStosFullPath = ManualInputStosFullPath
         # Files.RemoveOutdatedFile(ManualInputStosFullPath, OutputStosFullPath)
         if os.path.exists(AutomaticInputStosFullPath):
             # Clean up the automatic input if we have a manual override
             os.remove(AutomaticInputStosFullPath)
+            
+        return ManualInputStosFullPath
     # else:
         # The local copy may have a different downsample level, in which case the checksums based on the transform would always be different
         # As a result we need to use the meta-data checksum records and not the automatically generated file.
