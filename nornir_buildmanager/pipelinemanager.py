@@ -96,8 +96,8 @@ class ArgumentSet:
 
             iEndVar = iEndVar - 1
 
-        #logger = logging.getLogger(__name__ + ".ReplaceVariable")
-        #logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
+        # logger = logging.getLogger(__name__ + ".ReplaceVariable")
+        # logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         prettyoutput.LogErr("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         sys.exit()
 
@@ -152,7 +152,8 @@ class ArgumentSet:
 
         for key in Node.attrib:
             if key in self.Attribs:
-                raise PipelineError(PipelineNode=Node, message="%s attribute already present in arguments.  Remove duplicate use from pipelines.xml" % key)
+                raise PipelineError(PipelineNode=Node,
+                                    message="%s attribute already present in arguments.  Remove duplicate use from pipelines.xml" % key)
             val = Node.attrib[key]
 
             if len(val) == 0:
@@ -170,20 +171,20 @@ class ArgumentSet:
             try:
                 self.Attribs[key] = int(val)
                 continue
-            except:
+            except ValueError:
                 pass
 
             try:
                 self.Attribs[key] = float(val)
                 continue
-            except:
+            except ValueError:
                 pass
 
     def RemoveAttributes(self, Node):
         '''Remove attributes present in the node from the attrib dictionary'''
 
         for key in Node.attrib:
-            if key in self.Attribs: 
+            if key in self.Attribs:
                 val = Node.attrib[key]
                 # If we assign a variable to an attribute with the same name to ourselves do not overwrite
                 if val[0] == '#':
@@ -228,13 +229,13 @@ class ArgumentSet:
                     try:
                         NewParameters[name] = int(val)
                         continue
-                    except:
+                    except ValueError:
                         pass
 
                     try:
                         NewParameters[name] = float(val)
                         continue
-                    except:
+                    except ValueError:
                         pass
 
         if dargsKeyname is None:
@@ -243,7 +244,11 @@ class ArgumentSet:
             self.Parameters[dargsKeyname] = NewParameters
 
     def RemoveParameters(self, Node):
-        '''Remove entries from a dargs dictionary.'''
+        """
+        :param Node:
+        :return:
+        Remove entries from a dargs dictionary.
+        """
 
         # print "Remove Parameters"
 
@@ -253,7 +258,7 @@ class ArgumentSet:
             for entryNode in PN:
                 if entryNode.tag == 'Entry':
                     name = entryNode.attrib['Name']
-                    if not 'Value' in entryNode.attrib:
+                    if 'Value' not in entryNode.attrib:
                         continue
 
                     val = entryNode.attrib['Value']
@@ -275,7 +280,6 @@ class ArgumentSet:
         del self.Variables[key]
 
 
-
 class ExtensionData:
     def __init__(self):
         self.ext = None
@@ -288,9 +292,8 @@ class ExtensionData:
 class PipelineManager(object):
     logger = logging.getLogger('PipelineManager')
 
-    
-
     '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
+
     def __init__(self, pipelinesRoot, pipelineData):
         self.VolumeTree = None
         self.PipelineData = pipelineData
@@ -299,13 +302,12 @@ class PipelineManager(object):
 
         if 'Description' in pipelineData.attrib:
             self._description = pipelineData.attrib['Description']
-            
+
         if 'Help' in pipelineData.attrib:
             self._help = pipelineData.attrib['Help']
 
         if 'Epilog' in pipelineData.attrib:
             self._epilog = pipelineData.attrib['Epilog']
-
 
     @property
     def Description(self):
@@ -313,7 +315,7 @@ class PipelineManager(object):
             return self._description
 
         return None
-    
+
     @property
     def Help(self):
         if hasattr(self, '_help'):
@@ -359,13 +361,12 @@ class PipelineManager(object):
             PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXmlFile)
             prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXmlFile)
             sys.exit()
-            return False
 
         return True
 
     @classmethod
     def LoadPipelineXML(cls, PipelineXML):
-        #Python 3 switched to unicode always so the encoding should not be necessary for non-english character sets
+        # Python 3 switched to unicode always so the encoding should not be necessary for non-english character sets
         if int(platform.python_version_tuple()[0]) < 3:
             if isinstance(PipelineXML, str):
                 PipelineXML = PipelineXML.encode(sys.getdefaultencoding())
@@ -375,7 +376,7 @@ class PipelineManager(object):
                 return ElementTree.parse(PipelineXML)
 
         elif isinstance(PipelineXML, ElementTree.ElementTree):
-                return PipelineXML
+            return PipelineXML
 
         raise Exception("Invalid argument: " + str(PipelineXML))
 
@@ -384,7 +385,7 @@ class PipelineManager(object):
 
         PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
-        assert(isinstance(PipelineXML, ElementTree.ElementTree))
+        assert (isinstance(PipelineXML, ElementTree.ElementTree))
 
         PipelineNodes = PipelineXML.findall("Pipeline")
 
@@ -418,7 +419,6 @@ class PipelineManager(object):
 
         return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)
 
-
     @classmethod
     def RunPipeline(cls, PipelineXmlFile, PipelineName, args):
 
@@ -427,7 +427,6 @@ class PipelineManager(object):
 
         Pipeline.Execute(args)
 
-
     def GetArgParser(self, parser=None, IncludeGlobals=True):
         '''Create the complete argument parser for the pipeline
         :param parser:
@@ -435,16 +434,14 @@ class PipelineManager(object):
         '''
 
         if IncludeGlobals:
-            parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineRoot.findall('Arguments/Argument'), parser)
+            parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineRoot.findall('Arguments/Argument'),
+                                                                  parser)
 
         parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineData.findall('Arguments/Argument'), parser)
 
         PipelineManager._AddParserDescription(self.PipelineData, parser)
 
         return parser
-
-
-
 
     @classmethod
     def _AddParserDescription(cls, PipelineNode, parser):
@@ -458,10 +455,9 @@ class PipelineManager(object):
 
         if 'Help' in PipelineNode.attrib:
             parser.help = PipelineNode.attrib['Help']
-            
+
         if 'Description' in PipelineNode.attrib:
             parser.description = PipelineNode.attrib['Description']
-            
 
         if 'Epilog' in PipelineNode.attrib:
             parser.epilog = PipelineNode.attrib['Epilog']
@@ -476,9 +472,10 @@ class PipelineManager(object):
     def GetSearchRoot(cls, VolumeElem, PipelineNode, ArgSet):
         RootIterNodeName = PipelineNode.get('Root', None)
         RootForSearch = VolumeElem
-        if not RootIterNodeName is None:
-            if not RootIterNodeName in ArgSet.Variables:
-                raise PipelineSearchRootNotFound(argname=RootIterNodeName, PipelineNode=PipelineNode, VolumeElem=VolumeElem)
+        if RootIterNodeName is not None:
+            if RootIterNodeName not in ArgSet.Variables:
+                raise PipelineSearchRootNotFound(argname=RootIterNodeName, PipelineNode=PipelineNode,
+                                                 VolumeElem=VolumeElem)
 
             RootForSearch = ArgSet.Variables[RootIterNodeName]
         return RootForSearch
@@ -515,7 +512,7 @@ class PipelineManager(object):
         # dargs = copy.deepcopy(defaultDargs)
 
         self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
-        
+
         nornir_pools.WaitOnAllPools()
 
     def ExecuteChildPipelines(self, ArgSet, VolumeElem, PipelineNode):
@@ -543,14 +540,16 @@ class PipelineManager(object):
                     PipelineManager.logger.info("Search statement did not match.  Skipping to next iteration\n")
                     break
                 except PipelineListIntersectionFailed as e:
-                    PipelineManager.logger.info("Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + e.message)
+                    PipelineManager.logger.info(
+                        "Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + e.message)
                     break
                 except PipelineRegExSearchFailed as e:
-                    PipelineManager.logger.info("Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
+                    PipelineManager.logger.info(
+                        "Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
                     break
                 except PipelineError as e:
-                    errStr = "Unexpected error, exiting pipeline\n" + str(e) 
-                    PipelineManager.logger.error(errStr) 
+                    errStr = "Unexpected error, exiting pipeline\n" + str(e)
+                    PipelineManager.logger.error(errStr)
                     prettyoutput.LogErr(errStr)
                     sys.exit()
                 finally:
@@ -565,9 +564,8 @@ class PipelineManager(object):
     def ProcessStageElement(self, VolumeElem, PipelineNode, ArgSet=None):
 
         outStr = PipelineManager.ToElementString(PipelineNode)
-        #prettyoutput.CurseString('Section', outStr)
+        # prettyoutput.CurseString('Section', outStr)
 
-        
         # prettyoutput.Log("Processing Stage Element: " + outStr)
 
         # Copy dargs so we do not modify what the parent passed us
@@ -594,10 +592,8 @@ class PipelineManager(object):
         else:
             raise Exception("Unexpected element name in Pipeline.XML: " + PipelineNode.tag)
 
-        
-
-
-    def RequireSetMembership(self, ArgSet, VolumeElem, PipelineNode):
+    @staticmethod
+    def RequireSetMembership(ArgSet, VolumeElem, PipelineNode):
         '''If the attribute value is not present in the provided list the element is skipped.
            If the provided list is none we do not skip.'''
 
@@ -626,13 +622,14 @@ class PipelineManager(object):
                                            PipelineNode=PipelineNode,
                                            argname=AttribName)
 
-        if not Attrib in listOfValid:
-            raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, listOfValid=listOfValid, attribValue=Attrib)
+        if Attrib not in listOfValid:
+            raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode,
+                                                 listOfValid=listOfValid, attribValue=Attrib)
 
         return
 
-
-    def ProcessRequireMatchNode(self, ArgSet, VolumeElem, PipelineNode):
+    @staticmethod
+    def ProcessRequireMatchNode(ArgSet, VolumeElem, PipelineNode):
         '''If the regular expression does not match the attribute an exception is raised.
            This skips the current iteration of an enclosing <iterate> element'''
 
@@ -659,7 +656,8 @@ class PipelineManager(object):
 
         match = re.match(RegExStr, Attrib)
         if match is None:
-            raise PipelineRegExSearchFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, regex=RegExStr, attribValue=Attrib)
+            raise PipelineRegExSearchFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, regex=RegExStr,
+                                            attribValue=Attrib)
 
         return
 
@@ -676,7 +674,7 @@ class PipelineManager(object):
             if SelectedVolumeElem is None:
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
-            #Containers will be tested at load time.  The load linked element code checks containers
+            # Containers will be tested at load time.  The load linked element code checks containers
             if not isinstance(SelectedVolumeElem,
                               nornir_buildmanager.volumemanager.xcontainerelementwrapper.XContainerElementWrapper):
                 if SelectedVolumeElem.NeedsValidation:
@@ -685,14 +683,15 @@ class PipelineManager(object):
                         # Check if the node is locked, otherwise clean it and look for another node
                         if 'Locked' in SelectedVolumeElem.attrib:
                             if SelectedVolumeElem.Locked:
-                                PipelineManager.logger.info("Did not clean locked element {0}\n".format(SelectedVolumeElem.FullPath))
+                                PipelineManager.logger.info(
+                                    "Did not clean locked element {0}\n".format(SelectedVolumeElem.FullPath))
                                 break
-                            
+
                         SelectedVolumeElem.Clean(Reason)
                         PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
                         SelectedVolumeElem = None
 
-        if not SelectedVolumeElem is None:
+        if SelectedVolumeElem is not None:
             self.AddPipelineNodeVariable(PipelineNode, SelectedVolumeElem, ArgSet)
 
     def ProcessIterateNode(self, ArgSet, VolumeElem, PipelineNode):
@@ -723,12 +722,12 @@ class PipelineManager(object):
 
     @classmethod
     def _SaveNodes(cls, NodesToSave):
-        if not NodesToSave is None:
+        if NodesToSave is not None:
             if isinstance(NodesToSave, collections.abc.Iterable) or isgenerator(NodesToSave):
                 for node in NodesToSave:
                     if node is None:
-                        continue 
-                    
+                        continue
+
                     nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(node)
             else:
                 nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(NodesToSave)
@@ -745,7 +744,7 @@ class PipelineManager(object):
         if ArgSet.Arguments['verbose']:
             prettyoutput.Log("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
 
-        #PipelineManager.logger.info("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
+        # PipelineManager.logger.info("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
 
         if stageFunc is None:
             errorStr = "Stage implementation not found: " + str(PipelineModule) + "." + str(PipelineFunction)
@@ -792,16 +791,17 @@ class PipelineManager(object):
                         PipelineManager.logger.error(errorStr)
                         # prettyoutput.LogErr(errorStr)
 
-                        self.VolumeTree = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
+                        self.VolumeTree = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(
+                            self.VolumeTree.attrib["Path"], UseCache=False)
                         return
-                         
-                        
+
+
                 else:
                     # In debug mode we do not want to catch any exceptions
                     # stage functions can return None,True, or False to indicate they did work.
                     # if they return false we do not need to run the expensive save operation
                     print(str(PipelineModule) + '.' + str(PipelineFunction))
-                    
+
                     NodesToSave = stageFunc(**kwargs)
 
                 PipelineManager._SaveNodes(NodesToSave)
@@ -809,32 +809,34 @@ class PipelineManager(object):
             finally:
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
-                
-            #prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
-#           PipelineManager.RemoveParameters(dargs, PipelineNode)
-#           PipelineManager.RemoveAttributes(dargs, PipelineNode)
+            # prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
-    def AddPipelineNodeVariable(self, PipelineNode, VolumeElem, ArgSet):
+    #           PipelineManager.RemoveParameters(dargs, PipelineNode)
+    #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
+
+    @staticmethod
+    def AddPipelineNodeVariable(PipelineNode, VolumeElem, ArgSet):
         '''Adds a variable to our dictionary passed to functions'''
         if 'VariableName' in PipelineNode.attrib:
             key = PipelineNode.attrib['VariableName']
 
             # if key in ArgSet.Variables:
-                # raise PipelineError(PipelineNode=PipelineNode, VolumeElem=VolumeElem, message=str(key) + " is a duplicate variable name")
+            # raise PipelineError(PipelineNode=PipelineNode, VolumeElem=VolumeElem, message=str(key) + " is a duplicate variable name")
 
             ArgSet.AddVariable(key, VolumeElem)
 
             outStr = VolumeElem.ToElementString()
             # if(self.Parameters['verbose']):
-                # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
+            # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
 
             PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
 
         elif PipelineNode.tag == "Select":
             raise PipelineError(PipelineNode=PipelineNode, message="VariableName attribute required on Select Element")
 
-    def RemovePipelineNodeVariable(self, ArgSet, PipelineNode):
+    @staticmethod
+    def RemovePipelineNodeVariable(ArgSet, PipelineNode):
         '''Adds a variable to our dictionary passed to functions'''
         if 'VariableName' in PipelineNode.attrib:
             del ArgSet.Variables[PipelineNode.attrib['VariableName']]
@@ -847,13 +849,12 @@ def _GetVariableName(PipelineNode):
 
         # outStr = VolumeElem.ToElementString()
         # if(self.Parameters['verbose']):
-            # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
+        # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
         # PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
     elif PipelineNode.tag == "Select":
         raise PipelineError(PipelineNode=PipelineNode, message="Variable name attribute required on Select Element")
 
 
 if __name__ == "__main__":
-
     XmlFilename = 'D:\Buildscript\Pipelines.xml'
     PipelineManager.Load(XmlFilename)
