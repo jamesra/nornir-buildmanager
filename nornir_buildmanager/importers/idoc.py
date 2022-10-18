@@ -30,6 +30,7 @@ Example:
 
 """
 
+import sys
 import re
 import datetime
 import nornir_imageregistration
