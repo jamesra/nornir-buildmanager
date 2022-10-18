@@ -735,7 +735,7 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
         if k == 'Defocus':
             continue
 
-        setattr(IDocNodeObj, k, v)
+        setattr(IDocNodeObj, k, v if v is not None else '')
 
     return added
 

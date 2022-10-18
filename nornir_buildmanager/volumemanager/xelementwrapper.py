@@ -486,7 +486,7 @@ class XElementWrapper(ElementTree.Element):
                 originalValue = self.attrib[name]
 
             if value is None:
-                raise ValueError("Setting None on XML Element attribute: {name}")
+                raise ValueError(f"Setting None on XML Element attribute: {name}")
             elif not isinstance(value, str):
                 XElementWrapper.logger.info('Setting non string value on <' + str(
                     self.tag) + '>, automatically corrected: ' + name + ' -> ' + str(value))
