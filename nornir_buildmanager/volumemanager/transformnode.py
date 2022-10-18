@@ -21,7 +21,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
 
     @staticmethod
     def get_threshold_format():
-        return "%.2f"
+        return f"%.{TransformNode.get_threshold_precision()}f"
 
     @staticmethod
     def get_threshold_precision():
