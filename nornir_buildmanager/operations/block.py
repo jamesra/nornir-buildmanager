@@ -893,7 +893,7 @@ def AssembleStosOverlays(Parameters,
                     #     transforms.RemoveOnMismatch(WarpedImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
                     #===========================================================                   
 
-                    if not (os.path.exists(OverlayImageNode.FullPath) and os.path.exists(DiffImageNode.FullPath)):
+                    if not (os.path.exists(OverlayImageNode.FullPath) and os.path.exists(DiffImageNode.FullPath) and os.path.exists(WarpedImageNode.FullPath)):
 
                         # ir-stom's -slice_dirs argument is broken for masks, so we have to patch the stos file before use
                         if stosImages.ControlImageMaskNode is None or stosImages.MappedImageMaskNode is None:
@@ -1143,7 +1143,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, InputStosMapNode, Ou
                         Pool = nornir_pools.GetLocalMachinePool()
                         
                     task = Pool.add_process(ImageNode.attrib['Path'], identifyCmd + " && exit", shell=True)
-                    nornir_buildmanager.volumemanager.transformnode.TransformNode = Transform
+                    task.transform_node = Transform
                     TaskList.append(task)
                     Logger.info("Evaluating " + str(mappedSection) + ' -> ' + str(controlSection))
 
@@ -1157,10 +1157,10 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode, InputStosMapNode, Ou
                     MeanStr = t.wait_return()
                     MeanVal = float(MeanStr)
                     if BestMean is None:
-                        WinningTransform = nornir_buildmanager.volumemanager.transformnode.TransformNode
+                        WinningTransform = task.transform_node
                         BestMean = MeanVal
                     elif BestMean > float(MeanVal):
-                        WinningTransform = nornir_buildmanager.volumemanager.transformnode.TransformNode
+                        WinningTransform = task.transform_node
                         BestMean = MeanVal
                 except:
                     pass
@@ -1913,7 +1913,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt, rootNode, InputGroupNode, OutputGr
                                                                                MappedFilterName=MappedToControlTransform.MappedFilterName)
 
             if OutputTransform is None:
-                OutputTransform = nornir_buildmanager.volumemanager.transformnode.TransformNode(attrib=MappedToControlTransform.attrib)
+                OutputTransform = nornir_buildmanager.volumemanager.TransformNode(attrib=MappedToControlTransform.attrib)
                 OutputTransform.Name = str(mappedSectionNumber) + '-' + str(IntermediateControlSection)
                 OutputTransform.SetTransform(MappedToControlTransform)
                 OutputTransformAdded = OutputSectionMappingsNode.AddOrUpdateTransform(OutputTransform)
@@ -2361,7 +2361,7 @@ def _GetStosToMosaicTransform(StosTransformNode, TransformNode, OutputTransformN
     added = False
     if OutputTransformNode is None:
         # Create transform node for the output
-        OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name=OutputTransformName, Type="MosaicToVolume_Untranslated", Path=OutputTransformName + '.mosaic')
+        OutputTransformNode = nornir_buildmanager.volumemanager.TransformNode.Create(Name=OutputTransformName, Type="MosaicToVolume_Untranslated", Path=OutputTransformName + '.mosaic')
         TransformNode.Parent.AddChild(OutputTransformNode)
         added = True
         
