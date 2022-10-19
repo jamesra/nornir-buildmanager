@@ -62,14 +62,17 @@ def TryAddLogs(containerObj, InputPath, logger):
         print(f"NO LOG FILE FOUND FOR CAPTURE: {InputPath}")   
     elif len(LogsFiles) > 0:
         for filename in LogsFiles:
-
             NotesFilename = os.path.basename(filename)
             CopiedLogsFullPath = os.path.join(containerObj.FullPath, NotesFilename)
-            if not os.path.exists(CopiedLogsFullPath):
+            removed = files.RemoveOutdatedFile(filename, CopiedLogsFullPath)
+            if removed or removed is None or not os.path.exists(CopiedLogsFullPath):
                 os.makedirs(containerObj.FullPath, exist_ok=True)
                 
                 shutil.copyfile(filename, CopiedLogsFullPath)
                 LogsAdded = True
+            else:
+                print(f"Log file found and current, not recopied: {InputPath}")
+                return False
 
             # OK, try to parse the logs
             try:
@@ -139,9 +142,6 @@ def PickleLoad(logfullPath, version_func):
     :param logfullPath:
     :param version_func:
     """
-
-
-
 
     obj = None
     picklePath = logfullPath + ".pickle"
