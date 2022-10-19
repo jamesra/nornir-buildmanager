@@ -7,7 +7,14 @@ from . import shared
 from . import idoc
 from . import serialemlog
 
-ContrastValues = collections.namedtuple('ContrastValues', ('Section', 'Min', 'Max', 'Gamma'))
+
+class ContrastValue(collections.NamedTuple):
+    Section: int
+    Min: int
+    Max: int
+    Gamma: int = 1.0
+
+
 DefaultHistogramFilename = "ContrastOverrides.txt"
 
 
@@ -27,7 +34,7 @@ def CreateDefaultHistogramCutoffFile(histogramFilename: str):
         histogramFilehandle.close()
 
 
-def LoadHistogramCutoffs(filename: str):
+def LoadHistogramCutoffs(filename: str) -> dict[int, ContrastValue]:
     """
     Return a dictionary of section numbers containing named tuples of min,max,gamma values for raw data import
     The file is space delimited, and if a value in a column is not a number then the default calculated value
@@ -66,7 +73,7 @@ def LoadHistogramCutoffs(filename: str):
                 except ValueError:
                     Gamma = None
 
-                Values[sectionNumber] = ContrastValues(sectionNumber, MinCutoff, MaxCutoff, Gamma)
+                Values[sectionNumber] = ContrastValue(sectionNumber, MinCutoff, MaxCutoff, Gamma)
             except:
                 print(f"Could not parse histogram line #{line_number}: {', '.join(line)}")
 
