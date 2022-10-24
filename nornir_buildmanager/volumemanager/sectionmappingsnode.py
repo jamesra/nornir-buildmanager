@@ -32,7 +32,7 @@ class SectionMappingsNode(XElementWrapper):
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
 
     def FindStosTransform(self, ControlSectionNumber:int, ControlChannelName: str, ControlFilterName: str, MappedSectionNumber: int,
-                          MappedChannelName: str, MappedFilterName: str):
+                          MappedChannelName: str, MappedFilterName: str) -> TransformNode:
         """
         Find the stos transform matching all of the parameters if it exists
         WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query

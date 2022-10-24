@@ -1,6 +1,6 @@
-import collections
 import csv
 import os
+from typing import NamedTuple
 import nornir_buildmanager
 
 from . import shared
@@ -8,7 +8,7 @@ from . import idoc
 from . import serialemlog
 
 
-class ContrastValue(collections.NamedTuple):
+class ContrastValue(NamedTuple):
     Section: int
     Min: int
     Max: int
