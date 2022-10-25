@@ -337,6 +337,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
         for fnode in Filters:
             hNode = fnode.GetHistogram()
             self.assertIsNotNone(hNode, "Filter should have histogram")
+            
+            if hNode.Type == 'RawDataHistogram':
+                continue
 
             ahNode = hNode.GetAutoLevelHint()
             self.assertIsNotNone(ahNode, "Histogram should have autolevelhint")

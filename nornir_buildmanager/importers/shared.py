@@ -110,7 +110,10 @@ def TryCleanIdocCaptureData(containerObj, input_path: str, logger, new_section_i
 
 def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrapper,
                     InputPath: str,
-                    image_ext: str | None = None):
+                    image_ext: str | None = None,
+                    min_cutoff=None,
+                    max_cutoff=None,
+                    gamma=None):
     """
     :param containerObj:
     :param InputPath:
@@ -129,7 +132,7 @@ def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrap
 
     histogram_image_path = os.path.join(InputPath, f'Histogram{image_ext}')
     if os.path.exists(histogram_image_path):
-        image_node = nornir_buildmanager.volumemanager.ImageNode.Create(Path=f'Histogram{image_ext}', attrib={'Name':'RawDataHistogram'})
+        image_node = nornir_buildmanager.volumemanager.ImageNode.Create(Path=f'RawDataHistogram{image_ext}', attrib={'Name':'RawDataHistogram'})
         [image_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
         existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
         if image_added or existing_removed:
@@ -137,14 +140,20 @@ def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrap
 
     histogram_xml_path = os.path.join(InputPath, 'Histogram.xml')
     if os.path.exists(histogram_xml_path):
-        image_node = nornir_buildmanager.volumemanager.DataNode.Create(Path='Histogram.xml',
+        image_node = nornir_buildmanager.volumemanager.DataNode.Create(Path='RawDataHistogram.xml',
                                                                         attrib={'Name': 'RawDataHistogram'})
         [data_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
         existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
         if data_added or existing_removed:
             shutil.copyfile(histogram_image_path, image_node.FullPath)
             
-    return added | data_added | image_added
+    autolevel_hint = histogram_node.GetOrCreateAutoLevelHint()
+    autolevel_hint.UserRequestedGamma=gamma
+    autolevel_hint.UserRequestedMaxIntensityCutoff = max_cutoff
+    autolevel_hint.UserRequestedMinIntensityCutoff = min_cutoff
+    
+            
+    return added or data_added or image_added or autolevel_hint.AttributesChanged or histogram_node.ChildrenChanged
 
 def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: FilenameMetadata | None = None):
     '''

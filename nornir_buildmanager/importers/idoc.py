@@ -326,9 +326,7 @@ class SerialEMIDocImport(object):
         # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
         histogram_creation_task = Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin,
                       ActualMosaicMax, force_recreate=contrast_mismatch)
-        
-        
-
+          
         ImageConversionRequired = contrast_mismatch
 
         # Create a channel for the Raw data 
@@ -434,7 +432,7 @@ class SerialEMIDocImport(object):
             
         #It has been a while, check if the histogram is done and try to add meta-data for it
         histogram_creation_task.wait()
-        saveChannel |= shared.TryAddHistogram(channelObj, sectionDir, image_ext=".png")
+        saveChannel |= shared.TryAddHistogram(filterObj, sectionDir, image_ext=".png",  min_cutoff=ActualMosaicMin, max_cutoff=ActualMosaicMax, gamma=Gamma)
 
         if saveBlock:
             return VolumeObj
@@ -585,11 +583,11 @@ def _PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float,
     HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
     ImageRemoved = RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
 
-    if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath):
+    if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath) or nornir_shared.files.IsOlderThan(HistogramImageFullPath, datetime.date(year=2022, month=10, day=25)):
         #        pool = nornir_pools.GetGlobalMultithreadingPool()
-        # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d\nRaw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
         plot.Histogram(histogramFullPath, HistogramImageFullPath,
-                       Title="Section %d Raw Data Pixel Intensity" % sectionNumber, LinePosList=[minCutoff, maxCutoff])
+                       Title=f"Section {sectionNumber}\nRaw Data Pixel Intensity", LinePosList=[minCutoff, maxCutoff], range_is_power_of_two=True)
 
 
 class NornirTileset:
