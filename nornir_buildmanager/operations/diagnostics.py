@@ -249,7 +249,7 @@ def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, 
     
     removed_output = nornir_shared.files.RemoveOutdatedFile(TransformNode.FullPath, OutputImageNode.FullPath)
 
-    if not (node_added or removed_output):
+    if not (node_added or removed_output or removed_output is None):
         return
 
     OutputImageNode.SetTransform(TransformNode)
