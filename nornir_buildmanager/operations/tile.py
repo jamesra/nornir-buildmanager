@@ -628,23 +628,26 @@ def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercen
     return MinIntensityCutoff, MaxIntensityCutoff, Gamma
 
 
-def _ClearInvalidHistogramElements(filterObj: FilterNode, checksum: str) -> (bool, HistogramNode):
-    """I believe this is complicated due to legacy.  In the past multiple histogram nodes would accumulate.  This function deletes the excess nodes and returns
-       the valid one."""
-    HistogramElement = None
+def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: TransformNode, checksum: str) -> (bool, HistogramNode):
+    """I believe this is complicated due to legacy.  In the past multiple
+       histogram nodes would accumulate.  This function deletes the excess nodes
+       and returns the valid one."""
+    histogram_element = None
     HistogramElementRemoved = False
-    while HistogramElement is None:
-        HistogramElement = filterObj.find(
+    while histogram_element is None:
+        histogram_element = filterObj.find(
             "Histogram[@InputTransformChecksum='" + checksum + "']")  # type: HistogramNode | None
-        if HistogramElement is None:
+        if histogram_element is None:
             raise NornirUserException(
                 "Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath)
-        cleaned, reason = HistogramElement.CleanIfInvalid()
-        if cleaned:
-            HistogramElement = None
-            HistogramElementRemoved = True
+        cleaned, reason = histogram_element.CleanIfInvalid()
+        #Check that the type matches in input transform node type so we don't use the wrong histogram
+        if cleaned or histogram_element.Type != transform_node.Type:
+            histogram_element = None
+            HistogramElementRemoved = HistogramElementRemoved or cleaned
+            continue
 
-    return HistogramElementRemoved, HistogramElement
+    return HistogramElementRemoved, histogram_element
 
 
 def AutolevelTiles(Parameters, InputFilter: FilterNode, TransformNode: TransformNode, Downsample: float = 1,
@@ -662,6 +665,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, TransformNode: Transform
         OutputFilterName = 'Leveled'
 
     (HistogramElementRemoved, HistogramElement) = _ClearInvalidHistogramElements(InputFilter,
+                                                                                 TransformNode, 
                                                                                  InputTransformNode.Checksum)
     if HistogramElementRemoved:
         (yield InputFilter)
