@@ -30,36 +30,31 @@ Example:
 
 """
 
+from __future__ import annotations
+
 import sys
-import re
 import datetime
+import collections
+import numpy as np
+import matplotlib
+import matplotlib.colors as mcolors
+import matplotlib.pyplot as plt
+import matplotlib.tri as mtri
+
+import nornir_shared
 import nornir_imageregistration
-import nornir_buildmanager
 from nornir_buildmanager.volumemanager import *
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 from nornir_imageregistration import image_stats
-import nornir_shared
 from nornir_shared.images import *
-import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.histogram import *
-from nornir_shared.mathhelper import ListMedian
 from nornir_shared.files import RemoveOutdatedFile
 import nornir_shared.plot as plot
-import logging
-import collections
-import nornir_pools
-import numpy
-import nornir_buildmanager.importers.serialemlog as serialemlog
+ 
 import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
-
-import numpy as np
-import matplotlib
-import matplotlib.colors as mcolors
-from mpl_toolkits.mplot3d import axes3d
-import matplotlib.pyplot as plt
-import matplotlib.tri as mtri 
+from nornir_buildmanager.importers.serialemlog import SerialEMLog
 
 
 
@@ -68,24 +63,24 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     if extension is None:
         extension = 'idoc'
-        
+
     # TODO, set the defaults at the volume level in the meta-data and pull from there
     DesiredSectionList = kwargs.get('Sections', None)
-    
+
     MinCutoff = float(kwargs.get('Min'))
     MaxCutoff = float(kwargs.get('Max'))
     ContrastCutoffs = (MinCutoff, MaxCutoff)
-    CameraBpp = kwargs.get('CameraBpp',None)
-        
+    CameraBpp = kwargs.get('CameraBpp', None)
+
     if MinCutoff < 0.0 or MinCutoff > 1.0:
         raise ValueError("Min must be between 0 and 1: %f" % MinCutoff)
-    
+
     if MaxCutoff < 0.0 or MaxCutoff > 1.0:
         raise ValueError("Max must be between 0 and 1: %f" % MaxCutoff)
-    
+
     if MinCutoff >= MaxCutoff:
         raise ValueError("Max must be greater than Min: %f is not less than %f" % (MinCutoff, MaxCutoff))
-    
+
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
@@ -93,86 +88,87 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
 
     if not os.path.exists(ImportPath):
-        raise ValueError("Import Path does not exist: %s" % ImportPath) 
+        raise ValueError("Import Path does not exist: %s" % ImportPath)
 
-    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
+    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension,
+                                                                 ExcludeNames=[], ExcludedDownsampleLevels=[])
 
-    DataFound = False 
-    
+    DataFound = False
+
     found_sections = {}
 
     for m in matches:
-        #The problem with using the directory name is that there could be more than one
-        #.idoc file in a directory if a two-part capture of a section is done.
-        #  However the extensive use of 1.idoc naming
-        #conventions mean we have to use the directory name.
-        #So I build a list of all .idoc files in a directory and later we'll 
-        #run ToMosaic on all of them
-        
+        # The problem with using the directory name is that there could be more than one
+        # .idoc file in a directory if a two-part capture of a section is done.
+        # However, the extensive use of 1.idoc naming
+        # conventions mean we have to use the directory name.
+        # So I build a list of all .idoc files in a directory and later we'll
+        # run ToMosaic on all of them
+
         (path, idocFileList) = m
         idocFileList = [os.path.join(path, f) for f in idocFileList]
-        
-        #idocFileList = []
-        #idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
-            
+
+        # idocFileList = []
+        # idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
+
         if len(idocFileList) > 0:
-            
+
             idocFullPath = idocFileList[0]
-            
+
             try:
                 meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
             except nornir_buildmanager.NornirUserException:
                 prettyoutput.LogErr(f"Could not parse required metadata from {idocFullPath}")
                 continue
-            
-            #Skip this section if it is not in the desired range
-            if not DesiredSectionList is None:
-                if not meta_data.number in DesiredSectionList:
-                    continue 
-                
+
+            # Skip this section if it is not in the desired range
+            if DesiredSectionList is not None:
+                if meta_data.number not in DesiredSectionList:
+                    continue
+
             if meta_data.number is None:
                 prettyoutput.error("Could not parse section number from {0} filename".format(idocFullPath))
             else:
                 if meta_data.number in found_sections:
                     existing = found_sections[meta_data.number]
-                    if(len(existing) > 1):
+                    if len(existing) > 1:
                         existing = existing[0]
                     if existing.version < meta_data.version:
-                        found_sections[meta_data.number] = (meta_data, idocFileList) 
+                        found_sections[meta_data.number] = (meta_data, idocFileList)
                 else:
                     found_sections[meta_data.number] = (meta_data, idocFileList)
-            
-    #Todo: Print the list of filenames.  Apply regular expression of desired import range.  Then import.
+
+    # Todo: Print the list of filenames.  Apply regular expression of desired import range.  Then import.
     prettyoutput.Log(shared.FileMetaDataStrHeader())
     for section_entry in found_sections.items():
-        path = section_entry[0]
-        (data,idocFileList) = section_entry[1]
-        
+        #path = section_entry[0]
+        (data, idocFileList) = section_entry[1]
+
         prettyoutput.Log(shared.FileMetaDataStr(data))
-    
+
     for section_entry in found_sections.items():
         DataFound = True
-        path = section_entry[0]
-        (data,idocFileList) = section_entry[1]
+        #path = section_entry[0]
+        (data, idocFileList) = section_entry[1]
         for idocFileFullPath in idocFileList:
             yield SerialEMIDocImport.ToMosaic(VolumeElement,
-                                      idocFileFullPath,
-                                      ContrastCutoffs=ContrastCutoffs,
-                                      OutputImageExt=None,
-                                      FlipList=FlipList,
-                                      CameraBpp=CameraBpp,
-                                      ContrastMap=ContrastMap)
+                                              idocFileFullPath,
+                                              ContrastCutoffs=ContrastCutoffs,
+                                              OutputImageExt=None,
+                                              FlipList=FlipList,
+                                              CameraBpp=CameraBpp,
+                                              ContrastMap=ContrastMap)
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
-     
+
 
 class SerialEMIDocImport(object):
-    
+
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath: str, ContrastCutoffs, OutputImageExt: str = None,
-                TargetBpp:int = None, FlipList=None, ContrastMap=None, CameraBpp: int = None,
-                debug=None):
+    def ToMosaic(cls, VolumeObj, idocFileFullPath: str, ContrastCutoffs: tuple[float,float], OutputImageExt: str = None,
+                 TargetBpp: int = None, FlipList: list[int] | None = None, ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None, CameraBpp: int = None,
+                 debug: bool | None = None):
         """
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
@@ -180,7 +176,7 @@ class SerialEMIDocImport(object):
         between the median min and max values
         :param VolumeObj:
         :param idocFileFullPath:
-        :param ContrastCutoffs:
+        :param ContrastCutoffs: Percentile at which to set min,max pixel values if section is not in ContrastMap
         :param OutputImageExt:
         :param TargetBpp:
         :param CameraBpp:
@@ -188,9 +184,9 @@ class SerialEMIDocImport(object):
         :param list FlipList: List of section numbers which should have images flipped
         :param dict ContrastMap: Dictionary mapping section number to (Min, Max, Gamma) tuples
         """
-        if(OutputImageExt is None):
+        if OutputImageExt is None:
             OutputImageExt = 'png'
-  
+
         if TargetBpp is None:
             TargetBpp = 8
 
@@ -199,11 +195,11 @@ class SerialEMIDocImport(object):
 
         if ContrastMap is None:
             ContrastMap = {}
-   
+
         SaveChannel = False
 
         idocFilePath = serialem_utils.GetPathWithoutSpaces(idocFileFullPath)
- 
+
         OutputPath = VolumeObj.FullPath
 
         os.makedirs(OutputPath, exist_ok=True)
@@ -214,25 +210,25 @@ class SerialEMIDocImport(object):
         prettyoutput.CurseString('Stage', "SerialEM to Mosaic " + str(idocFileFullPath))
 
         SectionNumber = 0
-        sectionDir = os.path.dirname(idocFileFullPath) #serialem_utils.GetDirectories(idocFileFullPath)
+        sectionDir = os.path.dirname(idocFileFullPath)  # serialem_utils.GetDirectories(idocFileFullPath)
 
         BlockObj = BlockNode.Create('TEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
 
         # If the parent directory doesn't have the section number in the name, change it
         ExistingSectionInfo = shared.GetSectionInfo(sectionDir)
-        if(ExistingSectionInfo.number < 0):
+        if ExistingSectionInfo.number < 0:
             i = 5
-#            SectionNumber = SectionNumber + 1
-#            newPathName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber + '_' + sectionDir
-#            newPath = os.path.join(ParentDir, newPathName)
-#            prettyoutput.Log('Moving: ' + InputPath + ' -> ' + newPath)
-#            shutil.move(InputPath, newPath)
-#
-#            InputPath = newPath
-#
-#            #Run glob again because the dir changes
-#            idocFiles = glob.glob(os.path.join(InputPath,'*.idoc'))
+        #            SectionNumber = SectionNumber + 1
+        #            newPathName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber + '_' + sectionDir
+        #            newPath = os.path.join(ParentDir, newPathName)
+        #            prettyoutput.Log('Moving: ' + InputPath + ' -> ' + newPath)
+        #            shutil.move(InputPath, newPath)
+        #
+        #            InputPath = newPath
+        #
+        #            #Run glob again because the dir changes
+        #            idocFiles = glob.glob(os.path.join(InputPath,'*.idoc'))
         else:
             SectionNumber = ExistingSectionInfo.number
 
@@ -243,7 +239,7 @@ class SerialEMIDocImport(object):
         SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number
         try:
             parts = sectionDir.partition("_")
-            if not parts is None:
+            if parts is not None:
                 if len(parts[2]) > 0:
                     SectionName = parts[2]
         except:
@@ -258,7 +254,7 @@ class SerialEMIDocImport(object):
 
         # Create a channel group 
         [saveChannel, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode.Create('TEM'), 'Name')
-   
+
         # Create a channel group for the section
 
         # I started ignoring existing supertile.mosaic files so I could rebuild sections where
@@ -267,7 +263,7 @@ class SerialEMIDocImport(object):
         #    continue
 
         Flip = SectionNumber in FlipList
-        if(Flip):
+        if Flip:
             prettyoutput.Log("Found in FlipList.txt, flopping images")
 
         try:
@@ -276,16 +272,16 @@ class SerialEMIDocImport(object):
             prettyoutput.LogErr(f"Could not load idoc {idocFilePath}")
             raise e
 
-        assert(hasattr(IDocData, 'PixelSpacing'))
-        assert(hasattr(IDocData, 'DataMode'))
-        assert(hasattr(IDocData, 'ImageSize'))
+        assert (hasattr(IDocData, 'PixelSpacing'))
+        assert (hasattr(IDocData, 'DataMode'))
+        assert (hasattr(IDocData, 'ImageSize'))
 
         # If there are no tiles... return
         if IDocData.NumTiles == 0:
             prettyoutput.Log("No tiles found in IDoc: " + idocFilePath)
             return
-        
-        #Try to clean old nodes first if this is a reimport
+
+        # Try to clean old nodes first if this is a reimport
         saveChannel |= shared.TryCleanNotes(channelObj, sectionDir, logger, ExistingSectionInfo)
         saveChannel |= shared.TryCleanIdocCaptureData(channelObj, sectionDir, logger, ExistingSectionInfo)
 
@@ -297,35 +293,42 @@ class SerialEMIDocImport(object):
 
         # Set the scale
         [added, ScaleObj] = cls.CreateScaleNode(IDocData, channelObj)
-        
-        # Parse the images
-        ImageBpp = IDocData.GetImageBpp()            
-        if ImageBpp is None:
-            ImageBpp = cls.GetImageBpp(IDocData, sectionDir) 
 
-        FilterName = 'Raw' + str(TargetBpp)
-        if(TargetBpp is None):
+        # Parse the images
+        ImageBpp = IDocData.GetImageBpp()
+        if ImageBpp is None:
+            ImageBpp = cls.GetImageBpp(IDocData, sectionDir)
+
+        FilterName = f'Raw{TargetBpp}'
+        if TargetBpp is None:
             FilterName = 'Raw'
 
         histogramFullPath = os.path.join(sectionDir, 'Histogram.xml')
-        
+
         IDocData.RemoveMissingTiles(sectionDir)
-        if(len(IDocData.Tiles) == 0):
-            prettyoutput.Log("After removing missing file names there were no tiles remaining. Do the filename extensions match?" + idocFilePath)
+        if len(IDocData.Tiles) == 0:
+            prettyoutput.Log(
+                "After removing missing file names there were no tiles remaining. Do the filename extensions match?" + idocFilePath)
             return
-        
-        source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles ]
-          
-        (ActualMosaicMin, ActualMosaicMax, Gamma) = cls.GetSectionContrastSettings(SectionNumber, ContrastMap, ContrastCutoffs, source_tile_list, IDocData, histogramFullPath)
+
+        source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles]
+
+        (ActualMosaicMin, ActualMosaicMax, Gamma) = SerialEMIDocImport.GetSectionContrastSettings(SectionNumber, ContrastMap,
+                                                                                   ContrastCutoffs, source_tile_list,
+                                                                                   IDocData, histogramFullPath)
         ActualMosaicMax = numpy.around(ActualMosaicMax)
         ActualMosaicMin = numpy.around(ActualMosaicMin)
-        
-        contrast_mismatch = channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
-    
+
+        contrast_mismatch = channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax,
+                                                                      Gamma)
+
         Pool = nornir_pools.GetGlobalThreadPool()
-        #_PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-        Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax, force_recreate=contrast_mismatch)
+        # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+        histogram_creation_task = Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin,
+                      ActualMosaicMax, force_recreate=contrast_mismatch)
         
+        
+
         ImageConversionRequired = contrast_mismatch
 
         # Create a channel for the Raw data 
@@ -344,24 +347,26 @@ class SerialEMIDocImport(object):
         RemoveOutdatedFile(idocFilePath, SupertilePath)
 
         [added_transform, transformObj] = channelObj.UpdateOrAddChildByAttrib(TransformNode.Create(Name=SupertileName,
-                                                                         Path=SupertileTransform,
-                                                                         Type='Stage'),
-                                                                         'Path')
+                                                                                                   Path=SupertileTransform,
+                                                                                                   Type='Stage'),
+                                                                              'Path')
 
         [added_tilepyramid, PyramidNodeObj] = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode.Create(Type='stage',
-                                                                            NumberOfTiles=IDocData.NumTiles),
-                                                                            'Path')
+                                                                                                        NumberOfTiles=IDocData.NumTiles),
+                                                                                 'Path')
 
         [added_level, LevelObj] = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
 
-        Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir, OutputTileDir=LevelObj.FullPath, OutputImageExt=OutputImageExt)
+        Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=sectionDir,
+                                                            OutputTileDir=LevelObj.FullPath,
+                                                            OutputImageExt=OutputImageExt)
 
         # Make sure the target LevelObj is verified        
         if not os.path.exists(LevelObj.FullPath):
             os.makedirs(LevelObj.FullPath, exist_ok=True)
         else:
             Tileset.RemoveStaleTilesFromOutputDir(SupertilePath=SupertilePath)
-            
+
         if not added_level and LevelObj.NeedsValidation:
             nornir_buildmanager.operations.tile.VerifyTiles(filterObj.TilePyramid.GetLevel(1))
 
@@ -371,57 +376,65 @@ class SerialEMIDocImport(object):
         if len(SourceToMissingTargetMap) == 0:
             ImageConversionRequired = False
         else:
-            ImageConversionRequired = (not ImageBpp == TargetBpp) or (ImageConversionRequired or Tileset.ImageConversionRequired)
+            ImageConversionRequired = (not ImageBpp == TargetBpp) or (
+                        ImageConversionRequired or Tileset.ImageConversionRequired)
 
-        if(ImageConversionRequired):
+        if ImageConversionRequired:
             Invert = False
             filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
-            #nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
-            nornir_imageregistration.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp, OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)
+            # nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
+            nornir_imageregistration.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
+                                                         OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False,
+                                                         MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)
 
-        elif(Tileset.ImageMoveRequired):
+        elif Tileset.ImageMoveRequired:
             for f in SourceToMissingTargetMap:
                 shutil.copy(f, SourceToMissingTargetMap[f])
-        
+
         UpdateMosaicFile = False
         try:
-            #Check if we need to reimport the stage.mosaic file
-            cutoff_time = datetime.datetime(year=2022, month=7, day=18) #The deployment date of the updated nornir version
+            # Check if we need to reimport the stage.mosaic file
+            cutoff_time = datetime.datetime(year=2022, month=7,
+                                            day=18)  # The deployment date of the updated nornir version
             mosaic_fd = os.stat(SupertilePath)
             file_creation_time = datetime.datetime.utcfromtimestamp(mosaic_fd.st_ctime)
-             
+
             if cutoff_time > file_creation_time and 'RC3' in VolumeObj.FullPath:
                 UpdateMosaicFile = True
-            
+
         except FileNotFoundError:
             pass
-                    
+
         if os.path.exists(SupertilePath):
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
             UpdateMosaicFile = UpdateMosaicFile or MFile.NumberOfImages != len(Tileset.Tiles)
             if MFile.NumberOfImages != len(Tileset.Tiles):
-                prettyoutput.Log("Number of tiles in .mosaic did not match number of tiles in .idoc: " + str(MFile.NumberOfImages) + " vs. " + str(len(Tileset.Tiles)))
-                
-        
+                prettyoutput.Log("Number of tiles in .mosaic did not match number of tiles in .idoc: " + str(
+                    MFile.NumberOfImages) + " vs. " + str(len(Tileset.Tiles)))
 
         # If we wrote new images replace the .mosaic file
         if len(SourceToMissingTargetMap) > 0 or not os.path.exists(SupertilePath) or UpdateMosaicFile:
             # Writing this file indicates import succeeded and we don't need to repeat these steps, writing it will possibly invalidate a lot of downstream data
             # We need to flip the images.  This may be a Utah scope issue, our Y coordinates are inverted relative to the images.  To fix this
             # we flop instead of flip and reverse when writing the coordinates
-            mosaicfile.MosaicFile.Write(SupertilePath, Entries=Tileset.GetPositionsForTargets(), Flip=not Flip, ImageSize=IDocData.ImageSize, Downsample=1)
+            mosaicfile.MosaicFile.Write(SupertilePath, Entries=Tileset.GetPositionsForTargets(), Flip=not Flip,
+                                        ImageSize=IDocData.ImageSize, Downsample=1)
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
 
             # Sometimes files fail to convert, when this occurs remove them from the .mosaic
             if MFile.RemoveInvalidMosaicImages(LevelObj.FullPath):
                 MFile.Save(SupertilePath)
- 
+
             Mosaic.TranslateMosaicFileToZeroOrigin(SupertilePath)
             transformObj.ResetChecksum()
             SaveChannel = True
             # transformObj.Checksum = MFile.Checksum
+            
+        #It has been a while, check if the histogram is done and try to add meta-data for it
+        histogram_creation_task.wait()
+        saveChannel |= shared.TryAddHistogram(channelObj, sectionDir, image_ext=".png")
 
         if saveBlock:
             return VolumeObj
@@ -429,34 +442,38 @@ class SerialEMIDocImport(object):
             return BlockObj
         elif saveChannel:
             return sectionObj
-        elif  added_transform or added_tilepyramid or added_level or ImageConversionRequired or SaveChannel or contrast_mismatch:
+        elif added_transform or added_tilepyramid or added_level or ImageConversionRequired or SaveChannel or contrast_mismatch:
             return channelObj
         return None
 
-    @classmethod
-    def GetSectionContrastSettings(cls, SectionNumber, ContrastMap, ContrastCutoffs, SourceImagesFullPaths, idoc_data, histogramFullPath):
+    @staticmethod
+    def GetSectionContrastSettings(SectionNumber: int, ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue], ContrastCutoffs, SourceImagesFullPaths, idoc_data: IDoc,
+                                   histogramFullPath: str):
         """Clear and recreate the filters tile pyramid node if the filters contrast node does not match"""
         Gamma = 1.0
-        
-        #We don't have to run this step, but it ensures the histogram is up to date
-        (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0], 1.0 - ContrastCutoffs[1], idoc_data, histogramFullPath)
-        
-        if SectionNumber in ContrastMap:
-            ActualMosaicMin = ActualMosaicMin if ContrastMap[SectionNumber].Min is None else ContrastMap[SectionNumber].Min
-            ActualMosaicMax = ActualMosaicMax if ContrastMap[SectionNumber].Max is None else ContrastMap[SectionNumber].Max
-            Gamma = Gamma if ContrastMap[SectionNumber].Gamma is None else ContrastMap[SectionNumber].Gamma
-        
-        return (ActualMosaicMin, ActualMosaicMax, Gamma)
 
-    @classmethod
-    def GetImageBpp(cls, IDocData, sectionDir):
+        # We don't have to run this step, but it ensures the histogram is up to date
+        (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(SourceImagesFullPaths, ContrastCutoffs[0],
+                                                               1.0 - ContrastCutoffs[1], idoc_data, histogramFullPath)
+
+        if SectionNumber in ContrastMap:
+            ActualMosaicMin = ActualMosaicMin if ContrastMap[SectionNumber].Min is None else ContrastMap[
+                SectionNumber].Min
+            ActualMosaicMax = ActualMosaicMax if ContrastMap[SectionNumber].Max is None else ContrastMap[
+                SectionNumber].Max
+            Gamma = Gamma if ContrastMap[SectionNumber].Gamma is None else ContrastMap[SectionNumber].Gamma
+
+        return ActualMosaicMin, ActualMosaicMax, Gamma
+
+    @staticmethod
+    def GetImageBpp(IDocData, sectionDir):
         ImageBpp = IDocData.GetImageBpp()
         if ImageBpp is None:
             # Figure out the bit depth of the input
-            tile = IDocData.tiles[0] 
+            tile = IDocData.tiles[0]
             SourceImageFullPath = os.path.join(sectionDir, tile.Image)
             ImageBpp = GetImageBpp(SourceImageFullPath)
-        if(not ImageBpp is None):
+        if not ImageBpp is None:
             prettyoutput.Log("Source images are " + str(ImageBpp) + " bits per pixel")
         else:
             prettyoutput.Log("Could not determine source image BPP")
@@ -464,15 +481,15 @@ class SerialEMIDocImport(object):
 
         return ImageBpp
 
-    @classmethod
-    def CreateScaleNode(cls, IDocData, channelObj):
+    @staticmethod
+    def CreateScaleNode(IDocData, channelObj):
         """Create a scale node for the channel
         :return: ScaleNode object that was created"""
         scaleValueInNm = float(IDocData.PixelSpacing) / 10.0
         return channelObj.SetScale(scaleValueInNm)
 
-    @classmethod
-    def GetBitmask(cls, ImageMin, ImageMax, TargetBpp):
+    @staticmethod
+    def GetBitmask(ImageMin: int, ImageMax: int, TargetBpp: int) -> int:
         """
         :param int ImageMin: Minimum value
         :param int ImageMax: Maximum value
@@ -482,7 +499,7 @@ class SerialEMIDocImport(object):
         # Figure out how many bits are required to encode the values between min and max
         ValueRange = ImageMax - ImageMin
 
-        if(TargetBpp > 8):
+        if TargetBpp > 8:
             TargetBpp = int(math.ceil(math.log(ValueRange, 2)))
 
         # Figure out the left shift required to erase the top bits
@@ -496,40 +513,40 @@ class SerialEMIDocImport(object):
         andValue = 0
         for i in range(MinUsefulLowBit, MaxUsefulHighBit):
             andValue = andValue + pow(2, i)
-            
+
         return andValue
 
-    
-def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, idoc_data, histogramFullPath=None):
-    
+
+def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, idoc_data, histogramFullPath: str | None = None):
     histogramObj = None
-    if not histogramFullPath is None:
+    if histogramFullPath is not None:
         if os.path.exists(histogramFullPath):
             histogramObj = Histogram.Load(histogramFullPath)
 
     if histogramObj is None:
         prettyoutput.Log("Collecting mosaic min/max data")
-        
+
         Bpp = idoc_data.GetImageBpp()
         if Bpp is None:
             Bpp = nornir_shared.images.GetImageBpp(listfilenames[0])
-        
+
         numBins = 256
         if Bpp >= 11:
             numBins = 2048
-            
+
         maxVal = idoc_data.Max
         if idoc_data.CameraBpp is not None:
             if (1 << idoc_data.CameraBpp) - 1 < maxVal:
                 maxVal = (1 << idoc_data.CameraBpp) - 1
-            
-        histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, MinVal=idoc_data.Min, MaxVal=idoc_data.Max, numBins=numBins)
 
-        if not histogramFullPath is None:
+        histogramObj = image_stats.Histogram(listfilenames, Bpp=Bpp, MinVal=idoc_data.Min, MaxVal=idoc_data.Max,
+                                             numBins=numBins)
+
+        if histogramFullPath is not None:
             histogramObj = _CleanOutliersFromIDocHistogram(histogramObj)
             histogramObj.Save(histogramFullPath)
 
-    assert(not histogramObj is None)
+    assert (histogramObj is not None)
 
     # I am willing to clip 1 pixel every hundred thousand on the dark side, and one every ten thousand on the light
     return histogramObj.AutoLevel(MinCutoff, MaxCutoff)
@@ -544,114 +561,124 @@ def _CleanOutliersFromIDocHistogram(hObj):
     However this function is worth retaining because Max and Min outliers can rarely occur if a tile is removed
     from the input before import but remain in the iDoc data.
     """
-    
+
     hNew = nornir_shared.histogram.Histogram.TryRemoveMaxValueOutlier(hObj, TrimOnly=False)
     if hNew is not None:
         hObj = hNew
-        
+
     hNew = nornir_shared.histogram.Histogram.TryRemoveMinValueOutlier(hObj, TrimOnly=False)
     if hNew is not None:
         hObj = hNew
-    
+
     return hObj
-    
-def _PlotHistogram(histogramFullPath, sectionNumber, minCutoff, maxCutoff, force_recreate):    
+
+
+def _PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float, maxCutoff: float, force_recreate: bool):
+    """
+    :param histogramFullPath:  Output path of the image
+    :param sectionNumber:
+    :param minCutoff:
+    :param maxCutoff:
+    :param force_recreate:  If true recreate the histogram even if it exists
+    :return:
+    """
     HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
     ImageRemoved = RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
+
     if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath):
-#        pool = nornir_pools.GetGlobalMultithreadingPool()
+        #        pool = nornir_pools.GetGlobalMultithreadingPool()
         # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
-        plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        plot.Histogram(histogramFullPath, HistogramImageFullPath,
+                       Title="Section %d Raw Data Pixel Intensity" % sectionNumber, LinePosList=[minCutoff, maxCutoff])
 
 
-class NornirTileset():
-    
+class NornirTileset:
     Tile = collections.namedtuple("NornirTile", ('SourceImageFullPath', 'TargetImageFullPath', 'Position'))
-    
+
     @property
     def MissingInputImages(self):
         return self._MissingInputImages
-    
+
     @MissingInputImages.setter
     def MissingInputImages(self, value):
         self._MissingInputImages = value
-    
+
     @property
     def ImageMoveRequired(self):
         if self._ImageMoveRequired is None:
             self._ImageMoveRequired = self._IsImageMoveRequired()
         return self._ImageMoveRequired
-    
+
     def _IsImageMoveRequired(self):
         for t in self._tiles:
             if t.SourceImageFullPath != t.TargetImageFullPath:
                 return True
-            
+
         return False
-    
+
     @property
     def ImageConversionRequired(self):
         if self._ImageConversionRequired is None:
             self._ImageConversionRequired = self._IsImageConversionRequired()
-            
+
         return self._ImageConversionRequired
-    
+
     def _IsImageConversionRequired(self):
         """True if the extensions do not match"""
         for t in self._tiles:
             [_, SourceImageExt] = os.path.splitext(t.SourceImageFullPath)
-            [_, TargetImageExt] = os.path.splitext(t.TargetImageFullPath) 
+            [_, TargetImageExt] = os.path.splitext(t.TargetImageFullPath)
             if SourceImageExt.lower() != TargetImageExt.lower():
                 return True
-    
+
     def AddTile(self, tile):
         self._tiles.append(tile)
         self._ImageMoveRequired = None
         self._ImageConversionRequired = None
-    
+
     @property
     def SourceImagesFullPaths(self):
         imagePaths = []
         for t in self._tiles:
             imagePaths.append(t.SourceImageFullPath)
-            
+
         return imagePaths
-          
-    @property 
+
+    @property
     def Tiles(self):
         return self._tiles
-    
+
     def GetSourceToMissingTargetMap(self):
         """:return: A dictionary mapping source image paths to missing target image paths"""
-        
+
         SourceToTargetMap = {}
         for t in self._tiles:
             if os.path.exists(t.SourceImageFullPath) and not os.path.exists(t.TargetImageFullPath):
                 SourceToTargetMap[t.SourceImageFullPath] = t.TargetImageFullPath
-                
+
         return SourceToTargetMap
-                
+
     def RemoveStaleTilesFromOutputDir(self, SupertilePath):
         for t in self._tiles:
             if os.path.exists(t.SourceImageFullPath):
                 RemoveOutdatedFile(t.SourceImageFullPath, SupertilePath)
                 RemoveOutdatedFile(t.SourceImageFullPath, t.TargetImageFullPath)
-    
+
     def GetPositionsForTargets(self):
         positionMap = {}
         for t in self._tiles:
             if os.path.exists(t.TargetImageFullPath):
                 positionMap[t.TargetImageFullPath] = t.Position
-            
+
         return positionMap
-        
+
     def __init__(self, OutputImageExt):
         self._tiles = []
         self._MissingInputImages = False  # True if some of the IDocImages are missing from the disk
         self._ImageMoveRequired = False  # True if there are images that can be moved
         self._ImageConversionRequired = False  # True if there are images that need to be converted
         self._OutputImageExt = OutputImageExt
-        
+
     @classmethod
     def CreateTilesFromIDocTileData(cls, tiles, InputTileDir: str, OutputTileDir: str, OutputImageExt: str):
         """
@@ -662,9 +689,9 @@ class NornirTileset():
         """
         # SerialEM begins numbering file names from zero.  So we will too. 
         ImageNumber = -1
-        
+
         obj = NornirTileset(OutputImageExt)
-        
+
         for tile in tiles:
 
             [ImageRoot, ImageExt] = os.path.splitext(tile.Image)
@@ -678,28 +705,28 @@ class NornirTileset():
                 prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
                 obj.MissingInputImage = True
                 continue
-            
+
             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
-            ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + '.' + OutputImageExt
+            ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
             TargetImageFullPath = os.path.join(OutputTileDir, ConvertedImageName)
-            
-            obj.AddTile(NornirTileset.Tile(SourceImageFullPath, TargetImageFullPath, Position=tile.PieceCoordinates[0:2]))
-        
+
+            obj.AddTile(
+                NornirTileset.Tile(SourceImageFullPath, TargetImageFullPath, Position=tile.PieceCoordinates[0:2]))
+
         return obj
 
 
 def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
-
     # Copy the idoc file to the output directory
     idocPath = os.path.basename(idocFullPath)
-    IDocNodeObj = DataNode.Create(Path=idocPath, attrib={'Name' : 'IDoc'})
+    IDocNodeObj = DataNode.Create(Path=idocPath, attrib={'Name': 'IDoc'})
     containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'IDoc')
     [added, IDocNodeObj] = containerObj.UpdateOrAddChildByAttrib(IDocNodeObj, 'Name')
 
     CopiedFileFullPath = os.path.join(containerObj.FullPath, idocPath)
     if not os.path.exists(CopiedFileFullPath):
         os.makedirs(containerObj.FullPath, exist_ok=True)
-        
+
         shutil.copyfile(idocFullPath, CopiedFileFullPath)
 
     # Copy over attributes from the idoc
@@ -712,16 +739,16 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
             continue
 
         setattr(IDocNodeObj, k, v)
-#        if isinstance(v,str):
-#            IDocNodeObj.attrib[k] = v
-#        elif isinstance(v,list):
-#
-#            continue
-#        else:
-#            IDocNodeObj.attrib[k] = '%g' % v
+    #        if isinstance(v,str):
+    #            IDocNodeObj.attrib[k] = v
+    #        elif isinstance(v,list):
+    #
+    #            continue
+    #        else:
+    #            IDocNodeObj.attrib[k] = '%g' % v
 
     # Read the first tile obj, copy over common attributes
-    assert(len(idocObj.tiles) > 0)
+    assert (len(idocObj.tiles) > 0)
     tile = idocObj.tiles[0]
 
     for k in list(tile.__dict__.keys()):
@@ -741,9 +768,7 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
     return added
 
 
-
-
-class IDocTileData():
+class IDocTileData:
 
     def __init__(self, ImageName):
         """Populate all known SerialEM Idoc meta-data"""
@@ -760,159 +785,158 @@ class IDocTileData():
         self.ExposureTime = None
         self._MinMaxMean = None
         self.TargetDefocus = None
-        
+
         self._Min = None
         self._Max = None
         self._Mean = None
 
     def __str__(self):
         return self.Image
-    
+
     @property
     def Defocus(self):
         return self._Defocus
-    
+
     @Defocus.setter
     def Defocus(self, val):
         self._Defocus = val
-    
+
     @property
     def Min(self):
         return self._Min
-    
+
     @property
     def Max(self):
         return self._Max
-    
+
     @Max.setter
     def Max(self, val):
         self._Max = val
-    
+
     @property
     def Mean(self):
         return self._Mean
-    
+
     @property
     def MinMaxMean(self):
         return self._MinMaxMean
-    
+
     @MinMaxMean.setter
     def MinMaxMean(self, val):
         """Expects to be set to a three part list with integer or float values"""
         self._MinMaxMean = val
-        
+
         self._Min = val[0]
         self._Max = val[1]
         self._Mean = val[2]
-         
 
-class IDoc():
+
+class IDoc:
     """Class that parses a SerialEM idoc file"""
+
     @staticmethod
     def __ObjVersion():
         """Used for knowing when to ignore a pickled file"""
 
         return 1
-    
+
     @property
-    def NumTiles(self):
+    def NumTiles(self) -> int:
         return len(self.tiles)
-    
+
     @property
-    def CameraBpp(self):
+    def CameraBpp(self) -> int:
         return self._CameraBpp
-    
+
     @property
-    def Tiles(self):
+    def Tiles(self) -> list[IDocTileData]:
         return self.tiles
 
     def __init__(self):
         self.DataMode = None
         self.PixelSpacing = None
         self.ImageSize = None
-        self.tiles = []
+        self.tiles = []  # type: list[IDocTileData]
         self._CameraBpp = None
         self.note = None
 
         self.__IDocPickleVersion = IDoc.__ObjVersion()
         pass
-    
+
     @classmethod
     def VersionCheck(cls, loaded):
         if loaded.__IDocPickleVersion != cls.__ObjVersion():
-            raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
-        
+            raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (
+            loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+
         return
-            
-    def _SetCameraBpp(self, bpp):
+
+    def _SetCameraBpp(self, bpp: int):
         """Ensure the maximum intensity reported for tiles does not exceed the known capability of the camera"""
         self._CameraBpp = bpp
-        
+
         if self._CameraBpp is not None:
             maxPossible = 1 << bpp
             for t in self.tiles:
                 if t.Max > maxPossible:
                     t.Max = maxPossible
 
-    
-    def RemoveMissingTiles(self, path):
+    def RemoveMissingTiles(self, path: str):
         existingTiles = []
-        for t in self.tiles: 
+        for t in self.tiles:
             tFullPath = os.path.join(path, t.Image)
             if os.path.exists(tFullPath):
                 existingTiles.append(t)
-                
+
         self.tiles = existingTiles
 
-    def GetImageBpp(self):
+    def GetImageBpp(self) -> int | None:
         """:return: Bits per pixel if specified in the IDoc, otherwise None"""
-        ImageBpp = None
-        
-        
-        if (hasattr(self, 'DataMode')):
-            if self.DataMode == 0:
-                ImageBpp = 8
-            elif self.DataMode == 1:
-                ImageBpp = 16
-            elif self.DataMode == 6:
-                ImageBpp = 16
-        else:
-            if not self.Max is None:
-                ImageBpp = math.ceil(math.log2(self.Max)) 
 
-        return ImageBpp
-    
+        if hasattr(self, 'DataMode'):
+            if self.DataMode == 0:
+                return 8
+            elif self.DataMode == 1:
+                return 16
+            elif self.DataMode == 6:
+                return 16
+        else:
+            if self.Max is not None:
+                return math.ceil(math.log2(self.Max))
+
+        return None
+
     @property
-    def Max(self):
+    def Max(self) -> int:
         """
         For Max-Value outliers old versions of SerialEM falsely reported
         maxint for some pixels even though the camera was a 14-bit camera.  This applies to the original RC1 data. 
         By the time RC2 was collected in March 2012 this bug was fixed
             :return: Max pixel value across all tiles
         """
-        
+
         return max([t.Max for t in self.tiles])
-    
+
     @property
-    def Min(self):
+    def Min(self) -> int:
         """:return: Min pixel value across all tiles"""
         minVal = min([t.Min for t in self.tiles])
-        
-        #Sanity check for a bug in SerialEM
+
+        # Sanity check for a bug in SerialEM
         minVal = max(minVal, 0)
         return minVal
-    
+
     @property
-    def Mean(self):
+    def Mean(self) -> float:
         """:return: Mean pixel value across all tiles"""
         return numpy.mean([t.Mean for t in self.tiles])
 
     @property
-    def Note(self):
+    def Note(self) -> str:
         return self.note
 
     @classmethod
-    def Load(cls, idocfullPath, CameraBpp=None, usecache=True):
+    def Load(cls, idocfullPath: str, CameraBpp: int | None = None, usecache: bool = True) -> IDoc:
         """
         :param idocfullPath:
         :param usecache:
@@ -923,16 +947,16 @@ class IDoc():
 
             if obj is not None:
                 return obj
-            
-        assert(os.path.exists(idocfullPath))
+
+        assert (os.path.exists(idocfullPath))
 
         with open(idocfullPath, 'r') as hIDoc:
             idocText = hIDoc.read()
 
             idocObj = IDoc()
 
-            #imageStartIndicies = [m.start for m in re.finditer('\[Image', idocText)]
-            #NumImages = len(imageStartIndicies)
+            # imageStartIndicies = [m.start for m in re.finditer('\[Image', idocText)]
+            # NumImages = len(imageStartIndicies)
 
             lines = idocText.split('\n')
 
@@ -943,17 +967,17 @@ class IDoc():
                 line = line.strip()
                 line = line.strip('[]')
                 parts = line.split('=')
-                if(len(parts) <= 1):
+                if len(parts) <= 1:
                     continue
 
                 attribute = parts[0].strip()
                 # attribute = attribute.lower()
 
                 # If we find an image tag, create a new tiledata
-                if(attribute == 'Image'):
+                if attribute == 'Image':
                     imageFilename = parts[1].strip()
                     ############################################################
-                    #Hack to import old Williams data and any other ancient .idocs
+                    # Hack to import old Williams data and any other ancient .idocs
                     # (tile_number_str, ext) = os.path.splitext(imageFilename)
                     # tile_number = int(tile_number_str)
                     # if tile_number >= 10000:
@@ -963,13 +987,13 @@ class IDoc():
                     tileObj = IDocTileData(imageFilename)
                     idocObj.tiles.append(tileObj)
                 # a T tag might contain scope and time information
-                elif(attribute == 'T'):
+                elif attribute == 'T':
                     tValue = parts[1].strip()
                     if tValue.startswith("SerialEM: "):
-                        idocObj.note = tValue[tValue.index(":")+1:].strip()
+                        idocObj.note = tValue[tValue.index(":") + 1:].strip()
                 else:
                     value = None
-                    if(len(parts) > 1):
+                    if len(parts) > 1:
                         values = parts[1].split()
 
                         vTemp = values[0].strip()
@@ -980,39 +1004,37 @@ class IDoc():
                             ConvertedValues = []
                             for v in values:
                                 v = v.strip()
-                                convVal = None
-                                
+                                converted_value = None
+
                                 try:
-                                    convVal = int(v)
+                                    converted_value = int(v)
                                 except ValueError:
                                     try:
-                                        convVal = float(v)
-                                    except:
-                                        convVal = v
+                                        converted_value = float(v)
+                                    except ValueError:
+                                        converted_value = v
                                         pass
                                     pass
-                                                                    
-                                ConvertedValues.append(convVal)
-                                
+
+                                ConvertedValues.append(converted_value)
+
                             values = ConvertedValues
                             if len(values) == 1:
                                 value = values[0]
                             else:
                                 value = values
 
-                    if not value is None:
+                    if value is not None:
                         if tileObj is None:
                             setattr(idocObj, attribute, value)
-                            #idocObj.__dict__[attribute] = value
+                            # idocObj.__dict__[attribute] = value
                         else:
-                            setattr(tileObj, attribute, value) 
-                            
+                            setattr(tileObj, attribute, value)
+
             idocObj._SetCameraBpp(CameraBpp)
             serialem_utils.PickleSave(idocObj, idocfullPath)
             return idocObj
 
-        return None
-    
 def ArgToIDoc(arg):
     Data = None
     if arg is None:
@@ -1031,170 +1053,167 @@ class SymmetricNormalize(matplotlib.colors.Normalize):
     """
     Maps colors so the center is 0 on the color map and the normalized absolute value of the distance from center is used to generate the color
     """
-        
+
     def __init__(self, vabsmax, vcenter=None, clip=False):
         if vcenter is None:
             vcenter = 0
-        
+
         self.vcenter = vcenter
         self.vabsmax = vabsmax
-        
+
         if vabsmax is None:
             matplotlib.colors.Normalize.__init__(self, vmin=None, vmax=None, clip=clip)
         else:
             matplotlib.colors.Normalize.__init__(self, vmin=-vabsmax, vmax=vabsmax, clip=clip)
 
     def __call__(self, value, clip=None):
-        
+
         value = value - self.vcenter
-        
+
         if self.vabsmax is None:
             v = np.asarray(value)
             self.vabsmax = np.max(np.abs((np.min(v), np.max(v))))
-            
+
             if self.vabsmax == 0:
                 self.vabsmax = None
-        
+
         if self.vabsmax is not None:
             norm = np.absolute(value) / self.vabsmax
         else:
             norm = np.absolute(value)
-        
+
         if clip:
             norm[norm < 0] = 0.0
             norm[norm > 1] = 1.0
-            
+
         return norm
 
-def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
 
+def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
     Data = ArgToIDoc(DataSource)
-    
+
     if title is None:
         title = 'Defocus deviation from planar fit'
-    
+
     x = []
     y = []
     z = []
-    
+
     first_tile = Data.Tiles[0]
-    center = np.asarray((first_tile.StagePosition)) 
-    
+    center = np.asarray(first_tile.StagePosition)
+
     points = None
     for t in list(Data.Tiles):
-        if not t.Defocus is None:
-            
+        if t.Defocus is not None:
             x.append(t.StagePosition[0])
             y.append(t.StagePosition[1])
             z.append(t.Defocus)
-            
-            row = np.asarray((t.StagePosition[0],t.StagePosition[1],t.Defocus))
-            #row = np.swapaxes(row, 0, 1)
+
+            row = np.asarray((t.StagePosition[0], t.StagePosition[1], t.Defocus))
+            # row = np.swapaxes(row, 0, 1)
             if points is None:
                 points = row
             else:
-                points = np.vstack((points,row))
-            
-        
-    points[:,0:2] = points[:,0:2] - center  
-    #points = points - np.min(points,0)
-             
-    tmp_a = points[:,0:2] #XY values
-    tmp_a = np.hstack((tmp_a, np.ones((len(z),1))))
-    tmp_b = points[:,-1] #Z values
-    
+                points = np.vstack((points, row))
+
+    points[:, 0:2] = points[:, 0:2] - center
+    # points = points - np.min(points,0)
+
+    tmp_a = points[:, 0:2]  # XY values
+    tmp_a = np.hstack((tmp_a, np.ones((len(z), 1))))
+    tmp_b = points[:, -1]  # Z values
+
     b = np.matrix(tmp_b).T
     A = np.matrix(tmp_a)
-    
-    fit = (A.T * A).I * A.T * b #find a linear fit for X + Y = Z
+
+    fit = (A.T * A).I * A.T * b  # find a linear fit for X + Y = Z
     errors = b - A * fit
     residual = np.linalg.norm(errors)
 
-    #print( "solution:")
+    # print( "solution:")
     defocus_solution = "%f x + %f y + %f = z" % (fit[0], fit[1], fit[2])
-    #print( defocus_solution )
-    #print( "errors:")
-    #print( errors)
-    #print( "residual:")
-    #print( residual)
-    
+    # print( defocus_solution )
+    # print( "errors:")
+    # print( errors)
+    # print( "residual:")
+    # print( residual)
+
     remapped = tmp_a * fit.flat
-    adjusted_z = np.sum(remapped,1)
+    adjusted_z = np.sum(remapped, 1)
 
     # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
-    z = points[:,2]
+    z = points[:, 2]
     z = z - adjusted_z
-    #title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
-    
-    
-    
+    # title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
+
     fig = plt.figure(dpi=150)
     ax = fig.add_subplot(111, projection='3d')
-    
-    triang = mtri.Triangulation( points[:,0],  points[:,1])
-    
+
+    triang = mtri.Triangulation(points[:, 0], points[:, 1])
+
     zrange = np.max(np.abs((np.min(z), np.max(z))))
     AllowedZLimits = [1.0, 2.5, 5.0, 10.0, 25.0, 50, 100]
     zlim = NearestLimit(zrange, AllowedZLimits)
-    
-    #if zrange < 1.0:
+
+    # if zrange < 1.0:
     #    zrange = 1.0
-    
+
     offset = SymmetricNormalize(vabsmax=AllowedZLimits[0], vcenter=0.)
-     
-    ax.plot_trisurf(triang, z, cmap=plt.get_cmap('plasma'), shade=True, alpha=1, norm=offset) #, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+
+    ax.plot_trisurf(triang, z, cmap=plt.get_cmap('plasma'), shade=True, alpha=1,
+                    norm=offset)  # , c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
     ax.set_title(title + '\n' + defocus_solution)
     ax.set_zlabel('Z (um)')
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
-    ax.set_zlim(-zlim, zlim) 
-    ax.set_xlim(np.min(points[:,0]), np.max(points[:,0]) )
-    ax.set_ylim(np.min(points[:,1]), np.max(points[:,1]) )
-    
+    ax.set_zlim(-zlim, zlim)
+    ax.set_xlim(np.min(points[:, 0]), np.max(points[:, 0]))
+    ax.set_ylim(np.min(points[:, 1]), np.max(points[:, 1]))
+
     fig.subplotpars.left = 0
     fig.subplotpars.right = 1
     fig.subplotpars.bottom = 0
     fig.subplotpars.top = 1
-    
-    if OutputImageFile is None: 
+
+    if OutputImageFile is None:
         plt.show()
-    else: 
+    else:
         plt.ioff()
-        
+
         if isinstance(OutputImageFile, str):
             plt.savefig(OutputImageFile, bbox_inches='tight', dpi=300)
         else:
             for filename in OutputImageFile:
                 plt.savefig(filename, bbox_inches='tight', dpi=300)
-    
-    plt.close(fig) 
-        
+
+    plt.close(fig)
+
     return
+
 
 def NearestLimit(value, AllowedValueList):
     """
     Given a value, rounds the value to the next highest value in the AllowedValueList.
     This is used to provide consistency in the scale of plots
     """
-    
+
     if AllowedValueList is None or len(AllowedValueList) == 0:
         raise ValueError("NearestLimit: AllowedValueList parameter must not be None or Empty")
-    
+
     AllowedValueList = sorted(AllowedValueList)
-        
+
     iNextHighest = 0
     while iNextHighest < len(AllowedValueList):
         if AllowedValueList[iNextHighest] >= value:
             return AllowedValueList[iNextHighest]
-        
+
         iNextHighest = iNextHighest + 1
-        
-    #Return the highest value in the list
+
+    # Return the highest value in the list
     return AllowedValueList[-1]
-    
+
 
 if __name__ == "__main__":
-
     datapath = sys.argv[1]
 
     basename = os.path.basename(datapath)
@@ -1205,6 +1224,5 @@ if __name__ == "__main__":
 
     print("%d tiles" % Data.NumTiles)
 
-    #PlotDefocusSurface(datapath, os.path.join(outdir, outfile + "_defocus.svg"))
+    # PlotDefocusSurface(datapath, os.path.join(outdir, outfile + "_defocus.svg"))
     PlotDefocusSurface(datapath)
-

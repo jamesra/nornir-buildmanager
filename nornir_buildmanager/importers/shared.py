@@ -8,6 +8,7 @@ import os
 import sys
 import shutil
 import glob
+import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
 import collections
 import re
@@ -107,8 +108,47 @@ def TryCleanIdocCaptureData(containerObj, input_path: str, logger, new_section_i
     return _TryCleanDataWithNotInCurrentImport(input_path, filtered_list, new_section_info)
 
 
+def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrapper,
+                    InputPath: str,
+                    image_ext: str | None = None):
+    """
+    :param containerObj:
+    :param InputPath:
+    :param logger:
+    :return:
+    """
+
+    #if new_section_info is None:
+    #    new_section_info = GetSectionInfo(InputPath)
+
+    if image_ext is None:
+        image_ext = '.png'
+
+    histogram_node = nornir_buildmanager.volumemanager.HistogramNode.Create(Type='RawDataHistogram')
+    [added, histogram_node] = containerObj.UpdateOrAddChildByAttrib(histogram_node, 'Type')
+
+    histogram_image_path = os.path.join(InputPath, f'Histogram{image_ext}')
+    if os.path.exists(histogram_image_path):
+        image_node = nornir_buildmanager.volumemanager.ImageNode.Create(Path=f'Histogram{image_ext}', attrib={'Name':'RawDataHistogram'})
+        [image_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
+        existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
+        if image_added or existing_removed:
+            shutil.copyfile(histogram_image_path, image_node.FullPath)
+
+    histogram_xml_path = os.path.join(InputPath, 'Histogram.xml')
+    if os.path.exists(histogram_xml_path):
+        image_node = nornir_buildmanager.volumemanager.DataNode.Create(Path='Histogram.xml',
+                                                                        attrib={'Name': 'RawDataHistogram'})
+        [data_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
+        existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
+        if data_added or existing_removed:
+            shutil.copyfile(histogram_image_path, image_node.FullPath)
+            
+    return added | data_added | image_added
+
 def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: FilenameMetadata | None = None):
-    '''Check the path for a notes.txt file.  If found, add a <Notes> element to the passed containerObj
+    '''
+    Check the path for a notes.txt file.  If found, add a <Notes> element to the passed containerObj
     :param new_section_info: Section information for the section we are importing notes from
     '''
     

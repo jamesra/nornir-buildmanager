@@ -212,7 +212,7 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
 
             known_mappings = mapping.Mapped
             for rt_mapped in rt_node.Children: 
-                if not rt_mapped.SectionNumber in known_mappings:
+                if rt_mapped.SectionNumber not in known_mappings:
                     Modified = True
                     mapping.AddMapping(rt_mapped.SectionNumber)
 
@@ -990,8 +990,11 @@ def CalculateStosGroupWarpMeasurementImages(Parameters, StosMapNode, GroupNode, 
                 WarpImageNode.Type = 'WarpMetricImage_' + StosTransformNode.Type
 #                 (created_histogram_image, WarpHistogramImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, HistogramImageOutputFileFullPath, StosTransformNode)
 #                 WarpHistogramImageNode.Type = 'WarpHistogram_' + StosTransformNode.Type
-                (created_histogram, WarpHistogramNode) = GetOrCreateHistogramNodeHelper(SectionMappingNode, HistogramOutputFilename, HistogramImageOutputFilename, StosTransformNode)
-                WarpHistogramNode.Type = 'WarpHistogram_' + StosTransformNode.Type
+                (created_histogram, WarpHistogramNode) = GetOrCreateHistogramNodeHelper(SectionMappingNode,
+                                                                                        HistogramOutputFilename,
+                                                                                        HistogramImageOutputFilename,
+                                                                                        StosTransformNode,
+                                                                                        Type=f'WarpHistogram_{StosTransformNode.Type}')
                 
                 if created_warp:
                     WarpImageNode.SetTransform(StosTransformNode)
