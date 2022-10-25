@@ -319,9 +319,9 @@ class IDocSingleSectionImportTest(IDocTest):
 
         return FilterNode
 
-    def CreateImportContrastOverrideMapping(self, sectionNumber, MinVal, MaxVal, Gamma):
+    def CreateImportContrastOverrideMapping(self, sectionNumber, MinVal, MaxVal, Gamma) -> dict[int, nornir_buildmanager.importers.ContrastValue]:
         ContrastMap = {
-            sectionNumber: nornir_buildmanager.importers.ContrastValues(sectionNumber, MinVal, MaxVal, Gamma)}
+            sectionNumber: nornir_buildmanager.importers.ContrastValue(sectionNumber, MinVal, MaxVal, Gamma)}
         return ContrastMap
 
     def VerifyFilterContrast(self, MinVal, MaxVal, Gamma):
@@ -555,33 +555,33 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
 #         #self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % (BruteLevel))
 #         #self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
 #
-#         #self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
-#         #self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+#         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+#         self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
 #
 #         GridLevelOne = 16
 #         GridLevelTwo = 8
 #
-#         #self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=GridLevelOne, Filter="Leveled")
-#         #self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid", OutputLevel=GridLevelTwo, Filter="Leveled")
+#         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=GridLevelOne, Filter="Leveled")
+#         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid", OutputLevel=GridLevelTwo, Filter="Leveled")
 #
 #         # Copy output here to run IDocAlignOutputTest
 #
-#         #self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=GridLevelTwo, OutputLevel=1)
-#         #self.RunSliceToVolume()
-#         # self.RunMosaicToVolume()
-#         # self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
-#         # self.RunAssembleMosaicToVolume(Channels="TEM")
-#         # self.RunMosaicReport(OutputFile='VolumeReport')
-#         # self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=GridLevelOne)
-#         #
-#         # self.RunAssemble(Channels='TEM', Levels=[1])
-#         # self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
+#         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=GridLevelTwo, OutputLevel=1)
+#         self.RunSliceToVolume()
+#         self.RunMosaicToVolume()
+#         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
+#         self.RunAssembleMosaicToVolume(Channels="TEM")
+#         self.RunMosaicReport(OutputFile='VolumeReport')
+#         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=GridLevelOne)
+#
+#         self.RunAssemble(Channels='TEM', Levels=[1])
+#         self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 #
 #         # TODO, this failed.  Fix it
-#         # self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne), BruteLevel, GridLevelOne)
-#         #
-#         #
-#         # self.RunCalculateStosGroupWarpMetrics()
+#         self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne), BruteLevel, GridLevelOne)
+#
+#
+#         self.RunCalculateStosGroupWarpMetrics()
 
 #           
 #            
