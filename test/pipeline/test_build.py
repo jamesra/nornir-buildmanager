@@ -31,8 +31,8 @@ class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
         self.assertIsNotNone(ChannelNode)
 
         for tname in TransformNames:
-            TransformNode = ChannelNode.GetChildByAttrib("Transform", "Name", tname)
-            self.assertIsNotNone(ChannelNode)
+            transform_node = ChannelNode.GetChildByAttrib("Transform", "Name", tname)
+            self.assertIsNotNone(transform_node)
 
 
     def TileFiles(self, tilesetNode, downsample):
