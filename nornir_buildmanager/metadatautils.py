@@ -54,7 +54,7 @@ def GetOrCreateHistogramNodeHelper(ParentNode,
                     histogramNode = None
 
     if histogramNode is None:
-        histogramNode = nornir_buildmanager.volumemanager.HistogramNode.Create(InputTransformNode, None, Type=Type)
+        histogramNode = nornir_buildmanager.volumemanager.HistogramNode.Create(InputTransformNode, Type=Type)
         DataNode = nornir_buildmanager.volumemanager.DataNode.Create(os.path.basename(DataPath))
         histogramNode.append(DataNode)
 
