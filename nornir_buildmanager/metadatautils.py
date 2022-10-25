@@ -35,33 +35,38 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=
     return (Created, OverlayImageNode)
 
 
-def GetOrCreateHistogramNodeHelper(ParentNode, DataPath, ImagePath, InputTransformNode=None):
-    # Create a node in the XML records
-    Created = False
+def GetOrCreateHistogramNodeHelper(ParentNode,
+                                   DataPath: str,
+                                   ImagePath: str,
+                                   InputTransformNode=None,
+                                   Type: str | None = None):
+    """Create a Histogram node with child elements for the data and image"""
+    created = False
     histogramNode = ParentNode.find('Histogram')
-    if not histogramNode is None:
+    if histogramNode is not None:
         if histogramNode.NeedsValidation:
             cleaned, reason = histogramNode.CleanIfInvalid()
             if cleaned:
                 histogramNode = None
             
-            if not InputTransformNode is None:
+            if InputTransformNode is not None:
                 if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
                     histogramNode = None
 
     if histogramNode is None:
-        histogramNode = nornir_buildmanager.volumemanager.HistogramNode.Create(InputTransformNode, None)
+        histogramNode = nornir_buildmanager.volumemanager.HistogramNode.Create(InputTransformNode, None, Type=Type)
         DataNode = nornir_buildmanager.volumemanager.DataNode.Create(os.path.basename(DataPath))
         histogramNode.append(DataNode)
-        
-        ImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(os.path.basename(ImagePath))
-        histogramNode.append(ImageNode)
+
+        if ImagePath is not None:
+            ImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(os.path.basename(ImagePath))
+            histogramNode.append(ImageNode)
         
         histogramNode.SetTransform(InputTransformNode)
         ParentNode.append(histogramNode)
-        Created = True
+        created = True
 
-    return (Created, histogramNode)
+    return (created, histogramNode)
 
 def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, CreateFunc=None, ReplaceFunc=None):
     '''
