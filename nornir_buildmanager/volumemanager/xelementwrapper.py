@@ -589,7 +589,7 @@ class XElementWrapper(ElementTree.Element):
                         return False
         return True
 
-    def UpdateOrAddChildByAttrib(self, Element, AttribNames=None) -> (bool, XElementWrapper):
+    def UpdateOrAddChildByAttrib(self, element: XElementWrapper, AttribNames=None) -> (bool, XElementWrapper):
         if AttribNames is None:
             AttribNames = ['Name']
         elif isinstance(AttribNames, str):
@@ -601,15 +601,15 @@ class XElementWrapper(ElementTree.Element):
         attribXPaths = []
 
         for AttribName in AttribNames:
-            val = Element.attrib[AttribName]
+            val = element.attrib[AttribName]
             attribXPaths.append(attribXPathTemplate % {'AttribName': AttribName,
                                                        'AttribValue': val})
 
-        XPathStr = "%(ElementName)s[%(QueryString)s]" % {'ElementName': Element.tag,
+        XPathStr = "%(ElementName)s[%(QueryString)s]" % {'ElementName': element.tag,
                                                          'QueryString': ' and '.join(attribXPaths)}
-        return self.UpdateOrAddChild(Element, XPathStr)
+        return self.UpdateOrAddChild(element, XPathStr)
 
-    def UpdateOrAddChild(self, Element: XElementWrapper, XPath: str=None) -> (bool, XElementWrapper):
+    def UpdateOrAddChild(self, element: XElementWrapper, XPath: str=None) -> (bool, XElementWrapper):
         """Adds an element using the specified XPath.  If the XPath is unspecified the element name is used
            Returns a tuple with (True/False, Element).
            True indicates the element did not exist and was added.
@@ -617,7 +617,7 @@ class XElementWrapper(ElementTree.Element):
            """
 
         if XPath is None:
-            XPath = Element.tag
+            XPath = element.tag
 
         NewNodeCreated = False
 
@@ -632,10 +632,10 @@ class XElementWrapper(ElementTree.Element):
         '''Returns the existing element if it exists, adds ChildElement with specified attributes if it does not exist.'''
         child = self.find(XPath)
         if child is None:
-            if Element is not None:
-                self.append(Element)
-                assert (Element in self)
-                child = Element
+            if element is not None:
+                self.append(element)
+                assert (element in self)
+                child = element
                 NewNodeCreated = True
             else:
                 # No data provided to create the child element
