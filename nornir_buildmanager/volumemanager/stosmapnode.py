@@ -66,7 +66,7 @@ class StosMapNode(XElementWrapper):
         return MappedToControlCandidateList
 
     def GetMappingsForControl(self, Control: int) -> Generator[MappingNode]:
-        return self.findall("Mapping[@Control='{Control}']")   
+        return self.findall(f"Mapping[@Control='{Control}']")   
 
     def ClearMissingSections(self, existing_section_numbers: Iterable[int]):
         """Remove any control sections that are not in the list of known sections"""
