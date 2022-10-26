@@ -267,9 +267,9 @@ def ParseMetadataFromFilename(string):
         version = d.get('Version',None)
         if version is None:
             version = '\0' #Assign a letter that will sort earlier than 'A' in case someone names the first recapture A instead of B...
-            d['Version'] = version
+            d['Version'] = str.upper(version)
         else:
-            d['Version'] = str.strip(d['Version'])
+            d['Version'] = str.upper(str.strip(d['Version']))
             
         ds = d.get('Downsample',None)
         if ds is not None:
