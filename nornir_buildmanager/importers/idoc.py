@@ -57,46 +57,10 @@ import nornir_buildmanager.importers.serialem_utils as serialem_utils
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
 
 
-
-def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
-    """Import the specified directory into the volume"""
-
-    if extension is None:
-        extension = 'idoc'
-
-    # TODO, set the defaults at the volume level in the meta-data and pull from there
-    DesiredSectionList = kwargs.get('Sections', None)
-
-    MinCutoff = float(kwargs.get('Min'))
-    MaxCutoff = float(kwargs.get('Max'))
-    ContrastCutoffs = (MinCutoff, MaxCutoff)
-    CameraBpp = kwargs.get('CameraBpp', None)
-
-    if MinCutoff < 0.0 or MinCutoff > 1.0:
-        raise ValueError("Min must be between 0 and 1: %f" % MinCutoff)
-
-    if MaxCutoff < 0.0 or MaxCutoff > 1.0:
-        raise ValueError("Max must be between 0 and 1: %f" % MaxCutoff)
-
-    if MinCutoff >= MaxCutoff:
-        raise ValueError("Max must be greater than Min: %f is not less than %f" % (MinCutoff, MaxCutoff))
-
-    FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
-    histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
-    ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
-    if len(ContrastMap) == 0:
-        nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
-
-    if not os.path.exists(ImportPath):
-        raise ValueError("Import Path does not exist: %s" % ImportPath)
-
+def find_sections(ImportPath: str, extension: str, DesiredSectionList: list[int] | None ) -> dict[int, shared.FilenameMetadata]:
+    found_sections = {}
     matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension,
                                                                  ExcludeNames=[], ExcludedDownsampleLevels=[])
-
-    DataFound = False
-
-    found_sections = {}
-
     for m in matches:
         # The problem with using the directory name is that there could be more than one
         # .idoc file in a directory if a two-part capture of a section is done.
@@ -137,12 +101,50 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
                         found_sections[meta_data.number] = (meta_data, idocFileList)
                 else:
                     found_sections[meta_data.number] = (meta_data, idocFileList)
+                    
+    return found_sections
 
+def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
+    """Import the specified directory into the volume"""
+
+    if extension is None:
+        extension = 'idoc'
+
+    # TODO, set the defaults at the volume level in the meta-data and pull from there
+    DesiredSectionList = kwargs.get('Sections', None)
+
+    MinCutoff = float(kwargs.get('Min'))
+    MaxCutoff = float(kwargs.get('Max'))
+    ContrastCutoffs = (MinCutoff, MaxCutoff)
+    CameraBpp = kwargs.get('CameraBpp', None)
+
+    if MinCutoff < 0.0 or MinCutoff > 1.0:
+        raise ValueError("Min must be between 0 and 1: %f" % MinCutoff)
+
+    if MaxCutoff < 0.0 or MaxCutoff > 1.0:
+        raise ValueError("Max must be between 0 and 1: %f" % MaxCutoff)
+
+    if MinCutoff >= MaxCutoff:
+        raise ValueError("Max must be greater than Min: %f is not less than %f" % (MinCutoff, MaxCutoff))
+
+    FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
+    histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
+    ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
+    if len(ContrastMap) == 0:
+        nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
+
+    if not os.path.exists(ImportPath):
+        raise ValueError("Import Path does not exist: %s" % ImportPath)
+ 
+    DataFound = False
+
+    found_sections = find_sections(ImportPath, extension, DesiredSectionList)
+ 
     # Todo: Print the list of filenames.  Apply regular expression of desired import range.  Then import.
     prettyoutput.Log(shared.FileMetaDataStrHeader())
-    for section_entry in found_sections.items():
+    for section_key in sorted(found_sections.keys()):
         #path = section_entry[0]
-        (data, idocFileList) = section_entry[1]
+        (data, idocFileList) = found_sections[section_key]
 
         prettyoutput.Log(shared.FileMetaDataStr(data))
 
