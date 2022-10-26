@@ -1012,9 +1012,7 @@ class IDoc:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles)
 
-        existingTiles = [r[0] for r in filter(lambda t: t[1], results)]
-
-        self.tiles = existingTiles
+        self.tiles =  [r[0] for r in filter(lambda t: t[1], results)]
 
     def GetImageBpp(self) -> int | None:
         """:return: Bits per pixel if specified in the IDoc, otherwise None"""

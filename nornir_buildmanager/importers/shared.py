@@ -54,7 +54,7 @@ def FileMetaDataStr(data):
     v = data.version
     if v == '\0':
         v = None
-    output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}\n".format(os.path.basename(data.fullpath), str(data.number), str(v), str(data.name), str(data.downsample), str(data.extension))
+    output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}".format(os.path.basename(data.fullpath), str(data.number), str(v), str(data.name), str(data.downsample), str(data.extension))
     return output
 
 def _TryCleanDataWithNotInCurrentImport(input_path: str,
