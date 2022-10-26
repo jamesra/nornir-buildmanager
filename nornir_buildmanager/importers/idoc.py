@@ -1016,11 +1016,11 @@ class IDoc:
                     t.Max = maxPossible
 
     def RemoveMissingTiles(self, path: str):
-        existingTiles = []
-        for t in self.tiles:
-            tFullPath = os.path.join(path, t.Image)
-            if os.path.exists(tFullPath):
-                existingTiles.append(t)
+        #existingTiles = []
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = executor.map(lambda t: (t, os.path.exists(os.path.join(path, t.Image))), self.tiles)
+
+        existingTiles = [r[1] for r in filter(lambda t: t[0], results)]
 
         self.tiles = existingTiles
 
