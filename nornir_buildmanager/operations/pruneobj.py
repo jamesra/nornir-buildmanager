@@ -168,10 +168,9 @@ class PruneObj:
 
         # OutputTransformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)
         return [TransformParent, PruneNodeParent]
-    
-        
+      
     @classmethod
-    def TryUpdateHistogram(cls, prune_node, Threshold):
+    def TryUpdateHistogram(cls, prune_node, Threshold: float):
         '''
         Updates the prune histogram if needed.
         :return: If the histogram is updated a PruneObj is loaded and returned

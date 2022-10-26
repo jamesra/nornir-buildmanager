@@ -232,7 +232,7 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
             Modified = True
 
         for rt_mapped in rt_node.Children:
-            if not rt_mapped.SectionNumber in mappingNode.Mapped:
+            if rt_mapped.SectionNumber not in mappingNode.Mapped:
                 mappingNode.AddMapping(rt_mapped.SectionNumber)
                 Logger.info("\tAdded %d <- %d" % (rt_node.SectionNumber, rt_mapped.SectionNumber))
                 Modified = True
