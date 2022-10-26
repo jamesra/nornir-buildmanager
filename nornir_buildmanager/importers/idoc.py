@@ -368,19 +368,11 @@ class SerialEMIDocImport(object):
         else:
             SectionNumber = ExistingSectionInfo.number
 
-        prettyoutput.CurseString('Section', str(SectionNumber))
+        #prettyoutput.CurseString('Section', str(SectionNumber))
 
         # Check for underscores.  If there is an underscore and the first part is the sectionNumber, then use everything after as the section name
-        SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number
+        SectionName = ExistingSectionInfo.name if ExistingSectionInfo.name is not None else (('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number)
         SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number
-        try:
-            parts = sectionDir.partition("_")
-            if parts is not None:
-                if len(parts[2]) > 0:
-                    SectionName = parts[2]
-        except:
-            pass
-
         sectionObj = SectionNode.Create(SectionNumber,
                                         SectionName,
                                         SectionPath)
