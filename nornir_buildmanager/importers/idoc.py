@@ -529,6 +529,7 @@ class SerialEMIDocImport(object):
             file_creation_time = datetime.datetime.utcfromtimestamp(mosaic_fd.st_ctime)
 
             if cutoff_time > file_creation_time and 'RC3' in VolumeObj.FullPath:
+                os.remove(SupertilePath)
                 UpdateMosaicFile = True
 
         except FileNotFoundError:
@@ -542,17 +543,19 @@ class SerialEMIDocImport(object):
                     MFile.NumberOfImages) + " vs. " + str(len(Tileset.Tiles)))
 
         # If we wrote new images replace the .mosaic file
-        if len(SourceToMissingTargetMap) > 0 or not os.path.exists(SupertilePath) or UpdateMosaicFile:
+        if len(SourceToMissingTargetMap) > 0 or UpdateMosaicFile or not os.path.exists(SupertilePath):
             # Writing this file indicates import succeeded and we don't need to repeat these steps, writing it will possibly invalidate a lot of downstream data
             # We need to flip the images.  This may be a Utah scope issue, our Y coordinates are inverted relative to the images.  To fix this
             # we flop instead of flip and reverse when writing the coordinates
             mosaicfile.MosaicFile.Write(SupertilePath, Entries=Tileset.GetPositionsForTargets(), Flip=not Flip,
                                         ImageSize=IDocData.ImageSize, Downsample=1)
-            MFile = mosaicfile.MosaicFile.Load(SupertilePath)
+            
 
             # Sometimes files fail to convert, when this occurs remove them from the .mosaic
-            if MFile.RemoveInvalidMosaicImages(LevelObj.FullPath):
-                MFile.Save(SupertilePath)
+            if ImageConversionRequired:
+                MFile = mosaicfile.MosaicFile.Load(SupertilePath)
+                if MFile.RemoveInvalidMosaicImages(LevelObj.FullPath):
+                    MFile.Save(SupertilePath)
 
             Mosaic.TranslateMosaicFileToZeroOrigin(SupertilePath)
             transformObj.ResetChecksum()
@@ -781,7 +784,7 @@ class NornirTileset:
         with concurrent.futures.ThreadPoolExecutor() as executor:
             results = executor.map(lambda t: (t, not os.path.exists(t.TargetImageFullPath)), self.Tiles, chunksize=10)
         
-        SourceToTargetMap = {t.SourceImageFullPath:t.TargetImageFullPath for (t,_) in filter(lambda r: r[0], results)}
+        SourceToTargetMap = {t.SourceImageFullPath:t.TargetImageFullPath for (t,_) in filter(lambda r: r[1], results)}
         #for t in self._tiles:
             #if os.path.exists(t.SourceImageFullPath) and not os.path.exists(t.TargetImageFullPath):
                 #SourceToTargetMap[t.SourceImageFullPath] = t.TargetImageFullPath
