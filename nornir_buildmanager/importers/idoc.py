@@ -31,7 +31,9 @@ Example:
 """
 
 from __future__ import annotations
+import concurrent.futures
 
+import re
 import sys
 import datetime
 import collections
@@ -57,32 +59,27 @@ import nornir_buildmanager.importers.serialem_utils as serialem_utils
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
 
 
-def find_sections(ImportPath: str, extension: str, DesiredSectionList: list[int] | None ) -> dict[int, shared.FilenameMetadata]:
-    found_sections = {}
-    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension,
-                                                                 ExcludeNames=[], ExcludedDownsampleLevels=[])
-    for m in matches:
-        # The problem with using the directory name is that there could be more than one
-        # .idoc file in a directory if a two-part capture of a section is done.
-        # However, the extensive use of 1.idoc naming
-        # conventions mean we have to use the directory name.
-        # So I build a list of all .idoc files in a directory and later we'll
-        # run ToMosaic on all of them
+def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | None ) -> dict[int, list[shared.FilenameMetadata]]:
+    """
+    This fetches the directories that could contain sections so that when we recurse through the section folders we can
+    yield the sections we find right away instead of waiting for all sections to be found first
+    :param ImportPath:
+    :param extension:
+    :param DesiredSectionList:
+    :return: A list of DirEntry objects that could contain a valid section for the given section number.  The highest version directory is listed first.  The list is in descending order.
+    """
 
-        (path, idocFileList) = m
-        idocFileList = [os.path.join(path, f) for f in idocFileList]
+    found_sections = {}  # type : dict[int, list[shared.FilenameMetadata]]
 
-        # idocFileList = []
-        # idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
-
-        if len(idocFileList) > 0:
-
-            idocFullPath = idocFileList[0]
+    with os.scandir(ImportPath) as scanner:
+        for entry in scanner:
+            if entry.is_dir() is False:
+                continue
 
             try:
-                meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
+                meta_data = shared.GetSectionInfo(entry.name)
             except nornir_buildmanager.NornirUserException:
-                prettyoutput.LogErr(f"Could not parse required metadata from {idocFullPath}")
+                prettyoutput.LogErr(f"Could not parse required metadata from {entry.name}")
                 continue
 
             # Skip this section if it is not in the desired range
@@ -94,21 +91,152 @@ def find_sections(ImportPath: str, extension: str, DesiredSectionList: list[int]
                 prettyoutput.error("Could not parse section number from {0} filename".format(idocFullPath))
             else:
                 if meta_data.number in found_sections:
-                    existing = found_sections[meta_data.number]
-                    if len(existing) > 1:
-                        existing = existing[0]
-                    if existing.version < meta_data.version:
-                        found_sections[meta_data.number] = (meta_data, idocFileList)
+                    found_sections[meta_data.number].append(meta_data)
                 else:
-                    found_sections[meta_data.number] = (meta_data, idocFileList)
+                    found_sections[meta_data.number] = [meta_data]
                     
+    #Sort the lists by the version number
+    for key, candidate_data_list in found_sections.items():
+        found_sections[key] = sorted(candidate_data_list, key=lambda entry: entry.version, reverse=True)
+
     return found_sections
+
+def find_section_directory_idocs(ImportPath: str, section_meta_data: shared.FilenameMetadata, matching_pattern: re.Pattern | frozenset[str]) -> tuple[shared.FilenameMetadata, list[str]]:
+    """
+    :param ImportPath:
+    :param section_meta_data:
+    :param matching_pattern:
+    :return: yields all idoc files for a given section directory
+    """
+    #matching_pattern = nornir_shared.files.ensure_regex_or_set(extension)
+    section_path = os.path.join(ImportPath, section_meta_data.fullpath)
+    matched_file_list = []
+    with os.scandir(section_path) as path_scanner:
+        for entry in path_scanner:
+            if entry.is_file() is False:
+                continue
+
+            if nornir_shared.files.check_if_file_matches(entry.name, matching_pattern):
+                matched_file_list.append(os.path.join(section_path, entry.name))
+
+    return section_meta_data, matched_file_list
+
+def section_directory_idocs_generator(ImportPath: str, match_names: list[shared.FilenameMetadata], matching_pattern: re.Pattern | frozenset[str]) -> Generator[tuple[shared.FilenameMetadata, list[str]]]:
+    """
+    :param ImportPath:
+    :param match_names:
+    :param matching_pattern:
+    :return: yields the FileMetadata and .idoc file that should be imported for any given section number
+    """
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        yield from executor.map(lambda section_meta_data: find_section_directory_idocs(ImportPath, section_meta_data, matching_pattern), match_names)
+
+
+def find_sections(ImportPath: str, extension: str, section_candidates: dict[int, list[shared.FilenameMetadata]]) -> dict[
+        int, shared.FilenameMetadata]:
+
+    match_names = []
+    for candidate_dirs in section_candidates.values():
+        match_names.extend([e for e in candidate_dirs])
+
+    matching_pattern = nornir_shared.files.ensure_regex_or_set(extension)
+
+    best_section_results = {} # type: dict[int, tuple[shared.FilenameMetadata, list[str]]]
+
+    for section_meta_data, idocFileList in section_directory_idocs_generator(ImportPath, match_names, matching_pattern):
+        # The problem with using the directory name is that there could be more than one
+        # .idoc file in a directory if a two-part capture of a section is done.
+        # However, the extensive use of 1.idoc naming
+        # conventions mean we have to use the directory name.
+        # So I build a list of all .idoc files in a directory and later we'll
+        # run ToMosaic on all of idocs in the directory with the highest version number
+        section_number = section_meta_data.number
+
+        #If we already imported the section, move on
+        if section_number not in section_candidates:
+            continue
+
+        candidates = section_candidates[section_number]
+        index = candidates.index(section_meta_data)
+
+        if len(idocFileList) == 0:
+            #There are no .idocs to import 
+            print(f"No {extension} files found in {section_meta_data.fullpath}")
+        else:
+            #Store the result.  Remove the entry from the section_candidates.  If we have run out of candidates then
+            #yield the best result we found
+            if section_number in best_section_results:
+                (other_meta_data, other_idoc_list) = best_section_results[section_number] 
+                if other_meta_data.version < section_meta_data.version:
+                    best_section_results[section_number] = (section_meta_data, idocFileList)
+            else:
+                best_section_results[section_number] = (section_meta_data, idocFileList)
+                
+        candidates.remove(section_meta_data)
+        if len(candidates) == 0:
+            if section_number in best_section_results:
+                #yield the best result
+                yield best_section_results[section_number]
+                del best_section_results[section_number]
+                del section_candidates[section_number]
+            else:
+                print(f"No valid import found for section {section_number}")
+
+    #
+    #
+    # found_sections = {}
+    # matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension,
+    #                                                              MatchNames=match_names,
+    #                                                              ExcludeNames=[], ExcludedDownsampleLevels=[])
+    # for m in matches:
+    #     # The problem with using the directory name is that there could be more than one
+    #     # .idoc file in a directory if a two-part capture of a section is done.
+    #     # However, the extensive use of 1.idoc naming
+    #     # conventions mean we have to use the directory name.
+    #     # So I build a list of all .idoc files in a directory and later we'll
+    #     # run ToMosaic on all of them
+    #
+    #     (path, idocFileList) = m
+    #     idocFileList = [os.path.join(path, f) for f in idocFileList]
+    #
+    #     # idocFileList = []
+    #     # idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
+    #
+    #     if len(idocFileList) > 0:
+    #
+    #         idocFullPath = idocFileList[0]
+    #
+    #         try:
+    #             meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
+    #         except nornir_buildmanager.NornirUserException:
+    #             prettyoutput.LogErr(f"Could not parse required metadata from {idocFullPath}")
+    #             continue
+    #
+    #         # Skip this section if it is not in the desired range
+    #         if DesiredSectionList is not None:
+    #             if meta_data.number not in DesiredSectionList:
+    #                 continue
+    #
+    #         if meta_data.number is None:
+    #             prettyoutput.error("Could not parse section number from {0} filename".format(idocFullPath))
+    #         else:
+    #             if meta_data.number in found_sections:
+    #                 existing = found_sections[meta_data.number]
+    #                 if len(existing) > 1:
+    #                     existing = existing[0]
+    #                 if existing.version < meta_data.version:
+    #                     found_sections[meta_data.number] = (meta_data, idocFileList)
+    #             else:
+    #                 found_sections[meta_data.number] = (meta_data, idocFileList)
+    #
+    # return found_sections
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     """Import the specified directory into the volume"""
 
     if extension is None:
-        extension = 'idoc'
+        extension = '*.idoc'
 
     # TODO, set the defaults at the volume level in the meta-data and pull from there
     DesiredSectionList = kwargs.get('Sections', None)
@@ -138,20 +266,19 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
  
     DataFound = False
 
-    found_sections = find_sections(ImportPath, extension, DesiredSectionList)
- 
-    # Todo: Print the list of filenames.  Apply regular expression of desired import range.  Then import.
+    found_section_candidates = find_section_candidates(ImportPath, DesiredSectionList)
+    # Todo: Print the list of section directories.  Apply regular expression of desired import range.  Then import.
     prettyoutput.Log(shared.FileMetaDataStrHeader())
-    for section_key in sorted(found_sections.keys()):
-        #path = section_entry[0]
-        (data, idocFileList) = found_sections[section_key]
+    for section_key in sorted(found_section_candidates.keys()):
+        # path = section_entry[0]
+        section_number_dirlist = found_section_candidates[section_key]
+        for meta_data in section_number_dirlist:
+            prettyoutput.Log(shared.FileMetaDataStr(meta_data))
 
-        prettyoutput.Log(shared.FileMetaDataStr(data))
+    found_sections = find_sections(ImportPath, extension, found_section_candidates)
 
-    for section_entry in found_sections.items():
-        DataFound = True
-        #path = section_entry[0]
-        (data, idocFileList) = section_entry[1]
+    for (section_meta_data, idocFileList) in found_sections:
+        DataFound = True 
         for idocFileFullPath in idocFileList:
             yield SerialEMIDocImport.ToMosaic(VolumeElement,
                                               idocFileFullPath,
