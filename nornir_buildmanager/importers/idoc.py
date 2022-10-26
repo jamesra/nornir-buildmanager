@@ -1010,9 +1010,9 @@ class IDoc:
     def RemoveMissingTiles(self, path: str):
         #existingTiles = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            results = executor.map(lambda t: (t, os.path.exists(os.path.join(path, t.Image))), self.tiles)
+            results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles)
 
-        existingTiles = [r[1] for r in filter(lambda t: t[0], results)]
+        existingTiles = [r[0] for r in filter(lambda t: t[1], results)]
 
         self.tiles = existingTiles
 
