@@ -57,6 +57,7 @@ import nornir_shared.plot as plot
 import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
+from hypothesis.executors import executor
 
 
 def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | None) -> dict[int, list[shared.FilenameMetadata]]:
@@ -776,19 +777,33 @@ class NornirTileset:
 
     def GetSourceToMissingTargetMap(self):
         """:return: A dictionary mapping source image paths to missing target image paths"""
-
-        SourceToTargetMap = {}
-        for t in self._tiles:
-            if os.path.exists(t.SourceImageFullPath) and not os.path.exists(t.TargetImageFullPath):
-                SourceToTargetMap[t.SourceImageFullPath] = t.TargetImageFullPath
+ 
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = executor.map(lambda t: (t, not os.path.exists(t.TargetImageFullPath)), self.Tiles, chunksize=10)
+        
+        SourceToTargetMap = {t.SourceImageFullPath:t.TargetImageFullPath for (t,_) in filter(lambda r: r[0], results)}
+        #for t in self._tiles:
+            #if os.path.exists(t.SourceImageFullPath) and not os.path.exists(t.TargetImageFullPath):
+                #SourceToTargetMap[t.SourceImageFullPath] = t.TargetImageFullPath
 
         return SourceToTargetMap
+    
+    @staticmethod
+    def RemoveStaleTileFromOutputDir(t,  SupertilePath: str):
+        try:
+            RemoveOutdatedFile(t.SourceImageFullPath, SupertilePath)
+        except FileNotFoundError:
+            pass
+        
+        try:
+            RemoveOutdatedFile(t.SourceImageFullPath, t.TargetImageFullPath)
+        except FileNotFoundError:
+            pass
 
     def RemoveStaleTilesFromOutputDir(self, SupertilePath):
-        for t in self._tiles:
-            if os.path.exists(t.SourceImageFullPath):
-                RemoveOutdatedFile(t.SourceImageFullPath, SupertilePath)
-                RemoveOutdatedFile(t.SourceImageFullPath, t.TargetImageFullPath)
+        
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            results = executor.map(lambda tile: NornirTileset.RemoveStaleTileFromOutputDir(tile, SupertilePath), self.Tiles, chunksize=10) 
 
     def GetPositionsForTargets(self):
         positionMap = {}
@@ -827,10 +842,11 @@ class NornirTileset:
             ImageNumber = ImageNumber + 1
 
             SourceImageFullPath = os.path.join(InputTileDir, tile.Image)
-            if not os.path.exists(SourceImageFullPath):
-                prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
-                obj.MissingInputImage = True
-                continue
+            # Existence is checked earlier in the importer now
+            # if not os.path.exists(SourceImageFullPath):
+            #     prettyoutput.Log("Could not locate import image: " + SourceImageFullPath)
+            #     obj.MissingInputImage = True
+            #     continue
 
             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
             ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
@@ -1010,7 +1026,7 @@ class IDoc:
     def RemoveMissingTiles(self, path: str):
         #existingTiles = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles)
+            results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles, chunksize=10)
 
         self.tiles =  [r[0] for r in filter(lambda t: t[1], results)]
 
