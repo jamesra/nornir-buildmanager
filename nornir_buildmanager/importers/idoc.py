@@ -539,8 +539,7 @@ class SerialEMIDocImport(object):
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
             UpdateMosaicFile = UpdateMosaicFile or MFile.NumberOfImages != len(Tileset.Tiles)
             if MFile.NumberOfImages != len(Tileset.Tiles):
-                prettyoutput.Log("Number of tiles in .mosaic did not match number of tiles in .idoc: " + str(
-                    MFile.NumberOfImages) + " vs. " + str(len(Tileset.Tiles)))
+                prettyoutput.Log(f"Number of tiles in .mosaic did not match number of tiles in .idoc: {MFile.NumberOfImages} vs. {len(Tileset.Tiles)}")
 
         # If we wrote new images replace the .mosaic file
         if len(SourceToMissingTargetMap) > 0 or UpdateMosaicFile or not os.path.exists(SupertilePath):
