@@ -194,7 +194,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
  
     DataFound = False
 
-    found_section_candidates = find_section_candidates(ImportPath, DesiredSectionList)
+    found_section_candidates = find.find_section_candidates(ImportPath, DesiredSectionList)
     # Todo: Print the list of section directories.  Apply regular expression of desired import range.  Then import.
     prettyoutput.Log(shared.FileMetaDataStrHeader())
     for section_key in sorted(found_section_candidates.keys()):
