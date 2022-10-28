@@ -568,9 +568,8 @@ class SerialEMIDocImport(object):
 
 def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, idoc_data, histogramFullPath: str | None = None):
     histogramObj = None
-    if histogramFullPath is not None:
-        if os.path.exists(histogramFullPath):
-            histogramObj = Histogram.Load(histogramFullPath)
+    if histogramFullPath is not None: 
+        histogramObj = Histogram.Load(histogramFullPath)
 
     if histogramObj is None:
         prettyoutput.Log("Collecting mosaic min/max data")
