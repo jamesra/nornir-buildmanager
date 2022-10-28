@@ -702,13 +702,18 @@ class PipelineManager(object):
 
         # TODO: Update args from the element
         VolumeElemIter = RootForSearch.findall(xpath)
+        
+        validate = True
+        if 'Validate' in PipelineNode.attrib:
+            validate_value = PipelineNode.attrib.get('Validate', 'True').lower()
+            validate = validate_value == 'true' or validate_value == '1' or validate_value == 'y' or validate_value == 'yes'
 
         # Make sure downstream activities do not corrupt the dictionary for the caller
         CopiedArgSet = copy.copy(ArgSet)
 
         NumProcessed = 0
         for VolumeElemChild in VolumeElemIter:
-            if VolumeElem.NeedsValidation:
+            if validate and VolumeElem.NeedsValidation:
                 (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
                 if cleaned:
                     prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")

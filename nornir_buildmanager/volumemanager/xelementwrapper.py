@@ -801,9 +801,7 @@ class XElementWrapper(ElementTree.Element):
         if UsedWildcard:
             link_matches = list(filter(lambda e: e.tag.endswith('_Link'), link_matches))
 
-        num_matches = len(link_matches)
-        if num_matches > 0:
-
+        if link_matches:
             # if num_matches > 1:
             #    prettyoutput.Log("Need to load {0} links".format(num_matches))
             self._replace_links(link_matches)

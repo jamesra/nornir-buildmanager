@@ -653,7 +653,7 @@
             <Iterate VariableName="ChannelNode" XPath="Channel">
                 <RequireMatch Attribute="Name" RegEx="#ChannelRegEx" />
 
-                <Iterate VariableName="TransformNode" XPath="Transform">
+                <Iterate VariableName="TransformNode" XPath="Transform" Validate="False">
                     <RequireMatch Attribute="Name" RegEx="#TransformRegEx" />
 
                     <PythonCall Function="setters.SetLocked" Node="#TransformNode"
