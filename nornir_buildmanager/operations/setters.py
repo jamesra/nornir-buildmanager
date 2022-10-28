@@ -11,7 +11,7 @@ import nornir_buildmanager.volumemanager
 import nornir_shared.prettyoutput
 
 
-def SetFilterLock(Node, Locked):
+def SetFilterLock(Node, Locked, **kwargs):
     LockChanged = False
     ParentFilter = Node 
     if not isinstance(Node, nornir_buildmanager.volumemanager.FilterNode):
@@ -38,6 +38,20 @@ def SetLocked(Node, Locked, **kwargs):
             return parent
     else:
         return
+    
+def ForceUpdateInputTransformNode(Node: nornir_buildmanager.volumemanager.TransformNode, **kwargs):
+    transform = Node
+    parent = Node.Parent
+    if transform.HasInputTransform is False:
+        return
+    
+    input_transform = parent.GetChildByAttrib('Transform', 'Name', transform.InputTransform)
+    if input_transform is not None:
+        transform.SetTransform(input_transform)
+        nornir_shared.prettyoutput.Log(f"Updated input transform for {transform.FullPath} to {input_transform.Checksum}")
+        return parent
+    
+    return
     
 
 def SetPruneThreshold(PruneNode, Value, **kwargs):

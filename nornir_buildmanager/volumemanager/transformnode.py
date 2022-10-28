@@ -156,17 +156,19 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
 
         [valid, reason] = super(TransformNode, self).IsValid()
         prettyoutput.Log('Validate: {0}'.format(self.FullPath))
-        if valid:
+        if valid and not self.Locked:
             [valid, reason] = InputTransformHandler.InputTransformIsValid(self)
 
         # We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
+        
+        valid = valid or self.Locked
 
         if valid:
             self._validity_checked = valid
 
-        return valid, reason
+        return valid, reason if self.Locked is False else "Transform is locked"
 
     @property
     def Threshold(self) -> float | None:
