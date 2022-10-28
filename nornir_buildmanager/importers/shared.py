@@ -282,7 +282,8 @@ def ParseMetadataFromFilename(string):
         friendlyFormatDescription = "{Section#}[VersionLetter][_Section Name][_Downsample]\n\t{} => Required\t[] => Optional" 
         raise NornirUserException(f'\n"{string}" cannot be parsed.\nFile/Directory meta-data is expected to be in the format:\n\t{friendlyFormatDescription}')
     
-                       
+
+
 
 if __name__ == "__main__":
     pass
