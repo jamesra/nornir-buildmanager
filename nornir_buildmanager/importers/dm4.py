@@ -56,7 +56,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     if len(ContrastMap) == 0:
         nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
 
-    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension,
+    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles=f'*.{extension}',
                                                                  ExcludeNames=[], ExcludedDownsampleLevels=[])
     for m in matches:
         (path, foundfiles) = m
