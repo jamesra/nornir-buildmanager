@@ -16,7 +16,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
     """XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid"""
 
     @property
-    def SaveAsLinkedElement(self):
+    def SaveAsLinkedElement(self) -> bool:
         """
         When set to true, the element will be saved as a link element in the subdirectory
         It may be set to false to prevent saving meta-data from updating the modification
@@ -26,7 +26,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         return True
 
     @property
-    def SortKey(self):
+    def SortKey(self) -> str:
         """The default key used for sorting elements"""
 
         tag = self.tag
@@ -50,7 +50,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         return self.attrib.get('Path', '')
 
     @Path.setter
-    def Path(self, val):
+    def Path(self, val: str):
 
         super(XContainerElementWrapper, self.__class__).Path.fset(self, val)
 
@@ -64,7 +64,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         return
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         ResourcePath = self.FullPath
 
         if self.Parent is not None:  # Don't check for validity if our node has not been added to the tree yet
@@ -90,7 +90,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         return super(XContainerElementWrapper, self).IsValid()
 
-    def RepairMissingLinkElements(self, recurse=True):
+    def RepairMissingLinkElements(self, recurse: bool = True):
         """
         Searches all subdirectories under the element.  Any VolumeData.xml files
         found are loaded and a link is created for the top level element.  Written
@@ -286,7 +286,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         # else:
         # self.attrib['Path'] = Path
 
-    def Save(self, tabLevel=None, recurse=True):
+    def Save(self, tabLevel: int | None = None, recurse: bool = True):
         """
         Public version of Save, if this element is not flagged SaveAsLinkedElement
         then we need to save the parent to ensure our data is retained
@@ -300,7 +300,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         raise NotImplemented("Cannot save a container node that is not linked without a parent node to save it under")
 
-    def _Save(self, tabLevel=None, recurse=True):
+    def _Save(self, tabLevel: int | None = None, recurse: bool = True):
         """
         Called by another Save function.  This function is either called by a
         parent element or by ourselves if SaveAsLinkedElement is True.
@@ -410,7 +410,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
     # if(tabLevel == 0 or recurse==False):
     # pool.wait_completion()
 
-    def __SaveXML(self, xmlfilename, SaveElement):
+    def __SaveXML(self, xmlfilename: str, SaveElement: bool):
         """Intended to be called on a thread from the save function"""
         try:
             OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")

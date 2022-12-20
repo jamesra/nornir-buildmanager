@@ -15,18 +15,18 @@ class XResourceElementWrapper(lockable.Lockable,
     """Wrapper for an XML element that refers to a file or directory"""
 
     @property
-    def Path(self):
+    def Path(self) -> str:
         return self.attrib.get('Path', '')
 
     @Path.setter
-    def Path(self, val):
+    def Path(self, val: str):
         self.attrib['Path'] = val
 
         if hasattr(self, '__fullpath'):
             del self.__dict__['__fullpath']
 
     @property
-    def FullPath(self):
+    def FullPath(self) -> str:
 
         FullPathStr = self.__dict__.get('__fullpath', None)
 
@@ -69,20 +69,22 @@ class XResourceElementWrapper(lockable.Lockable,
         return FullPathStr
 
     @property
-    def ValidationTime(self):
+    def ValidationTime(self) -> datetime.datetime:
         """
         An optional attribute to record the last time we validated the state
         of the file or directory this element represents.
-        :return: Returns None if the attribute has not been set, otherwise an integer
+        :return: Returns datetime.min if the attribute has not been set
         """
         val = self.attrib.get('ValidationTime', datetime.datetime.min)
         if val is not None and isinstance(val, str):
             val = datetime.datetime.fromisoformat(val)
+        elif val is None:
+            return datetime.datetime.min
 
         return val
 
     @ValidationTime.setter
-    def ValidationTime(self, val):
+    def ValidationTime(self, val: datetime.datetime | None):
         if val is None:
             if 'ValidationTime' in self.attrib:
                 del self.attrib['ValidationTime']
@@ -98,7 +100,7 @@ class XResourceElementWrapper(lockable.Lockable,
         self.ValidationTime = self.LastFileSystemModificationTime
 
     @property
-    def ChangesSinceLastValidation(self):
+    def ChangesSinceLastValidation(self) -> bool | None:
         """
         :return: True if the modification time on the directory is later than our last validation time, or None if the path doesn't exist
         """
@@ -109,7 +111,7 @@ class XResourceElementWrapper(lockable.Lockable,
         return self.ValidationTime < dir_mod_time
 
     @property
-    def LastFileSystemModificationTime(self):
+    def LastFileSystemModificationTime(self) -> datetime.datetime | None:
         """
         :return: The most recent time the resource's file or directory was
         modified. Used to indicate that a verification needs to be repeated.
@@ -138,11 +140,11 @@ class XResourceElementWrapper(lockable.Lockable,
 
         return changes
 
-    def ToElementString(self):
+    def ToElementString(self) -> str:
         outStr = self.FullPath
         return outStr
 
-    def Clean(self, reason=None):
+    def Clean(self, reason: str | None = None):
         if self.Locked:
             Logger = logging.getLogger(__name__ + '.' + 'Clean')
             Logger.warning('Could not delete resource with locked flag set: %s' % self.FullPath)

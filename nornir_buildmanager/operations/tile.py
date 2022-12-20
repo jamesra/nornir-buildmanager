@@ -124,7 +124,11 @@ def VerifyTiles(LevelNode=None, **kwargs):
 
     if len(LevelFiles) == 0:
         InputLevelNode.TilesValidated = 0
-        InputLevelNode.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
+        try:
+            InputLevelNode.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
+        except FileNotFoundError:
+            InputLevelNode.ValidationTime = None
+            
         logger.info('No tiles found in level {0}'.format(LevelNode.FullPath))
         return False, []
     #
@@ -634,9 +638,8 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
        and returns the valid one."""
     histogram_element = None
     HistogramElementRemoved = False
-    while histogram_element is None:
-        histogram_element = filterObj.find(
-            "Histogram[@InputTransformChecksum='" + checksum + "']")  # type: HistogramNode | None
+    for histogram_element in filterObj.findall(
+            "Histogram[@InputTransformChecksum='" + checksum + "']"): # type: HistogramNode | None
         if histogram_element is None:
             raise NornirUserException(
                 "Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath)

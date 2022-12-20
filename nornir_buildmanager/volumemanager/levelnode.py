@@ -9,7 +9,7 @@ import nornir_buildmanager.volumemanager as volumemanager
 class LevelNode(volumemanager.XContainerElementWrapper):
 
     @property
-    def SaveAsLinkedElement(self):
+    def SaveAsLinkedElement(self) -> bool:
         """
         See base class for full description.  This is set to false to
         prevent saving the LevelNode's VolumeData.xml from changing the
@@ -20,38 +20,38 @@ class LevelNode(volumemanager.XContainerElementWrapper):
         return False
 
     @classmethod
-    def PredictPath(cls, level):
+    def PredictPath(cls, level) -> str:
         return nornir_buildmanager.templates.Current.LevelFormat % int(level)
 
     @classmethod
-    def ClassSortKey(cls, self):
+    def ClassSortKey(cls, self) -> str:
         """Required for objects derived from XContainerElementWrapper"""
         return "Level" + ' ' + nornir_buildmanager.templates.Current.DownsampleFormat % float(self.Downsample)
 
     @property
-    def SortKey(self):
+    def SortKey(self) -> str:
         """The default key used for sorting elements"""
         return LevelNode.ClassSortKey(self)
 
     @property
-    def Name(self):
+    def Name(self) -> str:
         return '%g' % self.Downsample
 
     @Name.setter
-    def Name(self, Value):
+    def Name(self, Value: str):
         assert False, "Attempting to set name on LevelNode"
 
     @property
-    def Downsample(self):
+    def Downsample(self) -> float:
         assert ('Downsample' in self.attrib)
         return float(self.attrib.get('Downsample', ''))
 
     @Downsample.setter
-    def Downsample(self, Value):
+    def Downsample(self, Value: float | int):
         self.attrib['Downsample'] = '%g' % Value
 
     @property
-    def GridDimX(self):
+    def GridDimX(self) -> int:
         val = self.attrib.get('GridDimX', None)
         if val is not None:
             val = int(val)
@@ -59,7 +59,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
         return val
 
     @GridDimX.setter
-    def GridDimX(self, val):
+    def GridDimX(self, val: int):
         if val is None:
             if 'GridDimX' in self.attrib:
                 del self.attrib['GridDimX']
@@ -67,7 +67,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
             self.attrib['GridDimX'] = '%d' % int(val)
 
     @property
-    def GridDimY(self):
+    def GridDimY(self) -> int:
         val = self.attrib.get('GridDimY', None)
         if val is not None:
             val = int(val)
@@ -75,7 +75,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
         return val
 
     @GridDimY.setter
-    def GridDimY(self, val):
+    def GridDimY(self, val: int):
         if val is None:
             if 'GridDimY' in self.attrib:
                 del self.attrib['GridDimY']
@@ -83,7 +83,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
             self.attrib['GridDimY'] = '%d' % int(val)
 
     @property
-    def TilesValidated(self):
+    def TilesValidated(self) -> bool | None:
         """
         :return: Returns None if the attribute has not been set, otherwise an integer
         """
@@ -94,18 +94,18 @@ class LevelNode(volumemanager.XContainerElementWrapper):
         return val
 
     @TilesValidated.setter
-    def TilesValidated(self, val):
+    def TilesValidated(self, val: bool | None):
         if val is None:
             if 'TilesValidated' in self.attrib:
                 del self.attrib['TilesValidated']
         else:
             self.attrib['TilesValidated'] = '%d' % int(val)
 
-    def IsValid(self):
+    def IsValid(self) -> tuple[bool, str]:
         """Remove level directories without files, or with more files than they should have"""
 
         if not os.path.isdir(self.FullPath):
-            return [False, 'Directory does not exist']
+            return False, 'Directory does not exist'
 
         # We need to be certain to avoid the pathscan that occurs in our parent class,
         # So we check that our directory exists and call it good
