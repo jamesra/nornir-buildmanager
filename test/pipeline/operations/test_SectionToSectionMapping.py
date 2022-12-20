@@ -276,4 +276,4 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         BannedSections = [4]
         StosMapNode.ClearBannedControlMappings(BannedSections)
         listMapFour = StosMapNode.GetMappingsForControl(4)
-        self.assertEqual(len(listMapFour), 0, "Banned section should be removed")
+        self.assertEqual(len(list(listMapFour)), 0, "Banned section should be removed")
