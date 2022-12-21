@@ -3,7 +3,7 @@ Created on May 17, 2018
 
 @author: u0490822
 '''
-
+import testbase
 from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.operations.block import *
 from nornir_imageregistration.transforms import registrationtree
@@ -11,6 +11,7 @@ from nornir_imageregistration.transforms import registrationtree
 from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry
 
 import test.pipeline.test_sectionimage as test_sectionimage
+import nornir_imageregistration
 
 def _RTNodesToNumberList(Nodes):
     nums = []
@@ -20,13 +21,18 @@ def _RTNodesToNumberList(Nodes):
     return nums
 
 
-def ValidateStosMap(test, StosMapNode, expectedRT, expectedCenter):
+def ValidateStosMap(test: testbase.TestBase, StosMapNode: StosMapNode, 
+                    expected_stosmap_center: int,
+                    expectedRT: registrationtree.RegistrationTree,
+                    expected_rt_center: int):
 
     rt = RegistrationTreeFromStosMapNode(StosMapNode)
 
     test.assertEqual(len(rt.Nodes), len(expectedRT.Nodes))
-
-    test.assertEqual(StosMapNode.CenterSection, expectedCenter)
+    test.assertEqual(StosMapNode.CenterSection, expected_stosmap_center)
+    
+    root_sections = [r for r in expectedRT.RootNodes.keys()]
+    test.assertTrue(expected_rt_center in root_sections, "Did not find expected root section")
 
     for expectedNode in list(expectedRT.Nodes.values()):
         actualNode = rt.Nodes[expectedNode.SectionNumber]
@@ -64,11 +70,8 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         expectedRT = registrationtree.RegistrationTree.CreateRegistrationTree(GoodSections, adjacentThreshold=adjacentThreshold, center=center)
         expectedRT.AddNonControlSections(BadSections)
         return expectedRT
-
-
-    def testCreateSectionToSectionMapping(self):
-
-        center = 5
+    
+    def runCreateSectionToSectionMappingForCenter(self, center: int):
         self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
         self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
         self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
@@ -79,29 +82,44 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         self.StosMapGeneratorAddSectionLaterCheck(center, adjacentThreshold=1, Logger=self.Logger)
         self.StosMapGeneratorAddSectionLaterCheck(center, adjacentThreshold=2, Logger=self.Logger)
 
-        center = 1
-        self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
-        self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
-
-        center = 12
-        self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
-        self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
-
-        center = 0
-        self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
-        self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
-
-        center = 13
-        self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
-        self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
-        self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
+    def testCreateSectionToSectionMapping_center_five(self):
+        self.runCreateSectionToSectionMappingForCenter(5)
+        
+    def testCreateSectionToSectionMapping_center_one(self):
+        self.runCreateSectionToSectionMappingForCenter(1)
+        
+    def testCreateSectionToSectionMapping_center_twelve(self):
+        self.runCreateSectionToSectionMappingForCenter(12)
+        
+    def testCreateSectionToSectionMapping_center_zero(self):
+        self.runCreateSectionToSectionMappingForCenter(0)
+        
+    def testCreateSectionToSectionMapping_center_thirteen(self):
+        self.runCreateSectionToSectionMappingForCenter(13)
+        
+        # center = 1
+        # self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
+        #
+        # center = 12
+        # self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
+        #
+        # center = 0
+        # self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
+        #
+        # center = 13
+        # self.GenerateStosMap(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.GenerateStosMap(center, adjacentThreshold=2, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
+        # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
 
     def testChangeCenterForStosMap(self):
         '''Creates a stosmap, then updates the center and ensures the new stosmap reflects the change'''
@@ -154,22 +172,26 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         StosMapNode = VerifyVolume(self, BlockNode, volumechecklist)
 
         # Verify that the sections are mapped correctly
+        expected_rt_center = center
         if center not in GoodSections:
-            center = registrationtree.NearestSection(GoodSections, center)
+            expected_rt_center = registrationtree.NearestSection(GoodSections, center)
 
         expectedRT = self._GenerateExpectedRT(GoodSections, [], center, adjacentThreshold)
-        ValidateStosMap(self, StosMapNode, expectedRT, center)
+        ValidateStosMap(self, StosMapNode, center,expectedRT, expected_rt_center)
 
         return BlockNode
 
 
-    def StosMapGeneratorWithInvalidCheck(self, center, adjacentThreshold, Logger):
+    def StosMapGeneratorWithInvalidCheck(self, center, adjacentThreshold, bad_sections: list[int] | None = None, Logger = None):
         '''Generate a stos map that contains some bad sections'''
 
-        GoodSections = [2, 3, 4, 6, 7, 8, 9]
-        BadSections = [1, 5, 10]
+        good_sections = [2, 3, 4, 6, 7, 8, 9]
+        
+        if bad_sections is None:
+            bad_sections = [1, 5, 10]
         BlockNode = self._GetResetBlockNode()
-        self._StosMapGeneratorWithInvalidCheckWithBlock(BlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger)
+        
+        self._StosMapGeneratorWithInvalidCheckWithBlock(BlockNode, good_sections, bad_sections, center, adjacentThreshold, Logger)
 
     def _StosMapGeneratorWithInvalidCheckWithBlock(self, BlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger, expectedRT=None):
 
@@ -184,10 +206,15 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         if expectedRT is None:
             expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
 
+        expected_rt_center = center
         if center not in GoodSections:
-            center = registrationtree.NearestSection(GoodSections, center)
+            expected_rt_center = registrationtree.NearestSection(GoodSections, center)
+            
+        expected_stosmap_center = center
+        if center in BadSections:
+            expected_stosmap_center = registrationtree.NearestSection(GoodSections, center)
 
-        ValidateStosMap(self, StosMapNode, expectedRT, center)
+        ValidateStosMap(self, StosMapNode, expected_stosmap_center, expectedRT, expected_rt_center)
 
         return OutputBlockNode
 
@@ -210,8 +237,9 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
             OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(BlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger)
             self.assertIsNotNone(OutputBlockNode)
 
+            expected_rt_center = center
             if center not in GoodSections:
-                center = registrationtree.NearestSection(GoodSections, center)
+                expected_rt_center = registrationtree.NearestSection(GoodSections, center)
 
             # OK, add the section back and make sure it is included in the updated stos map
 
@@ -220,16 +248,16 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
             GoodSections = [2, 3, 4, 6, 7, 8, 9]
             BadSections = [1, 5, 10]
 
-            expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
+            expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, expected_rt_center, adjacentThreshold)
 
-            # We expect extra mappings for section 8 since section 7 did not exxist in the original
-            if(adjacentThreshold == 1):
-                expectedRT.AddPair(6, 8)
-            elif(adjacentThreshold == 2):
-                expectedRT.AddPair(4, 8)
-                expectedRT.AddPair(6, 9)
-            else:
-                self.fail("Test not tweaked for adjacentThreshold > 2")
+            # We expect extra mappings for section 8 since section 7 did not exist in the original
+            # if(adjacentThreshold == 1):
+            #     expectedRT.AddPair(6, 8)
+            # elif(adjacentThreshold == 2):
+            #     expectedRT.AddPair(4, 8)
+            #     expectedRT.AddPair(6, 9)
+            # else:
+            #     self.fail("Test not tweaked for adjacentThreshold > 2")
 
             OutputBlockNode = self._StosMapGeneratorWithInvalidCheckWithBlock(OutputBlockNode, GoodSections, BadSections, center, adjacentThreshold, Logger, expectedRT)
             self.assertIsNotNone(OutputBlockNode)
@@ -268,10 +296,15 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         expectedRT = self._GenerateExpectedRT(GoodSections, BadSections, center, adjacentThreshold)
         expectedRT.AddPair(4, 10)
 
+        expected_rt_center = center
         if center not in GoodSections:
-            center = registrationtree.NearestSection(GoodSections, center)
+            expected_rt_center = registrationtree.NearestSection(GoodSections, center)
+            
+        expected_stosmap_center = center
+        if center in BadSections:
+            expected_stosmap_center = registrationtree.NearestSection(GoodSections, center)
 
-        ValidateStosMap(self, StosMapNode, expectedRT, center)
+        ValidateStosMap(self, StosMapNode, expected_stosmap_center, expectedRT, expected_rt_center)
 
         BannedSections = [4]
         StosMapNode.ClearBannedControlMappings(BannedSections)

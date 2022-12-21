@@ -8,10 +8,10 @@ import unittest
 
 import nornir_buildmanager.volumemanager.blocknode
 from nornir_buildmanager.operations.block import *
-from test.pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
+from pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
     CopySetupTestBase, EmptyVolumeTestBase
 
-import test.pipeline.test_sectionimage as test_sectionimage
+import pipeline.test_sectionimage as test_sectionimage
 
 
 def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection):

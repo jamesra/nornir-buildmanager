@@ -166,7 +166,7 @@ def SectionNumberCompare(SectionNodeA, SectionNodeB):
     return cmp(int(SectionNodeA.get('Number', None)), int(SectionNodeB.get('Number', None)))
 
 
-def _GetCenterSection(Parameters, MappingNode=None):
+def _GetCenterSection(Parameters, MappingNode: nornir_buildmanager.volumemanager.StosMapNode) -> int | None:
     '''Returns the number of the center section from the Block Node if possible, otherwise it checks the parameters.  Returns None if unspecified'''
 
     CenterSection = Parameters.get('CenterSection', None)
@@ -177,13 +177,14 @@ def _GetCenterSection(Parameters, MappingNode=None):
         CenterSection = None
 
     CenterSection = MappingNode.CenterSection
-    if not CenterSection is None:
+    if CenterSection is not None:
         return MappingNode.CenterSection
 
     return CenterSection
 
 
-def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
+def UpdateStosMapWithRegistrationTree(StosMap: nornir_buildmanager.volumemanager.StosMapNode,
+                                      RT: registrationtree.RegistrationTree, Mirror: bool, Logger):
     '''Adds any mappings missing in the StosMap with those from the registration tree
     @param StosMap StosMap: The Slice-to-slice mapping node to update
     @param registrationtree RT: The registration tree with new mappings
@@ -236,17 +237,37 @@ def UpdateStosMapWithRegistrationTree(StosMap, RT, Mirror, Logger):
                 mappingNode.AddMapping(rt_mapped.SectionNumber)
                 Logger.info("\tAdded %d <- %d" % (rt_node.SectionNumber, rt_mapped.SectionNumber))
                 Modified = True
+                
+    #Part three, remove nodes existing in the StosMap, but not the RT
+    for mapping in StosMap.Mappings:
+        control_section = mapping.Control
+        if control_section not in RT.Nodes:
+            StosMap.RemoveMapping(control_section)
+            Logger.info(f"\tRemoved missing control section {control_section}")
+            continue
+
+        rt_node = RT.Nodes[control_section]
+        rt_node_mapped_sections = frozenset(rt_node.ChildSectionNumbers)
+        missing_sections = mapping.Mapped - rt_node_mapped_sections
+        for missing_section in missing_sections:
+            mapping.RemoveMapping(missing_section)
+            Logger.info(f"\tRemoved mapping for missing mapped section {control_section} <- {missing_section}")
 
     return Modified
 
 
-def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
+def CreateOrUpdateSectionToSectionMapping(Parameters,
+                                          BlockNode: nornir_buildmanager.volumemanager.BlockNode,
+                                          ChannelsRegEx: str | None,
+                                          FiltersRegEx: str | None,
+                                          Logger: logging.Logger | None,
+                                          **kwargs):
     '''Figure out which sections should be registered to each other.
     Currently the only correct way to change the center section is to pass the center section
     to the align pipeline which forwards it to this function
         @BlockNode'''
     NumAdjacentSections = int(Parameters.get('NumAdjacentSections', '1'))
-    StosMapName = Parameters.get('OutputStosMapName', 'PotentialRegistrationChain')
+    StosMapName = Parameters.get('OutputStosMapName', 'PotentialRegistrationChain') # type: str
 
     CenterSectionParameter = Parameters.get('CenterSection', None)
     try:
@@ -282,26 +303,30 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
 
     # Identify the sections that can be control sections
     StosControlSectionNumbers = frozenset([SectionNumberKey(s) for s in SectionNodeList]).difference(NonStosSectionNumbersSet)
+    
+    adjusted_center_section = CenterSectionParameter
+    if CenterSectionParameter in NonStosSectionNumbersSet:
+        adjusted_center_section = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)
+        Logger.warning("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParameter, adjusted_center_section))
+        #CenterSectionParameter = adjusted_center_section  
 
-    if not NewStosMap:
-        if CenterSectionParameter in NonStosSectionNumbersSet:
-            AdjustedCenterSectionParameter = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)
-            Logger.warning("Requested center section %1d was invalid.  Using %2d" % (CenterSectionParameter, AdjustedCenterSectionParameter))
-            CenterSectionParameter = AdjustedCenterSectionParameter  
+    if not NewStosMap: 
+        if adjusted_center_section is None:
+            adjusted_center_section = OutputMappingNode.CenterSection
 
-        if CenterSectionParameter is None:
-            CenterSectionParameter = OutputMappingNode.CenterSection
-
-        CenterChanged = CenterSectionParameter != OutputMappingNode.CenterSection
+        CenterChanged = adjusted_center_section != OutputMappingNode.CenterSection
         if CenterChanged:
             # We are changing the center section, so remove all of the section mappings
             Logger.warning(f"Requested center section {CenterSectionParameter} has changed from current value of {OutputMappingNode.CenterSection}.  Replacing existing mappings.")
-            OutputMappingNode.CenterSection = CenterSectionParameter
+            OutputMappingNode.CenterSection = adjusted_center_section
+    else: 
+        if adjusted_center_section is not None:
+            OutputMappingNode.CenterSection = adjusted_center_section
 
-    CenterSectionNumber = _GetCenterSection(Parameters, OutputMappingNode)
+    #CenterSectionNumber = adjusted_center_section#_GetCenterSection(Parameters, OutputMappingNode)
 
-    DefaultRT = registrationtree.RegistrationTree.CreateRegistrationTree(StosControlSectionNumbers, adjacentThreshold=NumAdjacentSections, center=CenterSectionNumber)
-    DefaultRT.AddNonControlSections(BlockNode.NonStosSectionNumbers, center=CenterSectionNumber)
+    DefaultRT = registrationtree.RegistrationTree.CreateRegistrationTree(StosControlSectionNumbers, adjacentThreshold=NumAdjacentSections, center=adjusted_center_section)
+    DefaultRT.AddNonControlSections(BlockNode.NonStosSectionNumbers, center=adjusted_center_section)
 
     if(DefaultRT.IsEmpty):
         return None
@@ -326,9 +351,9 @@ def CreateOrUpdateSectionToSectionMapping(Parameters, BlockNode, ChannelsRegEx, 
     return None
 
 
-def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath, 
+def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath,
                           ControlMaskImageFullPath=None, MappedMaskImageFullPath=None,
-                          AngleSearchRange=None, TestForFlip=True,
+                          AngleSearchRange=None, TestForFlip: bool = True,
                           WarpedImageScaleFactors=None,
                           argstring=None, Logger=None):
     '''Call the stos-brute version from nornir-imageregistration'''
@@ -1055,7 +1080,9 @@ def CalculateStosGroupWarpMeasurementImages(Parameters, StosMapNode, GroupNode, 
         return GroupNode
     
 
-def SelectBestRegistrationChain(Parameters, InputGroupNode, InputStosMapNode, OutputStosMapName, Logger, **kwargs):
+def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.volumemanager.StosGroupNode,
+                                InputStosMapNode: nornir_buildmanager.volumemanager.StosMapNode,
+                                OutputStosMapName: str, Logger, **kwargs):
     '''Figure out which sections should be registered to each other'''
     Pool = None
     # Assess all of the images
@@ -1798,7 +1825,10 @@ def TranslateVolumeToZeroOrigin(StosGroupNode, **kwargs):
     return SavedStosGroupNode
 
 
-def BuildSliceToVolumeTransforms(StosMapNode, StosGroupNode, OutputMap, OutputGroupName, Downsample, Enrich, Tolerance, **kwargs):
+def BuildSliceToVolumeTransforms(StosMapNode: nornir_buildmanager.volumemanager.StosMapNode,
+                                 StosGroupNode: nornir_buildmanager.volumemanager.StosGroupNode,
+                                 OutputMap,
+                                 OutputGroupName: str, Downsample, Enrich: bool, Tolerance: float, **kwargs):
     '''Build a slice-to-volume transform for each section referenced in the StosMap
 
     :param StosMapNode:
@@ -2590,7 +2620,11 @@ def ReportVolumeBounds(StosMapNode, ChannelsRegEx, TransformName, Logger, **kwar
     return str(mosaicToVolume.VolumeBounds)
     
 
-def BuildChannelMosaicToVolumeTransform(StosMapNode, StosGroupNode, TransformNode, OutputTransformName, Logger, **kwargs):
+def BuildChannelMosaicToVolumeTransform(StosMapNode: nornir_buildmanager.volumemanager.StosMapNode,
+                                        StosGroupNode: nornir_buildmanager.volumemanager.StosGroupNode,
+                                        TransformNode: nornir_buildmanager.volumemanager.TransformNode,
+                                        OutputTransformName: str,
+                                        Logger, **kwargs):
     '''Build a slice-to-volume transform for each section referenced in the StosMap'''
 
     MosaicTransformParent = TransformNode.Parent

@@ -17,7 +17,7 @@ from nornir_buildmanager.argparsexml import IntegerList
 import nornir_imageregistration.files
 from nornir_imageregistration.files.mosaicfile import *
 import nornir_shared.misc
-import test.testbase
+import testbase
 
 import nornir_buildmanager.build as build
 
@@ -159,7 +159,7 @@ class VolumeEntry(object):
 
         return x
        
-class NornirBuildTestBase(test.testbase.TestBase):
+class NornirBuildTestBase(testbase.TestBase):
     '''Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class or PlatformTest
        Eventually all platforms should have the same standard tests taking input to a volume under this framework to ensure basic functionality
        is operating.  At this time the IDOC platform is the only one with a complete test.  PMG has a thorough test not entirely integrated with
@@ -620,7 +620,9 @@ class NornirBuildTestBase(test.testbase.TestBase):
         return self._StosFileHasMasks(transformNodes[0].FullPath)
     
     
-    def VerifyStosTransformPipelineSharedTests(self, volumeNode, stos_map_name, stos_group_name, MasksRequired, buildArgs):
+    def VerifyStosTransformPipelineSharedTests(self, volumeNode: nornir_buildmanager.volumemanager.VolumeNode,
+                                               stos_map_name: str, stos_group_name: str, MasksRequired: bool,
+                                               buildArgs):
         '''Ensure every section has a transform and that the transform is not regenerated if the pipeline is run twice.'''
         stos_map_node = volumeNode.find("Block/StosMap[@Name='%s']" % (stos_map_name))
         self.assertIsNotNone(stos_map_node)
