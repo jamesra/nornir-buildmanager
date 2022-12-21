@@ -14,8 +14,8 @@ class StosMapNode(XElementWrapper):
         return self.attrib.get('Name', '')
 
     @Name.setter
-    def Name(self, Value):
-        self.attrib['Name'] = Value
+    def Name(self, value: str):
+        self.attrib['Name'] = value
 
     @property
     def Type(self) -> str:
@@ -23,7 +23,7 @@ class StosMapNode(XElementWrapper):
         return self.attrib.get("Type", None)
 
     @Type.setter
-    def Type(self, val):
+    def Type(self, val: str):
         if val is None:
             if 'Type' in self.attrib:
                 del self.attrib['Type']

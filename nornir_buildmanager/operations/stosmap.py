@@ -3,6 +3,9 @@ Created on Dec 20, 2016
 
 @author: u0490822
 '''
+import nornir_imageregistration
+import nornir_buildmanager.volumemanager
+
 
 def ListBlockStosMaps(BlockNode, **kwargs):
     print("")
@@ -67,7 +70,7 @@ def RemoveMapping(BlockNode, StosMapName, ControlSection, MappedSection, **kwarg
         return BlockNode
 
 
-def SetCenter(BlockNode, StosMapName, CenterSection):
+def SetCenter(BlockNode: nornir_buildmanager.volumemanager.BlockNode, StosMapName: str, CenterSection: int):
     '''Sets the center section number for a StosMap'''
     StosMap = BlockNode.GetStosMap(StosMapName)
     if StosMap is None:
