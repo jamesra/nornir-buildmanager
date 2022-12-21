@@ -31,7 +31,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         return float(self.attrib.get('Downsample', 'NaN'))
 
     @Downsample.setter
-    def Downsample(self, val):
+    def Downsample(self, val: float | int):
         """The default key used for sorting elements"""
         self.attrib['Downsample'] = '%g' % val
 

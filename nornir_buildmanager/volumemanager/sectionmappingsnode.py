@@ -9,7 +9,7 @@ from nornir_shared import prettyoutput as prettyoutput
 class SectionMappingsNode(XElementWrapper):
 
     @property
-    def SortKey(self):
+    def SortKey(self) -> str:
         """The default key used for sorting elements"""
         return self.tag + ' ' + (nornir_buildmanager.templates.Current.SectionTemplate % self.MappedSectionNumber)
 

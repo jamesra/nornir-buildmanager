@@ -7,7 +7,7 @@ from nornir_buildmanager.volumemanager import XElementWrapper
 class ScaleNode(XElementWrapper):
 
     @property
-    def X(self):
+    def X(self) -> ScaleAxis:
         x_elem = ElementTree.Element.find(self,
                                           'X')  # Bypass the extra cruft in XElementTree since scale uses XML with no link loading or special wrapping of elements
 
@@ -17,7 +17,7 @@ class ScaleNode(XElementWrapper):
         return ScaleAxis(x_elem.attrib['UnitsPerPixel'], x_elem.attrib['UnitsOfMeasure'])
 
     @property
-    def Y(self):
+    def Y(self) -> ScaleAxis:
         y_elem = ElementTree.Element.find(self,
                                           'Y')  # Bypass the extra cruft in XElementTree since scale uses XML with no link loading or special wrapping of elements
 
@@ -27,7 +27,7 @@ class ScaleNode(XElementWrapper):
         return ScaleAxis(y_elem.attrib['UnitsPerPixel'], y_elem.attrib['UnitsOfMeasure'])
 
     @property
-    def Z(self):
+    def Z(self) -> ScaleAxis:
         z_elem = ElementTree.Element.find(self,
                                           'Z')  # Bypass the extra cruft in XElementTree since scale uses XML with no link loading or special wrapping of elements
 
@@ -76,11 +76,11 @@ class Scale(object):
     """
 
     @property
-    def X(self):
+    def X(self) -> ScaleAxis:
         return self._x
 
     @X.setter
-    def X(self, val):
+    def X(self, val: float | ScaleAxis):
         if isinstance(val, float):
             self._x = ScaleAxis(val, 'nm')
         elif isinstance(val, ScaleAxis):
@@ -89,11 +89,11 @@ class Scale(object):
             raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
 
     @property
-    def Y(self):
+    def Y(self) -> ScaleAxis:
         return self._y
 
     @Y.setter
-    def Y(self, val):
+    def Y(self, val: float | ScaleAxis):
         if isinstance(val, float):
             self._y = ScaleAxis(val, 'nm')
         elif isinstance(val, ScaleAxis):
@@ -102,11 +102,11 @@ class Scale(object):
             raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
 
     @property
-    def Z(self):
+    def Z(self) -> ScaleAxis:
         return self._z
 
     @Z.setter
-    def Z(self, val):
+    def Z(self, val: float | ScaleAxis):
         if isinstance(val, float):
             self._z = ScaleAxis(val, 'nm')
         elif isinstance(val, ScaleAxis):
@@ -141,7 +141,10 @@ class Scale(object):
                     self.Z * scalar if self.Z is not None else None)  # Only pass Z if it is not None
         return obj
 
-    def __init__(self, X, Y=None, Z=None):
+    def __init__(self,
+                 X: float | ScaleAxis,
+                 Y: float | ScaleAxis | None = None,
+                 Z: float | ScaleAxis | None = None):
         """
         If only X is passed we assume the scale for X&Y are identical and there is no Z
         The only way to specify a Z axis scale is to pass it to the constructor

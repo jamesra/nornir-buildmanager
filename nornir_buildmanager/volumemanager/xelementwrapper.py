@@ -61,7 +61,7 @@ class XElementWrapper(ElementTree.Element):
 
         return outStr
 
-    def _GetAttribFromParent(self, attribName):
+    def _GetAttribFromParent(self, attribName: str):
         p = self._Parent
         while p is not None:
             if attribName in p.attrib:
@@ -77,11 +77,11 @@ class XElementWrapper(ElementTree.Element):
         return self.get('Checksum', "")
 
     @Checksum.setter
-    def Checksum(self, Value):
-        if not isinstance(Value, str):
+    def Checksum(self, value: str):
+        if not isinstance(value, str):
             XElementWrapper.logger.warning(
-                'Setting non string value on XElement.Checksum, automatically corrected: ' + str(Value))
-        self.attrib['Checksum'] = str(Value)
+                'Setting non string value on XElement.Checksum, automatically corrected: ' + str(value))
+        self.attrib['Checksum'] = value
         return
 
     @property
@@ -89,8 +89,8 @@ class XElementWrapper(ElementTree.Element):
         return float(self.attrib.get('Version', 1.0))
 
     @Version.setter
-    def Version(self, Value):
-        self.attrib['Version'] = str(Value)
+    def Version(self, value):
+        self.attrib['Version'] = str(value)
 
     @property
     def AttributesChanged(self) -> bool:
@@ -102,8 +102,8 @@ class XElementWrapper(ElementTree.Element):
         return self._AttributesChanged
 
     @AttributesChanged.setter
-    def AttributesChanged(self, Value):
-        self._AttributesChanged = Value
+    def AttributesChanged(self, value: bool):
+        self._AttributesChanged = value
 
     #         if Value:
     #             self.MarkNonContainerParentChanged()
@@ -118,8 +118,8 @@ class XElementWrapper(ElementTree.Element):
         return self._ChildrenChanged
 
     @ChildrenChanged.setter
-    def ChildrenChanged(self, Value):
-        self._ChildrenChanged = Value
+    def ChildrenChanged(self, value: bool):
+        self._ChildrenChanged = value
 
     @property
     def ElementHasChangesToSave(self) -> bool:
@@ -206,11 +206,11 @@ class XElementWrapper(ElementTree.Element):
         self.OnParentChanged()
 
     @Parent.setter
-    def Parent(self, Value):
+    def Parent(self, value: XElementWrapper | None):
         """
         Setting the parent with this method will set the Attribute Changed flag
         """
-        self.__dict__['_Parent'] = Value
+        self.__dict__['_Parent'] = value
         self.OnParentChanged()
 
     def OnParentChanged(self):
@@ -330,7 +330,7 @@ class XElementWrapper(ElementTree.Element):
 
         return Valid[0] == False, Valid[1]  # The return value convention is reversed from IsValid.
 
-    def Clean(self, reason=None):
+    def Clean(self, reason: str | None = None):
         """Remove node from element tree and remove any external resources such as files"""
 
         DisplayStr = ' --- Cleaning ' + self.ToElementString() + ". "

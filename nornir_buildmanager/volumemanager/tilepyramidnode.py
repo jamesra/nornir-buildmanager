@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 import nornir_buildmanager
-from nornir_buildmanager.volumemanager import XContainerElementWrapper, PyramidLevelHandler
+from nornir_buildmanager.volumemanager import XContainerElementWrapper, PyramidLevelHandler, LevelNode
 from nornir_shared import prettyoutput as prettyoutput
 
 
@@ -18,7 +18,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         return self.attrib.get('LevelFormat', None)
 
     @LevelFormat.setter
-    def LevelFormat(self, val):
+    def LevelFormat(self, val: str):
         assert (isinstance(val, str))
         self.attrib['LevelFormat'] = val
 
@@ -27,7 +27,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         return int(self.attrib.get('NumberOfTiles', 0))
 
     @NumberOfTiles.setter
-    def NumberOfTiles(self, val):
+    def NumberOfTiles(self, val: int):
         self.attrib['NumberOfTiles'] = '%d' % val
 
     @property
@@ -35,7 +35,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         return self.attrib.get('ImageFormatExt', None)
 
     @ImageFormatExt.setter
-    def ImageFormatExt(self, val):
+    def ImageFormatExt(self, val: str):
         assert (isinstance(val, str))
         self.attrib['ImageFormatExt'] = val
 
@@ -50,14 +50,14 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         return m
 
     @Type.setter
-    def Type(self, val):
+    def Type(self, val: str | None):
         if val is None:
             if 'Type' in self.attrib:
                 del self.attrib['Type']
         else:
             self.attrib['Type'] = val
 
-    def ImagesInLevel(self, level_node):
+    def ImagesInLevel(self, level_node: LevelNode) -> tuple[bool, list[str]]:
         """
         :return: A list of all images contained in the level directory
         :rtype: list
@@ -85,7 +85,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
             return True, images
 
         except FileNotFoundError:
-            return []
+            return False, []
 
     @property
     def NeedsValidation(self) -> bool:
@@ -103,7 +103,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         # Starting with the highest resolution level, we need to check that all
         # of the levels are valid
 
-    def CheckIfLevelTilesExistViaMetaData(self, level_node):
+    def CheckIfLevelTilesExistViaMetaData(self, level_node: LevelNode):
         """
         Using the meta-data, returns whether there is a reasonable belief that
         the passed level has all of the tiles and that they are valid
@@ -136,7 +136,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         else:
             return False, "Fewer tiles validated than expected in level"
 
-    def TryToMakeLevelValid(self, level_node):
+    def TryToMakeLevelValid(self, level_node: LevelNode):
         """
         :param level_node:
     """

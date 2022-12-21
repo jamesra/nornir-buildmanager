@@ -10,12 +10,12 @@ from nornir_buildmanager.volumemanager import ChannelNode, XNamedContainerElemen
 class SectionNode(XNamedContainerElementWrapped):
 
     @classmethod
-    def ClassSortKey(cls, self):
+    def ClassSortKey(cls, self) -> str:
         """Required for objects derived from XContainerElementWrapper"""
         return f"Section {self.Number:04d}"
 
     @property
-    def SortKey(self):
+    def SortKey(self) -> str:
         """The default key used for sorting elements"""
         return SectionNode.ClassSortKey(self)
 

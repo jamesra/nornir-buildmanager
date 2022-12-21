@@ -10,7 +10,7 @@ class VolumeNode(XNamedContainerElementWrapped):
     def Blocks(self) -> Generator[BlockNode]:
         return self.findall('Block')
 
-    def GetBlock(self, name) -> BlockNode:
+    def GetBlock(self, name: str) -> BlockNode:
         return self.GetChildByAttrib('Block', 'Name', name)
 
     @property

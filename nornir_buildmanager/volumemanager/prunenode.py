@@ -20,7 +20,7 @@ class PruneNode(HistogramBase):
         return 0
 
     @NumImages.setter
-    def NumImages(self, value):
+    def NumImages(self, value: int | None):
 
         if value is None:
             if 'NumImages' in self.attrib:
