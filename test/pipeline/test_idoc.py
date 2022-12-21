@@ -18,7 +18,7 @@ import nornir_shared.misc
 
 import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_buildmanager.importers.idoc as idoc
-import setup_pipeline
+import pipeline.setup_pipeline as setup_pipeline
 
 
 class IDocTest(setup_pipeline.PlatformTest):
