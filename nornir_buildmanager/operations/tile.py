@@ -638,6 +638,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
        and returns the valid one."""
     histogram_element = None
     HistogramElementRemoved = False
+    check_type = 'Thr' in transform_node.Type #If a threshold value is encoded in the transform type, ensure it matches
     for histogram_element in filterObj.findall(
             "Histogram[@InputTransformChecksum='" + checksum + "']"): # type: HistogramNode | None
         if histogram_element is None:
@@ -645,7 +646,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
                 "Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath)
         cleaned, reason = histogram_element.CleanIfInvalid()
         #Check that the type matches in input transform node type so we don't use the wrong histogram
-        if cleaned or histogram_element.Type != transform_node.Type:
+        if cleaned or (check_type and histogram_element.Type != transform_node.Type):
             histogram_element = None
             HistogramElementRemoved = HistogramElementRemoved or cleaned
             continue
@@ -674,7 +675,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, TransformNode: Transform
         (yield InputFilter)
 
     if HistogramElement is None:
-        raise nb.NornirUserException("No histograms available for autoleveling of section: %s" % InputFilter.FullPath)
+        raise nb.NornirUserException("No histograms available for auto-leveling of section: %s" % InputFilter.FullPath)
 
     MinCutoffPercent = float(Parameters.get('MinCutoff', ContrastMinCutoffDefault)) / 100.0
     MaxCutoffPercent = float(Parameters.get('MaxCutoff', ContrastMaxCutoffDefault)) / 100.0

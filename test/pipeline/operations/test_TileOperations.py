@@ -235,7 +235,7 @@ class AutoLevelHistogramTest(PrepareSetup):
 
         self.ChannelData = self.VolumeObj.find("Block/Section[@Number='2']/Channel")
 
-        self.TransformNode = self.ChannelData.find("Transform[@Name='Stage']")
+        self.TransformNode = self.ChannelData.find("Transform[@Name='Prune']")
         self.assertIsNotNone(self.TransformNode)
 
         # Change the AutoLevelHint for a section and check that it regenerates
