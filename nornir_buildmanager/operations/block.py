@@ -9,6 +9,7 @@ import math
 import random
 import shutil
 import subprocess
+import tempfile
 
 import nornir_buildmanager
 
@@ -73,12 +74,12 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                     if(line.find("loading") >= 0):
                         parts = line.split()
                         [name, ext] = os.path.splitext(parts[1])
-                        if(self.stosfilename is None):
+                        if self.stosfilename is None:
                             self.stosfilename = name
                         else:
                             self.LastLoadedFile = name
 
-                    elif(line.find("saving") >= 0):
+                    elif line.find("saving") >= 0:
                         parts = line.split()
                         outputFile = parts[1]
                         # Figure out if the output file has a different path
@@ -843,6 +844,8 @@ def AssembleStosOverlays(Parameters,
   
     SectionMappingSaveRequired = False
     
+    tempdir = tempfile.mkdtemp() + os.path.sep
+    
     try:
         for MappingNode in StosMapNode.Mappings:
             MappedSectionList = MappingNode.Mapped
@@ -931,10 +934,9 @@ def AssembleStosOverlays(Parameters,
                                              stosImages.MappedImageNode.FullPath,
                                              stosImages.ControlImageMaskNode.FullPath,
                                              stosImages.MappedImageMaskNode.FullPath)
-
-                        stomtemplate = 'ir-stom -load %(InputFile)s -save Temp/ ' + misc.ArgumentsFromDict(Parameters)
-
-                        cmd = stomtemplate % {'InputFile' : StosTransformNode.FullPath}
+                        
+                        
+                        cmd = f'ir-stom -load {StosTransformNode.FullPath} -save {tempdir} ' + misc.ArgumentsFromDict(Parameters)
 
                         NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
                         ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
@@ -959,7 +961,7 @@ def AssembleStosOverlays(Parameters,
         #Pool.wait_completion()
         nornir_pools.WaitOnAllPools()
     finally:
-        files.rmtree('Temp', ignore_errors=True)
+        files.rmtree(tempdir, ignore_errors=True)
 
         os.chdir(oldDir)
 
