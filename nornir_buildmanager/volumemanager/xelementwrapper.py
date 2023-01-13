@@ -332,11 +332,9 @@ class XElementWrapper(ElementTree.Element):
 
     def Clean(self, reason: str | None = None):
         """Remove node from element tree and remove any external resources such as files"""
-
-        DisplayStr = ' --- Cleaning ' + self.ToElementString() + ". "
-
+  
         '''Remove the contents referred to by this node from the disk'''
-        prettyoutput.Log(DisplayStr)
+        prettyoutput.Log(f' --- Cleaning {self.ToElementString()}. ')
         if reason is not None:
             prettyoutput.Log("  --- " + reason)
 
