@@ -1839,26 +1839,25 @@
             <Argument flag="-Filters" default="(?![M|m]ask)" dest="FiltersRegEx"
                 type="str" help="Regular expression describing filters to be aligned"
                 required="False" />
-            <Argument flag="-UseMasks" action="store_true" dest="UseMasks"
-                help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes."
+            <Argument flag="-IgnoreMasks" action="store_true" dest="IgnoreMasks"
+                help="Ignore masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes."
                 required="False" />
-            <Argument flag="-Threshold" default="0.1" dest="DisplacementThreshold"
-                type="float"
-                help="Displacement threshold for control point movement.  Refinement stops below this value"
-                required="False" />
-            <Argument flag="-Spacing" default="96" dest="GridSpacing"
+            <Argument flag="-Spacing" default="96" dest="grid_spacing"
                 type="int" help="Grid cell spacing in pixels" required="False" />
             <Argument flag="-CellArea" default="128" dest="cell_size"
                 type="int" help="Area around each grid point to register, in pixels.  It is suggested to have overlap between the cells.  So cells of [128,128] would be spaced [64,64] apart."
                 required="False" />
-            <Argument flag="-Iterations" default="10" dest="Iterations"
+            <Argument flag="-Iterations" default="10" dest="num_iterations"
                 type="int" help="Maximum number of refinement passes to run"
                 required="False" />
-            <Argument flag="-AngleRange" dest="AngleSearchRange"
+            <Argument flag="-AngleRange" dest="angles_to_search"
                 type="FloatRange" help="Range of angles to check in degrees not radians.  Each cell is rotated by the angle and checked.  The highest scoring registration is used."
                 required="False" />
-            <Argument flag="-MaxCellTravelForFinalize" dest="MaxFinalizeTravel"
-                type="float" help="The maximum amount of travel a cell (point) can have from its predicted position before it is a candidate for finalization which stops attempting to register it further."
+            <Argument flag="-MaxTravelForFinalize" dest="max_travel_for_finalization"
+                type="float" help="The maximum amount of travel a point can have from its predicted position for it is considered correctly placed."
+                required="False" />
+            <Argument flag="-MaxTravelForFinalizeImprovement" dest="max_travel_for_finalization_improvement"
+                type="float" help="When finalized points are checked to see if they need to be nudged, they must move less than this distance to be considered.  If None, no limit is applied."
                 required="False" />
             <Argument flag="-MinAlignOverlap" dest="min_alignment_overlap"
                 type="float" help="The minimum amount of overlap a cell (point) must have with its expected position for a registration result to be considered valid."
@@ -1871,7 +1870,7 @@
                 required="False" />
             <Argument flag="-SavePlots" action="store_true" dest="SavePlots"
                 help="Amount of cell area that must be unmasked to attempt registering a given cell"
-                required="False" /> 
+                required="False" />
         </Arguments>
 
         <Select VariableName="BlockNode" XPath="Block" />
@@ -1884,11 +1883,11 @@
             XPath="Mapping">
             <PythonCall Function="block.StosGridRefine" MappingNode="#MappingNodeObj"
                 OutputStosGroup="#OutputGroup#OutputDownsample" Downsample="#OutputDownsample"
-                ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx"
-                UseMasks="#UseMasks" num_iterations="#Iterations" cell_size="#cell_size"
-                grid_spacing="#GridSpacing" angles_to_search="#AngleSearchRange"
-                max_travel_for_finalization="#MaxFinalizeTravel" min_alignment_overlap="#min_alignment_overlap"
-                 min_unmasked_area="#min_unmasked_area"
+                ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx" IgnoreMasks="#IgnoreMasks"
+                num_iterations="#num_iterations" cell_size="#cell_size"
+                grid_spacing="#grid_spacing" angles_to_search="#angles_to_search"
+                max_travel_for_finalization="#max_travel_for_finalization" max_travel_for_finalization_improvement="#max_travel_for_finalization_improvement"
+                        min_alignment_overlap="#min_alignment_overlap" min_unmasked_area="#min_unmasked_area"
                 SaveImages="#SaveImages" SavePlots="#SavePlots"
                 > 
             </PythonCall>
