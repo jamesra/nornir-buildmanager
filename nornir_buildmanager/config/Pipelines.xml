@@ -1853,10 +1853,10 @@
             <Argument flag="-AngleRange" dest="angles_to_search"
                 type="FloatRange" help="Range of angles to check in degrees not radians.  Each cell is rotated by the angle and checked.  The highest scoring registration is used."
                 required="False" />
-            <Argument flag="-MaxTravelForFinalize" dest="max_travel_for_finalization"
+            <Argument flag="-MaxTravelForFinalization" dest="max_travel_for_finalization"
                 type="float" help="The maximum amount of travel a point can have from its predicted position for it is considered correctly placed."
                 required="False" />
-            <Argument flag="-MaxTravelForFinalizeImprovement" dest="max_travel_for_finalization_improvement"
+            <Argument flag="-MaxTravelForFinalizedImprovement" dest="max_travel_for_finalization_improvement"
                 type="float" help="When finalized points are checked to see if they need to be nudged, they must move less than this distance to be considered.  If None, no limit is applied."
                 required="False" />
             <Argument flag="-MinAlignOverlap" dest="min_alignment_overlap"
