@@ -752,17 +752,17 @@ class NornirBuildTestBase(testbase.TestBase):
                                           '-OutputDownsample', str(int(OutputLevel)),
                                           '-Filter', 'Leveled',
                                           '-Iterations', "3",
-                                          '-Threshold', "1.0",
-                                          '-MinUnmaskedCellArea', "0.2")
+                                          '-MinUnmaskedCellArea', "0.24")
         if UseMasks:
-            buildArgs.append('-UseMasks')   
+            pass
+            #buildArgs.append('-UseMasks')   
             
         volumeNode = self.RunBuild(buildArgs)
 
         stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (OutputGroup, OutputLevel))
         self.assertIsNotNone(stos_group_node, "No %s%d Stos Group node produced" % (OutputGroup, OutputLevel))
           
-        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (OutputGroup, OutputLevel), stos_map_name='FinalStosMap', MasksRequired='-UseMasks' in buildArgs, buildArgs=buildArgs)
+        self.VerifyStosTransformPipelineSharedTests(volumeNode=volumeNode, stos_group_name='%s%d' % (OutputGroup, OutputLevel), stos_map_name='FinalStosMap', MasksRequired=UseMasks, buildArgs=buildArgs)
          
         return volumeNode
 

@@ -1181,38 +1181,39 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
 
         PotentialTransforms = []
         for controlSection in potentialControls:
-            t = (controlSection, InputSectionMappingNode.TransformsToSection(controlSection))
-            PotentialTransforms.extend(t)
+            t = (controlSection, list(InputSectionMappingNode.TransformsToSection(controlSection)))
+            PotentialTransforms.append(t)
 
-        if len(PotentialTransforms) == 1:
+        #Check if there is only one candidate
+        if len(PotentialTransforms) == 1 and len(PotentialTransforms[0][1]) == 1:
             # No need to test, copy over the transform
-            WinningTransform = PotentialTransforms[0][1]
+            WinningTransform = PotentialTransforms[0][1][0]
         else:
             TaskList = []
-            for Transform in PotentialTransforms:
-                controlSection = Transform.ControlSectionNumber
-                try:
-                    ImageSearchXPath = ImageSearchXPathTemplate % {'InputTransformChecksum': Transform.Checksum}
-                    ImageNode = InputSectionMappingNode.find(ImageSearchXPath)
+            for (controlSection, Transforms) in PotentialTransforms:
+                for Transform in Transforms:
+                    try:
+                        ImageSearchXPath = ImageSearchXPathTemplate % {'InputTransformChecksum': Transform.Checksum}
+                        ImageNode = InputSectionMappingNode.find(ImageSearchXPath)
 
-                    if ImageNode is None:
-                        Logger.error(f'{mappedSection} -> {controlSection}')
-                        Logger.error("No image node found for transform")
-                        Logger.error("Checksum: " + Transform.Checksum)
-                        continue
+                        if ImageNode is None:
+                            Logger.error(f'{mappedSection} -> {controlSection}')
+                            Logger.error("No image node found for transform")
+                            Logger.error("Checksum: " + Transform.Checksum)
+                            continue
 
-                    identifyCmd = 'magick identify -format %[mean] -verbose ' + ImageNode.FullPath
+                        identifyCmd = 'magick identify -format %[mean] -verbose ' + ImageNode.FullPath
 
-                    if Pool is None:
-                        Pool = nornir_pools.GetLocalMachinePool()
+                        if Pool is None:
+                            Pool = nornir_pools.GetLocalMachinePool()
 
-                    task = Pool.add_process(ImageNode.attrib['Path'], identifyCmd + " && exit", shell=True)
-                    task.transform_node = Transform
-                    TaskList.append(task)
-                    Logger.info("Evaluating " + str(mappedSection) + ' -> ' + str(controlSection))
+                        task = Pool.add_process(ImageNode.attrib['Path'], identifyCmd + " && exit", shell=True)
+                        task.transform_node = Transform
+                        TaskList.append(task)
+                        Logger.info("Evaluating " + str(mappedSection) + ' -> ' + str(controlSection))
 
-                except Exception as e:
-                    Logger.error("Could not evalutate mapping " + str(mappedSection) + ' -> ' + str(controlSection))
+                    except Exception as e:
+                        Logger.error("Could not evalutate mapping " + str(mappedSection) + ' -> ' + str(controlSection))
 
             BestMean = None
 
@@ -1578,6 +1579,16 @@ def StosGridRefine(Parameters, MappingNode, InputGroupNode, IgnoreMasks, Downsam
     this function was written there was a ir-refine-grid command line program and a native
     python implementation.
     '''
+    
+    #strip any XElements from kwargs before passing them on
+    keys_to_strip = []
+    for k, v in kwargs.items():
+        if isinstance(v, nornir_buildmanager.volumemanager.XElementWrapper):
+            keys_to_strip.append(k)
+    
+    for k in keys_to_strip:
+        del kwargs[k]
+            
 
     return RefineInvoker(__RunPythonGridRefinementCmd,
                          MappingNode=MappingNode,

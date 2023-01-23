@@ -28,7 +28,7 @@ class SectionMappingsNode(XElementWrapper):
     def Images(self) -> Generator[ImageNode]:
         return self.findall('Image')
 
-    def TransformsToSection(self, sectionNumber:int):
+    def TransformsToSection(self, sectionNumber:int) -> Generator[TransformNode]:
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
 
     def FindStosTransform(self, ControlSectionNumber:int, ControlChannelName: str, ControlFilterName: str, MappedSectionNumber: int,
