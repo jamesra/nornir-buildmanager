@@ -1711,7 +1711,7 @@
         <Select Root="BlockNode" VariableName="StosMapNodeObj"
             XPath="StosMap[@Name='#StosMap']" />
         <PythonCall Function="block.AssembleStosOverlays"
-            GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" />
+            group_node="#GroupNodeObj" stos_map_node="#StosMapNodeObj" />
     </Pipeline>
     
     <Pipeline Name="CalculateStosGroupWarpMetrics"
@@ -1881,7 +1881,7 @@
             XPath="StosGroup[@Name='#InputGroup#InputDownsample']" />
         <Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"
             XPath="Mapping">
-            <PythonCall Function="block.StosGridRefine" MappingNode="#MappingNodeObj"
+            <PythonCall Function="block.StosGridRefine" mapping_node="#MappingNodeObj"
                 OutputStosGroup="#OutputGroup#OutputDownsample" Downsample="#OutputDownsample"
                 ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx" IgnoreMasks="#IgnoreMasks"
                 num_iterations="#num_iterations" cell_size="#cell_size"

@@ -160,7 +160,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
             BlockNode = self._GetResetBlockNode()
 
         GoodSections = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        OutputBlockNode = CreateOrUpdateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, ChannelsRegEx="*", FiltersRegEx="*", Logger=self.Logger)
+        OutputBlockNode = CreateOrUpdateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, block_node=BlockNode, ChannelsRegEx="*", FiltersRegEx="*", Logger=self.Logger)
 
         if BlockShouldBeCreated:
             self.assertIsNotNone(OutputBlockNode)
@@ -197,7 +197,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
 
         self.SetNonStosSectionList(BlockNode, BadSections)
 
-        OutputBlockNode = CreateOrUpdateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, BlockNode=BlockNode, ChannelsRegEx='*', FiltersRegEx='*', Logger=self.Logger)
+        OutputBlockNode = CreateOrUpdateSectionToSectionMapping(Parameters={'NumAdjacentSections' : adjacentThreshold, 'CenterSection' : center}, block_node=BlockNode, ChannelsRegEx='*', FiltersRegEx='*', Logger=self.Logger)
         self.assertIsNotNone(OutputBlockNode)
 
         volumechecklist = [VolumeEntry("StosMap", "Name", "PotentialRegistrationChain")]
