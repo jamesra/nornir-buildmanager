@@ -753,9 +753,9 @@ class NornirBuildTestBase(testbase.TestBase):
                                           '-Filter', 'Leveled',
                                           '-Iterations', "3",
                                           '-MinUnmaskedCellArea', "0.24")
-        if UseMasks:
-            pass
-            #buildArgs.append('-UseMasks')   
+        if not UseMasks:
+            #pass
+            buildArgs.append('-IgnoreMasks')   
             
         volumeNode = self.RunBuild(buildArgs)
 
@@ -904,7 +904,7 @@ class NornirBuildTestBase(testbase.TestBase):
         
         return levelNode
         
-    def RemoveTileFromPyramid(self, section_number=691, channel='TEM', filter_name='Leveled', level=1):
+    def RemoveTileFromPyramid(self, section_number: int = 691, channel: str = 'TEM', filter_name: str = 'Leveled', level=1):
         '''Remove a single image from an image pyramid
         :return: Filename that was deleted
         '''
@@ -921,7 +921,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
         return chosenPngFile
 
-    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number, channel='TEM', filter_name='Leveled', level=1):
+    def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number: int, channel: str ='TEM', filter_name: str ='Leveled', level: int = 1):
         '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
         removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter_name, level)
 
@@ -944,12 +944,14 @@ class NornirBuildTestBase(testbase.TestBase):
         # os.remove(ManualStosDir)
         stosTransformList = []
         for f in glob.glob(os.path.join(ManualStosFullPath, '*.stos')):
-            shutil.copy(f, ManualStosDir)
             
             stosFilePath = os.path.basename(f)
-            
             # Find the TransformNode in the stos group we expect to be replaced by this manual file
             stosTransform = StosGroupNode.find("SectionMappings/Transform[@Path='%s']" % stosFilePath)
+            
+            shutil.copy(f, ManualStosDir)
+            
+            
             self.assertIsNotNone(stosTransform, "Stos transform file that is overriden by manual files does not exist: %s" % stosFilePath)
             
             stosTransformList.append(stosTransform)

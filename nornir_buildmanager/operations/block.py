@@ -30,7 +30,7 @@ from nornir_buildmanager.validation import transforms
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
 from nornir_buildmanager.exceptions import NornirUserException
-from nornir_buildmanager.volumemanager import *
+from nornir_buildmanager.volumemanager import * 
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -1380,7 +1380,7 @@ def IsStosNodeOutdated(InputTransformNode: TransformNode, OutputTransformNode: T
 
 def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: str, OutputDownsample: int,
                        ControlFilter: FilterNode, MappedFilter: FilterNode,
-                       UseMasks: bool):
+                       UseMasks: bool | None):
     '''
     :param InputTransformNode:
     :param OutputTransformPath:
@@ -1404,13 +1404,13 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
 
     OutputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
     if not OutputStos.HasMasks == UseMasks:
-        return False
+        return True
 
     ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
     MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
 
     if not (OutputStos.ControlImagePath == ControlImageFullPath and OutputStos.MappedImagePath == MappedImageFullPath):
-        return False
+        return True
 
     ControlMaskImageFullPath = None
     MappedMaskImageFullPath = None
@@ -1419,9 +1419,9 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
         MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
 
         if not OutputStos.ControlMaskFullPath == ControlMaskImageFullPath and OutputStos.MappedMaskFullPath == MappedMaskImageFullPath:
-            return False
+            return True
 
-    return True
+    return False
 
 
 def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransformPath: str, OutputDownsample: int,
@@ -1429,7 +1429,7 @@ def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransf
                                  UseMasks: bool):
     '''Only generates a stos file if the Output stos path has an earlier last modified time compared to the input
     :param bool UseMasks: True if masks should be included.  None if we should copy setting from input stos transform
-    :return: True if a file was generated, False if the output already existed and was valid
+    :return: True if a file was generated and saved, False if the output already existed and was valid
     '''
 
     # We should not be trying to create output if we have no input
@@ -1442,8 +1442,9 @@ def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransf
             pass
 
     if not os.path.exists(OutputTransformPath):
-        __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter,
+        result = __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter,
                            UseMasks)
+        result.Save(OutputTransformPath)
         return True
 
     return False
@@ -1465,9 +1466,9 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
                        UseMasks: bool | None):
     '''Generates a new stos file using the specified filters and scales the transform to match the
        requested downsample as needed.
-       :param bool UseMasks: True if masks should be included.  None if we should copy setting from input stos transform
+       :param UseMasks: True if masks should be included.  None if we should copy setting from input stos transform
        :rtype: bool
-       :return: True if a new stos file was generated
+       :return: A StosFile if a new file was needed, otherwise None
     '''
 
     stos_group_node = InputTransformNode.FindParent('StosGroup')
@@ -1501,11 +1502,9 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
                                                                  ControlMaskFullPath=ControlMaskImageFullPath,
                                                                  MappedMaskFullPath=MappedMaskImageFullPath)
 
-        ModifiedInputStos.Save(OutputTransformPath)
+        return ModifiedInputStos
     else:
-        shutil.copyfile(InputTransformNode.FullPath, OutputTransformPath)
-
-    return True
+        return None
 
 
 def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath: str, ManualInputStosFullPath: str):
@@ -1591,7 +1590,7 @@ def IrStosGridRefine(Parameters, mapping_node, InputGroupNode: StosGroupNode, Us
 
 def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsample=32,
                    ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
-                   Type=None, **kwargs):
+                   Type=None, **kwargs) -> Generator[XElementWrapper, None, None]:
     '''
     Invoke a command to execute a function with an input and output .stos file.  The function
     is expected to refine the input .stos file and write the output .stos file.  At the time
@@ -1623,7 +1622,7 @@ def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
                   UseMasks: bool, Downsample: int = 32,
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
                   OutputStosGroup: str | None = None, Type: str | None = None,
-                  **kwargs):
+                  **kwargs) -> Generator[XElementWrapper, None, None]:
     '''
     :param mapping_node:
     :param InputGroupNode:
@@ -1711,6 +1710,7 @@ def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
                 stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
                                                                        OutputPath=OutputFile)
 
+
             (InputStosFullPath, InputStosFileChecksum) = __GetOrCreateInputStosFileForRegistration(
                 stos_group_node=OutputStosGroupNode,
                 InputTransformNode=InputTransformNode,
@@ -1774,7 +1774,7 @@ def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
                         RefineFunc(InputStosFullPath, OutputStosFullPath, **kwargs)
                     except Exception as e:
                         prettyoutput.Log(f"Exception calling stos refine function {RefineFunc}:\n{e}\n\n")
-                        raise e
+                        raise
 
                     if not os.path.exists(OutputStosFullPath):
                         Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
@@ -2469,17 +2469,22 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMas
                     os.remove(stosNode.FullPath)
 
             if not os.path.exists(stosNode.FullPath):
-                stosGenerated = __GenerateStosFile(InputTransformNode,
-                                                   stosNode.FullPath,
-                                                   OutputDownsample,
-                                                   ControlFilter,
-                                                   MappedFilter,
-                                                   UseMasks=None)
+                try:
+                    stosGenerated = __GenerateStosFile(InputTransformNode,
+                                                       stosNode.FullPath,
+                                                       OutputDownsample,
+                                                       ControlFilter,
+                                                       MappedFilter,
+                                                       UseMasks=None)
 
-                if stosGenerated:
+                    if stosGenerated is not None:
+                        stosGenerated.Save(stosNode.FullPath)
+                    else:
+                        shutil.copyfile(InputTransformNode.FullPath, stosNode.FullPath)
+
                     stosNode.ResetChecksum()
                     stosNode.SetTransform(InputTransformNode)
-                else:
+                except FileNotFoundError:
                     OutputGroupNode.remove(stosNode)
 
                 (yield OutputGroupNode)
@@ -2656,7 +2661,7 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
     yield block_node
 
 
-def __MoveMosaicsToZeroOrigin(StosMosaicTransforms:  list[TransformNode], OutputStosMosaicTransformName: str):
+def __MoveMosaicsToZeroOrigin(StosMosaicTransforms:  Iterable[TransformNode], OutputStosMosaicTransformName: str):
     '''Given a set of transforms, ensure they are all translated so that none have a negative coordinate for the origin.
        :param list StosMosaicTransforms: [StosTransformNode]
        :param list OutputStosMosaicTransformName: list of names for output nodes
