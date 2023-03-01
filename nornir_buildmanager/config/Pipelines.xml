@@ -1666,19 +1666,19 @@
                 required="False" />
         </Arguments>
 
-        <Select VariableName="BlockNode" XPath="Block" />
+        <Select VariableName="block_node" XPath="Block" />
         <PythonCall Function="block.CreateOrUpdateSectionToSectionMapping"
             ChannelsRegEx="#ChannelsRegEx" FiltersRegEx="#FiltersRegEx"
-            OutputStosMapName="#OutputStosMap">
+            OutputStosMapName="#OutputStosMap" block_node="#block_node">
             <Parameters>
                 <Entry Name="NumAdjacentSections" Value="#NumAdjacentSections" />
                 <Entry Name="CenterSection" Value="#Center" />
             </Parameters>
         </PythonCall>
 
-        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+        <Select Root="block_node" VariableName="StosMapNodeObj"
             XPath="StosMap[@Name='#OutputStosMap']" />
-        <Iterate Root="StosMapNodeObj" VariableName="MappingNode"
+        <Iterate Root="StosMapNodeObj" VariableName="mapping_node"
             XPath="Mapping">
             <PythonCall Function="block.StosBrute" Root="BlockNode"
                 OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx"
@@ -1711,7 +1711,7 @@
         <Select Root="BlockNode" VariableName="StosMapNodeObj"
             XPath="StosMap[@Name='#StosMap']" />
         <PythonCall Function="block.AssembleStosOverlays"
-            GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" />
+            group_node="#GroupNodeObj" stos_map_node="#StosMapNodeObj" />
     </Pipeline>
     
     <Pipeline Name="CalculateStosGroupWarpMetrics"
@@ -1735,7 +1735,7 @@
         <Select Root="BlockNode" VariableName="StosMapNodeObj"
             XPath="StosMap[@Name='#StosMap']" />
         <PythonCall Function="block.CalculateStosGroupWarpMeasurementImages"
-            GroupNode="#GroupNodeObj" StosMapNode="#StosMapNodeObj" MaxReportedAngle="#MaxReportedAngle" RenderToSourceSpace="#RenderToSourceSpace" />
+            group_node="#GroupNodeObj" stos_map_node="#StosMapNodeObj" MaxReportedAngle="#MaxReportedAngle" RenderToSourceSpace="#RenderToSourceSpace" />
     </Pipeline>
 
     <Pipeline Name="SelectBestRegistrationChain"
@@ -1881,7 +1881,7 @@
             XPath="StosGroup[@Name='#InputGroup#InputDownsample']" />
         <Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"
             XPath="Mapping">
-            <PythonCall Function="block.StosGridRefine" MappingNode="#MappingNodeObj"
+            <PythonCall Function="block.StosGridRefine" mapping_node="#MappingNodeObj"
                 OutputStosGroup="#OutputGroup#OutputDownsample" Downsample="#OutputDownsample"
                 ControlFilterPattern="#FiltersRegEx" MappedFilterPattern="#FiltersRegEx" IgnoreMasks="#IgnoreMasks"
                 num_iterations="#num_iterations" cell_size="#cell_size"
@@ -1949,7 +1949,8 @@
                     XPath="StosGroup[@Name='#StovInputGroup#StovDownsample']">
                     <PythonCall Function="block.BuildSliceToVolumeTransforms"
                         OutputMap="#OutputMap" OutputGroupName="#StovOutputGroupName"
-                        Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance">
+                        Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance"
+                        stos_map_node="#StosMapNode" stos_group_node="#StosGroupNode">
                     </PythonCall>
                 </Iterate>
             </Iterate>
@@ -1986,7 +1987,7 @@
         <Iterate VariableName="BlockNode" XPath="Block">
             <!-- <Iterate VariableName="StosMapNode" XPath="StosMap[@Name='#VolumeImageGroupName']"> 
                 <Iterate VariableName="StosGroupNode" Root="BlockNode" XPath="StosGroup[@Name='#VolumeImageGroupName#VolumeImageDownsample']"> 
-                <PythonCall Function="block.AssembleStosOverlays" GroupNode="#StosGroupNode"/> 
+                <PythonCall Function="block.AssembleStosOverlays" group_node="#StosGroupNode"/>
                 </Iterate> </Iterate> -->
 
             <Iterate VariableName="StosGroupNode" Root="BlockNode"
@@ -2028,8 +2029,9 @@
                 XPath="StosGroup[@Name='#InputStosGroup#StosDownsample']" />
 
             <PythonCall Function="block.BuildMosaicToVolumeTransforms"
-                BlockNode="#BlockNode" ChannelsRegEx="#ChannelsRegEx"
-                InputTransformName="#InputTransformName" OutputTransformName="#OutputTransform" />
+                block_node="#BlockNode" ChannelsRegEx="#ChannelsRegEx" stos_map_node="#StosMapNode"
+                        stos_group_node="#StosGroupNode" InputTransformName="#InputTransformName"
+                        OutputTransformName="#OutputTransform" />
 
             <!-- <Iterate VariableName="ChannelNode" XPath="Section/Channel"> <RequireMatch 
                 Attribute="Name" RegEx="#ChannelsRegEx"/> <Select VariableName="TransformNode" 

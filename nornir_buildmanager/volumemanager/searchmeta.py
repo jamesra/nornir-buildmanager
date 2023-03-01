@@ -5,7 +5,8 @@ import xml.etree
 
 from nornir_buildmanager.volumemanager import XElementWrapper
 
-def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.Element], AttribName: str, RegExStr: str, CaseSensitive: bool = False) -> Generator[XElementWrapper, None, None]:
+def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.Element], AttribName: str,
+                     RegExStr: str | None, CaseSensitive: bool = False) -> Generator[XElementWrapper, None, None]:
     """
     Search a list of object's attributes using a regular express.
     Returns a generator of objects with matching attributes.

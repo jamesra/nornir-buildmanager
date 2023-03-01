@@ -235,7 +235,7 @@ class PMGBuildTest(setup_pipeline.CopySetupTestBase):
 
     @property
     def VolumePath(self):
-        return "PMGBuildTest"
+        return "6259"
 
     @property
     def Platform(self):

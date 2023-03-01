@@ -14,7 +14,7 @@ from pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
 import pipeline.test_sectionimage as test_sectionimage
 
 
-def FetchStosTransform(test, VolumeObj, groupName, ControlSection, MappedSection):
+def FetchStosTransform(test, VolumeObj, groupName: str, ControlSection, MappedSection):
     groupNode = VolumeObj.find("Block/StosGroup[@Name='" + groupName + "']")
     test.assertIsNotNone(groupNode, "Could not find StosGroup " + groupName)
 

@@ -10,6 +10,7 @@ from nornir_buildmanager.volumemanager import *
 import nornir_shared.files
 from nornir_shared import prettyoutput as prettyoutput
 
+
 class StosGroupNode(XNamedContainerElementWrapped):
 
     def __init__(self, tag=None, attrib=None, **extra):
@@ -19,7 +20,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         super(StosGroupNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, Name, Downsample, **extra) -> StosGroupNode:
+    def Create(cls, Name: str, Downsample: int, **extra) -> StosGroupNode:
         Path = Name
 
         obj = super(StosGroupNode, cls).Create(tag='StosGroup', Name=Name, attrib=None, Path=Path, **extra)
@@ -61,15 +62,16 @@ class StosGroupNode(XNamedContainerElementWrapped):
     def SectionMappings(self) -> Generator[SectionMappingsNode]:
         return self.findall('SectionMappings')
 
-    def GetSectionMapping(self, MappedSectionNumber) -> SectionMappingsNode:
+    def GetSectionMapping(self, MappedSectionNumber: int) -> SectionMappingsNode:
         return self.GetChildByAttrib('SectionMappings', 'MappedSectionNumber', MappedSectionNumber)
 
-    def GetOrCreateSectionMapping(self, MappedSectionNumber) -> (bool, SectionMappingsNode):
+    def GetOrCreateSectionMapping(self, MappedSectionNumber: int) -> (bool, SectionMappingsNode):
         (added, sectionMappings) = self.UpdateOrAddChildByAttrib(
-            nornir_buildmanager.volumemanager.SectionMappingsNode.Create(MappedSectionNumber=MappedSectionNumber), 'MappedSectionNumber')
+            nornir_buildmanager.volumemanager.SectionMappingsNode.Create(MappedSectionNumber=MappedSectionNumber),
+            'MappedSectionNumber')
         return added, sectionMappings
 
-    def TransformsForMapping(self, MappedSectionNumber:int, ControlSectionNumber:int) -> [TransformNode]:
+    def TransformsForMapping(self, MappedSectionNumber: int, ControlSectionNumber: int) -> [TransformNode]:
         sectionMapping = self.GetSectionMapping(MappedSectionNumber)
         if sectionMapping is None:
             return []
@@ -95,16 +97,16 @@ class StosGroupNode(XNamedContainerElementWrapped):
         # assert(not nornir_buildmanager.volumemanager.SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
 
         stosNode = section_mappings_node.FindStosTransform(ControlSectionNode.Number,
-                                                         ControlChannelNode.Name,
-                                                         ControlFilter.Name,
-                                                         MappedSectionNode.Number,
-                                                         MappedChannelNode.Name,
-                                                         MappedFilter.Name)
+                                                           ControlChannelNode.Name,
+                                                           ControlFilter.Name,
+                                                           MappedSectionNode.Number,
+                                                           MappedChannelNode.Name,
+                                                           MappedFilter.Name)
 
         return stosNode
 
-    def GetOrCreateStosTransformNode(self, ControlFilter, MappedFilter, OutputType, OutputPath) -> (
-    bool, TransformNode):
+    def GetOrCreateStosTransformNode(self, ControlFilter: FilterNode, MappedFilter: FilterNode,
+                                     OutputType: str, OutputPath: str) -> tuple[bool, TransformNode]:
         added = False
         stosNode = self.GetStosTransformNode(ControlFilter, MappedFilter)
 
@@ -116,7 +118,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
 
         return added, stosNode
 
-    def AddChecksumsToStos(self, stosNode, ControlFilter, MappedFilter):
+    def AddChecksumsToStos(self, stosNode, ControlFilter: FilterNode, MappedFilter: FilterNode):
 
         stosNode._AttributesChanged = True
         if MappedFilter.Imageset.HasImage(self.Downsample) or MappedFilter.Imageset.CanGenerate(self.Downsample):
@@ -164,15 +166,21 @@ class StosGroupNode(XNamedContainerElementWrapped):
 
         section_mappings_node = self.GetSectionMapping(MappedSectionNode.Number)
         assert (
-                    section_mappings_node is not None)  # We expect the caller to arrange for a section mappings node in advance
+                section_mappings_node is not None)  # We expect the caller to arrange for a section mappings node in advance
 
-        stosNode = nornir_buildmanager.volumemanager.TransformNode.Create(str(ControlSectionNode.Number), OutputType, OutputPath,
-                                        {'ControlSectionNumber': str(ControlSectionNode.Number),
-                                         'MappedSectionNumber': str(MappedSectionNode.Number),
-                                         'MappedChannelName': str(MappedChannelNode.Name),
-                                         'MappedFilterName': str(MappedFilter.Name),
-                                         'ControlChannelName': str(ControlChannelNode.Name),
-                                         'ControlFilterName': str(ControlFilter.Name)})
+        stosNode = nornir_buildmanager.volumemanager.TransformNode.Create(str(ControlSectionNode.Number), OutputType,
+                                                                          OutputPath,
+                                                                          {'ControlSectionNumber': str(
+                                                                              ControlSectionNode.Number),
+                                                                           'MappedSectionNumber': str(
+                                                                               MappedSectionNode.Number),
+                                                                           'MappedChannelName': str(
+                                                                               MappedChannelNode.Name),
+                                                                           'MappedFilterName': str(MappedFilter.Name),
+                                                                           'ControlChannelName': str(
+                                                                               ControlChannelNode.Name),
+                                                                           'ControlFilterName': str(
+                                                                               ControlFilter.Name)})
 
         self.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
         #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.
@@ -187,19 +195,17 @@ class StosGroupNode(XNamedContainerElementWrapped):
 
         return stosNode
 
-    @classmethod
-    def GenerateStosFilename(cls, ControlFilter, MappedFilter):
+    @staticmethod
+    def GenerateStosFilename(ControlFilter: FilterNode, MappedFilter: FilterNode) -> str:
 
-        ControlSectionNode = ControlFilter.FindParent('Section')
-        MappedSectionNode = MappedFilter.FindParent('Section')
+        ControlSectionNode = ControlFilter.FindParent('Section')  # type: SectionNode
+        MappedSectionNode = MappedFilter.FindParent('Section')  # type: SectionNode
 
-        OutputFile = str(MappedSectionNode.Number) + '-' + str(ControlSectionNode.Number) + \
-                     '_ctrl-' + ControlFilter.Parent.Name + "_" + ControlFilter.Name + \
-                     '_map-' + MappedFilter.Parent.Name + "_" + MappedFilter.Name + '.stos'
+        OutputFile = f'{MappedSectionNode.Number}-{ControlSectionNode.Number}_ctrl-{ControlFilter.Parent.Name}_{ControlFilter.Name}_map-{MappedFilter.Parent.Name}_{MappedFilter.Name}.stos'
         return OutputFile
 
     @classmethod
-    def _IsStosInputImageOutdated(cls, stosNode, ChecksumAttribName, imageNode):
+    def _IsStosInputImageOutdated(cls, stosNode, ChecksumAttribName: str, imageNode: ImageNode | None):
         """
         :param nornir_buildmanager.volumemanager.TransformNode stosNode: Stos Transform Node to test
         :param str ChecksumAttribName: Name of attribute with checksum value on image node
@@ -256,26 +262,26 @@ class StosGroupNode(XNamedContainerElementWrapped):
         is_invalid = False
 
         is_invalid = is_invalid or StosGroupNode._IsStosInputImageOutdated(stosNode,
-                                                                         ChecksumAttribName='ControlImageChecksum',
-                                                                         imageNode=ControlImageNode)
+                                                                           ChecksumAttribName='ControlImageChecksum',
+                                                                           imageNode=ControlImageNode)
         is_invalid = is_invalid or StosGroupNode._IsStosInputImageOutdated(stosNode,
-                                                                         ChecksumAttribName='MappedImageChecksum',
-                                                                         imageNode=MappedImageNode)
+                                                                           ChecksumAttribName='MappedImageChecksum',
+                                                                           imageNode=MappedImageNode)
 
         if MaskRequired:
             ControlMaskImageNode = ControlFilter.GetMaskImage(self.Downsample)
             MappedMaskImageNode = MappedFilter.GetMaskImage(self.Downsample)
             is_invalid = is_invalid or StosGroupNode._IsStosInputImageOutdated(stosNode,
-                                                                             ChecksumAttribName='ControlMaskImageChecksum',
-                                                                             imageNode=ControlMaskImageNode)
+                                                                               ChecksumAttribName='ControlMaskImageChecksum',
+                                                                               imageNode=ControlMaskImageNode)
             is_invalid = is_invalid or StosGroupNode._IsStosInputImageOutdated(stosNode,
-                                                                             ChecksumAttribName='MappedMaskImageChecksum',
-                                                                             imageNode=MappedMaskImageNode)
+                                                                               ChecksumAttribName='MappedMaskImageChecksum',
+                                                                               imageNode=MappedMaskImageNode)
 
         return is_invalid
 
     @classmethod
-    def __LegacyUpdateStosNode(cls, stosNode, ControlFilter, MappedFilter, OutputPath):
+    def __LegacyUpdateStosNode(cls, stosNode, ControlFilter: FilterNode, MappedFilter: FilterNode, OutputPath: str):
 
         if stosNode is None:
             return
