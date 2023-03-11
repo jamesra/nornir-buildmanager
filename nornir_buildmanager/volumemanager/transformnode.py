@@ -20,15 +20,15 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         super(TransformNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @staticmethod
-    def get_threshold_format():
+    def get_threshold_format() -> str:
         return f"%.{TransformNode.get_threshold_precision()}f"
 
     @staticmethod
-    def get_threshold_precision():
+    def get_threshold_precision() -> int:
         return 2  # Number of digits to save in XML file
 
     @staticmethod
-    def round_precision_value(value):
+    def round_precision_value(value) -> float:
         return float(TransformNode.get_threshold_format() % value)  # Number of digits to save in XML file
 
     @classmethod
@@ -48,7 +48,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         return None
 
     @ControlSectionNumber.setter
-    def ControlSectionNumber(self, value):
+    def ControlSectionNumber(self, value: int | None):
 
         if value is None:
             if 'ControlSectionNumber' in self.attrib:
@@ -64,7 +64,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         return None
 
     @MappedSectionNumber.setter
-    def MappedSectionNumber(self, value):
+    def MappedSectionNumber(self, value: int | None):
         if value is None:
             if 'MappedSectionNumber' in self.attrib:
                 del self.attrib['MappedSectionNumber']
@@ -78,13 +78,11 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
            unnecessary precision in coordinates.  It is done to reduce
            the time required to parse the transform at load time.
            """
-        if 'Compressed' in self.attrib:
-            return bool(self.attrib['Compressed'])
-
-        return False
+        value = self.attrib.get('Compressed', None)
+        return bool(value) if value is not None else False
 
     @Compressed.setter
-    def Compressed(self, value):
+    def Compressed(self, value: bool | None):
         if value is None:
             if 'Compressed' in self.attrib:
                 del self.attrib['Compressed']
@@ -93,16 +91,28 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
             self.attrib['Compressed'] = "%d" % value
 
     @property
+    def linear_blend_factor(self) -> float:
+        """If not None, the amount of linear blend used to create this transform.
+        If no value is stored, the linear blend amount is zero"""
+        value = self.attrib.get('linear_blend_factor', None)
+        return float(value) if value is not None else 0
+
+    @linear_blend_factor.setter
+    def linear_blend_factor(self, value: float | None):
+        if value is None or value == 0:
+            if 'linear_blend_factor' in self.attrib:
+                del self.attrib['linear_blend_factor']
+        else:
+            self.attrib['linear_blend_factor'] = f'{value:3F}'
+
+    @property
     def CropBox(self):
         """Returns boundaries of transform output if available, otherwise none
            :rtype tuple:
            :return (Xo, Yo, Width, Height):
         """
-
-        if 'CropBox' in self.attrib:
-            return nornir_shared.misc.ListFromAttribute(self.attrib['CropBox'])
-        else:
-            return None
+        value = self.attrib.get('CropBox', None)
+        return nornir_shared.misc.ListFromAttribute(value) if value is not None else None
 
     def CropBoxDownsampled(self, downsample):
         (Xo, Yo, Width, Height) = self.CropBox
@@ -173,18 +183,17 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
     @property
     def Threshold(self) -> float | None:
         val = self.attrib.get('Threshold', None)
-        if isinstance(val, str):
-            if len(val) == 0:
-                return None
-
-        if val is not None:
-            val = float(val)
-
-        return val
+        try:
+            return float(val)
+        except TypeError: #val is None
+            return None
+        except ValueError: #val is zero length string
+            return None
 
     @Threshold.setter
-    def Threshold(self, val):
-        if val is None and 'Threshold' in self.attrib:
-            del self.attrib['Threshold']
-
-        self.attrib['Threshold'] = TransformNode.get_threshold_format() % val
+    def Threshold(self, val: float | None):
+        if val is None:
+            if 'Threshold' in self.attrib:
+                del self.attrib['Threshold']
+        else:
+            self.attrib['Threshold'] = TransformNode.get_threshold_format() % val

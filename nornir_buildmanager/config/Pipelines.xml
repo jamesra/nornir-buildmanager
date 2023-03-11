@@ -1918,6 +1918,29 @@
         </Iterate>
     </Pipeline>
 
+    <Pipeline Name="LinearizeVolume">
+        Help="Converts each stos transform in a group to a linear transform with translation, rotation, and scale components.\
+             Mixes the output of the linear transform with the original transform according to the blend factor.  This can\
+             help reduce warping over long distances in the volume.">
+        <Arguments>
+            <Argument flag="-InputGroup" dest="InputGroupName" type="str"
+                required="True" help="Name of stos group to linearize" />
+            <Argument flag="-InputDownsample" dest="InputDownsample"
+                type="int" help="Downsample level of input stosgroup" required="True" />
+            <Argument flag="-OutputGroup" dest="OutputGroupName" type="str" required="True" help="Name of the output stos group"/>
+            <Argument flag="-linear_factor" type="float" required="True" dest="linear_blend_factor"
+                help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
+        </Arguments>
+
+        <Iterate VariableName="BlockNode" XPath="Block">
+            <Select VariableName="StosGroupNode" Root="BlockNode"
+                XPath="StosGroup[@Name='#InputGroupName#InputDownsample']" />
+            <PythonCall Function="block.LinearBlendStosGroup"
+                InputStosGroupNode="#StosGroupNode"
+                OutputGroupName="#OutputGroupName#InputDownsample" linear_blend_factor="#linear_blend_factor" />
+        </Iterate>
+    </Pipeline>
+
     <Pipeline Name="SliceToVolume"
         Help="Created a group of slice-to-volume transforms from a group of slice-to-slice transforms">
         <Arguments>

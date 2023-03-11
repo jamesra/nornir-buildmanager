@@ -2407,7 +2407,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
 #     return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
 
 
-def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMasks, **kwargs):
+def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, OutputGroupName: str, UseMasks: bool, **kwargs):
     '''Take a stos group node, scale the transforms, and save in new stosgroup
     
        TODO: This function used to create stos transforms between different filters to.  Port that to a separate function
@@ -2453,39 +2453,128 @@ def ScaleStosGroup(InputStosGroupNode, OutputDownsample, OutputGroupName, UseMas
                 continue
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
-            (stosNode_added, stosNode) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
+            (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
                                                                                       MappedFilter,
                                                                                       OutputType=InputTransformNode.Type,
                                                                                       OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
                                                                                           ControlFilter, MappedFilter))
 
             if not stosNode_added:
-                if not stosNode.IsInputTransformMatched(InputTransformNode):
-                    if os.path.exists(stosNode.FullPath):
-                        os.remove(stosNode.FullPath)
+                if not output_stos_node.IsInputTransformMatched(InputTransformNode):
+                    try:
+                        os.remove(output_stos_node.FullPath)
+                    except FileNotFoundError:
+                        pass  # It is OK if the file doesn't exist if we tried to delete it
             else:
                 # Remove an old file if we had to generate the meta-data
-                if os.path.exists(stosNode.FullPath):
-                    os.remove(stosNode.FullPath)
+                try:
+                    os.remove(output_stos_node.FullPath)
+                except FileNotFoundError:
+                    pass  # It is OK if the file doesn't exist if we tried to delete it
 
-            if not os.path.exists(stosNode.FullPath):
+            if not os.path.exists(output_stos_node.FullPath):
                 try:
                     stosGenerated = __GenerateStosFile(InputTransformNode,
-                                                       stosNode.FullPath,
+                                                       output_stos_node.FullPath,
                                                        OutputDownsample,
                                                        ControlFilter,
                                                        MappedFilter,
                                                        UseMasks=None)
 
                     if stosGenerated is not None:
-                        stosGenerated.Save(stosNode.FullPath)
+                        stosGenerated.Save(output_stos_node.FullPath)
                     else:
-                        shutil.copyfile(InputTransformNode.FullPath, stosNode.FullPath)
+                        shutil.copyfile(InputTransformNode.FullPath, output_stos_node.FullPath)
 
-                    stosNode.ResetChecksum()
-                    stosNode.SetTransform(InputTransformNode)
+                    output_stos_node.ResetChecksum()
+                    output_stos_node.SetTransform(InputTransformNode)
                 except FileNotFoundError:
-                    OutputGroupNode.remove(stosNode)
+                    OutputGroupNode.remove(output_stos_node)
+
+                (yield OutputGroupNode)
+
+
+def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str,
+                         linear_blend_factor: float, **kwargs):
+    '''Take a stos group node, convert each transform to a rigid linear transform, blend in the linear
+       transform with the control points of the original transform to "flatten" it
+    '''
+    GroupParent = InputStosGroupNode.Parent
+    OutputDownsample = InputStosGroupNode.Downsample
+
+    OutputGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.Create(OutputGroupName,
+                                                                                           OutputDownsample)
+    (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)
+
+    os.makedirs(OutputGroupNode.FullPath, exist_ok=True)
+
+    if SaveBlockNode:
+        (yield GroupParent)
+
+    for inputSectionMapping in InputStosGroupNode.SectionMappings:
+
+        (SectionMappingNodeAdded, OutputSectionMapping) = OutputGroupNode.GetOrCreateSectionMapping(
+            inputSectionMapping.MappedSectionNumber)
+        if SectionMappingNodeAdded:
+            (yield OutputGroupNode)
+
+        InputTransformNodes = inputSectionMapping.findall('Transform')
+
+        for InputTransformNode in InputTransformNodes:
+            if not os.path.exists(InputTransformNode.FullPath):
+                continue
+
+            # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
+            # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
+            try:
+                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)
+                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)
+            except AttributeError as e:
+                prettyoutput.LogErr(
+                    "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+                continue
+
+            if ControlFilter is None or MappedFilter is None:
+                prettyoutput.LogErr(
+                    "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+                continue
+            # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
+
+            (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
+                                                                                      MappedFilter,
+                                                                                      OutputType=InputTransformNode.Type,
+                                                                                      OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+                                                                                          ControlFilter, MappedFilter))
+
+            if not stosNode_added:
+                if not (output_stos_node.IsInputTransformMatched(InputTransformNode) and
+                        output_stos_node.linear_blend_factor == InputTransformNode.linear_blend_factor):
+                    try:
+                        os.remove(output_stos_node.FullPath)
+                    except FileNotFoundError:
+                        pass #It is OK if the file doesn't exist if we tried to delete it
+            else:
+                # Remove an old file if we had to generate the meta-data
+                try:
+                    os.remove(output_stos_node.FullPath)
+                except FileNotFoundError:
+                    pass  # It is OK if the file doesn't exist if we tried to delete it
+
+            if not os.path.exists(output_stos_node.FullPath):
+                try:
+                    shutil.copyfile(InputTransformNode.FullPath, output_stos_node.FullPath)
+                    loaded_output_stos = nornir_imageregistration.files.StosFile.Load(output_stos_node.FullPath)
+                    transform_changed = loaded_output_stos.BlendWithLinear(linear_factor=linear_blend_factor)
+                    output_stos_node.linear_blend_factor = linear_blend_factor
+
+                    if transform_changed:
+                        loaded_output_stos.Save(output_stos_node.FullPath)
+
+                    output_stos_node.ResetChecksum()
+                    output_stos_node.SetTransform(InputTransformNode)
+
+                except FileNotFoundError:
+                    OutputGroupNode.remove(output_stos_node)
 
                 (yield OutputGroupNode)
 
