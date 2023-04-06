@@ -32,9 +32,9 @@ if __name__ == '__main__':
 
     provides = ["nornir_buildmanager"]
 
-    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.4.1",
-                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.4.1",
-                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.4.1"]
+    dependency_links = ["git+http://github.com/nornir/nornir-pools#egg=nornir_pools-1.5.0",
+                        "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.5.0",
+                        "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.5.0"]
 
     package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
     data_files = {'nornir_buildmanager' : ['config/*.xml']}
