@@ -2495,7 +2495,7 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
 
 
 def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str,
-                         linear_blend_factor: float, **kwargs):
+                         linear_blend_factor: float, ignore_rotation: bool = False, **kwargs):
     '''Take a stos group node, convert each transform to a rigid linear transform, blend in the linear
        transform with the control points of the original transform to "flatten" it
     '''
@@ -2564,7 +2564,8 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                 try:
                     shutil.copyfile(InputTransformNode.FullPath, output_stos_node.FullPath)
                     loaded_output_stos = nornir_imageregistration.files.StosFile.Load(output_stos_node.FullPath)
-                    transform_changed = loaded_output_stos.BlendWithLinear(linear_factor=linear_blend_factor)
+                    transform_changed = loaded_output_stos.BlendWithLinear(linear_factor=linear_blend_factor,
+                                                                           ignore_rotation=ignore_rotation)
                     output_stos_node.linear_blend_factor = linear_blend_factor
 
                     if transform_changed:

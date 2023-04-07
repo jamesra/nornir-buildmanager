@@ -1930,6 +1930,8 @@
             <Argument flag="-OutputGroup" dest="OutputGroupName" type="str" required="True" help="Name of the output stos group"/>
             <Argument flag="-linear_factor" type="float" required="True" dest="linear_blend_factor"
                 help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
+            <Argument flag="-no_rotation" type="bool" required="False" default="False" dest="ignore_rotation"
+                help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
         </Arguments>
 
         <Iterate VariableName="BlockNode" XPath="Block">
@@ -1937,7 +1939,8 @@
                 XPath="StosGroup[@Name='#InputGroupName#InputDownsample']" />
             <PythonCall Function="block.LinearBlendStosGroup"
                 InputStosGroupNode="#StosGroupNode"
-                OutputGroupName="#OutputGroupName#InputDownsample" linear_blend_factor="#linear_blend_factor" />
+                OutputGroupName="#OutputGroupName#InputDownsample" linear_blend_factor="#linear_blend_factor"
+                ignore_rotation="#ignore_rotation"/>
         </Iterate>
     </Pipeline>
 
