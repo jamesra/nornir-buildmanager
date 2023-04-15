@@ -1558,9 +1558,15 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
         kwargs['outputDir'] = os.path.dirname(OutputStosFullPath)
 
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath}')
-    local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
+
+    try:
+        local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
                                                OutputStosPath=OutputStosFullPath,
                                                **kwargs)
+    except ValueError as e:
+        prettyoutput.LogErr(f'Refining {InputStosFullPath} to {OutputStosFullPath} Failed!')
+        return
+
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
 
 
