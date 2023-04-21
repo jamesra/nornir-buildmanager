@@ -1178,10 +1178,17 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
             Logger.error(str(mappedSection) + " -> ? No control section candidates found")
             continue
 
-        knownControlSections = list(OutputStosMapNode.FindAllControlsForMapped(mappedSection))
-        if len(knownControlSections) == len(potentialControls):
+        knownControlSections = set(OutputStosMapNode.FindAllControlsForMapped(mappedSection))
+        if knownControlSections == potentialControls:
             Logger.info(str(mappedSection) + " -> " + str(knownControlSections) + " was previously mapped, skipping")
             continue
+        else:
+            excess_control_sections = knownControlSections - potentialControls
+            for control in excess_control_sections:
+                OutputStosMapNode.RemoveMapping(control=control, mapped=mappedSection) 
+                Logger.info(f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
+                prettyoutput.Log(f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
+            
 
         # Examine each stos image if it exists and determine the best match
         WinningTransform = None
@@ -1596,7 +1603,7 @@ def IrStosGridRefine(Parameters, mapping_node, InputGroupNode: StosGroupNode, Us
 
 def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsample=32,
                    ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
-                   Type=None, **kwargs) -> Generator[XElementWrapper, None, None]:
+                   Type=None, MappedSections: None | list[int] = None, **kwargs) -> Generator[XElementWrapper, None, None]:
     '''
     Invoke a command to execute a function with an input and output .stos file.  The function
     is expected to refine the input .stos file and write the output .stos file.  At the time
@@ -1612,6 +1619,9 @@ def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsa
 
     for k in keys_to_strip:
         del kwargs[k]
+        
+    if MappedSections is not None:
+        MappedSections = frozenset(MappedSections)
 
     return RefineInvoker(__RunPythonGridRefinementCmd,
                          mapping_node=mapping_node,
@@ -1621,13 +1631,14 @@ def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsa
                          ControlFilterPattern=ControlFilterPattern,
                          MappedFilterPattern=MappedFilterPattern,
                          OutputStosGroup=OutputStosGroup,
-                         Type=Type, **kwargs)
+                         Type=Type, MappedSections=MappedSections, **kwargs)
 
 
 def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
                   UseMasks: bool, Downsample: int = 32,
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
                   OutputStosGroup: str | None = None, Type: str | None = None,
+                  MappedSections: None | frozenset[int] = None,
                   **kwargs) -> Generator[XElementWrapper, None, None]:
     '''
     :param mapping_node:
@@ -1658,8 +1669,15 @@ def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
 
     if added:
         yield block_node
+        
+    
 
     for MappedSection in mapping_node.Mapped:
+        
+        if MappedSections is not None and MappedSection not in MappedSections:
+            continue
+            
+        
         # Find the inputTransformNode in the InputGroupNode
         InputTransformNodes = list(InputGroupNode.TransformsForMapping(MappedSection, mapping_node.Control))
         if InputTransformNodes is None or len(InputTransformNodes) == 0:

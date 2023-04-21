@@ -53,15 +53,15 @@ class StosMapNode(XElementWrapper):
     def Mappings(self) -> Generator[MappingNode]:
         return self.findall('Mapping')
 
-    def MappedToControls(self) -> {int: dict[int, list[int]]}:
+    def MappedToControls(self) -> {int: dict[int, set[int]]}:
         """Return dictionary of possible control sections for a given mapped section number"""
         MappedToControlCandidateList = {}
         for mappingNode in self.Mappings:
             for mappedSection in mappingNode.Mapped:
                 if mappedSection in MappedToControlCandidateList:
-                    MappedToControlCandidateList[mappedSection].append(mappingNode.Control)
+                    MappedToControlCandidateList[mappedSection].add(mappingNode.Control)
                 else:
-                    MappedToControlCandidateList[mappedSection] = [mappingNode.Control]
+                    MappedToControlCandidateList[mappedSection] = set([mappingNode.Control])
 
         return MappedToControlCandidateList
 
