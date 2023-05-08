@@ -206,7 +206,7 @@ class MRCImport(object):
 
             #Quick correct out of bounds pixels
             outliers = img > min_max_gamma.max
-            img = numpy.copy(img).astype(numpy.float32)
+            img = numpy.astype(numpy.float32, copy=True)
             img[outliers] = img[outliers] / 2.0 
             scale = numpy.iinfo(dt).max / min_max_gamma.max
             if min_max_gamma.min > 0:
@@ -214,7 +214,7 @@ class MRCImport(object):
             else:
                 img = img * scale
 
-            img = img.round().astype(dt)
+            img = img.round().astype(dt, copy=False)
 
             im = Image.fromarray(img).convert(mode='I')
             im.save(output_fullpath,compress_level=1)
