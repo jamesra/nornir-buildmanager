@@ -69,3 +69,9 @@ pip-log.txt
 /.externalToolBuilders/
 /StosBrute8/
 /StosBrute32/
+
+##########
+# PyCharm
+##########
+
+.idea
