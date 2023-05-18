@@ -3,13 +3,12 @@ Created on Mar 15, 2013
 
 @author: u0490822
 '''
+import os
 import unittest
 
-from nornir_buildmanager.volumemanager import *
-
 import nornir_buildmanager.build as build
+from nornir_buildmanager.volumemanager import *
 from . import setup_pipeline
-import os
 
 
 class LMBuildTest(setup_pipeline.PlatformTest):
@@ -22,12 +21,12 @@ class LMBuildTest(setup_pipeline.PlatformTest):
     def Platform(self):
         return "PMG"
 
+
 class ShadingCorrectionTest(LMBuildTest):
 
     def testLMBuild(self):
-
         # Import the files
-        buildArgs = [self.TestOutputPath, '-debug', '-verbose', 'ImportPMG', self.ImportedDataPath ,'-Scale', '72']
+        buildArgs = [self.TestOutputPath, '-debug', '-verbose', 'ImportPMG', self.ImportedDataPath, '-Scale', '72']
         build.Execute(buildArgs)
 
         buildArgs = [self.TestOutputPath, '-debug', '-verbose', 'ShadeCorrect', '-Correction', 'brightfield']
@@ -46,7 +45,6 @@ class ShadingCorrectionTest(LMBuildTest):
         # We expect each folder to be a separate channel, so make sure each channel has a ShadingCorrectedFilter
         self.assertEqual(len(ShadingCorrectedFilters), len(os.listdir(self.ImportedDataPath)))
         self.assertEqual(len(ShadingCorrectedFilters), len(Channels))
-
 
         # Load the meta-data from the volumedata.xml file
         self.VolumeObj = VolumeManager.Load(self.TestOutputPath)

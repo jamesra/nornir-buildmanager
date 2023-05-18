@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import logging
-import os
 import shutil
 
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager import *
-
-import nornir_shared.files
 from nornir_shared import prettyoutput as prettyoutput
+import nornir_shared.files
 
 
 class StosGroupNode(XNamedContainerElementWrapped):
@@ -172,15 +169,16 @@ class StosGroupNode(XNamedContainerElementWrapped):
                                                                           OutputPath,
                                                                           {'ControlSectionNumber': str(
                                                                               ControlSectionNode.Number),
-                                                                           'MappedSectionNumber': str(
-                                                                               MappedSectionNode.Number),
-                                                                           'MappedChannelName': str(
-                                                                               MappedChannelNode.Name),
-                                                                           'MappedFilterName': str(MappedFilter.Name),
-                                                                           'ControlChannelName': str(
-                                                                               ControlChannelNode.Name),
-                                                                           'ControlFilterName': str(
-                                                                               ControlFilter.Name)})
+                                                                              'MappedSectionNumber': str(
+                                                                                  MappedSectionNode.Number),
+                                                                              'MappedChannelName': str(
+                                                                                  MappedChannelNode.Name),
+                                                                              'MappedFilterName': str(
+                                                                                  MappedFilter.Name),
+                                                                              'ControlChannelName': str(
+                                                                                  ControlChannelNode.Name),
+                                                                              'ControlFilterName': str(
+                                                                                  ControlFilter.Name)})
 
         self.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
         #        WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.

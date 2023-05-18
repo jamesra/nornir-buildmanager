@@ -1,9 +1,10 @@
-from typing import Generator, Iterable
 import re
-import nornir_buildmanager
+from typing import Generator, Iterable
 import xml.etree
 
+import nornir_buildmanager
 from nornir_buildmanager.volumemanager import XElementWrapper
+
 
 def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.Element], AttribName: str,
                      RegExStr: str | None, CaseSensitive: bool = False) -> Generator[XElementWrapper, None, None]:
@@ -29,7 +30,7 @@ def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.E
             continue
 
         if RegExStr == '*':
-            #Matches.append(MatchObj)
+            # Matches.append(MatchObj)
             yield MatchObj
             continue
 
@@ -38,7 +39,7 @@ def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.E
             (wrapped, MatchObj) = nornir_buildmanager.volumemanager.WrapElement(MatchObj)
             assert (wrapped is False)
             yield MatchObj
-            #Matches.append(MatchObj)
+            # Matches.append(MatchObj)
 
-    #return Matches
+    # return Matches
     return

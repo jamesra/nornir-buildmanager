@@ -5,25 +5,21 @@ Created on Aug 7, 2015
 '''
 
 import collections
-import glob
-import logging
-import os
-import tempfile
 
 import PIL
+import numpy as np
+
 import dm4reader
-from nornir_buildmanager.volumemanager import *
 import nornir_buildmanager.importers
+from nornir_buildmanager.importers import GetFileNameForTileNumber
 import nornir_buildmanager.templates
+from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
 import nornir_imageregistration.core
 import nornir_imageregistration.transforms.factory
 import nornir_pools
 import nornir_shared
-
 import nornir_shared.prettyoutput as prettyoutput
-import numpy as np
-from nornir_buildmanager.importers import GetFileNameForTileNumber
 
 DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Units'))
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from typing import Generator
-from nornir_buildmanager.volumemanager import XNamedContainerElementWrapped, BlockNode
+
+from nornir_buildmanager.volumemanager import BlockNode, XNamedContainerElementWrapped
 
 
 class VolumeNode(XNamedContainerElementWrapped):

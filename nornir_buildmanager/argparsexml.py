@@ -10,7 +10,6 @@ import logging
 
 from nornir_shared.argparse_helpers import *
 import nornir_shared.misc
-
 import nornir_shared.prettyoutput as prettyoutput
 
 
@@ -56,7 +55,8 @@ def _AddArgumentNodeToParser(parser, argNode):
                 logger = logging.getLogger(__name__ + "._AddArgumentNodeToParser")
                 logger.error('Type not found in __builtins__ or module __dict__' + val)
                 prettyoutput.LogErr('Type not found in __builtins__ or module __dict__ ' + val)
-                raise Exception(f"{val} type specified by argument node is not present in __builtins__ or module dictionary.  Must use a standard python type.")
+                raise Exception(
+                    f"{val} type specified by argument node is not present in __builtins__ or module dictionary.  Must use a standard python type.")
                 continue
 
             attribDictCopy[key] = val
@@ -68,8 +68,8 @@ def _AddArgumentNodeToParser(parser, argNode):
             listOfChoices = nornir_shared.misc.ListFromDelimited(val)
             if len(listOfChoices) < 2:
                 raise Exception(f"Flag {attribDictCopy['flag']} does not specify multiple choices.  Must use "
-                                        f"a comma delimited list to provide multiple choice options.\nCurrent choice "
-                                        f"string is: {val}")
+                                f"a comma delimited list to provide multiple choice options.\nCurrent choice "
+                                f"string is: {val}")
 
             attribDictCopy[key] = listOfChoices
 

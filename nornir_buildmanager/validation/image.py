@@ -25,7 +25,7 @@ def DimensionsMatch(imageFullPath, area):
         # Unable to read the size, assume the dimensions do not Match
         logging.error("IOError reading dimensions of file: %s\n%s" % (imageFullPath, str(e)))
         return False
-    
+
     if size is None:
         return False
     else:

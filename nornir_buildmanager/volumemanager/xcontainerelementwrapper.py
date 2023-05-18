@@ -5,10 +5,10 @@ import os
 import shutil
 import sys
 from xml.etree import ElementTree as ElementTree
-import nornir_buildmanager
 
-from nornir_buildmanager.volumemanager import VolumeManager, XElementWrapper, ValidateAttributesAreStrings, \
-    WrapElement, XResourceElementWrapper
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import ValidateAttributesAreStrings, WrapElement, XElementWrapper, \
+    XResourceElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
 
 

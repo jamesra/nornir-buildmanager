@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import os
 
-import nornir_buildmanager.volumemanager
-from nornir_buildmanager.volumemanager import XFileElementWrapper, ImageNode, InputTransformHandler
+from nornir_buildmanager.volumemanager import InputTransformHandler, XFileElementWrapper
 
 
 class TransformDataNode(InputTransformHandler, XFileElementWrapper):

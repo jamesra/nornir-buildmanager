@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import nornir_buildmanager
+from nornir_buildmanager.volumemanager import FilterNode, Scale, ScaleAxis, ScaleNode, TransformNode, XElementWrapper, \
+    XNamedContainerElementWrapped
 
-from nornir_buildmanager.volumemanager import XNamedContainerElementWrapped, \
-    XElementWrapper, Scale, ScaleAxis, ScaleNode, TransformNode, FilterNode
 
 class ChannelNode(XNamedContainerElementWrapped):
 
@@ -27,8 +27,8 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     def MatchFilterPattern(self, filterPattern: str) -> [FilterNode]:
         return nornir_buildmanager.volumemanager.SearchCollection(self.Filters,
-                                    'Name',
-                                    filterPattern)
+                                                                  'Name',
+                                                                  filterPattern)
 
     def GetTransform(self, transform_name) -> TransformNode | None:
         return self.GetChildByAttrib('Transform', 'Name', transform_name)

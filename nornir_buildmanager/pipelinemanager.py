@@ -5,24 +5,21 @@ Created on Apr 2, 2012
 
 import collections.abc
 import copy
+from inspect import isgenerator
 import logging
+import platform
 import re
 import sys
 import traceback
-import platform
+from xml.etree import ElementTree
 
 import nornir_buildmanager
-
-from .pipeline_exceptions import *
-
 import nornir_pools
 import nornir_shared.misc
-import nornir_shared.reflection
-from inspect import isgenerator
-
-from . import argparsexml
 import nornir_shared.prettyoutput as prettyoutput
-from xml.etree import ElementTree
+import nornir_shared.reflection
+from . import argparsexml
+from .pipeline_exceptions import *
 
 
 # import xml.etree
@@ -702,7 +699,7 @@ class PipelineManager(object):
 
         # TODO: Update args from the element
         VolumeElemIter = RootForSearch.findall(xpath)
-        
+
         validate = True
         if 'Validate' in PipelineNode.attrib:
             validate_value = PipelineNode.attrib.get('Validate', 'True').lower()

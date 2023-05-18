@@ -6,11 +6,9 @@ Created on Apr 25, 2013
 import glob
 import unittest
 
-import nornir_buildmanager.volumemanager.blocknode
 from nornir_buildmanager.operations.block import *
-from pipeline.setup_pipeline import VerifyVolume, VolumeEntry, \
-    CopySetupTestBase, EmptyVolumeTestBase
-
+import nornir_buildmanager.volumemanager.blocknode
+from pipeline.setup_pipeline import CopySetupTestBase, EmptyVolumeTestBase
 import pipeline.test_sectionimage as test_sectionimage
 
 
@@ -25,6 +23,7 @@ def FetchStosTransform(test, VolumeObj, groupName: str, ControlSection, MappedSe
     test.assertIsNotNone(Transform, "Could not find Transform for %d -> %d" % (MappedSection, ControlSection))
 
     return Transform
+
 
 #
 # class SliceToSliceRegistrationMosaicToVolume(CopySetupTestBase):
@@ -57,9 +56,8 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
         return "6872_small"
 
     def testAlignSectionsPipeline(self):
-
         # Import the files
-        buildArgs = [ self.TestOutputPath, '-debug', 'AlignSections', \
+        buildArgs = [self.TestOutputPath, '-debug', 'AlignSections', \
                      '-Downsample', '16', \
                      '-Center', '5', \
                      '-Channels', 'LeveledShading.*']
@@ -101,7 +99,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         self.assertEqual(numSourceFiles, numTargetFiles)
 
-    def ValidateTransforms(self, AutoOutputTransform, AutoInputTransform, ManualOutputTransform=None, ManualInputTransform=None):
+    def ValidateTransforms(self, AutoOutputTransform, AutoInputTransform, ManualOutputTransform=None,
+                           ManualInputTransform=None):
         '''ManualInputTransform can be none after the first refine call since the manual override file does not have a <transform> node.
            On the second pass or later ManualInputTransform refers to the transform that should have replaced the original output in the earlier pass'''
 
@@ -109,8 +108,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.assertIsNotNone(AutoOutputTransform, msg='Parameter is required to not be none, missing output?')
 
         self.assertEqual(AutoOutputTransform.InputTransformChecksum,
-                            AutoInputTransform.Checksum,
-                            "Output transform InputTransformChecksum from automatic input should match checksum of automatic input transform")
+                         AutoInputTransform.Checksum,
+                         "Output transform InputTransformChecksum from automatic input should match checksum of automatic input transform")
 
         if ManualOutputTransform is None:
             return
@@ -139,8 +138,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                             "Transform from earlier pass should have a different checksum compared to automatic input")
 
         self.assertEqual(ManualOutputTransform.InputTransformChecksum,
-                            ManualInputTransform.Checksum,
-                            "Output manual transform InputTransformChecksum should match input transform checksum")
+                         ManualInputTransform.Checksum,
+                         "Output manual transform InputTransformChecksum should match input transform checksum")
 
     def testRefineSectionAlignment(self):
 
@@ -148,7 +147,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         # Import the files
         buildArgs = [self.TestOutputPath, '-debug', 'AlignSections', \
-                      \
+ \
                      '-Downsample', '16', \
                      '-Center', '5', \
                      '-Channels', 'LeveledShading.*']
@@ -160,13 +159,13 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         SixToFiveAutomaticBruteFirstPassTransform = FetchStosTransform(self, self.VolumeObj, 'StosBrute16', 6, 7)
 
         # Try to refine the results
-        FirstRefineBuildArgs = [ self.TestOutputPath, '-debug', 'RefineSectionAlignment', \
-                      \
-                     '-Filter', '.*mosaic.*', \
-                     '-InputGroup', 'StosBrute', \
-                     '-InputDownsample', '16', \
-                     '-OutputDownsample', '16', \
-                     '-SectionMap', 'PotentialRegistrationChain']
+        FirstRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment', \
+ \
+                                '-Filter', '.*mosaic.*', \
+                                '-InputGroup', 'StosBrute', \
+                                '-InputDownsample', '16', \
+                                '-OutputDownsample', '16', \
+                                '-SectionMap', 'PotentialRegistrationChain']
         self.VolumeObj = self.RunBuild(FirstRefineBuildArgs)
 
         FirstRefineGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='" + groupNames[1] + "']")
@@ -177,20 +176,20 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         self.ValidateTransforms(AutoInputTransform=SixToFiveAutomaticBruteFirstPassTransform,
                                 AutoOutputTransform=SixToFiveAutomaticGridFirstPassTransform)
 
-#        self.assertEqual(SixToFiveAutomaticBruteFirstPassTransform.Checksum,
-#                         SixToFiveAutomaticGridFirstPassTransform.InputTransformChecksum,
-#                         "InputChecksum of first pass refine transform should match checksum of brute transform")
+        #        self.assertEqual(SixToFiveAutomaticBruteFirstPassTransform.Checksum,
+        #                         SixToFiveAutomaticGridFirstPassTransform.InputTransformChecksum,
+        #                         "InputChecksum of first pass refine transform should match checksum of brute transform")
 
         # Try to scale the transforms to full size
         ScaleArgs = [self.TestOutputPath, '-debug', 'ScaleVolumeTransforms', \
-                             '-InputGroup', 'StosGrid', \
-                             '-InputDownsample', '16', \
-                             '-OutputDownsample', '1']
+                     '-InputGroup', 'StosGrid', \
+                     '-InputDownsample', '16', \
+                     '-OutputDownsample', '1']
         self.VolumeObj = self.RunBuild(ScaleArgs)
 
         VolumeImageArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
-                     '-InputGroup', 'StosGrid', \
-                     '-InputDownsample', '16']
+                           '-InputGroup', 'StosGrid', \
+                           '-InputDownsample', '16']
         self.VolumeObj = self.RunBuild(VolumeImageArgs)
 
         ScaleAndVolumeImageGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='StosGrid1']")
@@ -202,18 +201,18 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                                 AutoOutputTransform=ScaledTransformFromSixteen)
 
         VolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
-                             '-InputGroup', 'StosGrid', \
-                             '-InputDownsample', '1']
+                            '-InputGroup', 'StosGrid', \
+                            '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(VolumeImagesArgs)
         VolumeImageNode = self.VolumeObj.findall("Block/StosGroup[@Name='StosGrid1']/Images")
         self.assertIsNotNone(VolumeImageNode)
 
         # Try to refine the of stos-grid
         SecondRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment', \
-                     '-InputGroup', 'StosGrid', \
-                     '-Filter', '.*mosaic.*', \
-                     '-InputDownsample', '16', \
-                     '-OutputDownsample', '8']
+                                 '-InputGroup', 'StosGrid', \
+                                 '-Filter', '.*mosaic.*', \
+                                 '-InputDownsample', '16', \
+                                 '-OutputDownsample', '8']
         self.VolumeObj = self.RunBuild(SecondRefineBuildArgs)
 
         SecondRefineGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='" + groupNames[2] + "']")
@@ -230,8 +229,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         # Try to refine the of stos-grid
         SliceToVolumeBuildArgs = [self.TestOutputPath, '-debug', 'SliceToVolume', \
-                     '-InputGroup', 'StosGrid', \
-                     '-Downsample', '8']
+                                  '-InputGroup', 'StosGrid', \
+                                  '-Downsample', '8']
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
 
         SixToFiveAutomaticSliceToVolumeTransform = FetchStosTransform(self, self.VolumeObj, 'SliceToVolume8', 5, 7)
@@ -240,10 +239,10 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                                 AutoOutputTransform=SixToFiveAutomaticSliceToVolumeTransform)
 
         # self.assertEqual(SixToFiveAutomaticGridSecondPassTransform.Checksum,
-                         # SixToFiveAutomaticSliceToVolumeTransform.InputTransformChecksum,
-                         # "InputChecksum of slice to volume transform should match checksum of input transform")
+        # SixToFiveAutomaticSliceToVolumeTransform.InputTransformChecksum,
+        # "InputChecksum of slice to volume transform should match checksum of input transform")
 
-##################
+        ##################
         # OK, replace the automatic stos files with manually created stos files.  Ensure
         # the upstream stos files regenerate
         manualDir = os.path.join(FirstRefineGroupNode.FullPath, 'Manual')
@@ -257,13 +256,13 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                                 AutoOutputTransform=SixToFiveAutomaticGridFirstPassTransform,
                                 ManualOutputTransform=SixToFiveManualGridFirstPassTransform)
 
-#        self.assertNotEqual(SixToFiveAutomaticGridFirstPassTransform.Checksum,
-#                            SixToFiveManualGridFirstPassTransform.Checksum,
-#                            "Transform checksum should not match automatic input when manual input provided")
-#
-#        self.assertNotEqual(SixToFiveAutomaticGridFirstPassTransform.InputTransformChecksum,
-#                            SixToFiveManualGridFirstPassTransform.InputTransformChecksum,
-#                            "Output transform InputTransformChecksum checksum should be different when manual input was provided")
+        #        self.assertNotEqual(SixToFiveAutomaticGridFirstPassTransform.Checksum,
+        #                            SixToFiveManualGridFirstPassTransform.Checksum,
+        #                            "Transform checksum should not match automatic input when manual input provided")
+        #
+        #        self.assertNotEqual(SixToFiveAutomaticGridFirstPassTransform.InputTransformChecksum,
+        #                            SixToFiveManualGridFirstPassTransform.InputTransformChecksum,
+        #                            "Output transform InputTransformChecksum checksum should be different when manual input was provided")
 
         self.VolumeObj = self.RunBuild(SecondRefineBuildArgs)
         SixToFiveRebuiltGridSecondPassTransform = FetchStosTransform(self, self.VolumeObj, 'StosGrid8', 6, 7)
@@ -273,13 +272,13 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                                 ManualOutputTransform=SixToFiveRebuiltGridSecondPassTransform,
                                 ManualInputTransform=SixToFiveManualGridFirstPassTransform)
 
-#        self.assertNotEqual(SixToFiveAutomaticGridSecondPassTransform.Checksum,
-#                            SixToFiveRebuiltGridSecondPassTransform.Checksum,
-#                            "Transform checksum should not match automatic input when manual input provided")
-#
-#        self.assertEqual(SixToFiveRebuiltGridSecondPassTransform.InputTransformChecksum,
-#                            SixToFiveManualGridFirstPassTransform.Checksum,
-#                             "InputChecksum of second pass transform should match checksum of first pass transform after manual replacement of input stos")
+        #        self.assertNotEqual(SixToFiveAutomaticGridSecondPassTransform.Checksum,
+        #                            SixToFiveRebuiltGridSecondPassTransform.Checksum,
+        #                            "Transform checksum should not match automatic input when manual input provided")
+        #
+        #        self.assertEqual(SixToFiveRebuiltGridSecondPassTransform.InputTransformChecksum,
+        #                            SixToFiveManualGridFirstPassTransform.Checksum,
+        #                             "InputChecksum of second pass transform should match checksum of first pass transform after manual replacement of input stos")
 
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
 
@@ -290,15 +289,15 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                                 ManualOutputTransform=SixToFiveRebuiltSliceToVolumeTransform,
                                 ManualInputTransform=SixToFiveRebuiltGridSecondPassTransform)
 
-#        self.assertNotEqual(SixToFiveAutomaticSliceToVolumeTransform.Checksum,
-#                            SixToFiveRebuiltSliceToVolumeTransform.Checksum,
-#                            "Transform checksum should not match automatic input when manual input provided")
-#
-#        self.assertEqual(SixToFiveRebuiltSliceToVolumeTransform.InputTransformChecksum,
-#                            SixToFiveRebuiltGridSecondPassTransform.Checksum,
-#                             "InputChecksum of second pass transform should match checksum of first pass transform after manual replacement of input stos")
+        #        self.assertNotEqual(SixToFiveAutomaticSliceToVolumeTransform.Checksum,
+        #                            SixToFiveRebuiltSliceToVolumeTransform.Checksum,
+        #                            "Transform checksum should not match automatic input when manual input provided")
+        #
+        #        self.assertEqual(SixToFiveRebuiltSliceToVolumeTransform.InputTransformChecksum,
+        #                            SixToFiveRebuiltGridSecondPassTransform.Checksum,
+        #                             "InputChecksum of second pass transform should match checksum of first pass transform after manual replacement of input stos")
 
-###################
+        ###################
 
         # Inject the override for 6-5 at the DS 8 level.
         self.InjectManualStosFiles("StosGrid8", os.path.join(SecondRefineGroupNode.FullPath, 'Manual'))
@@ -311,19 +310,20 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         self.VolumeObj = self.RunBuild(SliceToVolumeBuildArgs)
 
-        SixToFiveRebuiltFromManualSliceToVolumeTransform = FetchStosTransform(self, self.VolumeObj, 'SliceToVolume8', 5, 7)
+        SixToFiveRebuiltFromManualSliceToVolumeTransform = FetchStosTransform(self, self.VolumeObj, 'SliceToVolume8', 5,
+                                                                              7)
 
         self.ValidateTransforms(AutoInputTransform=SixToFiveRebuiltGridSecondPassTransform,
                                 AutoOutputTransform=SixToFiveRebuiltSliceToVolumeTransform,
                                 ManualOutputTransform=SixToFiveRebuiltFromManualSliceToVolumeTransform,
                                 ManualInputTransform=SixToFiveManualGridSecondPassTransform)
 
-###################
+        ###################
 
         SliceToVolumeScaleArgs = [self.TestOutputPath, '-debug', 'ScaleVolumeTransforms', \
-                             '-InputGroup', 'SliceToVolume', \
-                             '-InputDownsample', '8', \
-                             '-OutputDownsample', '1']
+                                  '-InputGroup', 'SliceToVolume', \
+                                  '-InputDownsample', '8', \
+                                  '-OutputDownsample', '1']
         self.VolumeObj = self.RunBuild(SliceToVolumeScaleArgs)
         SliceToVolumeScaleAndVolumeImageGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='SliceToVolume1']")
         self.assertIsNotNone(SliceToVolumeScaleAndVolumeImageGroupNode, "Could not find StosGroup SliceToVolume1")
@@ -334,19 +334,19 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                                 AutoOutputTransform=SliceToVolumeScaleTransformFromEight)
 
         SliceToVolumeImagesArgs = [self.TestOutputPath, '-debug', 'VolumeImage', \
-                                 '-InputGroup', 'SliceToVolume', \
-                                 '-InputDownsample', '1']
+                                   '-InputGroup', 'SliceToVolume', \
+                                   '-InputDownsample', '1']
         self.VolumeObj = self.RunBuild(SliceToVolumeImagesArgs)
         # SliceToVolumeScaleAndVolumeImageGroupNode = self.VolumeObj.find("Block/StosGroup[@Name='SliceToVolume1']")
         # self.assertIsNotNone(SliceToVolumeScaleAndVolumeImageGroupNode, "Could not find StosGroup SliceToVolume1")
 
     def testBlob(self):
         buildArgs = [self.TestOutputPath, '-debug', 'CreateBlobFilter', \
-                                 '-InputFilter', 'mosaic',
-                                 '-OutputFilter', 'Blob_mosaic',
-                                 '-Radius', '1',
-                                 '-Median', '1',
-                                 '-Levels', '1,4']
+                     '-InputFilter', 'mosaic',
+                     '-OutputFilter', 'Blob_mosaic',
+                     '-Radius', '1',
+                     '-Median', '1',
+                     '-Levels', '1,4']
 
         VolumeObj = self.RunBuild(buildArgs)
         BlobFilterNode = VolumeObj.find('Block/Section/Channel/Filter[@Name="Blob_mosaic"]')
@@ -367,7 +367,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         newstatDSFour = os.stat(BlobImageNodeDSFour.FullPath)
 
         self.assertEqual(oldstat.st_ctime, newstat.st_ctime, "Blob image recreated after second call to build")
-        self.assertEqual(oldstatDSFour.st_ctime, newstatDSFour.st_ctime, "Blob image recreated after second call to build")
+        self.assertEqual(oldstatDSFour.st_ctime, newstatDSFour.st_ctime,
+                         "Blob image recreated after second call to build")
 
 
 class StosGroupTest(EmptyVolumeTestBase):
@@ -391,9 +392,10 @@ class StosGroupTest(EmptyVolumeTestBase):
 
         return BlockNode
 
-    def RunCreateStosGroup(self, StosGroupName, Downsample, BlockName=None,):
+    def RunCreateStosGroup(self, StosGroupName, Downsample, BlockName=None, ):
 
-        buildArgs = self._CreateBuildArgs('CreateStosGroup', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+        buildArgs = self._CreateBuildArgs('CreateStosGroup', '-StosGroup', StosGroupName, '-Downsample',
+                                          str(Downsample))
 
         if BlockName is not None:
             buildArgs.extend(['-Block', BlockName])
@@ -402,7 +404,8 @@ class StosGroupTest(EmptyVolumeTestBase):
 
     def RunRemoveStosGroup(self, StosGroupName, Downsample, BlockName=None):
 
-        buildArgs = self._CreateBuildArgs('RemoveStosGroup', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+        buildArgs = self._CreateBuildArgs('RemoveStosGroup', '-StosGroup', StosGroupName, '-Downsample',
+                                          str(Downsample))
 
         if BlockName is not None:
             buildArgs.extend(['-Block', BlockName])
@@ -420,7 +423,8 @@ class StosGroupTest(EmptyVolumeTestBase):
 
     def RunListStosGroupContents(self, StosGroupName, Downsample, BlockName=None):
 
-        buildArgs = self._CreateBuildArgs('ListGroupSectionMappings', '-StosGroup', StosGroupName, '-Downsample', str(Downsample))
+        buildArgs = self._CreateBuildArgs('ListGroupSectionMappings', '-StosGroup', StosGroupName, '-Downsample',
+                                          str(Downsample))
 
         if BlockName is not None:
             buildArgs.extend(['-Block', BlockName])
@@ -436,7 +440,8 @@ class StosGroupTest(EmptyVolumeTestBase):
         self.assertTrue(self.HasStosGroup(StosGroupName, Downsample), "Missing StosGroup {0:s}".format(StosGroupName))
 
     def AssertNoStosGroup(self, StosGroupName, Downsample):
-        self.assertFalse(self.HasStosGroup(StosGroupName, Downsample), "Should not have StosGroup {0:s}".format(StosGroupName))
+        self.assertFalse(self.HasStosGroup(StosGroupName, Downsample),
+                         "Should not have StosGroup {0:s}".format(StosGroupName))
 
     def testCRUDOperations(self):
         self.AssertNoStosGroup("TestStosGroup", 1)
@@ -444,13 +449,15 @@ class StosGroupTest(EmptyVolumeTestBase):
         self.RunCreateStosGroup("TestStosGroup", 1)
 
         self.RunListStosGroups()  # Just ensure we don't crash during the list call, we don't check output
-        self.RunListStosGroupContents("TestStosGroup", 1)  # Just ensure we don't crash during the list call, we don't check output
+        self.RunListStosGroupContents("TestStosGroup",
+                                      1)  # Just ensure we don't crash during the list call, we don't check output
         self.AssertHasStosGroup("TestStosGroup", 1)
         self.AssertNoStosGroup("TestStosGroup", 2)
 
         self.RunRemoveStosGroup("TestStosGroup", 1)
         self.AssertNoStosGroup("TestStosGroup", 1)
-        self.RunListStosGroupContents("TestStosGroup", 1)  # Just ensure we don't crash during the list call, we don't check output
+        self.RunListStosGroupContents("TestStosGroup",
+                                      1)  # Just ensure we don't crash during the list call, we don't check output
 
 
 class StosMapTest(EmptyVolumeTestBase):

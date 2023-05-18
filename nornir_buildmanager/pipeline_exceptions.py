@@ -5,14 +5,14 @@ Created on Jan 9, 2019
 '''
 
 import os
-from typing import List, Any
+from typing import Any
 from xml.etree import ElementTree as ElementTree
- 
+
+
 # from nornir_buildmanager.Data import Volumes
 # from nornir_buildmanager.Data import Pipelines
 class PipelineError(Exception):
     '''An expected node did not exist'''
-
 
     def __init__(self, VolumeElem=None, PipelineNode=None, message=None, *args):
         super(PipelineError, self).__init__(*args)
@@ -23,11 +23,11 @@ class PipelineError(Exception):
 
     @property
     def __ErrorHeader(self):
-        return os.linesep + "*"*80 + os.linesep
+        return os.linesep + "*" * 80 + os.linesep
 
     @property
     def __ErrorFooter(self):
-        return os.linesep + "*"*80 + os.linesep
+        return os.linesep + "*" * 80 + os.linesep
 
     @property
     def __CoreErrorList(self):
@@ -50,7 +50,7 @@ class PipelineError(Exception):
 
         return s
 
-    def __str__(self): 
+    def __str__(self):
         return "\n".join(self.ErrorList())
 
 
@@ -104,15 +104,14 @@ class PipelineListIntersectionFailed(PipelineError):
     '''A regular expression search could not match any nodes'''
 
     def __init__(self, listOfValid, attribValue, **kwargs):
-
         if not "message" in kwargs:
-            kwargs['message'] = '\n'.join(PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=listOfValid, value=attribValue))
+            kwargs['message'] = '\n'.join(
+                PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=listOfValid, value=attribValue))
 
         super(PipelineListIntersectionFailed, self).__init__(**kwargs)
 
         self.listOfValid = listOfValid
         self.attribValue = attribValue
-
 
     @classmethod
     def GenErrorMessage(cls, list_of_valid, value):
@@ -121,7 +120,6 @@ class PipelineListIntersectionFailed(PipelineError):
 
     @property
     def __CoreErrorList(self):
-
         s = PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=self.listOfValid, value=self.attribValue)
         s.extend(super(PipelineError, self).__CoreErrorList)
         return s

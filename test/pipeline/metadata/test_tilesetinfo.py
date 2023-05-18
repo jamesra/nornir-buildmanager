@@ -3,17 +3,17 @@ Created on Oct 26, 2017
 
 @author: u0490822
 '''
-import unittest
 import os
+import unittest
+
+import test.testbase
 
 import nornir_buildmanager.metadata.tilesetinfo
-import test.testbase
 
 
 class TestTilesetInfo(test.testbase.TestBase):
- 
-    def testTilesetInfo(self):
 
+    def testTilesetInfo(self):
         OutputFileName = "TestTileInfo.xml"
         OutputFileFullPath = os.path.join(self.TestOutputPath, OutputFileName)
 
@@ -27,7 +27,7 @@ class TestTilesetInfo(test.testbase.TestBase):
         info.TileDimX = 256
         info.TileDimY = 512
 
-        info.Save(OutputFileFullPath) 
+        info.Save(OutputFileFullPath)
 
         self.assertTrue(os.path.exists(OutputFileFullPath))
 

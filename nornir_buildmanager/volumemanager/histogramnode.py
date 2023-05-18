@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from nornir_buildmanager.volumemanager import HistogramBase, AutoLevelHintNode, ImageNode, DataNode
+from nornir_buildmanager.volumemanager import AutoLevelHintNode, DataNode, HistogramBase, ImageNode
 
 
 class HistogramNode(HistogramBase):

@@ -29,5 +29,5 @@ class NotesNode(xresourceelementwrapper.XResourceElementWrapper):
 
         super(NotesNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
-    def CleanIfInvalid(self)-> (bool, str):
+    def CleanIfInvalid(self) -> (bool, str):
         return False, None

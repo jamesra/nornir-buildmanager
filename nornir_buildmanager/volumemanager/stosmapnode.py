@@ -1,9 +1,9 @@
 from __future__ import annotations
+
 from typing import Generator, Iterable
 
+from nornir_buildmanager.volumemanager import MappingNode, XElementWrapper
 import nornir_imageregistration.transforms
-
-from nornir_buildmanager.volumemanager import XElementWrapper, MappingNode
 from nornir_shared import misc as misc
 
 
@@ -66,7 +66,7 @@ class StosMapNode(XElementWrapper):
         return MappedToControlCandidateList
 
     def GetMappingsForControl(self, Control: int) -> Generator[MappingNode]:
-        return self.findall(f"Mapping[@Control='{Control}']")   
+        return self.findall(f"Mapping[@Control='{Control}']")
 
     def ClearMissingSections(self, existing_section_numbers: Iterable[int]):
         """Remove any control sections that are not in the list of known sections"""

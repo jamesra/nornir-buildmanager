@@ -7,20 +7,20 @@ Created on Aug 30, 2013
 import glob
 import os
 
+from setuptools import find_packages, setup
+
 from ez_setup import use_setuptools
-from setuptools import setup, find_packages
 
 # This if test prevents an infinite recursion running tests from "python setup.py test"
 if __name__ == '__main__':
-
     use_setuptools()
 
-    #OK to use pools v1.3.1, no changes made for v1.3.2
-    
-    #Starting with 1.3.4 Image Magick 7 is required
+    # OK to use pools v1.3.1, no changes made for v1.3.2
+
+    # Starting with 1.3.4 Image Magick 7 is required
 
     install_requires = ["nornir_pools>=1.5.0",
-                        "nornir_shared>=1.5.0", 
+                        "nornir_shared>=1.5.0",
                         "nornir_imageregistration>=1.4.1",
                         "numpy>=1.9.1",
                         "scipy>=0.13.2",
@@ -36,9 +36,9 @@ if __name__ == '__main__':
                         "git+http://github.com/nornir/nornir-shared#egg=nornir_shared-1.5.0",
                         "git+http://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.5.0"]
 
-    package_dir = {'nornir_buildmanager' : 'nornir_buildmanager'}
-    data_files = {'nornir_buildmanager' : ['config/*.xml']}
-    
+    package_dir = {'nornir_buildmanager': 'nornir_buildmanager'}
+    data_files = {'nornir_buildmanager': ['config/*.xml']}
+
     classifiers = ['Programming Language :: Python :: 3.7',
                    'Topic :: Scientific/Engineering']
 

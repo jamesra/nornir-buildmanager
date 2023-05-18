@@ -3,6 +3,7 @@ from _operator import attrgetter
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager as volumemanager
 
+
 class PyramidLevelHandler(object):
 
     @property

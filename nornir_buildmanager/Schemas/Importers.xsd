@@ -3,55 +3,56 @@
            targetNamespace="http://connectomes.utah.edu"
            xmlns="http://connectomes.utah.edu">
 
-  <xs:element name="Arg">
-    <xs:complexType>
-      <xs:annotation>
-        <xs:documentation xml:lang="en">
-          Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
-        </xs:documentation>
-      </xs:annotation>
-      <xs:attribute name="Name" type="xs:string"/>
-      <xs:attribute name="Value" type="xs:string">
-        <xs:annotation>
-          <xs:documentation>
-            For coding purposes the current python import script will attempt to convert value to an int, then a double, and use a string if the first two conversions fail. 
-          </xs:documentation>
-        </xs:annotation>
-          
-      </xs:attribute>
-    </xs:complexType>
-  </xs:element>
+    <xs:element name="Arg">
+        <xs:complexType>
+            <xs:annotation>
+                <xs:documentation xml:lang="en">
+                    Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
+                </xs:documentation>
+            </xs:annotation>
+            <xs:attribute name="Name" type="xs:string"/>
+            <xs:attribute name="Value" type="xs:string">
+                <xs:annotation>
+                    <xs:documentation>
+                        For coding purposes the current python import script will attempt to convert value to an int,
+                        then a double, and use a string if the first two conversions fail.
+                    </xs:documentation>
+                </xs:annotation>
 
-  <xs:element name="Arguments">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="Arg" minOccurs ="1" maxOccurs ="unbounded"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-  
-  <xs:element name="Importer">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="Arguments" minOccurs ="0" maxOccurs ="1"/>
-      </xs:sequence>
-      <xs:attribute name="Description" type ="xs:string" use="optional">
-      </xs:attribute>
-      <xs:attribute name="Extension"   type ="xs:string" use="required">
-      </xs:attribute>
-      <xs:attribute name="ImportClass" type ="xs:string" use="required">
-      </xs:attribute>
-      <xs:attribute name="ImportFunction" type ="xs:string" use="optional" default ="ToMosaic">
-      </xs:attribute>
-    </xs:complexType>
-  </xs:element>
+            </xs:attribute>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="Arguments">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element ref="Arg" minOccurs="1" maxOccurs="unbounded"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="Importer">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element ref="Arguments" minOccurs="0" maxOccurs="1"/>
+            </xs:sequence>
+            <xs:attribute name="Description" type="xs:string" use="optional">
+            </xs:attribute>
+            <xs:attribute name="Extension" type="xs:string" use="required">
+            </xs:attribute>
+            <xs:attribute name="ImportClass" type="xs:string" use="required">
+            </xs:attribute>
+            <xs:attribute name="ImportFunction" type="xs:string" use="optional" default="ToMosaic">
+            </xs:attribute>
+        </xs:complexType>
+    </xs:element>
 
 
-  <xs:element name="Importers">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element ref="Importer" minOccurs ="1" maxOccurs ="unbounded"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
+    <xs:element name="Importers">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element ref="Importer" minOccurs="1" maxOccurs="unbounded"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
 </xs:schema>

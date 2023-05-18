@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import nornir_buildmanager.volumemanager
 from nornir_buildmanager.volumemanager import HistogramBase
+
 
 class PruneNode(HistogramBase):
 

@@ -4,23 +4,20 @@ Created on Jun 4, 2012
 @author: Jamesan
 '''
 
-import logging
 import os
 import shutil
 import subprocess
-import json
 
+import nornir_buildmanager
+from nornir_buildmanager.validation import transforms
 import nornir_buildmanager.volumemanager.datanode
 import nornir_buildmanager.volumemanager.mosaicbasenode
 import nornir_buildmanager.volumemanager.transformnode
-from nornir_buildmanager import *
-from nornir_buildmanager.validation import transforms
-import nornir_imageregistration 
-from nornir_shared import *
+import nornir_imageregistration
 import nornir_pools
+from nornir_shared import *
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
     ProgressOutputInterceptor
-import nornir_buildmanager
 
 
 def TransformNodeToZeroOrigin(transform_node, **kwargs):
@@ -39,77 +36,83 @@ def TransformNodeToZeroOrigin(transform_node, **kwargs):
 
 def TranslateTransform(Parameters, TransformNode, FilterNode,
                        RegistrationDownsample,
-                       min_overlap:float=None,
-                       excess_scalar:float=None,
-                       feature_score_threshold:float=None,
-                       min_translate_iterations:int=None,
-                       max_translate_iterations:int=None,
-                       offset_acceptance_threshold:float=None,
-                       max_relax_iterations:int=None,
-                       max_relax_tension_cutoff:float=None,
-                       first_pass_inter_tile_distance_scale:float=None,
+                       min_overlap: float = None,
+                       excess_scalar: float = None,
+                       feature_score_threshold: float = None,
+                       min_translate_iterations: int = None,
+                       max_translate_iterations: int = None,
+                       offset_acceptance_threshold: float = None,
+                       max_relax_iterations: int = None,
+                       max_relax_tension_cutoff: float = None,
+                       first_pass_inter_tile_distance_scale: float = None,
                        min_offset_weight=None,
                        max_offset_weight=None,
-                       inter_tile_distance_scale:float=None,
+                       inter_tile_distance_scale: float = None,
                        scale_weight_by_feature_score=None,
-                       exclude_diagonal_overlaps=None, 
+                       exclude_diagonal_overlaps=None,
                        Logger=None, **kwargs):
-    
     settings = nornir_imageregistration.settings.TranslateSettings(
         min_overlap=min_overlap,
-         max_relax_iterations=max_relax_iterations,
-         max_relax_tension_cutoff=max_relax_tension_cutoff,
-         feature_score_threshold=feature_score_threshold,
-         offset_acceptance_threshold=offset_acceptance_threshold,
-         min_translate_iterations=min_translate_iterations,
-         max_translate_iterations=max_translate_iterations,
-         inter_tile_distance_scale=inter_tile_distance_scale,
-         first_pass_inter_tile_distance_scale=None,
-         first_pass_excess_scalar=None,
-         min_offset_weight=min_offset_weight,
-         max_offset_weight=max_offset_weight,
-         excess_scalar=excess_scalar,
-         use_feature_score=scale_weight_by_feature_score,
-         exclude_diagonal_overlaps=exclude_diagonal_overlaps,
-         known_offsets=None
-        )
-    
+        max_relax_iterations=max_relax_iterations,
+        max_relax_tension_cutoff=max_relax_tension_cutoff,
+        feature_score_threshold=feature_score_threshold,
+        offset_acceptance_threshold=offset_acceptance_threshold,
+        min_translate_iterations=min_translate_iterations,
+        max_translate_iterations=max_translate_iterations,
+        inter_tile_distance_scale=inter_tile_distance_scale,
+        first_pass_inter_tile_distance_scale=None,
+        first_pass_excess_scalar=None,
+        min_offset_weight=min_offset_weight,
+        max_offset_weight=max_offset_weight,
+        excess_scalar=excess_scalar,
+        use_feature_score=scale_weight_by_feature_score,
+        exclude_diagonal_overlaps=exclude_diagonal_overlaps,
+        known_offsets=None
+    )
+
     '''@ChannelNode'''
     OutputTransformName = kwargs.get('OutputTransform', 'Translated_' + TransformNode.Name)
     InputTransformNode = TransformNode
 
     [added_level, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(RegistrationDownsample)
-     
+
     MangledName = misc.GenNameFromDict(Parameters)
 
     # Check if there is an existing prune map, and if it exists if it is out of date
     TransformParentNode = InputTransformNode.Parent
 
     SaveRequired = added_level
-    OutputTransformPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, "_Max0.5")  # The hardcoded string is legacy to prevent duplicate transform elements
+    OutputTransformPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(
+        OutputTransformName, "_Max0.5")  # The hardcoded string is legacy to prevent duplicate transform elements
     OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode,
                                                                                    InputTransformNode=InputTransformNode,
                                                                                    OutputTransformPath=OutputTransformPath)
-    
-    OutputTransformSettingsPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, "_Settings", Ext=".json")
-    settings_data_node = nornir_buildmanager.volumemanager.datanode.DataNode.Create(Name="Translate Mosaic Settings", Path=OutputTransformSettingsPath)
-    [added_transform_settings_node, settings_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(settings_data_node, 'Name')
-    
-    ManualOffsetsPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, "_ManualOffsets", Ext=".csv")
-    manual_offsets_data_node = nornir_buildmanager.volumemanager.datanode.DataNode.Create(Name="Manual Offsets", Path=ManualOffsetsPath)
-    [added_manual_offsets_node, manual_offsets_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(manual_offsets_data_node, 'Name')
-      
+
+    OutputTransformSettingsPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(
+        OutputTransformName, "_Settings", Ext=".json")
+    settings_data_node = nornir_buildmanager.volumemanager.datanode.DataNode.Create(Name="Translate Mosaic Settings",
+                                                                                    Path=OutputTransformSettingsPath)
+    [added_transform_settings_node, settings_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(
+        settings_data_node, 'Name')
+
+    ManualOffsetsPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName,
+                                                                                                    "_ManualOffsets",
+                                                                                                    Ext=".csv")
+    manual_offsets_data_node = nornir_buildmanager.volumemanager.datanode.DataNode.Create(Name="Manual Offsets",
+                                                                                          Path=ManualOffsetsPath)
+    [added_manual_offsets_node, manual_offsets_data_node] = TransformParentNode.UpdateOrAddChildByAttrib(
+        manual_offsets_data_node, 'Name')
+
     settings = nornir_imageregistration.settings.GetOrSaveTranslateSettings(settings, settings_data_node.FullPath)
-      
-    #Now that the settings file exists, check if we have offsets to load
+
+    # Now that the settings file exists, check if we have offsets to load
     if os.path.exists(manual_offsets_data_node.FullPath):
         mosaic_offsets = nornir_imageregistration.settings.LoadMosaicOffsets(manual_offsets_data_node.FullPath)
-        settings.known_offsets = mosaic_offsets 
+        settings.known_offsets = mosaic_offsets
     else:
         nornir_imageregistration.settings.SaveMosaicOffsets(None, manual_offsets_data_node.FullPath)
-          
-    
-    if OutputTransformNode is not None:  
+
+    if OutputTransformNode is not None:
         if OutputTransformNode.Locked:
             Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
             return None
@@ -120,47 +123,51 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):
                 OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
                 OutputTransformNode = None
-            
+
     if OutputTransformNode is None:
-        OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
+        OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(
+            Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName,
+            attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
-    
 
-    if not os.path.exists(OutputTransformNode.FullPath): 
+    if not os.path.exists(OutputTransformNode.FullPath):
         # Tired of dealing with ir-refine-translate crashing when a tile is missing, load the mosaic and ensure the tile names are correct before running ir-refine-translate
-        
+
         haveTempFile = False
-        try: 
+        try:
             # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
             tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
             mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
             if mfileObj is None:
                 Logger.warning("Could not load %s" % InputTransformNode.FullPath)
                 return None
-            
+
             invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
-            
+
             mosaicToLoadPath = InputTransformNode.FullPath
             if invalidFiles:
                 haveTempFile = True
                 mfileObj.Save(tempMosaicFullPath)
                 mosaicToLoadPath = tempMosaicFullPath
-                
+
             mosaicObj = nornir_imageregistration.Mosaic.LoadFromMosaicFile(mosaicToLoadPath)
-            tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj, image_folder=LevelNode.FullPath, image_to_source_space_scale=LevelNode.Downsample)
+            tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj,
+                                                                               image_folder=LevelNode.FullPath,
+                                                                               image_to_source_space_scale=LevelNode.Downsample)
             firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(settings)
-            
+
             firstpass_translated_mosaicObj_tileset.SaveMosaic(OutputTransformNode.FullPath)
-    
+
             SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
-            
+
             OutputTransformNode.ResetChecksum()
             OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
             OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
             OutputTransformNode.ResetChecksum()
-              
-            print("%s -> %s" % (OutputTransformNode.FullPath, nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
+
+            print("%s -> %s" % (OutputTransformNode.FullPath,
+                                nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
         except Exception as e:
             OutputTransformNode.Clean(f"Exception generating mosaic tile translations:\n{e}")
             raise
@@ -169,15 +176,16 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                 if haveTempFile:
                     os.remove(tempMosaicFullPath)
             except FileNotFoundError:
-                pass 
- 
+                pass
+
     if SaveRequired or added_transform_settings_node or added_manual_offsets_node:
         nornir_pools.ClosePools()  # A workaround to avoid running out of memory
         return TransformParentNode
     else:
         return None
 
-# 
+
+#
 # def TranslateTransform_IrTools(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
 #     '''@ChannelNode'''
 #     MaxOffsetX = Parameters.get('MaxOffsetX', 0.1)
@@ -267,12 +275,13 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     '''@ChannelNode'''
     Iterations = Parameters.get('it', 10)
     Cell = Parameters.get('Cell', None)
-    MeshWidth = Parameters.get('MeshWidth', 8)  # These should be large enough numbers that there is overlap between cells, ~50% though 25% is often used for speed.
+    MeshWidth = Parameters.get('MeshWidth',
+                               8)  # These should be large enough numbers that there is overlap between cells, ~50% though 25% is often used for speed.
     MeshHeight = Parameters.get('MeshHeight', 8)
     Threshold = Parameters.get('Threshold', None)
-    
+
     InputTransformNode = TransformNode
-    
+
     (Valid, Reason) = InputTransformNode.IsValid()
     if not Valid:
         Logger.warning("Skipping refinement of invalid transform %s\n%s" % (InputTransformNode.FullPath, Reason))
@@ -289,7 +298,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     PixelSpacing = int(LevelNode.Downsample)
 
     CellString = ''
-    if not (Cell  is None):
+    if not (Cell is None):
         CellString = f' -cell {Cell} '
 
     ThresholdString = ''
@@ -305,10 +314,15 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
 
     SaveRequired = added_level
 
-    OutputTransformPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(OutputTransformName, MangledName)
-    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode, InputTransformNode=InputTransformNode, OutputTransformPath=OutputTransformPath)
+    OutputTransformPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(
+        OutputTransformName, MangledName)
+    OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParentNode,
+                                                                                   InputTransformNode=InputTransformNode,
+                                                                                   OutputTransformPath=OutputTransformPath)
     if OutputTransformNode is None:
-        OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName, attrib={'InputImageDir': LevelNode.FullPath})
+        OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(
+            Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName,
+            attrib={'InputImageDir': LevelNode.FullPath})
         OutputTransformNode.SetTransform(InputTransformNode)
         (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(OutputTransformNode, 'Path')
     elif OutputTransformNode.Locked:
@@ -316,32 +330,34 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         return None
 
     if not os.path.exists(OutputTransformNode.FullPath):
-        #This is a workaround for ir-refine-grid appearing to reverse the X,Y coordinates from the documented order on ITK's website for Rigid and and CenteredSimiliarity transforms
+        # This is a workaround for ir-refine-grid appearing to reverse the X,Y coordinates from the documented order on ITK's website for Rigid and and CenteredSimiliarity transforms
         InputMosaic = InputTransformNode.FullPath
         try:
-            #TempInputMosaic = InputMosaic
+            # TempInputMosaic = InputMosaic
 
             TempInputMosaic = os.path.join(os.path.dirname(InputMosaic), f'Corrected_{os.path.basename(InputMosaic)}')
             mosaic = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
-            #NeedsXYSwap = mosaic.HasTransformsNotUnderstoodByIrTools()
+            # NeedsXYSwap = mosaic.HasTransformsNotUnderstoodByIrTools()
             workaroundMosaic = mosaic.CreateCorrectedXYMosaicForStupidITKWorkaround()
             workaroundMosaic.Save(TempInputMosaic)
-            
+
             CmdLineTemplate = "ir-refine-grid -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s " + ThresholdString + ItString + CellString + MeshString + SpacingString
-            cmd = CmdLineTemplate % {'InputMosaic': TempInputMosaic, 'OutputMosaic': OutputTransformNode.FullPath, 'ImageDir': LevelNode.FullPath}
+            cmd = CmdLineTemplate % {'InputMosaic': TempInputMosaic, 'OutputMosaic': OutputTransformNode.FullPath,
+                                     'ImageDir': LevelNode.FullPath}
             prettyoutput.CurseString('Cmd', cmd)
             NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
             output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
-            
+
             if len(output) == 0:
-                raise RuntimeError("No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
-    
+                raise RuntimeError(
+                    "No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
+
             OutputTransformNode.cmd = cmd
             SaveRequired = True
-    
+
             TransformNodeToZeroOrigin(OutputTransformNode)
-            
-            #Reverse the output of ir-refine-grid on the X,Y axis dues ot 
+
+            # Reverse the output of ir-refine-grid on the X,Y axis dues ot
         except Exception as e:
             OutputTransformNode.Clean(f"Exception generating mosaic grid transform:\n{e}")
             raise
@@ -389,4 +405,3 @@ def CompressTransforms(Parameters, TransformNode, **kwargs):
         TransformNode.Compressed = True
 
     return TransformNode.Parent
-

@@ -4,11 +4,9 @@ import operator
 import os
 from xml.etree import ElementTree as ElementTree
 
-import nornir_shared.checksum
 import nornir_buildmanager.volumemanager
 from nornir_shared import prettyoutput as prettyoutput
-
-
+import nornir_shared.checksum
 
 
 # __LoadedVolumeXMLDict__ = dict()
@@ -82,10 +80,6 @@ class VolumeManager:
 
         return VolumeRoot
         # return cls.__init__(VolumeData, Filename)
-
-
-
-
 
     @classmethod
     def __SortNodes__(cls, element):

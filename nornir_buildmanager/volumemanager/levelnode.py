@@ -6,6 +6,7 @@ import os
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager as volumemanager
 
+
 class LevelNode(volumemanager.XContainerElementWrapper):
 
     @property

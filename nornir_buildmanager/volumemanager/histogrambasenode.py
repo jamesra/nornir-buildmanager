@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 
-from nornir_buildmanager.volumemanager import XElementWrapper, DataNode, ImageNode, InputTransformHandler
+from nornir_buildmanager.volumemanager import DataNode, ImageNode, InputTransformHandler, XElementWrapper
+
 
 class HistogramBase(InputTransformHandler, XElementWrapper):
 

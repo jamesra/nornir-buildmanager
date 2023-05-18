@@ -6,12 +6,12 @@ Created on Jan 9, 2019
 
 import os
 from xml.etree import ElementTree
+
 from nornir_buildmanager.pipeline_exceptions import PipelineError
 
 
 class Build(PipelineError):
     '''An expected node did not exist'''
-
 
     def __init__(self, VolumeElem=None, PipelineNode=None, message=None, **kwargs):
         super(PipelineError, self).__init__(**kwargs)
@@ -22,11 +22,11 @@ class Build(PipelineError):
 
     @property
     def __ErrorHeader(self):
-        return os.linesep + "*"*80 + os.linesep
+        return os.linesep + "*" * 80 + os.linesep
 
     @property
     def __ErrorFooter(self):
-        return os.linesep + "*"*80 + os.linesep
+        return os.linesep + "*" * 80 + os.linesep
 
     def __CoreErrorList(self):
         '''return a list of error strings'''

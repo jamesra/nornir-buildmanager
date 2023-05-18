@@ -3,11 +3,10 @@ from __future__ import annotations
 import abc
 import os
 
-import nornir_imageregistration
 import nornir_buildmanager
-from nornir_buildmanager.volumemanager import XContainerElementWrapper, LevelNode, ImageNode, InputTransformHandler, \
-    PyramidLevelHandler
- 
+from nornir_buildmanager.volumemanager import ImageNode, InputTransformHandler, LevelNode, PyramidLevelHandler, \
+    XContainerElementWrapper
+import nornir_imageregistration
 from nornir_shared import prettyoutput as prettyoutput
 
 
@@ -148,7 +147,8 @@ class ImageSetBaseNode(InputTransformHandler,
         # if super(ImageSetBaseNode, self).NeedsValidation:
         #    return True
 
-        input_needs_validation = nornir_buildmanager.volumemanager.InputTransformHandler.InputTransformNeedsValidation(self)
+        input_needs_validation = nornir_buildmanager.volumemanager.InputTransformHandler.InputTransformNeedsValidation(
+            self)
         return input_needs_validation[0]
 
     def IsValid(self) -> (bool, str):

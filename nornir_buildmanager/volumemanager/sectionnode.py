@@ -4,8 +4,8 @@ from typing import Generator
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
-
 from nornir_buildmanager.volumemanager import ChannelNode, XNamedContainerElementWrapped
+
 
 class SectionNode(XNamedContainerElementWrapped):
 
@@ -44,8 +44,8 @@ class SectionNode(XNamedContainerElementWrapped):
 
     def MatchChannelPattern(self, channelPattern) -> Generator[ChannelNode]:
         return nornir_buildmanager.volumemanager.SearchCollection(self.Channels,
-                                    'Name',
-                                    channelPattern)
+                                                                  'Name',
+                                                                  channelPattern)
 
     def MatchChannelFilterPattern(self, channelPattern, filterPattern) -> Generator[ChannelNode]:
         for channelNode in self.MatchChannelPattern(channelPattern):

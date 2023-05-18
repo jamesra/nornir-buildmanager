@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import nornir_buildmanager.volumemanager as volumemanager
 
+
 class DataNode(volumemanager.XFileElementWrapper):
     """Refers to an external file containing data"""
 

@@ -8,7 +8,7 @@ tileset.  TilesetInfo is used to read/write those xml files.
 '''
 
 import xml.dom
-import xml.etree.ElementTree 
+import xml.etree.ElementTree
 
 
 class TilesetInfo(object):
@@ -138,30 +138,28 @@ class TilesetInfo(object):
             newXML.write(b'<?xml version="1.0" ?> \n')
             out = xml.etree.ElementTree.tostring(elem)
             newXML.write(out)
-# 
-#         with  open(XmlFilePath, 'w') as newXML:
-#             newXML.write('<?xml version="1.0" ?> \n')
-# 
-#             template = '<Level GridDimX="%(GridDimX)d" GridDimY="%(GridDimY)d" TileXDim="%(TileXDim)d" TileYDim="%(TileYDim)d" Downsample="%(Downsample)d" FilePrefix="%(Prefix)s" FilePostFix="%(Postfix)s"/>'
-# 
-#             outstring = template % {'GridDimX' : self.GridDimX,
-#                                     'GridDimY' : self.GridDimY,
-#                                     'TileXDim' : self.TileDimX,
-#                                     'TileYDim' : self.TileDimY,
-#                                     'Downsample' : self.Downsample,
-#                                     'Prefix' : self.FilePrefix,
-#                                     'Postfix' : self.FilePostfix}
-# 
-#             newXML.write(outstring)
+        #
+        #         with  open(XmlFilePath, 'w') as newXML:
+        #             newXML.write('<?xml version="1.0" ?> \n')
+        #
+        #             template = '<Level GridDimX="%(GridDimX)d" GridDimY="%(GridDimY)d" TileXDim="%(TileXDim)d" TileYDim="%(TileYDim)d" Downsample="%(Downsample)d" FilePrefix="%(Prefix)s" FilePostFix="%(Postfix)s"/>'
+        #
+        #             outstring = template % {'GridDimX' : self.GridDimX,
+        #                                     'GridDimY' : self.GridDimY,
+        #                                     'TileXDim' : self.TileDimX,
+        #                                     'TileYDim' : self.TileDimY,
+        #                                     'Downsample' : self.Downsample,
+        #                                     'Prefix' : self.FilePrefix,
+        #                                     'Postfix' : self.FilePostfix}
+        #
+        #             newXML.write(outstring)
 
-#            newXML.write('<Level GridDimX=\"' + '%d' % XDim + '\" GridDimY=\"' + '%d' % YDim + 
-#                         '\" TileXDim=\"' + '%d' % TileXDim + '\" TileYDim=\"' + '%d' % TileYDim + 
-#                        '\" Downsample=\"' + '%d' % DownsampleTarget + '\" FilePrefix=\"' + 
-#                         FilePrefix + '\" FilePostfix=\"' + FilePostfix + '\" /> \n')
+        #            newXML.write('<Level GridDimX=\"' + '%d' % XDim + '\" GridDimY=\"' + '%d' % YDim +
+        #                         '\" TileXDim=\"' + '%d' % TileXDim + '\" TileYDim=\"' + '%d' % TileYDim +
+        #                        '\" Downsample=\"' + '%d' % DownsampleTarget + '\" FilePrefix=\"' +
+        #                         FilePrefix + '\" FilePostfix=\"' + FilePostfix + '\" /> \n')
         return
 
 # def WriteTilesetXML(XMLOutputPath, XDim, YDim, TileXDim, TileYDim, DownsampleTarget, FilePrefix, FilePostfix=".png"):
 
 # def __LoadAssembleTilesXML(XmlFilePath, Logger=None):
-
-    

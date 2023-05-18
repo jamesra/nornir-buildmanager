@@ -4,43 +4,37 @@ Created on May 22, 2012
 @author: Jamesan
 """
 
+import concurrent.futures
+import datetime
 import glob
-import logging
 import math
-import os
+import multiprocessing
 import shutil
 import subprocess
-import multiprocessing
+
 import numpy
-import datetime
-import concurrent.futures
-
-import nornir_shared.misc
-import nornir_shared.images
-import nornir_shared.plot
-import nornir_shared.files
-
-import nornir_imageregistration
-from nornir_imageregistration.files import mosaicfile
-from nornir_imageregistration.transforms import *
-import nornir_buildmanager
-import volumemanager
-from nornir_buildmanager.volumemanager import *
-from nornir_buildmanager.exceptions import NornirUserException
-import nornir_buildmanager.templates
-from nornir_buildmanager.validation import transforms, image
-from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile
-from nornir_shared.histogram import Histogram
-from nornir_shared.tasktimer import TaskTimer
+from numpy.typing import NDArray
 
 import nornir_buildmanager as nb
+from nornir_buildmanager.exceptions import NornirUserException
+import nornir_buildmanager.templates
+from nornir_buildmanager.validation import image, transforms
+from nornir_buildmanager.volumemanager import *
+import nornir_imageregistration
+from nornir_imageregistration import tileset_functions
+from nornir_imageregistration.files import mosaicfile
 import nornir_imageregistration.spatial as spatial
 import nornir_imageregistration.tileset as tiles
-import nornir_pools
-from nornir_imageregistration import tileset_functions
-
 import nornir_imageregistration.tileset_functions
+from nornir_imageregistration.transforms import *
+import nornir_pools
 from nornir_shared import prettyoutput
+import nornir_shared.files
+from nornir_shared.files import OutdatedFile, RemoveInvalidImageFile, RemoveOutdatedFile
+from nornir_shared.histogram import Histogram
+import nornir_shared.images
+import nornir_shared.misc
+import nornir_shared.plot
 
 HistogramTagStr = "HistogramData"
 
@@ -130,7 +124,7 @@ def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs):
             InputLevelNode.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(LevelNode.FullPath).st_mtime)
         except FileNotFoundError:
             InputLevelNode.ValidationTime = None
-            
+
         logger.info('No tiles found in level {0}'.format(LevelNode.FullPath))
         return False, []
     #
@@ -146,7 +140,7 @@ def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs):
             prettyoutput.LogErr('*** Deleting invalid tile: ' + InvalidTilePath)
             logger.warning('*** Deleting invalid tile: ' + InvalidTilePath)
             os.remove(InvalidTilePath)
-        except FileNotFoundError: #It is OK if the file is missing, that was our goal
+        except FileNotFoundError:  # It is OK if the file is missing, that was our goal
             pass
 
     if len(InvalidTiles) == 0:
@@ -636,20 +630,21 @@ def CutoffValuesForHistogram(HistogramElement, MinCutoffPercent, MaxCutoffPercen
     return MinIntensityCutoff, MaxIntensityCutoff, Gamma
 
 
-def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: TransformNode, checksum: str) -> (bool, HistogramNode):
+def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: TransformNode, checksum: str) -> (
+bool, HistogramNode):
     """I believe this is complicated due to legacy.  In the past multiple
        histogram nodes would accumulate.  This function deletes the excess nodes
        and returns the valid one."""
     histogram_element = None
     HistogramElementRemoved = False
-    check_type = 'Thr' in transform_node.Type #If a threshold value is encoded in the transform type, ensure it matches
+    check_type = 'Thr' in transform_node.Type  # If a threshold value is encoded in the transform type, ensure it matches
     for histogram_element in filterObj.findall(
-            "Histogram[@InputTransformChecksum='" + checksum + "']"): # type: HistogramNode | None
+            "Histogram[@InputTransformChecksum='" + checksum + "']"):  # type: HistogramNode | None
         if histogram_element is None:
             raise NornirUserException(
                 "Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath)
         cleaned, reason = histogram_element.CleanIfInvalid()
-        #Check that the type matches in input transform node type so we don't use the wrong histogram
+        # Check that the type matches in input transform node type so we don't use the wrong histogram
         if cleaned or (check_type and histogram_element.Type != transform_node.Type):
             histogram_element = None
             HistogramElementRemoved = HistogramElementRemoved or cleaned
@@ -673,7 +668,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, TransformNode: Transform
         OutputFilterName = 'Leveled'
 
     (HistogramElementRemoved, HistogramElement) = _ClearInvalidHistogramElements(InputFilter,
-                                                                                 TransformNode, 
+                                                                                 TransformNode,
                                                                                  InputTransformNode.Checksum)
     if HistogramElementRemoved:
         (yield InputFilter)
@@ -726,7 +721,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, TransformNode: Transform
             OutputFilterNode.BitsPerPixel = OutputBpp
             (yield ChannelNode)
         elif FilterPopulated:
-            #Ensure that the filter is populated with current images
+            # Ensure that the filter is populated with current images
             if nornir_buildmanager.operations.filter.RemoveTilePyramidIfOutdated(InputFilter, OutputFilterNode):
                 EntireTilePyramidNeedsBuilding = True
                 (yield OutputFilterNode)
@@ -1084,7 +1079,7 @@ def GenerateHistogramImage(HistogramElement: HistogramNode,
 def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True,
                       ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
     return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix,
-                                           UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, **kwargs)
+                                  UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, **kwargs)
 
 
 def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
@@ -1179,7 +1174,6 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
         if UpdateImageName(imageNode, ExpectedImageName):
             Logger.warn("Renamed image file: %s -> %s " % (original_image_name, ExpectedImageName))
             yield imageSet
-
 
 
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True,
@@ -1521,7 +1515,7 @@ def AssembleTileset(Parameters, FilterNode, PyramidNode, TransformNode, TileShap
     return FilterNode
 
 
-def _SaveImageAndCopy(ImageFullPath, temp_output_tile_fullpath, tile_image, bpp, optimize=True):
+def _SaveImageAndCopy(ImageFullPath: str, temp_output_tile_fullpath: str, tile_image: NDArray, bpp: int | None, optimize=True):
     """Used to pass to the thread pool.  Saves the image to a temporary path and copies the image to final output location.
     """
     nornir_imageregistration.SaveImage(ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp,

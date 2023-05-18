@@ -1,7 +1,6 @@
 import logging
 
 import nornir_buildmanager
-
 from . import lockable
 
 

@@ -4,17 +4,18 @@ Created on Apr 18, 2019
 @author: u0490822
 '''
 
-import os
-import sys
-import shutil
 import glob
+import os
+import re
+import shutil
+import sys
+from typing import Iterable, NamedTuple
+
+import nornir_buildmanager
+from nornir_buildmanager.exceptions import NornirUserException
 import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
-import collections
-import re
-from typing import Iterable, NamedTuple
-import nornir_buildmanager 
-from nornir_buildmanager.exceptions import NornirUserException
+
 
 class FilenameMetadata(NamedTuple):
     fullpath: str
@@ -23,63 +24,71 @@ class FilenameMetadata(NamedTuple):
     name: str
     downsample: int
     extension: str
-    
+
+
 class MinMaxGamma(NamedTuple):
     min: float
     max: float
     gamma: float = 1.0
 
-#FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
-#MinMaxGamma = collections.namedtuple('MinMaxGamma', 'min max gamma')  
 
-#Global instance of our parser for filenames that is initialized upon first use
+# FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
+# MinMaxGamma = collections.namedtuple('MinMaxGamma', 'min max gamma')
+
+# Global instance of our parser for filenames that is initialized upon first use
 _InputFileRegExParser = None
+
 
 def GetSectionInfo(fullpath) -> FilenameMetadata:
     '''Given a path or filename returns the meta data we can determine from the name
        :returns: A named tuple with (fullpath number version name downsample extension)
     '''
     fileName = os.path.basename(fullpath)
-    
+
     d = ParseMetadataFromFilename(fileName)
-    
+
     return FilenameMetadata(fullpath, d['Number'], d['Version'], d['Name'], d['Downsample'], d['Extension'])
+
 
 def FileMetaDataStrHeader():
     output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}\n".format("Path", "#", "Ver", "Name", "Ds", "ext")
     return output
-    
+
+
 def FileMetaDataStr(data):
     '''Provides a pretty string for a FilenameMetadata tuple'''
     v = data.version
     if v == '\0':
         v = None
-    output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}".format(os.path.basename(data.fullpath), str(data.number), str(v), str(data.name), str(data.downsample), str(data.extension))
+    output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}".format(os.path.basename(data.fullpath), str(data.number), str(v),
+                                                            str(data.name), str(data.downsample), str(data.extension))
     return output
+
 
 def _TryCleanDataWithNotInCurrentImport(input_path: str,
                                         elements: Iterable[nornir_buildmanager.volumemanager.XElementWrapper],
                                         new_section_info: FilenameMetadata | None = None) -> str:
-     
     removed = False
     for elem in elements:
         try:
             old_section_info = GetSectionInfo(elem.Path)
         except NornirUserException:
-            continue #Do not remove information that doesn't have a parsable path
-        
+            continue  # Do not remove information that doesn't have a parsable path
+
         if new_section_info is None:
             new_section_info = GetSectionInfo(input_path)
-        
+
         if new_section_info.number != old_section_info.number:
             continue
-          
+
         elem_file_path = os.path.join(input_path, elem.Path)
         if not os.path.exists(elem_file_path):
-            elem.Clean(f"Removing <{elem.tag}> element created {elem.CreationTime}.  Source file not found in current import folder {elem_file_path}")
+            elem.Clean(
+                f"Removing <{elem.tag}> element created {elem.CreationTime}.  Source file not found in current import folder {elem_file_path}")
             removed = True
-        
+
     return removed
+
 
 def TryCleanNotes(containerObj, input_path: str, logger, new_section_info: FilenameMetadata | None = None) -> bool:
     """
@@ -87,12 +96,13 @@ def TryCleanNotes(containerObj, input_path: str, logger, new_section_info: Filen
     :param new_section_info: Section information for the section we are importing notes from
     :return: True if a Note element was removed
     """
-         
+
     notes = containerObj.findall('Notes')
     return _TryCleanDataWithNotInCurrentImport(input_path, notes, new_section_info)
-        
 
-def TryCleanIdocCaptureData(containerObj, input_path: str, logger, new_section_info: FilenameMetadata | None = None) -> bool:
+
+def TryCleanIdocCaptureData(containerObj, input_path: str, logger,
+                            new_section_info: FilenameMetadata | None = None) -> bool:
     """
     Remove Data elements whose files do not exist in the input path
     :param new_section_info: Section information for the section we are importing notes from
@@ -104,7 +114,7 @@ def TryCleanIdocCaptureData(containerObj, input_path: str, logger, new_section_i
         _, ext = os.path.splitext(data.Path)
         if ext == '.log' or ext == '.idoc':
             filtered_list.append(data)
-        
+
     return _TryCleanDataWithNotInCurrentImport(input_path, filtered_list, new_section_info)
 
 
@@ -121,7 +131,7 @@ def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrap
     :return:
     """
 
-    #if new_section_info is None:
+    # if new_section_info is None:
     #    new_section_info = GetSectionInfo(InputPath)
 
     if image_ext is None:
@@ -132,7 +142,8 @@ def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrap
 
     histogram_image_path = os.path.join(InputPath, f'Histogram{image_ext}')
     if os.path.exists(histogram_image_path):
-        image_node = nornir_buildmanager.volumemanager.ImageNode.Create(Path=f'RawDataHistogram{image_ext}', attrib={'Name':'RawDataHistogram'})
+        image_node = nornir_buildmanager.volumemanager.ImageNode.Create(Path=f'RawDataHistogram{image_ext}',
+                                                                        attrib={'Name': 'RawDataHistogram'})
         [image_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
         existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
         if image_added or existing_removed:
@@ -141,39 +152,39 @@ def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrap
     histogram_xml_path = os.path.join(InputPath, 'Histogram.xml')
     if os.path.exists(histogram_xml_path):
         image_node = nornir_buildmanager.volumemanager.DataNode.Create(Path='RawDataHistogram.xml',
-                                                                        attrib={'Name': 'RawDataHistogram'})
+                                                                       attrib={'Name': 'RawDataHistogram'})
         [data_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
         existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
         if data_added or existing_removed:
             shutil.copyfile(histogram_image_path, image_node.FullPath)
-            
+
     autolevel_hint = histogram_node.GetOrCreateAutoLevelHint()
-    autolevel_hint.UserRequestedGamma=gamma
+    autolevel_hint.UserRequestedGamma = gamma
     autolevel_hint.UserRequestedMaxIntensityCutoff = max_cutoff
     autolevel_hint.UserRequestedMinIntensityCutoff = min_cutoff
-    
-            
+
     return added or data_added or image_added or autolevel_hint.AttributesChanged or histogram_node.ChildrenChanged
+
 
 def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: FilenameMetadata | None = None):
     '''
     Check the path for a notes.txt file.  If found, add a <Notes> element to the passed containerObj
     :param new_section_info: Section information for the section we are importing notes from
     '''
-    
+
     if new_section_info is None:
         new_section_info = GetSectionInfo(InputPath)
-    
+
     NotesFiles = glob.iglob(os.path.join(InputPath, '*.txt'))
-    NotesAdded = False 
+    NotesAdded = False
     for filename in NotesFiles:
-        
+
         if os.path.basename(filename) == 'ContrastOverrides.txt':
-            continue 
-        
+            continue
+
         if os.path.basename(filename) == 'Timing.txt':
-            continue 
-        
+            continue
+
         try:
             from xml.sax.saxutils import escape
 
@@ -199,7 +210,8 @@ def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: Filename
                     XMLnotesTxt = escape(notesTxt)
 
                     # Create a Notes node to save the notes into
-                    NotesNodeObj = nornir_buildmanager.volumemanager.NotesNode.Create(Text=XMLnotesTxt, SourceFilename=NotesFilename)
+                    NotesNodeObj = nornir_buildmanager.volumemanager.NotesNode.Create(Text=XMLnotesTxt,
+                                                                                      SourceFilename=NotesFilename)
                     containerObj.RemoveOldChildrenByAttrib('Notes', 'Path', NotesFilename)
                     [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
 
@@ -219,6 +231,7 @@ def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: Filename
             prettyoutput.Log(etraceback)
 
     return NotesAdded
+
 
 def ParseMetadataFromFilename(string):
     '''
@@ -251,40 +264,38 @@ def ParseMetadataFromFilename(string):
             #)                                             #Match the end of string if NumberOnly is not defined 
             (?P<Extension>\.\w+)?                          #Extension if present
             
-            """, re.VERBOSE) 
-    
+            """, re.VERBOSE)
+
     m = _InputFileRegExParser.match(string)
     raiseException = m is None
     if m is not None:
-        
+
         d = m.groupdict()
-        section_number = d.get('Number',None)
+        section_number = d.get('Number', None)
         if section_number is not None:
             d['Number'] = int(section_number)
         else:
             raiseException = True
-            
-        version = d.get('Version',None)
+
+        version = d.get('Version', None)
         if version is None:
-            version = '\0' #Assign a letter that will sort earlier than 'A' in case someone names the first recapture A instead of B...
+            version = '\0'  # Assign a letter that will sort earlier than 'A' in case someone names the first recapture A instead of B...
             d['Version'] = str.upper(version)
         else:
             d['Version'] = str.upper(str.strip(d['Version']))
-            
-        ds = d.get('Downsample',None)
+
+        ds = d.get('Downsample', None)
         if ds is not None:
             d['Downsample'] = int(ds)
-            
+
         if not raiseException:
             return d
-    
-    if raiseException: 
-        friendlyFormatDescription = "{Section#}[VersionLetter][_Section Name][_Downsample]\n\t{} => Required\t[] => Optional" 
-        raise NornirUserException(f'\n"{string}" cannot be parsed.\nFile/Directory meta-data is expected to be in the format:\n\t{friendlyFormatDescription}')
-    
 
+    if raiseException:
+        friendlyFormatDescription = "{Section#}[VersionLetter][_Section Name][_Downsample]\n\t{} => Required\t[] => Optional"
+        raise NornirUserException(
+            f'\n"{string}" cannot be parsed.\nFile/Directory meta-data is expected to be in the format:\n\t{friendlyFormatDescription}')
 
 
 if __name__ == "__main__":
     pass
-        

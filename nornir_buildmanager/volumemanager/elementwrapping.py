@@ -1,7 +1,8 @@
+import os
+
 import nornir_buildmanager.volumemanager
 from nornir_buildmanager.volumemanager import XElementWrapper
 import nornir_shared.reflection as reflection
-import os
 
 
 def SetElementParent(Element: XElementWrapper, ParentElement: XElementWrapper = None):
@@ -26,6 +27,7 @@ def SetElementParent(Element: XElementWrapper, ParentElement: XElementWrapper = 
             e.OnParentChanged()
 
     return
+
 
 def WrapElement(e) -> XElementWrapper:
     """

@@ -5,11 +5,11 @@ Created on May 26, 2015
 '''
 import os
 
+import nornir_buildmanager
 import nornir_buildmanager.volumemanager
 import nornir_imageregistration
 import nornir_shared.files
 import nornir_shared.prettyoutput
-import nornir_buildmanager
 
 num_contrast_pad_chars = 32
 
@@ -201,7 +201,8 @@ def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
     return None
 
 
-def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, Filter=None, ShowFeatureScores=False,label_overlaps=False, **kwargs):
+def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, Filter=None, ShowFeatureScores=False,
+                       label_overlaps=False, **kwargs):
     '''
     Plot the tile overlaps of a layout
     '''
@@ -217,8 +218,8 @@ def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, 
             raise ValueError(f"Unexpected Transform parameter: {Transform}.")
     except:
         nornir_shared.prettyoutput.LogErr(f"Unable to locate Transform {TransformNode}")
-        raise 
-     
+        raise
+
     mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
 
     LevelNode = None
@@ -246,7 +247,7 @@ def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, 
 
     (node_added, OutputImageNode) = ChannelNode.UpdateOrAddChildByAttrib(
         nornir_buildmanager.volumemanager.TransformDataNode.Create(Name=TransformNode.Name, Path=OutputFilename))
-    
+
     removed_output = nornir_shared.files.RemoveOutdatedFile(TransformNode.FullPath, OutputImageNode.FullPath)
 
     if not (node_added or removed_output or removed_output is None):
@@ -278,6 +279,6 @@ def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, 
                                                       colors=None,
                                                       OutputFilename=OutputFullPath,
                                                       label_overlaps=label_overlaps)
-    
+
     if node_added:
         return ChannelNode

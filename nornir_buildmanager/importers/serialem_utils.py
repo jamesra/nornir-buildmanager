@@ -1,13 +1,13 @@
-import sys
-import os
-import shutil
 import glob
+import os
 import pickle
+import shutil
+import sys
+
 import nornir_buildmanager.importers
 import nornir_buildmanager.importers.serialemlog
-import nornir_shared.prettyoutput as prettyoutput
-
 from nornir_shared import files
+import nornir_shared.prettyoutput as prettyoutput
 
 
 def try_remove_spaces_from_dirname(sectionDir):
@@ -19,20 +19,20 @@ def try_remove_spaces_from_dirname(sectionDir):
         shutil.move(sectionDir, sectionDirNoSpacesFullPath)
 
         sectionDir = sectionDirNoSpaces
-        return sectionDir 
-    
+        return sectionDir
+
     return None
 
 
 def _Update_path_on_rename(file_fullpath, new_section_dir):
     """Return the correct paths if we move the directory a section lives in"""
-    
+
     idocFilename = os.path.basename(file_fullpath)
     (ParentDir, sectionDir) = GetDirectories(file_fullpath)
-    
+
     sectionDir = os.path.join(ParentDir, new_section_dir)
     file_fullpath = os.path.join(sectionDir, idocFilename)
-    
+
     return file_fullpath
 
 
@@ -59,7 +59,7 @@ def TryAddLogs(containerObj, InputPath, logger):
     LogsFiles = glob.glob(os.path.join(InputPath, '*.log'))
     LogsAdded = False
     if len(LogsFiles) == 0:
-        print(f"NO LOG FILE FOUND FOR CAPTURE: {InputPath}")   
+        print(f"NO LOG FILE FOUND FOR CAPTURE: {InputPath}")
     elif len(LogsFiles) > 0:
         for filename in LogsFiles:
             NotesFilename = os.path.basename(filename)
@@ -67,7 +67,7 @@ def TryAddLogs(containerObj, InputPath, logger):
             removed = files.RemoveOutdatedFile(filename, CopiedLogsFullPath)
             if removed or removed is None or not os.path.exists(CopiedLogsFullPath):
                 os.makedirs(containerObj.FullPath, exist_ok=True)
-                
+
                 shutil.copyfile(filename, CopiedLogsFullPath)
                 LogsAdded = True
             else:
@@ -79,51 +79,52 @@ def TryAddLogs(containerObj, InputPath, logger):
                 LogData = nornir_buildmanager.importers.serialemlog.SerialEMLog.Load(filename)
                 if LogData is None:
                     continue
-                
+
                 if LogData.NumTiles == 0:
                     continue
 
                 # Create a Notes node to save the logs into
-                LogNodeObj = nornir_buildmanager.volumemanager.DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
-                
+                LogNodeObj = nornir_buildmanager.volumemanager.DataNode.Create(Path=NotesFilename,
+                                                                               attrib={'Name': 'Log'})
+
                 containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
                 [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')
                 LogsAdded = LogsAdded or added
-                
+
                 if LogData.AverageTileTime is not None:
                     LogNodeObj.AverageTileTime = '%g' % LogData.AverageTileTime
-                    
+
                 if LogData.AverageSettleTime is not None:
                     LogNodeObj.AverageSettleTime = '%g' % LogData.AverageSettleTime
-                
+
                 if LogData.AverageAcquisitionTime is not None:
                     LogNodeObj.AverageAcquisitionTime = '%g' % LogData.AverageAcquisitionTime
-                
+
                 if LogData.FastestTileTime is not None:
                     LogNodeObj.FastestTileTime = '%g' % LogData.FastestTileTime
-                    
+
                 if LogData.FastestSettleTime is not None:
                     LogNodeObj.FastestSettleTime = '%g' % LogData.FastestSettleTime
-                
+
                 if LogData.FastestAcquisitionTime is not None:
                     LogNodeObj.FastestAcquisitionTime = '%g' % LogData.FastestAcquisitionTime
-                    
+
                 if LogData.AverageTileDrift is not None:
                     LogNodeObj.AverageTileDrift = '%g' % LogData.AverageTileDrift
-                    
+
                 if LogData.MaxTileDrift is not None:
                     LogNodeObj.MaxTileDrift = '%g' % LogData.MaxTileDrift
-                    
+
                 if LogData.MinTileDrift is not None:
                     LogNodeObj.MinTileDrift = '%g' % LogData.MinTileDrift
-                
+
                 LogNodeObj.FilamentStabilizationTime = '%g' % LogData.FilamentStabilizationTime
                 LogNodeObj.LowMagCookTime = '%g' % LogData.LowMagCookTime
                 LogNodeObj.HighMagCookTime = '%g' % LogData.HighMagCookTime
                 LogNodeObj.TileAcquisitionTime = '%g' % LogData.TotalTileAcquisitionTime
                 LogNodeObj.CaptureTime = '%g' % LogData.TotalTime
                 LogNodeObj.SetupTime = '%g' % LogData.CaptureSetupTime
-                
+
                 LogNodeObj.HighMagCookDone = '%i' % LogData.HighMagCookDone
                 LogNodeObj.LowMagCookDone = '%i' % LogData.LowMagCookDone
                 LogNodeObj.StableFilamentChecked = '%i' % LogData.StableFilamentChecked
@@ -136,7 +137,7 @@ def TryAddLogs(containerObj, InputPath, logger):
 
     return LogsAdded
 
- 
+
 def PickleLoad(logfullPath, version_func):
     """
     :param logfullPath:
@@ -150,7 +151,6 @@ def PickleLoad(logfullPath, version_func):
     if removed is True:
         return None
 
-    
     try:
         with open(picklePath, 'rb') as filehandle:
             obj = pickle.load(filehandle)
@@ -182,9 +182,8 @@ def PickleLoad(logfullPath, version_func):
 
 
 def PickleSave(obj, logfullPath):
-    
     picklePath = logfullPath + ".pickle"
-    
+
     try:
         with open(picklePath, 'wb') as filehandle:
             pickle.dump(obj, filehandle)

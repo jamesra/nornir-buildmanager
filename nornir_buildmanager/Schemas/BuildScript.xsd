@@ -2,559 +2,566 @@
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
            targetNamespace="http://connectomes.utah.edu/Buildscript/"
            xmlns="http://connectomes.utah.edu/Buildscript/">
-  
-  <xs:annotation>
-    <xs:appinfo>ir-tools buildscripts</xs:appinfo>
-    <xs:documentation xml:lang="en">
-      This schema defines a build pipeline for the ir-tools and buildscripts
-    </xs:documentation>
-  </xs:annotation>
 
-  <xs:simpleType name="Tag" >
-    <xs:restriction base ="xs:string">
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:attribute name="Channel">
     <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Level to use as input
-      </xs:documentation>
-    </xs:annotation>
-    <xs:simpleType>
-      <xs:restriction base="xs:string">
-        <xs:minLength value ="1"/>
-      </xs:restriction>
-    </xs:simpleType>
-  </xs:attribute>
-
-  <xs:attribute name="InputMosaicTag" id="InputMosaicTag" type="Tag">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Type of mosaic to use as input, ex: supertile, translate, grid, etc...
-      </xs:documentation>
-    </xs:annotation>
-  </xs:attribute>
-
-  <xs:attribute name="OutputMosaicTag" id="OutputMosaicTag" type="Tag">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Type of mosaic to produce as output
-      </xs:documentation>
-    </xs:annotation>
-  </xs:attribute>
-
-  <xs:simpleType name="Percentage">
-    <xs:restriction base="xs:double">
-      <xs:minInclusive value ="0"/>
-      <xs:maxInclusive value ="100"/>
-    </xs:restriction>
-    
-  </xs:simpleType>
-
-  <xs:simpleType name="LevelValue" id="LevelValue">
-    <xs:restriction base="xs:integer">
-      <xs:minInclusive value="0"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:attribute name="Level" id="Level" type="LevelValue">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Level to use as input
-      </xs:documentation>
-    </xs:annotation>
-  </xs:attribute>
-
-  <xs:attribute name="DirName"           type="xs:string">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Path to a directory
-      </xs:documentation>
-    </xs:annotation>
-  </xs:attribute>
-
-  <xs:attribute name="FileName"           type="xs:string">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Path to a file
-      </xs:documentation>
-    </xs:annotation>
-  </xs:attribute>
-  
-  <xs:attribute name="BitsPerPixel"   type="xs:integer">
-    <xs:annotation>
-      <xs:appinfo>ir-tools buildscripts</xs:appinfo>
-      <xs:documentation xml:lang="en">
-        Number of bits of useable data in the input images
-      </xs:documentation>
-    </xs:annotation>
-  </xs:attribute>
-
-  <xs:complexType name="Entry">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="Name" type="xs:string"/>
-      <xs:element name="Value" type="xs:string"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="DictionaryType">
-    <xs:sequence>
-      <xs:element name="Entry" type="Entry"/>
-    </xs:sequence>
-  </xs:complexType>
-  
-  <xs:complexType name="LevelsType">
-    <xs:sequence>
-      <xs:element type="LevelValue" name="Level" minOccurs="1" maxOccurs ="unbounded">
-      </xs:element>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="IterateElementsType">
-    <xs:choice maxOccurs="unbounded">
-      <xs:element name="PythonCall" type ="PythonCallType" minOccurs="0"/>
-      <xs:element name="IterateVolumeElements" type="IterateElementsType" minOccurs="0" maxOccurs="unbounded"/>
-    </xs:choice>
-    <xs:attribute name="VariableName" type="xs:string" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          Name of the variable passed to the scripts
+        <xs:appinfo>ir-tools buildscripts</xs:appinfo>
+        <xs:documentation xml:lang="en">
+            This schema defines a build pipeline for the ir-tools and buildscripts
         </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="XPath" type="xs:string" use="required"/>
-  </xs:complexType>
+    </xs:annotation>
 
-  <xs:complexType name="PythonCallType">
-    <xs:sequence>
-      <xs:element name="Args" type="DictionaryType" minOccurs="0"/>
-    </xs:sequence>
-    <xs:attribute name="Module" default ="Pipeline.Operations.Builtin" use="optional"/>
-    <xs:attribute name="Function" use="optional"/>
-    <xs:anyAttribute/>
-  </xs:complexType>
+    <xs:simpleType name="Tag">
+        <xs:restriction base="xs:string">
+        </xs:restriction>
+    </xs:simpleType>
 
-  <xs:complexType name="Operation">
-    <xs:sequence minOccurs ="0">
-      <xs:element name="Parameters" type="DictionaryType" minOccurs="0"/>
-      <xs:element name="IterateVolumeElements" type ="IterateElementsType" minOccurs="0"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="TileOperation">
-    <xs:complexContent>
-      <xs:extension base="Operation">
-        <xs:attribute name="PyramidLevelNodeVar" use="optional" type ="xs:string" default ="PyramidLevelNode"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="FilterOperation">
-    <xs:complexContent>
-      <xs:extension base="Operation">
-        <xs:attribute name="PyramidNodeVar" use="optional" type ="xs:string" default ="PyramidNode"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="FilterToFilterOperation">
-    <xs:complexContent>
-      <xs:extension base="Operation">
-        <xs:attribute name="OutputFilter" type="Tag" use="required"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="TransfromOperation">
-    <xs:complexContent>
-      <xs:extension base="Operation">
-        <xs:attribute name="OutputTransform" type="Tag" use="required"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="TransfromToImageOperation">
-    <xs:complexContent>
-      <xs:extension base="Operation">
-        <xs:attribute name="Levels" type="xs:string" use="required"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="SliceToVolumeOperation">
-    <xs:sequence minOccurs ="0">
-      <xs:element ref ="Dictionary"/>
-    </xs:sequence>
-    <xs:attribute name="OutputStos" type="Tag" use="required"/>
-  </xs:complexType>
-
-  <xs:complexType name="VolumeOperation">
-    <xs:complexContent>
-      <xs:extension base="Operation">
-        <xs:attribute name="InputFilterTag" type="Tag" use="required"/>
-        <xs:attribute name="InputChannel" type="Tag" use="required"/>
-        <xs:attribute name="InputStosTag" type="Tag" use="required"/>
-        <xs:attribute name="OutputStosTag" type="Tag" use="required"/>
-        <xs:attribute name="InputLevel" type="LevelValue" use ="required"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="VolumeToImageOperation">
-    <xs:complexContent>
-      <xs:extension base="Operation">
-        <xs:attribute name="InputFilterTag" type="Tag" use="required"/>
-        <xs:attribute name="InputChannel" type="Tag" use="required"/>
-        <xs:attribute name="InputStosTag" type="Tag" use="required"/>
-        <xs:attribute name="Levels" type="xs:string" use="required"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:element name="PruneTiles">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="TransfromOperation">
-          <xs:attribute name="Threshold" use="required" type="xs:double">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Cutoff value to be used for pruning
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="Overlap" use="optional" default="0.10" type="xs:double">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Number from 0 to 1, indicates percentage of overlap.  Overlapping regions are not evaluated for features.  Default is 0.10
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="Downsample" use="optional" default="1" type="xs:int">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                The scalar to shrink the input by before processing
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-        </xs:extension>
-      </xs:complexContent>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="BuildTilePyramids">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="FilterOperation">
-          <xs:attribute name="Levels" type="xs:string" use="required"/>
-          
-        </xs:extension>
-      </xs:complexContent>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="EvaluateTiles">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="FilterOperation">
-          <xs:attribute ref="Level"/>
-          <xs:attribute name="EvaluateArg" type="xs:string">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Argument passed to image magick to evaluate the sequence.  See ImageMagick Docs for options.
-                Ex: min, max, median, mean
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="PreEvaluateSequenceArgs" type="xs:string">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                String passed to ImageMagick for pre-processing the images input to the sequence evaluation
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-
-          <xs:attribute name="PostEvaluateSequenceArgs" type="xs:string">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                String passed to ImageMagick for post-processing the output image of evaluating the sequence, such as smoothing the final output.
-                Ex: -virtual-pixel edge -gaussian-blur 0x5
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-        </xs:extension>
-      </xs:complexContent>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="CorrectTileShading">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="FilterToFilterOperation">
-          <xs:sequence minOccurs ="0">
-            <xs:element name="CorrectionCandidate">
-              <xs:complexType>
-                <xs:attribute name ="Image" type ="xs:string">
-                  <xs:annotation>
-                    <xs:documentation xml:lang="en">
-                      Name of the evaluated sequence image to use for shading correction
-                    </xs:documentation>
-                  </xs:annotation>
-                </xs:attribute>
-                <xs:attribute name ="Invert" type ="xs:boolean">
-                  <xs:annotation>
-                    <xs:documentation xml:lang="en">
-                      Set to true if the image should be inverted before correction
-                    </xs:documentation>
-                  </xs:annotation>
-                </xs:attribute>
-                <xs:attribute name ="ComposeOperator" type ="xs:string" default="minus">
-                  <xs:annotation>
-                    <xs:documentation xml:lang="en">
-                      Name of the operator to use for shading correction, ex: minus
-                    </xs:documentation>
-                  </xs:annotation>
-                </xs:attribute>
-                <xs:attribute name="Levels" type="xs:string" use="required"/>
-              </xs:complexType>
-            </xs:element>
-          </xs:sequence>
-        </xs:extension>
-      </xs:complexContent>
-      
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="AutolevelTiles">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="FilterToFilterOperation">
-          <xs:sequence minOccurs ="0">
-            <xs:element name="CorrectionCandidate">
-              <xs:complexType>
-                <xs:attribute name ="Gamma" type ="xs:double" default="1.0" use="optional"/>
-                <xs:attribute name ="MinCutoff" type ="xs:double" default="0.005"  use="optional"/>
-                <xs:attribute name ="MaxCutoff" type ="xs:double" default="0.005"  use="optional"/>
-              </xs:complexType>
-            </xs:element>
-          </xs:sequence>
-        </xs:extension>
-      </xs:complexContent>      
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="TranslateTransfrom">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="TransfromOperation">
-            <xs:attribute name ="MaxOffsetX" type ="Percentage"  use="optional"/>
-            <xs:attribute name ="MaxOffsetY" type ="Percentage"  use="optional"/>
-            <xs:attribute name ="BlackMaskX" type ="Percentage"  use="optional"/>
-            <xs:attribute name ="BlackMaskY" type ="Percentage"  use="optional"/>              
-        </xs:extension>
-      </xs:complexContent>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="RefineTransfrom">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="TransfromOperation">
-          <xs:attribute name="MeshWidth" type ="xs:integer" default="8"  use="optional"/>
-          <xs:attribute name="MeshHeight" type ="xs:integer" default="8"  use="optional"/>
-          <xs:attribute name="CellWidth" type ="xs:integer" use="optional"/>
-          <xs:attribute name="CellHeight" type ="xs:integer" use="optional"/>
-          <xs:attribute name="Iterations" type="xs:integer" default ="4"  use="optional"/>
-        </xs:extension>
-      </xs:complexContent>
-      
-    </xs:complexType>
-  </xs:element>
-
-  <xs:simpleType name ="FeatheringEnum">
-    <xs:restriction base ="xs:string">
-      <xs:enumeration value ="binary"/>
-      <xs:enumeration value ="blend"/>
-      <xs:enumeration value ="none"/>
-    </xs:restriction>
-  </xs:simpleType>
-  
-  
-  <xs:element name="AssembleTransfrom">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="TransfromToImageOperation">
-          <xs:attribute name="Interlace" type ="xs:boolean" default="1">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Interlaced PNGs can be larger, but load quickly in browsers.
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="Autolevel" type ="xs:boolean" default="0">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Set to true if you'd like the output contrast adjusted.  Can be useful for Stos, but not needed if tiles are autoleveled
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="Feathering" type ="FeatheringEnum" default="binary">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Feathering option to use with ir-assemble, default is binary
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-        </xs:extension>
-      </xs:complexContent>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="BlobTransfrom">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="TransfromToImageOperation">
-          <xs:attribute name="Interlace" type ="xs:boolean" default="1">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Interlaced PNGs can be larger, but load quickly in browsers.
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="Autolevel" type ="xs:boolean" default="0">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Set to true if you'd like the output contrast adjusted.  Can be useful for Stos, but not needed if tiles are autoleveled
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="BlobRadius" type ="xs:integer" default="0">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Radius to use for Blob processing
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-          <xs:attribute name="BlobMedian" type ="xs:integer" default="0">
-            <xs:annotation>
-              <xs:documentation xml:lang="en">
-                Median filter to apply to Transfrom before Blob processing
-              </xs:documentation>
-            </xs:annotation>
-          </xs:attribute>
-        </xs:extension>
-      </xs:complexContent>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="AssembleOptimizedTransfrom">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="TransfromToImageOperation">
-          <xs:attribute name="TileWidth" type ="xs:integer" default="256"/>
-          <xs:attribute name="TileHeight" type ="xs:integer" default="256"/>
-        </xs:extension>
-      </xs:complexContent>
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="SliceToSliceBrute">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="SliceToVolumeOperation">
-          <xs:attribute name="UseMask" type ="xs:boolean" default="1"/>
-          
-        </xs:extension>
-      </xs:complexContent>
-      
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="SliceToSliceGrid">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base="VolumeOperation">
-          <xs:attribute name="MeshWidth" type ="xs:integer" default="8"/>
-          <xs:attribute name="MeshHeight" type ="xs:integer" default="8"/>
-          <xs:attribute name="CellWidth" type ="xs:integer" use="optional"/>
-          <xs:attribute name="CellHeight" type ="xs:integer" use="optional"/>
-          <xs:attribute name="Iterations" type="xs:integer" default ="4" />
-        </xs:extension>
-      </xs:complexContent>      
-    </xs:complexType>
-  </xs:element>
-
-  <xs:element name="Pipeline">
-    <xs:complexType>
-      <xs:choice minOccurs ="0" maxOccurs ="unbounded">
-        <xs:element ref="PruneTiles" minOccurs="0" maxOccurs ="1">
-        </xs:element>
-        <xs:element ref="EvaluateTiles" minOccurs="0" maxOccurs ="unbounded">
-        </xs:element>
-        <xs:element ref="CorrectTileShading" minOccurs ="0" maxOccurs="1">
-        </xs:element>
-        <xs:element ref="AutolevelTiles" minOccurs ="0" maxOccurs="1">
-        </xs:element>
-        <xs:element ref="BuildTilePyramids" minOccurs="0" maxOccurs ="unbounded">
-        </xs:element>
-        <xs:element ref="TranslateTransfrom" minOccurs="0" maxOccurs ="1">
-        </xs:element>
-        <xs:element ref="RefineTransfrom" minOccurs="0" maxOccurs ="unbounded">
-        </xs:element>
-        <xs:element ref="AssembleTransfrom" minOccurs="0" maxOccurs ="unbounded">
-        </xs:element>
-        <xs:element ref="BlobTransfrom" minOccurs="0" maxOccurs ="unbounded">
-        </xs:element>
-        <xs:element ref="AssembleOptimizedTransfrom" minOccurs="0" maxOccurs ="1">
-        </xs:element>
-        <xs:element ref="SliceToSliceBrute" minOccurs="0" maxOccurs ="1">
-        </xs:element>
-        <xs:element ref="SliceToSliceGrid" minOccurs="0" maxOccurs ="unbounded">
-        </xs:element>
-        
-      </xs:choice>
-      <xs:attribute name="Name" type ="xs:string" use ="required">
+    <xs:attribute name="Channel">
         <xs:annotation>
-          <xs:documentation xml:lang="en">
-            Name of the pipeline
-          </xs:documentation>
-        </xs:annotation>
-      </xs:attribute>
-      <xs:attribute name="OverlapX" type ="xs:double">
-        <xs:annotation>
-          <xs:documentation xml:lang="en">
-            Expected overlap in X, from 0 - 1
-          </xs:documentation>
-        </xs:annotation>
-      </xs:attribute>
-      <xs:attribute name="OverlapY" type ="xs:double">
-        <xs:annotation>
-          <xs:documentation xml:lang="en">
-            Expected overlap in Y, from 0 - 1
-          </xs:documentation>
-        </xs:annotation>
-      </xs:attribute>
-    </xs:complexType>
-  </xs:element>
-
-
-  <xs:element name="Pipelines"  >
-    <xs:complexType>
-      <xs:sequence >
-        <xs:element name="Args" type="DictionaryType" minOccurs="0" maxOccurs="1">
-          <xs:annotation>
-            <xs:documentation>
-              Arguments that will be added to the python key words args dictionary (**kwargs) passed to functions
+            <xs:documentation xml:lang="en">
+                Level to use as input
             </xs:documentation>
-          </xs:annotation>
-        </xs:element>
-        <xs:element ref="Pipeline" minOccurs ="1" maxOccurs ="unbounded"/>
-      </xs:sequence>
+        </xs:annotation>
+        <xs:simpleType>
+            <xs:restriction base="xs:string">
+                <xs:minLength value="1"/>
+            </xs:restriction>
+        </xs:simpleType>
+    </xs:attribute>
+
+    <xs:attribute name="InputMosaicTag" id="InputMosaicTag" type="Tag">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Type of mosaic to use as input, ex: supertile, translate, grid, etc...
+            </xs:documentation>
+        </xs:annotation>
+    </xs:attribute>
+
+    <xs:attribute name="OutputMosaicTag" id="OutputMosaicTag" type="Tag">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Type of mosaic to produce as output
+            </xs:documentation>
+        </xs:annotation>
+    </xs:attribute>
+
+    <xs:simpleType name="Percentage">
+        <xs:restriction base="xs:double">
+            <xs:minInclusive value="0"/>
+            <xs:maxInclusive value="100"/>
+        </xs:restriction>
+
+    </xs:simpleType>
+
+    <xs:simpleType name="LevelValue" id="LevelValue">
+        <xs:restriction base="xs:integer">
+            <xs:minInclusive value="0"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+    <xs:attribute name="Level" id="Level" type="LevelValue">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Level to use as input
+            </xs:documentation>
+        </xs:annotation>
+    </xs:attribute>
+
+    <xs:attribute name="DirName" type="xs:string">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Path to a directory
+            </xs:documentation>
+        </xs:annotation>
+    </xs:attribute>
+
+    <xs:attribute name="FileName" type="xs:string">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Path to a file
+            </xs:documentation>
+        </xs:annotation>
+    </xs:attribute>
+
+    <xs:attribute name="BitsPerPixel" type="xs:integer">
+        <xs:annotation>
+            <xs:appinfo>ir-tools buildscripts</xs:appinfo>
+            <xs:documentation xml:lang="en">
+                Number of bits of useable data in the input images
+            </xs:documentation>
+        </xs:annotation>
+    </xs:attribute>
+
+    <xs:complexType name="Entry">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="Name" type="xs:string"/>
+            <xs:element name="Value" type="xs:string"/>
+        </xs:sequence>
     </xs:complexType>
-  </xs:element>
+
+    <xs:complexType name="DictionaryType">
+        <xs:sequence>
+            <xs:element name="Entry" type="Entry"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="LevelsType">
+        <xs:sequence>
+            <xs:element type="LevelValue" name="Level" minOccurs="1" maxOccurs="unbounded">
+            </xs:element>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="IterateElementsType">
+        <xs:choice maxOccurs="unbounded">
+            <xs:element name="PythonCall" type="PythonCallType" minOccurs="0"/>
+            <xs:element name="IterateVolumeElements" type="IterateElementsType" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:choice>
+        <xs:attribute name="VariableName" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    Name of the variable passed to the scripts
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="XPath" type="xs:string" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="PythonCallType">
+        <xs:sequence>
+            <xs:element name="Args" type="DictionaryType" minOccurs="0"/>
+        </xs:sequence>
+        <xs:attribute name="Module" default="Pipeline.Operations.Builtin" use="optional"/>
+        <xs:attribute name="Function" use="optional"/>
+        <xs:anyAttribute/>
+    </xs:complexType>
+
+    <xs:complexType name="Operation">
+        <xs:sequence minOccurs="0">
+            <xs:element name="Parameters" type="DictionaryType" minOccurs="0"/>
+            <xs:element name="IterateVolumeElements" type="IterateElementsType" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="TileOperation">
+        <xs:complexContent>
+            <xs:extension base="Operation">
+                <xs:attribute name="PyramidLevelNodeVar" use="optional" type="xs:string" default="PyramidLevelNode"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="FilterOperation">
+        <xs:complexContent>
+            <xs:extension base="Operation">
+                <xs:attribute name="PyramidNodeVar" use="optional" type="xs:string" default="PyramidNode"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="FilterToFilterOperation">
+        <xs:complexContent>
+            <xs:extension base="Operation">
+                <xs:attribute name="OutputFilter" type="Tag" use="required"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="TransfromOperation">
+        <xs:complexContent>
+            <xs:extension base="Operation">
+                <xs:attribute name="OutputTransform" type="Tag" use="required"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="TransfromToImageOperation">
+        <xs:complexContent>
+            <xs:extension base="Operation">
+                <xs:attribute name="Levels" type="xs:string" use="required"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="SliceToVolumeOperation">
+        <xs:sequence minOccurs="0">
+            <xs:element ref="Dictionary"/>
+        </xs:sequence>
+        <xs:attribute name="OutputStos" type="Tag" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="VolumeOperation">
+        <xs:complexContent>
+            <xs:extension base="Operation">
+                <xs:attribute name="InputFilterTag" type="Tag" use="required"/>
+                <xs:attribute name="InputChannel" type="Tag" use="required"/>
+                <xs:attribute name="InputStosTag" type="Tag" use="required"/>
+                <xs:attribute name="OutputStosTag" type="Tag" use="required"/>
+                <xs:attribute name="InputLevel" type="LevelValue" use="required"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="VolumeToImageOperation">
+        <xs:complexContent>
+            <xs:extension base="Operation">
+                <xs:attribute name="InputFilterTag" type="Tag" use="required"/>
+                <xs:attribute name="InputChannel" type="Tag" use="required"/>
+                <xs:attribute name="InputStosTag" type="Tag" use="required"/>
+                <xs:attribute name="Levels" type="xs:string" use="required"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:element name="PruneTiles">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="TransfromOperation">
+                    <xs:attribute name="Threshold" use="required" type="xs:double">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Cutoff value to be used for pruning
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="Overlap" use="optional" default="0.10" type="xs:double">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Number from 0 to 1, indicates percentage of overlap. Overlapping regions are not
+                                evaluated for features. Default is 0.10
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="Downsample" use="optional" default="1" type="xs:int">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                The scalar to shrink the input by before processing
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="BuildTilePyramids">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="FilterOperation">
+                    <xs:attribute name="Levels" type="xs:string" use="required"/>
+
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="EvaluateTiles">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="FilterOperation">
+                    <xs:attribute ref="Level"/>
+                    <xs:attribute name="EvaluateArg" type="xs:string">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Argument passed to image magick to evaluate the sequence. See ImageMagick Docs for
+                                options.
+                                Ex: min, max, median, mean
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="PreEvaluateSequenceArgs" type="xs:string">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                String passed to ImageMagick for pre-processing the images input to the sequence
+                                evaluation
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+
+                    <xs:attribute name="PostEvaluateSequenceArgs" type="xs:string">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                String passed to ImageMagick for post-processing the output image of evaluating the
+                                sequence, such as smoothing the final output.
+                                Ex: -virtual-pixel edge -gaussian-blur 0x5
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="CorrectTileShading">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="FilterToFilterOperation">
+                    <xs:sequence minOccurs="0">
+                        <xs:element name="CorrectionCandidate">
+                            <xs:complexType>
+                                <xs:attribute name="Image" type="xs:string">
+                                    <xs:annotation>
+                                        <xs:documentation xml:lang="en">
+                                            Name of the evaluated sequence image to use for shading correction
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="Invert" type="xs:boolean">
+                                    <xs:annotation>
+                                        <xs:documentation xml:lang="en">
+                                            Set to true if the image should be inverted before correction
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="ComposeOperator" type="xs:string" default="minus">
+                                    <xs:annotation>
+                                        <xs:documentation xml:lang="en">
+                                            Name of the operator to use for shading correction, ex: minus
+                                        </xs:documentation>
+                                    </xs:annotation>
+                                </xs:attribute>
+                                <xs:attribute name="Levels" type="xs:string" use="required"/>
+                            </xs:complexType>
+                        </xs:element>
+                    </xs:sequence>
+                </xs:extension>
+            </xs:complexContent>
+
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="AutolevelTiles">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="FilterToFilterOperation">
+                    <xs:sequence minOccurs="0">
+                        <xs:element name="CorrectionCandidate">
+                            <xs:complexType>
+                                <xs:attribute name="Gamma" type="xs:double" default="1.0" use="optional"/>
+                                <xs:attribute name="MinCutoff" type="xs:double" default="0.005" use="optional"/>
+                                <xs:attribute name="MaxCutoff" type="xs:double" default="0.005" use="optional"/>
+                            </xs:complexType>
+                        </xs:element>
+                    </xs:sequence>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="TranslateTransfrom">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="TransfromOperation">
+                    <xs:attribute name="MaxOffsetX" type="Percentage" use="optional"/>
+                    <xs:attribute name="MaxOffsetY" type="Percentage" use="optional"/>
+                    <xs:attribute name="BlackMaskX" type="Percentage" use="optional"/>
+                    <xs:attribute name="BlackMaskY" type="Percentage" use="optional"/>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="RefineTransfrom">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="TransfromOperation">
+                    <xs:attribute name="MeshWidth" type="xs:integer" default="8" use="optional"/>
+                    <xs:attribute name="MeshHeight" type="xs:integer" default="8" use="optional"/>
+                    <xs:attribute name="CellWidth" type="xs:integer" use="optional"/>
+                    <xs:attribute name="CellHeight" type="xs:integer" use="optional"/>
+                    <xs:attribute name="Iterations" type="xs:integer" default="4" use="optional"/>
+                </xs:extension>
+            </xs:complexContent>
+
+        </xs:complexType>
+    </xs:element>
+
+    <xs:simpleType name="FeatheringEnum">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="binary"/>
+            <xs:enumeration value="blend"/>
+            <xs:enumeration value="none"/>
+        </xs:restriction>
+    </xs:simpleType>
+
+
+    <xs:element name="AssembleTransfrom">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="TransfromToImageOperation">
+                    <xs:attribute name="Interlace" type="xs:boolean" default="1">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Interlaced PNGs can be larger, but load quickly in browsers.
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="Autolevel" type="xs:boolean" default="0">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Set to true if you'd like the output contrast adjusted. Can be useful for Stos, but not
+                                needed if tiles are autoleveled
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="Feathering" type="FeatheringEnum" default="binary">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Feathering option to use with ir-assemble, default is binary
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="BlobTransfrom">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="TransfromToImageOperation">
+                    <xs:attribute name="Interlace" type="xs:boolean" default="1">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Interlaced PNGs can be larger, but load quickly in browsers.
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="Autolevel" type="xs:boolean" default="0">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Set to true if you'd like the output contrast adjusted. Can be useful for Stos, but not
+                                needed if tiles are autoleveled
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="BlobRadius" type="xs:integer" default="0">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Radius to use for Blob processing
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                    <xs:attribute name="BlobMedian" type="xs:integer" default="0">
+                        <xs:annotation>
+                            <xs:documentation xml:lang="en">
+                                Median filter to apply to Transfrom before Blob processing
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:attribute>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="AssembleOptimizedTransfrom">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="TransfromToImageOperation">
+                    <xs:attribute name="TileWidth" type="xs:integer" default="256"/>
+                    <xs:attribute name="TileHeight" type="xs:integer" default="256"/>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="SliceToSliceBrute">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="SliceToVolumeOperation">
+                    <xs:attribute name="UseMask" type="xs:boolean" default="1"/>
+
+                </xs:extension>
+            </xs:complexContent>
+
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="SliceToSliceGrid">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="VolumeOperation">
+                    <xs:attribute name="MeshWidth" type="xs:integer" default="8"/>
+                    <xs:attribute name="MeshHeight" type="xs:integer" default="8"/>
+                    <xs:attribute name="CellWidth" type="xs:integer" use="optional"/>
+                    <xs:attribute name="CellHeight" type="xs:integer" use="optional"/>
+                    <xs:attribute name="Iterations" type="xs:integer" default="4"/>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+    </xs:element>
+
+    <xs:element name="Pipeline">
+        <xs:complexType>
+            <xs:choice minOccurs="0" maxOccurs="unbounded">
+                <xs:element ref="PruneTiles" minOccurs="0" maxOccurs="1">
+                </xs:element>
+                <xs:element ref="EvaluateTiles" minOccurs="0" maxOccurs="unbounded">
+                </xs:element>
+                <xs:element ref="CorrectTileShading" minOccurs="0" maxOccurs="1">
+                </xs:element>
+                <xs:element ref="AutolevelTiles" minOccurs="0" maxOccurs="1">
+                </xs:element>
+                <xs:element ref="BuildTilePyramids" minOccurs="0" maxOccurs="unbounded">
+                </xs:element>
+                <xs:element ref="TranslateTransfrom" minOccurs="0" maxOccurs="1">
+                </xs:element>
+                <xs:element ref="RefineTransfrom" minOccurs="0" maxOccurs="unbounded">
+                </xs:element>
+                <xs:element ref="AssembleTransfrom" minOccurs="0" maxOccurs="unbounded">
+                </xs:element>
+                <xs:element ref="BlobTransfrom" minOccurs="0" maxOccurs="unbounded">
+                </xs:element>
+                <xs:element ref="AssembleOptimizedTransfrom" minOccurs="0" maxOccurs="1">
+                </xs:element>
+                <xs:element ref="SliceToSliceBrute" minOccurs="0" maxOccurs="1">
+                </xs:element>
+                <xs:element ref="SliceToSliceGrid" minOccurs="0" maxOccurs="unbounded">
+                </xs:element>
+
+            </xs:choice>
+            <xs:attribute name="Name" type="xs:string" use="required">
+                <xs:annotation>
+                    <xs:documentation xml:lang="en">
+                        Name of the pipeline
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:attribute>
+            <xs:attribute name="OverlapX" type="xs:double">
+                <xs:annotation>
+                    <xs:documentation xml:lang="en">
+                        Expected overlap in X, from 0 - 1
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:attribute>
+            <xs:attribute name="OverlapY" type="xs:double">
+                <xs:annotation>
+                    <xs:documentation xml:lang="en">
+                        Expected overlap in Y, from 0 - 1
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:attribute>
+        </xs:complexType>
+    </xs:element>
+
+
+    <xs:element name="Pipelines">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="Args" type="DictionaryType" minOccurs="0" maxOccurs="1">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Arguments that will be added to the python key words args dictionary (**kwargs) passed to
+                            functions
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:element>
+                <xs:element ref="Pipeline" minOccurs="1" maxOccurs="unbounded"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
 </xs:schema>

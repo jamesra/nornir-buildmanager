@@ -3,10 +3,9 @@ from __future__ import annotations
 import math
 import os
 
-import nornir_buildmanager
-from nornir_buildmanager.volumemanager import ITransform, IChecksum, InputTransformHandler, MosaicBaseNode
-import nornir_shared.misc
+from nornir_buildmanager.volumemanager import ITransform, InputTransformHandler, MosaicBaseNode
 from nornir_shared import prettyoutput as prettyoutput
+import nornir_shared.misc
 
 
 class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
@@ -172,7 +171,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         # We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
-        
+
         valid = valid or self.Locked
 
         if valid:
@@ -185,9 +184,9 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         val = self.attrib.get('Threshold', None)
         try:
             return float(val)
-        except TypeError: #val is None
+        except TypeError:  # val is None
             return None
-        except ValueError: #val is zero length string
+        except ValueError:  # val is zero length string
             return None
 
     @Threshold.setter

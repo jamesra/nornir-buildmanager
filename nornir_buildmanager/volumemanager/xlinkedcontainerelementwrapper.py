@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from xml.etree import ElementTree as ElementTree
 
-from . import xcontainerelementwrapper, xelementwrapper, validation
+from . import validation, xcontainerelementwrapper, xelementwrapper
+
 
 class XLinkedContainerElementWrapper(xcontainerelementwrapper.XContainerElementWrapper):
     """Child elements of XLinkedContainerElementWrapper are saved

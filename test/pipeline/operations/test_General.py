@@ -3,7 +3,6 @@ Created on Aug 27, 2013
 
 @author: u0490822
 '''
-import unittest
 
 from test.pipeline.setup_pipeline import *
 

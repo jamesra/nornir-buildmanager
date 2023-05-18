@@ -3,13 +3,12 @@ Created on Apr 15, 2013
 
 @author: u0490822
 '''
-import glob
 import os
 import unittest
-  
+
 import nornir_buildmanager.importers.sectionimage as sectionimage
-from .setup_pipeline import VolumeEntry
 from . import setup_pipeline
+from .setup_pipeline import VolumeEntry
 
 
 class ImportLMImages(setup_pipeline.PlatformTest):
@@ -21,7 +20,7 @@ class ImportLMImages(setup_pipeline.PlatformTest):
     @property
     def VolumePath(self):
         return "6872"
- 
+
     def setUp(self):
         super(ImportLMImages, self).setUp()
 
@@ -31,7 +30,7 @@ class ImportLMImages(setup_pipeline.PlatformTest):
             node.Save()
 
         VolumeObj.Save()
-        del VolumeObj 
+        del VolumeObj
 
 
 class testImportPNG(ImportLMImages):
@@ -50,8 +49,8 @@ class testImportPNG(ImportLMImages):
 
         volumeNode = self.RunBuild(buildArgs)
 
-        for tile_set_node in setup_pipeline.EnumerateTileSets(self, volumeNode, Channels, Filter) : 
-            self._VerifyPyramidHasExpectedLevels(tile_set_node, [1,2,4]) 
+        for tile_set_node in setup_pipeline.EnumerateTileSets(self, volumeNode, Channels, Filter):
+            self._VerifyPyramidHasExpectedLevels(tile_set_node, [1, 2, 4])
 
         return volumeNode
 
@@ -62,12 +61,12 @@ class testImportPNG(ImportLMImages):
                                VolumeEntry("Channel", "Name", "gfp"),
                                VolumeEntry("Filter", "Name", "mosaic")]
 
-
         setup_pipeline.VerifyVolume(self, self.TestOutputPath, listExpectedEntries)
 
         self.RunTilesetFromImage(Channels="gfp")
 
         self.RunCreateVikingXML('Mosaic')
+
 
 #
 # class testManipulateImageVolume(setup_pipeline.PipelineTest):
@@ -87,7 +86,6 @@ class testImportPNG(ImportLMImages):
 #
 #
 #
-
 
 
 if __name__ == "__main__":

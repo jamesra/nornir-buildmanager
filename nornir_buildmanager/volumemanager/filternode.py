@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
-from nornir_buildmanager.volumemanager import XNamedContainerElementWrapped, ContrastHandler, \
-    ImageNode, ImageSetNode, HistogramNode, TilesetNode, TilePyramidNode, Scale
+from nornir_buildmanager.volumemanager import ContrastHandler, HistogramNode, ImageNode, ImageSetNode, Scale, \
+    TilePyramidNode, TilesetNode, XNamedContainerElementWrapped
+
 
 class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
     DefaultMaskName = "Mask"
@@ -206,6 +207,8 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         print("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (
             self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff,
             Gamma))
+
+
 #       XElementWrapper.logger.warning("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (
 #            self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff,
 #            Gamma))
@@ -213,4 +216,4 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
 
 def BuildFilterImageName(SectionNumber: int, ChannelName: str, FilterName: str, Extension=None) -> str:
     return nornir_buildmanager.templates.Current.SectionTemplate % SectionNumber + \
-           f"_{ChannelName}_{FilterName}{Extension}"
+        f"_{ChannelName}_{FilterName}{Extension}"

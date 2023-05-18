@@ -4,6 +4,7 @@ import math
 
 from nornir_buildmanager.volumemanager import XElementWrapper
 
+
 class AutoLevelHintNode(XElementWrapper):
 
     @property

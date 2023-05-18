@@ -3,7 +3,6 @@ Created on Jun 22, 2012
 
 @author: Jamesan
 '''
-import logging
 import math
 import random
 import shutil
@@ -11,26 +10,21 @@ import subprocess
 import tempfile
 import typing
 
-from nornir_shared import prettyoutput, files, misc, plot
-from nornir_shared.processoutputinterceptor import ProgressOutputInterceptor, ProcessOutputInterceptor
-
-import nornir_pools
-import nornir_imageregistration
-
-from nornir_imageregistration.views import TransformWarpView
-from nornir_imageregistration import assemble, mosaic
-from nornir_imageregistration.files import stosfile
-import nornir_imageregistration.stos_brute as stos_brute
-from nornir_imageregistration import local_distortion_correction
-from nornir_imageregistration.transforms import *
-
+from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.metadatautils import *
-from nornir_buildmanager.validation import transforms
-
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
-from nornir_buildmanager.exceptions import NornirUserException
-from nornir_buildmanager.volumemanager import * 
+from nornir_buildmanager.validation import transforms
+from nornir_buildmanager.volumemanager import *
+import nornir_imageregistration
+from nornir_imageregistration import assemble, local_distortion_correction, mosaic
+from nornir_imageregistration.files import stosfile
+import nornir_imageregistration.stos_brute as stos_brute
+from nornir_imageregistration.transforms import *
+from nornir_imageregistration.views import TransformWarpView
+import nornir_pools
+from nornir_shared import files, misc, plot, prettyoutput
+from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -84,7 +78,7 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                         parts = line.split()
                         outputFile = parts[1]
                         # Figure out if the output file has a different path
-                        #path = os.path.dirname(outputFile)
+                        # path = os.path.dirname(outputFile)
 
                         [name, ext] = os.path.splitext(outputFile)
                         if ext is None:
@@ -688,6 +682,7 @@ def GetImage(block_node: BlockNode, SectionNumber: int, Channel: str, Filter: st
 
     return filterNode.GetOrCreateImage(Downsample), filterNode.GetMaskImage(Downsample)
 
+
 class StosImageNodesOutput(typing.NamedTuple):
     ControlImageNode: ImageNode
     ControlImageMaskNode: ImageNode | None
@@ -696,20 +691,19 @@ class StosImageNodesOutput(typing.NamedTuple):
 
 
 def StosImageNodes(StosTransformNode: TransformNode, Downsample: int) -> StosImageNodesOutput:
-
     block_node = StosTransformNode.FindParent('Block')  # type: BlockNode | None
 
     (ControlImageNode, ControlImageMaskNode) = GetImage(block_node,
-                                                                      SectionNumber=StosTransformNode.ControlSectionNumber,
-                                                                      Channel=StosTransformNode.ControlChannelName,
-                                                                      Filter=StosTransformNode.ControlFilterName,
-                                                                      Downsample=Downsample)
+                                                        SectionNumber=StosTransformNode.ControlSectionNumber,
+                                                        Channel=StosTransformNode.ControlChannelName,
+                                                        Filter=StosTransformNode.ControlFilterName,
+                                                        Downsample=Downsample)
 
     (MappedImageNode, MappedImageMaskNode) = GetImage(block_node,
-                                                                    SectionNumber=StosTransformNode.MappedSectionNumber,
-                                                                    Channel=StosTransformNode.MappedChannelName,
-                                                                    Filter=StosTransformNode.MappedFilterName,
-                                                                    Downsample=Downsample)
+                                                      SectionNumber=StosTransformNode.MappedSectionNumber,
+                                                      Channel=StosTransformNode.MappedChannelName,
+                                                      Filter=StosTransformNode.MappedFilterName,
+                                                      Downsample=Downsample)
 
     return StosImageNodesOutput(ControlImageNode=ControlImageNode, ControlImageMaskNode=ControlImageMaskNode,
                                 MappedImageNode=MappedImageNode, MappedImageMaskNode=MappedImageMaskNode)
@@ -1185,10 +1179,10 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
         else:
             excess_control_sections = knownControlSections - potentialControls
             for control in excess_control_sections:
-                OutputStosMapNode.RemoveMapping(control=control, mapped=mappedSection) 
+                OutputStosMapNode.RemoveMapping(control=control, mapped=mappedSection)
                 Logger.info(f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
-                prettyoutput.Log(f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
-            
+                prettyoutput.Log(
+                    f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
 
         # Examine each stos image if it exists and determine the best match
         WinningTransform = None
@@ -1449,8 +1443,9 @@ def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransf
             pass
 
     if not os.path.exists(OutputTransformPath):
-        result = __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter,
-                           UseMasks)
+        result = __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter,
+                                    MappedFilter,
+                                    UseMasks)
         result.Save(OutputTransformPath)
         return True
 
@@ -1568,8 +1563,8 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
 
     try:
         local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
-                                               OutputStosPath=OutputStosFullPath,
-                                               **kwargs)
+                                                   OutputStosPath=OutputStosFullPath,
+                                                   **kwargs)
     except ValueError as e:
         prettyoutput.LogErr(f'Refining {InputStosFullPath} to {OutputStosFullPath} Failed!')
         return
@@ -1603,7 +1598,8 @@ def IrStosGridRefine(Parameters, mapping_node, InputGroupNode: StosGroupNode, Us
 
 def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsample=32,
                    ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
-                   Type=None, MappedSections: None | list[int] = None, **kwargs) -> Generator[XElementWrapper, None, None]:
+                   Type=None, MappedSections: None | list[int] = None, **kwargs) -> Generator[
+    XElementWrapper, None, None]:
     '''
     Invoke a command to execute a function with an input and output .stos file.  The function
     is expected to refine the input .stos file and write the output .stos file.  At the time
@@ -1619,7 +1615,7 @@ def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsa
 
     for k in keys_to_strip:
         del kwargs[k]
-        
+
     if MappedSections is not None:
         MappedSections = frozenset(MappedSections)
 
@@ -1669,15 +1665,12 @@ def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
 
     if added:
         yield block_node
-        
-    
 
     for MappedSection in mapping_node.Mapped:
-        
+
         if MappedSections is not None and MappedSection not in MappedSections:
             continue
-            
-        
+
         # Find the inputTransformNode in the InputGroupNode
         InputTransformNodes = list(InputGroupNode.TransformsForMapping(MappedSection, mapping_node.Control))
         if InputTransformNodes is None or len(InputTransformNodes) == 0:
@@ -1733,7 +1726,6 @@ def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
             if stosNode is None:
                 stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
                                                                        OutputPath=OutputFile)
-
 
             (InputStosFullPath, InputStosFileChecksum) = __GetOrCreateInputStosFileForRegistration(
                 stos_group_node=OutputStosGroupNode,
@@ -2391,7 +2383,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
     # TODO: Skip transforms using filters which no longer exist.  Should live in a separate function.
     filter_matches = nornir_buildmanager.volumemanager.SearchCollection(channel_node.Filters,
                                                                         'Name', filter_pattern,
-                                                                        CaseSensitive=True) # type: Generator[FilterNode, None, None]
+                                                                        CaseSensitive=True)  # type: Generator[FilterNode, None, None]
 
     result = next(filter_matches, None)
 
@@ -2431,7 +2423,8 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
 #     return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
 
 
-def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, OutputGroupName: str, UseMasks: bool, **kwargs):
+def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, OutputGroupName: str, UseMasks: bool,
+                   **kwargs):
     '''Take a stos group node, scale the transforms, and save in new stosgroup
     
        TODO: This function used to create stos transforms between different filters to.  Port that to a separate function
@@ -2478,10 +2471,11 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
             (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
-                                                                                      MappedFilter,
-                                                                                      OutputType=InputTransformNode.Type,
-                                                                                      OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-                                                                                          ControlFilter, MappedFilter))
+                                                                                              MappedFilter,
+                                                                                              OutputType=InputTransformNode.Type,
+                                                                                              OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+                                                                                                  ControlFilter,
+                                                                                                  MappedFilter))
 
             if not stosNode_added:
                 if not output_stos_node.IsInputTransformMatched(InputTransformNode):
@@ -2565,10 +2559,11 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
             # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
             (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
-                                                                                      MappedFilter,
-                                                                                      OutputType=InputTransformNode.Type,
-                                                                                      OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-                                                                                          ControlFilter, MappedFilter))
+                                                                                              MappedFilter,
+                                                                                              OutputType=InputTransformNode.Type,
+                                                                                              OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+                                                                                                  ControlFilter,
+                                                                                                  MappedFilter))
 
             if not stosNode_added:
                 if not (output_stos_node.IsInputTransformMatched(InputTransformNode) and
@@ -2576,7 +2571,7 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                     try:
                         os.remove(output_stos_node.FullPath)
                     except FileNotFoundError:
-                        pass #It is OK if the file doesn't exist if we tried to delete it
+                        pass  # It is OK if the file doesn't exist if we tried to delete it
             else:
                 # Remove an old file if we had to generate the meta-data
                 try:
@@ -2746,7 +2741,8 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
     '''
     Channels = block_node.findall('Section/Channel')
 
-    MatchingChannelNodes = nornir_buildmanager.volumemanager.SearchCollection(Channels, 'Name', ChannelsRegEx)  # type: Generator[ChannelNode, None, None]
+    MatchingChannelNodes = nornir_buildmanager.volumemanager.SearchCollection(Channels, 'Name',
+                                                                              ChannelsRegEx)  # type: Generator[ChannelNode, None, None]
 
     StosMosaicTransforms = []  # type: list[TransformNode]
 
@@ -2759,7 +2755,7 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
             continue
 
         node_to_save = BuildChannelMosaicToVolumeTransform(stos_map_node, stos_group_node, transform_node,
-                                                         UntranslatedOutputTransformName, Logger, **kwargs)
+                                                           UntranslatedOutputTransformName, Logger, **kwargs)
         if node_to_save is not None:
             yield node_to_save
 
@@ -2775,7 +2771,7 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
     yield block_node
 
 
-def __MoveMosaicsToZeroOrigin(StosMosaicTransforms:  Iterable[TransformNode], OutputStosMosaicTransformName: str):
+def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], OutputStosMosaicTransformName: str):
     '''Given a set of transforms, ensure they are all translated so that none have a negative coordinate for the origin.
        :param list StosMosaicTransforms: [StosTransformNode]
        :param list OutputStosMosaicTransformName: list of names for output nodes

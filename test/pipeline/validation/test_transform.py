@@ -3,19 +3,13 @@ Created on Feb 11, 2013
 
 @author: u0490822
 '''
-import logging
-import os
-import shutil
-import tempfile
 import unittest
 
-from nornir_buildmanager.volumemanager import *
-from nornir_buildmanager.validation import transforms
-import nornir_shared.files
-import nornir_shared.misc
 from test.pipeline.setup_pipeline import *
 
-import nornir_buildmanager.build as build
+from nornir_buildmanager.volumemanager import *
+import nornir_shared.files
+import nornir_shared.misc
 
 
 class TransformIsValidTest(PrepareAndMosaicSetup):
@@ -72,7 +66,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
         for tNode in TransformNodes:
             if not 'InputTransform' in tNode.attrib:
                 continue
-            
+
             prechecksum = tNode.Checksum
 
             original_stat = os.stat(tNode.FullPath)
@@ -85,7 +79,6 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             # Find a transform that depends on the transform we just deleted, if it exists
             OutputTransform = tNode.Parent.GetChildByAttrib('Transform', 'InputTransform', tNode.Name)
 
-
             original_output_stat = None
             output_fullpath = None
             if OutputTransform is not None:
@@ -94,7 +87,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
             # Import the files
-            
+
             # buildArgs = [self.TestOutputPath, '-debug', 'Prune', '-Threshold', '1.0']
             # build.Execute(buildArgs)
             self.RunPrune()
@@ -114,8 +107,9 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Make sure the transforms are still consistent
             self.ValidateAllTransforms(self.ChannelData)
-            
-            RefreshedTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name', tNode.Name) #  tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.Name)
+
+            RefreshedTransform = self.ChannelData.GetChildByAttrib('Transform', 'Name',
+                                                                   tNode.Name)  # tNode.Parent.GetChildByAttrib('Transform', 'Name', tNode.Name)
             self.assertIsNotNone(RefreshedTransform)
 
             # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
@@ -132,9 +126,11 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
                                      OutputTransform.FullPath)
                 else:
                     if new_output_stat.st_mtime > original_output_stat.st_mtime:
-                        raise ValueError(f"Transform {output_fullpath} regenerated itself when the input checksum was unchanged")
-                    #The regenerated transform should be the newest, but the downstream transform should not regenerate because checksum is matched
-                    self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath), tNode.FullPath)
+                        raise ValueError(
+                            f"Transform {output_fullpath} regenerated itself when the input checksum was unchanged")
+                    # The regenerated transform should be the newest, but the downstream transform should not regenerate because checksum is matched
+                    self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath),
+                                     tNode.FullPath)
 
             self.Logger.info("Transform regenerates successfully: " + tNode.FullPath)
 

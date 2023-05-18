@@ -57,7 +57,7 @@ class XFileElementWrapper(volumemanager.XResourceElementWrapper):
         """
         Checks that the file exists by attempting to update the validation time
         """
-        
+
         if self.NeedsValidation is False:
             return True
 

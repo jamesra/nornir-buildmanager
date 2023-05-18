@@ -31,46 +31,42 @@ Example:
 """
 
 from __future__ import annotations
-import concurrent.futures
 
-import re
-import sys
-import datetime
 import collections
-import numpy as np
+import concurrent.futures
+import datetime
+import sys
+
 import matplotlib
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
+import numpy as np
 
-import nornir_shared
-import nornir_imageregistration
-from nornir_buildmanager.volumemanager import *
-from nornir_imageregistration.files import mosaicfile
-from nornir_imageregistration.mosaic import Mosaic
-from nornir_imageregistration import image_stats
-from nornir_shared.images import *
-from nornir_shared.histogram import *
-from nornir_shared.files import RemoveOutdatedFile
-import nornir_shared.plot as plot
- 
-import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.find as find
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
-from hypothesis.executors import executor
- 
+import nornir_buildmanager.importers.shared as shared
+from nornir_buildmanager.volumemanager import *
+import nornir_imageregistration
+from nornir_imageregistration import image_stats
+from nornir_imageregistration.files import mosaicfile
+from nornir_imageregistration.mosaic import Mosaic
+from nornir_shared.files import RemoveOutdatedFile
+from nornir_shared.histogram import *
+from nornir_shared.images import *
+import nornir_shared.plot as plot
 
-def find_sections(ImportPath: str, extension: str, section_candidates: dict[int, list[shared.FilenameMetadata]]) -> dict[
-        int, shared.FilenameMetadata]:
 
+def find_sections(ImportPath: str, extension: str, section_candidates: dict[int, list[shared.FilenameMetadata]]) -> \
+dict[
+    int, shared.FilenameMetadata]:
     match_names = []
     for candidate_dirs in section_candidates.values():
         match_names.extend([e for e in candidate_dirs])
 
     matching_pattern = nornir_shared.files.ensure_regex_or_set(extension)
 
-    best_section_results = {} # type: dict[int, tuple[shared.FilenameMetadata, list[str]]]
+    best_section_results = {}  # type: dict[int, tuple[shared.FilenameMetadata, list[str]]]
 
     for section_meta_data, idocFileList in find.section_directory_metadata_generator(match_names, matching_pattern):
         # The problem with using the directory name is that there could be more than one
@@ -81,7 +77,7 @@ def find_sections(ImportPath: str, extension: str, section_candidates: dict[int,
         # run ToMosaic on all of idocs in the directory with the highest version number
         section_number = section_meta_data.number
 
-        #If we already imported the section, move on
+        # If we already imported the section, move on
         if section_number not in section_candidates:
             continue
 
@@ -89,22 +85,22 @@ def find_sections(ImportPath: str, extension: str, section_candidates: dict[int,
         index = candidates.index(section_meta_data)
 
         if not idocFileList:
-            #There are no .idocs to import 
+            # There are no .idocs to import
             print(f"No {extension} files found in {section_meta_data.fullpath}")
         else:
-            #Store the result.  Remove the entry from the section_candidates.  If we have run out of candidates then
-            #yield the best result we found
+            # Store the result.  Remove the entry from the section_candidates.  If we have run out of candidates then
+            # yield the best result we found
             if section_number in best_section_results:
-                (other_meta_data, other_idoc_list) = best_section_results[section_number] 
+                (other_meta_data, other_idoc_list) = best_section_results[section_number]
                 if other_meta_data.version < section_meta_data.version:
                     best_section_results[section_number] = (section_meta_data, idocFileList)
             else:
                 best_section_results[section_number] = (section_meta_data, idocFileList)
-                
+
         candidates.remove(section_meta_data)
         if len(candidates) == 0:
             if section_number in best_section_results:
-                #yield the best result
+                # yield the best result
                 yield best_section_results[section_number]
                 del best_section_results[section_number]
                 del section_candidates[section_number]
@@ -160,6 +156,7 @@ def find_sections(ImportPath: str, extension: str, section_candidates: dict[int,
     #
     # return found_sections
 
+
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     """Import the specified directory into the volume"""
 
@@ -191,7 +188,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     if not os.path.exists(ImportPath):
         raise ValueError("Import Path does not exist: %s" % ImportPath)
- 
+
     DataFound = False
 
     found_section_candidates = find.find_section_candidates(ImportPath, DesiredSectionList)
@@ -206,7 +203,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     found_sections = find_sections(ImportPath, extension, found_section_candidates)
 
     for (section_meta_data, idocFileList) in found_sections:
-        DataFound = True 
+        DataFound = True
         for idocFileFullPath in idocFileList:
             yield SerialEMIDocImport.ToMosaic(VolumeElement,
                                               idocFileFullPath,
@@ -223,8 +220,11 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 class SerialEMIDocImport(object):
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath: str, ContrastCutoffs: tuple[float,float], OutputImageExt: str = None,
-                 TargetBpp: int = None, FlipList: list[int] | None = None, ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None, CameraBpp: int = None,
+    def ToMosaic(cls, VolumeObj, idocFileFullPath: str, ContrastCutoffs: tuple[float, float],
+                 OutputImageExt: str = None,
+                 TargetBpp: int = None, FlipList: list[int] | None = None,
+                 ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
+                 CameraBpp: int = None,
                  debug: bool | None = None):
         """
         This function will convert an idoc file in the given path to a .mosaic file.
@@ -289,10 +289,11 @@ class SerialEMIDocImport(object):
         else:
             SectionNumber = ExistingSectionInfo.number
 
-        #prettyoutput.CurseString('Section', str(SectionNumber))
+        # prettyoutput.CurseString('Section', str(SectionNumber))
 
         # Check for underscores.  If there is an underscore and the first part is the sectionNumber, then use everything after as the section name
-        SectionName = ExistingSectionInfo.name if ExistingSectionInfo.name is not None else (('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number)
+        SectionName = ExistingSectionInfo.name if ExistingSectionInfo.name is not None else (
+                    ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number)
         SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number
         sectionObj = SectionNode.Create(SectionNumber,
                                         SectionName,
@@ -362,9 +363,12 @@ class SerialEMIDocImport(object):
 
         source_tile_list = [os.path.join(sectionDir, t.Image) for t in IDocData.tiles]
 
-        (ActualMosaicMin, ActualMosaicMax, Gamma) = SerialEMIDocImport.GetSectionContrastSettings(SectionNumber, ContrastMap,
-                                                                                   ContrastCutoffs, source_tile_list,
-                                                                                   IDocData, histogramFullPath)
+        (ActualMosaicMin, ActualMosaicMax, Gamma) = SerialEMIDocImport.GetSectionContrastSettings(SectionNumber,
+                                                                                                  ContrastMap,
+                                                                                                  ContrastCutoffs,
+                                                                                                  source_tile_list,
+                                                                                                  IDocData,
+                                                                                                  histogramFullPath)
         ActualMosaicMax = numpy.around(ActualMosaicMax)
         ActualMosaicMin = numpy.around(ActualMosaicMin)
 
@@ -373,9 +377,10 @@ class SerialEMIDocImport(object):
 
         Pool = nornir_pools.GetGlobalThreadPool()
         # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-        histogram_creation_task = Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber, ActualMosaicMin,
-                      ActualMosaicMax, force_recreate=contrast_mismatch)
-          
+        histogram_creation_task = Pool.add_task(histogramFullPath, _PlotHistogram, histogramFullPath, SectionNumber,
+                                                ActualMosaicMin,
+                                                ActualMosaicMax, force_recreate=contrast_mismatch)
+
         ImageConversionRequired = contrast_mismatch
 
         # Create a channel for the Raw data 
@@ -424,7 +429,7 @@ class SerialEMIDocImport(object):
             ImageConversionRequired = False
         else:
             ImageConversionRequired = (not ImageBpp == TargetBpp) or (
-                        ImageConversionRequired or Tileset.ImageConversionRequired)
+                    ImageConversionRequired or Tileset.ImageConversionRequired)
 
         if ImageConversionRequired:
             Invert = False
@@ -459,7 +464,8 @@ class SerialEMIDocImport(object):
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
             UpdateMosaicFile = UpdateMosaicFile or MFile.NumberOfImages != len(Tileset.Tiles)
             if MFile.NumberOfImages != len(Tileset.Tiles):
-                prettyoutput.Log(f"Number of tiles in .mosaic did not match number of tiles in .idoc: {MFile.NumberOfImages} vs. {len(Tileset.Tiles)}")
+                prettyoutput.Log(
+                    f"Number of tiles in .mosaic did not match number of tiles in .idoc: {MFile.NumberOfImages} vs. {len(Tileset.Tiles)}")
 
         # If we wrote new images replace the .mosaic file
         if SourceToMissingTargetMap or UpdateMosaicFile or not os.path.exists(SupertilePath):
@@ -468,7 +474,6 @@ class SerialEMIDocImport(object):
             # we flop instead of flip and reverse when writing the coordinates
             mosaicfile.MosaicFile.Write(SupertilePath, Entries=Tileset.GetPositionsForTargets(), Flip=not Flip,
                                         ImageSize=IDocData.ImageSize, Downsample=1)
-            
 
             # Sometimes files fail to convert, when this occurs remove them from the .mosaic
             if ImageConversionRequired:
@@ -480,10 +485,11 @@ class SerialEMIDocImport(object):
             transformObj.ResetChecksum()
             SaveChannel = True
             # transformObj.Checksum = MFile.Checksum
-            
-        #It has been a while, check if the histogram is done and try to add meta-data for it
+
+        # It has been a while, check if the histogram is done and try to add meta-data for it
         histogram_creation_task.wait()
-        saveChannel |= shared.TryAddHistogram(filterObj, sectionDir, image_ext=".png",  min_cutoff=ActualMosaicMin, max_cutoff=ActualMosaicMax, gamma=Gamma)
+        saveChannel |= shared.TryAddHistogram(filterObj, sectionDir, image_ext=".png", min_cutoff=ActualMosaicMin,
+                                              max_cutoff=ActualMosaicMax, gamma=Gamma)
 
         if saveBlock:
             return VolumeObj
@@ -496,7 +502,9 @@ class SerialEMIDocImport(object):
         return None
 
     @staticmethod
-    def GetSectionContrastSettings(SectionNumber: int, ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue], ContrastCutoffs, SourceImagesFullPaths, idoc_data: IDoc,
+    def GetSectionContrastSettings(SectionNumber: int,
+                                   ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue], ContrastCutoffs,
+                                   SourceImagesFullPaths, idoc_data: IDoc,
                                    histogramFullPath: str):
         """Clear and recreate the filters tile pyramid node if the filters contrast node does not match"""
         Gamma = 1.0
@@ -568,7 +576,7 @@ class SerialEMIDocImport(object):
 
 def _GetMinMaxCutoffs(listfilenames, MinCutoff, MaxCutoff, idoc_data, histogramFullPath: str | None = None):
     histogramObj = None
-    if histogramFullPath is not None: 
+    if histogramFullPath is not None:
         histogramObj = Histogram.Load(histogramFullPath)
 
     if histogramObj is None:
@@ -621,7 +629,8 @@ def _CleanOutliersFromIDocHistogram(hObj):
     return hObj
 
 
-def _PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float, maxCutoff: float, force_recreate: bool):
+def _PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float, maxCutoff: float,
+                   force_recreate: bool):
     """
     :param histogramFullPath:  Output path of the image
     :param sectionNumber:
@@ -633,11 +642,13 @@ def _PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float,
     HistogramImageFullPath = os.path.join(os.path.dirname(histogramFullPath), 'Histogram.png')
     ImageRemoved = RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
 
-    if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath) or nornir_shared.files.IsOlderThan(HistogramImageFullPath, datetime.date(year=2022, month=10, day=25)):
+    if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath) or nornir_shared.files.IsOlderThan(
+            HistogramImageFullPath, datetime.date(year=2022, month=10, day=25)):
         #        pool = nornir_pools.GetGlobalMultithreadingPool()
         # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d\nRaw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
         plot.Histogram(histogramFullPath, HistogramImageFullPath,
-                       Title=f"Section {sectionNumber}\nRaw Data Pixel Intensity", LinePosList=[minCutoff, maxCutoff], range_is_power_of_two=True)
+                       Title=f"Section {sectionNumber}\nRaw Data Pixel Intensity", LinePosList=[minCutoff, maxCutoff],
+                       range_is_power_of_two=True)
 
 
 class NornirTileset:
@@ -698,33 +709,34 @@ class NornirTileset:
 
     def GetSourceToMissingTargetMap(self):
         """:return: A dictionary mapping source image paths to missing target image paths"""
- 
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
             results = executor.map(lambda t: (t, not os.path.exists(t.TargetImageFullPath)), self.Tiles, chunksize=5)
-        
-        SourceToTargetMap = {t.SourceImageFullPath:t.TargetImageFullPath for (t,_) in filter(lambda r: r[1], results)}
-        #for t in self._tiles:
-            #if os.path.exists(t.SourceImageFullPath) and not os.path.exists(t.TargetImageFullPath):
-                #SourceToTargetMap[t.SourceImageFullPath] = t.TargetImageFullPath
+
+        SourceToTargetMap = {t.SourceImageFullPath: t.TargetImageFullPath for (t, _) in filter(lambda r: r[1], results)}
+        # for t in self._tiles:
+        # if os.path.exists(t.SourceImageFullPath) and not os.path.exists(t.TargetImageFullPath):
+        # SourceToTargetMap[t.SourceImageFullPath] = t.TargetImageFullPath
 
         return SourceToTargetMap
-    
+
     @staticmethod
-    def RemoveStaleTileFromOutputDir(t,  SupertilePath: str):
+    def RemoveStaleTileFromOutputDir(t, SupertilePath: str):
         try:
             RemoveOutdatedFile(t.SourceImageFullPath, SupertilePath)
         except FileNotFoundError:
             pass
-        
+
         try:
             RemoveOutdatedFile(t.SourceImageFullPath, t.TargetImageFullPath)
         except FileNotFoundError:
             pass
 
     def RemoveStaleTilesFromOutputDir(self, SupertilePath):
-        
+
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            results = executor.map(lambda tile: NornirTileset.RemoveStaleTileFromOutputDir(tile, SupertilePath), self.Tiles, chunksize=5)
+            results = executor.map(lambda tile: NornirTileset.RemoveStaleTileFromOutputDir(tile, SupertilePath),
+                                   self.Tiles, chunksize=5)
 
     def GetPositionsForTargets(self):
         positionMap = {}
@@ -755,7 +767,6 @@ class NornirTileset:
         obj = NornirTileset(OutputImageExt)
 
         for tile in tiles:
-
             [ImageRoot, ImageExt] = os.path.splitext(tile.Image)
 
             ImageExt = ImageExt.strip('.')
@@ -770,7 +781,8 @@ class NornirTileset:
             #     continue
 
             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
-            ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
+            ConvertedImageName = (
+                                             nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
             TargetImageFullPath = os.path.join(OutputTileDir, ConvertedImageName)
 
             obj.AddTile(
@@ -930,7 +942,7 @@ class IDoc:
     def VersionCheck(cls, loaded):
         if loaded.__IDocPickleVersion != cls.__ObjVersion():
             raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (
-            loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+                loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
 
         return
 
@@ -945,11 +957,12 @@ class IDoc:
                     t.Max = maxPossible
 
     def RemoveMissingTiles(self, path: str):
-        #existingTiles = []
+        # existingTiles = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles, chunksize=5)
+            results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles,
+                                   chunksize=5)
 
-        self.tiles =  [r[0] for r in filter(lambda t: t[1], results)]
+        self.tiles = [r[0] for r in filter(lambda t: t[1], results)]
 
     def GetImageBpp(self) -> int | None:
         """:return: Bits per pixel if specified in the IDoc, otherwise None"""
@@ -1095,6 +1108,7 @@ class IDoc:
             idocObj._SetCameraBpp(CameraBpp)
             serialem_utils.PickleSave(idocObj, idocfullPath)
             return idocObj
+
 
 def ArgToIDoc(arg):
     Data = None

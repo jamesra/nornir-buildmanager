@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 
+from nornir_imageregistration.files import mosaicfile, stosfile
 from . import xfileelementwrapper
-from nornir_imageregistration.files import stosfile, mosaicfile
 
 
 class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):

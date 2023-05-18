@@ -4,15 +4,14 @@ Created on Aug 27, 2013
 @author: u0490822
 '''
 
-
 import subprocess
 
-from nornir_buildmanager.volumemanager import *
+from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.operations.tile
 from nornir_buildmanager.validation import transforms
+from nornir_buildmanager.volumemanager import *
 import nornir_shared
 from nornir_shared import *
-from nornir_buildmanager.exceptions import NornirUserException
 
 
 def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExtension=None, **kwargs):
@@ -36,7 +35,8 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
     # STOPPED HERE.  NEED TO CREATE A FILTER  #
     ###########################################
     SaveFilterNode = False
-    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(FilterNode.Create(Name=OutputFilterName), "Name")
+    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(
+        FilterNode.Create(Name=OutputFilterName), "Name")
 
     # DownsampleSearchTemplate = "Level[@Downsample='%(Level)d']/Image"
 
@@ -62,7 +62,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
     # InputMaskLevelNode = MaskSetNode.find(DownsampleSearchString)
 
     InputImageNode = None
-    
+
     try:
         InputImageNode = InputFilter.GetOrCreateImage(thisLevel)
     except NornirUserException as e:
@@ -80,17 +80,17 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         InputMaskImageNode = InputFilter.GetOrCreateMaskImage(thisLevel)
         if not os.path.exists(InputMaskImageNode.FullPath):
             InputMaskImageNode = None
-    
+
         if not InputMaskImageNode is None:
             OutputFilterNode.MaskName = InputFilter.MaskName
-            MaskStr = ' -mask %s ' % InputMaskImageNode.FullPath 
+            MaskStr = ' -mask %s ' % InputMaskImageNode.FullPath
 
     BlobImageNode = OutputFilterNode.Imageset.GetImage(thisLevel)
     if not BlobImageNode is None:
         BlobImageNode = transforms.RemoveOnMismatch(BlobImageNode, "InputImageChecksum", InputImageNode.Checksum)
 
     if BlobImageNode is None:
-        try: 
+        try:
             BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName, GenerateData=False)
         except NornirUserException as e:
             prettyoutput.Log("Missing input blob image for blob level: " + str(thisLevel))
@@ -101,14 +101,14 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
 
         os.makedirs(os.path.dirname(BlobImageNode.FullPath), exist_ok=True)
 
-        cmd = irblobtemplate % {'OutputImageFile' : BlobImageNode.FullPath,
-                                'InputFile' : InputImageNode.FullPath} + MaskStr
+        cmd = irblobtemplate % {'OutputImageFile': BlobImageNode.FullPath,
+                                'InputFile': InputImageNode.FullPath} + MaskStr
 
         prettyoutput.Log(cmd)
         proc = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (stdout, stderr) = proc.communicate()
         if proc.returncode < 0 or not os.path.exists(BlobImageNode.FullPath):
-            SaveFilterNode = False 
+            SaveFilterNode = False
             prettyoutput.LogErr("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
             raise RuntimeError("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
         else:
@@ -116,7 +116,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
 
     if not hasattr(BlobImageNode, 'InputImageChecksum'):
         BlobImageNode.InputImageChecksum = InputImageNode.Checksum
-        SaveFilterNode = True 
+        SaveFilterNode = True
 
     BlobPyramidImageSet = nornir_buildmanager.operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
     SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)

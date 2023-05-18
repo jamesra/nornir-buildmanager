@@ -1,10 +1,6 @@
-import multiprocessing
-import os
-
-
 class __Config:
     '''A place to store hardcoded values used throughout the buildscripts'''
- 
+
     def __init__(self):
         # Standard format strings
         self.DefaultImageExt = 'png'
@@ -56,7 +52,7 @@ class __Config:
         return "MultipleIntensityAverage"
 
     def StosBruteCmd(self):
-    #    return "ir-stos-brute -sh 1 -clahe 2 -refine -cubic -regularize "
+        #    return "ir-stos-brute -sh 1 -clahe 2 -refine -cubic -regularize "
         return "ir-stos-brute -sh 1 -refine -regularize "
 
     def StosGridCmd(self, Spacing=None, Neighborhood=None):
@@ -65,7 +61,8 @@ class __Config:
         if Neighborhood is None:
             Neighborhood = 128
 
-        return "ir-stos-grid -sh 1 -fft 0 0.25 -grid_spacing " + str(Spacing) + " -neighborhood " + str(Neighborhood) + " -it 10 "
+        return "ir-stos-grid -sh 1 -fft 0 0.25 -grid_spacing " + str(Spacing) + " -neighborhood " + str(
+            Neighborhood) + " -it 10 "
 
     def StosAddTransform(self):
         return "ir-add-transforms "
@@ -78,7 +75,7 @@ Current = __Config()
 if __name__ == '__main__':
     try:
         from nornir_shared import prettyoutput
+
         prettyoutput.CurseString("# of Cores", str(Current.NumProcs))
     except:
         pass
-

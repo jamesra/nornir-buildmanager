@@ -5,50 +5,47 @@ Created on Feb 6, 2013
 '''
 
 import glob
-import logging
 import os
-import shutil
 import unittest
-  
+
+from nornir_buildmanager.importers.pmg import PMGInfo, ParsePMGFilename
+import nornir_buildmanager.importers.pmg as pmg
 import nornir_buildmanager.volumemanager
-from nornir_buildmanager.importers.pmg import ParsePMGFilename, PMGInfo
 from nornir_imageregistration.files.mosaicfile import MosaicFile
 import nornir_shared.files
 import nornir_shared.misc
-
-import nornir_buildmanager.importers.pmg as pmg
 from . import setup_pipeline
 
-
-PMGData = {"6750_10677D_WDF_20x_02_G.pmg" : PMGInfo(Slide=6750,
-                                                 Block='10677D',
-                                                 Initials='WDF',
-                                                 Mag='20x',
-                                                 Spot=2,
-                                                 Probe='G',
-                                                 NumberOfImages=10),
-           "6750_10677D_WDF_20x_03_E.pmg" : PMGInfo(Slide=6750,
-                                                 Block='10677D',
-                                                 Initials='WDF',
-                                                 Mag='20x',
-                                                 Spot=3,
-                                                 Probe='E',
-                                                 NumberOfImages=8),
-           "6259_9778_WDF_40xOil_04_Dapi.pmg" : PMGInfo(Slide=6259,
-                                                 Block='9778',
-                                                 Initials='WDF',
-                                                 Mag='40xOil',
-                                                 Spot=4,
-                                                 Probe='G',
-                                                 NumberOfImages=96),
-           "6259_9778_WDF_40xOil_04_YY.pmg" : PMGInfo(Slide=6259,
-                                                 Block='9778',
-                                                 Initials='WDF',
-                                                 Mag='40xOil',
-                                                 Spot=4,
-                                                 Probe='G',
-                                                 NumberOfImages=96)
+PMGData = {"6750_10677D_WDF_20x_02_G.pmg": PMGInfo(Slide=6750,
+                                                   Block='10677D',
+                                                   Initials='WDF',
+                                                   Mag='20x',
+                                                   Spot=2,
+                                                   Probe='G',
+                                                   NumberOfImages=10),
+           "6750_10677D_WDF_20x_03_E.pmg": PMGInfo(Slide=6750,
+                                                   Block='10677D',
+                                                   Initials='WDF',
+                                                   Mag='20x',
+                                                   Spot=3,
+                                                   Probe='E',
+                                                   NumberOfImages=8),
+           "6259_9778_WDF_40xOil_04_Dapi.pmg": PMGInfo(Slide=6259,
+                                                       Block='9778',
+                                                       Initials='WDF',
+                                                       Mag='40xOil',
+                                                       Spot=4,
+                                                       Probe='G',
+                                                       NumberOfImages=96),
+           "6259_9778_WDF_40xOil_04_YY.pmg": PMGInfo(Slide=6259,
+                                                     Block='9778',
+                                                     Initials='WDF',
+                                                     Mag='40xOil',
+                                                     Spot=4,
+                                                     Probe='G',
+                                                     NumberOfImages=96)
            }
+
 
 class PMGTest(setup_pipeline.PlatformTest):
 
@@ -65,10 +62,10 @@ class PMGTest(setup_pipeline.PlatformTest):
         clsstr = str(self.__class__.__name__)
         return clsstr
 
+
 class ParseBasicFilename(PMGTest):
 
     def runTest(self):
-
         filename = os.path.join("FakeDir1", "FakeDir2", '1234_5678_ja_40x_04_yy.pmg')
 
         info = ParsePMGFilename(filename)
@@ -82,10 +79,10 @@ class ParseBasicFilename(PMGTest):
 
         pass
 
+
 class ParseSectionFilename(PMGTest):
 
     def runTest(self):
-
         filename = os.path.join("FakeDir1", '1234_5678_0001_ja_40x_04_yy.pmg')
 
         info = ParsePMGFilename(filename)
@@ -99,10 +96,10 @@ class ParseSectionFilename(PMGTest):
         self.assertEqual(info.Probe, 'yy', "Incorrect probe name")
         pass
 
+
 class ParseSpacesInFilename(PMGTest):
 
     def runTest(self):
-
         filename = os.path.join("FakeDir1", "FakeDir2", '1234_5678_0001_ja_40x_04_yy GFP.pmg')
 
         info = ParsePMGFilename(filename)
@@ -116,6 +113,7 @@ class ParseSpacesInFilename(PMGTest):
         self.assertEqual(info.Probe, 'yy GFP', "Incorrect probe name")
         pass
 
+
 class ImportPMG(PMGTest):
 
     def runTest(self):
@@ -125,18 +123,18 @@ class ImportPMG(PMGTest):
         results = nornir_shared.files.RecurseSubdirectoriesGenerator(pmgImportDir, "*.pmg")
 
         for (pmgDir, pmgFiles) in results:
-
             VolumeObj = nornir_buildmanager.volumemanager.VolumeManager.Load(self.TestOutputPath, Create=True)
-            #pmgFile = glob.glob(os.path.join(pmgDir, "*.pmg"))
+            # pmgFile = glob.glob(os.path.join(pmgDir, "*.pmg"))
             self.assertEqual(len(pmgFiles), 1, "Unexpected extra PMG in dir: " + pmgDir)
             pmgFile = pmgFiles[0]
-            #pmgFile = pmgFile[0]
+            # pmgFile = pmgFile[0]
             pmgFileKey = os.path.basename(pmgFile)
 
             pmgData = PMGData[pmgFileKey]
             self.assertIsNotNone(pmgData)
 
-            pmg.PMGImport.ToMosaic(VolumeObj, os.path.join(pmgDir, pmgFile), scaleValueInNm=100, OutputPath=VolumeObj.FullPath, debug=True)
+            pmg.PMGImport.ToMosaic(VolumeObj, os.path.join(pmgDir, pmgFile), scaleValueInNm=100,
+                                   OutputPath=VolumeObj.FullPath, debug=True)
 
             VolumeObj.Save()
             del VolumeObj
@@ -170,11 +168,13 @@ class ImportPMG(PMGTest):
         self.assertEqual(mfile.NumberOfImages, pmgData.NumberOfImages)
 
         XPathTemplate = "Block/Section[@Number='%(section)d']/Channel[@Name='%(probe)s']/Filter[@Name='Raw8']/TilePyramid"
-        XPath = XPathTemplate % {'section' : SectionNumber,
-                                 'probe' : pmgData.Probe}
+        XPath = XPathTemplate % {'section': SectionNumber,
+                                 'probe': pmgData.Probe}
         TilePyramidObj = VolumeObj.find(XPath)
         self.assertIsNotNone(TransformObj)
         self.assertEqual(TilePyramidObj.NumberOfTiles, pmgData.NumberOfImages)
+
+
 #
 #
 # class PMGBuildTest(PMGTest):
@@ -227,10 +227,6 @@ class ImportPMG(PMGTest):
 #
 
 
-     
-             
-      
-
 class PMGBuildTest(setup_pipeline.CopySetupTestBase):
 
     @property
@@ -244,7 +240,7 @@ class PMGBuildTest(setup_pipeline.CopySetupTestBase):
     def runTest(self):
         BruteLevel = 8
 
-        #=======================================================================
+        # =======================================================================
         # self.RunImport()
         # self.RunShadingCorrection(ChannelPattern="(?![D|d]api)", CorrectionType='brightfield', FilterPattern="Raw8")
         # self.RunShadingCorrection(ChannelPattern="([D|d]api)", CorrectionType='darkfield', FilterPattern="Raw8")
@@ -264,21 +260,27 @@ class PMGBuildTest(setup_pipeline.CopySetupTestBase):
         self.RunAlignSections(Channels="*", Filters="Blob", Levels=BruteLevel)
 
         self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
-        self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+        self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel,
+                                            InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
 
-        volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+        volumeNode = self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid",
+                                                    OutputLevel=BruteLevel, Filter="Leveled")
 
-        listReplacedTransformNodes = self.CopyManualStosFiles(self.Grid32ManualStosFullPath, StosGroupName='%s%d' % ('Grid', BruteLevel))
+        listReplacedTransformNodes = self.CopyManualStosFiles(self.Grid32ManualStosFullPath,
+                                                              StosGroupName='%s%d' % ('Grid', BruteLevel))
 
-        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel, Filter="Leveled")
+        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid",
+                                       OutputLevel=BruteLevel, Filter="Leveled")
 
-        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
+        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid",
+                                       OutputLevel=BruteLevel / 4, Filter="Leveled")
         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
         self.RunSliceToVolume()
         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
         self.RunMosaicToVolume()
         self.RunAssembleMosaicToVolume(Channels="(?!Registered)", Filters="ShadingCorrected", AssembleLevel=1)
         self.RunExportImages(Channels="Registered", Filters="ShadingCorrected", AssembleLevel=1, Output="Registered")
+
 
 # class PMGAlignTest(setup_pipeline.CopySetupTestBase):
 #
@@ -330,13 +332,15 @@ class PMGBuildTest(setup_pipeline.CopySetupTestBase):
 
 class ParsePMG(PMGTest):
 
-
     def setUp(self):
 
         super(PMGTest, self).setUp()
 
-        self.pmgDirs = [d[0] for d in nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg")]
-        extraDirs = [d[0] for d in nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'), "*.pmg")]
+        self.pmgDirs = [d[0] for d in nornir_shared.files.RecurseSubdirectoriesGenerator(
+            os.path.join(self.PlatformFullPath, '6259_small'), "*.pmg")]
+        extraDirs = [d[0] for d in
+                     nornir_shared.files.RecurseSubdirectoriesGenerator(os.path.join(self.PlatformFullPath, '6750'),
+                                                                        "*.pmg")]
         self.pmgDirs.extend(extraDirs)
         self.assertTrue(len(self.pmgDirs) > 0, "No test input found")
 
@@ -358,6 +362,7 @@ class ParsePMG(PMGTest):
 
             for f in list(FilesDict.keys()):
                 self.assertTrue(os.path.exists(os.path.join(pmgDir, f)))
+
 
 if __name__ == "__main__":
     # import syssys.argv = ['', 'Test.testpmg']

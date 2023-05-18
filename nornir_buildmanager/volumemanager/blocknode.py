@@ -1,11 +1,12 @@
 from __future__ import annotations
-from collections.abc import Iterable, Generator
+
+from collections.abc import Generator, Iterable
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
-from nornir_buildmanager.volumemanager import StosMapNode, \
-    StosGroupNode, SectionNode, XElementWrapper, \
+from nornir_buildmanager.volumemanager import SectionNode, StosGroupNode, StosMapNode, XElementWrapper, \
     XNamedContainerElementWrapped
+
 
 class BlockNode(XNamedContainerElementWrapped):
 

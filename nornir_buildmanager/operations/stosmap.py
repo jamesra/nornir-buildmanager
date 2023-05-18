@@ -3,7 +3,6 @@ Created on Dec 20, 2016
 
 @author: u0490822
 '''
-import nornir_imageregistration
 import nornir_buildmanager.volumemanager
 
 
@@ -17,6 +16,7 @@ def ListBlockStosMaps(BlockNode, **kwargs):
     print("")
 
     return
+
 
 def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
     StosMap = BlockNode.GetStosMap(StosMapName)
@@ -37,10 +37,11 @@ def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
 
     for mapping in sorted(mappings, key=lambda m: m.Control):
         print("{0:s}{1:s}".format(repr(mapping.Control).ljust(10),
-              ', '.join([str(n) for n in sorted(mapping.Mapped)]))) 
+                                  ', '.join([str(n) for n in sorted(mapping.Mapped)])))
 
     print('')
     return
+
 
 def AddMapping(BlockNode, StosMapName, ControlSection, MappedSection, **kwargs):
     StosMap = BlockNode.GetStosMap(StosMapName)
@@ -83,6 +84,7 @@ def SetCenter(BlockNode: nornir_buildmanager.volumemanager.BlockNode, StosMapNam
     print("New Center: {0:d}".format(StosMap.CenterSection))
 
     return BlockNode
+
 
 if __name__ == '__main__':
     pass

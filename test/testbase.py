@@ -8,7 +8,6 @@ import glob
 import logging
 import os
 import pickle
-import pstats
 import shutil
 import unittest
 
@@ -17,7 +16,7 @@ from nornir_shared.misc import SetupLogging
 
 
 class PickleHelper(object):
-         
+
     @property
     def TestCachePath(self):
         '''Contains cached files from previous test runs, such as database query results.
@@ -29,8 +28,7 @@ class PickleHelper(object):
             self.fail("TESTOUTPUTPATH environment variable should specify test output directory")
 
         return None
-    
-    
+
     def SaveVariable(self, var, path):
         fullpath = os.path.join(self.TestCachePath, path)
 
@@ -39,7 +37,6 @@ class PickleHelper(object):
         with open(fullpath, 'wb') as filehandle:
             print("Saving: " + fullpath)
             pickle.dump(var, filehandle, protocol=pickle.HIGHEST_PROTOCOL)
-            
 
     def ReadOrCreateVariable(self, varname, createfunc=None, **kwargs):
         '''Reads variable from disk, call createfunc if it does not exist'''
@@ -75,7 +72,8 @@ class TestBase(unittest.TestCase):
     def TestInputPath(self):
         if 'TESTINPUTPATH' in os.environ:
             TestInputDir = os.environ["TESTINPUTPATH"]
-            self.assertTrue(os.path.exists(TestInputDir), "Test input directory specified by TESTINPUTPATH environment variable does not exist")
+            self.assertTrue(os.path.exists(TestInputDir),
+                            "Test input directory specified by TESTINPUTPATH environment variable does not exist")
             return TestInputDir
         else:
             self.fail("TESTINPUTPATH environment variable should specfify input data directory")
@@ -91,7 +89,7 @@ class TestBase(unittest.TestCase):
             self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
 
         return None
-    
+
     @property
     def TestSetupCachePath(self):
         '''The directory where we can cache the setup phase of the tests.  Delete to obtain a clean run of all tests'''
@@ -102,7 +100,7 @@ class TestBase(unittest.TestCase):
             self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
 
         return None
-    
+
     @property
     def TestOutputURL(self):
         if 'TESTOUTPUTURL' in os.environ:
@@ -134,7 +132,7 @@ class TestBase(unittest.TestCase):
                 shutil.rmtree(self.VolumeDir)
         except:
             pass
-        
+
         os.makedirs(self.VolumeDir, exist_ok=True)
 
         self.profiler = None
@@ -142,49 +140,48 @@ class TestBase(unittest.TestCase):
         if 'PROFILE' in os.environ:
             self.profiler = cProfile.Profile()
             self.profiler.enable()
-          
+
         SetupLogging(Level=logging.INFO)
         self.Logger = logging.getLogger(self.classname)
-        
 
     def tearDown(self):
         nornir_pools.ClosePools()
         if not self.profiler is None:
             self.profiler.dump_stats(self.TestProfilerOutputPath)
-                         
+
         unittest.TestCase.tearDown(self)
-        
+
     def SaveTestSetupToCache(self, subpath=None):
         '''Copy the results from the output directory to the test cache directory'''
         TestCachePath = self.TestSetupCachePath
         if subpath is not None:
             TestCachePath = os.path.join(self.TestSetupCachePath, subpath)
-            
+
         if os.path.exists(TestCachePath):
             shutil.rmtree(TestCachePath)
-            
+
         shutil.copytree(self.TestOutputPath, TestCachePath)
         print("Saved test setup to cache %s" % TestCachePath)
-        
+
     def TryLoadTestSetupFromCache(self, subpath=None):
         '''Copy the results from the setup cache to the output directory.
         :return: True if cache existed and copied
-        ''' 
+        '''
         if not isinstance(subpath, str):
             subpath = str(subpath)
-            
+
         TestCachePath = self.TestSetupCachePath
         if subpath is not None:
             TestCachePath = os.path.join(self.TestSetupCachePath, subpath)
-            
+
         if os.path.exists(TestCachePath):
             print("Found test setup in cache %s" % TestCachePath)
             if os.path.exists(self.TestOutputPath):
                 shutil.rmtree(self.TestOutputPath)
             shutil.copytree(TestCachePath, self.TestOutputPath)
             return True
-        
-        return False 
+
+        return False
 
 
 class ImageTestBase(TestBase):
@@ -203,7 +200,7 @@ class TransformTestBase(TestBase):
     @property
     def TestName(self):
         raise NotImplementedError("Test should override TestName property")
-    
+
     @property
     def TestOutputPath(self):
         return os.path.join(super(TransformTestBase, self).TestOutputPath, self.id())
@@ -219,7 +216,7 @@ class TransformTestBase(TestBase):
 
     def setUp(self):
         self.ImportedDataPath = os.path.join(self.TestInputPath, "Transforms", "Mosaics")
-        
+
         os.makedirs(self.TestOutputPath, exist_ok=True)
 
         super(TransformTestBase, self).setUp()

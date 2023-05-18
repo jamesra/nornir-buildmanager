@@ -3,409 +3,428 @@
            targetNamespace="http://connectomes.utah.edu/Volume/"
            xmlns="http://connectomes.utah.edu/Volume/">
 
-  <xs:simpleType name="LengthUnits">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value ="pm"/>
-      <xs:enumeration value ="A"/>
-      <xs:enumeration value ="nm"/>
-      <xs:enumeration value ="um"/>
-      <xs:enumeration value ="mm"/>
-      <xs:enumeration value ="m"/>
-      <xs:enumeration value ="km"/>
-    </xs:restriction>
-  </xs:simpleType>
+    <xs:simpleType name="LengthUnits">
+        <xs:restriction base="xs:string">
+            <xs:enumeration value="pm"/>
+            <xs:enumeration value="A"/>
+            <xs:enumeration value="nm"/>
+            <xs:enumeration value="um"/>
+            <xs:enumeration value="mm"/>
+            <xs:enumeration value="m"/>
+            <xs:enumeration value="km"/>
+        </xs:restriction>
+    </xs:simpleType>
 
-  <!--Scale definition-->
-  <xs:complexType name="ScaleForAxis">
-    <xs:attribute name="UnitsOfMeasure" type="LengthUnits"/>
-    <xs:attribute name="UnitsPerPixel" type="xs:double"/>
-  </xs:complexType>
-
-  <xs:complexType name="Scale">
-    <xs:sequence>
-      <xs:element name="X" type ="ScaleForAxis" minOccurs ="1"/>
-      <xs:element name="Y" type ="ScaleForAxis" minOccurs ="1"/>
-      <xs:element name="Z" type ="ScaleForAxis" minOccurs ="0"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="BoundingBoxType">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Size of an entity in pixels
-      </xs:documentation>
-    </xs:annotation>
-    <xs:attribute name="X" type="xs:double" default="0" use="optional"/>
-    <xs:attribute name="Y" type="xs:double" default="0" use="optional"/>
-    <xs:attribute name="Z" type="xs:double" default="0" use="optional"/>
-    <xs:attribute name="Width" type="xs:double" use="required"/>
-    <xs:attribute name="Height" type="xs:double" use="required"/>
-    <xs:attribute name="Depth" type="xs:double" use="required"/>
-  </xs:complexType>
-
-  <xs:complexType name="EntryElement">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:attribute name="Name" type="xs:string"/>
-    <xs:attribute name="Value" type="xs:string"/>
-  </xs:complexType>
-
-  <xs:complexType name="DictionaryElement">
-    <xs:sequence>
-      <xs:element name="Entry" type="EntryElement" minOccurs="0" maxOccurs ="unbounded"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:complexType name="TagElement">
-    <xs:annotation>
-      <xs:documentation>
-        Tags are a named dictionary functions can attach to elements to prevent conflicting with names in an elements default property list
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base="DictionaryElement">
-        <xs:attribute name="Name" use="required"/>
-        <xs:attribute name="CreationDate" type="xs:dateTime" use="optional" default ="1980-01-01T12:00:00">
-          <xs:annotation>
-            <xs:documentation>
-              The date this resource was created by the scripts
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-        <xs:anyAttribute/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-  
-  <xs:complexType name="Container">
-    <xs:annotation>
-      <xs:documentation>
-        A resource stored in a path on the filesystem or prefixed by a URI
-      </xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      
-      <xs:element name="Properties" type="DictionaryElement" minOccurs ="0" maxOccurs ="1">
-        <xs:annotation>
-          <xs:documentation>
-            Arbitrary data about the node, used by buildscripts for record keeping
-          </xs:documentation>
-        </xs:annotation>
-      </xs:element>
-      <xs:element name="Tag" type="TagElement" minOccurs ="0" maxOccurs ="unbounded">
-        <xs:annotation>
-          <xs:documentation>
-            Arbitrary data about the node, with associated properties extensions to buildscripts can store internal information here
-          </xs:documentation>
-        </xs:annotation>
-      </xs:element>
-    </xs:sequence>
-    <xs:attribute name="Path" type="xs:string" use="required">
-      <xs:annotation>
-        <xs:documentation>
-          Relative or absolute path to the resource.
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="CreationDate" type="xs:dateTime" use="optional" default ="1980-01-01T12:00:00">
-      <xs:annotation>
-        <xs:documentation>
-          The date this resource was created by the scripts
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="ScriptVersion" type="xs:decimal" use="optional" default="1.0">
-      <xs:annotation>
-        <xs:documentation>
-          The script version in use when this resource was created
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-    <xs:attribute name="CommandLine" use="optional" type="xs:string">
-      <xs:annotation>
-        <xs:documentation>
-          The command line used to generate this resource if applicable, used for debugging
-        </xs:documentation>
-      </xs:annotation>
-    </xs:attribute>
-  </xs:complexType>
-
-  <xs:complexType name="NamedContainer">
-    <xs:annotation>
-      <xs:documentation>
-        A resource stored in a path on the filesystem or prefixed by a URI that presents a friendly name.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base="Container">
-          <xs:attribute name="Name" type="xs:string" use="required">
-          <xs:annotation>
-            <xs:documentation>
-              Name of the resource used displayed to the user
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-        <xs:attribute name="Description" type="xs:string" use="optional" default ="">
-          <xs:annotation>
-            <xs:documentation>
-              Description of the resource
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-  
-  <xs:complexType name="Level">
-    <xs:annotation>
-      <xs:documentation>
-        Describes a level in a "tileset" or "pyramid" image pyramid.  A level is a directory containing all of the original tiles downsampled by a common factor.
-        Level: A number defining what level of the pyramid this is.  Must currently be a power of two.
-        path: A string which is to be appended to the section path to be used to locate images in this level.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      
-      <xs:extension base="Container">
-        <xs:attribute name="Downsample" type="xs:integer" use="required"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="GridLevel">
-    <xs:annotation>
-      <xs:documentation>
-        Grid tilesets have a variable number of images of fixed size representing the data.  These are not compatible with the ir-tools, but
-        make viewing very fast.
-        GridDimX: Tilesets only, Integer defining the dimensions of the grid in X
-        GridDimY: Tilesets only, Integer defining the dimensions of the grid in Y
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base ="Level">
-        <xs:attribute name="GridDimX" type="xs:integer" use="required" />
-        <xs:attribute name="GridDimY" type="xs:integer" use="required" />
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType  name="Pyramid">
-    <xs:annotation>
-      <xs:documentation>
-        Image pyramids are generated from the original images captured by an imaging platform.  We use these image
-        pyramids with the NCRToolset to generate transforms which describe where each tile in the pyramid is
-        positioned in section space.  In the pyramid each tiles size is variable according to what level of the
-        pyramid it is loaded from.  This makes for poor performance over the internet.  However they are very
-        useful for debugging the output of the NCRToolset over an intranet.
-
-        name: Name of the channel displayed in the Viking UI
-        path: Relative path from the section path.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base="Container">
-        <xs:sequence>
-          <xs:element name="Level" minOccurs="1" maxOccurs="unbounded" type ="Level"/>
-        </xs:sequence>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-  
-  <xs:complexType name="Tileset" >
-      <xs:annotation>
-        <xs:documentation>
-          In a tileset all the images have a fixed size regardless of the level of the pyramid, we typically use 256x256 pixel tiles.  Tiles are laid out on a grid with no overlap.
-          This optimizes bandwidth use.  Tile names include the grid position, i.e. X001_Y001.png
-
-          Name: Name of the channel in the Viking UI
-          path: Relative path from the section path.
-          FilePrefix: String to prepend to all file names, if needed.  A period is added after the file prefix if the attribute is included.
-          FilePostfix: Extension to add to file names, must be supported by XNA library.  .png format recommended.
-          TileXDim: Pixel X dimensions of each tile
-          TileYDim: Pixel Y dimensions of each tile
-        </xs:documentation>
-      </xs:annotation>
-      <xs:complexContent>
-        <xs:extension base="Container">
-            <xs:sequence>
-              <xs:element name="Level" minOccurs="1" maxOccurs="unbounded" type ="GridLevel"/>
-            </xs:sequence>
-            <xs:attribute name="FilePrefix" type="xs:string" />
-            <xs:attribute name="FilePostfix" type="xs:string" />
-            <xs:attribute name="TileXDim" type="xs:integer" use="required"/>
-            <xs:attribute name="TileYDim" type="xs:integer" use="required"/>
-            <xs:attribute name="GridCoordFormat" type ="xs:string" use="optional" default ="d">
-              <xs:annotation>
-                <xs:documentation>
-                  The C# string format operator used to display grid coordinates.  Default is "d".
-                </xs:documentation>
-              </xs:annotation>
-
-            </xs:attribute>
-        </xs:extension>
-      </xs:complexContent>    
-  </xs:complexType>
-
-  <xs:complexType name="ImageType">
-    <xs:annotation>
-      <xs:documentation>
-        An image
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base="NamedContainer">
-        <xs:sequence>
-          <xs:element name="Level" minOccurs="1" maxOccurs="unbounded" type ="Level"/>
-        </xs:sequence>
-        <xs:attribute name="SourceTransformXPath" type="xs:string" use="optional"/>
-        <xs:attribute name="SourceFilterXPath"    type="xs:string" use="optional"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="Channel">
-    <xs:annotation>
-      <xs:documentation>
-        Channel represent a single channel of input. A channel contains filters, which might contain the raw, leveled, and shading corrected versions of a set of images.
-        Regardless of the filter tiles within a channel are expected to have a consistent position in the mosaic across all tiles.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base="NamedContainer">
-        <xs:sequence>
-          <xs:element name="Scale" type="Scale" minOccurs ="0" maxOccurs ="1"/>
-          <xs:element name="Filter" type="Filter" minOccurs ="1" maxOccurs ="unbounded"/>
-          <xs:element name="Transform" type="TransformBase" minOccurs ="0" maxOccurs ="unbounded"/>
-        </xs:sequence>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="Filter">
-    <xs:annotation>
-      <xs:documentation>
-        Sections have an arbitrary number of channels.  Within each channel there are a number of filters representating various aspects of the same section.
-        Channels can belong to a number of sets.
-        Name: Name of the channel
-        
-        path: Relative path from the section path.
-        UseForVolume: Boolean, specifies that this transform is used to position tiles in the section before the are warped into the volume. Only the highest quality transform should have this set.
-        FilePrefix: String to prepend to all file names, if needed.  A period is added after the file prefix. Traditionally we prepend the section number to tile names.  Tiles are expected to be numbered with three digits. i.e. Section 1 Tile 243 = 0001.243.png.  The story on this is long, but I am open to changing it.
-        FilePostfix: Extension to add to file names, must be supported by XNA library.  .png format recommended.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base="NamedContainer">
-        <xs:sequence >
-          <xs:element name="TilePyramid" type ="Pyramid" minOccurs="0" maxOccurs ="unbounded"/>
-          <xs:element name="Tileset" type ="Tileset" minOccurs="0" maxOccurs ="unbounded"/>
-          <xs:element name="Image" type="ImageType" minOccurs ="0" maxOccurs="unbounded"/>
-          <xs:element name="MemberOf" type="xs:string" minOccurs="0" maxOccurs ="unbounded">
-            <xs:annotation>
-              <xs:documentation>
-                Name of a set of channels this filter belongs to, i.e: "Primary"
-              </xs:documentation>
-            </xs:annotation>
-          </xs:element>
-        </xs:sequence>
-        <xs:attribute name="BitsPerPixel" type="xs:int" use="optional"/>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="TransformBase">
-    <xs:annotation>
-      <xs:documentation>
-        Transforms are only applied to Pyramids.  They are generated by the NCRToolset and describe how each tile in a mosaic is positioned in the section.
-        Name: Name of the transform in the Viking UI
-        path: Relative path from the section path.
-        UseForVolume: Boolean, specifies that this transform is used to position tiles in the section before the are warped into the volume. Only the highest quality transform should have this set.
-        FilePrefix: String to prepend to all file names, if needed.  A period is added after the file prefix. Traditionally we prepend the section number to tile names.  Tiles are expected to be numbered with three digits. i.e. Section 1 Tile 243 = 0001.243.png.  The story on this is long, but I am open to changing it.
-        FilePostfix: Extension to add to file names, must be supported by XNA library.  .png format recommended.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:complexContent>
-      <xs:extension base="NamedContainer">
-        <xs:sequence>
-          <xs:element name="BoundingBox" type="BoundingBoxType" minOccurs="1" maxOccurs="1"/> 
-        </xs:sequence>
-        <xs:attribute name="Type" type="xs:string" use="required">
-          <xs:annotation>
-            <xs:documentation >
-              The type of transform this is.  Used as reference in buildscript pipeline.  Translate, Grid, etc...
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-        <xs:attribute name="SourceTransformXPath" type ="xs:string" use="optional">
-          <xs:annotation>
-            <xs:documentation >
-              XPath References to the transforms used to generate this transform, if any. Seperated by \n
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-        <xs:attribute name="SourceDataXPath" type ="xs:string" use="optional">
-          <xs:annotation>
-            <xs:documentation >
-              XPath References to the data sources used to generate this transform, if any.  Seperated by \n
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="SectionType">
-    <xs:complexContent>
-      <xs:extension base ="NamedContainer">
-        <xs:sequence>
-          <xs:element name="Channel" type ="Channel" minOccurs ="1" maxOccurs ="unbounded"/>
-        </xs:sequence>
-        <xs:attribute name="Number" type ="xs:integer" use="required">
-          <xs:annotation>
-            <xs:documentation>
-              Number of the section
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-        <xs:attribute name="Z" type ="xs:float" use="optional">
-          <xs:annotation>
-            <xs:documentation>
-              Thickness of the section
-            </xs:documentation>
-          </xs:annotation>
-        </xs:attribute>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:complexType name="BlockType">
-    <xs:complexContent>
-      <xs:extension base ="NamedContainer">
-        <xs:sequence>
-          <xs:element name="Section" type="SectionType" minOccurs ="0" maxOccurs ="unbounded">
-            <xs:unique name="SectionNumber">
-              <xs:selector xpath="Volume/Section"/>
-              <xs:field xpath="Number"/>
-            </xs:unique>
-          </xs:element>
-        </xs:sequence>
-      </xs:extension>
-    </xs:complexContent>
-  </xs:complexType>
-
-  <xs:element name="Volume">
-    <xs:complexType>
-      <xs:complexContent>
-        <xs:extension base ="NamedContainer">
-          <xs:sequence>
-            <xs:element name="Block" type="BlockType" minOccurs ="0" maxOccurs ="unbounded"/>
-          </xs:sequence>
-        </xs:extension>
-      </xs:complexContent>
+    <!--Scale definition-->
+    <xs:complexType name="ScaleForAxis">
+        <xs:attribute name="UnitsOfMeasure" type="LengthUnits"/>
+        <xs:attribute name="UnitsPerPixel" type="xs:double"/>
     </xs:complexType>
-    
-  </xs:element >
+
+    <xs:complexType name="Scale">
+        <xs:sequence>
+            <xs:element name="X" type="ScaleForAxis" minOccurs="1"/>
+            <xs:element name="Y" type="ScaleForAxis" minOccurs="1"/>
+            <xs:element name="Z" type="ScaleForAxis" minOccurs="0"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="BoundingBoxType">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Size of an entity in pixels
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="X" type="xs:double" default="0" use="optional"/>
+        <xs:attribute name="Y" type="xs:double" default="0" use="optional"/>
+        <xs:attribute name="Z" type="xs:double" default="0" use="optional"/>
+        <xs:attribute name="Width" type="xs:double" use="required"/>
+        <xs:attribute name="Height" type="xs:double" use="required"/>
+        <xs:attribute name="Depth" type="xs:double" use="required"/>
+    </xs:complexType>
+
+    <xs:complexType name="EntryElement">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:attribute name="Name" type="xs:string"/>
+        <xs:attribute name="Value" type="xs:string"/>
+    </xs:complexType>
+
+    <xs:complexType name="DictionaryElement">
+        <xs:sequence>
+            <xs:element name="Entry" type="EntryElement" minOccurs="0" maxOccurs="unbounded"/>
+        </xs:sequence>
+    </xs:complexType>
+
+    <xs:complexType name="TagElement">
+        <xs:annotation>
+            <xs:documentation>
+                Tags are a named dictionary functions can attach to elements to prevent conflicting with names in an
+                elements default property list
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="DictionaryElement">
+                <xs:attribute name="Name" use="required"/>
+                <xs:attribute name="CreationDate" type="xs:dateTime" use="optional" default="1980-01-01T12:00:00">
+                    <xs:annotation>
+                        <xs:documentation>
+                            The date this resource was created by the scripts
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:anyAttribute/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="Container">
+        <xs:annotation>
+            <xs:documentation>
+                A resource stored in a path on the filesystem or prefixed by a URI
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+
+            <xs:element name="Properties" type="DictionaryElement" minOccurs="0" maxOccurs="1">
+                <xs:annotation>
+                    <xs:documentation>
+                        Arbitrary data about the node, used by buildscripts for record keeping
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+            <xs:element name="Tag" type="TagElement" minOccurs="0" maxOccurs="unbounded">
+                <xs:annotation>
+                    <xs:documentation>
+                        Arbitrary data about the node, with associated properties extensions to buildscripts can store
+                        internal information here
+                    </xs:documentation>
+                </xs:annotation>
+            </xs:element>
+        </xs:sequence>
+        <xs:attribute name="Path" type="xs:string" use="required">
+            <xs:annotation>
+                <xs:documentation>
+                    Relative or absolute path to the resource.
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="CreationDate" type="xs:dateTime" use="optional" default="1980-01-01T12:00:00">
+            <xs:annotation>
+                <xs:documentation>
+                    The date this resource was created by the scripts
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="ScriptVersion" type="xs:decimal" use="optional" default="1.0">
+            <xs:annotation>
+                <xs:documentation>
+                    The script version in use when this resource was created
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+        <xs:attribute name="CommandLine" use="optional" type="xs:string">
+            <xs:annotation>
+                <xs:documentation>
+                    The command line used to generate this resource if applicable, used for debugging
+                </xs:documentation>
+            </xs:annotation>
+        </xs:attribute>
+    </xs:complexType>
+
+    <xs:complexType name="NamedContainer">
+        <xs:annotation>
+            <xs:documentation>
+                A resource stored in a path on the filesystem or prefixed by a URI that presents a friendly name.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="Container">
+                <xs:attribute name="Name" type="xs:string" use="required">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Name of the resource used displayed to the user
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="Description" type="xs:string" use="optional" default="">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Description of the resource
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="Level">
+        <xs:annotation>
+            <xs:documentation>
+                Describes a level in a "tileset" or "pyramid" image pyramid. A level is a directory containing all of
+                the original tiles downsampled by a common factor.
+                Level: A number defining what level of the pyramid this is. Must currently be a power of two.
+                path: A string which is to be appended to the section path to be used to locate images in this level.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+
+            <xs:extension base="Container">
+                <xs:attribute name="Downsample" type="xs:integer" use="required"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="GridLevel">
+        <xs:annotation>
+            <xs:documentation>
+                Grid tilesets have a variable number of images of fixed size representing the data. These are not
+                compatible with the ir-tools, but
+                make viewing very fast.
+                GridDimX: Tilesets only, Integer defining the dimensions of the grid in X
+                GridDimY: Tilesets only, Integer defining the dimensions of the grid in Y
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="Level">
+                <xs:attribute name="GridDimX" type="xs:integer" use="required"/>
+                <xs:attribute name="GridDimY" type="xs:integer" use="required"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="Pyramid">
+        <xs:annotation>
+            <xs:documentation>
+                Image pyramids are generated from the original images captured by an imaging platform. We use these
+                image
+                pyramids with the NCRToolset to generate transforms which describe where each tile in the pyramid is
+                positioned in section space. In the pyramid each tiles size is variable according to what level of the
+                pyramid it is loaded from. This makes for poor performance over the internet. However they are very
+                useful for debugging the output of the NCRToolset over an intranet.
+
+                name: Name of the channel displayed in the Viking UI
+                path: Relative path from the section path.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="Container">
+                <xs:sequence>
+                    <xs:element name="Level" minOccurs="1" maxOccurs="unbounded" type="Level"/>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="Tileset">
+        <xs:annotation>
+            <xs:documentation>
+                In a tileset all the images have a fixed size regardless of the level of the pyramid, we typically use
+                256x256 pixel tiles. Tiles are laid out on a grid with no overlap.
+                This optimizes bandwidth use. Tile names include the grid position, i.e. X001_Y001.png
+
+                Name: Name of the channel in the Viking UI
+                path: Relative path from the section path.
+                FilePrefix: String to prepend to all file names, if needed. A period is added after the file prefix if
+                the attribute is included.
+                FilePostfix: Extension to add to file names, must be supported by XNA library. .png format recommended.
+                TileXDim: Pixel X dimensions of each tile
+                TileYDim: Pixel Y dimensions of each tile
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="Container">
+                <xs:sequence>
+                    <xs:element name="Level" minOccurs="1" maxOccurs="unbounded" type="GridLevel"/>
+                </xs:sequence>
+                <xs:attribute name="FilePrefix" type="xs:string"/>
+                <xs:attribute name="FilePostfix" type="xs:string"/>
+                <xs:attribute name="TileXDim" type="xs:integer" use="required"/>
+                <xs:attribute name="TileYDim" type="xs:integer" use="required"/>
+                <xs:attribute name="GridCoordFormat" type="xs:string" use="optional" default="d">
+                    <xs:annotation>
+                        <xs:documentation>
+                            The C# string format operator used to display grid coordinates. Default is "d".
+                        </xs:documentation>
+                    </xs:annotation>
+
+                </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="ImageType">
+        <xs:annotation>
+            <xs:documentation>
+                An image
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="NamedContainer">
+                <xs:sequence>
+                    <xs:element name="Level" minOccurs="1" maxOccurs="unbounded" type="Level"/>
+                </xs:sequence>
+                <xs:attribute name="SourceTransformXPath" type="xs:string" use="optional"/>
+                <xs:attribute name="SourceFilterXPath" type="xs:string" use="optional"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="Channel">
+        <xs:annotation>
+            <xs:documentation>
+                Channel represent a single channel of input. A channel contains filters, which might contain the raw,
+                leveled, and shading corrected versions of a set of images.
+                Regardless of the filter tiles within a channel are expected to have a consistent position in the mosaic
+                across all tiles.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="NamedContainer">
+                <xs:sequence>
+                    <xs:element name="Scale" type="Scale" minOccurs="0" maxOccurs="1"/>
+                    <xs:element name="Filter" type="Filter" minOccurs="1" maxOccurs="unbounded"/>
+                    <xs:element name="Transform" type="TransformBase" minOccurs="0" maxOccurs="unbounded"/>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="Filter">
+        <xs:annotation>
+            <xs:documentation>
+                Sections have an arbitrary number of channels. Within each channel there are a number of filters
+                representating various aspects of the same section.
+                Channels can belong to a number of sets.
+                Name: Name of the channel
+
+                path: Relative path from the section path.
+                UseForVolume: Boolean, specifies that this transform is used to position tiles in the section before the
+                are warped into the volume. Only the highest quality transform should have this set.
+                FilePrefix: String to prepend to all file names, if needed. A period is added after the file prefix.
+                Traditionally we prepend the section number to tile names. Tiles are expected to be numbered with three
+                digits. i.e. Section 1 Tile 243 = 0001.243.png. The story on this is long, but I am open to changing it.
+                FilePostfix: Extension to add to file names, must be supported by XNA library. .png format recommended.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="NamedContainer">
+                <xs:sequence>
+                    <xs:element name="TilePyramid" type="Pyramid" minOccurs="0" maxOccurs="unbounded"/>
+                    <xs:element name="Tileset" type="Tileset" minOccurs="0" maxOccurs="unbounded"/>
+                    <xs:element name="Image" type="ImageType" minOccurs="0" maxOccurs="unbounded"/>
+                    <xs:element name="MemberOf" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+                        <xs:annotation>
+                            <xs:documentation>
+                                Name of a set of channels this filter belongs to, i.e: "Primary"
+                            </xs:documentation>
+                        </xs:annotation>
+                    </xs:element>
+                </xs:sequence>
+                <xs:attribute name="BitsPerPixel" type="xs:int" use="optional"/>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="TransformBase">
+        <xs:annotation>
+            <xs:documentation>
+                Transforms are only applied to Pyramids. They are generated by the NCRToolset and describe how each tile
+                in a mosaic is positioned in the section.
+                Name: Name of the transform in the Viking UI
+                path: Relative path from the section path.
+                UseForVolume: Boolean, specifies that this transform is used to position tiles in the section before the
+                are warped into the volume. Only the highest quality transform should have this set.
+                FilePrefix: String to prepend to all file names, if needed. A period is added after the file prefix.
+                Traditionally we prepend the section number to tile names. Tiles are expected to be numbered with three
+                digits. i.e. Section 1 Tile 243 = 0001.243.png. The story on this is long, but I am open to changing it.
+                FilePostfix: Extension to add to file names, must be supported by XNA library. .png format recommended.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:complexContent>
+            <xs:extension base="NamedContainer">
+                <xs:sequence>
+                    <xs:element name="BoundingBox" type="BoundingBoxType" minOccurs="1" maxOccurs="1"/>
+                </xs:sequence>
+                <xs:attribute name="Type" type="xs:string" use="required">
+                    <xs:annotation>
+                        <xs:documentation>
+                            The type of transform this is. Used as reference in buildscript pipeline. Translate, Grid,
+                            etc...
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="SourceTransformXPath" type="xs:string" use="optional">
+                    <xs:annotation>
+                        <xs:documentation>
+                            XPath References to the transforms used to generate this transform, if any. Seperated by \n
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="SourceDataXPath" type="xs:string" use="optional">
+                    <xs:annotation>
+                        <xs:documentation>
+                            XPath References to the data sources used to generate this transform, if any. Seperated by
+                            \n
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="SectionType">
+        <xs:complexContent>
+            <xs:extension base="NamedContainer">
+                <xs:sequence>
+                    <xs:element name="Channel" type="Channel" minOccurs="1" maxOccurs="unbounded"/>
+                </xs:sequence>
+                <xs:attribute name="Number" type="xs:integer" use="required">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Number of the section
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+                <xs:attribute name="Z" type="xs:float" use="optional">
+                    <xs:annotation>
+                        <xs:documentation>
+                            Thickness of the section
+                        </xs:documentation>
+                    </xs:annotation>
+                </xs:attribute>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:complexType name="BlockType">
+        <xs:complexContent>
+            <xs:extension base="NamedContainer">
+                <xs:sequence>
+                    <xs:element name="Section" type="SectionType" minOccurs="0" maxOccurs="unbounded">
+                        <xs:unique name="SectionNumber">
+                            <xs:selector xpath="Volume/Section"/>
+                            <xs:field xpath="Number"/>
+                        </xs:unique>
+                    </xs:element>
+                </xs:sequence>
+            </xs:extension>
+        </xs:complexContent>
+    </xs:complexType>
+
+    <xs:element name="Volume">
+        <xs:complexType>
+            <xs:complexContent>
+                <xs:extension base="NamedContainer">
+                    <xs:sequence>
+                        <xs:element name="Block" type="BlockType" minOccurs="0" maxOccurs="unbounded"/>
+                    </xs:sequence>
+                </xs:extension>
+            </xs:complexContent>
+        </xs:complexType>
+
+    </xs:element>
 </xs:schema>

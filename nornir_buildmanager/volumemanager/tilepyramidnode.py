@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 import nornir_buildmanager
-from nornir_buildmanager.volumemanager import XContainerElementWrapper, PyramidLevelHandler, LevelNode
+from nornir_buildmanager.volumemanager import LevelNode, PyramidLevelHandler, XContainerElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
 
 

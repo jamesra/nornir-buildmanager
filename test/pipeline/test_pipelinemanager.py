@@ -4,10 +4,10 @@ Created on Jan 6, 2014
 @author: u0490822
 '''
 import unittest
+import xml.etree.ElementTree as etree
 
 import nornir_buildmanager.argparsexml as argparsexml
 import nornir_buildmanager.pipelinemanager as pm
-import xml.etree.ElementTree as etree
 
 ArgumentXML = '<Arguments> \
                  <Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/> \

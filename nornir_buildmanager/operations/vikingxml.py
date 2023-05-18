@@ -9,15 +9,15 @@ import os
 import xml.etree.ElementTree as ETree
 
 import nornir_buildmanager.volumemanager
-import nornir_pools
-import nornir_shared.prettyoutput as prettyoutput
 from nornir_imageregistration.files import *
+import nornir_pools
 from nornir_shared.files import RecurseSubdirectoriesGenerator
+import nornir_shared.prettyoutput as prettyoutput
 
 ECLIPSE = 'ECLIPSE' in os.environ
 
-def CreateXMLIndex(path, server=None):
 
+def CreateXMLIndex(path, server=None):
     VolumeXMLDirs = RecurseSubdirectoriesGenerator(Path=path, RequiredFiles='Volume.xml')
 
     for directory in VolumeXMLDirs:
@@ -25,6 +25,7 @@ def CreateXMLIndex(path, server=None):
         InputVolumeNode = nornir_buildmanager.volumemanager.VolumeManager.Load(directory, Create=False)
         if not InputVolumeNode is None:
             CreateVikingXML(VolumeNode=InputVolumeNode)
+
 
 def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=None, **kwargs):
     '''When passed a volume node, creates a VikingXML file'''
@@ -43,10 +44,10 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
     # Load the inputXML file and begin parsing
 
     # Create the root output node
-    OutputVolumeNode = ETree.Element('Volume', {'Name' : InputVolumeNode.Name,
-                                                'num_stos' : '0',
-                                                'num_sections' : '0',
-                                                'InputChecksum' : InputVolumeNode.Checksum})
+    OutputVolumeNode = ETree.Element('Volume', {'Name': InputVolumeNode.Name,
+                                                'num_stos': '0',
+                                                'num_sections': '0',
+                                                'InputChecksum': InputVolumeNode.Checksum})
 
     (units_of_measure, units_per_pixel) = DetermineVolumeScale(InputVolumeNode)
     if units_of_measure is not None:
@@ -81,8 +82,7 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
 
 
 def RecursiveMergeAboutXML(path, xmlFileName, sourceXML="About.xml"):
-
-    if path is None or  len(path) == 0:
+    if path is None or len(path) == 0:
         return
 
     [Parent, tail] = os.path.split(path)
@@ -99,6 +99,7 @@ def RecursiveMergeAboutXML(path, xmlFileName, sourceXML="About.xml"):
 
     return Url
 
+
 def DetermineVolumeScale(InputVolumeNode):
     '''
     Returns the highest resolution found in all sections of the volume
@@ -108,7 +109,7 @@ def DetermineVolumeScale(InputVolumeNode):
     if ScaleNodes is None or len(ScaleNodes) == 0:
         return None, None
 
-    #This code assumes all units are the same
+    # This code assumes all units are the same
     units_of_measure = [s.X.UnitsOfMeasure for s in ScaleNodes]
 
     units_all_equal = all(x == units_of_measure[0] for x in units_of_measure)
@@ -125,8 +126,8 @@ def DetermineVolumeScale(InputVolumeNode):
 def AddScaleData(OutputNode, units_of_measure, units_per_pixel):
     '''Adds a scale node to the OutputNode'''
 
-    OutputScaleNode = ETree.SubElement(OutputNode, 'Scale', {'UnitsOfMeasure' : str(units_of_measure),
-                                                           'UnitsPerPixel' : str(units_per_pixel)})
+    OutputScaleNode = ETree.SubElement(OutputNode, 'Scale', {'UnitsOfMeasure': str(units_of_measure),
+                                                             'UnitsPerPixel': str(units_per_pixel)})
 
     return OutputScaleNode
 
@@ -151,7 +152,7 @@ def RemoveDuplicateScaleEntries(OutputNode, volume_units_of_measure, volume_unit
         if scale_node is None:
             RemoveDuplicateScaleEntries(subelem, volume_units_of_measure, volume_units_per_pixel)
         else:
-            #Determine if the scales match
+            # Determine if the scales match
             elem_units_of_measure = scale_node.attrib['UnitsOfMeasure']
             elem_units_per_pixel = float(scale_node.attrib['UnitsPerPixel'])
 
@@ -162,7 +163,6 @@ def RemoveDuplicateScaleEntries(OutputNode, volume_units_of_measure, volume_unit
 
 
 def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
-
     global ECLIPSE
 
     lastCreated = None
@@ -191,8 +191,8 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
         for Mapping in StosMapNode.findall('Mapping'):
 
             for MappedSection in Mapping.Mapped:
-                MappingString = UpdateTemplate % {'mapped' : int(MappedSection),
-                                                              'control' : int(Mapping.Control)}
+                MappingString = UpdateTemplate % {'mapped': int(MappedSection),
+                                                  'control': int(Mapping.Control)}
 
                 SectionMappingNode = StosGroup.GetChildByAttrib('SectionMappings', 'MappedSectionNumber', MappedSection)
                 if SectionMappingNode is None:
@@ -204,17 +204,19 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
                     print("No Section Mapping Transform found for " + MappingString)
                     continue
 
-                OutputStosNode = ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName' : StosGroup.Name,
-                                                                      'controlSection' : str(transform.ControlSectionNumber),
-                                                                      'mappedSection' :  str(transform.MappedSectionNumber),
-                                                                      'path' : os.path.join(BlockNode.Path, StosGroup.Path, transform.Path),
-                                                                      'pixelspacing' : '%g' % StosGroup.Downsample,
-                                                                      'type' : transform.Type })
+                OutputStosNode = ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName': StosGroup.Name,
+                                                                             'controlSection': str(
+                                                                                 transform.ControlSectionNumber),
+                                                                             'mappedSection': str(
+                                                                                 transform.MappedSectionNumber),
+                                                                             'path': os.path.join(BlockNode.Path,
+                                                                                                  StosGroup.Path,
+                                                                                                  transform.Path),
+                                                                             'pixelspacing': '%g' % StosGroup.Downsample,
+                                                                             'type': transform.Type})
 
-                UpdateString = UpdateTemplate % {'mapped' : int(transform.MappedSectionNumber),
-                                                              'control' : int(transform.ControlSectionNumber)}
-
-
+                UpdateString = UpdateTemplate % {'mapped': int(transform.MappedSectionNumber),
+                                                 'control': int(transform.ControlSectionNumber)}
 
                 if not ECLIPSE:
                     print(('\b' * 80))
@@ -227,24 +229,22 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
 
 def ParseSections(InputVolumeNode, OutputVolumeNode):
-
     # Find all of the section tags
     Pool = nornir_pools.GetGlobalThreadPool()
-    
+
     SectionTasks = []
-    
+
     print("Adding Sections\n")
     for BlockNode in InputVolumeNode.findall('Block'):
         for SectionNode in BlockNode.Sections:
-
             OutputSectionNode = OutputVolumeNode.find("Section[@Number='%d']" % SectionNode.Number)
-            assert(OutputSectionNode is None)
-            
-            #if not ECLIPSE:
-                #print('\b' * 3)
+            assert (OutputSectionNode is None)
+
+            # if not ECLIPSE:
+            # print('\b' * 3)
 
             print('Queue %g' % SectionNode.Number)
-            
+
             task = Pool.add_task(str(SectionNode.Number), ParseSection, BlockNode.Path, SectionNode)
             SectionTasks.append(task)
 
@@ -253,20 +253,20 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
             print('\b' * 8)
 
         print('%s' % t.name)
-        
+
         OutputSectionNode = t.wait_return()
-        
+
         OutputVolumeNode.append(OutputSectionNode)
 
     AllSectionNodes = list(OutputVolumeNode.findall('Section'))
     OutputVolumeNode.attrib['num_sections'] = str(len(AllSectionNodes))
-    
+
+
 def ParseSection(BlockPath, SectionNode):
-    
     # Create a section node, or create on if it doesn't exist
-    OutputSectionNode = ETree.Element('Section', {'Number' : str(SectionNode.Number),
-                                             'Path' : os.path.join(BlockPath, SectionNode.Path),
-                                             'Name' : SectionNode.Name})
+    OutputSectionNode = ETree.Element('Section', {'Number': str(SectionNode.Number),
+                                                  'Path': os.path.join(BlockPath, SectionNode.Path),
+                                                  'Name': SectionNode.Name})
 
     ParseChannels(SectionNode, OutputSectionNode)
 
@@ -274,11 +274,11 @@ def ParseSection(BlockPath, SectionNode):
     for NoteNode in NotesNodes:
         # Copy over Notes elements verbatim
         OutputSectionNode.append(NoteNode.Copy())
-        
+
     return OutputSectionNode
 
-def ParseChannels(SectionNode, OutputSectionNode):
 
+def ParseChannels(SectionNode, OutputSectionNode):
     for ChannelNode in SectionNode.Channels:
         ScaleNode = ChannelNode.find('Scale')
 
@@ -290,15 +290,17 @@ def ParseChannels(SectionNode, OutputSectionNode):
         for FilterNode in ChannelNode.Filters:
             for tilepyramid in FilterNode.findall('TilePyramid'):
                 OutputPyramidNode = ParsePyramidNode(FilterNode, tilepyramid, OutputSectionNode)
-                OutputPyramidNode.attrib['Path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputPyramidNode.attrib['Path'])
+                OutputPyramidNode.attrib['Path'] = os.path.join(ChannelNode.Path, FilterNode.Path,
+                                                                OutputPyramidNode.attrib['Path'])
                 if ScaleNode is not None:
                     AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
             for tileset in FilterNode.findall('Tileset'):
                 OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
-                OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path, OutputTilesetNode.attrib['path'])
+                OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path,
+                                                                OutputTilesetNode.attrib['path'])
                 if ScaleNode is not None:
                     AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
-                print("Tileset found for section " + str(SectionNode.attrib["Number"]))    
+                print("Tileset found for section " + str(SectionNode.attrib["Number"]))
 
         for NoteNode in ChannelNode.findall('Notes'):
             # Copy over Notes elements verbatim
@@ -308,7 +310,6 @@ def ParseChannels(SectionNode, OutputSectionNode):
 
 
 def ParseTransform(TransformNode, OutputSectionNode):
-
     mFile = mosaicfile.MosaicFile.Load(TransformNode.FullPath)
 
     if mFile is None:
@@ -341,51 +342,51 @@ def ParseTransform(TransformNode, OutputSectionNode):
     if 'grid' in TransformNode.Name.lower():
         UseForVolume = 'true'
 
-
-    #Viking needs the transform names to be consistent, and if transforms are built with different spacings, for TEM and CMP, Viking can't display
-    #So we simplify the transform name
+    # Viking needs the transform names to be consistent, and if transforms are built with different spacings, for TEM and CMP, Viking can't display
+    # So we simplify the transform name
     TransformName = TransformNode.Name
 
-    return ETree.SubElement(OutputSectionNode, 'Transform', {'FilePostfix' : Postfix,
-                                                          'FilePrefix' : Prefix,
-                                                         'Path' : TransformNode.Path,
-                                                         'Name' : TransformName,
-                                                         'UseForVolume' : UseForVolume})
+    return ETree.SubElement(OutputSectionNode, 'Transform', {'FilePostfix': Postfix,
+                                                             'FilePrefix': Prefix,
+                                                             'Path': TransformNode.Path,
+                                                             'Name': TransformName,
+                                                             'UseForVolume': UseForVolume})
+
 
 def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
     OutputPyramidNode = ETree.SubElement(OutputSectionNode, 'Pyramid', {
-                                                         'Path' : InputPyramidNode.Path,
-                                                         'Name' : FilterNode.Parent.Name + "." + FilterNode.Name + ".Pyramid",
-                                                         'LevelFormat' : InputPyramidNode.LevelFormat})
+        'Path': InputPyramidNode.Path,
+        'Name': FilterNode.Parent.Name + "." + FilterNode.Name + ".Pyramid",
+        'LevelFormat': InputPyramidNode.LevelFormat})
 
     for LevelNode in InputPyramidNode.Levels:
-        ETree.SubElement(OutputPyramidNode, 'Level', {'Path' : LevelNode.Path,
-                                                      'Downsample' : '%g' % LevelNode.Downsample})
+        ETree.SubElement(OutputPyramidNode, 'Level', {'Path': LevelNode.Path,
+                                                      'Downsample': '%g' % LevelNode.Downsample})
 
     return OutputPyramidNode
 
+
 def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
     OutputTilesetNode = ETree.SubElement(OutputSectionNode, 'Tileset', {
-                                                         'path' : InputTilesetNode.Path,
-                                                         'name' : FilterNode.Parent.Name + "." + FilterNode.Name,
-                                                         'TileXDim' : str(InputTilesetNode.TileXDim),
-                                                         'TileYDim' : str(InputTilesetNode.TileYDim),
-                                                         'FilePrefix' : InputTilesetNode.FilePrefix,
-                                                         'FilePostfix' : InputTilesetNode.FilePostfix,
-                                                         'CoordFormat' : InputTilesetNode.CoordFormat})
+        'path': InputTilesetNode.Path,
+        'name': FilterNode.Parent.Name + "." + FilterNode.Name,
+        'TileXDim': str(InputTilesetNode.TileXDim),
+        'TileYDim': str(InputTilesetNode.TileYDim),
+        'FilePrefix': InputTilesetNode.FilePrefix,
+        'FilePostfix': InputTilesetNode.FilePostfix,
+        'CoordFormat': InputTilesetNode.CoordFormat})
 
     for LevelNode in InputTilesetNode.Levels:
-        ETree.SubElement(OutputTilesetNode, 'Level', {'path' : LevelNode.Path,
-                                                      'Downsample' : '%g' % LevelNode.Downsample,
-                                                      'GridDimX' : str(LevelNode.GridDimX),
-                                                      'GridDimY' : str(LevelNode.GridDimY)})
+        ETree.SubElement(OutputTilesetNode, 'Level', {'path': LevelNode.Path,
+                                                      'Downsample': '%g' % LevelNode.Downsample,
+                                                      'GridDimX': str(LevelNode.GridDimX),
+                                                      'GridDimY': str(LevelNode.GridDimY)})
 
     return OutputTilesetNode
 
 
 # Merge the created VolumeXML with the general definitions in about.XML
 def MergeAboutXML(volumeXML, aboutXML):
-
     import xml.dom.minidom
 
     prettyoutput.Log('MergeAboutXML ' + str(volumeXML) + ' ' + str(aboutXML))
@@ -425,7 +426,6 @@ def MergeAboutXML(volumeXML, aboutXML):
 
 
 def MergeElements(volumeNode, aboutNode):
-
     if ElementsEqual(volumeNode, aboutNode):
         CopyNewAttributes(volumeNode, aboutNode)
         MergeChildren(volumeNode, aboutNode)
@@ -433,7 +433,6 @@ def MergeElements(volumeNode, aboutNode):
 
 # Both arguments should be matching elements
 def MergeChildren(volumeParent, aboutParent):
-
     aboutElement = aboutParent.firstChild
     while aboutElement is not None:
         if aboutElement.nodeName is None:
@@ -451,6 +450,7 @@ def MergeChildren(volumeParent, aboutParent):
 
         aboutElement = aboutElement.nextSibling
 
+
 # Compare the attributes of two elements and return true if they match
 def ElementsEqual(volumeElement, aboutElement):
     '''Return true if the elements have the same tag, and the attributes found in both elements have same value'''
@@ -465,7 +465,6 @@ def ElementsEqual(volumeElement, aboutElement):
             return False
 
     return True
-
 
     # Volume is the root element so it is always a match
     if aboutElement.nodeName == "Volume":
@@ -487,10 +486,11 @@ def ElementsEqual(volumeElement, aboutElement):
 
     return False
 
+
 def CopyNewAttributes(volumeElement, aboutElement):
     '''Copy the attributes from the aboutElement to the volumeElement'''
-#   print 'v: ' + volumeElement.toxml()
-#   print 'a: ' + aboutElement.toxml()
+    #   print 'v: ' + volumeElement.toxml()
+    #   print 'a: ' + aboutElement.toxml()
 
     if aboutElement.hasAttributes() == False:
         return
@@ -522,6 +522,7 @@ def UpdateVolumePath(volumeElement, aboutElement, relPath):
             PathURL = url_join(attribute.value, relPath)
             volumeElement.setAttribute("path", PathURL)
             return PathURL
+
 
 def url_join(*args):
     """Join any arbitrary strings into a forward-slash delimited list.

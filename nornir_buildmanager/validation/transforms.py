@@ -4,7 +4,6 @@ Created on Feb 11, 2013
 @author: u0490822
 '''
 
-import logging
 import os
 
 
@@ -44,7 +43,7 @@ def IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision=None):
 
     if OutputNode is None:
         return False
- 
+
     OutputValue = __GetAttribOrDefault(OutputNode, OutputAttribute, None)
 
     if isinstance(TargetValue, str):

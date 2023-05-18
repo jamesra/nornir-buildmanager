@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 from typing import Generator
 
 import nornir_buildmanager
-from nornir_buildmanager.volumemanager import XElementWrapper, TransformNode, ImageNode, BlockNode
+from nornir_buildmanager.volumemanager import BlockNode, ImageNode, TransformNode, XElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
 
 
@@ -28,10 +29,11 @@ class SectionMappingsNode(XElementWrapper):
     def Images(self) -> Generator[ImageNode]:
         return self.findall('Image')
 
-    def TransformsToSection(self, sectionNumber:int) -> Generator[TransformNode]:
+    def TransformsToSection(self, sectionNumber: int) -> Generator[TransformNode]:
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
 
-    def FindStosTransform(self, ControlSectionNumber:int, ControlChannelName: str, ControlFilterName: str, MappedSectionNumber: int,
+    def FindStosTransform(self, ControlSectionNumber: int, ControlChannelName: str, ControlFilterName: str,
+                          MappedSectionNumber: int,
                           MappedChannelName: str, MappedFilterName: str) -> TransformNode:
         """
         Find the stos transform matching all of the parameters if it exists

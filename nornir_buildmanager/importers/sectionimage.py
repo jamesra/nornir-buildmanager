@@ -7,24 +7,20 @@ Created on Apr 15, 2013
 '''Image files are expected to have this naming convention:
     Section#_Channel_Comments'''
 
-import glob
-import logging
-import os
 import shutil
-import sys
 
 from nornir_buildmanager import metadatautils
-from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.importers import filenameparser
+from nornir_buildmanager.volumemanager import *
 import nornir_shared.files
-
-from .filenameparser import ParseFilename, mapping
 import nornir_shared.prettyoutput as prettyoutput
+from .filenameparser import mapping
 
 imageNameMappings = [mapping('Section', typefunc=int),
                      mapping('Channel', typefunc=str),
-                     mapping('Filter', typefunc=str, default=None), 
+                     mapping('Filter', typefunc=str, default=None),
                      mapping('Downsample', typefunc=int, default=1)]
+
 
 def FillInMissingImageNameData(imageData):
     '''Not all image names will have the essential information on where the image belongs.
@@ -47,7 +43,8 @@ def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **k
         (path, foundfiles) = m
         foundfiles = [os.path.join(path, f) for f in foundfiles]
         for idocFullPath in foundfiles:
-            result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
+            result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args,
+                                           **kwargs)
             if result is not None:
                 yield result
 
@@ -56,18 +53,18 @@ class SectionImage(object):
     '''
     Import sections represented by a single image
     '''
-    
+
     def __init__(self):
         '''
         Constructor
         '''
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, scaleValueInNm, OutputPath=None, OutputImageExt=None, TargetBpp=None, debug=None, *args, **kwargs):
+    def ToMosaic(cls, VolumeObj, InputPath, scaleValueInNm, OutputPath=None, OutputImageExt=None, TargetBpp=None,
+                 debug=None, *args, **kwargs):
 
         '''#Converts a directory of images to sections, each represented by a single image.
            Each image should have the format Section#_ChannelText'''
-
 
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:
@@ -82,7 +79,7 @@ class SectionImage(object):
 
         # Find the files with a .pmg extension
         filename = InputPath
- 
+
         if 'histogram' in filename.lower():
             prettyoutput.Log("PNG importer ignoring probable histogram file: " + filename)
             return None
@@ -103,7 +100,7 @@ class SectionImage(object):
 
         if fileData is None:
             raise Exception("Could not parse section from PMG filename: " + filename)
- 
+
         SectionNumber = fileData.Section
         sectionObj = SectionNode.Create(SectionNumber)
 

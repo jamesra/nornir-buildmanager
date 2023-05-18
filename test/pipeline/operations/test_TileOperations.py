@@ -3,29 +3,15 @@ Created on Feb 22, 2013
 
 @author: u0490822
 '''
-import glob
-import logging
-import os
-import shutil
-import tempfile
 import unittest
 
-import nornir_buildmanager
-from nornir_buildmanager.volumemanager import *
-
-import nornir_buildmanager.volumemanager.datanode
-import nornir_buildmanager.volumemanager.imagenode
-from nornir_buildmanager.operations.tile import *
-from nornir_buildmanager.validation import transforms
-import nornir_shared.files
-import nornir_shared.misc
 from test.pipeline.setup_pipeline import *
 
 import nornir_buildmanager as nb
-import nornir_buildmanager.build as build
 import nornir_buildmanager.operations.setters as setters
-import nornir_imageregistration.tileset as tiles
-import numpy as np
+from nornir_buildmanager.operations.tile import *
+import nornir_buildmanager.volumemanager.datanode
+import nornir_buildmanager.volumemanager.imagenode
 
 
 # class EvaluateFilterTest(ImportOnlySetup):
@@ -78,7 +64,8 @@ class ShadeCorrectionTest(ImportOnlySetup):
         SourceLevel = SourceFilter.TilePyramid.GetLevel(Downsample=1)
         self.assertIsNotNone(SourceLevel)
 
-        ChannelNode = CorrectTiles(Parameters={}, CorrectionType='brightfield', FilterNode=self.FilterNode, OutputFilterName='ShadingCorrected')
+        ChannelNode = CorrectTiles(Parameters={}, CorrectionType='brightfield', FilterNode=self.FilterNode,
+                                   OutputFilterName='ShadingCorrected')
         self.assertIsNotNone(ChannelNode)
 
         FilterNode = ChannelNode.GetFilter("ShadingCorrected")
@@ -89,7 +76,8 @@ class ShadeCorrectionTest(ImportOnlySetup):
 
         SourceTiles = glob.glob(os.path.join(SourceLevel.FullPath, '*.png'))
         OutputTiles = glob.glob(os.path.join(LevelNode.FullPath, '*.png'))
-        self.assertEqual(len(SourceTiles), len(OutputTiles), "Number of shading corrected tiles does not match number of input tiles")
+        self.assertEqual(len(SourceTiles), len(OutputTiles),
+                         "Number of shading corrected tiles does not match number of input tiles")
 
         # image = tiles.CalculateShadeImage(OutputTiles, correction_type=tiles.ShadeCorrectionTypes.BRIGHTFIELD)
 
@@ -123,7 +111,8 @@ class HistogramFilterTest(ImportOnlySetup):
         # Make sure the reported number of images matches the actual number of tiles on the disk
         ImagesOnDisk = glob.glob(os.path.join(self.InputLevelNode.FullPath, '*.png'))
 
-        self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk), "Number of images on disk do not match meta-data")
+        self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk),
+                         "Number of images on disk do not match meta-data")
 
         OutputPyramidNode = BuildTilePyramids(PyramidNode=self.InputPyramidNode, Levels=[2, 8, 64])
         self.assertIsNotNone(self.InputLevelNode)
@@ -150,7 +139,8 @@ class HistogramFilterTest(ImportOnlySetup):
             self.assertTrue(LNode.Downsample in ExpectedLevels)
 
             ImagesOnDisk = glob.glob(os.path.join(LNode.FullPath, '*.png'))
-            self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk), "Number of images on disk do not match meta-data")
+            self.assertEqual(self.InputPyramidNode.NumberOfTiles, len(ImagesOnDisk),
+                             "Number of images on disk do not match meta-data")
 
 
 class HistogramFilterTest2(ImportOnlySetup):
@@ -178,9 +168,10 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertIsNotNone(self.InputLevelNode)
 
         # The first time it is run we should get a filter node with a histogram
-        OutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
+        OutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode,
+                                            Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
         self.assertIsNotNone(OutputFilterNodes)
-        
+
         OutputFilterNodes = list(OutputFilterNodes)
         OutputFilterNode = OutputFilterNodes[-1]
 
@@ -193,11 +184,14 @@ class HistogramFilterTest2(ImportOnlySetup):
         self.assertTrue(os.path.exists(HistogramNode.ImageFullPath))
 
         # The second time it is run we should not regenerate a histogram and None should be returned
-        SecondOutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode)
+        SecondOutputFilterNodes = HistogramFilter(Parameters={}, FilterNode=self.InputFilterNode,
+                                                  Downsample=self.InputLevelNode.Downsample,
+                                                  TransformNode=self.TransformNode)
         self.assertIsNotNone(SecondOutputFilterNodes)
-        
+
         SecondOutputFilterNodesList = list(SecondOutputFilterNodes)
-        self.assertEqual(len(SecondOutputFilterNodesList), 0, "No elements should require saving after an identical call")
+        self.assertEqual(len(SecondOutputFilterNodesList), 0,
+                         "No elements should require saving after an identical call")
 
         self.assertIsNotNone(HistogramNode)
         self.assertIsNotNone(nornir_buildmanager.volumemanager.datanode.DataNode)
@@ -205,7 +199,7 @@ class HistogramFilterTest2(ImportOnlySetup):
 
 
 class BuildTilePyramidTest(PrepareSetup):
-    
+
     @property
     def VolumePath(self):
         return "RC2_4Square"
@@ -213,12 +207,13 @@ class BuildTilePyramidTest(PrepareSetup):
     @property
     def Platform(self):
         return "IDOC"
-    
+
     def runTest(self):
         volumeNode = self.RunAdjustContrast(Sections=690)
-        
+
         # Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
-        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections' : 690}, section_number=690, channel='TEM', filter_name='Leveled', level=4)       
+        self.RemoveAndRegenerateTile(RegenFunction=self.RunAdjustContrast, RegenKwargs={'Sections': 690},
+                                     section_number=690, channel='TEM', filter_name='Leveled', level=4)
 
 
 class AutoLevelHistogramTest(PrepareSetup):
@@ -269,7 +264,9 @@ class AutoLevelHistogramTest(PrepareSetup):
         self.LoadInputMetaData()
 
         # Calling the first time should generate tiles
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNotNone(ChannelOutput)
 
         self.VolumeObj.Save()
@@ -278,7 +275,9 @@ class AutoLevelHistogramTest(PrepareSetup):
         OriginalMinIntensity = self.OutputFilterNode.MinIntensityCutoff
 
         # Calling again with the same output should not regenerate the tiles
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         self.LoadOutputMetaData(OutputFilterName)
@@ -293,7 +292,9 @@ class AutoLevelHistogramTest(PrepareSetup):
         # Test a max < min
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = ManualMinValue
         try:
-            ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+            ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode,
+                                                Downsample=self.InputLevelNode.Downsample,
+                                                TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
             self.fail("Should have raised exception for invalid manual histogram setting")
         except nb.NornirUserException as e:
             pass
@@ -301,33 +302,45 @@ class AutoLevelHistogramTest(PrepareSetup):
         # Test the Max Cutoff value
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = ManualMaxValue
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNotNone(ChannelOutput)
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.MaxIntensityCutoff, ManualMaxValue)
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         # Calling again with new parameters but the filter locked should not regenerate tiles
         setters.SetFilterContrastLocked(self.OutputFilterNode, Locked=True)
 
         self.AutoLevelHintNode.UserRequestedMaxIntensityCutoff = None
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertEqual(len(ChannelOutput), 0, "Locked filter should not regenerate")
 
         # Calling again with new parameters but the filter locked should not regenerate tiles
         setters.SetFilterContrastLocked(self.OutputFilterNode, Locked=False)
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNotNone(ChannelOutput, "Unlocked filter should regenerate")
 
         self.LoadOutputMetaData(OutputFilterName)
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         self.assertEqual(self.OutputFilterNode.MaxIntensityCutoff, AutoMaxCutoff)
@@ -335,45 +348,61 @@ class AutoLevelHistogramTest(PrepareSetup):
         # Test the Min Cutoff value
 
         self.AutoLevelHintNode.UserRequestedMinIntensityCutoff = ManualMinValue
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.MinIntensityCutoff, ManualMinValue)
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         self.AutoLevelHintNode.UserRequestedMinIntensityCutoff = None
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.MinIntensityCutoff, AutoMinCutoff)
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         # Test the gamma value
 
         self.AutoLevelHintNode.UserRequestedGamma = 1.2
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertEqual(self.OutputFilterNode.Gamma, self.AutoLevelHintNode.UserRequestedGamma)
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         self.AutoLevelHintNode.UserRequestedGamma = None
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNotNone(ChannelOutput)
 
         self.LoadOutputMetaData(OutputFilterName)
         self.assertAlmostEqual(self.OutputFilterNode.Gamma, AutoGamma, places=4)
 
-        ChannelOutput = list(AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample, TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
+        ChannelOutput = list(
+            AutolevelTiles(Parameters={}, InputFilter=self.InputFilterNode, Downsample=self.InputLevelNode.Downsample,
+                           TransformNode=self.TransformNode, OutputFilterName=OutputFilterName))
         self.assertIsNone(ChannelOutput[0])
 
         self.VolumeObj.Save()

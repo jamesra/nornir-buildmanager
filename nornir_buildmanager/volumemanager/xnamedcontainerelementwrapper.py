@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from . import xcontainerelementwrapper
 
+
 class XNamedContainerElementWrapped(xcontainerelementwrapper.XContainerElementWrapper):
     """XML meta-data for a container whose sub-elements are contained within a directory on the file system whose name is not constant.  Such as a channel name."""
 

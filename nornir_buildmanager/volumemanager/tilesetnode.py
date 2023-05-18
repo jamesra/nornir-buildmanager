@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 
-import nornir_buildmanager 
-from nornir_buildmanager.volumemanager import XContainerElementWrapper, PyramidLevelHandler, InputTransformHandler
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import InputTransformHandler, PyramidLevelHandler, XContainerElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
 
 
@@ -60,14 +60,14 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
 
     @classmethod
     def Create(cls, attrib: dict = None, **extra) -> TilesetNode:
-        return cls(tag='Tileset', 
+        return cls(tag='Tileset',
                    attrib=attrib,
                    **extra)
 
     def __init__(self, tag=None, attrib=None, Path=None, **extra):
         if tag is None:
             tag = 'Tileset'
-            
+
         if Path is None:
             Path = TilesetNode.DefaultPath
 

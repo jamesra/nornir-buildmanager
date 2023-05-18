@@ -1,7 +1,8 @@
 from __future__ import annotations
-from nornir_shared import misc as misc
 
 from nornir_buildmanager.volumemanager import XElementWrapper
+from nornir_shared import misc as misc
+
 
 class MappingNode(XElementWrapper):
 
@@ -72,7 +73,7 @@ class MappingNode(XElementWrapper):
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
             tag = 'Mapping'
-        
+
         super(MappingNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
         self._mapped_cache = None

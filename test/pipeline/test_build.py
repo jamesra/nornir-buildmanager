@@ -3,8 +3,6 @@ Created on Feb 22, 2013
 
 @author: u0490822
 '''
-import glob
-import unittest
 
 from .setup_pipeline import *
 
@@ -34,7 +32,6 @@ class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
             transform_node = ChannelNode.GetChildByAttrib("Transform", "Name", tname)
             self.assertIsNotNone(transform_node)
 
-
     def TileFiles(self, tilesetNode, downsample):
         levelNode = tilesetNode.GetLevel(downsample)
         self.assertIsNotNone(levelNode)
@@ -44,7 +41,6 @@ class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
 
         return files
 
-
     def CheckTilesetExists(self, VolumeObj):
 
         TilesetNode = VolumeObj.find("Block/Section/Channel/Filter/Tileset")
@@ -52,7 +48,8 @@ class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
 
         FullResTiles = self.TileFiles(TilesetNode, 1)
         DSTwoTiles = self.TileFiles(TilesetNode, 2)
-        self.assertGreaterEqual(len(DSTwoTiles), len(FullResTiles) / 4, "Downsample level seems to be missing assembled tiles")
+        self.assertGreaterEqual(len(DSTwoTiles), len(FullResTiles) / 4,
+                                "Downsample level seems to be missing assembled tiles")
 
         FullResTiles.sort()
         DSTwoTiles.sort()
@@ -61,10 +58,9 @@ class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
                          os.path.basename(DSTwoTiles[0]),
                          "Tiles at different downsample levels should use the same naming convention")
 
-
     def runTest(self):
         # Import the files
-  
+
         # self.CheckTransformsExist(VolumeObj)
 
         buildArgs = self._CreateBuildArgs('AssembleTiles', '-Shape', '512,512')
@@ -74,6 +70,7 @@ class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
         VolumeObj = VolumeManager.Load(self.TestOutputPath)
 
         self.CheckTilesetExists(VolumeObj)
+
 
 if __name__ == "__main__":
     # import syssys.argv = ['', 'Test.testName']

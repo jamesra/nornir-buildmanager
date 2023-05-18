@@ -1,8 +1,8 @@
 import glob
-from nornir_shared.images import *
-from nornir_shared.files import rmtree, OutdatedFile
-import nornir_buildmanager.importers.shared as shared
 
+import nornir_buildmanager.importers.shared as shared
+from nornir_shared.files import OutdatedFile, rmtree
+from nornir_shared.images import *
 from . import idoc
 
 
@@ -11,9 +11,9 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
     def SerialEMMDocImport(self):
         pass;
 
-
     @classmethod
-    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None, TargetBpp=None, debug=None, **kwargs):
+    def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None,
+                 TargetBpp=None, debug=None, **kwargs):
         '''The mdoc should be paired with a .st file of the same name. 
        The st file is converted to tif's, the mdoc is renamed to an idoc
        and the idoc importer is run.'''
@@ -35,7 +35,8 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         mdocFiles = glob.glob(os.path.join(InputPath, '*.' + Extension))
         if len(mdocFiles) == 0:
             # This shouldn't happen, but just in case
-            assert (len(mdocFiles) > 0), "ToMosaic called without proper target file present in the path: " + str(InputPath);
+            assert (len(mdocFiles) > 0), "ToMosaic called without proper target file present in the path: " + str(
+                InputPath);
             return [None, None]
 
         # ok, try to find the .st file
@@ -105,7 +106,8 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             idocFilenameFullPath = os.path.join(MDocImportDirFullPath, idocFilename)
             cls.ConvertMDocToIDoc(mdoc, idocFilenameFullPath)
 
-            super(SerialEMMDocImport, cls).ToMosaic(VolumeObj, MDocImportDirFullPath, OutputPath, 'idoc', OutputImageExt, TileOverlap, TargetBpp)
+            super(SerialEMMDocImport, cls).ToMosaic(VolumeObj, MDocImportDirFullPath, OutputPath, 'idoc',
+                                                    OutputImageExt, TileOverlap, TargetBpp)
 
     @classmethod
     def ConvertMDocToIDoc(cls, MDocFilename, IDocFilename):

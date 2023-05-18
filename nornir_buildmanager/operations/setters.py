@@ -6,6 +6,7 @@ Created on Feb 25, 2014
 
 import logging
 import math
+
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
 import nornir_shared.prettyoutput
@@ -13,22 +14,22 @@ import nornir_shared.prettyoutput
 
 def SetFilterLock(Node, Locked, **kwargs):
     LockChanged = False
-    ParentFilter = Node 
+    ParentFilter = Node
     if not isinstance(Node, nornir_buildmanager.volumemanager.FilterNode):
         ParentFilter = Node.FindParent('Filter')
-    
+
     if not ParentFilter is None:
         LockChanged = ParentFilter.Locked != bool(Locked)
         ParentFilter.Locked = bool(Locked)
     else:
         nornir_shared.prettyoutput.LogErr("Unable to find filter for node {0}".format(str(Node)))
-    
+
     if LockChanged:
         return ParentFilter.Parent
-    
+
     return
-        
-        
+
+
 def SetLocked(Node, Locked, **kwargs):
     LockChanged = Node.Locked != bool(Locked)
     if LockChanged:
@@ -38,24 +39,25 @@ def SetLocked(Node, Locked, **kwargs):
             return parent
     else:
         return
-    
+
+
 def ForceUpdateInputTransformNode(Node: nornir_buildmanager.volumemanager.TransformNode, **kwargs):
     transform = Node
     parent = Node.Parent
     if transform.HasInputTransform is False:
         return
-    
+
     input_transform = parent.GetChildByAttrib('Transform', 'Name', transform.InputTransform)
     if input_transform is not None:
         transform.SetTransform(input_transform)
-        nornir_shared.prettyoutput.Log(f"Updated input transform for {transform.FullPath} to {input_transform.Checksum}")
+        nornir_shared.prettyoutput.Log(
+            f"Updated input transform for {transform.FullPath} to {input_transform.Checksum}")
         return parent
-    
+
     return
-    
+
 
 def SetPruneThreshold(PruneNode, Value, **kwargs):
-
     logger = logging.getLogger(__name__ + '.SetPruneThreshold')
 
     PruneNode.UserRequestedCutoff = str(Value)
@@ -68,7 +70,6 @@ def SetPruneThreshold(PruneNode, Value, **kwargs):
 
 
 def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs):
-
     logger = logging.getLogger(__name__ + '.SetContrastRange')
 
     if math.isnan(MinValue):
@@ -97,41 +98,40 @@ def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs)
 
     SetFilterLock(AutoLevelHint, False)
 
-    logger.info("Set contrast min: %s max: %s, gamma: %s on %s" % (minStr, maxStr, gammaStr, HistogramElement.Parent.FullPath))
+    logger.info(
+        "Set contrast min: %s max: %s, gamma: %s on %s" % (minStr, maxStr, gammaStr, HistogramElement.Parent.FullPath))
 
     return HistogramElement.Parent
 
 
 def PrintContrast(FilterElement, **kwargs):
-    
     ChannelElement = FilterElement.FindParent('Channel')
     SectionElement = FilterElement.FindParent('Section')
-    
+
     minI = FilterElement.MinIntensityCutoff
     maxI = FilterElement.MaxIntensityCutoff
     gamma = FilterElement.Gamma
-    
+
     if minI is None:
         minI = float('nan')
-        
+
     if maxI is None:
         maxI = float('nan')
-        
+
     if gamma is None:
         gamma = float('nan')
-    
+
     output = ("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}".format(("{0:d}".format(SectionElement.Number)).ljust(6),
-                                                    ChannelElement.Name.ljust(16), FilterElement.Name.ljust(16),
-                                                    ("{0:g}".format(minI)).ljust(8),
-                                                    ("{0:g}".format(maxI)).ljust(8),
-                                                    ("{0:g}".format(gamma)).ljust(8)))
-    
+                                                      ChannelElement.Name.ljust(16), FilterElement.Name.ljust(16),
+                                                      ("{0:g}".format(minI)).ljust(8),
+                                                      ("{0:g}".format(maxI)).ljust(8),
+                                                      ("{0:g}".format(gamma)).ljust(8)))
+
     print(output)
-    return 
+    return
 
-       
+
 def SetFilterContrastLocked(FilterNode, Locked, **kwargs):
-
     logger = logging.getLogger(__name__ + '.SetFilterContrastLocked')
 
     LockChanged = FilterNode.Locked != bool(int(Locked))
@@ -142,7 +142,6 @@ def SetFilterContrastLocked(FilterNode, Locked, **kwargs):
 
 
 def SetFilterMaskName(FilterNode, MaskName, **kwargs):
-    
     logger = logging.getLogger(__name__ + '.SetFilterContrastLocked')
 
     FilterNode.MaskName = MaskName
@@ -161,7 +160,7 @@ def MarkSectionsAsDamaged(block_node, SectionNumbers, **kwargs):
     block_node.MarkSectionsAsDamaged(SectionNumbers)
     return block_node.Parent
 
-    
+
 def MarkSectionsAsUndamaged(block_node, SectionNumbers, **kwargs):
     block_node.MarkSectionsAsUndamaged(SectionNumbers)
     return block_node.Parent

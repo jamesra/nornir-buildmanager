@@ -4,6 +4,7 @@ from xml.etree import ElementTree as ElementTree
 
 from nornir_buildmanager.volumemanager import XElementWrapper
 
+
 class ScaleNode(XElementWrapper):
 
     @property
@@ -69,6 +70,7 @@ class ScaleNode(XElementWrapper):
                                                           'UnitsPerPixel': str(scale.Z.UnitsPerPixel)}))
 
         return output
+
 
 class Scale(object):
     """

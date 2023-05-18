@@ -11,6 +11,7 @@ class IChecksum(abc.ABC):
 
 class ITransform(IChecksum, abc.ABC):
     """Interface to a meta-data element that provides a unique signature for a transform"""
+
     @abstractmethod
     def CropBox(self):
         raise NotImplementedError()

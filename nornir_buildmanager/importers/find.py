@@ -1,16 +1,16 @@
-
 import concurrent.futures
-import typing
-from typing import Generator
 import os
 import re
+from typing import Generator
 
-import nornir_shared
-from nornir_shared import prettyoutput
 import nornir_buildmanager
 import nornir_buildmanager.importers.shared as shared
+import nornir_shared
+from nornir_shared import prettyoutput
 
-def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | None) -> dict[int, list[shared.FilenameMetadata]]:
+
+def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | None) -> dict[
+    int, list[shared.FilenameMetadata]]:
     """
     This fetches the directories that could contain sections so that when we recurse through the section folders we can
     yield the sections we find right away instead of waiting for all sections to be found first
@@ -27,7 +27,7 @@ def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | Non
         root_meta_data = shared.GetSectionInfo(ImportPath)
         found_sections[root_meta_data.number] = [root_meta_data]
     except nornir_buildmanager.NornirUserException:
-        #This means we are going to check child directory names only and not this folder for idocs
+        # This means we are going to check child directory names only and not this folder for idocs
         root_meta_data = None
 
     with os.scandir(ImportPath) as scanner:
@@ -54,20 +54,23 @@ def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | Non
                 else:
                     found_sections[meta_data.number] = [meta_data]
 
-    #Sort the lists by the version number
+    # Sort the lists by the version number
     for key, candidate_data_list in found_sections.items():
         found_sections[key] = sorted(candidate_data_list, key=lambda entry: entry.version, reverse=True)
 
     return found_sections
 
-def find_section_directory_metadata(section_meta_data: shared.FilenameMetadata, matching_pattern: re.Pattern | frozenset[str]) -> tuple[shared.FilenameMetadata, list[str]]:
+
+def find_section_directory_metadata(section_meta_data: shared.FilenameMetadata,
+                                    matching_pattern: re.Pattern | frozenset[str]) -> tuple[
+    shared.FilenameMetadata, list[str]]:
     """
     :param ImportPath:
     :param section_meta_data:
     :param matching_pattern:
     :return: yields all idoc files for a given section directory
     """
-    #matching_pattern = nornir_shared.files.ensure_regex_or_set(extension)
+    # matching_pattern = nornir_shared.files.ensure_regex_or_set(extension)
     matched_file_list = []
     with os.scandir(section_meta_data.fullpath) as path_scanner:
         for entry in path_scanner:
@@ -79,7 +82,10 @@ def find_section_directory_metadata(section_meta_data: shared.FilenameMetadata, 
 
     return section_meta_data, matched_file_list
 
-def section_directory_metadata_generator(match_names: list[shared.FilenameMetadata], matching_pattern: re.Pattern | frozenset[str]) -> Generator[tuple[shared.FilenameMetadata, list[str]], None, None]:
+
+def section_directory_metadata_generator(match_names: list[shared.FilenameMetadata],
+                                         matching_pattern: re.Pattern | frozenset[str]) -> Generator[
+    tuple[shared.FilenameMetadata, list[str]], None, None]:
     """
     :param ImportPath:
     :param match_names:
@@ -88,4 +94,5 @@ def section_directory_metadata_generator(match_names: list[shared.FilenameMetada
     """
 
     with concurrent.futures.ThreadPoolExecutor() as executor:
-        yield from executor.map(lambda section_meta_data: find_section_directory_metadata(section_meta_data, matching_pattern), match_names)
+        yield from executor.map(
+            lambda section_meta_data: find_section_directory_metadata(section_meta_data, matching_pattern), match_names)

@@ -7,12 +7,11 @@ Created on Apr 15, 2013
 import os
 from typing import Generator
 
-import nornir_buildmanager.volumemanager 
-
+import nornir_buildmanager.volumemanager
 import nornir_shared.misc as misc
 
 
-def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=None):
+def GetOrCreateImageNodeHelper(ParentNode, OutputImageName, InputTransformNode=None):
     # Create a node in the XML records
     Created = False
     OverlayImageNode = ParentNode.GetChildByAttrib('Image', 'Path', os.path.basename(OutputImageName))
@@ -21,7 +20,7 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=
             cleaned, reason = OverlayImageNode.CleanIfInvalid()
             if cleaned:
                 OverlayImageNode = None
-                
+
             if not InputTransformNode is None:
                 if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
                     OverlayImageNode = None
@@ -48,7 +47,7 @@ def GetOrCreateHistogramNodeHelper(ParentNode,
             cleaned, reason = histogramNode.CleanIfInvalid()
             if cleaned:
                 histogramNode = None
-            
+
             if InputTransformNode is not None:
                 if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
                     histogramNode = None
@@ -61,12 +60,13 @@ def GetOrCreateHistogramNodeHelper(ParentNode,
         if ImagePath is not None:
             ImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(os.path.basename(ImagePath))
             histogramNode.append(ImageNode)
-        
+
         histogramNode.SetTransform(InputTransformNode)
         ParentNode.append(histogramNode)
         created = True
 
     return created, histogramNode
+
 
 def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, CreateFunc=None, ReplaceFunc=None):
     '''
@@ -79,7 +79,7 @@ def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, Create
     :param function ReplaceFunc: Function to call if an existing node is found that does not pass the test
     '''
     raise NotImplemented()
-    
+
 
 def CreateLevelNodes(ParentNode, DownsampleLevels):
     DownsampleLevels = misc.SortedListFromDelimited(DownsampleLevels)
@@ -123,15 +123,16 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
     return ImageSetNode
 
 
-def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample) -> Generator[nornir_buildmanager.volumemanager.ImageSetNode, None, None]:
+def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample) -> Generator[
+    nornir_buildmanager.volumemanager.ImageSetNode, None, None]:
     '''Find the first image matching the criteria'''
     InputImageSetXPathTemplate = "Section[@Number='%(SectionNumber)s']/Channel/Filter/ImageSet[@Name='%(ImageSetName)s']"
     InputImageXPathTemplate = "Level[@Downsample='%(Downsample)d']/Image"
 
-    ImageSets = BlockNode.findall(InputImageSetXPathTemplate % {'SectionNumber' : SectionNumber,
-                                                                       'ImageSetName' : ImageSetName})
+    ImageSets = BlockNode.findall(InputImageSetXPathTemplate % {'SectionNumber': SectionNumber,
+                                                                'ImageSetName': ImageSetName})
     for ImageSet in ImageSets:
-        ImageXPath = InputImageXPathTemplate % {'Downsample' : Downsample}
+        ImageXPath = InputImageXPathTemplate % {'Downsample': Downsample}
         ImageNode = ImageSet.find(ImageXPath)
         return ImageSet
 
@@ -147,7 +148,7 @@ def MaskImageNodeForImageSet(ImageSetNode, Downsample):
 
         if not MappedMaskSetNode is None:
             MaskImageXPathTemplate = "Level[@Downsample='%(Downsample)d']/Image"
-            MaskImageXPath = MaskImageXPathTemplate % {'Downsample' : Downsample}
+            MaskImageXPath = MaskImageXPathTemplate % {'Downsample': Downsample}
             return MappedMaskSetNode.find(MaskImageXPath)
 
     return None

@@ -1,11 +1,9 @@
 import csv
 import os
 from typing import NamedTuple
-import nornir_buildmanager
 
-from . import shared
-from . import idoc
-from . import serialemlog
+import nornir_buildmanager
+from . import idoc, serialemlog, shared
 
 
 class ContrastValue(NamedTuple):

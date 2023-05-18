@@ -1,15 +1,8 @@
 import glob
-import logging
 import os
-import shutil
-import tempfile
-import unittest
 
-import nornir_shared.files
-import nornir_shared.misc
 from test.pipeline.setup_pipeline import *
 
-import nornir_buildmanager.build as build
 import nornir_buildmanager.validation.image as image
 import nornir_imageregistration.core as core
 
@@ -69,4 +62,3 @@ class ImageValidationTest(CopySetupTestBase):
 
         for png in pngs:
             self.RunRemoveOnDimensionTest(png)
-

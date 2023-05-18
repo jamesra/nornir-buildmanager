@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from nornir_buildmanager.volumemanager.imagesetbasenode import ImageSetBaseNode
 
+
 class ImageSetNode(ImageSetBaseNode):
     """Represents single image at various downsample levels"""
 

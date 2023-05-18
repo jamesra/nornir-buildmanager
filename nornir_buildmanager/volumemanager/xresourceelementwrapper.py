@@ -3,11 +3,10 @@ from __future__ import annotations
 import datetime
 import logging
 import os
+
 import nornir_buildmanager
 import nornir_shared.files
-
-from . import lockable
-from . import xelementwrapper
+from . import lockable, xelementwrapper
 
 
 class XResourceElementWrapper(lockable.Lockable,

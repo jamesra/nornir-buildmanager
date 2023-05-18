@@ -5,9 +5,8 @@ import logging
 import operator
 from typing import *
 from xml.etree import ElementTree as ElementTree
-from collections.abc import Iterable
 
-import nornir_buildmanager 
+import nornir_buildmanager
 from nornir_shared import prettyoutput as prettyoutput
 
 # Used for debugging with conditional break's, each node gets a temporary unique ID
@@ -19,7 +18,7 @@ class XElementWrapper(ElementTree.Element):
 
     def sort(self):
         """Order child elements"""
-  
+
         if len(self) <= 1:
             return
 
@@ -332,7 +331,7 @@ class XElementWrapper(ElementTree.Element):
 
     def Clean(self, reason: str | None = None):
         """Remove node from element tree and remove any external resources such as files"""
-  
+
         '''Remove the contents referred to by this node from the disk'''
         prettyoutput.Log(f' --- Cleaning {self.ToElementString()}. ')
         if reason is not None:
@@ -523,7 +522,7 @@ class XElementWrapper(ElementTree.Element):
         Children = self.GetChildrenByAttrib(ElementName, AttribName, AttribValue)
         if Children is None:
             return
-        
+
         Children = list(Children)
         if len(Children) < 2:
             return
@@ -549,7 +548,6 @@ class XElementWrapper(ElementTree.Element):
                                                                            'AttribName': AttribName,
                                                                            'AttribValue': AttribValue}
         return self.findall(XPathStr)
-
 
     def GetChildByAttrib(self, ElementName: str, AttribName: str, AttribValue) -> XElementWrapper | None:
 
@@ -607,7 +605,7 @@ class XElementWrapper(ElementTree.Element):
                                                          'QueryString': ' and '.join(attribXPaths)}
         return self.UpdateOrAddChild(element, XPathStr)
 
-    def UpdateOrAddChild(self, element: XElementWrapper, XPath: str=None) -> (bool, XElementWrapper):
+    def UpdateOrAddChild(self, element: XElementWrapper, XPath: str = None) -> (bool, XElementWrapper):
         """Adds an element using the specified XPath.  If the XPath is unspecified the element name is used
            Returns a tuple with (True/False, Element).
            True indicates the element did not exist and was added.
@@ -696,7 +694,7 @@ class XElementWrapper(ElementTree.Element):
         #        assert (not ParentTag is None)
         p = self.Parent
         while p is not None:
-            results = p.findall(xpath) 
+            results = p.findall(xpath)
             if next(results, None) is not None:
                 yield from p.findall(xpath)  # Cannot restart a generator, so have to start it again and return
                 return
@@ -746,7 +744,8 @@ class XElementWrapper(ElementTree.Element):
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(
             path)
 
-        if isinstance(self, nornir_buildmanager.volumemanager.XContainerElementWrapper):  # Only containers have linked elements
+        if isinstance(self,
+                      nornir_buildmanager.volumemanager.XContainerElementWrapper):  # Only containers have linked elements
             LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
             if LinkMatches is None:
                 return None

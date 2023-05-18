@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from numpy.typing import NDArray
 import os
 
-import nornir_imageregistration
+from numpy.typing import NDArray
+
 import nornir_buildmanager.volumemanager as volumemanager
+import nornir_imageregistration
 import nornir_shared.checksum
+
 
 class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementWrapper):
     """Refers to an image file"""

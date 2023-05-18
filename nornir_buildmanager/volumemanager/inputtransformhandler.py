@@ -1,8 +1,5 @@
-import nornir_buildmanager
-import nornir_shared.misc
-from nornir_shared import prettyoutput as prettyoutput
-
 from nornir_buildmanager.volumemanager import ITransform
+import nornir_shared.misc
 
 
 class InputTransformHandler(object):
@@ -101,9 +98,9 @@ class InputTransformHandler(object):
             return transform_node is None
 
         return self.InputTransform == transform_node.Name and \
-               self.InputTransformType == transform_node.Type and \
-               self.InputTransformChecksum == transform_node.Checksum and \
-               self.InputTransformCropBox == transform_node.CropBox
+            self.InputTransformType == transform_node.Type and \
+            self.InputTransformChecksum == transform_node.Checksum and \
+            self.InputTransformCropBox == transform_node.CropBox
 
     def CleanIfInputTransformMismatched(self, transform_node: ITransform) -> bool:
         """Remove this element from its parent if the transform node does not match our input transform attributes
