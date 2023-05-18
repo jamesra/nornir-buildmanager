@@ -24,6 +24,7 @@ import nornir_imageregistration
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
 import nornir_buildmanager
+import volumemanager
 from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates
@@ -80,7 +81,7 @@ def EstimateMaxTempImageArea() -> int:
     return estimated_max_temp_image_area
 
 
-def VerifyImages(TilePyramidNode, **kwargs):
+def VerifyImages(TilePyramidNode: TilePyramidNode, **kwargs):
     """Eliminate any image files which cannot be parsed by Image Magick's identify command"""
     PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
@@ -102,7 +103,7 @@ def VerifyImages(TilePyramidNode, **kwargs):
     return None
 
 
-def VerifyTiles(LevelNode=None, **kwargs):
+def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs):
     """ @LevelNode
     Eliminate any image files which cannot be parsed by Image Magick's identify command.
     This function is going to do the work regardless of whether meta-data in the
@@ -141,10 +142,12 @@ def VerifyTiles(LevelNode=None, **kwargs):
 
     for InvalidTile in InvalidTiles:
         InvalidTilePath = os.path.join(TileImageDir, InvalidTile)
-        if os.path.exists(InvalidTilePath):
+        try:
             prettyoutput.LogErr('*** Deleting invalid tile: ' + InvalidTilePath)
             logger.warning('*** Deleting invalid tile: ' + InvalidTilePath)
             os.remove(InvalidTilePath)
+        except FileNotFoundError: #It is OK if the file is missing, that was our goal
+            pass
 
     if len(InvalidTiles) == 0:
         logger.info('Tiles all valid {0}'.format(LevelNode.FullPath))
