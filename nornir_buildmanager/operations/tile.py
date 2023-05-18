@@ -30,6 +30,7 @@ import nornir_buildmanager.templates
 from nornir_buildmanager.validation import transforms, image
 from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile
 from nornir_shared.histogram import Histogram
+from nornir_shared.tasktimer import TaskTimer
 
 import nornir_buildmanager as nb
 import nornir_imageregistration.spatial as spatial
@@ -1618,12 +1619,13 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
             max_temp_image_area = EstimateMaxTempImageArea()
             prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(
                 float(max_temp_image_area) / float(2 << 20)))
-
-        for tile in mosaicTileset.GenerateOptimizedTiles(target_space_scale=1.0 / InputLevelNode.Downsample,
+            
+        task_timer = nornir_shared.tasktimer.TaskTimer()
+        task_timer.Start(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+        for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(target_space_scale=1.0 / InputLevelNode.Downsample,
                                                          tile_dims=tile_dims,
                                                          max_temp_image_area=max_temp_image_area,
                                                          usecluster=True):
-            (iRow, iCol, tile_image) = tile
 
             tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': TileSetNode.FilePrefix,
                                                                                      'X': iCol,
@@ -1640,6 +1642,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
 
         # Wait for the tiles to save
         pool.wait_completion()
+        task_timer.End(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
         prettyoutput.Log("Generation of tileset complete")
         #         else:
         #             Logger.info("Assemble tiles output already exists")
