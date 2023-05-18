@@ -4,16 +4,15 @@ Created on Jul 3, 2012
 @author: Jamesan
 '''
 
-import copy
 import functools
 import os
+import xml.etree.ElementTree as ETree
 
 import nornir_buildmanager.volumemanager
+import nornir_pools
+import nornir_shared.prettyoutput as prettyoutput
 from nornir_imageregistration.files import *
 from nornir_shared.files import RecurseSubdirectoriesGenerator
-import nornir_shared.prettyoutput as prettyoutput
-import xml.etree.ElementTree as ETree
-import nornir_pools
 
 ECLIPSE = 'ECLIPSE' in os.environ
 
@@ -83,12 +82,12 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
 
 def RecursiveMergeAboutXML(path, xmlFileName, sourceXML="About.xml"):
 
-    if(path is None or  len(path) == 0):
+    if path is None or  len(path) == 0:
         return
 
     [Parent, tail] = os.path.split(path)
 
-    if(tail is None or len(tail) == 0):
+    if tail is None or len(tail) == 0:
         return
 
     Url = RecursiveMergeAboutXML(Parent, xmlFileName, sourceXML)
@@ -107,7 +106,7 @@ def DetermineVolumeScale(InputVolumeNode):
 
     ScaleNodes = list(InputVolumeNode.findall('Block/Section/Channel/Scale'))
     if ScaleNodes is None or len(ScaleNodes) == 0:
-        return (None, None)
+        return None, None
 
     #This code assumes all units are the same
     units_of_measure = [s.X.UnitsOfMeasure for s in ScaleNodes]
@@ -120,7 +119,7 @@ def DetermineVolumeScale(InputVolumeNode):
 
     min_UnitsPerPixel = min(UnitsPerPixel)
 
-    return (units_of_measure[0], min_UnitsPerPixel)
+    return units_of_measure[0], min_UnitsPerPixel
 
 
 def AddScaleData(OutputNode, units_of_measure, units_per_pixel):
@@ -312,11 +311,11 @@ def ParseTransform(TransformNode, OutputSectionNode):
 
     mFile = mosaicfile.MosaicFile.Load(TransformNode.FullPath)
 
-    if(mFile is None):
+    if mFile is None:
         prettyoutput.LogErr("Unable to load transform: " + TransformNode.FullPath)
         return
 
-    if(mFile.NumberOfImages < 1):
+    if mFile.NumberOfImages < 1:
         prettyoutput.LogErr("Not including empty .mosaic file")
         return
 
@@ -333,13 +332,13 @@ def ParseTransform(TransformNode, OutputSectionNode):
     Postfix = parts[len(parts) - 1]
 
     # Two conventions are commonly used Section#.Tile#.png or Tile#.png
-    if(len(parts) == 3):
+    if len(parts) == 3:
         Prefix = parts[0]
     else:
         Prefix = ''
 
     UseForVolume = 'false'
-    if('grid' in TransformNode.Name.lower()):
+    if 'grid' in TransformNode.Name.lower():
         UseForVolume = 'true'
 
 
@@ -390,9 +389,9 @@ def MergeAboutXML(volumeXML, aboutXML):
     import xml.dom.minidom
 
     prettyoutput.Log('MergeAboutXML ' + str(volumeXML) + ' ' + str(aboutXML))
-    if(os.path.exists(volumeXML) == False):
+    if os.path.exists(volumeXML) == False:
         return
-    if(os.path.exists(aboutXML) == False):
+    if os.path.exists(aboutXML) == False:
         return
 
     aboutDom = xml.dom.minidom.parse(aboutXML)
@@ -407,7 +406,7 @@ def MergeAboutXML(volumeXML, aboutXML):
 
     Url = None
     # Volume path is a special case so we append the path to the host name
-    if(volumeNode.nodeName == "Volume" and aboutNode.nodeName == "Volume"):
+    if volumeNode.nodeName == "Volume" and aboutNode.nodeName == "Volume":
         baseVolumeDir = os.path.dirname(volumeXML)
         baseAboutDir = os.path.dirname(aboutXML)
         relPath = baseVolumeDir.replace(baseAboutDir, '')
@@ -427,7 +426,7 @@ def MergeAboutXML(volumeXML, aboutXML):
 
 def MergeElements(volumeNode, aboutNode):
 
-    if(ElementsEqual(volumeNode, aboutNode)):
+    if ElementsEqual(volumeNode, aboutNode):
         CopyNewAttributes(volumeNode, aboutNode)
         MergeChildren(volumeNode, aboutNode)
 
@@ -436,13 +435,13 @@ def MergeElements(volumeNode, aboutNode):
 def MergeChildren(volumeParent, aboutParent):
 
     aboutElement = aboutParent.firstChild
-    while(aboutElement is not None):
-        if(aboutElement.nodeName is None):
+    while aboutElement is not None:
+        if aboutElement.nodeName is None:
             break
 
         volumeElements = volumeParent.getElementsByTagName(aboutElement.nodeName)
         # The volume doesn't have any elements like this.  Add them
-        if(volumeElements.length == 0):
+        if volumeElements.length == 0:
             newNode = aboutElement.cloneNode(True)
             prettyoutput.Log('NewNode' + newNode.toxml())
             volumeParent.insertBefore(newNode, volumeParent.firstChild)
@@ -456,7 +455,7 @@ def MergeChildren(volumeParent, aboutParent):
 def ElementsEqual(volumeElement, aboutElement):
     '''Return true if the elements have the same tag, and the attributes found in both elements have same value'''
 
-    if(aboutElement.nodeName != volumeElement.nodeName):
+    if aboutElement.nodeName != volumeElement.nodeName:
         return False
 
     for attrib_key in list(aboutElement.attributes.keys()):
@@ -469,14 +468,14 @@ def ElementsEqual(volumeElement, aboutElement):
 
 
     # Volume is the root element so it is always a match
-    if(aboutElement.nodeName == "Volume"):
+    if aboutElement.nodeName == "Volume":
         return True
 
     # Nodes only match if their attributes match
-    if(aboutElement.nodeName == "Section"):
+    if aboutElement.nodeName == "Section":
         aboutNumber = aboutElement.getAttribute("number")
         volNumber = volumeElement.getAttribute("number")
-        if(aboutNumber != volNumber):
+        if aboutNumber != volNumber:
             return False
         else:
             prettyoutput.Log("Equal:")
@@ -493,14 +492,14 @@ def CopyNewAttributes(volumeElement, aboutElement):
 #   print 'v: ' + volumeElement.toxml()
 #   print 'a: ' + aboutElement.toxml()
 
-    if(aboutElement.hasAttributes() == False):
+    if aboutElement.hasAttributes() == False:
         return
 
     attributeMap = aboutElement.attributes
     for i in range(0, attributeMap.length):
         attribute = attributeMap.item(i)
 
-        if(volumeElement.hasAttribute(attribute.name) == False):
+        if volumeElement.hasAttribute(attribute.name) == False:
             volumeElement.setAttribute(attribute.name, attribute.value)
 
 
@@ -508,10 +507,10 @@ def UpdateVolumePath(volumeElement, aboutElement, relPath):
     '''
     Special case for updating the root element Volume path
     '''
-    if(aboutElement.hasAttributes() == False):
+    if aboutElement.hasAttributes() == False:
         return
 
-    if(len(relPath) > 0):
+    if len(relPath) > 0:
         relPath = relPath.lstrip('\\')
         relPath = relPath.lstrip('/')
 
@@ -519,7 +518,7 @@ def UpdateVolumePath(volumeElement, aboutElement, relPath):
     for i in range(0, attributeMap.length):
         attribute = attributeMap.item(i)
 
-        if(attribute.name == "host"):
+        if attribute.name == "host":
             PathURL = url_join(attribute.value, relPath)
             volumeElement.setAttribute("path", PathURL)
             return PathURL

@@ -69,7 +69,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
     (added_outputlevel, OutputLevel) = TileSetNode.GetOrCreateLevel(InputLevelNode.Downsample, GenerateData=False)
     
     added_outputlevel = True
-    if(added_outputlevel):
+    if added_outputlevel:
         [YDim, XDim] = nornir_shared.images.GetImageSize(ImageNode.FullPath)
 
         tile_output = os.path.join(TileSetNode.FullPath, 'Tile%d.png')
@@ -99,7 +99,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
         iFile = 0
         for iY in range(0, GridDimY):
             for iX in range(0, GridDimX):
-                tileFileName = os.path.join(TileSetNode.FullPath, tile_output % (iFile))
+                tileFileName = os.path.join(TileSetNode.FullPath, tile_output % iFile)
                 gridTileFileName = GridTileNameTemplate % {'prefix' : TileSetNode.FilePrefix,
                                                            'X' : iX,
                                                            'Y' : iY,

@@ -16,7 +16,7 @@ class FilenameInfo(object):
             self.__dict__.update(kwargs)
 
 
-class mapping():
+class mapping:
 
     def __init__(self, attribname, typefunc, **kwargs):
         self.attribute = attribname

@@ -42,7 +42,7 @@ def MovePath(Node, NewPath, **kwargs):
         logger.info("Moving " + oldFullPath + "\n  to " + Node.FullPath)
 
 
-        if(os.path.exists(Node.FullPath)):
+        if os.path.exists(Node.FullPath):
             if os.path.isdir(Node.FullPath):
                 shutil.move(oldFullPath, Node.FullPath)
             else:

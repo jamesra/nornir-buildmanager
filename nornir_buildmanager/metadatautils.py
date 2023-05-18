@@ -32,7 +32,7 @@ def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=
         ParentNode.append(OverlayImageNode)
         Created = True
 
-    return (Created, OverlayImageNode)
+    return Created, OverlayImageNode
 
 
 def GetOrCreateHistogramNodeHelper(ParentNode,
@@ -66,7 +66,7 @@ def GetOrCreateHistogramNodeHelper(ParentNode,
         ParentNode.append(histogramNode)
         created = True
 
-    return (created, histogramNode)
+    return created, histogramNode
 
 def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, CreateFunc=None, ReplaceFunc=None):
     '''

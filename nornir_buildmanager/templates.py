@@ -60,9 +60,9 @@ class __Config:
         return "ir-stos-brute -sh 1 -refine -regularize "
 
     def StosGridCmd(self, Spacing=None, Neighborhood=None):
-        if(Spacing is None):
+        if Spacing is None:
             Spacing = 128
-        if(Neighborhood is None):
+        if Neighborhood is None:
             Neighborhood = 128
 
         return "ir-stos-grid -sh 1 -fft 0 0.25 -grid_spacing " + str(Spacing) + " -neighborhood " + str(Neighborhood) + " -it 10 "

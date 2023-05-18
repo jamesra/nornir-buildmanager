@@ -80,7 +80,7 @@ def PrintNodeTreeAndAttributes(node, attributes, format_str=None, **kwargs):
     values = []
     for attrib_name in attributes:
         value = None
-        if (hasattr(node, attrib_name)):
+        if hasattr(node, attrib_name):
             value = getattr(node, attrib_name)
 
         values.append(value)
@@ -107,7 +107,7 @@ def GetNamesToRootString(node, **kwargs):
     names = []
 
     fill = kwargs.get('fill', 12)  # Default to 12 character padding for names
-    while (iter_node.Parent is not None):
+    while iter_node.Parent is not None:
         iter_node = iter_node.Parent
         if hasattr(iter_node, 'Number'):
             names.insert(0, iter_node.Number)

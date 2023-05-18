@@ -413,7 +413,7 @@ class SerialEMLog(object):
         
         line = hLog.readline(512)
         if line is None or len(line) == 0:
-            return (None, None, None)  # No more lines in file
+            return None, None, None  # No more lines in file
         
         entry = None
         timestamp = None
@@ -425,7 +425,7 @@ class SerialEMLog(object):
             if entry is None:
                 line = hLog.readline(512)
                 if line is None or len(line) == 0:
-                    return (None, None, None)  # No more lines in file
+                    return None, None, None  # No more lines in file
                 
                 continue
 
@@ -438,7 +438,7 @@ class SerialEMLog(object):
             
             entry = entry.strip()
         
-            return (line, timestamp, entry)
+            return line, timestamp, entry
     
     @staticmethod
     def TryParseLine(line):
@@ -446,7 +446,7 @@ class SerialEMLog(object):
         line = line.strip()
         
         if len(line) == 0:
-            return (None, None)
+            return None, None
         
         entry = line
         timestamp = None
@@ -460,7 +460,7 @@ class SerialEMLog(object):
             
         entry = entry.strip()
         
-        return (timestamp, entry)
+        return timestamp, entry
                 
     @classmethod
     def Load(cls, logfullPath, usecache=True):
@@ -695,7 +695,7 @@ class SerialEMLog(object):
         
         LastElapsedTime = None
         
-        while(True):
+        while True:
             (line, timestamp, entry) = SerialEMLog.ReadLine(hLog)
             if line is None:
                 break
@@ -716,7 +716,7 @@ class SerialEMLog(object):
             if entry.find("Stage") < 0:
                 break
         
-        return (LastElapsedTime, line)
+        return LastElapsedTime, line
             
         
         
@@ -743,7 +743,7 @@ class SerialEMLog(object):
                 # Value = Value.strip()
                 floatValue = float(ValueStr)
                 
-                return (floatValue, UnitsStr)
+                return floatValue, UnitsStr
             
         return None
     

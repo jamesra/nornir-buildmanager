@@ -290,7 +290,7 @@ def Execute(buildArgs=None):
                 OutputFile.writelines(OutStr)
                 OutputFile.close()
         except:
-            prettyoutput.Log('Could not write %s' % (timeTextFullPath))
+            prettyoutput.Log('Could not write %s' % timeTextFullPath)
 
 
 if __name__ == '__main__':

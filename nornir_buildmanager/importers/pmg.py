@@ -119,10 +119,10 @@ class PMGImport(object):
             OutputPath = os.path.join(PMGFullPath, "..")
 
         # If the user did not supply a value, use a default
-        if(TileOverlap is None):
+        if TileOverlap is None:
             TileOverlap = 0.10
 
-        if (TargetBpp is None):
+        if TargetBpp is None:
             TargetBpp = 8
 
         # Report the current stage to the user
@@ -137,7 +137,7 @@ class PMGImport(object):
         PMG = ParseFilename(PMGFullPath, pmgMappings)
         PMGDir = os.path.dirname(PMGFullPath)
 
-        if(PMG is None):
+        if PMG is None:
             raise Exception("Could not parse section from PMG filename: %s" + PMGFullPath)
 
         if PMG.Section is None:
@@ -163,7 +163,7 @@ class PMGImport(object):
         FlipList = GetFlipList(ParentDir)
         Flip = PMG.Section in FlipList
 
-        if(Flip):
+        if Flip:
             prettyoutput.Log("Flipping")
 
 
@@ -194,7 +194,7 @@ class PMGImport(object):
     
         # Create a filter and mosaic
         FilterName = 'Raw' + str(TargetBpp)
-        if(TargetBpp is None):
+        if TargetBpp is None:
             FilterName = 'Raw'
     
         [added_filter, filterObj] = channelObj.GetOrCreateFilter(FilterName)
@@ -260,7 +260,7 @@ def ParsePMG(filename, TileOverlapPercent=None):
 
     PMGDir = os.path.dirname(filename)
 
-    if(DEBUG):
+    if DEBUG:
         prettyoutput.Log("Filename: " + filename)
         # prettyoutput.Log("PMG to: " + OutFilepath)
 
@@ -285,7 +285,7 @@ def ParsePMG(filename, TileOverlapPercent=None):
 
     Data = Tuple[2]
 
-    if(DEBUG):
+    if DEBUG:
         prettyoutput.Log(("Num Tiles: " + str(NumPieces)))
         prettyoutput.Log(("Scale    : " + str(ScaleFactor)))
         prettyoutput.Log(("Reduction: " + str(ReductionFactor)))
@@ -310,7 +310,7 @@ def ParsePMG(filename, TileOverlapPercent=None):
         Tuple = Entry.partition('PATH')
 
         # Probably means we skipped the last tile in a PMG
-        if(Tuple[1] != "PATH"):
+        if Tuple[1] != "PATH":
             continue
 
         Tuple = Tuple[2].partition('<')
@@ -330,10 +330,10 @@ def ParsePMG(filename, TileOverlapPercent=None):
             prettyoutput.Log('Skipping missing tile in PMG: ' + TileFilename)
             continue
 
-        if(TileWidth == 0):
+        if TileWidth == 0:
             try:
                 [TileHeight, TileWidth] = nornir_imageregistration.GetImageSize(TileFullPath)
-                if(DEBUG):
+                if DEBUG:
                     prettyoutput.Log(str(TileWidth) + ',' + str(TileHeight) + " " + TileFilename)
             except:
                 prettyoutput.Log('Could not determine size of tile: ' + TileFilename)
@@ -366,7 +366,7 @@ def ParsePMG(filename, TileOverlapPercent=None):
         iX = round(X / TileWidthMinusOverlap)
         iY = round(Y / TileHeightMinusOverlap)
 
-        if(DEBUG):
+        if DEBUG:
             prettyoutput.Log(("Name,iX,iY: " + TileFilename + " " + str((iX, iY))))
 
         # Add tile to dictionary

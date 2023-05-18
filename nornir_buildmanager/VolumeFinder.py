@@ -17,12 +17,12 @@ def FindServerFromAboutXML(path, sourceXML=None):
     if sourceXML is None:
         sourceXML = "About.xml"
 
-    if(path is None or  len(path) == 0):
+    if path is None or  len(path) == 0:
         return None
 
     [Parent, tail] = os.path.split(path)
 
-    if(tail is None or len(tail) == 0):
+    if tail is None or len(tail) == 0:
         return None
 
     AboutXMLPath = os.path.join(path, sourceXML)
@@ -43,7 +43,7 @@ def FindServerFromAboutXML(path, sourceXML=None):
     if len(path) == 0:
         return "/"
 
-    if(path[-1] != '/'):
+    if path[-1] != '/':
         path = path + '/'
     path = path + tail
 
@@ -58,7 +58,7 @@ def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
 
     assert(isinstance(ColumnsForRow, dict))
 
-    if(RowOrderList is None):
+    if RowOrderList is None:
         RowOrderList = list(ColumnsForRow.keys())
         RowOrderList = RowOrderList.sort()
 
@@ -126,7 +126,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
     if requiredFiles is None:
         requiredFiles = []
 
-    if(path is None):
+    if path is None:
         VolumeNode = kwargs.get('VolumeNode', None)
         if VolumeNode is None:
             PrettyOutput.LogErr("Path attribute not found for VolumeFinder")
@@ -183,7 +183,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
 
         for filename in requiredFiles:
             filenameFullPath = os.path.join(directory, filename)
-            if(os.path.exists(filenameFullPath)):
+            if os.path.exists(filenameFullPath):
                 dirImageList.append(filenameFullPath)  # Should check if it exists maybe
 
         dirDict[directory] = dirImageList
@@ -198,7 +198,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
     HTMLString = HTMLString + HTMLTable + '\n'
     HTMLString = HTMLString + HTMLFooter
 
-    if(len(RowNames) == 0):
+    if len(RowNames) == 0:
         PrettyOutput.Log("Report generator could not find matching files " + str(requiredFiles))
         return ""
 
@@ -214,7 +214,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
 def EmailIndex(path=None, subject=None, **kwargs):
     import nornir_shared.emaillib
 
-    if(path is None):
+    if path is None:
         VolumeNode = kwargs.get('ReportingElement', None)
         if VolumeNode is None:
             PrettyOutput.LogErr("Path attribute not found for VolumeFinder")

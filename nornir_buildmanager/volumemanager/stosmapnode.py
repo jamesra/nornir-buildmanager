@@ -61,7 +61,7 @@ class StosMapNode(XElementWrapper):
                 if mappedSection in MappedToControlCandidateList:
                     MappedToControlCandidateList[mappedSection].add(mappingNode.Control)
                 else:
-                    MappedToControlCandidateList[mappedSection] = set([mappingNode.Control])
+                    MappedToControlCandidateList[mappedSection] = {mappingNode.Control}
 
         return MappedToControlCandidateList
 

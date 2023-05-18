@@ -29,10 +29,10 @@ class PruneObj:
 
     def __init__(self, MapToImageScore=None, Tolerance=None):
         self.Tolerance = Tolerance
-        if(self.Tolerance is None):
+        if self.Tolerance is None:
             self.Tolerance = 5
 
-        if(MapToImageScore is None):
+        if MapToImageScore is None:
             self.MapImageToScore = dict()
         else:
             self.MapImageToScore = MapToImageScore
@@ -59,7 +59,7 @@ class PruneObj:
     def _TryUpdateUndefinedThresholdFromParameter(cls, PruneNode, ThresholdParameter):
         '''If a Threshold parameter is passed set the UserRequested cutoff if it is not already specified'''
 
-        if(PruneNode.UserRequestedCutoff is None and ThresholdParameter is not None):
+        if PruneNode.UserRequestedCutoff is None and ThresholdParameter is not None:
             PruneNode.UserRequestedCutoff = ThresholdParameter
             return True
 
@@ -72,7 +72,7 @@ class PruneObj:
 
         threshold_precision = nornir_buildmanager.volumemanager.TransformNode.get_threshold_precision() #Number of digits to save in XML file
 
-        if(Logger is None):
+        if Logger is None:
             Logger = logging.getLogger(__name__ + '.PruneMosaic')
 
         Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
@@ -105,7 +105,7 @@ class PruneObj:
         TransformParent.RemoveOldChildrenByAttrib('Transform', 'Name', OutputTransformName)
         
         PruneDataNode = PruneNode.find('Data')
-        if(PruneDataNode is None):
+        if PruneDataNode is None:
             Logger.warning("Did not find expected prune data node")
             return None
  
@@ -142,12 +142,12 @@ class PruneObj:
         
         assert(not PruneObjInstance is None)
 
-        if(OutputTransformNode is None):
-            if(not hasattr(OutputTransformNode, Threshold)):
+        if OutputTransformNode is None:
+            if not hasattr(OutputTransformNode, Threshold):
                 OutputTransformNode.Threshold = Threshold
 
-            if(OutputTransformNode.Threshold != Threshold):
-                if(os.path.exists(OutputMosaicFullPath)):
+            if OutputTransformNode.Threshold != Threshold:
+                if os.path.exists(OutputMosaicFullPath):
                     os.remove(OutputMosaicFullPath)
 
         if not os.path.exists(OutputMosaicFullPath):
@@ -177,7 +177,7 @@ class PruneObj:
             otherwise None
         '''
         PruneDataNode = prune_node.DataNode
-        if(PruneDataNode is None):
+        if PruneDataNode is None:
             Logger = logging.getLogger(__name__ + '.ReadPruneDataNode')
             Logger.warning("Did not find expected prune data node")
             return None
@@ -241,12 +241,12 @@ class PruneObj:
 
         [created, LevelNode] = FilterNode.TilePyramid.GetOrCreateLevel(Downsample)
 
-        if(LevelNode is None):
+        if LevelNode is None:
             prettyoutput.LogErr("Missing InputPyramidLevelNode attribute on PruneTiles")
             Logger.error("Missing InputPyramidLevelNode attribute on PruneTiles")
             return
 
-        if(TransformNode is None):
+        if TransformNode is None:
             prettyoutput.LogErr("Missing TransformNode attribute on PruneTiles")
             Logger.error("Missing TransformNode attribute on PruneTiles")
             return
@@ -308,8 +308,8 @@ class PruneObj:
 
         with open(MapImageToScoreFile, 'w') as outfile:
 
-            if(len(list(self.MapImageToScore.keys())) == 0):
-                if(os.path.exists(MapImageToScoreFile)):
+            if len(list(self.MapImageToScore.keys())) == 0:
+                if os.path.exists(MapImageToScoreFile):
                     os.remove(MapImageToScoreFile)
 
                 prettyoutput.Log("No prune scores present in PruneMap being saved: " + MapImageToScoreFile)
@@ -333,7 +333,7 @@ class PruneObj:
         infile.close()
 
         assert(len(lines) > 0)
-        if(len(lines) == 0):
+        if len(lines) == 0:
             return None
 
         MapImageToScore = dict()
@@ -348,12 +348,12 @@ class PruneObj:
 
     @staticmethod
     def CreateHistogram(MapImageToScore, HistogramXMLFile, MapImageToScoreFile=None):
-        if(len(list(MapImageToScore.items())) == 0 and MapImageToScoreFile is not None):
+        if len(list(MapImageToScore.items())) == 0 and MapImageToScoreFile is not None:
    #         prettyoutput.Log( "Reading scores, MapImageToScore Empty " + MapImageToScoreFile)
             PruneObj.ReadPruneMap(MapImageToScoreFile)
    #         prettyoutput.Log( "Read scores complete: " + str(self.MapImageToScore))
  
-        if(len(list(MapImageToScore.items())) == 0):
+        if len(list(MapImageToScore.items())) == 0:
             prettyoutput.Log("No prune scores to create histogram with")
             return 
 
@@ -396,10 +396,10 @@ class PruneObj:
 
         # prettyoutput.Log("NumBins: " + str(numBins))
 
-        if(numBins < 10):
+        if numBins < 10:
             numBins = 10
 
-        if(numBins > len(scores)):
+        if numBins > len(scores):
             numBins = len(scores)
 
         # prettyoutput.Log("Final NumBins: " + str(numBins))
@@ -421,7 +421,7 @@ class PruneObj:
         :return: Number of tiles removed
         '''
 
-        if(not isinstance(Tolerance, float)):
+        if not isinstance(Tolerance, float):
             Tolerance = float(Tolerance)
 
         SourceMosaicFullPath = os.path.join(path, SourceMosaic)
@@ -439,7 +439,7 @@ class PruneObj:
             filename = item[0]
             score = item[1]
 
-            if(score >= Tolerance):
+            if score >= Tolerance:
                 keyVal = filename
                 if not keyVal in inputImageToTransforms:
                     keyVal = os.path.basename(filename)
@@ -450,7 +450,7 @@ class PruneObj:
             else:
                 numRemoved = numRemoved + 1
 
-        if(len(mosaic.ImageToTransformString) <= 0):
+        if len(mosaic.ImageToTransformString) <= 0:
             errMsg = "All tiles removed when using threshold = " + str(Tolerance) + "\nThe prune request was ignored"
             prettyoutput.LogErr(errMsg)
             raise ValueError(errMsg) 

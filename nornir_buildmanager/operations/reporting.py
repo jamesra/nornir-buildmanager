@@ -154,7 +154,7 @@ class HTMLPaths(object):
 
     @classmethod
     def __StripLeadingPathSeperator(cls, path):
-        while(path[0] == os.sep or path[0] == os.altsep):
+        while path[0] == os.sep or path[0] == os.altsep:
             path = path[1:]
 
         return path
@@ -187,7 +187,7 @@ class HTMLPaths(object):
         (ThumbnailDirectory, ext) = os.path.splitext(self.OutputFile)
         ThumbnailDirectoryFullPath = os.path.join(self.OutputDir, ThumbnailDirectory)
 
-        return (ThumbnailDirectory, ThumbnailDirectoryFullPath)
+        return ThumbnailDirectory, ThumbnailDirectoryFullPath
 
     def GetFileAnchorHTML(self, Node, text):
         '''Returns an <A> anchor node pointing at the nodes file.  If the file does not exist an empty string is returned'''
@@ -377,7 +377,7 @@ def __RTFToHTML(rtfStr):
                         '\par': '<br\>',
                         '\viewkind': ''}
 
-    if(rtfStr[0] == '{'):
+    if rtfStr[0] == '{':
         rtfStr = rtfStr[1:-2]
 
     HTMLOut = HTMLBuilder()
@@ -820,12 +820,12 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     try:
         (_, ext) = os.path.splitext(ImageNode.FullPath)
         if ext == '.svg':
-            return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
+            return HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width
         
         (Height, Width) = ImageNode.Dimensions
         # [Height, Width] = nornir_imageregistration.GetImageSize(ImageNode.FullPath)
     except IOError:
-        return (HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width)
+        return HtmlPaths.GetSubNodeFullPath(ImageNode), Height, Width
 
     # Create a thumbnail if needed
     if Width > MaxImageWidth or Height > MaxImageHeight:
@@ -851,7 +851,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
     else:
         ImgSrcPath = HtmlPaths.GetSubNodeFullPath(ImageNode)
         
-    return (ImgSrcPath, Height, Width)
+    return ImgSrcPath, Height, Width
 
 
 def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
@@ -886,7 +886,7 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
           
     HTML.Add("</TR>")
     
-    if(not (filter.Gamma is None or filter.MinIntensityCutoff is None or filter.MaxIntensityCutoff is None)):
+    if not (filter.Gamma is None or filter.MinIntensityCutoff is None or filter.MaxIntensityCutoff is None):
         HTML.Add('<TR><TD align="center">%d - %d</TD><TD align="center">Gamma %g</TD></TR>' % (filter.MinIntensityCutoff, filter.MaxIntensityCutoff, filter.Gamma))    
     
     HTML.Add("</TABLE>")
@@ -1172,7 +1172,7 @@ def DictToPages(RowDict, Paths, RowsPerPage, IndentLevel=0):
 def __getKeyIndiciesForPage(iPage, RowsPerPage):
     iStartKey = iPage * RowsPerPage
     iEndKey = (iPage + 1) * RowsPerPage
-    return (iStartKey, iEndKey)
+    return iStartKey, iEndKey
 
 
 def __getKeysForPage(SortedKeys, iPage, RowsPerPage):
@@ -1182,7 +1182,7 @@ def __getKeysForPage(SortedKeys, iPage, RowsPerPage):
 
 def __getFirstAndLastKeysForPage(SortedKeys, iPage, RowsPerPage):
     subset = __getKeysForPage(SortedKeys, iPage, RowsPerPage)
-    return (subset[0], subset[-1])
+    return subset[0], subset[-1]
 
 
 def DictToPage(HTML, RowDict, Paths, SortedKeys, iPage=0, RowsPerPage=50, IndentLevel=0):
@@ -1531,7 +1531,7 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
 
 def GenerateImageReport(xpaths, VolumeElement, Logger, OutputFile=None, **kwargs):
 
-    if(OutputFile is None):
+    if OutputFile is None:
         OutputFile = os.path.join(VolumeElement.FullPath, 'Report.html')
 
     if isinstance(xpaths, str):
@@ -1572,7 +1572,7 @@ def RecursiveReportGenerator(VolumeElement, xpaths, Logger=None):
 
     for element in VolumeElement:
         childList = RecursiveReportGenerator(element, xpaths, Logger.getChild('element.Name'))
-        if(len(childList) > 0):
+        if len(childList) > 0:
             List.append((element.tag, element.Name, childList))
 
     return List

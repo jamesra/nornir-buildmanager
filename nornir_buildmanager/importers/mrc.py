@@ -115,7 +115,7 @@ class MRCImport(object):
             
         bpp = mrcfile.bytes_per_pixel * 8
         FilterName = 'Raw' + str(bpp)
-        if(TargetBpp is None):
+        if TargetBpp is None:
             FilterName = 'Raw'
             
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
@@ -272,9 +272,9 @@ class MRCFile(object):
     def IsBigEndian(Header):
         '''Returns true if the mrc header indicates the file is big endian'''
         (EndianStamp,) = struct.unpack('I', Header[0xD4:0xD8])
-        if (EndianStamp == 17):
+        if EndianStamp == 17:
             return True
-        elif(EndianStamp == 68):
+        elif EndianStamp == 68:
             return False
         else:
             Warning('ENDIAN Value in MRC header incorrect, defaulting to Little Endian')
@@ -314,7 +314,7 @@ class MRCFile(object):
         (obj.tile_header_size, obj.tile_header_flags,) = struct.unpack(obj.EndianChar + 'HH', Header[0x80:0x84])
         
         (imod_stamp,) = struct.unpack(obj.EndianChar + 'I', Header[0x98: 0x9C])
-        if(imod_stamp == 1146047817):
+        if imod_stamp == 1146047817:
             obj.imod_flags = struct.unpack(obj.EndianChar + 'I', Header[0x9C: 0xA0])
         
         (img_origin_x, img_origin_y, img_origin_z,) = struct.unpack(obj.EndianChar + 'fff', Header[0xC4: 0xD0])
@@ -335,19 +335,19 @@ class MRCFile(object):
         
     @property
     def bytes_per_pixel(self):
-        if(self.img_pixel_mode == 0):
+        if self.img_pixel_mode == 0:
             return 1
-        elif(self.img_pixel_mode == 1):
+        elif self.img_pixel_mode == 1:
             return 2
-        elif(self.img_pixel_mode == 2):
+        elif self.img_pixel_mode == 2:
             return 2
-        elif(self.img_pixel_mode == 3):
+        elif self.img_pixel_mode == 3:
             return 4
-        elif(self.img_pixel_mode == 4):
+        elif self.img_pixel_mode == 4:
             return 4
-        elif(self.img_pixel_mode == 6):
+        elif self.img_pixel_mode == 6:
             return 2
-        elif(self.img_pixel_mode == 16):
+        elif self.img_pixel_mode == 16:
             return 3
         else:
             raise ValueError("Unknown pixel format")
@@ -357,19 +357,19 @@ class MRCFile(object):
         '''
         :return: The numpy dtype pixels are encoded in
         '''
-        if(self.img_pixel_mode == 0):
+        if self.img_pixel_mode == 0:
             dtype = numpy.uint8
-        elif(self.img_pixel_mode == 1):
+        elif self.img_pixel_mode == 1:
             dtype = numpy.int16
-        elif(self.img_pixel_mode == 2):
+        elif self.img_pixel_mode == 2:
             dtype = numpy.float
-        elif(self.img_pixel_mode == 3):
+        elif self.img_pixel_mode == 3:
             dtype = numpy.dtype([('real', numpy.uint16), ('i', numpy.uint16)])
-        elif(self.img_pixel_mode == 4):
+        elif self.img_pixel_mode == 4:
             dtype = numpy.complex
-        elif(self.img_pixel_mode == 6):
+        elif self.img_pixel_mode == 6:
             dtype = numpy.uint16
-        elif(self.img_pixel_mode == 16):
+        elif self.img_pixel_mode == 16:
             dtype = numpy.dtype([('R', numpy.uint8), ('G', numpy.uint8), ('B', numpy.uint8)])
         else:
             raise ValueError("Unknown pixel format")
@@ -386,19 +386,19 @@ class MRCFile(object):
         '''
         :return: The numpy dtype pixels are encoded in
         '''
-        if(self.img_pixel_mode == 0):
+        if self.img_pixel_mode == 0:
             mode = 'L'
-        elif(self.img_pixel_mode == 1):
+        elif self.img_pixel_mode == 1:
             mode = 'I;16' 
-        elif(self.img_pixel_mode == 2):
+        elif self.img_pixel_mode == 2:
             mode = 'F'
-        elif(self.img_pixel_mode == 3):
+        elif self.img_pixel_mode == 3:
             raise ValueError("Complex valued pixels are not supported")
-        elif(self.img_pixel_mode == 4):
+        elif self.img_pixel_mode == 4:
             raise ValueError("Complex valued pixels are not supported")
-        elif(self.img_pixel_mode == 6):
+        elif self.img_pixel_mode == 6:
             mode = 'I;16'
-        elif(self.img_pixel_mode == 16):
+        elif self.img_pixel_mode == 16:
             mode = 'RGB'
         else:
             raise ValueError("Unknown pixel format")
@@ -590,33 +590,33 @@ class MRCTileHeader(object):
         if big_endian:
             Endian = '>'
         
-        if(tile_flags & MRCTileHeaderFlags.TiltAngle):
+        if tile_flags & MRCTileHeaderFlags.TiltAngle:
             (obj.tilt_angle,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
             obj.tilt_angle = float(obj.tilt_angle) / 100.0
             offset += 2
             
-        if(tile_flags & MRCTileHeaderFlags.PieceCoord):
+        if tile_flags & MRCTileHeaderFlags.PieceCoord:
             (px, py, pz,) = struct.unpack(Endian + 'HHH', header[offset:offset + 6])
             obj.piece_coords = numpy.asarray((px, py, pz))
             offset += 6
             
-        if(tile_flags & MRCTileHeaderFlags.StageCoord):
+        if tile_flags & MRCTileHeaderFlags.StageCoord:
             (sx, sy,) = struct.unpack(Endian + 'HH', header[offset:offset + 4])
             obj.stage_coords = numpy.asarray((sx, sy), dtype=numpy.float32) / 25.0
             obj._pixel_coords = MRCTileHeader.calculate_pixel_coords(obj.stage_coords, nm_per_pixel)
             offset += 4
             
-        if(tile_flags & MRCTileHeaderFlags.Magnification):
+        if tile_flags & MRCTileHeaderFlags.Magnification:
             (obj.mag,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
             obj.mag = float(obj.mag) * 100.0
             offset += 2
             
-        if(tile_flags & MRCTileHeaderFlags.Intensity):
+        if tile_flags & MRCTileHeaderFlags.Intensity:
             (obj.intensity,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
             obj.intensity = float(obj.intensity) / 25000.0
             offset += 2
             
-        if(tile_flags & MRCTileHeaderFlags.Exposure):
+        if tile_flags & MRCTileHeaderFlags.Exposure:
             (obj.exposure,) = struct.unpack(Endian + 'f', header[offset:offset + 4])
             offset += 4
         

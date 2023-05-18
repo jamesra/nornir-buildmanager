@@ -143,7 +143,7 @@ def ImportStos(InputStosFullpath, BlockNode, GroupName,
     OutputFileFullPath = os.path.join(StosGroup.FullPath, OutputFilename)
     
     # Copy the STOS file into the StosGroup directory
-    if(ControlDownsample != MappedDownsample):
+    if ControlDownsample != MappedDownsample:
         # Adjust the mappedDownsample to match the control downsample
         stos = stosfile.StosFile.Load(InputStosFullpath)
         adjustedStos = stos.EqualizeStosGridPixelSpacing(ControlDownsample, MappedDownsample,

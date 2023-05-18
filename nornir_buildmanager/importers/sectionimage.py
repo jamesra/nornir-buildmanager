@@ -74,7 +74,7 @@ class SectionImage(object):
             OutputPath = os.path.join(InputPath, "..")
 
         # If the user did not supply a value, use a default
-        if (TargetBpp is None):
+        if TargetBpp is None:
             TargetBpp = 8
 
         # Report the current stage to the user
@@ -101,7 +101,7 @@ class SectionImage(object):
         BlockObj = BlockNode.Create(BlockName)
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
 
-        if(fileData is None):
+        if fileData is None:
             raise Exception("Could not parse section from PMG filename: " + filename)
  
         SectionNumber = fileData.Section
@@ -119,7 +119,7 @@ class SectionImage(object):
         # Create a filter and mosaic
         FilterName = fileData.Filter
         if FilterName is None:
-            if(TargetBpp is None):
+            if TargetBpp is None:
                 FilterName = 'Import'
             else:
                 FilterName = 'Import' + str(TargetBpp)

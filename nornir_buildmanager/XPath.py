@@ -58,7 +58,7 @@ def XPathIterator(XPath: str):
 
     for subpath in PathParts:
         StartFromRoot = len(subpath) == 0
-        if (StartFromRoot):
+        if StartFromRoot:
             continue
 
         # prettyoutput.Log("\n" + subpath);
@@ -75,7 +75,7 @@ def XPathIterator(XPath: str):
 
         obj.IsAttribute = not matches.group('IsAttribute') is None
 
-        if (obj.Value is not None):
+        if obj.Value is not None:
             if obj.Value[0] == "'" and obj.Value[-1] == "'" and len(obj.Value) >= 3:
                 obj.Value = obj.Value[1:-2]
             elif obj.Value[0] == '"' and obj.Value[-1] == '"' and len(obj.Value) >= 3:

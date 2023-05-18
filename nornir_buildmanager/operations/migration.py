@@ -59,7 +59,7 @@ def RenumberTransformTilesToStartAtZero(transform_node, **kwargs):
     tile_number_list = GetListOfTileNumbers(sorted_keys)
     
     for tile_number in tile_number_list: 
-        original_key = tile_format % (tile_number)
+        original_key = tile_format % tile_number
         new_tile_name = tile_format % (tile_number - 1)
         
         transform = mFile.ImageToTransformString[original_key]
@@ -70,7 +70,7 @@ def RenumberTransformTilesToStartAtZero(transform_node, **kwargs):
         mFile.ImageToTransformString[new_tile_name] = transform
         
     mFile.Save(transform_node.FullPath)
-    print("Updated tile numbering for %s" % (transform_node.FullPath))
+    print("Updated tile numbering for %s" % transform_node.FullPath)
     
     # return transform_node.Parent
     
@@ -154,7 +154,7 @@ def MigrateChannel_1p2_to_1p3(channel_node, **kwargs):
     for transform_node in channel_node.findall('Transform'):
         MigrateTransforms_1p2_to_1p3(transform_node)
         
-    print("Saving %s" % (channel_node.Parent.FullPath))
+    print("Saving %s" % channel_node.Parent.FullPath)
     return channel_node
 
 def MigrateTransforms_1p2_to_1p3(transform_node, **kwargs):

@@ -14,7 +14,7 @@ def try_remove_spaces_from_dirname(sectionDir):
     """:return: Renamed directory if there were spaced in the filename, otherwise none"""
     sectionDirNoSpaces = sectionDir.replace(' ', '_')
     ParentDir = os.path.dirname(sectionDir)
-    if(sectionDirNoSpaces != sectionDir):
+    if sectionDirNoSpaces != sectionDir:
         sectionDirNoSpacesFullPath = os.path.join(ParentDir, sectionDirNoSpaces)
         shutil.move(sectionDir, sectionDirNoSpacesFullPath)
 
@@ -42,7 +42,7 @@ def GetDirectories(idocFileFullPath):
     """
     sectionDir = os.path.dirname(idocFileFullPath)
     ParentDir = os.path.dirname(sectionDir)
-    return (ParentDir, sectionDir)
+    return ParentDir, sectionDir
 
 
 def GetPathWithoutSpaces(idocFileFullPath):
@@ -117,17 +117,17 @@ def TryAddLogs(containerObj, InputPath, logger):
                 if LogData.MinTileDrift is not None:
                     LogNodeObj.MinTileDrift = '%g' % LogData.MinTileDrift
                 
-                LogNodeObj.FilamentStabilizationTime = '%g' % (LogData.FilamentStabilizationTime)
-                LogNodeObj.LowMagCookTime = '%g' % (LogData.LowMagCookTime)
-                LogNodeObj.HighMagCookTime = '%g' % (LogData.HighMagCookTime)
-                LogNodeObj.TileAcquisitionTime = '%g' % (LogData.TotalTileAcquisitionTime)
-                LogNodeObj.CaptureTime = '%g' % (LogData.TotalTime)
-                LogNodeObj.SetupTime = '%g' % (LogData.CaptureSetupTime)
+                LogNodeObj.FilamentStabilizationTime = '%g' % LogData.FilamentStabilizationTime
+                LogNodeObj.LowMagCookTime = '%g' % LogData.LowMagCookTime
+                LogNodeObj.HighMagCookTime = '%g' % LogData.HighMagCookTime
+                LogNodeObj.TileAcquisitionTime = '%g' % LogData.TotalTileAcquisitionTime
+                LogNodeObj.CaptureTime = '%g' % LogData.TotalTime
+                LogNodeObj.SetupTime = '%g' % LogData.CaptureSetupTime
                 
-                LogNodeObj.HighMagCookDone = '%i' % (LogData.HighMagCookDone)
-                LogNodeObj.LowMagCookDone = '%i' % (LogData.LowMagCookDone)
-                LogNodeObj.StableFilamentChecked = '%i' % (LogData.StableFilamentChecked)
-                LogNodeObj.ISCalibrationDone = '%i' % (LogData.ISCalibrationDone)
+                LogNodeObj.HighMagCookDone = '%i' % LogData.HighMagCookDone
+                LogNodeObj.LowMagCookDone = '%i' % LogData.LowMagCookDone
+                LogNodeObj.StableFilamentChecked = '%i' % LogData.StableFilamentChecked
+                LogNodeObj.ISCalibrationDone = '%i' % LogData.ISCalibrationDone
 
             except:
                 (etype, evalue, etraceback) = sys.exc_info()

@@ -136,7 +136,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
             mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
             if mfileObj is None:
-                Logger.warning("Could not load %s" % (InputTransformNode.FullPath))
+                Logger.warning("Could not load %s" % InputTransformNode.FullPath)
                 return None
             
             invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
@@ -362,7 +362,7 @@ def CompressTransforms(Parameters, TransformNode, **kwargs):
        This will change the checksum of the transform, so it may cause portions of the 
        pipeline to execute again if used unwisely'''
 
-    if(TransformNode is None):
+    if TransformNode is None:
         return
 
     if 'Compressed' in TransformNode.attrib:
