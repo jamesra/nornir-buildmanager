@@ -242,6 +242,15 @@ def Execute(buildArgs=None):
 
     if buildArgs is None:
         buildArgs = sys.argv[1:]
+        
+    #Change the temp directory if nornir specifies an alternate in the environment variables
+    if 'NORNIR_TEMP_DIR' in os.environ:
+        temp_dir = os.environ['NORNIR_TEMP_DIR']
+        os.makedirs(temp_dir, exist_ok=True)
+        os.environ['TEMP'] = temp_dir
+        os.environ['TMP'] = temp_dir
+        os.environ['TMPDIR'] = temp_dir
+        
 
     InitLogging(buildArgs)
 
