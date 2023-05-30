@@ -1935,7 +1935,13 @@ def TranslateVolumeToZeroOrigin(stos_group_node: StosGroupNode, **kwargs):
 def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanager.StosMapNode,
                                  stos_group_node: nornir_buildmanager.volumemanager.StosGroupNode,
                                  OutputMap: str,
-                                 OutputGroupName: str, Downsample, Enrich: bool, Tolerance: float | None, **kwargs):
+                                 OutputGroupName: str,
+                                 Downsample, Enrich: bool,
+                                 Tolerance: float | None,
+                                 linear_blend_factor: float | None=None,
+                                 travel_limit: float | None=None,  
+                                 ignore_rotation: bool = False,
+                                  **kwargs):
     '''Build a slice-to-volume transform for each section referenced in the StosMap
 
     :param stos_map_node:
@@ -1985,7 +1991,10 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
         Node = rt.Nodes[sectionNumber]
         yield from SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode,
                                                          OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance,
-                                                         ControlToVolumeTransform=None)
+                                                         ControlToVolumeTransform=None,
+                                                         linear_blend_factor=linear_blend_factor,
+                                                         travel_limit=travel_limit,  
+                                                         ignore_rotation=ignore_rotation)
         # for saveNode in SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance, ControlToVolumeTransform=None):
         #    (yield saveNode)
 
@@ -1998,7 +2007,10 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                           rootNode: registrationtree.RegistrationTreeNode,
                                           InputGroupNode: StosGroupNode, OutputGroupNode: StosGroupNode,
                                           EnrichTolerance=float | None,
-                                          ControlToVolumeTransform=None):
+                                          ControlToVolumeTransform=None,
+                                          linear_blend_factor: float | None=None,
+                                          travel_limit: float | None=None,  
+                                          ignore_rotation: bool = False):
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
     SectionToRootTransformMap = {}
@@ -2140,7 +2152,10 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                         prettyoutput.Log("\tCalculating new .stos")
                         MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath,
                                                               ControlToVolumeTransform.FullPath,
-                                                              EnrichTolerance=EnrichTolerance)
+                                                              EnrichTolerance=EnrichTolerance,
+                                                              linear_factor=linear_blend_factor,
+                                                              travel_limit=travel_limit,
+                                                              ignore_rotation=ignore_rotation)
                         MToVStos.Save(OutputTransform.FullPath)
 
                         OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
@@ -2513,7 +2528,9 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
 
 
 def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str,
-                         linear_blend_factor: float, ignore_rotation: bool = False, **kwargs):
+                         linear_blend_factor: float | None,
+                         travel_limit: float | None,  
+                         ignore_rotation: bool = False, **kwargs):
     '''Take a stos group node, convert each transform to a rigid linear transform, blend in the linear
        transform with the control points of the original transform to "flatten" it
     '''
@@ -2584,6 +2601,7 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                     shutil.copyfile(InputTransformNode.FullPath, output_stos_node.FullPath)
                     loaded_output_stos = nornir_imageregistration.files.StosFile.Load(output_stos_node.FullPath)
                     transform_changed = loaded_output_stos.BlendWithLinear(linear_factor=linear_blend_factor,
+                                                                           travel_limit=travel_limit,
                                                                            ignore_rotation=ignore_rotation)
                     output_stos_node.linear_blend_factor = linear_blend_factor
 

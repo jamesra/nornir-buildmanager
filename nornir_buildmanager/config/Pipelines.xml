@@ -1953,22 +1953,25 @@
             <Argument flag="-InputGroup" dest="InputGroupName" type="str"
                       required="True" help="Name of stos group to linearize"/>
             <Argument flag="-InputDownsample" dest="InputDownsample"
-                      type="int" help="Downsample level of input stosgroup" required="True"/>
-            <Argument flag="-OutputGroup" dest="OutputGroupName" type="str" required="True"
-                      help="Name of the output stos group"/>
-            <Argument flag="-linear_factor" type="float" required="True" dest="linear_blend_factor"
-                      help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
-            <Argument flag="-no_rotation" action="store_true" required="False" dest="ignore_rotation"
-                      help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
+                type="int" help="Downsample level of input stosgroup" required="True" />
+            <Argument flag="-OutputGroup" dest="OutputGroupName" type="str" required="True" help="Name of the output stos group"/>
+            <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
+                help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
+            <Argument flag="-travel_limit" type="float" required="False" dest="travel_limit"
+                help="Distance a transformed point can be from the rigid transform before we ignore distortion and use rigid transform for that point.  Points closer than one half of this value use the transformed position."/>
+            <Argument flag="-no_rotation"  action="store_true" required="False" dest="ignore_rotation"
+                help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
         </Arguments>
 
         <Iterate VariableName="BlockNode" XPath="Block">
             <Select VariableName="StosGroupNode" Root="BlockNode"
                     XPath="StosGroup[@Name='#InputGroupName#InputDownsample']"/>
             <PythonCall Function="block.LinearBlendStosGroup"
-                        InputStosGroupNode="#StosGroupNode"
-                        OutputGroupName="#OutputGroupName#InputDownsample" linear_blend_factor="#linear_blend_factor"
-                        ignore_rotation="#ignore_rotation"/>
+                InputStosGroupNode="#StosGroupNode"
+                OutputGroupName="#OutputGroupName#InputDownsample" 
+                linear_blend_factor="#linear_blend_factor"
+                travel_limit="#travel_limit"
+                ignore_rotation="#ignore_rotation"/>
         </Iterate>
     </Pipeline>
 
@@ -1992,9 +1995,16 @@
                       help="Do not add extra control points to slice-to-volume transforms to increase accuracy."
                       required="False"/>
             <Argument flag="-Tolerance" dest="Tolerance" type="float"
-                      default="64"
-                      help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy."
-                      required="False"/>
+                default="64"
+                help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy."
+                required="False" />
+             <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
+                help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
+            <Argument flag="-travel_limit" type="float" required="False" dest="travel_limit"
+                help="Distance a transformed point can be from the rigid transform before we ignore distortion and use rigid transform for that point.  Points closer than one half of this value use the transformed position."/>
+            <Argument flag="-no_rotation"  action="store_true" required="False" dest="ignore_rotation"
+                help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
+       
 
         </Arguments>
         <Iterate VariableName="BlockNode" XPath="Block">
@@ -2002,9 +2012,12 @@
                 <Iterate VariableName="StosGroupNode" Root="BlockNode"
                          XPath="StosGroup[@Name='#StovInputGroup#StovDownsample']">
                     <PythonCall Function="block.BuildSliceToVolumeTransforms"
-                                OutputMap="#OutputMap" OutputGroupName="#StovOutputGroupName"
-                                Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance"
-                                stos_map_node="#StosMapNode" stos_group_node="#StosGroupNode">
+                        OutputMap="#OutputMap" OutputGroupName="#StovOutputGroupName"
+                        Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance"
+                        stos_map_node="#StosMapNode" stos_group_node="#StosGroupNode" 
+                        linear_blend_factor="#linear_blend_factor"
+                        travel_limit="#travel_limit"
+                        ignore_rotation="#ignore_rotation">
                     </PythonCall>
                 </Iterate>
             </Iterate>
