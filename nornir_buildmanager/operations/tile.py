@@ -11,6 +11,7 @@ import math
 import multiprocessing
 import shutil
 import subprocess
+import tempfile
 
 import numpy
 from numpy.typing import NDArray
@@ -2157,6 +2158,18 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
 
     os.makedirs(DestPath, exist_ok=True)
 
+    ############################################################################
+    #Pre-create directories so we aren't calling exist and create for every tile
+    temp_dir = tempfile.gettempdir()
+    level_dir = os.path.basename(SourcePath)
+    temp_input_dir = os.path.join(temp_dir, level_dir)
+    os.makedirs(temp_input_dir, exist_ok=True)
+
+    output_level_dir = os.path.basename(DestPath)
+    temp_output_dir = os.path.join(temp_dir, output_level_dir)
+    os.makedirs(temp_output_dir, exist_ok=True)
+    ############################################################################
+
     if Pool is None:
         # Pool = nornir_pools.GetMultithreadingPool("IOPool", num_threads=multiprocessing.cpu_count() * 16)
         # Pool = nornir_pools.GetGlobalMultithreadingPool()
@@ -2222,13 +2235,14 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             #                            TopLeft, TopRight,
             #                            BottomLeft, BottomRight,
             #                            OutputFileFullPath])
-
             # task = Pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillow, TileDim,
             task = Pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillowOverNetwork,
                                  TileDim,
                                  TopLeft=TopLeft, TopRight=TopRight,
                                  BottomLeft=BottomLeft, BottomRight=BottomRight,
-                                 OutputFileFullPath=OutputFileFullPath)
+                                 OutputFileFullPath=OutputFileFullPath,
+                                 temp_input_dir=temp_input_dir,
+                                 temp_output_dir=temp_output_dir)
 
             if FirstTaskForRow is None:
                 FirstTaskForRow = task
