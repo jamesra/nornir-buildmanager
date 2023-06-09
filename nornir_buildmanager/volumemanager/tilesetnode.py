@@ -5,6 +5,7 @@ import os
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager import InputTransformHandler, PyramidLevelHandler, XContainerElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
+import nornir_imageregistration
 
 
 class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformHandler):

@@ -1610,7 +1610,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
                                                                                           tile_dims[1], tile_dims[0],
                                                                                           SectionNode.Number))
 
-        temp_level_dir = tileset_functions.GetTempDirForLevelDir(LevelOne.FullPath)
+        temp_level_dir = get_temp_dir_for_tileset_level(LevelOne.FullPath)
         os.makedirs(temp_level_dir, exist_ok=True)
 
         if max_temp_image_area is None:
@@ -2145,7 +2145,7 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: (int, 
 
 
 def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensions: (int, int), TileDim: (int, int),
-                                FilePrefix: str, FilePostfix: str, Pool=None, **kwargs):
+                                FilePrefix: str, FilePostfix: str, temp_input_dir: str, temp_output_dir: str, Pool=None, **kwargs):
     """
     :param SourcePath:
     :param DestPath:
@@ -2160,13 +2160,13 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
 
     ############################################################################
     #Pre-create directories so we aren't calling exist and create for every tile
-    temp_dir = tempfile.gettempdir()
-    level_dir = os.path.basename(SourcePath)
-    temp_input_dir = os.path.join(temp_dir, level_dir)
+    # temp_dir = tempfile.gettempdir()
+    # level_dir = os.path.basename(SourcePath)
+    # temp_input_dir = os.path.join(temp_dir, level_dir)
     os.makedirs(temp_input_dir, exist_ok=True)
-
-    output_level_dir = os.path.basename(DestPath)
-    temp_output_dir = os.path.join(temp_dir, output_level_dir)
+    #
+    # output_level_dir = os.path.basename(DestPath)
+    # temp_output_dir = os.path.join(temp_dir, output_level_dir)
     os.makedirs(temp_output_dir, exist_ok=True)
     ############################################################################
 
@@ -2175,7 +2175,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
         # Pool = nornir_pools.GetGlobalMultithreadingPool()
         # Pool = nornir_pools.GetGlobalThreadPool()
         Pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
-        # Pool = nornir_pools.GetGlobalSerialPool()
+        #Pool = nornir_pools.GetGlobalSerialPool()
 
     # Merge all the tiles we can find into tiles of the same size
 
@@ -2241,8 +2241,8 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
                                  TopLeft=TopLeft, TopRight=TopRight,
                                  BottomLeft=BottomLeft, BottomRight=BottomRight,
                                  OutputFileFullPath=OutputFileFullPath,
-                                 temp_input_dir=temp_input_dir,
-                                 temp_output_dir=temp_output_dir)
+                                 input_level_temp_dir=temp_input_dir,
+                                 output_level_temp_dir=temp_output_dir)
 
             if FirstTaskForRow is None:
                 FirstTaskForRow = task
@@ -2273,16 +2273,26 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     if Pool is not None:
         Pool.wait_completion()
         # Pool.shutdown()
+        
+        
+def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.LevelNode):
+    
+    section = level.FindParent('Section')
+    section_name = section.Path if section is not None else 'section_root'
+    root = level.FindParent('Volume')
+    root_name = 'assemble_root' if root is None else os.path.basename(root.Path)  
+    
+    return os.path.join(tempfile.gettempdir(), 'nornir', 'assemble_tiles', root_name, section_name, os.path.basename(level.FullPath))
 
 
 # OK, now build/check the remaining levels of the tile pyramids
 def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs):
     """@TileSetNode"""
 
-    MinResolutionLevel = TileSetNode.MinResLevel
+    MinResolutionLevel = TileSetNode.MaxResLevel
 
-    temp_level_paths = [tileset_functions.GetTempDirForLevelDir(
-        MinResolutionLevel.FullPath)]  # Paths to levels we generate to ensure temp directories are cleaned later
+    input_temp_dir = get_temp_dir_for_tileset_level(MinResolutionLevel)
+    temp_level_paths = [input_temp_dir]  # Paths to levels we generate to ensure temp directories are cleaned later
 
     while MinResolutionLevel is not None:
 
@@ -2317,24 +2327,31 @@ def BuildTilesetPyramid(TileSetNode, HighestDownsample=None, Pool=None, **kwargs
         if added is True:
             yield TileSetNode
 
+        output_temp_dir = get_temp_dir_for_tileset_level(NextLevelNode)
+        
         # Check to make sure the level hasn't already been generated and we've just missed the
         [Valid, Reason] = NextLevelNode.IsValid()
         if not Valid:
-            temp_level_paths.append(NextLevelNode.FullPath)
+            temp_level_paths.append(output_temp_dir)
+            
             # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
             BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
                                         DestGridDimensions=(newYDim, newXDim),
                                         TileDim=(TileSetNode.TileYDim, TileSetNode.TileXDim),
                                         FilePrefix=TileSetNode.FilePrefix,
                                         FilePostfix=TileSetNode.FilePostfix,
+                                        temp_input_dir=input_temp_dir,
+                                        temp_output_dir=output_temp_dir,
                                         Pool=Pool)
+            
             # This was a lot of work, make sure it is saved before queueing the next level
             yield TileSetNode
             prettyoutput.Log("\nTileset level %d completed" % NextLevelNode.Downsample)
         else:
             logging.info("Level was already generated " + str(TileSetNode))
 
-        MinResolutionLevel = TileSetNode.MinResLevel
+        input_temp_dir = output_temp_dir
+        MinResolutionLevel = NextLevelNode
 
     tileset_functions.ClearTempDirectories(temp_level_paths)
     return
