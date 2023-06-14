@@ -1610,7 +1610,7 @@ def AssembleTilesetNumpy(Parameters, FilterNode, PyramidNode, TransformNode, Til
                                                                                           tile_dims[1], tile_dims[0],
                                                                                           SectionNode.Number))
 
-        temp_level_dir = get_temp_dir_for_tileset_level(LevelOne.FullPath)
+        temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
         os.makedirs(temp_level_dir, exist_ok=True)
 
         if max_temp_image_area is None:
