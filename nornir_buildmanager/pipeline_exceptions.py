@@ -151,8 +151,6 @@ class PipelineSelectFailed(PipelineError):
 
     @property
     def __CoreErrorList(self):
-        s = []
-        s.append("A select statement has failed")
-        s.append("XPath: " + self.xpath)
+        s = ["A select statement has failed", "XPath: " + self.xpath]
         s.extend(super(PipelineError, self).__CoreErrorList)
         return s

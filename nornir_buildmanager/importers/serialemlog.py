@@ -816,7 +816,7 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
             maxdrift = max(maxdrift, t.driftStamps[-1][1])
             max_time = max(max_time, t.driftStamps[-1][0])
             lines.append((time, drift))
-            NumTiles = NumTiles + 1
+            NumTiles += 1
 
     plot.PolyLine(lines,
                   Title="Stage settle time, max drift %g" % maxdrift,
@@ -863,7 +863,7 @@ def PlotDwellTimeGrid(DataSource, OutputImageFile):
                 fastestTime = min(fastestTime, t.acquisitionTime)
 
             lines.append((time, drift))
-            NumTiles = NumTiles + 1
+            NumTiles += 1
 
     #    print "Fastest Capture: %g" % fastestTime
     #
@@ -922,7 +922,7 @@ def PlotDriftGrid(DataSource, OutputImageFile):
                 fastestTime = min(fastestTime, t.acquisitionTime)
 
             lines.append((time, drift))
-            NumTiles = NumTiles + 1
+            NumTiles += 1
 
     #    print "Fastest Capture: %g" % fastestTime
     #

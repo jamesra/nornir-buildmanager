@@ -99,7 +99,7 @@ def VerifyImages(TilePyramidNode: TilePyramidNode, **kwargs):
 
 
 def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs) -> tuple[bool, list[str]]:
-    """ @LevelNode
+    """
     Eliminate any image files which cannot be parsed by Image Magick's identify command.
     This function is going to do the work regardless of whether meta-data in the
     tile pyramid indicates it should and will update the level node with the results
@@ -154,6 +154,7 @@ def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs) -> tuple[bool, lis
 
     if InputLevelNode.ElementHasChangesToSave:
         InputLevelNode.Save()
+
     return True, InvalidTiles
 
 
@@ -1090,7 +1091,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
     OutputName = InputChannelNode.Name
 
     if prefix is not None and len(prefix) > 0:
-        OutputName = prefix + OutputName
+        OutputName += prefix
     else:
         return False, InputChannelNode
 
@@ -2073,16 +2074,16 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: (int, 
 
             if os.path.exists(TopLeft) is False:
                 TopLeft = 'null:'
-                nullCount = nullCount + 1
+                nullCount += 1
             if os.path.exists(TopRight) is False:
                 TopRight = 'null:'
-                nullCount = nullCount + 1
+                nullCount += 1
             if os.path.exists(BottomLeft) is False:
                 BottomLeft = 'null:'
-                nullCount = nullCount + 1
+                nullCount += 1
             if os.path.exists(BottomRight) is False:
                 BottomRight = 'null:'
-                nullCount = nullCount + 1
+                nullCount += 1
 
             if nullCount == 4:
                 continue

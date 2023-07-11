@@ -481,7 +481,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
         TransformNode = ChannelNode.GetTransform(input_transform_name)
         self.assertIsNotNone(TransformNode,
-                             "Could not locate transform with the correct name: %s" % (input_transform_name))
+                             "Could not locate transform with the correct name: %s" % input_transform_name)
 
         self.assertEqual(InputTransformChecksumNode.InputTransform, TransformNode.Name,
                          "Transform name does not match the transform.")
@@ -507,21 +507,21 @@ class NornirBuildTestBase(testbase.TestBase):
             expected_levels = [expected_levels]
 
         for level in expected_levels:
-            LevelNode = pyramid_node.find("Level[@Downsample='%d']" % (level))
-            self.assertIsNotNone(LevelNode, "No Level node at level %d" % (level))
+            LevelNode = pyramid_node.find("Level[@Downsample='%d']" % level)
+            self.assertIsNotNone(LevelNode, "No Level node at level %d" % level)
             self.assertTrue(os.path.exists(LevelNode.FullPath),
-                            "Output directory expected for level node, level %d" % (level))
+                            "Output directory expected for level node, level %d" % level)
 
     def _VerifyImageSetHasExpectedLevels(self, image_set_node, expected_levels):
         if not nornir_shared.misc.IsSequence(expected_levels):
             expected_levels = [expected_levels]
 
         for level in expected_levels:
-            AssembledImageNode = image_set_node.find("Level[@Downsample='%d']/Image" % (level))
+            AssembledImageNode = image_set_node.find("Level[@Downsample='%d']/Image" % level)
             self.assertIsNotNone(AssembledImageNode,
-                                 "No Image node at level %d produced from assemble pipeline" % (level))
+                                 "No Image node at level %d produced from assemble pipeline" % level)
             self.assertTrue(os.path.exists(AssembledImageNode.FullPath),
-                            "Output file expected for image node after assemble runs, level %d" % (level))
+                            "Output file expected for image node after assemble runs, level %d" % level)
 
         # self._VerifyInputTransformIsCorrect(AssembledImageNode, InputTransformName=Transform)
 
@@ -639,10 +639,10 @@ class NornirBuildTestBase(testbase.TestBase):
                                                stos_map_name: str, stos_group_name: str, MasksRequired: bool,
                                                buildArgs):
         '''Ensure every section has a transform and that the transform is not regenerated if the pipeline is run twice.'''
-        stos_map_node = volumeNode.find("Block/StosMap[@Name='%s']" % (stos_map_name))
+        stos_map_node = volumeNode.find("Block/StosMap[@Name='%s']" % stos_map_name)
         self.assertIsNotNone(stos_map_node)
 
-        stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s']" % (stos_group_name))
+        stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s']" % stos_group_name)
         self.assertIsNotNone(stos_group_node)
 
         sectionNodes = volumeNode.findall('Block/Section')
@@ -698,8 +698,8 @@ class NornirBuildTestBase(testbase.TestBase):
         sectionNumbers.remove(center_section)
 
         for section_number in sectionNumbers:
-            transform = stos_group_node.find("SectionMappings/Transform[@MappedSectionNumber='%d']" % (section_number))
-            self.assertIsNotNone(transform, "Missing transform mapping section %d" % (section_number))
+            transform = stos_group_node.find("SectionMappings/Transform[@MappedSectionNumber='%d']" % section_number)
+            self.assertIsNotNone(transform, "Missing transform mapping section %d" % section_number)
 
     def VerifyFilesLastModifiedDateUnchanged(self, file_last_modified_map):
         '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
@@ -707,7 +707,7 @@ class NornirBuildTestBase(testbase.TestBase):
         for (file_path, last_modified_reference) in list(file_last_modified_map.items()):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
             self.assertEqual(last_modified_reference, disk_modified_time,
-                             "Last modified date for %s should not be different" % (file_path))
+                             "Last modified date for %s should not be different" % file_path)
 
     def VerifyFilesLastModifiedDateChanged(self, file_last_modified_map):
         '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
@@ -724,7 +724,7 @@ class NornirBuildTestBase(testbase.TestBase):
                                           '-StosMap', StosMap)
         volumeNode = self.RunBuild(buildArgs)
 
-        InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (StosMap))
+        InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % StosMap)
         self.assertIsNotNone(InputStosMap)
 
         stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s%d']" % (Group, Downsample))
@@ -753,10 +753,10 @@ class NornirBuildTestBase(testbase.TestBase):
                                           OutputStosMap)
         volumeNode = self.RunBuild(buildArgs)
 
-        InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (InputStosMap))
+        InputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % InputStosMap)
         self.assertIsNotNone(InputStosMap)
 
-        OutputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % (OutputStosMap))
+        OutputStosMap = volumeNode.find("Block/StosMap[@Name='%s']" % OutputStosMap)
         self.assertIsNotNone(OutputStosMap)
 
         self.assertEqual(InputStosMap.CenterSection, OutputStosMap.CenterSection,
@@ -932,7 +932,7 @@ class NornirBuildTestBase(testbase.TestBase):
         self.assertIsNotNone(filterNode, "Missing filter node")
 
         levelNode = filterNode.TilePyramid.GetLevel(level)
-        self.assertIsNotNone(levelNode, "Missing level %d" % (level))
+        self.assertIsNotNone(levelNode, "Missing level %d" % level)
 
         return levelNode
 
@@ -943,7 +943,7 @@ class NornirBuildTestBase(testbase.TestBase):
         '''
 
         levelNode = self.__GetLevelNode(section_number, channel, filter_name, level)
-        self.assertIsNotNone(levelNode, "Missing level %d" % (level))
+        self.assertIsNotNone(levelNode, "Missing level %d" % level)
 
         # Choose a random tile and remove it
         pngFiles = glob.glob(os.path.join(levelNode.FullPath, '*.png'))

@@ -147,7 +147,7 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
             self.assertTrue(expected in mapped, "Expected section %d to me mapped to %d" % (expected, controlNumber))
 
         unexpected = mapped.difference(expectedMappings)
-        self.assertTrue(len(unexpected) == 0, "Unexpected mappings found to %d" % (controlNumber))
+        self.assertTrue(len(unexpected) == 0, "Unexpected mappings found to %d" % controlNumber)
 
     def GenerateStosMap(self, center, adjacentThreshold, Logger, BlockNode=None):
 

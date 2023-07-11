@@ -34,7 +34,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         tag = self.tag
         if tag.endswith("_Link"):
             tag = tag[:-len("_Link")]
-            tag = tag + "Node"
+            tag += "Node"
 
             current_module = sys.modules[__name__]
             if hasattr(current_module, tag):

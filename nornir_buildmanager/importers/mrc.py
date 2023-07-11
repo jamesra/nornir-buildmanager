@@ -210,7 +210,7 @@ class MRCImport(object):
             # Quick correct out of bounds pixels
             outliers = img > min_max_gamma.max
             img = numpy.astype(numpy.float32, copy=True)
-            img[outliers] = img[outliers] / 2.0
+            img[outliers] /= 2.0
             scale = numpy.iinfo(dt).max / min_max_gamma.max
             if min_max_gamma.min > 0:
                 img = (img - min_max_gamma.min) * scale
@@ -305,7 +305,7 @@ class MRCFile(object):
         obj.grid_cell_dim = numpy.asarray((grid_cell_XDim, grid_cell_YDim, grid_cell_ZDim), dtype=numpy.float32)
 
         obj.pixel_spacing = obj.grid_cell_dim / obj.grid_dim.astype(numpy.float64)
-        obj.pixel_spacing = obj.pixel_spacing / 10.0  # convert pixel spacing in nanometers
+        obj.pixel_spacing /= 10.0  # convert pixel spacing in nanometers
 
         (obj.mapx, obj.mapy, obj.mapz,) = struct.unpack(obj.EndianChar + 'III', Header[0x40: 0x4C])
         assert (obj.mapx == 1)  # If these asserts fail the image is stored in an untested orientation
@@ -641,11 +641,11 @@ class MRCTileHeader(object):
         output = str(self.ID)
 
         if self.stage_coords is not None:
-            output = output + " Stage: {0},{1}".format(self.stage_coords[0], self.stage_coords[1])
+            output += " Stage: {0},{1}".format(self.stage_coords[0], self.stage_coords[1])
 
         return output
 
 
 if __name__ == '__main__':
     # obj = MRCFile.Load('C:/Data/RC1/0022_150X.mrc')
-    obj = MRCFile.Load('C:/Data/RC1/0060.mrc')
+    __result = MRCFile.Load('C:/Data/RC1/0060.mrc')

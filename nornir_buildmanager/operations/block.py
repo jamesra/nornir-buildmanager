@@ -1965,7 +1965,7 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
         Tolerance = None
     else:
         # Scale the tolerance for the downsample level
-        Tolerance = Tolerance / float(Downsample)
+        Tolerance /= float(Downsample)
 
     rt = __StosMapToRegistrationTree(stos_map_node)
 

@@ -165,7 +165,7 @@ class InputTransformHandler(object):
                         'Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
                     return True, ""
                 else:
-                    nMatches = nMatches + 1
+                    nMatches += 1
 
                 valid, reason = InputTransformNode.IsValid()
                 if not valid:

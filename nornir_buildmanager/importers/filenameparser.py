@@ -59,7 +59,7 @@ def __NumRequriedArgsForMapping(mappingList):
     NumRequiredArgs = 0
     for m in mappingList:
         if not hasattr(m, 'default'):
-            NumRequiredArgs = NumRequiredArgs + 1
+            NumRequiredArgs += 1
 
     return NumRequiredArgs
 

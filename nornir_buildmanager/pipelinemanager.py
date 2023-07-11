@@ -73,7 +73,7 @@ class ArgumentSet:
         '''Replace # variable names in an xpath with variable string values'''
 
         # Find the next # if it exists
-        iStart = iStart + 1  # Skip the # symbol
+        iStart += 1  # Skip the # symbol
         iEndVar = xpath[iStart + 1:].find('#')
         if iEndVar < 0:
             # OK, just check to the end of the string
@@ -91,7 +91,7 @@ class ArgumentSet:
             except KeyError as e:
                 pass
 
-            iEndVar = iEndVar - 1
+            iEndVar -= 1
 
         # logger = logging.getLogger(__name__ + ".ReplaceVariable")
         # logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
@@ -788,7 +788,7 @@ class PipelineManager(object):
                         errorStr = '\n' + '-' * 60 + '\n'
                         errorStr = errorStr + str(PipelineModule) + '.' + str(PipelineFunction) + " Exception\n"
                         errorStr = errorStr + '-' * 60 + '\n'
-                        errorStr = errorStr + traceback.format_exc()
+                        errorStr += traceback.format_exc()
                         errorStr = errorStr + '-' * 60 + '\n'
                         PipelineManager.logger.error(errorStr)
                         # prettyoutput.LogErr(errorStr)

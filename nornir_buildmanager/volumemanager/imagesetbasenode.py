@@ -113,7 +113,7 @@ class ImageSetBaseNode(InputTransformHandler,
                     # Probably a bad node, remove it
                     self.CleanIfInvalid()
 
-            SourceDownsample = SourceDownsample / 2.0
+            SourceDownsample /= 2.0
 
         return SourceImage, SourceDownsample
 

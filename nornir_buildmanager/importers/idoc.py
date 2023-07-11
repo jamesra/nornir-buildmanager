@@ -771,7 +771,7 @@ class NornirTileset:
 
             ImageExt = ImageExt.strip('.')
             ImageExt = ImageExt.lower()
-            ImageNumber = ImageNumber + 1
+            ImageNumber += 1
 
             SourceImageFullPath = os.path.join(InputTileDir, tile.Image)
             # Existence is checked earlier in the importer now
@@ -1218,7 +1218,7 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
 
     # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
     z = points[:, 2]
-    z = z - adjusted_z
+    z -= adjusted_z
     # title = "Defocus recorded at each capture position in mosaic\nradius = defocus, color = # of tries"
 
     fig = plt.figure(dpi=150)
@@ -1282,7 +1282,7 @@ def NearestLimit(value, AllowedValueList):
         if AllowedValueList[iNextHighest] >= value:
             return AllowedValueList[iNextHighest]
 
-        iNextHighest = iNextHighest + 1
+        iNextHighest += 1
 
     # Return the highest value in the list
     return AllowedValueList[-1]

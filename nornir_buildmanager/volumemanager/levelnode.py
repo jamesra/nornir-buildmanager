@@ -145,7 +145,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
 
         super(LevelNode, self).__init__(tag='Level', attrib=attrib, **extra)
 
-        # Temporary remap for TileValidationTime
+        # Remapping for legacy TileValidationTime
         if 'TileValidationTime' in self.attrib:
             val = self.attrib.get('TileValidationTime', datetime.datetime.min)
             if val is not None and isinstance(val, str):

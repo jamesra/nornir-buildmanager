@@ -40,12 +40,12 @@ class StosRebuildHelper(object):
 
         volumeObj = self.LoadVolume()
         stosGroup = volumeObj.find("Block/StosGroup[@Name='%s']" % stos_group_name)
-        self.assertIsNotNone(stosGroup, "Stos group not found %s" % (stos_group_name))
+        self.assertIsNotNone(stosGroup, "Stos group not found %s" % stos_group_name)
 
         outputTransformList = []
         for originalTransform in input_transform_list:
             updatedTransform = stosGroup.find(
-                "SectionMappings/Transform[@InputTransformChecksum='%s']" % (originalTransform.Checksum))
+                "SectionMappings/Transform[@InputTransformChecksum='%s']" % originalTransform.Checksum)
             self.assertIsNotNone(updatedTransform,
                                  "No transform found with input transform checksum %s" % originalTransform.Checksum)
 
@@ -63,7 +63,7 @@ class StosRebuildHelper(object):
         outputTransformList = []
         for originalTransform in input_transform_list:
             updatedTransform = stosBlock.find(
-                "Section/Channel/Transform[@InputTransformChecksum='%s']" % (originalTransform.Checksum))
+                "Section/Channel/Transform[@InputTransformChecksum='%s']" % originalTransform.Checksum)
             self.assertIsNotNone(updatedTransform,
                                  "No transform found with input transform checksum %s" % originalTransform.Checksum)
 
@@ -189,11 +189,11 @@ class StosRebuildHelper(object):
         '''Given a list of transforms, ensure that each transform has been updated'''
 
         stosGroup = volumeObj.find("Block/StosGroup[@Name='%s']" % stos_group_name)
-        self.assertIsNotNone(stosGroup, "Stos group not found %s" % (stos_group_name))
+        self.assertIsNotNone(stosGroup, "Stos group not found %s" % stos_group_name)
 
         updatedTransforms = []
         for originalTransform in originalTransformList:
-            updatedTransform = stosGroup.find("SectionMappings/Transform[@Path='%s']" % (originalTransform.Path))
+            updatedTransform = stosGroup.find("SectionMappings/Transform[@Path='%s']" % originalTransform.Path)
             self.assertIsNotNone(updatedTransform, "Updated transform is None, should match manual transform info")
 
             # All files should be replaced with the manual stos files

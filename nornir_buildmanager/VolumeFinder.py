@@ -43,7 +43,7 @@ def FindServerFromAboutXML(path, sourceXML=None):
         return "/"
 
     if path[-1] != '/':
-        path = path + '/'
+        path += '/'
     path = path + tail
 
     path = path.replace('\\', '/')
@@ -168,7 +168,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
             RegExpPatterns.append(filename)
             requiredFiles.pop(i)
         else:
-            i = i + 1
+            i += 1
 
     for directory in dirs:
         # Take the path from the list and find files.
@@ -196,7 +196,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
 
     HTMLTable = HTMLTableForImageList(path, dirDict, RowNames, **kwargs)
     HTMLString = HTMLString + HTMLTable + '\n'
-    HTMLString = HTMLString + HTMLFooter
+    HTMLString += HTMLFooter
 
     if len(RowNames) == 0:
         PrettyOutput.Log("Report generator could not find matching files " + str(requiredFiles))

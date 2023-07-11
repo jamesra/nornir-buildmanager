@@ -28,7 +28,7 @@ class XSubPath(object):
             if item[0].startswith('_'):
                 continue
 
-            s = s + (str(item[0]) + " : " + str(item[1]) + '\n')
+            s += str(item[0]) + " : " + str(item[1]) + '\n'
 
         return s
 

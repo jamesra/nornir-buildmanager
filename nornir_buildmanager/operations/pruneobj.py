@@ -376,7 +376,7 @@ class PruneObj:
         for pair in list(MapImageToScore.items()):
             #         prettyoutput.Log("pair: " + str(pair))
             scores[i] = pair[1]
-            i = i + 1
+            i += 1
 
         # Figure out what type of histogram we should create
         #       prettyoutput.Log('Scores: ' + str(scores))
@@ -458,7 +458,7 @@ class PruneObj:
 
                 mosaic.ImageToTransformString[keyVal] = inputImageToTransforms[keyVal]
             else:
-                numRemoved = numRemoved + 1
+                numRemoved += 1
 
         if len(mosaic.ImageToTransformString) <= 0:
             errMsg = "All tiles removed when using threshold = " + str(Tolerance) + "\nThe prune request was ignored"

@@ -35,7 +35,7 @@ def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=
         OutputFile = "Volume.VikingXML"
 
     if not OutputFile.lower().endswith('.vikingxml'):
-        OutputFile = OutputFile + ".VikingXML"
+        OutputFile += ".VikingXML"
 
     # Create our XML File
     OutputXMLFilename = os.path.join(path, OutputFile)
@@ -221,7 +221,7 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
                 print(UpdateString)
 
-                num_stos = num_stos + 1
+                num_stos += 1
 
     OutputVolumeNode.attrib["num_stos"] = '%g' % num_stos
 
@@ -390,9 +390,9 @@ def MergeAboutXML(volumeXML, aboutXML):
     import xml.dom.minidom
 
     prettyoutput.Log('MergeAboutXML ' + str(volumeXML) + ' ' + str(aboutXML))
-    if(os.path.exists(volumeXML) == False):
+    if not os.path.exists(volumeXML):
         return
-    if(os.path.exists(aboutXML) == False):
+    if not os.path.exists(aboutXML):
         return
 
     aboutDom = xml.dom.minidom.parse(aboutXML)
@@ -493,14 +493,17 @@ def CopyNewAttributes(volumeElement, aboutElement):
 #   print 'v: ' + volumeElement.toxml()
 #   print 'a: ' + aboutElement.toxml()
 
-    if(aboutElement.hasAttributes() == False):
+    #   print 'v: ' + volumeElement.toxml()
+    #   print 'a: ' + aboutElement.toxml()
+
+    if not aboutElement.hasAttributes():
         return
 
     attributeMap = aboutElement.attributes
     for i in range(0, attributeMap.length):
         attribute = attributeMap.item(i)
 
-        if(volumeElement.hasAttribute(attribute.name) == False):
+        if not volumeElement.hasAttribute(attribute.name):
             volumeElement.setAttribute(attribute.name, attribute.value)
 
 
@@ -508,7 +511,7 @@ def UpdateVolumePath(volumeElement, aboutElement, relPath):
     '''
     Special case for updating the root element Volume path
     '''
-    if(aboutElement.hasAttributes() == False):
+    if not aboutElement.hasAttributes():
         return
 
     if(len(relPath) > 0):

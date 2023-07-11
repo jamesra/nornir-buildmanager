@@ -109,7 +109,7 @@ def AssembleTilesetFromImageSet(Parameters, ImageSetNode, TileShape=None, Logger
 
                 shutil.move(tileFileName, gridTileFileName)
 
-                iFile = iFile + 1
+                iFile += 1
 
         OutputLevel.GridDimX = GridDimX
         OutputLevel.GridDimY = GridDimY

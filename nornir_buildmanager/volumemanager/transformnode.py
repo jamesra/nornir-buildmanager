@@ -115,8 +115,8 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
 
     def CropBoxDownsampled(self, downsample):
         (Xo, Yo, Width, Height) = self.CropBox
-        Xo = Xo // float(downsample)
-        Yo = Yo // float(downsample)
+        Xo //= float(downsample)
+        Yo //= float(downsample)
         Width = int(math.ceil(Width / float(downsample)))
         Height = int(math.ceil(Height / float(downsample)))
 

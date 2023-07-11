@@ -235,7 +235,7 @@ class XElementWrapper(ElementTree.Element):
 
         global nid
         self.__dict__['id'] = nid
-        nid = nid + 1
+        nid += 1
 
         self._AttributesChanged = False
         self._ChildrenChanged = False

@@ -242,7 +242,7 @@ def GetTempFileSaltString(node=None) -> str:
         global TempFileSalt
 
         saltString = str(TempFileSalt) + "_"
-        TempFileSalt = TempFileSalt + 1
+        TempFileSalt += 1
 
         return saltString
 
@@ -1506,26 +1506,26 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
     for columnList in RowBodyList:
         HTML = HTML + ' ' * IndentLevel + '<tr>\n'
 
-        IndentLevel = IndentLevel + 1
+        IndentLevel += 1
 
         if isinstance(columnList, str):
-            HTML = HTML + '<td>'
-            HTML = HTML + columnList
-            HTML = HTML + "</td>\n"
+            HTML += '<td>'
+            HTML += columnList
+            HTML += "</td>\n"
         else:
             FirstColumn = True
             for column in columnList:
                 HTML = HTML + ' ' * IndentLevel
                 if FirstColumn:
-                    HTML = HTML + '<td valign="top">'
+                    HTML += '<td valign="top">'
                     FirstColumn = False
                 else:
-                    HTML = HTML + '<td align="left">'
+                    HTML += '<td align="left">'
 
                 HTML = HTML + column
-                HTML = HTML + "</td>\n"
+                HTML += "</td>\n"
 
-        IndentLevel = IndentLevel - 1
+        IndentLevel -= 1
         HTML = HTML + ' ' * IndentLevel + "</tr>\n"
 
     HTML = HTML + ' ' * IndentLevel + "</table>\n"
