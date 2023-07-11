@@ -98,7 +98,7 @@ def VerifyImages(TilePyramidNode: TilePyramidNode, **kwargs):
     return None
 
 
-def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs):
+def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs) -> tuple[bool, list[str]]:
     """ @LevelNode
     Eliminate any image files which cannot be parsed by Image Magick's identify command.
     This function is going to do the work regardless of whether meta-data in the
@@ -152,11 +152,12 @@ def VerifyTiles(LevelNode: LevelNode | None = None, **kwargs):
     InputLevelNode.ValidationTime = LevelNode.LastFileSystemModificationTime
     InputLevelNode.TilesValidated = len(LevelFiles) - len(InvalidTiles)
 
-    InputLevelNode.Save()
+    if InputLevelNode.ElementHasChangesToSave:
+        InputLevelNode.Save()
     return True, InvalidTiles
 
 
-def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterName):
+def FilterIsPopulated(InputFilterNode, Downsample, MosaicFullPath, OutputFilterName) -> bool:
     """
     :return: True if the filter has all the tiles the mosaic file indicates it should have at the provided downsample level
     """
