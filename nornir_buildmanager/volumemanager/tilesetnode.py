@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 
-import nornir_buildmanager
-from nornir_buildmanager.volumemanager import InputTransformHandler, PyramidLevelHandler, XContainerElementWrapper
+import nornir_imageregistration
+import nornir_buildmanager 
+from nornir_buildmanager.volumemanager import XContainerElementWrapper, PyramidLevelHandler, InputTransformHandler
 from nornir_shared import prettyoutput as prettyoutput
 import nornir_imageregistration
 
