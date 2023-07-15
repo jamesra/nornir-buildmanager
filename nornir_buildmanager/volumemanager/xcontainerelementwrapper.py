@@ -3,8 +3,7 @@ from __future__ import annotations
 import concurrent.futures
 import os
 import shutil
-import sys
-import threading
+import sys 
 from xml.etree import ElementTree as ElementTree
 
 import nornir_buildmanager
@@ -15,7 +14,7 @@ from nornir_shared import prettyoutput as prettyoutput
 
 class XContainerElementWrapper(XResourceElementWrapper):
     """XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid"""
-    _save_lock : threading.Lock
+    
     
     @property
     def SaveAsLinkedElement(self) -> bool:
@@ -286,7 +285,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         # if Path is None:
         assert ('Path' in self.attrib)
         
-        self._save_lock = threading.Lock()
+       
         # else:
         # self.attrib['Path'] = Path
 

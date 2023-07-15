@@ -103,7 +103,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         # Starting with the highest resolution level, we need to check that all
         # of the levels are valid
 
-    def CheckIfLevelTilesExistViaMetaData(self, level_node: LevelNode):
+    def CheckIfLevelTilesExistViaMetaData(self, level_node: LevelNode) -> tuple[bool, str]:
         """
         Using the meta-data, returns whether there is a reasonable belief that
         the passed level has all of the tiles and that they are valid
