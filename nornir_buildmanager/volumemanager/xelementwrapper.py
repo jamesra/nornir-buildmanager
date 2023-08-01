@@ -267,7 +267,8 @@ class XElementWrapper(ElementTree.Element):
             if 'CreationDate' not in self.attrib:
                 self.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__()
 
-            self.Version = nornir_buildmanager.volumemanager.GetLatestVersionForNodeType(tag)
+            if 'Version' not in self.attrib:
+                self.Version = nornir_buildmanager.volumemanager.GetLatestVersionForNodeType(tag)
 
     @classmethod
     def RemoveDuplicateElements(cls, tagName):
@@ -466,12 +467,16 @@ class XElementWrapper(ElementTree.Element):
             attribute = getattr(self.__class__, name)
             if isinstance(attribute, property):
                 if attribute.fset is not None:
-                    # Mark the _AttributesChanged flag if the value has been updated
-                    if attribute.fget is not None:
-                        self._AttributesChanged = self._AttributesChanged or attribute.fget(self) != value
-                    else:
-                        self._AttributesChanged = True
-                    attribute.fset(self, value)
+                    try:
+                        self._save_lock.acquire(blocking=True)
+                        # Mark the _AttributesChanged flag if the value has been updated
+                        if attribute.fget is not None:
+                            self._AttributesChanged = self._AttributesChanged or attribute.fget(self) != value
+                        else:
+                            self._AttributesChanged = True
+                        attribute.fset(self, value)
+                    finally:
+                        self._save_lock.release()
                     return
                 else:
                     assert (attribute.fset is not None)  # Why are we trying to set a property without a setter?
