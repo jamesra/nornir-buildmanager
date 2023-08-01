@@ -1,8 +1,8 @@
-'''
+"""
 Created on Jun 4, 2012
 
 @author: Jamesan
-'''
+"""
 
 import os
 import shutil
@@ -21,7 +21,7 @@ from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
 
 
 def TransformNodeToZeroOrigin(transform_node, **kwargs):
-    ''':return: transform_node if the mosaic was adjusted.  None if the transform_node already had a zero origin'''
+    """:return: transform_node if the mosaic was adjusted.  None if the transform_node already had a zero origin"""
     if nornir_imageregistration.Mosaic.TranslateMosaicFileToZeroOrigin(transform_node.FullPath):
         transform_node.ResetChecksum()
 
@@ -272,7 +272,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 
 
 def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample, Logger, **kwargs):
-    '''@ChannelNode'''
+    """@ChannelNode"""
     Iterations = Parameters.get('it', 10)
     Cell = Parameters.get('Cell', None)
     MeshWidth = Parameters.get('MeshWidth',
@@ -302,7 +302,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         CellString = f' -cell {Cell} '
 
     ThresholdString = ''
-    if not Threshold is None:
+    if Threshold is not None:
         ThresholdString = ' -displacement_threshold %g ' % Threshold
 
     MeshString = f' -mesh {MeshWidth} {MeshHeight} '
@@ -374,9 +374,9 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
 
 
 def CompressTransforms(Parameters, TransformNode, **kwargs):
-    '''Rewrite the provided transform node to represent the same data with less text
-       This will change the checksum of the transform, so it may cause portions of the 
-       pipeline to execute again if used unwisely'''
+    """Rewrite the provided transform node to represent the same data with less text
+       This will change the checksum of the transform, so it may cause portions of the
+       pipeline to execute again if used unwisely"""
 
     if TransformNode is None:
         return

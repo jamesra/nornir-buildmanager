@@ -398,7 +398,7 @@ class PipelineManager(object):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
 
-        SelectedPipeline = None
+        # SelectedPipeline = None
         XMLDoc = cls.LoadPipelineXML(PipelineXml)
 
         if PipelineName is None:
@@ -560,7 +560,7 @@ class PipelineManager(object):
 
     def ProcessStageElement(self, VolumeElem, PipelineNode, ArgSet=None):
 
-        outStr = PipelineManager.ToElementString(PipelineNode)
+        #outStr = PipelineManager.ToElementString(PipelineNode)
         # prettyoutput.CurseString('Section', outStr)
 
         # prettyoutput.Log("Processing Stage Element: " + outStr)
@@ -736,7 +736,7 @@ class PipelineManager(object):
 
     def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
-        PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
+        #PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
         PipelineModule = PipelineNode.get("Module", "nornir_buildmanager.operations")
 
         PipelineFunction = PipelineNode.get('Function', PipelineNode.tag)
@@ -779,7 +779,7 @@ class PipelineManager(object):
                 if 'Parameters' not in kwargs:
                     kwargs['Parameters'] = {}
 
-                NodesToSave = None
+                #NodesToSave = None
 
                 if not ArgSet.Arguments["debug"]:
                     try:

@@ -56,6 +56,7 @@ class PipelineError(Exception):
 
 class PipelineArgumentNotFound(PipelineError):
     '''A select statement could not find the requested node'''
+    argname : str
 
     def __init__(self, argname, **kwargs):
         super(PipelineArgumentNotFound, self).__init__(**kwargs)
@@ -73,7 +74,7 @@ class PipelineSearchRootNotFound(PipelineArgumentNotFound):
     '''A select statement could not find the requested node'''
 
     def __init__(self, argname, **kwargs):
-        super(PipelineSearchRootNotFound, self).__init__(**kwargs)
+        super(PipelineSearchRootNotFound, self).__init__(argname, **kwargs)
 
         self.argname = argname
 
@@ -86,8 +87,9 @@ class PipelineSearchRootNotFound(PipelineArgumentNotFound):
 
 class PipelineRegExSearchFailed(PipelineError):
     '''A regular expression search could not match any nodes'''
+    regex : str
 
-    def __init__(self, regex, attribValue, **kwargs):
+    def __init__(self, regex: str, attribValue, **kwargs):
         super(PipelineRegExSearchFailed, self).__init__(**kwargs)
 
         self.regex = regex
@@ -127,8 +129,9 @@ class PipelineListIntersectionFailed(PipelineError):
 
 class PipelineSearchFailed(PipelineError):
     '''A find statement could not match any nodes'''
+    xpath: str
 
-    def __init__(self, xpath, **kwargs):
+    def __init__(self, xpath: str, **kwargs):
         super(PipelineSearchFailed, self).__init__(**kwargs)
         self.xpath = xpath
 
@@ -143,8 +146,9 @@ class PipelineSelectFailed(PipelineError):
     '''A select statement could not find the requested node.
        This means a variable was not populated and the remaining statements
        in an iteration should not execute or they may use stale data'''
+    xpath: str
 
-    def __init__(self, xpath, **kwargs):
+    def __init__(self, xpath: str, **kwargs):
         super(PipelineSelectFailed, self).__init__(**kwargs)
 
         self.xpath = xpath

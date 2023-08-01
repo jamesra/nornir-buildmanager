@@ -78,7 +78,7 @@ def LoadHistogramCutoffs(filename: str) -> dict[int, ContrastValue]:
     return Values
 
 
-def SaveHistogramCutoffs(filename, SectionToContrast):
+def SaveHistogramCutoffs(filename: str, SectionToContrast: dict[int, ContrastValue]):
     """
     :param filename:
     :param SectionToContrast:
@@ -96,7 +96,7 @@ def SaveHistogramCutoffs(filename, SectionToContrast):
     return
 
 
-def GetFlipList(path):
+def GetFlipList(path: str) -> list[int]:
     FlippedSections = list()
 
     flipFileName = os.path.join(path, 'FlipList.txt')
@@ -114,7 +114,7 @@ def GetFlipList(path):
     return FlippedSections
 
 
-def GetFileNameForTileNumber(tile_number, ext):
+def GetFileNameForTileNumber(tile_number: int, ext: str) -> str:
     if ext[0] == '.':
         ext = ext[1:]
 

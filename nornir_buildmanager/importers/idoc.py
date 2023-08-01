@@ -36,30 +36,33 @@ import collections
 import concurrent.futures
 import datetime
 import sys
+import shutil
+import math
 
 import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 import numpy as np
 
-import nornir_buildmanager.importers.find as find
-import nornir_buildmanager.importers.serialem_utils as serialem_utils
-from nornir_buildmanager.importers.serialemlog import SerialEMLog
-import nornir_buildmanager.importers.shared as shared
-from nornir_buildmanager.volumemanager import *
-import nornir_imageregistration
-from nornir_imageregistration import image_stats
-from nornir_imageregistration.files import mosaicfile
-from nornir_imageregistration.mosaic import Mosaic
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import *
 from nornir_shared.images import *
 import nornir_shared.plot as plot
 
+import nornir_imageregistration
+from nornir_imageregistration import image_stats
+from nornir_imageregistration.files import mosaicfile
+from nornir_imageregistration.mosaic import Mosaic
 
-def find_sections(ImportPath: str, extension: str, section_candidates: dict[int, list[shared.FilenameMetadata]]) -> \
-dict[
-    int, shared.FilenameMetadata]:
+import nornir_buildmanager.importers.find as find
+import nornir_buildmanager.importers.serialem_utils as serialem_utils
+from nornir_buildmanager.importers.serialemlog import SerialEMLog
+import nornir_buildmanager.importers.shared as shared
+from nornir_buildmanager.volumemanager import *
+
+
+def find_sections(extension: str, section_candidates:
+                  dict[int, list[shared.FilenameMetadata]]) -> dict[int, shared.FilenameMetadata]:
     match_names = []
     for candidate_dirs in section_candidates.values():
         match_names.extend([e for e in candidate_dirs])
@@ -107,57 +110,8 @@ dict[
             else:
                 print(f"No valid import found for section {section_number}")
 
-    #
-    #
-    # found_sections = {}
-    # matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension,
-    #                                                              MatchNames=match_names,
-    #                                                              ExcludeNames=[], ExcludedDownsampleLevels=[])
-    # for m in matches:
-    #     # The problem with using the directory name is that there could be more than one
-    #     # .idoc file in a directory if a two-part capture of a section is done.
-    #     # However, the extensive use of 1.idoc naming
-    #     # conventions mean we have to use the directory name.
-    #     # So I build a list of all .idoc files in a directory and later we'll
-    #     # run ToMosaic on all of them
-    #
-    #     (path, idocFileList) = m
-    #     idocFileList = [os.path.join(path, f) for f in idocFileList]
-    #
-    #     # idocFileList = []
-    #     # idocFileList.extend(glob.iglob(os.path.join(path, '*.idoc')))
-    #
-    #     if len(idocFileList) > 0:
-    #
-    #         idocFullPath = idocFileList[0]
-    #
-    #         try:
-    #             meta_data = shared.GetSectionInfo(os.path.dirname(idocFullPath))
-    #         except nornir_buildmanager.NornirUserException:
-    #             prettyoutput.LogErr(f"Could not parse required metadata from {idocFullPath}")
-    #             continue
-    #
-    #         # Skip this section if it is not in the desired range
-    #         if DesiredSectionList is not None:
-    #             if meta_data.number not in DesiredSectionList:
-    #                 continue
-    #
-    #         if meta_data.number is None:
-    #             prettyoutput.error("Could not parse section number from {0} filename".format(idocFullPath))
-    #         else:
-    #             if meta_data.number in found_sections:
-    #                 existing = found_sections[meta_data.number]
-    #                 if len(existing) > 1:
-    #                     existing = existing[0]
-    #                 if existing.version < meta_data.version:
-    #                     found_sections[meta_data.number] = (meta_data, idocFileList)
-    #             else:
-    #                 found_sections[meta_data.number] = (meta_data, idocFileList)
-    #
-    # return found_sections
 
-
-def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
+def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = None, *args, **kwargs) -> Generator[XElementWrapper, None, None]:
     """Import the specified directory into the volume"""
 
     if extension is None:
@@ -200,7 +154,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
         for meta_data in section_number_dirlist:
             prettyoutput.Log(shared.FileMetaDataStr(meta_data))
 
-    found_sections = find_sections(ImportPath, extension, found_section_candidates)
+    found_sections = find_sections(extension, found_section_candidates)
 
     for (section_meta_data, idocFileList) in found_sections:
         DataFound = True
@@ -220,11 +174,11 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 class SerialEMIDocImport(object):
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, idocFileFullPath: str, ContrastCutoffs: tuple[float, float],
+    def ToMosaic(cls, VolumeObj: VolumeNode, idocFileFullPath: str, ContrastCutoffs: tuple[float, float],
                  OutputImageExt: str = None,
-                 TargetBpp: int = None, FlipList: list[int] | None = None,
+                 TargetBpp: int | None = None, FlipList: list[int] | None = None,
                  ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
-                 CameraBpp: int = None,
+                 CameraBpp: int | None  = None,
                  debug: bool | None = None):
         """
         This function will convert an idoc file in the given path to a .mosaic file.
@@ -369,8 +323,8 @@ class SerialEMIDocImport(object):
                                                                                                   source_tile_list,
                                                                                                   IDocData,
                                                                                                   histogramFullPath)
-        ActualMosaicMax = numpy.around(ActualMosaicMax)
-        ActualMosaicMin = numpy.around(ActualMosaicMin)
+        ActualMosaicMax = np.around(ActualMosaicMax)
+        ActualMosaicMin = np.around(ActualMosaicMin)
 
         contrast_mismatch = channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax,
                                                                       Gamma)
@@ -939,10 +893,10 @@ class IDoc:
         pass
 
     @classmethod
-    def VersionCheck(cls, loaded):
+    def VersionCheck(cls, loaded: IDoc):
         if loaded.__IDocPickleVersion != cls.__ObjVersion():
             raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (
-                loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion))
+                loaded.__SerialEMLogVersion, cls.__ObjVersion()))
 
         return
 
@@ -1003,7 +957,7 @@ class IDoc:
     @property
     def Mean(self) -> float:
         """:return: Mean pixel value across all tiles"""
-        return numpy.mean([t.Mean for t in self.tiles])
+        return float(np.mean(np.array([t.Mean for t in self.tiles])))
 
     @property
     def Note(self) -> str:
@@ -1111,17 +1065,16 @@ class IDoc:
 
 
 def ArgToIDoc(arg):
-    Data = None
     if arg is None:
-        Data = IDoc.Load(sys.argv[1])
+        data = IDoc.Load(sys.argv[1])
     elif isinstance(arg, str):
-        Data = IDoc.Load(arg)
+        data = IDoc.Load(arg)
     elif isinstance(arg, IDoc):
-        Data = arg
+        data = arg
     else:
-        raise Exception("Invalid argument type to PlotDrifGrid")
+        raise ValueError("Invalid argument type to PlotDrifGrid, arg={arg}")
 
-    return Data
+    return data
 
 
 class SymmetricNormalize(matplotlib.colors.Normalize):
@@ -1165,7 +1118,7 @@ class SymmetricNormalize(matplotlib.colors.Normalize):
 
 
 def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
-    Data = ArgToIDoc(DataSource)
+    data = ArgToIDoc(DataSource)
 
     if title is None:
         title = 'Defocus deviation from planar fit'
@@ -1174,11 +1127,11 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
     y = []
     z = []
 
-    first_tile = Data.Tiles[0]
+    first_tile = data.Tiles[0]
     center = np.asarray(first_tile.StagePosition)
 
     points = None
-    for t in list(Data.Tiles):
+    for t in list(data.Tiles):
         if t.Defocus is not None:
             x.append(t.StagePosition[0])
             y.append(t.StagePosition[1])

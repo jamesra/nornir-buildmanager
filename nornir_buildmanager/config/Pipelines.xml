@@ -135,7 +135,7 @@
                 <!--
                                 <Select VariableName="Pyramid"
                                     XPath="Filter[@Name='#InputFilter']/TilePyramid" />
-                                <PythonCall Function="tile.VerifyImages" TilePyramidNode="#Pyramid" />
+                                <PythonCall Function="tile.VerifyImages" tile_pyramid_node="#Pyramid" />
                 -->
 
                 <Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
@@ -270,11 +270,11 @@
                 <Iterate VariableName="InputFilterNode" XPath="Filter">
                     <RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
 
-                    <Iterate VariableName="TilePyramidNode" XPath="TilePyramid">
+                    <Iterate VariableName="tile_pyramid_node" XPath="TilePyramid">
                         <PythonCall Function="tile.VerifyImages"/>
                     </Iterate>
 
-                    <PythonCall Function="tile.CorrectTiles" FilterNode="#InputFilterNode"
+                    <PythonCall Function="tile.CorrectTiles" filter_node="#InputFilterNode"
                                 OutputFilterName="#OutputFilter" InvertSource="True"
                                 CorrectionType="#Correction"/>
                 </Iterate>
@@ -304,7 +304,7 @@
                 <Iterate VariableName="InputFilterNode" XPath="Filter">
                     <RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
 
-                    <Iterate VariableName="TilePyramidNode" XPath="TilePyramid">
+                    <Iterate VariableName="tile_pyramid_node" XPath="TilePyramid">
                         <PythonCall Function="tile.VerifyImages"/>
                     </Iterate>
 
@@ -427,8 +427,8 @@
                     <RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
 
                     <!-- Calculate the intensity histogram for the entire mosaic -->
-                    <PythonCall Function="tile.HistogramFilter" FilterNode="#FilterNode"
-                                Downsample="#Downsample" TransformNode="#TransformNode">
+                    <PythonCall Function="tile.HistogramFilter" filter_node="#FilterNode"
+                                Downsample="#Downsample" transform_node="#TransformNode">
                     </PythonCall>
                 </Iterate>
             </Iterate>
@@ -472,7 +472,7 @@
 
                 <RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
 
-                <Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
+                <Select VariableName="transform_node" XPath="Transform[@Name='#InputTransform']"/>
 
                 <Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
                 <PythonCall Function="tile.AutolevelTiles" InputFilter="#FilterNode"
@@ -1076,9 +1076,9 @@
                 <RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
 
                 <!-- Build a downsampled image of the mosaic -->
-                <Select VariableName="TransformNode" XPath="Transform[@Name='#TransformName']"/>
+                <Select VariableName="transform_node" XPath="Transform[@Name='#TransformName']"/>
 
-                <Iterate VariableName="FilterNode" XPath="Filter">
+                <Iterate VariableName="filter_node" XPath="Filter">
                     <RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 
                     <PythonCall Function="tile.AssembleTransform"
@@ -1126,19 +1126,19 @@
         <Iterate VariableName="section_node" XPath="Block/Section">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
 
-            <Iterate VariableName="ChannelNode" XPath="Channel">
+            <Iterate VariableName="channel_node" XPath="Channel">
 
                 <RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
 
-                <Select VariableName="TransformNode" XPath="Transform[@Name='#TransformName']"/>
-                <Iterate VariableName="FilterNode" XPath="Filter">
+                <Select VariableName="transform_node" XPath="Transform[@Name='#TransformName']"/>
+                <Iterate VariableName="filter_node" XPath="Filter">
                     <RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 
-                    <Select VariableName="PyramidNode" Root="FilterNode" XPath="TilePyramid"/>
+                    <Select VariableName="pyramid_node" Root="filter_node" XPath="TilePyramid"/>
                     <PythonCall Function="tile.AssembleTilesetNumpy" TileShape="#shape"
                                 max_temp_image_area="#max_temp_image_area" ignore_stale="#ignore_stale"/>
 
-                    <Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
+                    <Select VariableName="tile_set_node" Root="filter_node" XPath="Tileset"/>
                     <PythonCall Function="tile.BuildTilesetPyramid"
                                 HighestDownsample="#HighestDownsample"/>
                 </Iterate>
@@ -1171,18 +1171,18 @@
         <Iterate VariableName="section_node" XPath="Block/Section">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
 
-            <Iterate VariableName="ChannelNode" XPath="Channel">
+            <Iterate VariableName="chennel_node" XPath="Channel">
 
                 <RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
 
-                <Iterate VariableName="FilterNode" XPath="Filter">
+                <Iterate VariableName="filter_node" XPath="Filter">
                     <RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 
-                    <Select VariableName="ImageSetNode" Root="FilterNode" XPath="ImageSet"/>
+                    <Select VariableName="image_set_node" Root="filter_node" XPath="ImageSet"/>
                     <PythonCall Function="filter.AssembleTilesetFromImageSet"
                                 TileShape="#shape"/>
 
-                    <Select VariableName="TileSetNode" Root="FilterNode" XPath="Tileset"/>
+                    <Select VariableName="tile_set_node" Root="filter_node" XPath="Tileset"/>
                     <PythonCall Function="tile.BuildTilesetPyramid"
                                 HighestDownsample="#HighestDownsample"/>
                 </Iterate>
@@ -1570,7 +1570,7 @@
                 </Iterate>
                 <Iterate VariableName="FilterNode" XPath="Filter">
                     <PythonCall Function="tile.VerifyAssembledImagePathIsCorrect"
-                                FilterNode="#FilterNode"/>
+                                filter_node="#FilterNode"/>
                     <Iterate VariableName="HistogramNode" XPath="Histogram">
                         <PythonCall Function="general.CleanNodeIfInvalid" node="#HistogramNode"/>
                     </Iterate>

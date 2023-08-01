@@ -1,15 +1,18 @@
-'''
+"""
 Created on Apr 9, 2019
 
 @author: u0490822
-'''
+"""
+from __future__ import annotations
 
 import enum
 import logging
 import struct
 import sys
+from PIL import Image
 
 import numpy
+from numpy.typing import DTypeLike
 
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 import nornir_buildmanager.importers.shared as shared
@@ -23,17 +26,16 @@ from nornir_shared.images import *
 from . import GetFileNameForTileNumber
 
 
-def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
-    '''Import the specified directory into the volume'''
+def Import(VolumeElement: VolumeNode, ImportPath: str, extension: srt | None = None, *args, **kwargs):
+    """Import the specified directory into the volume"""
 
     if extension is None:
         extension = 'mrc'
 
     if not os.path.exists(ImportPath):
-        raise Exception("Import directory not found: " + ImportPath)
-        return
+        raise ValueError(f"Import directory not found: {ImportPath}")
 
-    CameraBpp = kwargs.get('CameraBpp', None)
+    CameraBpp = int(kwargs['CameraBpp']) if 'CameraBpp' in kwargs else None
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
@@ -59,18 +61,26 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
 
 class MRCImport(object):
-    '''
+    """
     Imports an .MRC file into a volume
-    '''
+    """
 
     @classmethod
-    def ToMosaic(cls, VolumeObj, mrc_fullpath,
-                 Extension=None, OutputImageExt=None,
-                 TileOverlap=None, TargetBpp=None, FlipList=None,
-                 ContrastMap=None, CameraBpp=None, debug=None):
+    def ToMosaic(cls, VolumeObj: VolumeNode, mrc_fullpath: str,
+                 Extension: str | None = None, OutputImageExt: str = None,
+                 TileOverlap=None, TargetBpp: int | None = None, FlipList: list[int] | None = None,
+                 ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
+                 CameraBpp: int | None = None,
+                 debug: bool | None = None):
 
         if OutputImageExt is None:
             OutputImageExt = '.png'
+
+        if TargetBpp is None:
+            TargetBpp = 8
+
+        if ContrastMap is None:
+            ContrastMap = {}
 
         OutputPath = VolumeObj.FullPath
 
@@ -80,7 +90,6 @@ class MRCImport(object):
 
         mrc_fullpath = serialem_utils.GetPathWithoutSpaces(mrc_fullpath)
 
-        SectionNumber = 0
         input_dir = os.path.dirname(mrc_fullpath)
 
         BlockObj = BlockNode.Create('TEM')
@@ -162,23 +171,24 @@ class MRCImport(object):
         cls.ExportImages(mrc_fullpath, LevelObj.FullPath, img_ext=OutputImageExt, min_max_gamma=min_max_gamma)
 
     def __init__(self, params):
-        '''
+        """
         Constructor
-        '''
+        """
         pass
 
     @classmethod
-    def ExportImages(cls, mrcfile, output_dir, img_ext, min_max_gamma):
+    def ExportImages(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str,
+                     min_max_gamma: shared.MinMaxGamma | None):
 
-        if isinstance(mrcfile, str):
-            mrc_obj = MRCFile.Load(mrcfile)
+        if isinstance(mrc_obj, str):
+            mrc_obj = MRCFile.Load(mrc_obj)
 
         pool = nornir_pools.GetGlobalLocalMachinePool()
 
         for iTile in range(0, mrc_obj.num_tiles):
             pool.add_task(str(iTile),
                           cls.ExportImage,
-                          mrcfile,
+                          mrc_obj,
                           output_dir,
                           img_ext,
                           iTile,
@@ -187,27 +197,24 @@ class MRCImport(object):
             # cls.ExportImage(mrcfile, output_dir, img_ext, iTile, min_max_gamma)
 
     @classmethod
-    def ExportImage(cls, mrcfile, output_dir, img_ext, iTile, min_max_gamma=None):
-
-        if isinstance(mrcfile, str):
-            mrcfile = MRCFile.Load(mrcfile)
-
+    def ExportImage(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
+                    min_max_gamma: shared.MinMaxGamma | None = None):
         filename = GetFileNameForTileNumber(tile_number=iTile, ext=img_ext)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(output_dir, filename)
         if nornir_shared.images.IsValidImage(output_fullpath):
             return False
 
         if min_max_gamma is None:
-            im = mrcfile.get_tile_as_image(iTile)
+            im = mrc_obj.get_tile_as_image(iTile)
             im.save(output_fullpath, compress_level=1)
         else:
             # This mess is here because we can't really trust the min/max pixel values reported in the MRC file for a lot of our old data
             # t = mrcfile._repair_out_of_bounds_pixels(iTile, 14)
-            img = mrcfile.get_tile_as_numpy(iTile)
+            img = mrc_obj.get_tile_as_numpy(iTile)
             dt = img.dtype
             img = numpy.transpose(img)
 
-            # Quick correct out of bounds pixels
+            # Quick correct out-of-bounds pixels
             outliers = img > min_max_gamma.max
             img = numpy.astype(numpy.float32, copy=True)
             img[outliers] /= 2.0
@@ -228,8 +235,10 @@ class MRCImport(object):
         return True
 
     @classmethod
-    def GetSectionContrastSettings(cls, mrcfile, SectionNumber, ContrastMap, CameraBpp):
-        '''Clear and recreate the filters tile pyramid node if the filters contrast node does not match'''
+    def GetSectionContrastSettings(cls, mrcfile: MRCFile, SectionNumber: int,
+                                   ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue],
+                                   CameraBpp: int) -> shared.MinMaxGamma:
+        """Clear and recreate the filters tile pyramid node if the filters contrast node does not match"""
         Gamma = 1.0
 
         minval = mrcfile.min_pixel_value
@@ -247,7 +256,7 @@ class MRCImport(object):
         return shared.MinMaxGamma(minval, maxval, Gamma)
 
     @classmethod
-    def CreateMosaic(cls, mrcfile, img_ext):
+    def CreateMosaic(cls, mrcfile, img_ext: str):
         mosaic = nornir_imageregistration.Mosaic()
 
         for (i, t) in enumerate(mrcfile.tile_meta):
@@ -266,15 +275,15 @@ class MRCImport(object):
 
 
 class MRCFile(object):
-    '''
+    """
     Reads a SerialEM mrc file
     http://bio3d.colorado.edu/imod/doc/mrc_format.txt
-    '''
+    """
     HeaderLength = 1024
 
     @staticmethod
     def IsBigEndian(Header):
-        '''Returns true if the mrc header indicates the file is big endian'''
+        """Returns true if the mrc header indicates the file is big endian"""
         (EndianStamp,) = struct.unpack('I', Header[0xD4:0xD8])
         if EndianStamp == 17:
             return True
@@ -285,8 +294,8 @@ class MRCFile(object):
             return False
 
     @classmethod
-    def Load(cls, filename):
-        '''Read the header of an MRC file from disk and return an object for access'''
+    def Load(cls, filename: str):
+        """Read the header of an MRC file from disk and return an object for access"""
 
         mrc = open(filename, 'rb')
 
@@ -333,14 +342,14 @@ class MRCFile(object):
         return obj
 
     @property
-    def EndianChar(self):
+    def EndianChar(self) -> str:
         if self.IsBigEndian:
             return '>'
         else:
             return '<'
 
     @property
-    def bytes_per_pixel(self):
+    def bytes_per_pixel(self) -> int:
         if self.img_pixel_mode == 0:
             return 1
         elif self.img_pixel_mode == 1:
@@ -359,10 +368,10 @@ class MRCFile(object):
             raise ValueError("Unknown pixel format")
 
     @property
-    def pixel_dtype(self):
-        '''
+    def pixel_dtype(self) -> DTypeLike:
+        """
         :return: The numpy dtype pixels are encoded in
-        '''
+        """
         if self.img_pixel_mode == 0:
             dtype = numpy.uint8
         elif self.img_pixel_mode == 1:
@@ -389,9 +398,9 @@ class MRCFile(object):
 
     @property
     def pil_pixel_mode(self):
-        '''
+        """
         :return: The numpy dtype pixels are encoded in
-        '''
+        """
         if self.img_pixel_mode == 0:
             mode = 'L'
         elif self.img_pixel_mode == 1:
@@ -419,15 +428,15 @@ class MRCFile(object):
 
     @property
     def image_length_in_bytes(self):
-        '''
+        """
         Return the number of bytes in a tile
-        '''
+        """
         return self.img_shape.prod() * self.bytes_per_pixel
 
     def _get_image_offset(self, iTile):
-        '''
+        """
         Return the offset to the first pixel of a tile
-        '''
+        """
         first_image_offset = MRCFile.HeaderLength + self.extended_header_size
         image_byte_size = self.img_shape.prod() * self.bytes_per_pixel
 
@@ -435,9 +444,9 @@ class MRCFile(object):
         return image_offset
 
     def get_tile_as_bytes(self, iTile):
-        '''
+        """
         Return bytes
-        '''
+        """
         image_offset = self._get_image_offset(iTile)
 
         self.mrc.seek(image_offset)
@@ -449,10 +458,10 @@ class MRCFile(object):
         return image_bytes
 
     def _repair_out_of_bounds_pixels(self, iTile, camera_bpp):
-        '''
+        """
         Used to repair old mrc files where the maximum pixel values were sometimes incorrect
         :param int camera_bpp: The maximum number of bits that could be encoded by the camera capturing the image
-        '''
+        """
         image_bytes = self.get_tile_as_bytes(iTile)
         img = numpy.frombuffer(image_bytes, dtype=self.pixel_dtype, count=self.img_shape.prod())
         max_val = (1 << camera_bpp) - 1
@@ -465,12 +474,12 @@ class MRCFile(object):
         self.set_pixels(iTile, iPixels, new_values=corrected.tobytes(), old_values=img[outliers].tobytes())
 
     def set_pixels(self, iTile, iPixels, new_values, old_values=None):
-        '''
+        """
         :param int iTile: Index of tile to update
         :param list iPixels: Indicies of pixels to update
         :param bytes new_values: Values to set on the new pixels, must match length of iPixels * self.bytes_per_pixel
-        :param bytes old_values: The current values at the pixels to be corrected.  Function will raise an exception if the expected value doesn't match.  Useful in debugging and development to ensure the correct pixels are being updated 
-        '''
+        :param bytes old_values: The current values at the pixels to be corrected.  Function will raise an exception if the expected value doesn't match.  Useful in debugging and development to ensure the correct pixels are being updated
+        """
 
         tile_offset = self._get_image_offset(iTile)
         for (i, iPixel) in enumerate(iPixels):
@@ -493,17 +502,17 @@ class MRCFile(object):
         return
 
     def get_tile_as_numpy(self, iTile):
-        '''
+        """
         Return a numpy array
-        '''
+        """
         image_bytes = self.get_tile_as_bytes(iTile)
         img = numpy.frombuffer(image_bytes, dtype=self.pixel_dtype, count=self.img_shape.prod()).reshape(self.img_shape)
         return img
 
     def get_tile_as_image(self, iTile):
-        '''
+        """
         Return a pillow image
-        '''
+        """
         image_bytes = self.get_tile_as_bytes(iTile)
         im = PIL.Image.frombytes(data=image_bytes, mode=self.pil_pixel_mode,
                                  size=(self.img_shape[1], self.img_shape[0]))
@@ -579,13 +588,13 @@ class MRCTileHeader(object):
 
     @staticmethod
     def Load(tile_id, header, tile_flags, nm_per_pixel, big_endian=False):
-        '''
+        """
         :param tile_flags:
         :param nm_per_pixel:
         :param big_endian:
         :param tile_id: Arbitrary name for the tile we will load
         :param header: MRC File header
-        '''
+        """
         obj = MRCTileHeader(tile_id, nm_per_pixel)
         offset = 0
 

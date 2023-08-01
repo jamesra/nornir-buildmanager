@@ -3,6 +3,8 @@ Created on Feb 14, 2013
 
 @author: u0490822
 '''
+from __future__ import annotations
+
 import datetime
 import glob
 import math
@@ -18,7 +20,7 @@ import nornir_shared.misc
 import testbase
 
 
-def VerifyVolume(test, VolumeObj, listVolumeEntries):
+def VerifyVolume(test, VolumeObj: VolumeNode, listVolumeEntries: list[VolumeEntry]):
     '''Walk a list of volume entries and ensure each exists'''
 
     SearchEntry = VolumeObj
@@ -37,14 +39,14 @@ def VerifyVolume(test, VolumeObj, listVolumeEntries):
     return SearchEntry
 
 
-def MatchingSections(SectionNodes, sectionNumberList):
+def MatchingSections(SectionNodes: list[SectionNode], sectionNumberList: list[int]):
     '''Return section nodes with numbers existing in the string representing a list of integers'''
     for sectionNode in SectionNodes:
         if sectionNode.Number in sectionNumberList:
             yield sectionNode
 
 
-def FullPathsForNodes(node_list):
+def FullPathsForNodes(node_list: list[XResourceElementWrapper]):
     list_full_paths = []
     for n in node_list:
         list_full_paths.append(n.FullPath)
@@ -52,7 +54,7 @@ def FullPathsForNodes(node_list):
     return list_full_paths
 
 
-def BuildPathToModifiedDateMap(path_list):
+def BuildPathToModifiedDateMap(path_list: list[str]):
     '''Given a list of paths, construct a dictionary which maps to a cached last modified date'''
     file_to_modified_time = {}
     for file_path in path_list:
@@ -62,7 +64,7 @@ def BuildPathToModifiedDateMap(path_list):
     return file_to_modified_time
 
 
-def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels, Filters):
+def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels: str, Filters: str) -> Generator[FilterNode, None, None]:
     '''Generator which returns a list of matching filters contained under a list of section nodes
     :param list SectionNodes: List of sections to search
     :param str Channels: Regular expression for channel names 
@@ -80,7 +82,7 @@ def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels, Filters):
                 yield f
 
 
-def EnumerateImageSets(testObj, volumeNode, Channels, Filter, RequireMasks=True):
+def EnumerateImageSets(testObj, volumeNode: VolumeNode, Channels: str, Filter:str, RequireMasks: bool = True):
     '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
 
     sections = volumeNode.findall("Block/Section")
@@ -878,6 +880,7 @@ class NornirBuildTestBase(testbase.TestBase):
         NumImages = 0
         for f in filters:
             if f.Imageset.HasImage(AssembleLevel):
+                print(f"Counting Section {f.FindParent('Section').Number} filter {f.Name}")
                 NumImages += 1
 
         OutputPngs = glob.glob(os.path.join(imageOutputPath, '*.png'))

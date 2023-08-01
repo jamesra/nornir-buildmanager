@@ -234,7 +234,7 @@ class XElementWrapper(ElementTree.Element):
         now = now.replace(microsecond=0)
         return str(now)
 
-    def __init__(self, tag, attrib=None, **extra):
+    def __init__(self, tag: str, attrib=None, **extra):
 
         global nid
         self.__dict__['id'] = nid
@@ -271,7 +271,7 @@ class XElementWrapper(ElementTree.Element):
                 self.Version = nornir_buildmanager.volumemanager.GetLatestVersionForNodeType(tag)
 
     @classmethod
-    def RemoveDuplicateElements(cls, tagName):
+    def RemoveDuplicateElements(cls, tagName: str):
         """For nodes that should not be duplicated this function removes all but the last created element"""
         pass
 
@@ -289,7 +289,7 @@ class XElementWrapper(ElementTree.Element):
     def NeedsValidation(self) -> bool:
         raise NotImplemented("NeedsValidation should be implemented in derived class {0}".format(str(self)))
 
-    def IsValidLazy(self) -> (bool, str):
+    def IsValidLazy(self) -> tuple[bool, str]:
         """
         First checks if the XElement requires validation before invoking IsValid
         """
@@ -299,7 +299,7 @@ class XElementWrapper(ElementTree.Element):
         else:
             return [True, "NeedsValidation flag not set"]
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """This function should be overridden by derrived classes.  It returns true if the file system or other external
            resources match the state recorded within the element.
 
@@ -321,18 +321,18 @@ class XElementWrapper(ElementTree.Element):
 
         return True, ""
 
-    def CleanIfInvalid(self) -> (bool, str):
+    def CleanIfInvalid(self) -> tuple[bool, str]:
         """Remove the contents of this node if it is out of date
         :returns: true, reason (bool,str) if node was cleaned"""
-        Valid = self.IsValid()
+        valid = self.IsValid()
 
-        if isinstance(Valid, bool):
-            Valid = (Valid, "")
+        if isinstance(valid, bool):
+            valid = (valid, "")
 
-        if not Valid[0]:
-            self.Clean(Valid[1])
+        if not valid[0]:
+            self.Clean(valid[1])
 
-        return Valid[0] == False, Valid[1]  # The return value convention is reversed from IsValid.
+        return valid[0] is False, valid[1]  # The return value convention is reversed from IsValid.
 
     def Clean(self, reason: str | None = None):
         """Remove node from element tree and remove any external resources such as files"""
@@ -373,7 +373,7 @@ class XElementWrapper(ElementTree.Element):
         return cpy
 
     @classmethod
-    def __CreateFromElement(cls, dictElement):
+    def __CreateFromElement(cls, dictElement: dict):
         """Create an instance of this class using an ElementTree.Element.
            Override to customize the creation of derived classes"""
 
@@ -429,7 +429,7 @@ class XElementWrapper(ElementTree.Element):
 
         return outStr
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str):
 
         """Called when an attribute lookup has not found the attribute in the usual places (i.e. it is not an instance attribute nor is it found in the class tree for self). name is the attribute name. This method should return the (computed) attribute value or raise an AttributeError exception.
 
@@ -457,7 +457,7 @@ class XElementWrapper(ElementTree.Element):
 
         raise AttributeError(name)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any):
         """Called when an attribute assignment is attempted. This is called instead of the
            normal mechanism (i.e. store the value in the instance dictionary). name is the
            attribute name, value is the value to be assigned to it."""
@@ -510,7 +510,7 @@ class XElementWrapper(ElementTree.Element):
             finally:
                 self._save_lock.release()
 
-    def __delattr__(self, name):
+    def __delattr__(self, name: str):
 
         """Like __setattr__() but for attribute deletion instead of assignment. This should only be implemented if del obj.name is meaningful for the object."""
         
@@ -524,7 +524,7 @@ class XElementWrapper(ElementTree.Element):
             finally:
                 self._save_lock.release()
 
-    def CompareAttributes(self, dictAttrib):
+    def CompareAttributes(self, dictAttrib: dict):
         """Compare the passed dictionary with the attributes on the node, return entries which do not match"""
         mismatched = list()
 
@@ -537,7 +537,7 @@ class XElementWrapper(ElementTree.Element):
 
         return mismatched
 
-    def RemoveOldChildrenByAttrib(self, ElementName, AttribName, AttribValue):
+    def RemoveOldChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue):
         """If multiple children match the criteria, we remove all but the child with the latest creation date"""
         Children = self.GetChildrenByAttrib(ElementName, AttribName, AttribValue)
         if Children is None:
@@ -571,7 +571,6 @@ class XElementWrapper(ElementTree.Element):
 
     def GetChildByAttrib(self, ElementName: str, AttribName: str, AttribValue) -> XElementWrapper | None:
 
-        XPathStr = ""
         if isinstance(AttribValue, float):
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName,
                                                                                'AttribName': AttribName,
@@ -582,7 +581,7 @@ class XElementWrapper(ElementTree.Element):
                                                                                'AttribValue': AttribValue}
 
         assert (len(XPathStr) > 0)
-        Child = self.find(XPathStr)
+        child = self.find(XPathStr)
         # if(len(Children) > 1):
         #    prettyoutput.LogErr("Multiple nodes found fitting criteria: " + XPathStr)
         #    return Children
@@ -590,10 +589,10 @@ class XElementWrapper(ElementTree.Element):
         # if len(Children) == 0:
         #    return None
 
-        if Child is None:
+        if child is None:
             return None
 
-        return Child
+        return child
 
     def Contains(self, Element: XElementWrapper) -> bool:
         for c in self:
@@ -759,7 +758,7 @@ class XElementWrapper(ElementTree.Element):
         return wrappedElement
 
     # replacement for find function that loads subdirectory xml files
-    def find(self, path, namespaces=None) -> XElementWrapper | None:
+    def find(self, path: str, namespaces=None) -> XElementWrapper | None:
 
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(
             path)
@@ -803,7 +802,7 @@ class XElementWrapper(ElementTree.Element):
 
         return None
 
-    def findall(self, path, namespaces=None) -> Generator[XElementWrapper]:
+    def findall(self, path: str, namespaces=None) -> Generator[XElementWrapper]:
         match = path
         (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(
             match)
@@ -865,7 +864,7 @@ class XElementWrapper(ElementTree.Element):
                 (yield m)
 
     @classmethod
-    def __ElementLinkNameFromXPath(cls, xpath) -> (str, str, str, bool):
+    def __ElementLinkNameFromXPath(cls, xpath: str) -> (str, str, str, bool):
         """
         :Return: The name to search for the linked and unlinked version of the search term.
                  If only attributes are specified the Link search term will return all

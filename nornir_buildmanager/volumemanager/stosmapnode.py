@@ -42,7 +42,7 @@ class StosMapNode(XElementWrapper):
         return None
 
     @CenterSection.setter
-    def CenterSection(self, val):
+    def CenterSection(self, val: int | None):
         if val is None:
             self.attrib['CenterSection'] = ""
         else:

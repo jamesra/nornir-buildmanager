@@ -29,7 +29,7 @@ from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, Pro
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
 
-    def __init__(self, proc, processData=None, OverlayFilename=None, DiffFilename=None, WarpedFilename=None):
+    def __init__(self, proc, processData=None, OverlayFilename: str | None = None, DiffFilename: str | None = None, WarpedFilename: str | None = None):
         super(StomPreviewOutputInterceptor, self).__init__(proc, processData)
 
         self.Output = list()  # List of output lines
@@ -356,9 +356,9 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
     return None
 
 
-def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImageFullPath,
-                          ControlMaskImageFullPath=None, MappedMaskImageFullPath=None,
-                          AngleSearchRange=None, TestForFlip: bool = True,
+def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath: str, MappedImageFullPath: str,
+                          ControlMaskImageFullPath: str | None = None, MappedMaskImageFullPath: str | None = None,
+                          AngleSearchRange: list[float] | None = None, TestForFlip: bool = True,
                           WarpedImageScaleFactors=None,
                           argstring=None, Logger=None):
     '''Call the stos-brute version from nornir-imageregistration'''
@@ -386,8 +386,8 @@ def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath, MappedImag
     return
 
 
-def __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode=None,
-                           MappedMaskImageNode=None, argstring=None, Logger=None):
+def __CallIrToolsStosBrute(stosNode, ControlImageNode: ImageNode, MappedImageNode: ImageNode, ControlMaskImageNode: ImageNode | None = None,
+                           MappedMaskImageNode: ImageNode | None = None, argstring: str | None = None, Logger=None):
     if argstring is None:
         argstring = ""
 
@@ -583,7 +583,7 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
     return
 
 
-def StosBrute(Parameters, mapping_node, block_node, ChannelsRegEx, FiltersRegEx, Logger, **kwargs):
+def StosBrute(Parameters, mapping_node: MappingNode, block_node: BlockNode, ChannelsRegEx: str, FiltersRegEx: str, Logger, **kwargs):
     '''Create an initial rotation and translation alignment for a pair of unregistered images'''
 
     Downsample = int(Parameters.get('Downsample', 32))
@@ -1572,7 +1572,7 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
 
 
-def IrStosGridRefine(Parameters, mapping_node, InputGroupNode: StosGroupNode, UseMasks: bool, Downsample: int = 32,
+def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: StosGroupNode, UseMasks: bool, Downsample: int = 32,
                      ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
                      OutputStosGroup=None,
                      Type=None):
@@ -1596,7 +1596,7 @@ def IrStosGridRefine(Parameters, mapping_node, InputGroupNode: StosGroupNode, Us
                          )
 
 
-def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsample=32,
+def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, IgnoreMasks, Downsample=32,
                    ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
                    Type=None, MappedSections: None | list[int] = None, **kwargs) -> Generator[
     XElementWrapper, None, None]:
@@ -1630,7 +1630,7 @@ def StosGridRefine(Parameters, mapping_node, InputGroupNode, IgnoreMasks, Downsa
                          Type=Type, MappedSections=MappedSections, **kwargs)
 
 
-def RefineInvoker(RefineFunc, mapping_node, InputGroupNode: StosGroupNode,
+def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGroupNode,
                   UseMasks: bool, Downsample: int = 32,
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
                   OutputStosGroup: str | None = None, Type: str | None = None,

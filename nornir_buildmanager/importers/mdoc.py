@@ -1,4 +1,5 @@
 import glob
+import os
 
 import nornir_buildmanager.importers.shared as shared
 from nornir_shared.files import OutdatedFile, rmtree
