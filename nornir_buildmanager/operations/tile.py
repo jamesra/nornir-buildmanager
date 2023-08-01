@@ -1955,11 +1955,11 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
         PreviouslyGeneratedOutputFiles = frozenset(DestIsValid)
 
     if Pool is not None:
-        Pool.shutdown()
+        #Pool.shutdown()
         Pool = None
 
     if local_thread_pool is not None:
-        local_thread_pool.shutdown()
+        #local_thread_pool.shutdown()
         local_thread_pool = None
 
     if SavePyramidNode:
