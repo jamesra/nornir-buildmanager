@@ -131,7 +131,7 @@ class InputTransformHandler(object):
         InputTransformNodes = self.FindAllFromParent("Transform[@Type='" + self.InputTransformType + "']")
 
         for it in InputTransformNodes:
-            if it.NeedsValidation:
+            if it is not self and it is not None and it.NeedsValidation:
                 return True, f"Potential Input Transform needs validation: {it.FullPath}"
 
         return False, "No Input Transforms found requiring validation"
