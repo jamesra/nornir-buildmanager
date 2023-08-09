@@ -70,10 +70,13 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         if result[0]:
             knownChecksum = self.attrib.get('Checksum', None)
             if knownChecksum is not None:
-                fileChecksum = self._CalcChecksum()
-
-                if not knownChecksum == fileChecksum:
-                    return False, "File checksum does not match meta-data"
+                try:
+                    fileChecksum = self._CalcChecksum()
+    
+                    if not knownChecksum == fileChecksum:
+                        return False, "File checksum does not match meta-data"
+                except FileNotFoundError:
+                    return False, f"File not found {self.FullPath}"
 
         return result
 
