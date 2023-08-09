@@ -709,15 +709,20 @@ class PipelineManager(object):
         CopiedArgSet = copy.copy(ArgSet)
 
         NumProcessed = 0
+        save_parent = set()
         for VolumeElemChild in VolumeElemIter:
             if validate and VolumeElem.NeedsValidation:
                 (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
                 if cleaned:
                     prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
-                    PipelineManager._SaveNodes(VolumeElemChild.Parent)
+                    #PipelineManager._SaveNodes(VolumeElemChild.Parent)
+                    save_parent.add(VolumeElemChild.Parent) 
                     continue
 
             NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
+            
+        for parent in save_parent:
+            PipelineManager._SaveNodes(parent)
 
         if NumProcessed == 0:
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
