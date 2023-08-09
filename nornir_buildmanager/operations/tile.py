@@ -1258,12 +1258,22 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     if os.path.exists(image_node.FullPath):
         image.RemoveOnDimensionMismatch(MaskImageNode.FullPath,
                                         nornir_imageregistration.GetImageSize(image_node.FullPath))
+        
+    # LevelFormatStr = LevelFormatTemplate % thisLevel
+    [added_input_level, InputLevelNode] = filter_node.TilePyramid.GetOrCreateLevel(thisLevel)
+    if added_input_level:
+        yield filter_node.TilePyramid
+        
+    try: 
+        removed_outdated_image = RemoveOutdatedFile(InputLevelNode.FullPath, image_node.FullPath, nornir_shared.files.FileTimeComparison.CREATION) 
+        removed_outdated_mask  = RemoveOutdatedFile(InputLevelNode.FullPath, MaskImageNode.FullPath, nornir_shared.files.FileTimeComparison.CREATION)
+        #RemoveInvalidImageFile(image_node.FullPath)
+        #RemoveInvalidImageFile(MaskImageNode.FullPath)
+    except FileNotFoundError:
+        pass
 
     if not (os.path.exists(image_node.FullPath) and os.path.exists(MaskImageNode.FullPath)):
-
-        # LevelFormatStr = LevelFormatTemplate % thisLevel
-        [added_input_level, InputLevelNode] = filter_node.TilePyramid.GetOrCreateLevel(thisLevel)
-
+ 
         ImageDir = InputLevelNode.FullPath
         # ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
 
