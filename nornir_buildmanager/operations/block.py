@@ -25,6 +25,7 @@ from nornir_imageregistration.views import TransformWarpView
 import nornir_pools
 from nornir_shared import files, misc, plot, prettyoutput
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
+import nornir_shared
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -1683,10 +1684,7 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             InputSectionMappingNode = InputTransformNode.FindParent('SectionMappings')
             OutputSectionMappingNode = nornir_buildmanager.volumemanager.sectionmappingsnode.SectionMappingsNode.Create(
                 **InputSectionMappingNode.attrib)
-            (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode,
-                                                                                             'MappedSectionNumber')
-            if added:
-                yield OutputStosGroupNode
+            
 
             ControlFilter = __GetFirstMatchingFilter(block_node,
                                                      InputTransformNode.ControlSectionNumber,
@@ -1697,15 +1695,31 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
                                                     InputTransformNode.MappedSectionNumber,
                                                     InputTransformNode.MappedChannelName,
                                                     MappedFilterPattern)
+            
+            (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode,
+                                                                                          'MappedSectionNumber')
+            
+            existing_output_transform_node = None
+            if added:
+                yield OutputStosGroupNode
+            else:
+                existing_output_transform_node = OutputSectionMappingNode.FindStosTransform(ControlSectionNumber=mapping_node.Control,
+                                                                                            ControlChannelName=InputTransformNode.ControlChannelName,
+                                                                                            ControlFilterName=InputTransformNode.ControlFilterName,
+                                                                                            MappedSectionNumber=MappedSection,
+                                                                                            MappedChannelName=InputTransformNode.MappedChannelName,
+                                                                                            MappedFilterName=InputTransformNode.MappedFilterName) 
 
             if ControlFilter is None:
                 Logger.warning("No control filter, skipping refinement")
-                OutputSectionMappingNode.Clean("No control filter found in stos grid")
+                if existing_output_transform_node is not None:
+                    existing_output_transform_node.Clean("No control filter found in stos grid") 
 
             if MappedFilter is None:
                 Logger.warning("No mapped filter, skipping refinement")
-                OutputSectionMappingNode.Clean("No mapped filter found in stos grid")
-
+                if existing_output_transform_node is not None:
+                    existing_output_transform_node.Clean("No mapped filter found in stos grid")
+                     
             if ControlFilter is None or MappedFilter is None:
                 yield OutputStosGroupNode
                 continue
@@ -1722,7 +1736,7 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
                 ControlFilter, MappedFilter)
             OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
-            stosNode = OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter)
+            stosNode = existing_output_transform_node if existing_output_transform_node is not None else OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter)
             if stosNode is None:
                 stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
                                                                        OutputPath=OutputFile)
@@ -2392,7 +2406,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
     channel_node = section_node.GetChannel(channel_name)
     if channel_node is None:
         Logger = logging.getLogger(__name__ + '.__GetFirstMatchingFilter')
-        Logger.warning("Channel %s.%s is missing, skipping grid refinement" % (section_number, channel_node))
+        Logger.warning("Channel %s.%s is missing, skipping grid refinement" % (section_number, channel_name))
         return None
 
     # TODO: Skip transforms using filters which no longer exist.  Should live in a separate function.

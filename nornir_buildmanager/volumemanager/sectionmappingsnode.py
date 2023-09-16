@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Generator
 
+import nornir_shared
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager import BlockNode, ImageNode, TransformNode, XElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
@@ -32,9 +33,11 @@ class SectionMappingsNode(XElementWrapper):
     def TransformsToSection(self, sectionNumber: int) -> Generator[TransformNode]:
         return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
 
-    def FindStosTransform(self, ControlSectionNumber: int, ControlChannelName: str, ControlFilterName: str,
+    def FindStosTransform(self, 
+                          ControlSectionNumber: int,
+                          ControlChannelName: str, ControlFilterName: str,
                           MappedSectionNumber: int,
-                          MappedChannelName: str, MappedFilterName: str) -> TransformNode:
+                          MappedChannelName: str, MappedFilterName: str) -> TransformNode | None:
         """
         Find the stos transform matching all of the parameters if it exists
         WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
@@ -43,31 +46,15 @@ class SectionMappingsNode(XElementWrapper):
 
         # TODO: 3/10/2017 I believe I can stop checking MappedSectionNumber because it is built into the SectionMapping node.  This is a sanity check before I pull the plug
         assert (MappedSectionNumber == self.MappedSectionNumber)
+        
+        return nornir_shared.find_first_match(self.Transforms, {'ControlSectionNumber' : ControlSectionNumber,
+                                                                'ControlChannelName' : ControlChannelName,
+                                                                'ControlFilterName'  : ControlFilterName,
+                                                                'MappedSectionNumber': self.MappedSectionNumber,
+                                                                'MappedChannelName'  : MappedChannelName,
+                                                                'MappedFilterName'   : MappedFilterName})
 
-        for t in self.Transforms:
-            if t.ControlSectionNumber != ControlSectionNumber:
-                continue
-
-            if t.ControlChannelName != ControlChannelName:
-                continue
-
-            if t.ControlFilterName != ControlFilterName:
-                continue
-
-            if t.MappedSectionNumber != MappedSectionNumber:
-                continue
-
-            if t.MappedChannelName != MappedChannelName:
-                continue
-
-            if t.MappedFilterName != MappedFilterName:
-                continue
-
-            return t
-
-        return None
-
-    def TryRemoveTransformNode(self, transform_node: TransformNode):
+    def TryRemoveTransformNode(self, transform_node: TransformNode) -> bool:
         """Remove the transform if it exists
         :rtype bool:
         :return: True if transform removed
@@ -83,7 +70,7 @@ class SectionMappingsNode(XElementWrapper):
                            ControlChannelName: str,
                            ControlFilterName: str,
                            MappedChannelName: str,
-                           MappedFilterName: str):
+                           MappedFilterName: str) -> bool:
         """Remove the transform if it exists
         :rtype bool:
         :return: True if transform removed
