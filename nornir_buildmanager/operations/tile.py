@@ -401,7 +401,7 @@ def CorrectTiles(Parameters, CorrectionType: str, filter_node: FilterNode, Outpu
     [OutputLevelAdded, OutputLevelNode] = OutputPyramidNode.UpdateOrAddChildByAttrib(OutputLevelNode, 'Downsample')
 
     # Make sure the destination directory exists
-    correctionImage = None
+    # correctionImage = None
     os.makedirs(OutputLevelNode.FullPath, exist_ok=True)
 
     OutputImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(Path='Correction.png',
@@ -772,7 +772,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
     try:
         # Try to create the output directory.  If we succeed we need to rebuild the entire pyramid. 
         # If the path does exist make sure it is a directory 
-        os.makedirs(OutputImageDir)
+        os.makedirs(OutputImageDir, exist_ok=True)
         EntireTilePyramidNeedsBuilding = True
     except (OSError, WindowsError, FileExistsError):
         if not os.path.isdir(OutputImageDir):
@@ -1099,7 +1099,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix: str | None, InputChannelNode: Ch
         nornir_buildmanager.volumemanager.ChannelNode.Create(output_name, output_name))
 
 
-def GetOrCreateCleanedImageNode(imageset_node: ImageSetNode, transform_node: TransformNode, level: LevelNode, image_name: str):
+def GetOrCreateCleanedImageNode(imageset_node: ImageSetNode, transform_node: TransformNode, level: float, image_name: str):
     [added_level, image_level_node] = imageset_node.GetOrCreateLevel(level, GenerateData=False)
 
     os.makedirs(image_level_node.FullPath, exist_ok=True)
@@ -1216,10 +1216,16 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     OutputImageNameTemplate = filter_node.DefaultImageName(image_ext)
     OutputImageMaskNameTemplate = InputMaskFilterNode.DefaultImageName(image_ext)
 
+    section_node = filter_node.FindParent('Section')
+
     if OutputFilterNode.HasImageset:
-        OutputFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node)
+        if OutputFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node) or OutputFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_node.SectionNumber):
+            yield OutputFilterNode
+
     if OutputMaskFilterNode.HasImageset:
-        OutputMaskFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node)
+        if OutputMaskFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node) or OutputMaskFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_node.SectionNumber):
+            yield OutputMaskFilterNode
+
 
     OutputFilterNode.Imageset.SetTransform(transform_node)
     OutputMaskFilterNode.Imageset.SetTransform(transform_node)
@@ -2129,10 +2135,10 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: (int, 
 
             # montageBugFixCmd_template = 
             # task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
-            task = pool.add_process(cmd, cmd + " && exit", shell=True)
+            t = pool.add_process(cmd, cmd + " && exit", shell=True)
 
             if FirstTaskForRow is None:
-                FirstTaskForRow = task
+                FirstTaskForRow = t
 
         # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
         # prettyoutput.CurseProgress(TaskString, iY + 1, newYDim)
@@ -2247,7 +2253,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             #                            BottomLeft, BottomRight,
             #                            OutputFileFullPath])
             # task = Pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillow, TileDim,
-            task = pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillowOverNetwork,
+            t = pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillowOverNetwork,
                                  TileDim,
                                  TopLeft=TopLeft, TopRight=TopRight,
                                  BottomLeft=BottomLeft, BottomRight=BottomRight,
@@ -2256,7 +2262,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
                                  output_level_temp_dir=temp_output_dir)
 
             if FirstTaskForRow is None:
-                FirstTaskForRow = task
+                FirstTaskForRow = t
 
     # Pool.starmap_async(name=DestPath, func=tileset_functions.CreateOneTilesetTileWithPillow, iterable=tile_params)
 
@@ -2366,22 +2372,3 @@ def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, **kwar
 
     tileset_functions.ClearTempDirectories(temp_level_paths)
     return
-
-
-if __name__ == "__main__":
-    TestImageDir = 'D:/BuildScript/Test/Images'
-    Pool = nornir_pools.GetGlobalProcessPool()
-
-    BadTestImage = os.path.join(TestImageDir, 'Bad101.png')
-    BadTestImageOut = os.path.join(TestImageDir, 'Bad101Shrink.png')
-
-    task = nornir_imageregistration.Shrink(BadTestImage, BadTestImageOut, 0.5)
-    print(('Bad image return value: ' + str(task.returncode)))
-    Pool.wait_completion()
-
-    GoodTestImage = os.path.join(TestImageDir, '400.png')
-    GoodTestImageOut = os.path.join(TestImageDir, '400Shrink.png')
-
-    task = nornir_imageregistration.Shrink(GoodTestImage, GoodTestImageOut, 0.5)
-    Pool.wait_completion()
-    print(('Good image return value: ' + str(task.returncode)))

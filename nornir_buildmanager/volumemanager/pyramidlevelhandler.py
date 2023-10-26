@@ -28,7 +28,7 @@ class PyramidLevelHandler(object):
         """
         return self.GetChildByAttrib("Level", "Downsample", "%g" % Downsample)
 
-    def GetOrCreateLevel(self, Downsample, GenerateData: bool = True) -> (bool, volumemanager.LevelNode | None):
+    def GetOrCreateLevel(self, Downsample: float, GenerateData: bool = True) -> (bool, volumemanager.LevelNode | None):
         """
             :param float Downsample: Level downsample factor from full-res data
             :param bool GenerateData: True if missing data should be generated.  Defaults to true.

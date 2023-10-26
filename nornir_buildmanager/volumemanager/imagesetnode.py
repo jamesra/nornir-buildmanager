@@ -36,6 +36,36 @@ class ImageSetNode(ImageSetBaseNode):
 
         return self.MaxResLevel.Downsample
 
+
+    def NameMatchesSectionNumber(self, section_number: int) -> bool:
+        """
+        When sections are swapped the assembled images have the incorrect name.  In this case we should either regenerate them
+        or rename them.  This function tells us if the numbers are not correct.
+        :return: True if first image in set has a name with a section number and the section number does not match
+        :rtype: bool
+        """
+
+        #Determine if we have any images
+        if not bool(self.Images):
+            return False
+
+        # Determine if the name starts with a number
+        first_image = self.Images[0]
+        parts = first_image.split('_')
+        try:
+            return int(parts[0]) == section_number
+        except ValueError:
+            return False #Naming convention does not use section number at start of name.  Continue
+
+    def CleanIfNameHasSectionNumberMismatch(self, section_number: int) -> bool:
+
+        if self.NameMatchesSectionNumber(section_number):
+            self.Clean("ImageSet file name does not match section number")
+            return True
+
+        return False
+
+
     def IsLevelValid(self, level_node) -> bool:
         raise NotImplemented("HasImage is being used.  I considered this a dead code path.")
 
