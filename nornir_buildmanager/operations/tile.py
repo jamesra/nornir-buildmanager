@@ -1219,11 +1219,11 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     section_node = filter_node.FindParent('Section')
 
     if OutputFilterNode.HasImageset:
-        if OutputFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node) or OutputFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_node.SectionNumber):
+        if OutputFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node) or OutputFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_node.Number):
             yield OutputFilterNode
 
     if OutputMaskFilterNode.HasImageset:
-        if OutputMaskFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node) or OutputMaskFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_node.SectionNumber):
+        if OutputMaskFilterNode.Imageset.CleanIfInputTransformMismatched(transform_node) or OutputMaskFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_node.Number):
             yield OutputMaskFilterNode
 
 

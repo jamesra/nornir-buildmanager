@@ -45,13 +45,14 @@ class ImageSetNode(ImageSetBaseNode):
         :rtype: bool
         """
 
-        #Determine if we have any images
-        if not bool(self.Images):
+        # Determine if we have any images
+        try:
+            first_image = next(self.Images)
+        except StopIteration:
             return False
-
+        
         # Determine if the name starts with a number
-        first_image = self.Images[0]
-        parts = first_image.split('_')
+        parts = first_image.Path.split('_')
         try:
             return int(parts[0]) == section_number
         except ValueError:
@@ -59,7 +60,7 @@ class ImageSetNode(ImageSetBaseNode):
 
     def CleanIfNameHasSectionNumberMismatch(self, section_number: int) -> bool:
 
-        if self.NameMatchesSectionNumber(section_number):
+        if not self.NameMatchesSectionNumber(section_number):
             self.Clean("ImageSet file name does not match section number")
             return True
 
