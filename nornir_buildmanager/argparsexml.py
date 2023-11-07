@@ -13,7 +13,7 @@ import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 
 
-def _ConvertValueToPythonType(val):
+def _ConvertValueToPythonType(val: str) -> bool | int | float | str:
     if val.lower() == 'true':
         return True
     elif val.lower() == 'false':
@@ -79,7 +79,7 @@ def _AddArgumentNodeToParser(parser, argNode):
     parser.add_argument(*Flag, **attribDictCopy)
 
 
-def CreateOrExtendParserForArguments(ArgumentNodes, parser=None):
+def CreateOrExtendParserForArguments(ArgumentNodes, parser: argparse.ArgumentParser | None = None):
     '''
        Converts a list of <Argument> nodes into an argument parser, or extends an existing argument parser
        :param XElement ArgumentNodes: Argument nodes.  Usually found with the xquery "Arguments/Argument" on the pipeline node

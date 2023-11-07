@@ -18,6 +18,7 @@ import matplotlib
 
 import nornir_buildmanager.volumemanager.volumemanager
 import nornir_buildmanager.pipelinemanager as pipelinemanager
+import nornir_imageregistration
 
 # Nornir build must use a backend that does not allocate windows in the GUI should be used.
 # Otherwise bugs will appear in multi-threaded environments
@@ -51,7 +52,7 @@ def AddVolumeArgumentToParser(parser):
                         )
 
 
-def _AddParserRootArguments(parser):
+def _AddParserRootArguments(parser: argparse.ArgumentParser):
     parser.add_argument('volumepath',
                         action='store',
                         type=str,
@@ -79,6 +80,13 @@ def _AddParserRootArguments(parser):
                         help='Provide additional output',
                         dest='verbose')
 
+    parser.add_argument('computational_library',
+                        choices=['cupy', 'numpy', 'detect'],
+                        required=False,
+                        default='detect',
+                        help='If not specified, cupy will be used if a nVidia GPU is present.  Otherwise, force cupy (GPU) or numpy (CPU) use.',
+                        dest='computational_library')
+
 
 #     parser.add_argument('-recover',
 #                         action='store_true',
@@ -87,7 +95,7 @@ def _AddParserRootArguments(parser):
 #                         help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.',
 #                         dest='verbose')
 
-def _AddRecoverNotesParser(root_parser, subparsers):
+def _AddRecoverNotesParser(root_parser: argparse.ArgumentParser, subparsers):
     recover_parser = subparsers.add_parser('RecoverNotes',
                                            help='Used to recover or update notes files in a folder.  This searches a path for *.txt files and creates/updates a notes element with the information in the file.', )
     recover_parser.set_defaults(func=call_recover_import_meta_data, parser=root_parser)
@@ -100,7 +108,7 @@ def _AddRecoverNotesParser(root_parser, subparsers):
                                 dest='save_restoration')
 
 
-def _AddRecoverParser(root_parser, subparsers):
+def _AddRecoverParser(root_parser: argparse.ArgumentParser, subparsers):
     recover_parser = subparsers.add_parser('RecoverLinks',
                                            help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.', )
     recover_parser.set_defaults(func=call_recover_links, parser=root_parser)
@@ -120,7 +128,7 @@ def _AddRecoverParser(root_parser, subparsers):
                                 dest='save_restoration')
 
 
-def _GetPipelineXMLPath():
+def _GetPipelineXMLPath() -> str:
     return os.path.join(ConfigDataPath(), 'Pipelines.xml')
 
 
@@ -154,7 +162,7 @@ def BuildParserRoot():
     return parser
 
 
-def _AddPipelineParsers(subparsers):
+def _AddPipelineParsers(subparsers: argparse.ArgumentParser):
     PipelineXML = _GetPipelineXMLPath()
     # Load the element tree once and pass it to the later functions so we aren't parsing the XML text in the loop
     PipelineXML = pipelinemanager.PipelineManager.LoadPipelineXML(PipelineXML)
@@ -237,6 +245,18 @@ def InitLogging(buildArgs):
     else:
         SetupLogging(Level=logging.WARN)
 
+def init_computational_library(args: argparse.Namespace):
+    if args.computational_library == 'detect':
+        if nornir_imageregistration.HasCupy():
+            args.computational_library = 'cupy'
+        else:
+            args.computational_library = 'numpy'
+    else:
+        args.computational_library = args.computational_library.lower()
+
+    os.environ['NORNIR_COMPUTATIONAL_LIBRARY'] = args.computational_library
+    nornir_imageregistration.SetActiveComputationalLib(nornir_imageregistration.ComputationLib.cupy if args.computational_library == 'cupy' else nornir_imageregistration.ComputationLib.numpy)
+
 
 def Execute(buildArgs=None):
     # Spend more time on each thread before switching
@@ -266,22 +286,26 @@ def Execute(buildArgs=None):
         lowpriority()
         print("Warning, using low priority flag.  This can make builds much slower")
 
+    init_computational_library(args)
+
+    print(f'Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}')
+
     # SetupLogging(OutputPath=args.volumepath)
-    cmdName = ''
+    cmd_name = None
     if hasattr(args, 'PipelineName'):
-        cmdName = args.PipelineName
+        cmd_name = args.PipelineName
     elif len(buildArgs) >= 2:
-        cmdName = buildArgs[1]
+        cmd_name = buildArgs[1]
 
     try:
-        if cmdName is not None:
-            Timer.Start(cmdName)
+        if cmd_name is not None:
+            Timer.Start(cmd_name)
 
         args.func(args)
 
     finally:
-        if cmdName is not None:
-            Timer.End(cmdName)
+        if cmd_name is not None:
+            Timer.End(cmd_name)
 
         OutStr = str(Timer)
         prettyoutput.Log(OutStr)

@@ -63,6 +63,13 @@ from nornir_buildmanager.volumemanager import *
 
 def find_sections(extension: str, section_candidates:
                   dict[int, list[shared.FilenameMetadata]]) -> dict[int, shared.FilenameMetadata]:
+    '''
+    Find directories that contain files with the passed extension.  Parses section information from the
+    directory name.  returns a dictionary mapping section number to the latest version of the section.
+    :param extension: 
+    :param section_candidates: 
+    :return: 
+    '''
     match_names = []
     for candidate_dirs in section_candidates.values():
         match_names.extend([e for e in candidate_dirs])
