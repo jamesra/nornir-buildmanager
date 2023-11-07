@@ -1,7 +1,7 @@
-'''
+"""
 Created on Apr 2, 2012
 
-'''
+"""
 
 import collections.abc
 import copy
@@ -24,7 +24,7 @@ from .pipeline_exceptions import *
 
 # import xml.etree
 class ArgumentSet:
-    '''Collection of arguments from each source'''
+    """Collection of arguments from each source"""
 
     @property
     def Arguments(self):
@@ -50,7 +50,7 @@ class ArgumentSet:
         self.PipelineName = PipelineName
 
     def SubstituteStringVariables(self, xpath):
-        '''Replace all instances of # in a string with the variable names'''
+        """Replace all instances of # in a string with the variable names"""
 
         iStart = xpath.find("#")
         while iStart >= 0:
@@ -88,7 +88,7 @@ class ArgumentSet:
                 value = self.TryGetValueForKey(keyCheck)
                 xpath = xpath[:iStart - 1] + str(value) + xpath[iEndVar:]
                 return xpath
-            except KeyError as e:
+            except KeyError:
                 pass
 
             iEndVar -= 1
@@ -99,9 +99,9 @@ class ArgumentSet:
         sys.exit()
 
     def TryGetSubstituteObject(self, val):
-        '''Place an object directly into a dictionary. 
+        """Place an object directly into a dictionary.
         :param str val: The key to lookup
-        :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned.'''
+        :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned."""
         if val is None:
             return False, None
 
@@ -307,28 +307,28 @@ class PipelineManager(object):
             self._epilog = pipelineData.attrib['Epilog']
 
     @property
-    def Description(self):
+    def Description(self) -> str:
         if hasattr(self, '_description'):
             return self._description
 
         return None
 
     @property
-    def Help(self):
+    def Help(self) -> str:
         if hasattr(self, '_help'):
             return self._help
 
         return None
 
     @property
-    def Epilog(self):
+    def Epilog(self) -> str:
         if hasattr(self, '_epilog'):
             return self._epilog
 
         return None
 
     @classmethod
-    def ToElementString(cls, element):
+    def ToElementString(cls, element) -> str:
         if element.tag == 'Iterate':
             return "Iterate: " + element.attrib['XPath']
 
@@ -342,7 +342,7 @@ class PipelineManager(object):
         return outStr
 
     @classmethod
-    def PrintPipelineEnumeration(cls, PipelineXML):
+    def PrintPipelineEnumeration(cls, PipelineXML: str | ElementTree.ElementTree):
         PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
         cls.logger.info("Enumerating available pipelines")
@@ -353,24 +353,19 @@ class PipelineManager(object):
             prettyoutput.Log('    ' + pipeline.attrib.get('Description', "") + '\n')
 
     @classmethod
-    def _CheckPipelineXMLExists(cls, PipelineXmlFile):
-        if not os.path.exists(PipelineXmlFile):
-            PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXmlFile)
-            prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXmlFile)
-            sys.exit()
-
-        return True
-
-    @classmethod
-    def LoadPipelineXML(cls, PipelineXML):
+    def LoadPipelineXML(cls, PipelineXML: str | ElementTree.ElementTree) -> ElementTree.ElementTree:
         # Python 3 switched to unicode always so the encoding should not be necessary for non-english character sets
         if int(platform.python_version_tuple()[0]) < 3:
             if isinstance(PipelineXML, str):
                 PipelineXML = PipelineXML.encode(sys.getdefaultencoding())
 
         if isinstance(PipelineXML, str):
-            if cls._CheckPipelineXMLExists(PipelineXML):
+            try:
                 return ElementTree.parse(PipelineXML)
+            except FileNotFoundError:
+                PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXML)
+                prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXML)
+                sys.exit()
 
         elif isinstance(PipelineXML, ElementTree.ElementTree):
             return PipelineXML
@@ -378,7 +373,7 @@ class PipelineManager(object):
         raise Exception("Invalid argument: " + str(PipelineXML))
 
     @classmethod
-    def ListPipelines(cls, PipelineXML):
+    def ListPipelines(cls, PipelineXML: str) -> list[str]:
 
         PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
@@ -390,11 +385,7 @@ class PipelineManager(object):
         return sorted(PipelineNames)
 
     @classmethod
-    def __PrintPipelineArguments(cls, PipelineNode):
-        pass
-
-    @classmethod
-    def Load(cls, PipelineXml, PipelineName=None):
+    def Load(cls, PipelineXml: str | ElementTree.ElementTree, PipelineName: str | None = None):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
 
@@ -417,14 +408,14 @@ class PipelineManager(object):
         return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)
 
     @classmethod
-    def RunPipeline(cls, PipelineXmlFile, PipelineName, args):
+    def RunPipeline(cls, PipelineXmlFile: str | ElementTree.ElementTree, PipelineName: str, args):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
         Pipeline = cls.Load(PipelineXmlFile, PipelineName)
 
         Pipeline.Execute(args)
 
-    def GetArgParser(self, parser=None, IncludeGlobals=True):
+    def GetArgParser(self, parser = None, IncludeGlobals: bool = True):
         '''Create the complete argument parser for the pipeline
         :param parser:
         :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation
