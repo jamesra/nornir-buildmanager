@@ -1078,9 +1078,9 @@ def GenerateHistogramImage(HistogramElement: HistogramNode,
 
 
 def AssembleTransform(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True,
-                      ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
+                      ThumbnailSize=256, Interlace=True, CropBox=None, UseGPU=False, **kwargs):
     return AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix,
-                                           UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, **kwargs)
+                                           UseCluster, ThumbnailSize, Interlace, CropBox=CropBox, UseGPU=UseGPU, **kwargs)
 
 
 def __GetOrCreateOutputChannelForPrefix(prefix, InputChannelNode):
@@ -1179,8 +1179,10 @@ def VerifyAssembledImagePathIsCorrect(Parameters, Logger, FilterNode, extension=
 
 
 def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, OutputChannelPrefix=None, UseCluster=True,
-                           ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
+                           ThumbnailSize=256, Interlace=True, CropBox=None, UseGPU=False, **kwargs):
     """@ChannelNode - TransformNode lives under ChannelNode"""
+
+    UseCluster = False if UseGPU else UseCluster
 
     if CropBox is not None:
         RequestedBoundingBox = [CropBox[1], CropBox[0], CropBox[3], CropBox[2]]
@@ -1271,12 +1273,13 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
         tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask' + image_ext)
 
         Logger.info("Assembling " + TransformNode.FullPath)
-        mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
+        mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath, use_cp=UseGPU)
         mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, ImageDir,
                                                                                  image_to_source_space_scale=thisLevel)
 
         (mosaicImage, maskImage) = mosaicTileset.AssembleImage(FixedRegion=RequestedBoundingBox,
-                                                               usecluster=True,
+                                                               usecluster=UseCluster,
+                                                               use_cp=UseGPU,
                                                                target_space_scale=1.0 / thisLevel)
 
         if mosaicImage is None or maskImage is None:

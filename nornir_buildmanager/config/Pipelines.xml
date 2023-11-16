@@ -1056,6 +1056,10 @@
                 default=""
                 help="Bounding box of region to assemble.  Default is no cropping.  Form is MinX,MinY,MaxX,MaxY with no spaces."
                 required="False" />
+            <Argument flag="-GPU" dest="UseGPU" action="store_true"
+                default="False"
+                help="Use GPU processing via CuPy library (instead of CPU clusters)"
+                required="False" />
         </Arguments>
         <Iterate VariableName="section_node" XPath="Block/Section">
             <RequireSetMembership Attribute="Number" List="#Sections" />
