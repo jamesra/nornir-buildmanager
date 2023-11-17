@@ -1076,7 +1076,7 @@
 
                     <PythonCall Function="tile.AssembleTransform"
                         OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace"
-                        Levels="#Levels" CropBox="#CropBox">
+                        Levels="#Levels" CropBox="#CropBox" UseGPU="#UseGPU">
                         <Parameters>
                             <Entry Name="feathering" Value="binary" />
                         </Parameters>
