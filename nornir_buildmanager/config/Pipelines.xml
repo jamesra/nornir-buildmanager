@@ -1546,6 +1546,28 @@
         </Iterate>
     </Pipeline>
 
+    <Pipeline Name="RepairStosAngles" Help="Negate angles for .stos files created before Dec 1st 2023">
+         <Arguments>
+            <Argument flag="-Block" default="*" dest="BlockRegEx" type="str"
+                      help="Block to examine the StosGroup within" required="False"/>
+            <Argument flag="-StosGroup" dest="StosGroup" type="str"
+                      help="Name of the StosGroup" default="*" required="False"/>
+            <Argument flag="-Type" dest="Type" type="str"
+                      help="Type of transform" default="Brute" required="False"/>
+        </Arguments>
+        <Iterate VariableName="BlockNode" XPath="Block" Validate="False">
+            <RequireMatch Attribute="Name" RegEx="#BlockRegEx"/>
+            <Iterate VariableName="SectionMappingNode"
+                     XPath="StosGroup[@Name='#StosGroup']" Validate="False">
+                <Iterate VariableName="transform_node"
+                     XPath="SectionMappings/Transform[@Type='#Type']" Validate="False">
+                    <PythonCall Function="migration.ReverseRigidTransformAngles"
+                                transform_node="#transform_node"/>
+                </Iterate>
+            </Iterate>
+        </Iterate>
+    </Pipeline>
+
     <Pipeline Name="Cleanup" Help="Clean common errors from the volume meta-data">
         <Arguments>
             <Argument flag="-Sections" dest="Sections" type="IntegerList"

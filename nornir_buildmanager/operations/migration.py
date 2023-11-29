@@ -6,6 +6,7 @@ Created on May 15, 2015
 All the code, often throwaway, to migrate from one version to another.
 '''
 
+import datetime
 import glob
 import os
 
@@ -185,3 +186,80 @@ def MigrateTransforms_1p2_to_1p3(transform_node, **kwargs):
             dependent.SetTransform(transform_node)
 
     return transform_node.Parent
+
+
+#-------------------------------------------------------------------
+
+def reverse_angle_for_rigid_transforms(filename: str):
+    """"If the transform is a rigid transform, then we need to invert the angle if it is older than 11/28/2023"""
+
+    cutoff_date = datetime.datetime(2023, 11, 28)
+    cutoff_value = cutoff_date.timestamp()
+
+    stos_stats = os.stat(filename)
+    if stos_stats.st_mtime >= cutoff_value: #Check if the file has been modified after the cutoff date
+        return False, None
+
+    obj = nornir_imageregistration.files.StosFile.Load(filename)
+    transform = nornir_imageregistration.transforms.LoadTransform(obj.Transform, pixelSpacing=1)
+    #This patch only applies to rigid transforms
+    if not isinstance(transform, nornir_imageregistration.transforms.Rigid):
+        return False, None
+
+    if isinstance(transform, nornir_imageregistration.transforms.CenteredSimilarity2DTransform):
+        updated_transform = nornir_imageregistration.transforms.CenteredSimilarity2DTransform(target_offset=transform.target_offset,
+                                                                                 source_rotation_center=transform.source_space_center_of_rotation,
+                                                                                 angle=-transform.angle,
+                                                                                 scalar=transform.scalar,
+                                                                                 flip_ud=transform.flip_ud)
+    elif isinstance(transform, nornir_imageregistration.transforms.Rigid):
+        updated_transform = nornir_imageregistration.transforms.Rigid(target_offset=transform.target_offset,
+                                                         source_rotation_center=transform.source_space_center_of_rotation,
+                                                         angle=-transform.angle,
+                                                         flip_ud=transform.flip_ud)
+    else:
+        raise NotImplementedError("Unknown transform type")
+
+    obj.Transform = updated_transform
+    obj.Save(filename) #Replace the file we just loaded
+    return True, updated_transform
+
+def ReverseRigidTransformAngles(transform_node: nornir_buildmanager.volumemanager.TransformNode, **kwargs):
+    """
+    Negate the angle value stored in .stos files for .stos files made before 11/28/2023.
+    Then update InputTransformChecksum for any dependent transforms
+    :param transform_node:
+    :param kwargs:
+    :return:
+    """
+    original_checksum = transform_node.Checksum
+
+    try:
+        updated, updated_transform = reverse_angle_for_rigid_transforms(transform_node.FullPath)
+    except FileNotFoundError:
+        transform_node.Clean("File not found")
+        return transform_node.Parent
+        pass
+
+    if not updated:
+        return None
+
+    if updated:
+        transform_node.ResetChecksum()
+
+    # All done changing the transforms meta-data.  Now update transforms which depend on us with correct information
+    block_node = transform_node.FindParent('Block')
+    if block_node is None:
+        raise ValueError("Transform node %s is not in a block" % transform_node.FullPath)
+
+    save_block = False
+    for dependent in nornir_buildmanager.volumemanager.inputtransformhandler.InputTransformHandler.EnumerateTransformDependents(
+            block_node, original_checksum, transform_node.Type, recursive=False, child_element_name='StosGroup/SectionMappings/Transform'):
+        if dependent.HasInputTransform and dependent.InputTransformChecksum == original_checksum:
+            dependent.SetTransform(transform_node)
+            save_block = True
+            
+    if save_block:
+        return block_node
+    else:
+        return transform_node.Parent

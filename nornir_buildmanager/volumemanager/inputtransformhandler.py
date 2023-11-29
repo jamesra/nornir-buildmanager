@@ -80,7 +80,7 @@ class InputTransformHandler(object):
             raise Exception(
                 "Invalid argument passed to InputTransformCropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
-    def SetTransform(self, transform_node: ITransform):
+    def SetTransform(self, transform_node):
         if transform_node is None:
             self.InputTransformChecksum = None
             self.InputTransformType = None
@@ -92,7 +92,7 @@ class InputTransformHandler(object):
             self.InputTransform = transform_node.Name
             self.InputTransformCropBox = transform_node.CropBox
 
-    def IsInputTransformMatched(self, transform_node: ITransform) -> bool:
+    def IsInputTransformMatched(self, transform_node) -> bool:
         """Return true if the transform node matches our input transform"""
         if not self.HasInputTransform:
             return transform_node is None
@@ -102,7 +102,7 @@ class InputTransformHandler(object):
             self.InputTransformChecksum == transform_node.Checksum and \
             self.InputTransformCropBox == transform_node.CropBox
 
-    def CleanIfInputTransformMismatched(self, transform_node: ITransform) -> bool:
+    def CleanIfInputTransformMismatched(self, transform_node) -> bool:
         """Remove this element from its parent if the transform node does not match our input transform attributes
         :return: True if element removed from parent, otherwise false
         :rtype: bool
@@ -190,14 +190,14 @@ class InputTransformHandler(object):
         return True, ""
 
     @classmethod
-    def EnumerateTransformDependents(cls, parent_node, checksum: str, type_name: str, recursive: bool):
+    def EnumerateTransformDependents(cls, parent_node, checksum: str, type_name: str, recursive: bool, child_element_name: str | None = None):
         """Return a list of all sibling transforms (Same parent element) which have our checksum and type as an input transform checksum and type"""
 
         # WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
         if parent_node is None:
             return
 
-        for t in parent_node.findall('*'):
+        for t in parent_node.findall(child_element_name):
             if recursive:
                 for c in cls.EnumerateTransformDependents(t, checksum, type_name, recursive):
                     yield c
