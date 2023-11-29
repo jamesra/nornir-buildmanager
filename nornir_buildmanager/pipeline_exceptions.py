@@ -73,7 +73,7 @@ class PipelineArgumentNotFound(PipelineError):
 class PipelineSearchRootNotFound(PipelineArgumentNotFound):
     '''A select statement could not find the requested node'''
 
-    def __init__(self, argname, **kwargs):
+    def __init__(self, argname: str, **kwargs):
         super(PipelineSearchRootNotFound, self).__init__(argname, **kwargs)
 
         self.argname = argname

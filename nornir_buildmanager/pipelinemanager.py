@@ -457,7 +457,7 @@ class PipelineManager(object):
         return xpath
 
     @classmethod
-    def GetSearchRoot(cls, VolumeElem, PipelineNode, ArgSet):
+    def GetSearchRoot(cls, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode, ArgSet):
         RootIterNodeName = PipelineNode.get('Root', None)
         RootForSearch = VolumeElem
         if RootIterNodeName is not None:
@@ -503,7 +503,7 @@ class PipelineManager(object):
 
         nornir_pools.WaitOnAllPools()
 
-    def ExecuteChildPipelines(self, ArgSet, VolumeElem, PipelineNode):
+    def ExecuteChildPipelines(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
         '''Run all of the child pipeline elements on the volume element'''
 
         PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
@@ -549,7 +549,7 @@ class PipelineManager(object):
         # To prevent later calls from being able to access variables from earlier steps be sure to remove the variable from the dargs
         return PipelinesRun
 
-    def ProcessStageElement(self, VolumeElem, PipelineNode, ArgSet=None):
+    def ProcessStageElement(self, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode, ArgSet=None):
 
         #outStr = PipelineManager.ToElementString(PipelineNode)
         # prettyoutput.CurseString('Section', outStr)
@@ -581,7 +581,7 @@ class PipelineManager(object):
             raise Exception("Unexpected element name in Pipeline.XML: " + PipelineNode.tag)
 
     @staticmethod
-    def RequireSetMembership(ArgSet, VolumeElem, PipelineNode):
+    def RequireSetMembership(ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
         '''If the attribute value is not present in the provided list the element is skipped.
            If the provided list is none we do not skip.'''
 
@@ -617,7 +617,7 @@ class PipelineManager(object):
         return
 
     @staticmethod
-    def ProcessRequireMatchNode(ArgSet, VolumeElem, PipelineNode):
+    def ProcessRequireMatchNode(ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
         '''If the regular expression does not match the attribute an exception is raised.
            This skips the current iteration of an enclosing <iterate> element'''
 
@@ -649,7 +649,7 @@ class PipelineManager(object):
 
         return
 
-    def ProcessSelectNode(self, ArgSet, VolumeElem, PipelineNode):
+    def ProcessSelectNode(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, ArgSet)
 
@@ -682,7 +682,7 @@ class PipelineManager(object):
         if SelectedVolumeElem is not None:
             self.AddPipelineNodeVariable(PipelineNode, SelectedVolumeElem, ArgSet)
 
-    def ProcessIterateNode(self, ArgSet, VolumeElem, PipelineNode):
+    def ProcessIterateNode(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, ArgSet)
 
@@ -730,7 +730,7 @@ class PipelineManager(object):
             else:
                 nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(NodesToSave)
 
-    def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
+    def ProcessPythonCall(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
         #PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
         PipelineModule = PipelineNode.get("Module", "nornir_buildmanager.operations")
@@ -814,7 +814,7 @@ class PipelineManager(object):
     #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
 
     @staticmethod
-    def AddPipelineNodeVariable(PipelineNode, VolumeElem, ArgSet):
+    def AddPipelineNodeVariable(PipelineNode, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, ArgSet):
         '''Adds a variable to our dictionary passed to functions'''
         if 'VariableName' in PipelineNode.attrib:
             key = PipelineNode.attrib['VariableName']

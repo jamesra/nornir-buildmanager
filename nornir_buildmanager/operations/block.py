@@ -2653,7 +2653,7 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
     return False
 
 
-def _GetStosToMosaicTransform(StosTransformNode, transform_node, OutputTransformName):
+def _GetOrCreateStosToMosaicTransform(StosTransformNode, transform_node: TransformNode, OutputTransformName: str):
     OutputTransformNode = transform_node.Parent.GetTransform(OutputTransformName)
     added = False
     if OutputTransformNode is None:
@@ -2667,15 +2667,15 @@ def _GetStosToMosaicTransform(StosTransformNode, transform_node, OutputTransform
     return added, OutputTransformNode
 
 
-def _ApplyStosToMosaicTransform(StosTransformNode, transform_node, OutputTransformName, Logger, **kwargs):
+def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transform_node: TransformNode, OutputTransformName: str, Logger, **kwargs):
     '''
     return: Transform node if there was an create/update.  None if no change
     '''
 
     MappedFilterNode = transform_node.FindParent('Filter')
 
-    (added_output_transform, OutputTransformNode) = _GetStosToMosaicTransform(StosTransformNode, transform_node,
-                                                                              OutputTransformName)
+    (added_output_transform, OutputTransformNode) = _GetOrCreateStosToMosaicTransform(StosTransformNode, transform_node,
+                                                                                      OutputTransformName)
 
     if added_output_transform:
         OutputTransformNode.SetTransform(StosTransformNode)
@@ -2686,12 +2686,16 @@ def _ApplyStosToMosaicTransform(StosTransformNode, transform_node, OutputTransfo
     if StosTransformNode is not None:
         if not (OutputTransformNode.IsInputTransformMatched(
                 StosTransformNode) and OutputTransformNode.InputMosaicTransformChecksum == transform_node.Checksum):
-            if os.path.exists(OutputTransformNode.FullPath):
+            try:
                 os.remove(OutputTransformNode.FullPath)
+            except FileNotFoundError:
+                pass
     else:
         if not OutputTransformNode.InputMosaicTransformChecksum == transform_node.Checksum:
-            if os.path.exists(OutputTransformNode.FullPath):
+            try:
                 os.remove(OutputTransformNode.FullPath)
+            except FileNotFoundError:
+                pass
 
     if os.path.exists(OutputTransformNode.FullPath):
         return OutputTransformNode
