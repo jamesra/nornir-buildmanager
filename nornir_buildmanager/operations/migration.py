@@ -9,10 +9,12 @@ All the code, often throwaway, to migrate from one version to another.
 import datetime
 import glob
 import os
+import re
 
 import nornir_buildmanager.volumemanager.inputtransformhandler
 import nornir_imageregistration
 import nornir_imageregistration.files
+import nornir_shared.files
 
 
 def GetTileNumber(filename):
@@ -263,3 +265,63 @@ def ReverseRigidTransformAngles(transform_node: nornir_buildmanager.volumemanage
         return block_node
     else:
         return transform_node.Parent
+
+
+    #-----------------------------------------------------------------------------
+
+def RepairCroppedXMLFilesInElement(volume_element: nornir_buildmanager.volumemanager.VolumeNode, **kwargs):
+    for child_folder, matches in nornir_shared.files.RecurseSubdirectoriesGenerator(volume_element.FullPath, ExcludeNames=nornir_shared.files.DefaultLevelStrings):
+        TryRepairXMLFileAppendError(os.path.join(child_folder, "VolumeData.xml"))
+
+_XMLHeadTagParser = re.compile(r'''
+                                   (<[?].+[?]>)? # Ignore standard header if it exists 
+                                   \s*<\s* #Ignore whitespace and opening
+                                   (?P<Tag>[a-zA-Z0-9]+) # Tag name
+                                   \s* # Optional whitespace
+                                   (?P<Attributes>[a-zA-Z0-9]+\s*=\s*".*"\s*)? 
+                                   (/>|>)  # closing
+                                   (?P<Remaining>.+)? # Remaining text
+                                   ''', re.VERBOSE)
+
+def TryRepairXMLFileAppendError(filename: str):
+    """Attempt to repair an XML file that has excess text after the closing element"""
+
+    try:
+        with open(filename, 'r') as f:
+            data = f.read()
+            f.close()
+
+        match = _XMLHeadTagParser.match(data)
+        if match is None:
+            print(f'File {filename} does not appear to be an XML file')
+            return False
+
+        tag_name = match['Tag']
+        #Find where the end tag is
+        end_tag = '</' + tag_name + '>'
+        end_tag_index = data.rfind(end_tag)
+        if end_tag_index < 0:
+            print(f'File {filename} does not appear to have an endtag')
+            return False
+
+        #Find where the remaining text is
+        expected_length = end_tag_index + len(end_tag)
+        if expected_length == len(data):
+            return False #No data to crop
+        
+        remaining_text = data[expected_length:]
+
+        #trim the excess text after the endtag
+        data = data[0:expected_length]
+
+        with open(filename, 'w') as f:
+            f.write(data)
+            f.close()
+
+        print(f'Removed excess text in {filename}: {remaining_text}')
+        return True
+
+    except FileNotFoundError:
+        return False
+
+

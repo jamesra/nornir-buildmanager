@@ -537,12 +537,12 @@
                       required="False"/>
         </Arguments>
         <PythonCall Function="diagnostics.Print" val="Section Channel Filter"/>
-        <Iterate VariableName="section_node" XPath="Block/Section">
+        <Iterate VariableName="section_node" XPath="Block/Section" Verify="False">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
 
-            <Iterate VariableName="ChannelNode" XPath="Channel">
+            <Iterate VariableName="ChannelNode" XPath="Channel" Verify="False">
                 <RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
-                <Iterate VariableName="FilterNode" XPath="Filter">
+                <Iterate VariableName="FilterNode" XPath="Filter" Verify="False">
                     <RequireMatch Attribute="Name" RegEx="#FiltersRegEx"/>
                     <PythonCall Function="diagnostics.PrintIfMissingTileset"
                                 filter_node="#FilterNode"/>
@@ -595,11 +595,11 @@
             <Argument flag="-Filters" dest="FilterRegEx" default="*"
                       help="Regular expression describing filters to be edited" required="False"/>
         </Arguments>
-        <Iterate VariableName="SectionNode" XPath="Block/Section">
+        <Iterate VariableName="SectionNode" XPath="Block/Section" Verify="False">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
-            <Iterate VariableName="ChannelNode" XPath="Channel">
+            <Iterate VariableName="ChannelNode" XPath="Channel" Verify="False">
                 <RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
-                <Iterate VariableName="FilterNode" XPath="Filter">
+                <Iterate VariableName="FilterNode" XPath="Filter" Verify="False">
                     <RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
                     <PythonCall Function="setters.PrintContrast"
                                 FilterElement="#FilterNode"/>

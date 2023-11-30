@@ -80,7 +80,7 @@ def _AddParserRootArguments(parser: argparse.ArgumentParser):
                         help='Provide additional output',
                         dest='verbose')
 
-    parser.add_argument('computational_library',
+    parser.add_argument('-computational_library',
                         choices=['cupy', 'numpy', 'detect'],
                         required=False,
                         default='detect',
@@ -127,6 +127,12 @@ def _AddRecoverParser(root_parser: argparse.ArgumentParser, subparsers):
                                 help='Set this flag to save the VolumeData.xml files with the located linked elements included.',
                                 dest='save_restoration')
 
+def _AddXMLRepairParser(root_parser: argparse.ArgumentParser, subparsers):
+    recover_parser = subparsers.add_parser('RepairXML',
+                                           help='Fixes an issue where XML files have extra characters after the closing tag.  Should only apply to data before Dec 2023', )
+    recover_parser.set_defaults(func=call_repair_xml, parser=root_parser)
+
+
 
 def _GetPipelineXMLPath() -> str:
     return os.path.join(ConfigDataPath(), 'Pipelines.xml')
@@ -141,6 +147,7 @@ def BuildParserRoot():
     pipeline_subparsers = parser.add_subparsers(title='Commands')
     _AddRecoverParser(parser, pipeline_subparsers)
     _AddRecoverNotesParser(parser, pipeline_subparsers)
+    _AddXMLRepairParser(parser, pipeline_subparsers)
     # subparsers = parser.add_subparsers(title='Utilities')
 
     # subparsers = parser.add_subparsers(title='help')
@@ -202,6 +209,12 @@ def call_recover_links(args):
         prettyoutput.Log("Save flag not set, recovered links not saved.")
 
 
+def call_repair_xml(args):
+    '''This function checks for missing link elements in a volume and adds them back to the volume'''
+    volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
+    nornir_buildmanager.operations.migration.RepairCroppedXMLFilesInElement(volumeObj)
+
+
 def call_recover_import_meta_data(args):
     '''This function checks for missing link elements in a volume and adds them back to the volume'''
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
@@ -255,7 +268,7 @@ def init_computational_library(args: argparse.Namespace):
         args.computational_library = args.computational_library.lower()
 
     os.environ['NORNIR_COMPUTATIONAL_LIBRARY'] = args.computational_library
-    nornir_imageregistration.SetActiveComputationalLib(nornir_imageregistration.ComputationLib.cupy if args.computational_library == 'cupy' else nornir_imageregistration.ComputationLib.numpy)
+    nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.cupy if args.computational_library == 'cupy' else nornir_imageregistration.ComputationLib.numpy)
 
 
 def Execute(buildArgs=None):
@@ -288,7 +301,7 @@ def Execute(buildArgs=None):
 
     init_computational_library(args)
 
-    print(f'Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}')
+    print(f"Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}")
 
     # SetupLogging(OutputPath=args.volumepath)
     cmd_name = None
