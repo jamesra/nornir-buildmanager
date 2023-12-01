@@ -273,7 +273,7 @@ def RepairCroppedXMLFilesInElement(volume_element: nornir_buildmanager.volumeman
     for child_folder, matches in nornir_shared.files.RecurseSubdirectoriesGenerator(volume_element.FullPath,
                                                                                     ExcludedFiles=[],
                                                                                     ExcludeNames=nornir_shared.files.DefaultLevelStrings):
-        print(child_folder)
+        #print(child_folder)
         TryRepairXMLFileAppendError(os.path.join(child_folder, "VolumeData.xml"))
 
 _XMLHeadTagParser = re.compile(r'''
