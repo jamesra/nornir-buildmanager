@@ -134,7 +134,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if recurse:
                 for child in self:
                     if hasattr(child, "RepairMissingLinkElements"):
-                        child.RepairMissingLinkElements()
+                        child.RepairMissingLinkElements(recurse)
 
     @staticmethod
     def _load_link_element(fullpath: str):
