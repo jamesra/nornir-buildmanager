@@ -203,7 +203,7 @@ def call_recover_links(args):
     volumeObj.RepairMissingLinkElements(recurse=args.recurse)
 
     if args.save_restoration:
-        volumeObj.Save(recurse=False)
+        volumeObj.Save()
         prettyoutput.Log("Recovered links saved (if found).")
     else:
         prettyoutput.Log("Save flag not set, recovered links not saved.")

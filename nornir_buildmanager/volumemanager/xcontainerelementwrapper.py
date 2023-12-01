@@ -128,7 +128,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 loadedElement = self._load_wrap_setparent_link_element(dirname)
                 if loadedElement is not None:
                     self.append(loadedElement)
-                    prettyoutput.Log("\tAdded: {0}".format(loadedElement))
+                    #prettyoutput.Log("\tAdded: {0}".format(loadedElement))
                     self.ChildrenChanged = True
 
             if recurse:
