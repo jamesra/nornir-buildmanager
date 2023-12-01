@@ -125,11 +125,15 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 prettyoutput.Log("Found missing linked container {0}".format(dirname))
 
                 # Load the VolumeData.xml, take the root element name and create a link in our element
-                loadedElement = self._load_wrap_setparent_link_element(dirname)
-                if loadedElement is not None:
-                    self.append(loadedElement)
-                    #prettyoutput.Log("\tAdded: {0}".format(loadedElement))
-                    self.ChildrenChanged = True
+                try:
+                    loadedElement = self._load_wrap_setparent_link_element(dirname)
+                    if loadedElement is not None:
+                        self.append(loadedElement)
+                        #prettyoutput.Log("\tAdded: {0}".format(loadedElement))
+                        self.ChildrenChanged = True
+                except FileNotFoundError:
+                    prettyoutput.Log("Could not open {0}".format(dirname))
+                    pass
 
             if recurse:
                 for child in self:
