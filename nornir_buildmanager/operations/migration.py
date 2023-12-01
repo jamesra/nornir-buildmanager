@@ -270,7 +270,10 @@ def ReverseRigidTransformAngles(transform_node: nornir_buildmanager.volumemanage
     #-----------------------------------------------------------------------------
 
 def RepairCroppedXMLFilesInElement(volume_element: nornir_buildmanager.volumemanager.VolumeNode, **kwargs):
-    for child_folder, matches in nornir_shared.files.RecurseSubdirectoriesGenerator(volume_element.FullPath, ExcludeNames=nornir_shared.files.DefaultLevelStrings):
+    for child_folder, matches in nornir_shared.files.RecurseSubdirectoriesGenerator(volume_element.FullPath,
+                                                                                    ExcludedFiles=[],
+                                                                                    ExcludeNames=nornir_shared.files.DefaultLevelStrings):
+        print(child_folder)
         TryRepairXMLFileAppendError(os.path.join(child_folder, "VolumeData.xml"))
 
 _XMLHeadTagParser = re.compile(r'''
@@ -299,7 +302,7 @@ def TryRepairXMLFileAppendError(filename: str):
         tag_name = match['Tag']
         #Find where the end tag is
         end_tag = '</' + tag_name + '>'
-        end_tag_index = data.rfind(end_tag)
+        end_tag_index = data.find(end_tag)
         if end_tag_index < 0:
             print(f'File {filename} does not appear to have an endtag')
             return False
@@ -312,10 +315,16 @@ def TryRepairXMLFileAppendError(filename: str):
         remaining_text = data[expected_length:]
 
         #trim the excess text after the endtag
-        data = data[0:expected_length]
+        fixed_data = data[0:expected_length]
+        
+        name, ext = os.path.splitext(filename)
+        backup_filename = name + '.bak'
+        with open(backup_filename, 'w') as f:
+            f.write(data)
+            f.close()
 
         with open(filename, 'w') as f:
-            f.write(data)
+            f.write(fixed_data)
             f.close()
 
         print(f'Removed excess text in {filename}: {remaining_text}')
