@@ -297,10 +297,10 @@ class XElementWrapper(ElementTree.Element):
         if self.NeedsValidation:
             return self.IsValid()
         else:
-            return [True, "NeedsValidation flag not set"]
+            return True, "NeedsValidation flag not set"
 
     def IsValid(self) -> tuple[bool, str]:
-        """This function should be overridden by derrived classes.  It returns true if the file system or other external
+        """This function should be overridden by derived classes.  It returns true if the file system or other external
            resources match the state recorded within the element.
 
            IsValid should always do the full work of validation and then update
@@ -778,8 +778,8 @@ class XElementWrapper(ElementTree.Element):
                 #    prettyoutput.Log("Need to load {0} links".format(num_matches))
                 self._replace_links(LinkMatches)
 
-                if self.ElementHasChangesToSave:
-                    self.Save()
+                #if self.ElementHasChangesToSave:  #TODO: This does not belong here, but I need to save validation information updates.
+                #    self.Save()
 
         matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
         for match in matchiterator:

@@ -56,6 +56,8 @@ class HistogramBase(InputTransformHandler, XElementWrapper):
                 return False, "No file to match data node"
 
         '''Check for the transform node and ensure the checksums match'''
-        # TransformNode = self.Parent.find('Transform')
-
-        return super(HistogramBase, self).IsValid()
+        valid, reason = super(HistogramBase, self).IsValid()
+        if valid:
+            return self.InputTransformIsValid()
+        else:
+            return valid, reason

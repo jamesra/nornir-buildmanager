@@ -58,17 +58,12 @@ class XFileElementWrapper(volumemanager.XResourceElementWrapper):
         Checks that the file exists by attempting to update the validation time
         """
 
-        if self.NeedsValidation is False:
-            return True
+        valid, reason = super(XFileElementWrapper, self).IsValid()
 
-        try:
-            self.ValidationTime = self.LastFileSystemModificationTime
-        except FileNotFoundError:
-            return False, 'File does not exist'
+        #if valid and self.NeedsValidation is False:
+        #    return True, "No modifications to filesystem"
 
-        result = super(XFileElementWrapper, self).IsValid()
-
-        return result
+        return valid, reason
 
     @classmethod
     def Create(cls, tag, Path, attrib, **extra) -> XFileElementWrapper:
@@ -77,13 +72,15 @@ class XFileElementWrapper(volumemanager.XResourceElementWrapper):
         return obj
 
     @property
-    def Checksum(self) -> str:
+    def Checksum(self) -> str | None:
         """Checksum of the file resource when the node was last updated"""
         checksum = self.get('Checksum', None)
         if checksum is None:
-            if os.path.exists(self.FullPath):
+            try:
                 checksum = nornir_shared.checksum.FileChecksum(self.FullPath)
                 self.attrib['Checksum'] = str(checksum)
                 self._AttributesChanged = True
+            except FileNotFoundError:
+                return None
 
         return checksum

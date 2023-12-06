@@ -113,7 +113,7 @@ def _AddRecoverParser(root_parser: argparse.ArgumentParser, subparsers):
                                            help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.', )
     recover_parser.set_defaults(func=call_recover_links, parser=root_parser)
 
-    recover_parser.add_argument('-s',
+    recover_parser.add_argument('-recurse',
                                 action='store_true',
                                 required=False,
                                 default=False,

@@ -163,14 +163,15 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         except AttributeError:
             pass
 
-        [valid, reason] = super(TransformNode, self).IsValid()
         prettyoutput.Log('Validate: {0}'.format(self.FullPath))
+        valid, reason = super(TransformNode, self).IsValid()
         if valid and not self.Locked:
-            [valid, reason] = InputTransformHandler.InputTransformIsValid(self)
+            valid, reason = InputTransformHandler.InputTransformIsValid(self)
 
         # We can delete a locked transform if it does not exist on disk
         if not valid and not os.path.exists(self.FullPath):
             self.Locked = False
+            return False, "Transform does not exist on disk"
 
         valid = valid or self.Locked
 

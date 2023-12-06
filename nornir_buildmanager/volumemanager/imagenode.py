@@ -24,13 +24,20 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
         return ImageNode(tag='Image', Path=Path, attrib=attrib, **extra)
 
     def IsValid(self) -> (bool, str):
-        if not os.path.exists(self.FullPath):
-            return False, 'File does not exist'
+        if self.NeedsValidation:
+            try:
+                if self.Checksum != nornir_shared.checksum.FilesizeChecksum(self.FullPath):
+                    return False, "Checksum mismatch"
+                else:
+                    self.UpdateValidationTime() # Record the last time we checked the file
+            except FileNotFoundError:
+                return False, f"File not found {self.FullPath}"
 
-        if self.Checksum != nornir_shared.checksum.FilesizeChecksum(self.FullPath):
-            return False, "Checksum mismatch"
-
-        return super(ImageNode, self).IsValid()
+        valid, reason = super(ImageNode, self).IsValid()
+        if valid:
+            return self.InputTransformIsValid()
+        else:
+            return valid, reason
 
     @property
     def Checksum(self) -> str:

@@ -29,7 +29,7 @@ def SetElementParent(Element: XElementWrapper, ParentElement: XElementWrapper = 
     return
 
 
-def WrapElement(e) -> XElementWrapper:
+def WrapElement(e) -> tuple[bool, XElementWrapper]:
     """
     Returns a new class that represents the passed XML element
     :param ElementTree.Element e: Element to be represented by a class

@@ -12,6 +12,16 @@ from nornir_buildmanager.volumemanager import ValidateAttributesAreStrings, Wrap
 from nornir_shared import prettyoutput as prettyoutput
 
 
+class DuplicateElementError(Exception):
+
+    def __init__(self, element: XContainerElementWrapper, message):
+        self.element = element
+        super().__init__(message)
+
+    def __str__(self):
+        return f"{super().__str__()}\nat {self.element.FullPath}\n"
+
+
 class XContainerElementWrapper(XResourceElementWrapper):
     """XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid"""
     
@@ -81,10 +91,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
                             break
 
                 if not files_found:
-                    return False, 'Directory is empty: {0}' % ResourcePath
+                    return False, f'Directory is empty: {ResourcePath}'
 
             except FileNotFoundError:
-                return False, '{0} does not exist' % ResourcePath
+                return False, f'{ResourcePath} does not exist'
 
         elif not os.path.isdir(ResourcePath):
             return False, 'Directory does not exist'
@@ -105,35 +115,34 @@ class XContainerElementWrapper(XResourceElementWrapper):
         with os.scandir(self.FullPath) as pathscan:
             for path in filter(lambda p: p.is_dir() and p.name[0] != '.', pathscan):
 
-                possible_meta_data_path = os.path.join(path, 'VolumeData.XML')
-
-                if not os.path.exists(possible_meta_data_path):
-                    continue
+                #possible_meta_data_path = os.path.join(path, 'VolumeData.XML')
 
                 # prettyoutput.Log("Found potential linked element: {0}".format(item.path))
 
-                dirname = os.path.dirname(possible_meta_data_path)
+                dirname = path.path
 
-                expected_path = os.path.basename(dirname)
+                #expected_path = path.name
 
                 # Check to be sure that this is a new node
-                existingChild = self.find("*[@Path='{0}']".format(expected_path))
+                try:
+                    existingChild = self.find(f"*[@Path='{path.name}']")
+                except nornir_buildmanager.volumemanager.DuplicateElementError as e:
+                    continue
 
                 if existingChild is not None:
                     continue
 
-                prettyoutput.Log("Found missing linked container {0}".format(dirname))
-
-                # Load the VolumeData.xml, take the root element name and create a link in our element
+                 # Load the VolumeData.xml, take the root element name and create a link in our element
                 try:
                     loadedElement = self._load_wrap_setparent_link_element(dirname)
                     if loadedElement is not None:
                         self.append(loadedElement)
                         #prettyoutput.Log("\tAdded: {0}".format(loadedElement))
                         self.ChildrenChanged = True
+                        prettyoutput.Log(f"Found missing linked container {dirname}")
                 except FileNotFoundError:
                     prettyoutput.Log("Could not open {0}".format(dirname))
-                    pass
+                    continue
 
             if recurse:
                 for child in self:
@@ -293,6 +302,15 @@ class XContainerElementWrapper(XResourceElementWrapper):
         # else:
         # self.attrib['Path'] = Path
 
+    @staticmethod
+    def RaiseOnDuplicateLink(child: XElementWrapper, SaveElement: XElementWrapper):
+        link_tag = f'{child.tag}_Link'
+        find_str = f"{link_tag}[@Path='{child.Path}']"
+        existingNode = SaveElement.find(find_str)
+        if existingNode is not None:
+            raise DuplicateElementError(SaveElement,
+                                        f"Found duplicate element when saving {ElementTree.tostring(SaveElement, encoding='utf-8')}\nDuplicate: {ElementTree.tostring(existingNode, encoding='utf-8')}")
+
     def Save(self, tabLevel: int | None = None, recurse: bool = True):
         """
         Public version of Save, if this element is not flagged SaveAsLinkedElement
@@ -371,15 +389,11 @@ class XContainerElementWrapper(XResourceElementWrapper):
                         child._Save(tabLevel + 1)
     
                     if child.SaveAsLinkedElement:
-                        linktag = child.tag + '_Link'
+                        linktag = f'{child.tag}_Link'
     
                         # Sanity check to prevent duplicate link bugs
                         if __debug__:
-                            existingNode = SaveElement.find(linktag + "[@Path='{0}']".format(child.Path))
-                            if existingNode is not None:
-                                raise AssertionError("Found duplicate element when saving {0}\nDuplicate: {1}".format(
-                                    ElementTree.tostring(SaveElement, encoding="utf-8"),
-                                    ElementTree.tostring(existingNode, encoding="utf-8")))
+                            self.RaiseOnDuplicateLink(child, SaveElement)
     
                         LinkElement = XElementWrapper(linktag, attrib=child.attrib)
                         # SaveElement.append(LinkElement)

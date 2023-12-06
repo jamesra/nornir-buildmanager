@@ -96,18 +96,22 @@ class XResourceElementWrapper(lockable.Lockable,
         Sets ValidationTime to the LastModified time on the file or directory
         """
 
-        self.ValidationTime = self.LastFileSystemModificationTime
+        try:
+            self.ValidationTime = self.LastFileSystemModificationTime
+        except FileNotFoundError:
+            self.ValidationTime = None #No validation time if we cannot find the file/directory
 
     @property
     def ChangesSinceLastValidation(self) -> bool | None:
         """
         :return: True if the modification time on the directory is later than our last validation time, or None if the path doesn't exist
         """
-        dir_mod_time = self.LastFileSystemModificationTime
-        if dir_mod_time is None:
-            return None
+        try:
+            dir_mod_time = self.LastFileSystemModificationTime
+            return self.ValidationTime < dir_mod_time
+        except FileNotFoundError: # If the file or directory is missing that is a change :-)
+            return True
 
-        return self.ValidationTime < dir_mod_time
 
     @property
     def LastFileSystemModificationTime(self) -> datetime.datetime | None:
@@ -122,7 +126,7 @@ class XResourceElementWrapper(lockable.Lockable,
             level_last_filesystem_modification = datetime.datetime.utcfromtimestamp(level_stats.st_mtime)
             return level_last_filesystem_modification
         except FileNotFoundError:
-            return None
+            raise
 
     @property
     def NeedsValidation(self) -> bool:
@@ -133,11 +137,15 @@ class XResourceElementWrapper(lockable.Lockable,
                     "Container elements ({0}) that save as links must not use directory modification time to check for changes because the meta-data saves in the same directory".format(
                         self.tag))
 
+        return self.FileSystemModifiedSinceLastValidation
+
+    @property
+    def FileSystemModifiedSinceLastValidation(self) -> bool:
         changes = self.ChangesSinceLastValidation
         if changes is None:
             return True
-
-        return changes
+        else:
+            return changes
 
     def ToElementString(self) -> str:
         outStr = self.FullPath

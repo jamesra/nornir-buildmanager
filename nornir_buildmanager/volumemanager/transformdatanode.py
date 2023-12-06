@@ -15,9 +15,17 @@ class TransformDataNode(InputTransformHandler, XFileElementWrapper):
         return cls(tag='TransformData', Path=Path, attrib=attrib, **extra)
 
     def IsValid(self) -> (bool, str):
-        if not os.path.exists(self.FullPath):
-            return [False, 'File does not exist']
 
+        '''Checking the last modified time also checks if the file exists, so we just check file existence'''
+        if not os.path.exists(self.FullPath):
+            return False, 'File does not exist'
+        #if self.FileSystemModifiedSinceLastValidation:
+        #    if not os.path.exists(self.FullPath):
+        #        return False, 'File does not exist'
+
+        #    self.UpdateValidationTime() # Record the last time we checked the file
+
+        #Always check input transform, since changes to inputs not reflected in the file system changes
         (valid, reason) = self.InputTransformIsValid()
         if not valid:
             return valid, reason

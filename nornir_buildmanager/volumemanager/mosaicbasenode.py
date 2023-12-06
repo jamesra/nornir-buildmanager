@@ -65,9 +65,9 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
             "Checksums for mosaic elements will not be directly settable soon.  Use ResetChecksum instead")
 
     def IsValid(self) -> (bool, str):
-        result = super(MosaicBaseNode, self).IsValid()
+        valid, reason = super(MosaicBaseNode, self).IsValid()
 
-        if result[0]:
+        if valid and self.FileSystemModifiedSinceLastValidation:
             knownChecksum = self.attrib.get('Checksum', None)
             if knownChecksum is not None:
                 try:
@@ -75,10 +75,12 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
     
                     if not knownChecksum == fileChecksum:
                         return False, "File checksum does not match meta-data"
+
+                    self.UpdateValidationTime() # Record the last time we checked the file
                 except FileNotFoundError:
                     return False, f"File not found {self.FullPath}"
 
-        return result
+        return valid, reason
 
     @classmethod
     def Create(cls, tag, Name, Type, Path=None, attrib=None, **extra):
