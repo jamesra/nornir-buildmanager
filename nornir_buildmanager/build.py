@@ -22,7 +22,7 @@ import nornir_imageregistration
 
 # Nornir build must use a backend that does not allocate windows in the GUI should be used.
 # Otherwise bugs will appear in multi-threaded environments
-if not 'DEBUG' in os.environ:
+if 'DEBUG' not in os.environ:
     matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt

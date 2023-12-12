@@ -308,7 +308,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         find_str = f"{link_tag}[@Path='{child.Path}']"
         existingNode = SaveElement.find(find_str)
         if existingNode is not None:
-            raise DuplicateElementError(SaveElement,
+            raise DuplicateElementError(child,
                                         f"Found duplicate element when saving {ElementTree.tostring(SaveElement, encoding='utf-8')}\nDuplicate: {ElementTree.tostring(existingNode, encoding='utf-8')}")
 
     def Save(self, tabLevel: int | None = None, recurse: bool = True):
@@ -392,12 +392,17 @@ class XContainerElementWrapper(XResourceElementWrapper):
                         linktag = f'{child.tag}_Link'
     
                         # Sanity check to prevent duplicate link bugs
-                        if __debug__:
-                            self.RaiseOnDuplicateLink(child, SaveElement)
+                        try:
+                            if __debug__:
+                                self.RaiseOnDuplicateLink(child, SaveElement)
     
-                        LinkElement = XElementWrapper(linktag, attrib=child.attrib)
-                        # SaveElement.append(LinkElement)
-                        SaveElement.append(LinkElement)
+                            LinkElement = XElementWrapper(linktag, attrib=child.attrib)
+                            # SaveElement.append(LinkElement)
+                            SaveElement.append(LinkElement)
+                        except DuplicateElementError:
+                            self.logger.error(f"Duplicate link element found when saving {self.FullPath}:\n{SaveElement}")
+                            continue
+
                     else:
                         SaveElement.append(child)
     
