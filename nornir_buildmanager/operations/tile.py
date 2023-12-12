@@ -69,7 +69,7 @@ def EstimateMaxTempImageArea() -> int:
         num_duplicate_copies_in_memory = int(3)
         # At most we need the raw tile (and distance image), the assembled individual tile (and distance image), and the full composite image (and distance image) we are building
         safety_factor = int(2)
-        estimated_max_temp_image_area = (memory_data.available / (
+        estimated_max_temp_image_area = int(memory_data.available / (
                 bytes_per_pixel * num_images_per_tile * num_duplicate_copies_in_memory * safety_factor))
         prettyoutput.Log("Maximum per-core temporary image size calculated a {0:g}MB limit.".format(
             float(estimated_max_temp_image_area) / float(1 << 20)))
@@ -112,20 +112,26 @@ def VerifyTiles(level_node: LevelNode | None = None, **kwargs) -> tuple[bool, li
 
     """
     logger = logging.getLogger(__name__ + '.VerifyTiles')
+ 
+    if level_node is None:
+        logger.info('No level node provided, skipping validation')
+        return False, []
+    
+    input_pyramid_node = level_node.FindParent('TilePyramid')
+    if input_pyramid_node is None:
+        logger.info('No pyramid node provided, skipping validation')
+        return False, []
+    TileExt = input_pyramid_node.attrib.get('ImageFormatExt', '.png')
 
-    InputLevelNode = level_node
-    InputPyramidNode = InputLevelNode.FindParent('TilePyramid')
-    TileExt = InputPyramidNode.attrib.get('ImageFormatExt', '.png')
-
-    TileImageDir = InputLevelNode.FullPath
+    TileImageDir = level_node.FullPath
     level_image_files = glob.glob(os.path.join(TileImageDir, '*' + TileExt))
 
     if len(level_image_files) == 0:
-        InputLevelNode.TilesValidated = 0
+        level_node.TilesValidated = False
         try:
-            InputLevelNode.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(level_node.FullPath).st_mtime)
+            level_node.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(level_node.FullPath).st_mtime)
         except FileNotFoundError:
-            InputLevelNode.ValidationTime = None
+            level_node.ValidationTime = None
 
         logger.info('No tiles found in level {0}'.format(level_node.FullPath))
         return False, []
@@ -150,11 +156,11 @@ def VerifyTiles(level_node: LevelNode | None = None, **kwargs) -> tuple[bool, li
 
     # We can't just save the directory modified time because it will change when the VolumeData.xml is saved
 
-    InputLevelNode.ValidationTime = level_node.LastFileSystemModificationTime
-    InputLevelNode.TilesValidated = len(level_image_files) - len(InvalidTiles)
+    level_node.ValidationTime = level_node.LastFileSystemModificationTime
+    level_node.TilesValidated = len(level_image_files) - len(InvalidTiles)
 
-    if InputLevelNode.ElementHasChangesToSave:
-        InputLevelNode.Save()
+    if level_node.ElementHasChangesToSave:
+        level_node.Save()
 
     return True, InvalidTiles
 
@@ -163,9 +169,12 @@ def FilterIsPopulated(InputFilterNode: FilterNode, Downsample: int, MosaicFullPa
     """
     :return: True if the filter has all the tiles the mosaic file indicates it should have at the provided downsample level
     """
-    channel_node = InputFilterNode.Parent
-    InputPyramidNode = InputFilterNode.find('TilePyramid')
-    InputLevelNode = InputPyramidNode.GetLevel(Downsample)
+    channel_node = InputFilterNode.Parent # type: ChannelNode # type: ignore
+    input_pyramid_node = InputFilterNode.TilePyramid
+    if input_pyramid_node is None:
+        return False
+    
+    InputLevelNode = input_pyramid_node.GetLevel(Downsample)
     OutputFilterNode = channel_node.GetFilter(OutputFilterName)
     if OutputFilterNode is None:
         return False
@@ -191,7 +200,7 @@ def FilterIsPopulated(InputFilterNode: FilterNode, Downsample: int, MosaicFullPa
     #    return False
 
     # Find out if the number of predicted images matches the number of actual images
-    ImageFiles = glob.iglob(OutputLevelNode.FullPath + os.sep + '*' + InputPyramidNode.ImageFormatExt)
+    ImageFiles = glob.iglob(OutputLevelNode.FullPath + os.sep + '*' + input_pyramid_node.ImageFormatExt)
     fileSystemImageFiles = frozenset(map(os.path.basename, ImageFiles))
     transformImageFiles = frozenset(mFile.ImageToTransformString.keys())
 

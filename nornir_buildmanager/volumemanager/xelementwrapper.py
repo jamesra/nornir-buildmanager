@@ -373,7 +373,7 @@ class XElementWrapper(ElementTree.Element):
         return cpy
 
     @classmethod
-    def __CreateFromElement(cls, dictElement: dict):
+    def __CreateFromElement(cls, dictElement: ElementTree.Element):
         """Create an instance of this class using an ElementTree.Element.
            Override to customize the creation of derived classes"""
 

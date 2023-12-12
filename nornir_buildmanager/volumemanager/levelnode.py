@@ -84,8 +84,9 @@ class LevelNode(volumemanager.XContainerElementWrapper):
             self.attrib['GridDimY'] = '%d' % int(val)
 
     @property
-    def TilesValidated(self) -> bool | None:
+    def TilesValidated(self) -> int | None:
         """
+        The number of tiles that have been validated
         :return: Returns None if the attribute has not been set, otherwise an integer
         """
         val = self.attrib.get('TilesValidated', None)
@@ -95,7 +96,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
         return val
 
     @TilesValidated.setter
-    def TilesValidated(self, val: bool | None):
+    def TilesValidated(self, val: int | None):
         if val is None:
             if 'TilesValidated' in self.attrib:
                 del self.attrib['TilesValidated']

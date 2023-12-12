@@ -180,7 +180,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         super(TilePyramidNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, NumberOfTiles=0, LevelFormat=None, ImageFormatExt=None, attrib=None, **extra) -> TilePyramidNode:
+    def Create(cls, NumberOfTiles: int = 0, LevelFormat: str | None = None, ImageFormatExt: str | None = None, attrib=None, **extra) -> TilePyramidNode:
         if LevelFormat is None:
             LevelFormat = nornir_buildmanager.templates.Current.LevelFormat
 

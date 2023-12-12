@@ -18,7 +18,7 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
     @property
     def Scale(self) -> Scale | None:
         """Returns the scale if it is specified in a parent Channel Node"""
-        channelNode = self.FindParent('Channel')
+        channelNode = self.FindParent('Channel') # type: ChannelNode # type: ignore
         if channelNode is None:
             return None
 
@@ -54,10 +54,10 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         else:
             self.attrib['BitsPerPixel'] = '%d' % val
 
-    def GetOrCreateTilePyramid(self) -> (bool, TilePyramidNode):
+    def GetOrCreateTilePyramid(self) -> tuple[bool, TilePyramidNode]:
         # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
         # There should be only one Imageset, so use find
-        pyramid = self.find('TilePyramid')
+        pyramid = self.find('TilePyramid') # type: TilePyramidNode # type: ignore
         if pyramid is None:
             pyramid = TilePyramidNode.Create(NumberOfTiles=0)
             self.append(pyramid)
@@ -69,7 +69,7 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
     def TilePyramid(self) -> TilePyramidNode:
         # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
         # There should be only one Imageset, so use find
-        pyramid = self.find('TilePyramid')
+        pyramid = self.find('TilePyramid') # type: TilePyramidNode | None # type: ignore
         if pyramid is None:
             pyramid = TilePyramidNode.Create(NumberOfTiles=0)
             self.append(pyramid)
@@ -78,22 +78,22 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
 
     @property
     def HasTilePyramid(self) -> bool:
-        return not self.find('TilePyramid') is None
+        return self.find('TilePyramid') is not None
 
     @property
     def HasImageset(self) -> bool:
-        return not self.find('ImageSet') is None
+        return self.find('ImageSet') is not None
 
     @property
     def HasTileset(self) -> bool:
-        return not self.find('Tileset') is None
+        return self.find('Tileset') is not None
 
     @property
     def Tileset(self) -> TilesetNode | None:
         """Get the tileset for the filter, create if missing"""
         # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
         # There should be only one Imageset, so use find
-        tileset = self.find('Tileset')
+        tileset = self.find('Tileset')  # type: TilesetNode | None # type: ignore
         return tileset
 
     @property
@@ -101,7 +101,7 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         """Get the imageset for the filter, create if missing"""
         # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
         # There should be only one Imageset, so use find
-        imageset = self.find('ImageSet')
+        imageset = self.find('ImageSet')  # type: ImageSetNode | None # type: ignore
         if imageset is None:
             imageset = ImageSetNode.Create()
             self.append(imageset)
@@ -150,7 +150,7 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         """
         return not self.GetMaskFilter() is None
 
-    def GetMaskFilter(self, MaskName: str = None) -> FilterNode | None:
+    def GetMaskFilter(self, MaskName: str | None = None) -> FilterNode | None:
         if MaskName is None:
             MaskName = self.MaskName
 
@@ -161,7 +161,7 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
 
         return self.Parent.GetFilter(MaskName)
 
-    def GetOrCreateMaskFilter(self, MaskName: str = None) -> FilterNode:
+    def GetOrCreateMaskFilter(self, MaskName: str | None = None) -> FilterNode:
         if MaskName is None:
             MaskName = self.GetOrCreateMaskName()
 

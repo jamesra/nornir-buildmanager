@@ -215,17 +215,19 @@ HTMLAnchorTemplate = '<a href="%(href)s">%(body)s</a>'
 TempFileSalt = 0
 
 
-def GetTempFileSaltString(node=None) -> str:
+def GetTempFileSaltString(node: nornir_buildmanager.volumemanager.XElementWrapper | None = None) -> str:
     saltString = None
 
     if isinstance(node, nornir_buildmanager.volumemanager.XElementWrapper):
-        b_node = node.FindParent('Block')
-        s_node = node.FindParent('Section')
-        c_node = node.FindParent('Channel')
-        f_node = node.FindParent('Filter')
+        b_node = node.FindParent('Block') # type: nornir_buildmanager.volumemanager.BlockNode | None # type: ignore
+        s_node = node.FindParent('Section') # type: nornir_buildmanager.volumemanager.SectionNode | None # type: ignore
+        c_node = node.FindParent('Channel') # type: nornir_buildmanager.volumemanager.ChannelNode | None  # type: ignore
+        f_node = node.FindParent('Filter') # type: nornir_buildmanager.volumemanager.FilterNode | None # type: ignore
 
         if b_node is not None:
             saltString = b_node.Name
+        else:
+            saltString = ""
         if s_node is not None:
             saltString += f"_{s_node.Number}"
         if c_node is not None:
@@ -245,6 +247,8 @@ def GetTempFileSaltString(node=None) -> str:
         TempFileSalt += 1
 
         return saltString
+    
+    return saltString
 
 
 def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
@@ -805,7 +809,7 @@ def AddImageToTable(TableEntries, htmlPaths, DriftSettleThumbnailFilename):
     DriftSettleThumbnailOutputFullPath = os.path.join(htmlPaths.ThumbnailDir, DriftSettleThumbnailFilename)
 
 
-def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None):
+def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth: int, MaxImageHeight: int):
     '''Scale an image to be smaller than the maximum dimensions.  Vector based images such as SVG will not be scaled
     :return: (Image_source_path, Width, Height) Image source path may refer to a copy or the original.
     '''
@@ -913,7 +917,7 @@ def ImgTagFromImageSetNode(Imageset, HtmlPaths, MaxImageWidth=None, MaxImageHeig
                                MaxImageHeight=MaxImageHeight, Logger=Logger, **kwargs)
 
 
-def ImgTagFromImageNode(ImageNode, HtmlPaths, AnchorHREF=None, MaxImageWidth=None, MaxImageHeight=None, Logger=None,
+def ImgTagFromImageNode(ImageNode, HtmlPaths, AnchorHREF=None, MaxImageWidth: int | None = None, MaxImageHeight: int | None = None, Logger=None,
                         **kwargs):
     '''Create the HTML to display an image with an anchor to the full image.
        If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute'''
@@ -952,7 +956,7 @@ def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
     return '<a href="%s">%s</a>' % (HtmlPaths.GetSubNodeFullPath(ColSubElement), ColSubElement.Name)
 
 
-def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Logger=None, **kwargs):
+def RowReport(RowElement, HTMLPaths, RowLabelAttrib: str | None = None, ColumnXPaths=None, Logger=None, **kwargs):
     '''Create HTML to describe an element'''
     if Logger is None:
         Logger = logging.getLogger(__name__ + ".RowReport")
@@ -968,8 +972,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib=None, ColumnXPaths=None, Log
 
     if hasattr(RowElement, RowLabelAttrib):
         RowLabel = str(getattr(RowElement, RowLabelAttrib))
-
-    if RowLabel is None:
+    else:
         RowLabel = str(RowElement)
 
     # OK, build the columns
@@ -1096,8 +1099,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
         NumRows += 1
         if hasattr(RowElement, RowLabelAttrib):
             RowLabel = getattr(RowElement, RowLabelAttrib)
-
-        if RowLabel is None:
+        else:
             RowLabel = RowElement
 
         # task = pool.add_task(RowLabel, RowReport, RowElement, RowLabelAttrib=RowLabelAttrib, ColumnXPaths=ColumnXPaths, HTMLPaths=Paths, Logger=Logger, **kwargs)
