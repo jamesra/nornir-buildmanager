@@ -1,4 +1,5 @@
 from __future__ import annotations
+from msilib.schema import File
 
 import os
 
@@ -40,13 +41,18 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
             return valid, reason
 
     @property
-    def Checksum(self) -> str:
+    def Checksum(self) -> str | None:
         checksum = self.get('Checksum', None)
         if checksum is None:
-            checksum = nornir_shared.checksum.FilesizeChecksum(self.FullPath)
-            self.attrib['Checksum'] = str(checksum)
-            self._AttributesChanged = True
-
+            try:
+                checksum = nornir_shared.checksum.FilesizeChecksum(self.FullPath)
+                self.attrib['Checksum'] = str(checksum)
+                self._AttributesChanged = True
+            except FileNotFoundError:
+                self.logger.debug(f'{self.FullPath} not found to calculate checksum}')
+                # Reasonable to assume we have no checksum because the file does not exist
+                return None
+            
         return checksum
 
     @property
