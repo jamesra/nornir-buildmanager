@@ -1,7 +1,10 @@
+import logging
 import math
 import os
 import shutil
 import subprocess
+
+from numpy.typing import NDArray
 
 import nornir_buildmanager
 import nornir_shared
@@ -25,37 +28,42 @@ def RemoveTilePyramidIfOutdated(input_filter: nornir_buildmanager.volumemanager.
     return False
 
 
-def AssembleTilesetFromImageSet(Parameters, image_set_node: nornir_buildmanager.volumemanager.ImageSetNode,
-                                TileShape=None, Logger=None, **kwargs):
+def AssembleTilesetFromImageSet(Parameters,
+                                image_set_node: nornir_buildmanager.volumemanager.ImageSetNode,
+                                TileShape: list[int] | NDArray,
+                                Logger: logging.Logger,
+                                **kwargs):
     '''Create full resolution tiles of specfied size for the mosaics'''
     prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")
 
     TileWidth = TileShape[0]
     TileHeight = TileShape[1]
 
-    filter_node = image_set_node.FindParent('Filter')
+    filter_node = image_set_node.FindParent('Filter') # type: nornir_buildmanager.volumemanager.FilterNode | None # type: ignore
+    if filter_node is None:
+        Logger.warning(f"No filter found for AssembleTilesetFromImageSet, {image_set_node.FullPath}")
+        return
 
-    input_level_node = image_set_node.MaxResLevel
+    input_level_node = image_set_node.MaxResLevel # type: nornir_buildmanager.volumemanager.LevelNode | None
     if input_level_node is None:
         Logger.warning("No input image level found for AssembleTilesetFromImageSet")
         return
 
     # Remove our tileset if our image is newer than the tileset
-    image_node = image_set_node.GetImage(input_level_node.Downsample)
+    image_node = image_set_node.GetImage(input_level_node.Downsample) # type: nornir_buildmanager.volumemanager.ImageNode | None   
     if image_node is None:
         Logger.warning("No input image found for AssembleTilesetFromImageSet")
         return
 
-    if filter_node.HasTileset:
-        tile_set_node = filter_node.Tileset
+    tile_set_node = filter_node.Tileset if filter_node.HasTileset else None # type: nornir_buildmanager.volumemanager.TilesetNode | None # type: ignore
 
     #         if files.IsOutdated(ImageNode.FullPath, TileSetNode.Levels[0].FullPath):
     #             TileSetNode.Clean("Input image was newer than tileset")
     #         else:
     #             return
 
-    if not filter_node.HasTileset:
-        tile_set_node = nornir_buildmanager.volumemanager.TilesetNode.Create()
+    if tile_set_node is None:
+        tile_set_node = nornir_buildmanager.volumemanager.TilesetNode.Create() # type: nornir_buildmanager.volumemanager.TilesetNode
         [added, tile_set_node] = filter_node.UpdateOrAddChildByAttrib(tile_set_node, 'Path')
 
         tile_set_node.TileXDim = TileWidth
@@ -88,7 +96,7 @@ def AssembleTilesetFromImageSet(Parameters, image_set_node: nornir_buildmanager.
         prettyoutput.CurseString('Cmd', cmd)
         subprocess.call(cmd + ' && exit', shell=True)
 
-        FilePostfix = ''
+        # FilePostfix = ''
 
         GridDimY = int(math.ceil(YDim / float(TileHeight)))
         GridDimX = int(math.ceil(XDim / float(TileWidth)))

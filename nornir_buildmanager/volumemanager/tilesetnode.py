@@ -61,7 +61,7 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
         self.attrib['TileYDim'] = '%d' % int(val)
 
     @classmethod
-    def Create(cls, attrib: dict = None, **extra) -> TilesetNode:
+    def Create(cls, attrib: dict | None = None, **extra) -> TilesetNode:
         return cls(tag='Tileset',
                    attrib=attrib,
                    **extra)
