@@ -19,7 +19,7 @@ class DuplicateElementError(Exception):
         super().__init__(message)
 
     def __str__(self):
-        return f"{super().__str__()}\nat {self.element.FullPath}\n"
+        return f"{self.element.FullPath} had a duplicate element\n"
 
 
 class XContainerElementWrapper(XResourceElementWrapper):
@@ -444,6 +444,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     def __SaveXML(self, xmlfilename: str, SaveElement: bool):
         """Intended to be called on a thread from the save function"""
+        self.logger.info(f'Writing {xmlfilename}')
         try:
             OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         except Exception as e:

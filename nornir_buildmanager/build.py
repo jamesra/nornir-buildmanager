@@ -299,9 +299,9 @@ def Execute(buildArgs=None):
         lowpriority()
         print("Warning, using low priority flag.  This can make builds much slower")
 
-    init_computational_library(args)
+    #init_computational_library(args)
 
-    print(f"Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}")
+    #print(f"Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}")
 
     # SetupLogging(OutputPath=args.volumepath)
     cmd_name = None
