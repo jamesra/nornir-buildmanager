@@ -1,5 +1,5 @@
 from __future__ import annotations
-from msilib.schema import File
+# from msilib.schema import File
 
 import os
 
