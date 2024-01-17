@@ -49,7 +49,7 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
                 self.attrib['Checksum'] = str(checksum)
                 self._AttributesChanged = True
             except FileNotFoundError:
-                self.logger.debug(f'{self.FullPath} not found to calculate checksum}')
+                self.logger.debug(f'{self.FullPath} not found to calculate checksum')
                 # Reasonable to assume we have no checksum because the file does not exist
                 return None
             
