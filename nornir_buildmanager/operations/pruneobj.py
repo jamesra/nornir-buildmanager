@@ -38,14 +38,14 @@ class PruneObj:
             self.MapImageToScore = MapToImageScore
 
     @classmethod
-    def _GetThreshold(cls, PruneNode, ThresholdParameter):
+    def _GetThreshold(cls, PruneNode: nornir_buildmanager.volumemanager.PruneNode, ThresholdParameter) -> float:
         '''Return the threshold value that should be used.
            If a UserRequestedCutoff is specified use that.
            If a Threshold is passed only use if no UserRequstedValue exists
            '''
 
         Threshold = None
-        if not PruneNode.UserRequestedCutoff is None:
+        if PruneNode.UserRequestedCutoff is not None:
             Threshold = PruneNode.UserRequestedCutoff
         else:
             Threshold = ThresholdParameter
@@ -76,7 +76,7 @@ class PruneObj:
             Logger = logging.getLogger(__name__ + '.PruneMosaic')
 
         Threshold = cls._GetThreshold(PruneNode, Parameters.get('Threshold', None))
-        if not Threshold is None:
+        if Threshold is not None:
             Threshold = TransformNode.round_precision_value(Threshold)  # round(Threshold, threshold_precision)
             Parameters['Threshold'] = Threshold  # Update the Parameters so the Mangled name is correct
 
@@ -113,7 +113,7 @@ class PruneObj:
         OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(channel_node=TransformParent,
                                                                                        InputTransformNode=InputTransformNode,
                                                                                        OutputTransformPath=OutputMosaicName)
-        if not OutputTransformNode is None:
+        if OutputTransformNode is not None:
             if OutputTransformNode.Locked:
                 Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
                 return None

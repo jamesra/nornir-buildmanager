@@ -381,7 +381,7 @@ def CorrectTiles(Parameters, CorrectionType: str, filter_node: FilterNode, Outpu
         correctionType = tiles.ShadeCorrectionTypes.DARKFIELD
 
     assert (filter_node is not None)
-    InputPyramidNode = filter_node.find('TilePyramid')
+    InputPyramidNode = filter_node.find('TilePyramid') # type: TilePyramidNode # type: ignore
     assert (InputPyramidNode is not None)
 
     InputLevelNode = InputPyramidNode.MaxResLevel

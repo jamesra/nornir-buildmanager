@@ -1,5 +1,4 @@
-from __future__ import annotations
-from msilib.schema import File
+from __future__ import annotations 
 
 import os
 
@@ -49,7 +48,7 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
                 self.attrib['Checksum'] = str(checksum)
                 self._AttributesChanged = True
             except FileNotFoundError:
-                self.logger.debug(f'{self.FullPath} not found to calculate checksum}')
+                self.logger.debug(f'{self.FullPath} not found to calculate checksum')
                 # Reasonable to assume we have no checksum because the file does not exist
                 return None
             
@@ -77,7 +76,7 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
         return dims
 
     @Dimensions.setter
-    def Dimensions(self, dims: NDArray[int] | tuple[int, int] | None):
+    def Dimensions(self, dims: NDArray[np.integer] | tuple[int, int] | None):
         """
         :param tuple dims: (height, width) or None
         """

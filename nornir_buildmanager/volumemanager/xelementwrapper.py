@@ -563,21 +563,26 @@ class XElementWrapper(ElementTree.Element):
                     else:
                         self.remove(Child)
 
-    def GetChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue) -> Generator[XElementWrapper]:
-        XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
-                                                                           'AttribName': AttribName,
-                                                                           'AttribValue': AttribValue}
-        return self.findall(XPathStr)
-
-    def GetChildByAttrib(self, ElementName: str, AttribName: str, AttribValue) -> XElementWrapper | None:
-
+    def GetChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue: float | str) -> Generator[XElementWrapper]:
         if isinstance(AttribValue, float):
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName,
-                                                                               'AttribName': AttribName,
+                                                                                'AttribName': AttribName,
                                                                                'AttribValue': AttribValue}
         else:
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
-                                                                               'AttribName': AttribName,
+                                                                                'AttribName': AttribName,
+                                                                               'AttribValue': AttribValue}
+        return self.findall(XPathStr)
+
+    def GetChildByAttrib(self, ElementName: str, AttribName: str, AttribValue: float | str) -> XElementWrapper | None:
+
+        if isinstance(AttribValue, float):
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName,
+                                                                                'AttribName': AttribName,
+                                                                               'AttribValue': AttribValue}
+        else:
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
+                                                                                'AttribName': AttribName,
                                                                                'AttribValue': AttribValue}
 
         assert (len(XPathStr) > 0)

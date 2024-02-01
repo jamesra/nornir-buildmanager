@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator, Iterable
+from typing import Sequence
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
@@ -43,7 +44,7 @@ class BlockNode(XNamedContainerElementWrapped):
         else:
             return False, section_obj
 
-    def GetStosGroup(self, group_name: str, downsample) -> StosGroupNode | None:
+    def GetStosGroup(self, group_name: str, downsample: float) -> StosGroupNode | None:
         stos_group: StosGroupNode
         for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):
             if stos_group.Downsample == downsample:
@@ -51,7 +52,7 @@ class BlockNode(XNamedContainerElementWrapped):
 
         return None
 
-    def GetOrCreateStosGroup(self, group_name: str, downsample) -> (bool, StosGroupNode):
+    def GetOrCreateStosGroup(self, group_name: str, downsample: float) -> (bool, StosGroupNode):
         """:Return: Tuple of (created, stos_group)"""
 
         existing_stos_group = self.GetStosGroup(group_name, downsample)
@@ -63,7 +64,7 @@ class BlockNode(XNamedContainerElementWrapped):
 
         return True, OutputStosGroupNode
 
-    def GetStosMap(self, map_name) -> StosMapNode:
+    def GetStosMap(self, map_name: str) -> StosMapNode:
         return self.GetChildByAttrib('StosMap', 'Name', map_name)  # type: StosMapNode
 
     def GetOrCreateStosMap(self, map_name) -> StosMapNode:
@@ -75,7 +76,7 @@ class BlockNode(XNamedContainerElementWrapped):
         else:
             return stos_map_node
 
-    def RemoveStosMap(self, map_name) -> bool:
+    def RemoveStosMap(self, map_name: str) -> bool:
         """:return: True if a map was found and removed"""
         stos_map_node = self.GetStosMap(map_name)
         if stos_map_node is not None:
@@ -84,7 +85,7 @@ class BlockNode(XNamedContainerElementWrapped):
 
         return False
 
-    def RemoveStosGroup(self, group_name, downsample) -> bool:
+    def RemoveStosGroup(self, group_name: str, downsample: float) -> bool:
         """:return: True if a StosGroup was found and removed"""
         existing_stos_group = self.GetStosGroup(group_name, downsample)
         if existing_stos_group is not None:
@@ -93,14 +94,14 @@ class BlockNode(XNamedContainerElementWrapped):
 
         return False
 
-    def MarkSectionsAsDamaged(self, section_number_list):
+    def MarkSectionsAsDamaged(self, section_number_list: Sequence[int]):
         """Add the sections in the list to the NonStosSectionNumbers"""
         if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
             section_number_list = frozenset(section_number_list)
 
         self.NonStosSectionNumbers = frozenset(section_number_list.union(self.NonStosSectionNumbers))
 
-    def MarkSectionsAsUndamaged(self, section_number_list):
+    def MarkSectionsAsUndamaged(self, section_number_list: Sequence[int]):
         if not isinstance(section_number_list, set) or isinstance(section_number_list, frozenset):
             section_number_list = frozenset(section_number_list)
 
