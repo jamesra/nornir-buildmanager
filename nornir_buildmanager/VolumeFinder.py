@@ -255,7 +255,7 @@ def EmailIndex(path=None, subject=None, **kwargs):
 
     kwargs['message'] = message
 
-    nornir_shared.emaillib.SendMail(**kwargs)
+    #nornir_shared.emaillib.SendMail(**kwargs)
 
 
 #            if     then write HTML
