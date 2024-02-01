@@ -107,8 +107,8 @@
                       type="str"
                       help="Regular expression describing channels to include, * processes all channels"
                       required="False"/>
-            <Argument flag="-Threshold" dest="PruneThreshold" default="0"
-                      type="float" help="Texture complexity threshold" required="True"/>
+            <Argument flag="-DefaultThreshold" dest="DefaultPruneThreshold"
+                      type="float" help="Texture complexity threshold, this value is used if not user defined value is set and no previous prune operation has been run.  To change this value for an already built section, use SetPruneCutoff" required="True"/>
             <Argument flag="-InputFilter" dest="InputFilter" default="Raw8"
                       help="Filter to calculate complexity upon" required="False"/>
             <Argument flag="-Downsample" dest="Downsample" type="int"
@@ -159,7 +159,7 @@
                 <PythonCall Function="pruneobj.PruneObj.PruneMosaic"
                             OutputTransformName="#OutputTransform">
                     <Parameters>
-                        <Entry Name="Threshold" Value="#PruneThreshold"/>
+                        <Entry Name="Threshold" Value="#DefaultPruneThreshold"/>
                     </Parameters>
                 </PythonCall>
             </Iterate>

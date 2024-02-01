@@ -295,7 +295,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
         # Prune
         buildArgs = self._CreateBuildArgs('Prune', '-InputFilter', Filter, '-OutputTransform', 'Prune', '-Downsample',
-                                          str(Downsample), '-Threshold', '1.0')
+                                          str(Downsample), '-DefaultThreshold', '1.0')
         volumeNode = self.RunBuild(buildArgs)
 
         self.assertIsNotNone(volumeNode, "No volume node returned from build")
@@ -647,7 +647,7 @@ class NornirBuildTestBase(testbase.TestBase):
         stos_group_node = volumeNode.find("Block/StosGroup[@Name='%s']" % stos_group_name)
         self.assertIsNotNone(stos_group_node)
 
-        sectionNodes = volumeNode.findall('Block/Section')
+        sectionNodes = list(volumeNode.findall('Block/Section'))
         self.assertIsNotNone(sectionNodes)
         self.VerifySectionsHaveStosTransform(stos_group_node, stos_map_node.CenterSection, sectionNodes)
 
