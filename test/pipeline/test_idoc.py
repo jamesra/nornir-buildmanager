@@ -27,7 +27,7 @@ class IDocTest(setup_pipeline.PlatformTest):
 
     @property
     def Platform(self):
-        return "IDoc"
+        return "IDOC"
 
     @property
     def Grid32ManualStosFullPath(self):
@@ -262,7 +262,7 @@ class IDocSingleSectionImportTest(IDocTest):
 
     @property
     def VolumePath(self):
-        return "RC2_Micro\\%d" % self.SectionNumber
+        return os.path.join("RC2_Micro", f"{self.SectionNumber}")
 
     @property
     def SectionNumber(self):
@@ -369,7 +369,7 @@ class IDocSingleSectionImportTest(IDocTest):
         self.LoadMetaData()
 
         # self.assertFalse(self.RawFilterObj.TilePyramid.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
-        # self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))         
+        # self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(OriginalMinIntensity, OriginalMaxIntensity, OriginalGamma))
         self.EnsureTilePyramidIsFull(self.RawFilterObj, 25)
 
         self.RunSetFilterLocked(str(self.SectionNumber), Channels="TEM", Filters="Raw8", Locked="1")
@@ -395,7 +395,7 @@ class IDocSingleSectionImportTest(IDocTest):
         self.RunMosaic(Filter='Leveled', Transform='Stage')
 
         self.LoadMetaData()
-        # self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma)) 
+        # self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma))
 
     def tearDown(self):
         IDocTest.tearDown(self)
@@ -403,21 +403,21 @@ class IDocSingleSectionImportTest(IDocTest):
             os.remove(self.HistogramFullPath)
 
 
-#  
+#
 # class IDocAlignOutputTest(setup_pipeline.CopySetupTestBase):
 #     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
-#  
+#
 #     @property
 #     def VolumePath(self):
 #         return "RC2_4Square_Aligned"
-#  
+#
 #     @property
 #     def Platform(self):
 #         return "IDOC"
-#  
+#
 #     def runTest(self):
 #         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
-#  
+#
 #         BruteLevel = 32
 #         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
 #         self.RunSliceToVolume()
@@ -546,7 +546,7 @@ class IDocBuildTestBootstrapDebugging(setup_pipeline.CopySetupTestBase, StosRebu
         # self.RunMosaic(Filter="Leveled")
         # #        self.RunMosaicReport()
         # self.RunAssemble(Channels='TEM', Levels=[8, 16])
-        # #                        
+        # #
         # self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
         # self.RunMosaicReport()
         #
@@ -579,39 +579,38 @@ class IDocBuildTestBootstrapDebugging(setup_pipeline.CopySetupTestBase, StosRebu
         #
         #
 
-
         self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne), BruteLevel=BruteLevel, GridOneLevel=GridLevelOne)
 
         self.RunCalculateStosGroupWarpMetrics()
 
 
-#            
+#
 # ===============================================================================
-#  
+#
 # class IDocAlignTest(setup_pipeline.CopySetupTestBase):
 #     '''Attemps an alignment on a cached copy of the output from IDocBuildTest'''
-#  
+#
 #     @property
 #     def VolumePath(self):
 #         return "IDocAlignTest"
-#  
+#
 #     @property
 #     def Platform(self):
 #         return "IDOC"
-#  
+#
 #     def runTest(self):
 #         # Doesn't need to run if IDocBuildTest is run, here for debugging convienience if it fails
 #         # return
 #         BruteLevel = 32
-#           
+#
 #         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=BruteLevel / 4, Filter="Leveled")
 #         self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=BruteLevel / 4, OutputLevel=1)
 #         self.RunSliceToVolume()
-#         self.RunMosaicToVolume() 
+#         self.RunMosaicToVolume()
 #         self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
 #         self.RunAssembleMosaicToVolume(Channels="TEM")
 #         self.RunMosaicReport(OutputFile='VolumeReport')
-#         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16) 
+#         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
 # ===============================================================================
 
 class IdocReaderTest(IDocTest):
@@ -623,7 +622,7 @@ class IdocReaderTest(IDocTest):
     def runTest(self):
         NumLogTiles = 25
 
-        idocDir = os.path.join(self.ImportedDataPath, '17/*.idoc')
+        idocDir = os.path.join(self.ImportedDataPath, "17", "*.idoc")
         idocFiles = glob.glob(idocDir)
 
         self.assertEqual(len(idocFiles), 1, "Idoc file not found")
@@ -701,7 +700,7 @@ class LogReaderTest(IDocTest):
         self.assertEqual(TileData.endAcquisitionTime, 5433.453)
 
     def runTest(self):
-        logDir = os.path.join(self.ImportedDataPath, '17/*.log')
+        logDir = os.path.join(self.ImportedDataPath, "17", "*.log")
         logFiles = glob.glob(logDir)
 
         self.assertEqual(len(logFiles), 1)
