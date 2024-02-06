@@ -7,13 +7,13 @@ Created on Aug 30, 2013
 import glob
 import os
 
-from ez_setup import use_setuptools
+# from ez_setup import use_setuptools
 from setuptools import setup, find_packages
 
 # This if test prevents an infinite recursion running tests from "python setup.py test"
 if __name__ == '__main__':
 
-    use_setuptools()
+    # use_setuptools()
 
     #OK to use pools v1.3.1, no changes made for v1.3.2
     
