@@ -17,7 +17,7 @@ maintainers = [
 description = "Scripts for the construction of 3D volumes from 2D image sets."
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.8"
+requires-python = ">=3.7"
 dependencies = [
 	"numpy>=1.9.1",
 	"scipy>=0.13.2",
