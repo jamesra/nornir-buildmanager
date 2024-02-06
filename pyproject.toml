@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = 'setuptools.build_meta'
+
+[tool.setuptools.packages.find]
+where = ["nornir_buildmanager"]
+
+[project]
+name = "nornir_buildmanager"
+version = "1.4.1"
+authors = [
+  { name="James Anderson", email="James.R.Anderson@utah.edu" },
+]
+maintainers = [
+  { name="Clement Vachet", email="cvachet@sci.utah.edu" },
+]
+description = "Scripts for the construction of 3D volumes from 2D image sets."
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.8"
+dependencies = [
+	"numpy>=1.9.1",
+	"scipy>=0.13.2",
+	"matplotlib>=1.3.0",
+	"psutil",
+	"nornir_pools @ git+https://github.com/nornir/nornir-pools#egg=nornir_pools-1.4.1",
+	"nornir_shared @ git+https://github.com/nornir/nornir-shared#egg=nornir_shared-1.4.1",
+	"nornir_imageregistration @ git+https://github.com/nornir/nornir-imageregistration#egg=nornir_imageregistration-1.4.1"
+]
+classifiers = [
+    "Programming Language :: Python :: 3.7",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering",
+]
+
+[project.scripts]
+nornir-build = "nornir_buildmanager.build:Execute"
+
+[tool.setuptools]
+package-data = {"nornir_buildmanager" = ["config/*.xml"]}
+
+[project.urls]
+Homepage = "https://github.com/clementsan/nornir-buildmanager"
+Issues = "https://github.com/clementsan/nornir-buildmanager/issues"
