@@ -8,6 +8,7 @@ import datetime
 import logging
 import math
 import os
+import validators
 import shutil
 
 import nornir_buildmanager

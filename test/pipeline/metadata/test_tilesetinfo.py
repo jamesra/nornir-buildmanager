@@ -1,14 +1,12 @@
-'''
+"""
 Created on Oct 26, 2017
 
 @author: u0490822
-'''
+"""
 import os
 import unittest
-
-import test.testbase
-
 import nornir_buildmanager.metadata.tilesetinfo
+import test.testbase
 
 
 class TestTilesetInfo(test.testbase.TestBase):
