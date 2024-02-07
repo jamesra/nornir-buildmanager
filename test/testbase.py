@@ -10,9 +10,12 @@ import os
 import pickle
 import shutil
 import unittest
+from dotenv import load_dotenv
 
 import nornir_pools
 from nornir_shared.misc import SetupLogging
+
+load_dotenv()  # take environment variables from .env in parent folders.
 
 
 class PickleHelper(object):
