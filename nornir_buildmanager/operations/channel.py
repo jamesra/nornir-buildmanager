@@ -110,7 +110,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         if proc.returncode < 0 or not os.path.exists(BlobImageNode.FullPath):
             SaveFilterNode = False
             prettyoutput.LogErr("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
-            raise RuntimeError("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
+            raise NornirUserException("Unable to create blob using command:\ncmd:%s\nerr: %s" % (cmd, stdout))
         else:
             SaveFilterNode = True
 

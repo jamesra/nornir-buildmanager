@@ -332,10 +332,9 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
     if not os.path.exists(OutputTransformNode.FullPath):
         # This is a workaround for ir-refine-grid appearing to reverse the X,Y coordinates from the documented order on ITK's website for Rigid and and CenteredSimiliarity transforms
         InputMosaic = InputTransformNode.FullPath
+        TempInputMosaic = os.path.join(os.path.dirname(InputMosaic), f'Corrected_{os.path.basename(InputMosaic)}')
         try:
             # TempInputMosaic = InputMosaic
-
-            TempInputMosaic = os.path.join(os.path.dirname(InputMosaic), f'Corrected_{os.path.basename(InputMosaic)}')
             mosaic = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
             # NeedsXYSwap = mosaic.HasTransformsNotUnderstoodByIrTools()
             workaroundMosaic = mosaic.CreateCorrectedXYMosaicForStupidITKWorkaround()
@@ -349,7 +348,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
             output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
 
             if len(output) == 0:
-                raise RuntimeError(
+                raise nornir_buildmanager.NornirMissingDependencyException(
                     "No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
 
             OutputTransformNode.cmd = cmd

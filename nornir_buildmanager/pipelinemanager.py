@@ -13,13 +13,13 @@ import sys
 import traceback
 from xml.etree import ElementTree
 
-import nornir_buildmanager
 import nornir_pools
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
 from . import argparsexml
 from .pipeline_exceptions import *
+import nornir_buildmanager.volumemanager
 
 
 # import xml.etree
@@ -518,6 +518,12 @@ class PipelineManager(object):
                     prettyoutput.IncreaseIndent()
                     self.ProcessStageElement(VolumeElem, ChildNode, ArgSet)
                     PipelinesRun += 1
+
+                except nornir_buildmanager.NornirMissingDependencyException as e:
+                    # This means builds cannot succeed.  We should clearly warn the user and stop so the cause of failure is clear
+                    PipelineManager.logger.error(e.message)
+                    prettyoutput.LogErr(e.message)
+                    raise nornir_buildmanager.NornirRethrownException() from e
                 except PipelineSelectFailed as e:
                     if ArgSet.Arguments["debug"]:
                         PipelineManager.logger.info(str(e))
@@ -536,10 +542,10 @@ class PipelineManager(object):
                         "Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
                     break
                 except PipelineError as e:
-                    errStr = "Unexpected error, exiting pipeline\n" + str(e)
+                    errStr = "Unexpected error, exiting pipeline\n" + str(e.message)
                     PipelineManager.logger.error(errStr)
                     prettyoutput.LogErr(errStr)
-                    sys.exit()
+                    raise nornir_buildmanager.NornirRethrownException() from e
                 finally:
                     prettyoutput.DecreaseIndent()
 
