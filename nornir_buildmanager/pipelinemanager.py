@@ -42,14 +42,14 @@ class ArgumentSet:
     def Variables(self):
         return self._Variables
 
-    def __init__(self, PipelineName=None):
+    def __init__(self, PipelineName: str | None = None):
         self._Arguments = {}
         self._Attribs = {}
         self._Parameters = {}
         self._Variables = {}
         self.PipelineName = PipelineName
 
-    def SubstituteStringVariables(self, xpath):
+    def SubstituteStringVariables(self, xpath: str) -> str:
         """Replace all instances of # in a string with the variable names"""
 
         iStart = xpath.find("#")
@@ -69,7 +69,7 @@ class ArgumentSet:
 
         raise KeyError(str(key) + " not found")
 
-    def ReplaceVariable(self, xpath, iStart):
+    def ReplaceVariable(self, xpath, iStart: int):
         '''Replace # variable names in an xpath with variable string values'''
 
         # Find the next # if it exists
@@ -539,7 +539,7 @@ class PipelineManager(object):
                     break
                 except PipelineRegExSearchFailed as e:
                     PipelineManager.logger.info(
-                        "Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
+                        f"Regular expression did not match. regex {e.regex} != {e.attribValue}. Skipping to next iteration.\n" + str(e.attribValue))
                     break
                 except PipelineError as e:
                     errStr = "Unexpected error, exiting pipeline\n" + str(e.message)

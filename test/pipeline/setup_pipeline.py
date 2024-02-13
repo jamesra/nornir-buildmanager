@@ -1,8 +1,8 @@
-'''
+"""
 Created on Feb 14, 2013
 
 @author: u0490822
-'''
+"""
 from __future__ import annotations
 
 import datetime
@@ -21,7 +21,7 @@ import testbase
 
 
 def VerifyVolume(test, VolumeObj: VolumeNode, listVolumeEntries: list[VolumeEntry]):
-    '''Walk a list of volume entries and ensure each exists'''
+    """Walk a list of volume entries and ensure each exists"""
 
     SearchEntry = VolumeObj
     if isinstance(VolumeObj, str):
@@ -40,7 +40,7 @@ def VerifyVolume(test, VolumeObj: VolumeNode, listVolumeEntries: list[VolumeEntr
 
 
 def MatchingSections(SectionNodes: list[SectionNode], sectionNumberList: list[int]):
-    '''Return section nodes with numbers existing in the string representing a list of integers'''
+    """Return section nodes with numbers existing in the string representing a list of integers"""
     for sectionNode in SectionNodes:
         if sectionNode.Number in sectionNumberList:
             yield sectionNode
@@ -55,7 +55,7 @@ def FullPathsForNodes(node_list: list[XResourceElementWrapper]):
 
 
 def BuildPathToModifiedDateMap(path_list: list[str]):
-    '''Given a list of paths, construct a dictionary which maps to a cached last modified date'''
+    """Given a list of paths, construct a dictionary which maps to a cached last modified date"""
     file_to_modified_time = {}
     for file_path in path_list:
         mtime = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
@@ -65,12 +65,12 @@ def BuildPathToModifiedDateMap(path_list: list[str]):
 
 
 def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels: str, Filters: str) -> Generator[FilterNode, None, None]:
-    '''Generator which returns a list of matching filters contained under a list of section nodes
+    """Generator which returns a list of matching filters contained under a list of section nodes
     :param list SectionNodes: List of sections to search
-    :param str Channels: Regular expression for channel names 
+    :param str Channels: Regular expression for channel names
     :param str Filters: Regular expression for channel names
     :return: Generator of matching filters
-    :rtype: FilterNode'''
+    :rtype: FilterNode"""
 
     for sectionNode in SectionNodes:
         ChannelNodes = SearchCollection(sectionNode.Channels, AttribName='Name', RegExStr=Channels)
@@ -83,7 +83,7 @@ def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels: str, Filters
 
 
 def EnumerateImageSets(testObj, volumeNode: VolumeNode, Channels: str, Filter:str, RequireMasks: bool = True):
-    '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
+    """Used after assemble or blob create an imageset to ensure the correct levels exist"""
 
     sections = volumeNode.findall("Block/Section")
     filters = EnumerateFilters(sections, Channels, Filter)
@@ -102,7 +102,7 @@ def EnumerateImageSets(testObj, volumeNode: VolumeNode, Channels: str, Filter:st
 
 
 def EnumerateTileSets(testObj, volumeNode, Channels, Filter=None):
-    '''Used after assemble or blob create an imageset to ensure the correct levels exist'''
+    """Used after assemble or blob create an imageset to ensure the correct levels exist"""
 
     if Filter is None:
         Filter = '(?![M|m]ask)'
@@ -162,10 +162,10 @@ class VolumeEntry(object):
 
 
 class NornirBuildTestBase(testbase.TestBase):
-    '''Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class or PlatformTest
+    """Base class to use for tests that require executing commands on the pipeline.  Tests have gradually migrated to using this base class or PlatformTest
        Eventually all platforms should have the same standard tests taking input to a volume under this framework to ensure basic functionality
        is operating.  At this time the IDOC platform is the only one with a complete test.  PMG has a thorough test not entirely integrated with
-       this class'''
+       this class"""
 
     @property
     def VolumePath(self):
@@ -173,7 +173,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
     @property
     def TestSetupCachePath(self):
-        '''The directory where we can cache the setup phase of the tests.  Delete to obtain a clean run of all tests'''
+        """The directory where we can cache the setup phase of the tests.  Delete to obtain a clean run of all tests"""
         if 'TESTOUTPUTPATH' in os.environ:
             TestOutputDir = os.environ["TESTOUTPUTPATH"]
             return os.path.join(TestOutputDir, 'Cache', self.Platform, self.VolumePath)
@@ -183,14 +183,14 @@ class NornirBuildTestBase(testbase.TestBase):
         return None
 
     def RunBuild(self, buildArgs):
-        '''Run a build, ensure the output directory exists, and return the volume obj'''
+        """Run a build, ensure the output directory exists, and return the volume obj"""
         print("Run build : %s" % str(buildArgs))
         build.Execute(buildArgs)
         self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
         return self.LoadVolume()
 
     def LoadVolume(self):
-        '''Load the volume meta data from disk'''
+        """Load the volume meta data from disk"""
         VolumeObj = VolumeManager.Load(self.TestOutputPath)
         self.assertIsNotNone(VolumeObj)
         self.assertTrue(os.path.exists(VolumeObj.FullPath))
@@ -223,14 +223,14 @@ class NornirBuildTestBase(testbase.TestBase):
         return pargs
 
     def ValidateTransformChecksum(self, Node):
-        '''Ensure that the reported checksum and actual file checksum match'''
+        """Ensure that the reported checksum and actual file checksum match"""
         self.assertTrue(hasattr(Node, 'Checksum'))
         self.assertTrue(os.path.exists(Node.FullPath))
         FileChecksum = MosaicFile.LoadChecksum(Node.FullPath)
         self.assertEqual(Node.Checksum, FileChecksum)
 
     def CheckTransformInputs(self, transformNode):
-        '''Walk every transform node, verify that if the inputtransform data matches the recorded data'''
+        """Walk every transform node, verify that if the inputtransform data matches the recorded data"""
 
         # If the object does not claim to have an input checksum then the test is not valid
         if not 'InputTransformChecksum' in transformNode.attrib:
@@ -269,7 +269,7 @@ class NornirBuildTestBase(testbase.TestBase):
         return
 
     def ValidateAllTransforms(self, ParentNode):
-        '''Check every transform in the parent node to ensure that if it refers to an input transform the values match'''
+        """Check every transform in the parent node to ensure that if it refers to an input transform the values match"""
 
         TransformNodes = list(ParentNode.findall('Transform'))
         for tNode in TransformNodes:
@@ -386,7 +386,7 @@ class NornirBuildTestBase(testbase.TestBase):
         for fnode in Filters:
             self.assertEqual(fnode.Locked, LockedVal, "Filter did not lock as expected")
 
-    def RunShadingCorrection(self, ChannelPattern, CorrectionType=None, FilterPattern=None):
+    def RunShadingCorrection(self, ChannelPattern: str, CorrectionType=None, FilterPattern=None):
         if FilterPattern is None:
             FilterPattern = '(?![M|m]ask)'
 
@@ -406,7 +406,7 @@ class NornirBuildTestBase(testbase.TestBase):
         FilterNode = volumeNode.find("Block/Section/Channel/Filter[@Name='%s']" % ExpectedOutputFilter)
         self.assertIsNotNone(ExpectedOutputFilter, "No filter node produced for contrast adjustment")
 
-    def RunHistogram(self, Filter=None, Downsample=4, Transform=None):
+    def RunHistogram(self, Filter=None, Downsample: int = 4, Transform=None):
         if Filter is None:
             Filter = 'Raw8'
 
@@ -423,7 +423,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
         return volumeNode
 
-    def RunAdjustContrast(self, Sections=None, Filter=None, Gamma=None, Transform=None):
+    def RunAdjustContrast(self, Sections=None, Filter=None, Gamma: float | None = None, Transform=None):
         if Filter is None:
             Filter = 'Raw8'
 
@@ -476,7 +476,7 @@ class NornirBuildTestBase(testbase.TestBase):
         return volumeNode
 
     def _VerifyInputTransformIsCorrect(self, InputTransformChecksumNode, input_transform_name: str):
-        '''Check that the checksum for a transform matches the recorded input transform checksum for a node under a channel'''
+        """Check that the checksum for a transform matches the recorded input transform checksum for a node under a channel"""
 
         ChannelNode = InputTransformChecksumNode.FindParent('Channel')
         self.assertIsNotNone(ChannelNode, "Test requires the node be under a channel element")
@@ -504,7 +504,7 @@ class NornirBuildTestBase(testbase.TestBase):
         self._VerifyInputTransformIsCorrect(image_set_node, input_transform_name=transform_name)
 
     def _VerifyPyramidHasExpectedLevels(self, pyramid_node, expected_levels):
-        '''Used to ensure that any node with level children nodes has the correct levels'''
+        """Used to ensure that any node with level children nodes has the correct levels"""
         if not nornir_shared.misc.IsSequence(expected_levels):
             expected_levels = [expected_levels]
 
@@ -640,7 +640,7 @@ class NornirBuildTestBase(testbase.TestBase):
     def VerifyStosTransformPipelineSharedTests(self, volumeNode: nornir_buildmanager.volumemanager.VolumeNode,
                                                stos_map_name: str, stos_group_name: str, MasksRequired: bool,
                                                buildArgs):
-        '''Ensure every section has a transform and that the transform is not regenerated if the pipeline is run twice.'''
+        """Ensure every section has a transform and that the transform is not regenerated if the pipeline is run twice."""
         stos_map_node = volumeNode.find("Block/StosMap[@Name='%s']" % stos_map_name)
         self.assertIsNotNone(stos_map_node)
 
@@ -691,7 +691,7 @@ class NornirBuildTestBase(testbase.TestBase):
         return volumeNode
 
     def VerifySectionsHaveStosTransform(self, stos_group_node, center_section, sectionNodes):
-        '''Ensure that each section in the list is mapped by a transform in the stos group'''
+        """Ensure that each section in the list is mapped by a transform in the stos group"""
         # Check that there are transforms 
         sectionNumbers = [n.Number for n in sectionNodes]
         self.assertGreater(len(sectionNumbers), 0)
@@ -704,7 +704,7 @@ class NornirBuildTestBase(testbase.TestBase):
             self.assertIsNotNone(transform, "Missing transform mapping section %d" % section_number)
 
     def VerifyFilesLastModifiedDateUnchanged(self, file_last_modified_map):
-        '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
+        """Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary"""
 
         for (file_path, last_modified_reference) in list(file_last_modified_map.items()):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
@@ -712,7 +712,7 @@ class NornirBuildTestBase(testbase.TestBase):
                              "Last modified date for %s should not be different" % file_path)
 
     def VerifyFilesLastModifiedDateChanged(self, file_last_modified_map):
-        '''Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary'''
+        """Takes a dictionary of {file_path:  last_modified}.  Fails if a files modified time on disk does not match the value in the dictionary"""
 
         for (file_path, last_modified_reference) in list(file_last_modified_map.items()):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
@@ -941,9 +941,9 @@ class NornirBuildTestBase(testbase.TestBase):
 
     def RemoveTileFromPyramid(self, section_number: int = 691, channel: str = 'TEM', filter_name: str = 'Leveled',
                               level=1):
-        '''Remove a single image from an image pyramid
+        """Remove a single image from an image pyramid
         :return: Filename that was deleted
-        '''
+        """
 
         levelNode = self.__GetLevelNode(section_number, channel, filter_name, level)
         self.assertIsNotNone(levelNode, "Missing level %d" % level)
@@ -959,7 +959,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
     def RemoveAndRegenerateTile(self, RegenFunction, RegenKwargs, section_number: int, channel: str = 'TEM',
                                 filter_name: str = 'Leveled', level: int = 1):
-        '''Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called'''
+        """Remove a tile from an image pyramid level.  Run adjust contrast and ensure the tile is regenerated after RegenFunction is called"""
         removedTileFullPath = self.RemoveTileFromPyramid(section_number, channel, filter_name, level)
 
         RegenFunction(**RegenKwargs)
@@ -968,11 +968,11 @@ class NornirBuildTestBase(testbase.TestBase):
                         "Deleted tile was not regenerated %s" % removedTileFullPath)
 
     def CopyManualStosFiles(self, ManualStosFullPath, StosGroupName):
-        '''Copy all stos files from the manual stos directory into the StosGroup's manual directory.
+        """Copy all stos files from the manual stos directory into the StosGroup's manual directory.
         :param str ManualStosFullPath: Directory containing .stos files
         :param str StosGroupName: Stos group to add manual files to
         :return: list of transform nodes targeted by copied manual files
-        '''
+        """
 
         volumeNode = self.LoadVolume()
         StosGroupNode = volumeNode.find("Block/StosGroup[@Name='%s']" % StosGroupName)
@@ -1015,7 +1015,7 @@ class PlatformTest(NornirBuildTestBase):
             return self.PlatformFullPath
 
     def setUp(self):
-        '''Imports a volume and stops, tests call pipeline functions'''
+        """Imports a volume and stops, tests call pipeline functions"""
         super(PlatformTest, self).setUp()
         self.assertTrue(os.path.exists(self.PlatformFullPath),
                         "Test data for platform does not exist:" + self.PlatformFullPath)
@@ -1046,7 +1046,7 @@ class PlatformTest(NornirBuildTestBase):
 
 
 class EmptyVolumeTestBase(NornirBuildTestBase):
-    '''The class to use when one only wants an empty volume'''
+    """The class to use when one only wants an empty volume"""
 
     def setUp(self):
         super(EmptyVolumeTestBase, self).setUp()
@@ -1054,7 +1054,7 @@ class EmptyVolumeTestBase(NornirBuildTestBase):
 
 
 class CopySetupTestBase(PlatformTest):
-    '''Copies data from Platform data directory to test output directory at setup'''
+    """Copies data from Platform data directory to test output directory at setup"""
 
     def setUp(self):
         super(CopySetupTestBase, self).setUp()
@@ -1069,7 +1069,7 @@ class CopySetupTestBase(PlatformTest):
 
 
 class ImportOnlySetup(PlatformTest):
-    '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
+    """Calls prepare on a PMG volume.  Used as a base class for more complex tests"""
 
     def setUp(self):
         super(ImportOnlySetup, self).setUp()
@@ -1087,7 +1087,7 @@ class ImportOnlySetup(PlatformTest):
 
 
 class PrepareSetup(PlatformTest):
-    '''Calls prepare on a PMG volume.  Used as a base class for more complex tests'''
+    """Calls prepare on a PMG volume.  Used as a base class for more complex tests"""
 
     def setUp(self):
         super(PrepareSetup, self).setUp()
@@ -1105,7 +1105,7 @@ class PrepareSetup(PlatformTest):
 
 
 class PrepareAndMosaicSetup(PlatformTest):
-    '''Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests'''
+    """Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests"""
 
     def setUp(self):
         super(PrepareAndMosaicSetup, self).setUp()
@@ -1122,7 +1122,7 @@ class PrepareAndMosaicSetup(PlatformTest):
 
 
 class PrepareThroughAssembleSetup(PlatformTest):
-    '''Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests'''
+    """Calls prepare and mosaic pipelines on a PMG volume.  Used as a base class for more complex tests"""
 
     def setUp(self):
         super(PrepareThroughAssembleSetup, self).setUp()

@@ -63,13 +63,13 @@ from nornir_buildmanager.volumemanager import *
 
 def find_sections(extension: str, section_candidates:
                   dict[int, list[shared.FilenameMetadata]]) -> dict[int, shared.FilenameMetadata]:
-    '''
+    """
     Find directories that contain files with the passed extension.  Parses section information from the
     directory name.  returns a dictionary mapping section number to the latest version of the section.
     :param extension: 
     :param section_candidates: 
     :return: 
-    '''
+    """
     match_names = []
     for candidate_dirs in section_candidates.values():
         match_names.extend([e for e in candidate_dirs])
@@ -805,6 +805,22 @@ def AddIdocNode(containerObj, idocFullPath, idocObj, logger):
 
 
 class IDocTileData:
+    """Class that holds the meta-data for a single tile in a SerialEM idoc file"""
+
+    Image: str
+    TiltAngle: float
+    PieceCoordinates: tuple[float, float]
+    StagePosition: tuple[float, float]
+    Intensity: float
+    ExposureDose: float
+    SpotSize: int
+    _Defocus: float
+    ImageShift: tuple[float, float]
+    RotationAngle: float
+    ExposureTime: float
+    _MinMaxMean: tuple[int, int, float]
+    TargetDefocus: float
+    Magnification: float
 
     def __init__(self, ImageName):
         """Populate all known SerialEM Idoc meta-data"""
@@ -821,6 +837,7 @@ class IDocTileData:
         self.ExposureTime = None
         self._MinMaxMean = None
         self.TargetDefocus = None
+        self.Magnification = None
 
         self._Min = None
         self._Max = None
@@ -830,31 +847,35 @@ class IDocTileData:
         return self.Image
 
     @property
-    def Defocus(self):
+    def Defocus(self) -> float:
         return self._Defocus
 
     @Defocus.setter
-    def Defocus(self, val):
+    def Defocus(self, val: float):
         self._Defocus = val
 
     @property
-    def Min(self):
+    def Min(self) -> int:
         return self._Min
 
+    @Min.setter
+    def Min(self, val: int):
+        self._Min = val
+
     @property
-    def Max(self):
+    def Max(self) -> int:
         return self._Max
 
     @Max.setter
-    def Max(self, val):
+    def Max(self, val: int):
         self._Max = val
 
     @property
-    def Mean(self):
+    def Mean(self) -> float:
         return self._Mean
 
     @property
-    def MinMaxMean(self):
+    def MinMaxMean(self) -> tuple[int, int, float]:
         return self._MinMaxMean
 
     @MinMaxMean.setter
@@ -871,7 +892,7 @@ class IDoc:
     """Class that parses a SerialEM idoc file"""
 
     @staticmethod
-    def __ObjVersion():
+    def __ObjVersion() -> int:
         """Used for knowing when to ignore a pickled file"""
 
         return 1
@@ -903,7 +924,7 @@ class IDoc:
     def VersionCheck(cls, loaded: IDoc):
         if loaded.__IDocPickleVersion != cls.__ObjVersion():
             raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (
-                loaded.__SerialEMLogVersion, cls.__ObjVersion()))
+                loaded.__IDocPickleVersion, cls.__ObjVersion()))
 
         return
 
