@@ -92,7 +92,7 @@ def PrintNodeTreeAndAttributes(node, attributes, format_str=None, **kwargs):
     else:
         # value_format_str = '{0: <' + str(value_fill) + '}'
         for v in values:
-            out_values_str += '{0: <{fill}}'.format(v, fill=value_fill)
+            out_values_str += '{0: <{fill}}'.format(v, fill=value_fill) if v is not None else "None"
 
     print(out_parent_names + ' ' + out_values_str)
     return
