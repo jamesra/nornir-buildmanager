@@ -10,28 +10,28 @@ include = ["nornir_buildmanager"]
 name = "nornir_buildmanager"
 version = "1.5.0"
 authors = [
-  { name="James Anderson", email="James.R.Anderson@utah.edu" },
+	{ name="James Anderson", email="James.R.Anderson@utah.edu" },
 ]
 maintainers = [
-  { name="Clement Vachet", email="cvachet@sci.utah.edu" },
+	{ name="Clement Vachet", email="cvachet@sci.utah.edu" },
 ]
 description = "Scripts for the construction of 3D volumes from 2D image sets."
 readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
-	"numpy",
-	"scipy",
-	"matplotlib",
-	"psutil",
+	"numpy >= 1.26",
+	"scipy >= 1.11",
+	"matplotlib >= 3.8",
+	"psutil >= 5.9",
 	"nornir_pools @ git+https://github.com/clementsan/nornir-pools.git@dev",
 	"nornir_shared @ git+https://github.com/clementsan/nornir-shared.git@dev",
 	"nornir_imageregistration @ git+https://github.com/clementsan/nornir-imageregistration.git@dev"
 ]
 classifiers = [
-    "Programming Language :: Python :: 3.10",
-    "Operating System :: OS Independent",
-    "Topic :: Scientific/Engineering",
+	"Programming Language :: Python :: 3.10",
+	"Operating System :: OS Independent",
+	"Topic :: Scientific/Engineering",
 ]
 
 [project.scripts]
