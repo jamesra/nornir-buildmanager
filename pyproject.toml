@@ -18,7 +18,7 @@ maintainers = [
 description = "Scripts for the construction of 3D volumes from 2D image sets."
 readme = "README.md"
 license = {file = "LICENSE"}
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
 	"numpy",
 	"scipy",
@@ -29,7 +29,7 @@ dependencies = [
 	"nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration@dev#egg=nornir_imageregistration-1.5.0"
 ]
 classifiers = [
-    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering",
 ]
