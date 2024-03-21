@@ -24,6 +24,7 @@ dependencies = [
 	"scipy >= 1.11",
 	"matplotlib >= 3.8",
 	"psutil >= 5.9",
+	"hypothesis >= 6.96",
 	"validators >= 0.23",
 	"nornir_pools @ git+https://github.com/clementsan/nornir-pools.git@dev",
 	"nornir_shared @ git+https://github.com/clementsan/nornir-shared.git@dev",
