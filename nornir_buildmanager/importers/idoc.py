@@ -58,8 +58,7 @@ import nornir_buildmanager.importers.shared as shared
 import nornir_buildmanager.importers.find as find
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
-from hypothesis.executors import executor
- 
+
 
 def find_sections(ImportPath: str, extension: str, section_candidates: dict[int, list[shared.FilenameMetadata]]) -> dict[
         int, shared.FilenameMetadata]:
