@@ -24,6 +24,7 @@ dependencies = [
 	"scipy >= 1.11",
 	"matplotlib >= 3.8",
 	"psutil >= 5.9",
+	"validators >= 0.23",
 	"nornir_pools @ git+https://github.com/clementsan/nornir-pools.git@dev",
 	"nornir_shared @ git+https://github.com/clementsan/nornir-shared.git@dev",
 	"nornir_imageregistration @ git+https://github.com/clementsan/nornir-imageregistration.git@CuPy"
