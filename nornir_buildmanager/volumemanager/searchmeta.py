@@ -34,7 +34,7 @@ def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.E
             yield MatchObj
             continue
 
-        match = re.fullmatch(RegExStr, attrib, flags)
+        match = re.match(RegExStr, attrib, flags)
         if match is not None:
             (wrapped, MatchObj) = nornir_buildmanager.volumemanager.WrapElement(MatchObj)
             assert (wrapped is False)
