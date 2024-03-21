@@ -1,8 +1,0 @@
-numpy~=1.26.0
-scipy>=1.10.1
-matplotlib>=3.7.1
-psutil
-nornir_pools @ git+https://github.com/jamesra/nornir-pools@dev#egg=nornir_pools-1.5.0
-nornir_shared @ git+https://github.com/jamesra/nornir-shared@dev#egg=nornir_shared-1.5.0
-nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration@CuPy#egg=nornir_imageregistration-1.5.0
-cupy [gpu]
