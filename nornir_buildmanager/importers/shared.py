@@ -9,12 +9,15 @@ import os
 import re
 import shutil
 import sys
-from typing import Iterable, NamedTuple
+import datetime
+from typing import Iterable, NamedTuple, Callable
 
 import nornir_buildmanager
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
+from nornir_shared.histogram import Histogram
+import nornir_shared.plot as plot
 
 
 class FilenameMetadata(NamedTuple):
@@ -30,6 +33,13 @@ class MinMaxGamma(NamedTuple):
     min: float
     max: float
     gamma: float = 1.0
+
+
+class ContrastValue(NamedTuple):
+    Section: int
+    Min: int
+    Max: int
+    Gamma: int = 1.0
 
 
 # FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
@@ -233,7 +243,7 @@ def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: Filename
     return NotesAdded
 
 
-def ParseMetadataFromFilename(string):
+def ParseMetadataFromFilename(string: str):
     '''
     Parses the filename of an input file to determine
         Number : Section Number
@@ -295,6 +305,116 @@ def ParseMetadataFromFilename(string):
         friendlyFormatDescription = "{Section#}[VersionLetter][_Section Name][_Downsample]\n\t{} => Required\t[] => Optional"
         raise NornirUserException(
             f'\n"{string}" cannot be parsed.\nFile/Directory meta-data is expected to be in the format:\n\t{friendlyFormatDescription}')
+
+
+def CleanOutliersFromHistogram(hObj: Histogram) -> Histogram:
+    """
+    For Max-Value outliers this is a legacy function that supports old versions of SerialEM that falsely reported
+    maxint for some pixels even though the camera was a 14-bit camera.  This applies to the original RC1 data.
+    By the time RC2 was collected in March 2018 this bug was fixed
+
+    However this function is worth retaining because Max and Min outliers can rarely occur if a tile is removed
+    from the input before import but remain in the iDoc data.
+    """
+
+    hNew = Histogram.TryRemoveMaxValueOutlier(hObj, TrimOnly=False)
+    if hNew is not None:
+        hObj = hNew
+
+    hNew = Histogram.TryRemoveMinValueOutlier(hObj, TrimOnly=False)
+    if hNew is not None:
+        hObj = hNew
+
+    return hObj
+
+
+def replace_extension(filename: str, new_extension: str) -> str:
+    """
+    Replace the extension of a file with a new extension
+    :param filename: Filename to change
+    :param new_extension: New extension to use
+    :return: Filename with the new extension
+    """
+    (base, _) = os.path.splitext(filename)
+    return f"{base}.{new_extension}"
+
+
+def PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float, maxCutoff: float,
+                  force_recreate: bool):
+    """
+    :param histogramFullPath:  Output path of the image
+    :param sectionNumber:
+    :param minCutoff:
+    :param maxCutoff:
+    :param force_recreate:  If true recreate the histogram even if it exists
+    :return:
+    """
+    HistogramImageFullPath = replace_extension(histogramFullPath, "png")
+    ImageRemoved = files.RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
+
+    if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath) or files.IsOlderThan(
+            HistogramImageFullPath, datetime.date(year=2022, month=10, day=25)):
+        #        pool = nornir_pools.GetGlobalMultithreadingPool()
+        # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d\nRaw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        plot.Histogram(histogramFullPath, HistogramImageFullPath,
+                       Title=f"Section {sectionNumber}\nRaw Data Pixel Intensity", LinePosList=[minCutoff, maxCutoff],
+                       range_is_power_of_two=True)
+
+
+def _GetMinMaxCutoffs(calculate_histogram: Callable[[], Histogram],
+                      min_cutoff: float,
+                      max_cutoff: float,
+                      histogram_cache_path: str | None = None):
+    """
+
+    :param calculate_histogram: A function which calculates a composite histogram of the section images.  Assumed to be a costly function to call.
+    :param min_cutoff:
+    :param max_cutoff:
+    :param histogram_cache_path:
+    :return:
+    """
+    histogramObj = None
+    if histogram_cache_path is not None:
+        histogramObj = Histogram.Load(histogram_cache_path)
+
+    if histogramObj is None:
+        histogramObj = calculate_histogram()
+
+        if histogram_cache_path is not None:
+            histogramObj = CleanOutliersFromHistogram(histogramObj)
+            histogramObj.Save(histogram_cache_path)
+
+    assert (histogramObj is not None)
+
+    # I am willing to clip 1 pixel every hundred thousand on the dark side, and one every ten thousand on the light
+    return histogramObj.AutoLevel(min_cutoff, max_cutoff)
+
+
+def GetSectionContrastSettings(section_number: int,
+                               contrast_map: dict[int, ContrastValue],
+                               contrast_cutoffs: tuple[float, float],
+                               calculate_histogram: Callable[[], Histogram],
+                               histogram_cache_path: str) -> MinMaxGamma:
+    """Clear and recreate the filters tile pyramid node if the filters contrast node does not match"""
+    Gamma = 1.0
+
+    # We don't have to run this step, but it ensures the histogram is up to date
+    (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(
+        calculate_histogram=calculate_histogram,
+        min_cutoff=contrast_cutoffs[0],
+        max_cutoff=1.0 - contrast_cutoffs[1],
+        histogram_cache_path=histogram_cache_path)
+
+    if section_number in contrast_map:
+        ActualMosaicMin = ActualMosaicMin if contrast_map[section_number].Min is None else contrast_map[
+            section_number].Min
+        ActualMosaicMax = ActualMosaicMax if contrast_map[section_number].Max is None else contrast_map[
+            section_number].Max
+        Gamma = Gamma if contrast_map[section_number].Gamma is None else contrast_map[section_number].Gamma
+
+    return MinMaxGamma(min=ActualMosaicMin,
+                       max=ActualMosaicMax,
+                       gamma=Gamma)
 
 
 if __name__ == "__main__":

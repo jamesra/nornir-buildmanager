@@ -530,7 +530,7 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
             try:
                 os.makedirs(self.repro_directory, exist_ok=True)
                 nornir_shared.files.rmtree(self.repro_directory)
-                shutil.copytree(self.TestOutputPath, self.repro_directory) 
+                shutil.copytree(self.TestOutputPath, self.repro_directory)
             except OSError as e:
                 self.Logger.error(f"\nCould not copy test output into reproduction directory: {self.TestOutputPath} -> {self.repro_directory}\n{e}\n\n")
 

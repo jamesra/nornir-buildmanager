@@ -6,36 +6,44 @@ Created on Apr 9, 2019
 from __future__ import annotations
 
 import enum
-import logging
 import struct
 import sys
+import tempfile
+
 from PIL import Image
+import PIL.Image
+from typing import Literal
 
 import numpy
+import numpy as np
 from numpy.typing import DTypeLike
 
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 import nornir_buildmanager.importers.shared as shared
 from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
-import nornir_pools
 from nornir_shared.files import RemoveOutdatedFile
 import nornir_shared.files as files
 from nornir_shared.histogram import *
 from nornir_shared.images import *
 from . import GetFileNameForTileNumber
+from nornir_buildmanager import NornirUserException
 
 
-def Import(VolumeElement: VolumeNode, ImportPath: str, extension: srt | None = None, *args, **kwargs):
+def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = None, *args, **kwargs):
     """Import the specified directory into the volume"""
 
     if extension is None:
         extension = 'mrc'
 
+    MinCutoff = float(kwargs.get('Min'))
+    MaxCutoff = float(kwargs.get('Max'))
+    ContrastCutoffs = (MinCutoff, MaxCutoff)
+
     if not os.path.exists(ImportPath):
         raise ValueError(f"Import directory not found: {ImportPath}")
 
-    CameraBpp = int(kwargs['CameraBpp']) if 'CameraBpp' in kwargs else None
+    CameraBpp = kwargs['CameraBpp'] if 'CameraBpp' in kwargs else None
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
@@ -51,7 +59,8 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: srt | None = N
         prettyoutput.CurseString("MRCImport", "Importing *.{0} from {1}".format(extension, path))
         for file_fullpath in foundfiles:
             yield from MRCImport.ToMosaic(VolumeElement,
-                                          file_fullpath,
+                                          mrc_fullpath=file_fullpath,
+                                          ContrastCutoffs=ContrastCutoffs,
                                           FlipList=FlipList,
                                           CameraBpp=CameraBpp,
                                           ContrastMap=ContrastMap,
@@ -60,13 +69,16 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: srt | None = N
     nornir_pools.WaitOnAllPools()
 
 
-class MRCImport(object):
+class MRCImport:
     """
     Imports an .MRC file into a volume
     """
 
+    _temp_dir: str  # Temporary directory to store numpy arrays of each tile image in the MRC file.  Used with a context manager to clean up the temporary files
+
     @classmethod
     def ToMosaic(cls, VolumeObj: VolumeNode, mrc_fullpath: str,
+                 ContrastCutoffs: tuple[float, float],
                  Extension: str | None = None, OutputImageExt: str = None,
                  TileOverlap=None, TargetBpp: int | None = None, FlipList: list[int] | None = None,
                  ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
@@ -90,14 +102,17 @@ class MRCImport(object):
 
         mrc_fullpath = serialem_utils.GetPathWithoutSpaces(mrc_fullpath)
 
-        input_dir = os.path.dirname(mrc_fullpath)
+        source_dir = os.path.dirname(mrc_fullpath)
 
         BlockObj = BlockNode.Create('TEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
         if saveBlock:
             (yield VolumeObj)
 
-        mrcfile = MRCFile.Load(mrc_fullpath)
+        mrcfile: MRCFile = MRCFile.Load(mrc_fullpath)
+        if CameraBpp is None:
+            CameraBpp = mrcfile.bytes_per_pixel * 8
+
         ExistingSectionInfo = shared.GetSectionInfo(mrc_fullpath)
         SectionNumber = ExistingSectionInfo.number
         SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % ExistingSectionInfo.number
@@ -116,24 +131,57 @@ class MRCImport(object):
         if saveChannel:
             (yield sectionObj)
 
-        shared.TryAddNotes(channelObj, input_dir, logger)
-        serialem_utils.TryAddLogs(channelObj, input_dir, logger)
+        try:
+            shared.TryAddNotes(channelObj, source_dir, logger)
+        except NornirUserException:
+            pass
 
-        # Set the scale
-        [added_scale, ScaleObj] = channelObj.SetScale(mrcfile.pixel_spacing)
+        try:
+            serialem_utils.TryAddLogs(channelObj, source_dir, logger)
+        except NornirUserException:
+            pass
+
+        [added_scale, ScaleObj] = channelObj.SetScale(mrcfile.scale)
         if added_scale:
             (yield channelObj)
 
-        bpp = mrcfile.bytes_per_pixel * 8
-        FilterName = 'Raw' + str(bpp)
+        bpp = CameraBpp
+        FilterName = 'Raw' + str(mrcfile.bytes_per_pixel * 8)
         if TargetBpp is None:
             FilterName = 'Raw'
 
+        histogram_cache_path = os.path.join(source_dir, f'Histogram-{SectionNumber}.xml')
+
+        contrast_settings = shared.GetSectionContrastSettings(section_number=SectionNumber,
+                                                              contrast_map=ContrastMap,
+                                                              contrast_cutoffs=ContrastCutoffs,
+                                                              calculate_histogram=lambda: cls.CalculateHistogram(
+                                                                  mrc_obj=mrcfile, bpp=bpp),
+                                                              histogram_cache_path=histogram_cache_path)
+
+        contrast_settings = shared.MinMaxGamma(min=np.around(contrast_settings.min),
+                                               max=np.around(contrast_settings.max),
+                                               gamma=contrast_settings.gamma)
+
+        contrast_mismatch = channelObj.RemoveFilterOnContrastMismatch(FilterName, contrast_settings.min,
+                                                                      contrast_settings.max,
+                                                                      contrast_settings.gamma)
+        image_conversion_required = contrast_mismatch
+
+        pool = nornir_pools.GetGlobalThreadPool()
+        # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+        histogram_creation_task = pool.add_task(histogram_cache_path,
+                                                shared.PlotHistogram,
+                                                histogram_cache_path,
+                                                SectionNumber,
+                                                contrast_settings.min,
+                                                contrast_settings.max, force_recreate=contrast_mismatch)
+
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
         filterObj.BitsPerPixel = bpp
+        filterObj.SetContrastValues(contrast_settings.min, contrast_settings.max, contrast_settings.gamma)
         if added_filter:
-            ImageConversionRequired = True
-            (yield channelObj)
+            image_conversion_required = True
 
         StageTransformName = 'Stage'
         StageTransformFilename = StageTransformName + '.mosaic'
@@ -167,23 +215,81 @@ class MRCImport(object):
             mosaicObj.SaveToMosaicFile(transformObj.FullPath)
             (yield channelObj)
 
-        min_max_gamma = cls.GetSectionContrastSettings(mrcfile, SectionNumber, ContrastMap, CameraBpp)
-        cls.ExportImages(mrc_fullpath, LevelObj.FullPath, img_ext=OutputImageExt, min_max_gamma=min_max_gamma)
+        cls.ExportImages(mrc_fullpath, LevelObj.FullPath, img_ext=OutputImageExt, min_max_gamma=contrast_settings)
 
-    def __init__(self, params):
+    def __init__(self):
         """
         Constructor
         """
         pass
 
+    def __enter__(self):
+        self._temp_dir = tempfile.mkdtemp()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        nornir_shared.files.rmtree(self._temp_dir)
+
+    @staticmethod
+    def cache_tiles(mrcfile: MRCFile, output_dir: str, img_ext: str, min_max_gamma: shared.MinMaxGamma | None):
+        with tempfile.gettempdir() as temp_dir:
+            pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)
+            for iTile in range(0, mrcfile.num_tiles):
+                pool.add_task(str(iTile),
+                              MRCImport.ExportImage,
+                              mrcfile,
+                              output_dir,
+                              img_ext,
+                              iTile,
+                              min_max_gamma)
+
+            pool.shutdown()
+
+    @staticmethod
+    def CalculateHistogram(mrc_obj: str | MRCFile, bpp: float):
+        """Construct a composite histogram from all images in the MRC file"""
+        composite_histogram = None
+
+        pool = nornir_pools.GetGlobalThreadPool()
+        # pool = nornir_pools.GetGlobalSerialPool()
+
+        num_bins = 256
+        if bpp >= 11:
+            num_bins = 2048
+
+        tasks = []
+        for iTile, tile_header in enumerate(mrc_obj.tile_meta):
+            img = mrc_obj.get_tile_as_numpy_memmap(iTile)
+            t = pool.add_task(str(iTile),
+                              nornir_imageregistration.image_stats.HistogramOfArray,
+                              img,
+                              bpp=bpp,
+                              num_bins=num_bins)
+            t.iTile = iTile
+            tasks.append(t)
+
+        for t in tasks:
+            try:
+                image_histogram = t.wait_return()
+                if composite_histogram is None:
+                    composite_histogram = image_histogram
+                else:
+                    composite_histogram.AddHistogram(image_histogram)
+            except Exception as e:
+                prettyoutput.LogErr(f"Failed to build histogram for tile #{t.iTile}\n{e}")
+                raise
+
+        return composite_histogram
+
     @classmethod
     def ExportImages(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str,
                      min_max_gamma: shared.MinMaxGamma | None):
-
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
-        pool = nornir_pools.GetGlobalLocalMachinePool()
+        pool = nornir_pools.GetGlobalThreadPool()
+        #pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)
+        #pool = nornir_pools.GetGlobalSerialPool()
 
         for iTile in range(0, mrc_obj.num_tiles):
             pool.add_task(str(iTile),
@@ -194,11 +300,11 @@ class MRCImport(object):
                           iTile,
                           min_max_gamma)
 
-            # cls.ExportImage(mrcfile, output_dir, img_ext, iTile, min_max_gamma)
+        pool.shutdown()
 
-    @classmethod
-    def ExportImage(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
-                    min_max_gamma: shared.MinMaxGamma | None = None):
+    @staticmethod
+    def ExportImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
+                    min_max_gamma: shared.MinMaxGamma | None = None) -> bool:
         filename = GetFileNameForTileNumber(tile_number=iTile, ext=img_ext)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(output_dir, filename)
         if nornir_shared.images.IsValidImage(output_fullpath):
@@ -210,26 +316,27 @@ class MRCImport(object):
         else:
             # This mess is here because we can't really trust the min/max pixel values reported in the MRC file for a lot of our old data
             # t = mrcfile._repair_out_of_bounds_pixels(iTile, 14)
-            img = mrc_obj.get_tile_as_numpy(iTile)
+            img = mrc_obj.get_tile_as_numpy_memmap(iTile)
             dt = img.dtype
-            img = numpy.transpose(img)
+            img = np.flipud(
+                img)  # This was required to make the images match the orientation of the RC1 original dataset.
 
             # Quick correct out-of-bounds pixels
             outliers = img > min_max_gamma.max
-            img = numpy.astype(numpy.float32, copy=True)
-            img[outliers] /= 2.0
-            scale = numpy.iinfo(dt).max / min_max_gamma.max
+            img_clipped = np.clip(img, min_max_gamma.min, min_max_gamma.max)
+            img = img.astype(np.float32)
+            # img[outliers] /= 2.0
+            scale = np.iinfo(dt).max / min_max_gamma.max
             if min_max_gamma.min > 0:
                 img = (img - min_max_gamma.min) * scale
             else:
-                img = img * scale
+                img *= scale
 
             img = img.round().astype(dt, copy=False)
 
-            im = Image.fromarray(img).convert(mode='I')
-            im.save(output_fullpath, compress_level=1)
-            im.close()
-            del im
+            with Image.fromarray(img).convert(mode='I') as im:
+                im.save(output_fullpath, compress_level=1)
+
             del img
 
         return True
@@ -255,18 +362,23 @@ class MRCImport(object):
 
         return shared.MinMaxGamma(minval, maxval, Gamma)
 
-    @classmethod
-    def CreateMosaic(cls, mrcfile, img_ext: str):
+    @staticmethod
+    def CreateMosaic(mrcfile, img_ext: str) -> nornir_imageregistration.Mosaic:
         mosaic = nornir_imageregistration.Mosaic()
 
         for (i, t) in enumerate(mrcfile.tile_meta):
             image_shape = mrcfile.img_shape
             pixel_position = t.pixel_coords
-            tile_transform = nornir_imageregistration.transforms.factory.CreateRigidMeshTransform(
+            tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform(
                 target_image_shape=image_shape,
                 source_image_shape=image_shape,
-                rangle=0,
-                warped_offset=pixel_position)
+                warped_offset=pixel_position,
+                rangle=0)
+            # tile_transform = nornir_imageregistration.transforms.factory.CreateRigidMeshTransform(
+            #     target_image_shape=image_shape,
+            #     source_image_shape=image_shape,
+            #     rangle=0,
+            #     warped_offset=pixel_position)
             tile_filename = GetFileNameForTileNumber(i, img_ext)
             mosaic.ImageToTransform[tile_filename] = tile_transform
 
@@ -274,15 +386,36 @@ class MRCImport(object):
         return mosaic
 
 
-class MRCFile(object):
+class MRCFile:
     """
     Reads a SerialEM mrc file
     http://bio3d.colorado.edu/imod/doc/mrc_format.txt
     """
     HeaderLength = 1024
 
+    grid_dim: NDArray[int]
+    grid_cell_dim: NDArray[np.floating]
+    pixel_spacing: NDArray[np.floating]
+    min_pixel_value: float
+    max_pixel_value: float
+    mean_pixel_value: float
+    extended_header_size: int
+    tile_header_size: int
+    tile_header_flags: int
+    img_origin: NDArray[np.floating]
+    imod_flags: int
+    tile_meta: list[MRCTileHeader]
+
+    _temp_dir: str  # Temporary directory to store numpy arrays of each tile image in the MRC file.  Used with a context manager to clean up the temporary files
+
+    @property
+    def scale(self) -> Scale:
+        return Scale(X=self.pixel_spacing[0],
+                     Y=self.pixel_spacing[1],
+                     Z=self.pixel_spacing[2])
+
     @staticmethod
-    def IsBigEndian(Header):
+    def IsBigEndian(Header: bytes) -> bool:
         """Returns true if the mrc header indicates the file is big endian"""
         (EndianStamp,) = struct.unpack('I', Header[0xD4:0xD8])
         if EndianStamp == 17:
@@ -293,15 +426,15 @@ class MRCFile(object):
             Warning('ENDIAN Value in MRC header incorrect, defaulting to Little Endian')
             return False
 
-    @classmethod
-    def Load(cls, filename: str):
+    @staticmethod
+    def Load(filename: str) -> MRCFile:
         """Read the header of an MRC file from disk and return an object for access"""
 
         mrc = open(filename, 'rb')
 
         # The mrc file header is always 1024, mostly empty space
-        Header = mrc.read(cls.HeaderLength)
-        IsBigEndian = cls.IsBigEndian(Header)
+        Header = mrc.read(MRCFile.HeaderLength)
+        IsBigEndian = MRCFile.IsBigEndian(Header)
         obj = MRCFile(mrc, IsBigEndian)
 
         (obj.img_XDim, obj.img_YDim, obj.num_tiles, obj.img_pixel_mode) = struct.unpack(obj.EndianChar + 'IIII',
@@ -342,11 +475,8 @@ class MRCFile(object):
         return obj
 
     @property
-    def EndianChar(self) -> str:
-        if self.IsBigEndian:
-            return '>'
-        else:
-            return '<'
+    def EndianChar(self) -> Literal[">", "<"]:
+        return '>' if self.IsBigEndian else '<'
 
     @property
     def bytes_per_pixel(self) -> int:
@@ -397,7 +527,7 @@ class MRCFile(object):
         return dtype
 
     @property
-    def pil_pixel_mode(self):
+    def pil_pixel_mode(self) -> str:
         """
         :return: The numpy dtype pixels are encoded in
         """
@@ -426,14 +556,21 @@ class MRCFile(object):
 
         return mode
 
+    def __enter__(self):
+        self._temp_dir = tempfile.mkdtemp()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        nornir_shared.files.rmtree(self._temp_dir)
+
     @property
-    def image_length_in_bytes(self):
+    def image_length_in_bytes(self) -> int:
         """
         Return the number of bytes in a tile
         """
         return self.img_shape.prod() * self.bytes_per_pixel
 
-    def _get_image_offset(self, iTile):
+    def _get_image_offset(self, iTile: int) -> int:
         """
         Return the offset to the first pixel of a tile
         """
@@ -443,7 +580,7 @@ class MRCFile(object):
         image_offset = first_image_offset + (image_byte_size * iTile)
         return image_offset
 
-    def get_tile_as_bytes(self, iTile):
+    def get_tile_as_bytes(self, iTile: int) -> bytes:
         """
         Return bytes
         """
@@ -457,7 +594,7 @@ class MRCFile(object):
 
         return image_bytes
 
-    def _repair_out_of_bounds_pixels(self, iTile, camera_bpp):
+    def _repair_out_of_bounds_pixels(self, iTile: int, camera_bpp: int):
         """
         Used to repair old mrc files where the maximum pixel values were sometimes incorrect
         :param int camera_bpp: The maximum number of bits that could be encoded by the camera capturing the image
@@ -473,7 +610,7 @@ class MRCFile(object):
 
         self.set_pixels(iTile, iPixels, new_values=corrected.tobytes(), old_values=img[outliers].tobytes())
 
-    def set_pixels(self, iTile, iPixels, new_values, old_values=None):
+    def set_pixels(self, iTile: int, iPixels: NDArray[np.integer], new_values: bytes, old_values: bytes | None = None):
         """
         :param int iTile: Index of tile to update
         :param list iPixels: Indicies of pixels to update
@@ -501,7 +638,7 @@ class MRCFile(object):
 
         return
 
-    def get_tile_as_numpy(self, iTile):
+    def get_tile_as_numpy(self, iTile: int) -> NDArray:
         """
         Return a numpy array
         """
@@ -509,7 +646,15 @@ class MRCFile(object):
         img = numpy.frombuffer(image_bytes, dtype=self.pixel_dtype, count=self.img_shape.prod()).reshape(self.img_shape)
         return img
 
-    def get_tile_as_image(self, iTile):
+    def get_tile_as_numpy_memmap(self, iTile: int) -> bytes:
+        """
+        Return bytes
+        """
+        image_offset = self._get_image_offset(iTile)
+        return np.memmap(filename=self.mrc, mode='c', dtype=self.pixel_dtype, shape=self.img_shape.prod(),
+                         offset=image_offset).reshape(self.img_shape)
+
+    def get_tile_as_image(self, iTile: int) -> PIL.Image.Image:
         """
         Return a pillow image
         """
@@ -519,7 +664,7 @@ class MRCFile(object):
         im = im.convert(mode='I')
         return im
 
-    def ReadTileMeta(self, mrc, iTile):
+    def ReadTileMeta(self, mrc, iTile: int) -> MRCTileHeader:
         mrc.seek(MRCFile.HeaderLength + (iTile * self.tile_header_size))
         TileHeader = mrc.read(self.tile_header_size)
         while len(TileHeader) < self.tile_header_size:
@@ -531,10 +676,10 @@ class MRCFile(object):
                                   big_endian=self.IsBigEndian)
 
     @property
-    def img_shape(self):
+    def img_shape(self) -> NDArray[np.int64]:
         return numpy.asarray((self.img_XDim, self.img_YDim), dtype=numpy.int64)
 
-    def __init__(self, mrc, isBigEndian=False):
+    def __init__(self, mrc, isBigEndian: bool = False):
         self.mrc = mrc
         self.IsBigEndian = isBigEndian  # True for big-endian
 
@@ -572,10 +717,21 @@ class MRCTileHeaderFlags(enum.IntFlag):
     Exposure = 32
 
 
-class MRCTileHeader(object):
+class MRCTileHeader:
+    ID: int
+    nm_per_pixel: float | NDArray[np.floating]
+    tilt_angle: float | None
+    piece_coords: NDArray[int] | None
+    stage_coords: NDArray[np.floating] | None
+    mag: float | None
+    intensity: float | None
+    exposure: float | None
+
+    _pixel_coords: NDArray[np.floating] | None = None  # Calculated value
 
     @staticmethod
-    def calculate_pixel_coords(stage_coords, nm_per_pixel):
+    def calculate_pixel_coords(stage_coords: NDArray[np.floating], nm_per_pixel: float | NDArray[np.floating]) -> \
+            NDArray[np.floating]:
 
         # stage_coords is in um, so convert to nm and then pixels
         nm_coord = stage_coords.astype(numpy.float64) * 1000.0  # Convert to nm
@@ -583,11 +739,11 @@ class MRCTileHeader(object):
         return pixel_coord
 
     @property
-    def pixel_coords(self):
+    def pixel_coords(self) -> NDArray[np.floating]:
         return self._pixel_coords
 
     @staticmethod
-    def Load(tile_id, header, tile_flags, nm_per_pixel, big_endian=False):
+    def Load(tile_id: int, header, tile_flags: int, nm_per_pixel: float, big_endian: bool = False) -> MRCTileHeader:
         """
         :param tile_flags:
         :param nm_per_pixel:
@@ -634,7 +790,7 @@ class MRCTileHeader(object):
 
         return obj
 
-    def __init__(self, ID, nm_per_pixel):
+    def __init__(self, ID: int, nm_per_pixel: float | NDArray[np.floating]):
         self.ID = ID
         self.nm_per_pixel = nm_per_pixel
         self.tilt_angle = None
@@ -646,7 +802,7 @@ class MRCTileHeader(object):
 
         self._pixel_coords = None  # Calculated value
 
-    def __str__(self, *args, **kwargs):
+    def __str__(self, *args, **kwargs) -> str:
         output = str(self.ID)
 
         if self.stage_coords is not None:

@@ -4,14 +4,7 @@ from typing import NamedTuple
 
 import nornir_buildmanager
 from . import idoc, serialemlog, shared
-
-
-class ContrastValue(NamedTuple):
-    Section: int
-    Min: int
-    Max: int
-    Gamma: int = 1.0
-
+from .shared import ContrastValue
 
 DefaultHistogramFilename = "ContrastOverrides.txt"
 
