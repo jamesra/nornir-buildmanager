@@ -20,10 +20,10 @@ readme = "README.md"
 license = {file = "LICENSE"}
 requires-python = ">=3.10"
 dependencies = [
-	"numpy",
-	"scipy",
-	"matplotlib",
-	"psutil",
+	"numpy >= 1.26",
+	"scipy >= 1.11",
+	"matplotlib >= 3.8",
+	"psutil >= 5.9",
 	"nornir_pools @ git+https://github.com/clementsan/nornir-pools.git@dev",
 	"nornir_shared @ git+https://github.com/clementsan/nornir-shared.git@dev",
 	"nornir_imageregistration @ git+https://github.com/clementsan/nornir-imageregistration.git@CuPy"
@@ -38,7 +38,7 @@ classifiers = [
 nornir-build = "nornir_buildmanager.build:Execute"
 
 [project.optional-dependencies]
-gpu = ["cupy"]
+gpu = ["cupy >= 13.0"]
 
 [tool.setuptools]
 package-data = {"nornir_buildmanager" = ["config/*.xml"]}
