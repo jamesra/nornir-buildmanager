@@ -10,10 +10,10 @@ include = ["nornir_buildmanager*"]
 name = "nornir_buildmanager"
 version = "1.6.0"
 authors = [
-  { name="James Anderson", email="James.R.Anderson@utah.edu" },
+	{ name="James Anderson", email="James.R.Anderson@utah.edu" },
 ]
 maintainers = [
-  { name="Clement Vachet", email="cvachet@sci.utah.edu" },
+	{ name="Clement Vachet", email="cvachet@sci.utah.edu" },
 ]
 description = "Scripts for the construction of 3D volumes from 2D image sets."
 readme = "README.md"
@@ -30,9 +30,9 @@ dependencies = [
 	"nornir_imageregistration @ git+https://github.com/clementsan/nornir-imageregistration.git@CuPy"
 ]
 classifiers = [
-    "Programming Language :: Python :: 3.10",
-    "Operating System :: OS Independent",
-    "Topic :: Scientific/Engineering",
+	"Programming Language :: Python :: 3.10",
+	"Operating System :: OS Independent",
+	"Topic :: Scientific/Engineering",
 ]
 
 [project.scripts]
