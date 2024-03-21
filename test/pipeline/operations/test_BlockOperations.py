@@ -80,7 +80,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
     @property
     def VolumePath(self):
-        return "SliceToSliceRegistrationBruteOnly"
+        return "SliceToSliceRegistrationSkipBrute"
 
     def setUp(self):
         super(SliceToSliceRegistrationSkipBrute, self).setUp()
