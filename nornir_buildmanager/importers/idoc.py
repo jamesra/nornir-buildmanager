@@ -329,7 +329,7 @@ class SerialEMIDocImport(object):
         contrast_settings = shared.GetSectionContrastSettings(section_number=SectionNumber,
                                                               contrast_map=ContrastMap,
                                                               contrast_cutoffs=ContrastCutoffs,
-                                                              calculate_histogram=lambda: IDocData.CalculateHistogram(
+                                                              calculate_histogram=lambda: SerialEMIDocImport.CalculateHistogram(
                                                                   IDocData, source_tile_list),
                                                               histogram_cache_path=histogram_cache_path)
 
