@@ -77,7 +77,7 @@ def find_section_directory_metadata(section_meta_data: shared.FilenameMetadata,
             if entry.is_file() is False:
                 continue
 
-            if nornir_shared.files.check_if_file_matches(entry.name, matching_pattern):
+            if nornir_shared.files.check_if_str_matches(entry.name, matching_pattern):
                 matched_file_list.append(os.path.join(section_meta_data.fullpath, entry.name))
 
     return section_meta_data, matched_file_list

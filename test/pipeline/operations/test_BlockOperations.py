@@ -142,6 +142,12 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                          "Output manual transform InputTransformChecksum should match input transform checksum")
 
     def testRefineSectionAlignment(self):
+        
+        #The data for section 7 appears to be missing from the test input folder now. 
+        # I need to dig through old copies and see if can be tracked down.  No idea
+        # why the input data for this test went missing. 
+        # C:\src\git\nornir-testdata\PlatformRaw\PMG\SliceToSliceRegistrationSkipBrute
+        
 
         groupNames = ['StosBrute16', 'StosGrid16', 'StosGrid8', 'SliceToVolume8']
 

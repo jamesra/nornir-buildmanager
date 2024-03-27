@@ -1076,6 +1076,8 @@
                       default=""
                       help="Bounding box of region to assemble.  Default is no cropping.  Form is MinX,MinY,MaxX,MaxY with no spaces."
                       required="False"/>
+            <Argument flag="-ext" dest="image_ext" default="png"
+                      help="Format to save, default is png format. Use npy for Numpy arrays."/>
         </Arguments>
         <Iterate VariableName="section_node" XPath="Block/Section">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
@@ -1092,7 +1094,7 @@
 
                     <PythonCall Function="tile.AssembleTransform"
                                 OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace"
-                                Levels="#Levels" CropBox="#CropBox">
+                                Levels="#Levels" CropBox="#CropBox" image_ext="#image_ext">
                         <Parameters>
                             <Entry Name="feathering" Value="binary"/>
                         </Parameters>
