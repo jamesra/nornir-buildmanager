@@ -88,8 +88,9 @@ class PipelineSearchRootNotFound(PipelineArgumentNotFound):
 class PipelineRegExSearchFailed(PipelineError):
     '''A regular expression search could not match any nodes'''
     regex : str
+    attribValue: Any
 
-    def __init__(self, regex: str, attribValue, **kwargs):
+    def __init__(self, regex: str, attribValue: Any, **kwargs):
         super(PipelineRegExSearchFailed, self).__init__(**kwargs)
 
         self.regex = regex

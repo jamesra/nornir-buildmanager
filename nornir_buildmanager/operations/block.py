@@ -2751,7 +2751,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
                     MosaicToVolume = task.wait_return()
                     MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
                 except:
-                    Logger.warn("Exception transforming tile. Skipping %s" % task.imagename)
+                    Logger.warning("Exception transforming tile. Skipping %s" % task.imagename)
                     pass
         else:
             for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):

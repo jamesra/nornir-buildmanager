@@ -6,7 +6,7 @@ Created on Dec 20, 2016
 import nornir_buildmanager.volumemanager
 
 
-def ListBlockStosMaps(BlockNode, **kwargs):
+def ListBlockStosMaps(BlockNode: nornir_buildmanager.volumemanager.BlockNode, **kwargs):
     print("")
 
     print('StosMaps in block {0:s}:'.format(BlockNode.Name))
@@ -18,7 +18,7 @@ def ListBlockStosMaps(BlockNode, **kwargs):
     return
 
 
-def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
+def ListStosMap(BlockNode: nornir_buildmanager.volumemanager.BlockNode, StosMapName: str, ControlSection=None, **kwargs):
     StosMap = BlockNode.GetStosMap(StosMapName)
 
     print('')
@@ -43,7 +43,7 @@ def ListStosMap(BlockNode, StosMapName, ControlSection=None, **kwargs):
     return
 
 
-def AddMapping(BlockNode, StosMapName, ControlSection, MappedSection, **kwargs):
+def AddMapping(BlockNode: nornir_buildmanager.volumemanager.BlockNode, StosMapName: str, ControlSection: int, MappedSection: int, **kwargs):
     StosMap = BlockNode.GetStosMap(StosMapName)
 
     if StosMap is None:
@@ -57,7 +57,7 @@ def AddMapping(BlockNode, StosMapName, ControlSection, MappedSection, **kwargs):
     return BlockNode
 
 
-def RemoveMapping(BlockNode, StosMapName, ControlSection, MappedSection, **kwargs):
+def RemoveMapping(BlockNode: nornir_buildmanager.volumemanager.BlockNode, StosMapName: str, ControlSection: int, MappedSection: int, **kwargs):
     StosMap = BlockNode.GetStosMap(StosMapName)
     if StosMap is None:
         print("No stos map found with name {0}".format(StosMapName))

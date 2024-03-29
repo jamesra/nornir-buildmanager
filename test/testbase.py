@@ -10,9 +10,12 @@ import os
 import pickle
 import shutil
 import unittest
+from dotenv import load_dotenv
 
 import nornir_pools
 from nornir_shared.misc import SetupLogging
+
+load_dotenv()  # take environment variables from .env in parent folders.
 
 
 class PickleHelper(object):
@@ -86,7 +89,7 @@ class TestBase(unittest.TestCase):
             TestOutputDir = os.environ["TESTOUTPUTPATH"]
             return os.path.join(TestOutputDir, self.classname)
         else:
-            self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
+            self.fail("TESTOUTPUTPATH environment variable should specify output data directory")
 
         return None
 
@@ -97,7 +100,7 @@ class TestBase(unittest.TestCase):
             TestOutputDir = os.environ["TESTOUTPUTPATH"]
             return os.path.join(TestOutputDir, 'Cache')
         else:
-            self.fail("TESTOUTPUTPATH environment variable should specify input data directory")
+            self.fail("TESTOUTPUTPATH environment variable should specify output data directory")
 
         return None
 
@@ -114,9 +117,7 @@ class TestBase(unittest.TestCase):
             TestOutputDir = os.environ["TESTOUTPUTPATH"]
             return os.path.join(TestOutputDir, "Logs", self.classname)
         else:
-            self.fail("TESTOUTPUTPATH environment variable should specfify input data directory")
-
-        return None
+            self.fail("TESTOUTPUTPATH environment variable should specfify output data directory")
 
     @property
     def TestProfilerOutputPath(self):

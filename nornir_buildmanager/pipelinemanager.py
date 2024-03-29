@@ -13,13 +13,13 @@ import sys
 import traceback
 from xml.etree import ElementTree
 
-import nornir_buildmanager
 import nornir_pools
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
 from . import argparsexml
 from .pipeline_exceptions import *
+import nornir_buildmanager.volumemanager
 
 
 # import xml.etree
@@ -42,14 +42,14 @@ class ArgumentSet:
     def Variables(self):
         return self._Variables
 
-    def __init__(self, PipelineName=None):
+    def __init__(self, PipelineName: str | None = None):
         self._Arguments = {}
         self._Attribs = {}
         self._Parameters = {}
         self._Variables = {}
         self.PipelineName = PipelineName
 
-    def SubstituteStringVariables(self, xpath):
+    def SubstituteStringVariables(self, xpath: str) -> str:
         """Replace all instances of # in a string with the variable names"""
 
         iStart = xpath.find("#")
@@ -69,7 +69,7 @@ class ArgumentSet:
 
         raise KeyError(str(key) + " not found")
 
-    def ReplaceVariable(self, xpath, iStart):
+    def ReplaceVariable(self, xpath, iStart: int):
         '''Replace # variable names in an xpath with variable string values'''
 
         # Find the next # if it exists
@@ -518,6 +518,12 @@ class PipelineManager(object):
                     prettyoutput.IncreaseIndent()
                     self.ProcessStageElement(VolumeElem, ChildNode, ArgSet)
                     PipelinesRun += 1
+
+                except nornir_buildmanager.NornirMissingDependencyException as e:
+                    # This means builds cannot succeed.  We should clearly warn the user and stop so the cause of failure is clear
+                    PipelineManager.logger.error(e.message)
+                    prettyoutput.LogErr(e.message)
+                    raise nornir_buildmanager.NornirRethrownException() from e
                 except PipelineSelectFailed as e:
                     if ArgSet.Arguments["debug"]:
                         PipelineManager.logger.info(str(e))
@@ -533,13 +539,13 @@ class PipelineManager(object):
                     break
                 except PipelineRegExSearchFailed as e:
                     PipelineManager.logger.info(
-                        "Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
+                        f"Regular expression did not match. regex {e.regex} != {e.attribValue}. Skipping to next iteration.\n" + str(e.attribValue))
                     break
                 except PipelineError as e:
-                    errStr = "Unexpected error, exiting pipeline\n" + str(e)
+                    errStr = "Unexpected error, exiting pipeline\n" + str(e.message)
                     PipelineManager.logger.error(errStr)
                     prettyoutput.LogErr(errStr)
-                    sys.exit()
+                    raise nornir_buildmanager.NornirRethrownException() from e
                 finally:
                     prettyoutput.DecreaseIndent()
 

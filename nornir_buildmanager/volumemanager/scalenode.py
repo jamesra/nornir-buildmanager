@@ -75,7 +75,11 @@ class ScaleNode(XElementWrapper):
 class Scale(object):
     """
     A 2/3 dimensional representation of scale.
+    Units should be in nanometers
     """
+    _x: float | None
+    _y: float | None
+    _z: float | None
 
     @property
     def X(self) -> ScaleAxis:
@@ -86,7 +90,7 @@ class Scale(object):
         if isinstance(val, float):
             self._x = ScaleAxis(val, 'nm')
         elif isinstance(val, ScaleAxis):
-            self._x = val
+            self._x = val.UnitsPerPixel
         else:
             raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
 
@@ -99,7 +103,7 @@ class Scale(object):
         if isinstance(val, float):
             self._y = ScaleAxis(val, 'nm')
         elif isinstance(val, ScaleAxis):
-            self._y = val
+            self._y = val.UnitsPerPixel
         else:
             raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
 
@@ -112,7 +116,7 @@ class Scale(object):
         if isinstance(val, float):
             self._z = ScaleAxis(val, 'nm')
         elif isinstance(val, ScaleAxis):
-            self._z = val
+            self._z = val.UnitsPerPixel
         else:
             raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
 
@@ -172,13 +176,15 @@ class Scale(object):
             return "X:{0} Y:{1}".format(str(self.X), str(self.Y))
 
 
-class ScaleAxis(object):
+class ScaleAxis:
+    UnitsPerPixel: float
+    UnitsOfMeasure: str
 
     def __init__(self, UnitsPerPixel: float, UnitsOfMeasure: str):
         self.UnitsPerPixel = float(UnitsPerPixel)
         self.UnitsOfMeasure = str(UnitsOfMeasure)
 
-    def __truediv__(self, scalar):
+    def __truediv__(self, scalar: float):
         if isinstance(scalar, float):
             return ScaleAxis(self.UnitsPerPixel / scalar, self.UnitsOfMeasure)
         elif isinstance(scalar, ScaleAxis):
@@ -189,13 +195,13 @@ class ScaleAxis(object):
 
         raise NotImplementedError("Division for input type is not supported: %s" % scalar)
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         if other is None:
             return False
 
         return other.UnitsPerPixel == self.UnitsPerPixel and other.UnitsOfMeasure == self.UnitsOfMeasure
 
-    def __mul__(self, scalar):
+    def __mul__(self, scalar: float):
         if isinstance(scalar, float):
             return ScaleAxis(self.UnitsPerPixel * scalar, self.UnitsOfMeasure)
         elif isinstance(scalar, ScaleAxis):

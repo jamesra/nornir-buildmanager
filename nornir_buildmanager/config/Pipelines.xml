@@ -56,13 +56,20 @@
                       help="Directory to import from.  The .mrc files in subdirectories should be named with the desired section number after import. i.e. 0005.mrc to import the file as section #5."/>
             <Argument flag="-ext" dest="extension" default="mrc"
                       help="Extension of mrc files, default is mrc"/>
+            <Argument flag="-Min" dest="MinValue" type="float"
+                      help="Min intensity cutoff.  A value from 0.0 to 1.0" required="False"
+                      default="0.0001"/>
+            <Argument flag="-Max" dest="MaxValue" type="float"
+                      help="Max intensity cutoff.  A value from 0.0 to 1.0" required="False"
+                      default=".9999"/>
             <Argument flag="-CameraBpp" dest="CameraBpp" type="int"
                       help="The actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data."
                       required="False"/>
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.mrc"
-                    Function="Import" ImportPath="#ImportDir" extension="#extension" CameraBpp="#CameraBpp"/>
+                    Function="Import" ImportPath="#ImportDir" extension="#extension"
+                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp"/>
     </Pipeline>
 
     <Pipeline Name="ImportImages"
@@ -107,8 +114,10 @@
                       type="str"
                       help="Regular expression describing channels to include, * processes all channels"
                       required="False"/>
-            <Argument flag="-Threshold" dest="PruneThreshold" default="0"
-                      type="float" help="Texture complexity threshold" required="True"/>
+            <Argument flag="-DefaultThreshold" dest="DefaultPruneThreshold"
+                      type="float"
+                      help="Texture complexity threshold, this value is used if not user defined value is set and no previous prune operation has been run.  To change this value for an already built section, use SetPruneCutoff"
+                      required="True"/>
             <Argument flag="-InputFilter" dest="InputFilter" default="Raw8"
                       help="Filter to calculate complexity upon" required="False"/>
             <Argument flag="-Downsample" dest="Downsample" type="int"
@@ -159,7 +168,7 @@
                 <PythonCall Function="pruneobj.PruneObj.PruneMosaic"
                             OutputTransformName="#OutputTransform">
                     <Parameters>
-                        <Entry Name="Threshold" Value="#PruneThreshold"/>
+                        <Entry Name="Threshold" Value="#DefaultPruneThreshold"/>
                     </Parameters>
                 </PythonCall>
             </Iterate>
@@ -1067,6 +1076,8 @@
                       default=""
                       help="Bounding box of region to assemble.  Default is no cropping.  Form is MinX,MinY,MaxX,MaxY with no spaces."
                       required="False"/>
+            <Argument flag="-ext" dest="image_ext" default="png"
+                      help="Format to save, default is png format. Use npy for Numpy arrays."/>
         </Arguments>
         <Iterate VariableName="section_node" XPath="Block/Section">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
@@ -1083,7 +1094,7 @@
 
                     <PythonCall Function="tile.AssembleTransform"
                                 OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace"
-                                Levels="#Levels" CropBox="#CropBox">
+                                Levels="#Levels" CropBox="#CropBox" image_ext="#image_ext">
                         <Parameters>
                             <Entry Name="feathering" Value="binary"/>
                         </Parameters>
@@ -1547,7 +1558,7 @@
     </Pipeline>
 
     <Pipeline Name="RepairStosAngles" Help="Negate angles for .stos files created before Dec 1st 2023">
-         <Arguments>
+        <Arguments>
             <Argument flag="-Block" default="*" dest="BlockRegEx" type="str"
                       help="Block to examine the StosGroup within" required="False"/>
             <Argument flag="-StosGroup" dest="StosGroup" type="str"
@@ -1560,7 +1571,7 @@
             <Iterate VariableName="SectionMappingNode"
                      XPath="StosGroup[@Name='#StosGroup']" Validate="False">
                 <Iterate VariableName="transform_node"
-                     XPath="SectionMappings/Transform[@Type='#Type']" Validate="False">
+                         XPath="SectionMappings/Transform[@Type='#Type']" Validate="False">
                     <PythonCall Function="migration.ReverseRigidTransformAngles"
                                 transform_node="#transform_node"/>
                 </Iterate>
@@ -1975,25 +1986,26 @@
             <Argument flag="-InputGroup" dest="InputGroupName" type="str"
                       required="True" help="Name of stos group to linearize"/>
             <Argument flag="-InputDownsample" dest="InputDownsample"
-                type="int" help="Downsample level of input stosgroup" required="True" />
-            <Argument flag="-OutputGroup" dest="OutputGroupName" type="str" required="True" help="Name of the output stos group"/>
+                      type="int" help="Downsample level of input stosgroup" required="True"/>
+            <Argument flag="-OutputGroup" dest="OutputGroupName" type="str" required="True"
+                      help="Name of the output stos group"/>
             <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
-                help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
+                      help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
             <Argument flag="-travel_limit" type="float" required="False" dest="travel_limit"
-                help="Distance a transformed point can be from the rigid transform before we ignore distortion and use rigid transform for that point.  Points closer than one half of this value use the transformed position."/>
-            <Argument flag="-no_rotation"  action="store_true" required="False" dest="ignore_rotation"
-                help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
+                      help="Distance a transformed point can be from the rigid transform before we ignore distortion and use rigid transform for that point.  Points closer than one half of this value use the transformed position."/>
+            <Argument flag="-no_rotation" action="store_true" required="False" dest="ignore_rotation"
+                      help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
         </Arguments>
 
         <Iterate VariableName="BlockNode" XPath="Block">
             <Select VariableName="StosGroupNode" Root="BlockNode"
                     XPath="StosGroup[@Name='#InputGroupName#InputDownsample']"/>
             <PythonCall Function="block.LinearBlendStosGroup"
-                InputStosGroupNode="#StosGroupNode"
-                OutputGroupName="#OutputGroupName#InputDownsample" 
-                linear_blend_factor="#linear_blend_factor"
-                travel_limit="#travel_limit"
-                ignore_rotation="#ignore_rotation"/>
+                        InputStosGroupNode="#StosGroupNode"
+                        OutputGroupName="#OutputGroupName#InputDownsample"
+                        linear_blend_factor="#linear_blend_factor"
+                        travel_limit="#travel_limit"
+                        ignore_rotation="#ignore_rotation"/>
         </Iterate>
     </Pipeline>
 
@@ -2017,16 +2029,16 @@
                       help="Do not add extra control points to slice-to-volume transforms to increase accuracy."
                       required="False"/>
             <Argument flag="-Tolerance" dest="Tolerance" type="float"
-                default="64"
-                help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy."
-                required="False" />
-             <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
-                help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
+                      default="64"
+                      help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy."
+                      required="False"/>
+            <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
+                      help="A value from 0 to 1.0 indicating how much weight to assign the linear transform in the output"/>
             <Argument flag="-travel_limit" type="float" required="False" dest="travel_limit"
-                help="Distance a transformed point can be from the rigid transform before we ignore distortion and use rigid transform for that point.  Points closer than one half of this value use the transformed position."/>
-            <Argument flag="-no_rotation"  action="store_true" required="False" dest="ignore_rotation"
-                help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
-       
+                      help="Distance a transformed point can be from the rigid transform before we ignore distortion and use rigid transform for that point.  Points closer than one half of this value use the transformed position."/>
+            <Argument flag="-no_rotation" action="store_true" required="False" dest="ignore_rotation"
+                      help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
+
 
         </Arguments>
         <Iterate VariableName="BlockNode" XPath="Block">
@@ -2034,12 +2046,12 @@
                 <Iterate VariableName="StosGroupNode" Root="BlockNode"
                          XPath="StosGroup[@Name='#StovInputGroup#StovDownsample']">
                     <PythonCall Function="block.BuildSliceToVolumeTransforms"
-                        OutputMap="#OutputMap" OutputGroupName="#StovOutputGroupName"
-                        Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance"
-                        stos_map_node="#StosMapNode" stos_group_node="#StosGroupNode" 
-                        linear_blend_factor="#linear_blend_factor"
-                        travel_limit="#travel_limit"
-                        ignore_rotation="#ignore_rotation">
+                                OutputMap="#OutputMap" OutputGroupName="#StovOutputGroupName"
+                                Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance"
+                                stos_map_node="#StosMapNode" stos_group_node="#StosGroupNode"
+                                linear_blend_factor="#linear_blend_factor"
+                                travel_limit="#travel_limit"
+                                ignore_rotation="#ignore_rotation">
                     </PythonCall>
                 </Iterate>
             </Iterate>

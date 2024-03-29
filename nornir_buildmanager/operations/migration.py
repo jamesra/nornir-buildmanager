@@ -17,12 +17,12 @@ import nornir_imageregistration.files
 import nornir_shared.files
 
 
-def GetTileNumber(filename):
+def GetTileNumber(filename: str) -> int:
     (tile_number_str, ext) = os.path.splitext(os.path.basename(filename))
     return int(tile_number_str)
 
 
-def GetTileFormatString(tilefilename):
+def GetTileFormatString(tilefilename: str) -> str:
     basename = os.path.basename(tilefilename)
     (basename, extension) = os.path.splitext(basename)
 
@@ -31,7 +31,7 @@ def GetTileFormatString(tilefilename):
     return file_format
 
 
-def GetListOfTileNumbers(tile_filenames):
+def GetListOfTileNumbers(tile_filenames: list[str]) -> list[int]:
     tile_number_list = []
     for tile_filename in tile_filenames:
         tile_number = GetTileNumber(tile_filename)
@@ -192,7 +192,7 @@ def MigrateTransforms_1p2_to_1p3(transform_node, **kwargs):
 
 #-------------------------------------------------------------------
 
-def reverse_angle_for_rigid_transforms(filename: str):
+def reverse_angle_for_rigid_transforms(filename: str) -> tuple[bool, nornir_imageregistration.transforms.Rigid | None]:
     """"If the transform is a rigid transform, then we need to invert the angle if it is older than 11/28/2023"""
 
     cutoff_date = datetime.datetime(2023, 11, 28)
@@ -286,7 +286,7 @@ _XMLHeadTagParser = re.compile(r'''
                                    (?P<Remaining>.+)? # Remaining text
                                    ''', re.VERBOSE)
 
-def TryRepairXMLFileAppendError(filename: str):
+def TryRepairXMLFileAppendError(filename: str) -> bool:
     """Attempt to repair an XML file that has excess text after the closing element"""
 
     try:

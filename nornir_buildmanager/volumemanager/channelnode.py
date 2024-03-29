@@ -76,42 +76,54 @@ class ChannelNode(XNamedContainerElementWrapped):
         return False
 
     @property
-    def Scale(self) -> Scale:
+    def Scale(self) -> Scale | None:
         if hasattr(self, '_scale') is False:
             scaleNode = self.find('Scale')
             self._scale = Scale.Create(scaleNode) if scaleNode is not None else None
 
         return self._scale
 
-    def GetScale(self) -> Scale:
+    def GetScale(self) -> Scale | None:
         return self.Scale
 
-    def SetScale(self, scaleValueInNm: float):
+    def _try_remove_scale_node(self):
+        existing_scale_node = self.find('Scale')
+        if existing_scale_node is not None:
+            self.remove(existing_scale_node)
+
+    def SetScale(self, scale_value_in_nm: float | int | ScaleAxis | Scale) -> tuple[bool, ScaleNode]:
         """Create a scale node for the channel
+        If a float or integer is passed, the value should be in nanometer units.
         :return: ScaleNode object that was created"""
         # TODO: Scale should be its own object and a property
 
-        [added, scaleNode] = self.UpdateOrAddChild(ScaleNode.Create())
+        self._try_remove_scale_node()
 
-        if isinstance(scaleValueInNm, float):
-            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': 'nm',
-                                                             'UnitsPerPixel': str(scaleValueInNm)}))
-            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': 'nm',
-                                                             'UnitsPerPixel': str(scaleValueInNm)}))
-        elif isinstance(scaleValueInNm, int):
-            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': 'nm',
-                                                             'UnitsPerPixel': str(scaleValueInNm)}))
-            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': 'nm',
-                                                             'UnitsPerPixel': str(scaleValueInNm)}))
-        elif isinstance(scaleValueInNm, ScaleAxis):
-            scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': str(scaleValueInNm.UnitsOfMeasure),
-                                                             'UnitsPerPixel': str(scaleValueInNm.UnitsPerPixel)}))
-            scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': str(scaleValueInNm.UnitsOfMeasure),
-                                                             'UnitsPerPixel': str(scaleValueInNm.UnitsPerPixel)}))
-        elif isinstance(scaleValueInNm, Scale):
-            (added, scaleNode) = self.UpdateOrAddChild(ScaleNode.CreateFromScale(scaleValueInNm))
+        if isinstance(scale_value_in_nm, Scale):
+            (added, scaleNode) = self.UpdateOrAddChild(ScaleNode.CreateFromScale(scale_value_in_nm),
+                                                       f"ScaleNode[X='{scale_value_in_nm.X.UnitsPerPixel}'][Y='{scale_value_in_nm.Y.UnitsPerPixel}'][Z='{scale_value_in_nm.Z.UnitsPerPixel}']")
         else:
-            raise NotImplementedError("Unknown type %s" % scaleValueInNm)
+            [added, scaleNode] = self.UpdateOrAddChild(ScaleNode.Create())
+
+            if isinstance(scale_value_in_nm, float):
+                scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scale_value_in_nm)}))
+                scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scale_value_in_nm)}))
+            elif isinstance(scale_value_in_nm, int):
+                scaleNode.UpdateOrAddChild(XElementWrapper('X', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scale_value_in_nm)}))
+                scaleNode.UpdateOrAddChild(XElementWrapper('Y', {'UnitsOfMeasure': 'nm',
+                                                                 'UnitsPerPixel': str(scale_value_in_nm)}))
+            elif isinstance(scale_value_in_nm, ScaleAxis):
+                scaleNode.UpdateOrAddChild(
+                    XElementWrapper('X', {'UnitsOfMeasure': str(scale_value_in_nm.UnitsOfMeasure),
+                                          'UnitsPerPixel': str(scale_value_in_nm.UnitsPerPixel)}))
+                scaleNode.UpdateOrAddChild(
+                    XElementWrapper('Y', {'UnitsOfMeasure': str(scale_value_in_nm.UnitsOfMeasure),
+                                          'UnitsPerPixel': str(scale_value_in_nm.UnitsPerPixel)}))
+            else:
+                raise NotImplementedError("Unknown type %s" % scale_value_in_nm)
 
         self._scale = Scale.Create(scaleNode)
 

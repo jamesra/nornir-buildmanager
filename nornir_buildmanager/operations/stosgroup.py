@@ -23,7 +23,7 @@ def CreateStosGroup(GroupName, BlockNode, Downsample, **kwargs):
         return None
 
 
-def RemoveStosGroup(GroupName, BlockNode, Downsample, **kwargs):
+def RemoveStosGroup(GroupName: str, BlockNode, Downsample, **kwargs):
     removed = BlockNode.RemoveStosGroup(GroupName, Downsample)
     if removed:
         print("Removed Stos group {0} with transforms downsampled by {1}".format(GroupName, str(Downsample)))

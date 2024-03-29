@@ -10,6 +10,7 @@ import PIL
 import numpy as np
 
 import dm4reader
+import dm4reader.dm4file
 import nornir_buildmanager.importers
 from nornir_buildmanager.importers import GetFileNameForTileNumber
 import nornir_buildmanager.templates
@@ -139,7 +140,7 @@ class DM4FileHandler(object):
             'ImageData'].named_tags['PixelDepth']
 
     def __init__(self, dm4fullpath):
-        self._dm4file = dm4reader.DM4File.open(dm4fullpath)
+        self._dm4file = dm4reader.dm4file.DM4File.open(dm4fullpath)
         self._tags = self._dm4file.read_directory()
 
         # This is probably not entirely correct.  I suspect the DM4 file could have multiple images in the ImageSourceList.
