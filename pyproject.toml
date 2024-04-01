@@ -22,9 +22,9 @@ dependencies = [
 	"matplotlib >= 3.8",
 	"psutil >= 5.9",
 	"validators >= 0.23",
-	"nornir_pools @ git+https://github.com/clementsan/nornir-pools.git@dev",
-	"nornir_shared @ git+https://github.com/clementsan/nornir-shared.git@dev",
-	"nornir_imageregistration @ git+https://github.com/clementsan/nornir-imageregistration.git@dev"
+	"nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@dev",
+	"nornir_shared @ git+https://github.com/jamesra/nornir-shared.git@dev",
+	"nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@dev"
 ]
 classifiers = [
 	"Programming Language :: Python :: 3.10",
