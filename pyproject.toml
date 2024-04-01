@@ -12,9 +12,6 @@ version = "1.6.0"
 authors = [
 	{ name="James Anderson", email="James.R.Anderson@utah.edu" },
 ]
-maintainers = [
-	{ name="Clement Vachet", email="cvachet@sci.utah.edu" },
-]
 description = "Scripts for the construction of 3D volumes from 2D image sets."
 readme = "README.md"
 license = {file = "LICENSE"}
