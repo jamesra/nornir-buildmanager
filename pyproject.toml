@@ -39,5 +39,5 @@ nornir-build = "nornir_buildmanager.build:Execute"
 package-data = {"nornir_buildmanager" = ["config/*.xml"]}
 
 [project.urls]
-Homepage = "https://github.com/clementsan/nornir-buildmanager"
-Issues = "https://github.com/clementsan/nornir-buildmanager/issues"
+Homepage = "https://github.com/jamesra/nornir-buildmanager"
+Issues = "https://github.com/jamesra/nornir-buildmanager/issues"
