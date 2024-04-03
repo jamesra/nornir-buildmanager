@@ -128,7 +128,8 @@ class BlockNode(XNamedContainerElementWrapped):
         # deleted after running an align on each legacy volume
         ExpectedText = BlockNode.NonStosNumbersToString(NonStosSectionNumbers)
         if ExpectedText != StosExemptNode.text:
-            self.NonStosSectionNumbers = NonStosSectionNumbers
+            StosExemptNode.text = ExpectedText
+            StosExemptNode._AttributesChanged = True
         ################
 
         return NonStosSectionNumbers
@@ -145,7 +146,7 @@ class BlockNode(XNamedContainerElementWrapped):
             StosExemptNode._AttributesChanged = True
 
     @staticmethod
-    def NonStosNumbersToString(value) -> str:
+    def NonStosNumbersToString(value: str | int | list[int] | set[int] | frozenset[int]) -> str:
         """Converts a string, integer, list, set, or frozen set to a comma
         delimited string"""
         if isinstance(value, str):
