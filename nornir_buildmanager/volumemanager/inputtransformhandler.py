@@ -2,7 +2,7 @@ from nornir_buildmanager.volumemanager import ITransform
 import nornir_shared.misc
 
 
-class InputTransformHandler(object):
+class InputTransformHandler:
     """This can be added as a base class to another element.  It
        adds InputTransformChecksum and various option helper attributes.
     """
@@ -67,7 +67,7 @@ class InputTransformHandler(object):
     @InputTransformCropBox.setter
     def InputTransformCropBox(self, bounds: tuple[float] | None):
         """Sets boundaries in fixed space for output from the transform.
-        :param bounds tuple:  (Xo, Yo, Width, Height) or (Width, Height)
+        :param bounds:  (Xo, Yo, Width, Height) or (Width, Height)
         """
         if bounds is None:
             if 'InputTransformCropBox' in self.attrib:
@@ -190,7 +190,8 @@ class InputTransformHandler(object):
         return True, ""
 
     @classmethod
-    def EnumerateTransformDependents(cls, parent_node, checksum: str, type_name: str, recursive: bool, child_element_name: str | None = None):
+    def EnumerateTransformDependents(cls, parent_node, checksum: str, type_name: str, recursive: bool,
+                                     child_element_name: str | None = None):
         """Return a list of all sibling transforms (Same parent element) which have our checksum and type as an input transform checksum and type"""
 
         # WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query

@@ -1,4 +1,4 @@
-from __future__ import annotations 
+from __future__ import annotations
 
 import os
 
@@ -29,7 +29,7 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
                 if self.Checksum != nornir_shared.checksum.FilesizeChecksum(self.FullPath):
                     return False, "Checksum mismatch"
                 else:
-                    self.UpdateValidationTime() # Record the last time we checked the file
+                    self.UpdateValidationTime()  # Record the last time we checked the file
             except FileNotFoundError:
                 return False, f"File not found {self.FullPath}"
 
@@ -41,6 +41,8 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
 
     @property
     def Checksum(self) -> str | None:
+        """Checksum of the image.  This is the file size in bytes for speed.
+         Images are large and we don't need to read the whole file to calculate a checksum."""
         checksum = self.get('Checksum', None)
         if checksum is None:
             try:
@@ -51,8 +53,33 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
                 self.logger.debug(f'{self.FullPath} not found to calculate checksum')
                 # Reasonable to assume we have no checksum because the file does not exist
                 return None
-            
+
         return checksum
+
+    @property
+    def InputImageChecksum(self) -> str | None:
+        """Checksum of the image used to create this image.  This is the file size in bytes for speed.
+         Images are large and we don't need to read the whole file to calculate a checksum."""
+        result = self.attrib.get('InputTransformChecksum', None)
+
+        # This is a workaround for RC2, possibly other volumes, from a 2015 era bug where the input transform checksum was set to '...property attribute...'
+        if result is not None and 'property' in result:
+            del self.attrib['InputTransformChecksum']
+            self.AttributesChanged = True
+            return None
+
+        return result
+
+    @InputImageChecksum.setter
+    def InputImageChecksum(self, input_checksum: str | None) -> str | None:
+        """Checksum of the image used to create this image.  This is the file size in bytes for speed.
+         Images are large and we don't need to read the whole file to calculate a checksum.
+         If None is passed the attribute is removed from the node."""
+        if input_checksum is None:
+            if 'InputTransformChecksum' in self.attrib:
+                del self.attrib['InputTransformChecksum']
+        else:
+            self.attrib['InputTransformChecksum'] = input_checksum
 
     @property
     def Dimensions(self) -> tuple[float, float]:

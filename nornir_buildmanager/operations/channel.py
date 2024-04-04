@@ -1,10 +1,12 @@
-'''
+"""
 Created on Aug 27, 2013
 
 @author: u0490822
-'''
+"""
 
 import subprocess
+import logging
+from typing import Any
 
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.operations.tile
@@ -14,8 +16,11 @@ import nornir_shared
 from nornir_shared import *
 
 
-def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExtension=None, **kwargs):
-    '''@FilterNode.  Create  a new filter which has been processed with blob'''
+def CreateBlobFilter(Parameters: dict[str, Any], Logger: logging.Logger,
+                     InputFilter: nornir_buildmanager.volumemanager.FilterNode,
+                     OutputFilterName: str, ImageExtension: str | None = None,
+                     **kwargs) -> nornir_buildmanager.volumemanager.XElementWrapper | None:
+    """@FilterNode.  Create  a new filter which has been processed with blob"""
     Radius = Parameters.get('r', '3')
     Median = Parameters.get('median', '3')
     Max = Parameters.get('max', '3')
@@ -75,7 +80,7 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
         Logger.error("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
         return
 
-    MaskStr = ""
+    mask_str = ""
     if InputFilter.HasMask:
         InputMaskImageNode = InputFilter.GetOrCreateMaskImage(thisLevel)
         if not os.path.exists(InputMaskImageNode.FullPath):
@@ -83,10 +88,10 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
 
         if not InputMaskImageNode is None:
             OutputFilterNode.MaskName = InputFilter.MaskName
-            MaskStr = ' -mask %s ' % InputMaskImageNode.FullPath
+            mask_str = ' -mask %s ' % InputMaskImageNode.FullPath
 
     BlobImageNode = OutputFilterNode.Imageset.GetImage(thisLevel)
-    if not BlobImageNode is None:
+    if BlobImageNode is not None and BlobImageNode.InputImageChecksum is not None:
         BlobImageNode = transforms.RemoveOnMismatch(BlobImageNode, "InputImageChecksum", InputImageNode.Checksum)
 
     if BlobImageNode is None:
@@ -98,11 +103,10 @@ def CreateBlobFilter(Parameters, Logger, InputFilter, OutputFilterName, ImageExt
             return
 
     if not os.path.exists(BlobImageNode.FullPath):
-
         os.makedirs(os.path.dirname(BlobImageNode.FullPath), exist_ok=True)
 
         cmd = irblobtemplate % {'OutputImageFile': BlobImageNode.FullPath,
-                                'InputFile': InputImageNode.FullPath} + MaskStr
+                                'InputFile': InputImageNode.FullPath} + mask_str
 
         prettyoutput.Log(cmd)
         proc = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

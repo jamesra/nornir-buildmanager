@@ -15,8 +15,11 @@ nid = 0
 
 
 class XElementWrapper(ElementTree.Element):
-    _save_lock : threading.RLock
-    
+    _AttributesChanged: bool  # Set to true if any attribute has changed and the node needs to be saved to disk
+    _ChildrenChanged: bool  # Set to true if any child node has changed and the node needs to be saved to disk
+    _Parent: XElementWrapper | None  # Parent node in the XML tree
+    _save_lock: threading.RLock  # Lock to prevent multiple threads from writing attributes of the node at the same time
+
     logger = logging.getLogger('XElementWrapper')
 
     def sort(self):
@@ -461,8 +464,7 @@ class XElementWrapper(ElementTree.Element):
         """Called when an attribute assignment is attempted. This is called instead of the
            normal mechanism (i.e. store the value in the instance dictionary). name is the
            attribute name, value is the value to be assigned to it."""
-           
-        
+
         if hasattr(self.__class__, name):
             attribute = getattr(self.__class__, name)
             if isinstance(attribute, property):
@@ -494,13 +496,13 @@ class XElementWrapper(ElementTree.Element):
                 originalValue = None
                 if name in self.attrib:
                     originalValue = self.attrib[name]
-    
+
                 if value is None:
                     raise ValueError(f"Setting None on XML Element attribute: {name}")
                 elif not isinstance(value, str):
                     XElementWrapper.logger.info('Setting non string value on <' + str(
                         self.tag) + '>, automatically corrected: ' + name + ' -> ' + str(value))
-    
+
                     strVal = '%g' % value if isinstance(value, float) else str(value)
                     self.attrib[name] = strVal
                     self._AttributesChanged = self._AttributesChanged or (strVal != originalValue)
@@ -513,7 +515,7 @@ class XElementWrapper(ElementTree.Element):
     def __delattr__(self, name: str):
 
         """Like __setattr__() but for attribute deletion instead of assignment. This should only be implemented if del obj.name is meaningful for the object."""
-        
+
         if name in self.__dict__:
             self.__dict__.pop(name)
         elif name in self.attrib:
@@ -563,14 +565,15 @@ class XElementWrapper(ElementTree.Element):
                     else:
                         self.remove(Child)
 
-    def GetChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue: float | str) -> Generator[XElementWrapper]:
+    def GetChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue: float | str) -> Generator[
+        XElementWrapper]:
         if isinstance(AttribValue, float):
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName,
-                                                                                'AttribName': AttribName,
+                                                                               'AttribName': AttribName,
                                                                                'AttribValue': AttribValue}
         else:
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
-                                                                                'AttribName': AttribName,
+                                                                               'AttribName': AttribName,
                                                                                'AttribValue': AttribValue}
         return self.findall(XPathStr)
 
@@ -578,11 +581,11 @@ class XElementWrapper(ElementTree.Element):
 
         if isinstance(AttribValue, float):
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName,
-                                                                                'AttribName': AttribName,
+                                                                               'AttribName': AttribName,
                                                                                'AttribValue': AttribValue}
         else:
             XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
-                                                                                'AttribName': AttribName,
+                                                                               'AttribName': AttribName,
                                                                                'AttribValue': AttribValue}
 
         assert (len(XPathStr) > 0)
@@ -783,7 +786,7 @@ class XElementWrapper(ElementTree.Element):
                 #    prettyoutput.Log("Need to load {0} links".format(num_matches))
                 self._replace_links(LinkMatches)
 
-                #if self.ElementHasChangesToSave:  #TODO: This does not belong here, but I need to save validation information updates.
+                # if self.ElementHasChangesToSave:  #TODO: This does not belong here, but I need to save validation information updates.
                 #    self.Save()
 
         matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
