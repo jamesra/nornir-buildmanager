@@ -1187,8 +1187,6 @@ def AssembleTransformScipy(Parameters, Logger, FilterNode, TransformNode, Output
                            ThumbnailSize=256, Interlace=True, CropBox=None, **kwargs):
     """@ChannelNode - TransformNode lives under ChannelNode"""
 
-    UseCluster = False if UseGPU else UseCluster
-
     if CropBox is not None:
         RequestedBoundingBox = [CropBox[1], CropBox[0], CropBox[3], CropBox[2]]
     else:
