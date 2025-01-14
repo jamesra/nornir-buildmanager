@@ -1804,7 +1804,6 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             if not os.path.exists(OutputStosFullPath):
                 ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
                 if ManualStosFileFullPath is None:
-
                     try:
                         RefineFunc(InputStosFullPath, OutputStosFullPath, **kwargs)
                     except Exception as e:

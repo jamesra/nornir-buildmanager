@@ -60,7 +60,8 @@ class ImageSetBaseNode(InputTransformHandler,
         [added_level, level_node] = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
         imageNode = level_node.find("Image")
-        if imageNode is None:
+        if imageNode is None or not os.path.exists(
+                imageNode.FullPath):  # We have to check for existence in case image file is deleted but meta-data remains.
             if GenerateData and not self.CanGenerate(Downsample):
                 raise nornir_buildmanager.NornirUserException(
                     "%s cannot generate downsample %d image" % (self.FullPath, Downsample))

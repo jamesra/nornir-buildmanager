@@ -43,12 +43,11 @@ class StosGroupNode(XNamedContainerElementWrapped):
         os.makedirs(self.FullPath, exist_ok=True)
         os.makedirs(self.ManualInputDirectory, exist_ok=True)
 
-    def PathToManualTransform(self, InputTransformFullPath):
+    def PathToManualTransform(self, InputTransformFullPath: str) -> str | None:
         """Check the manual directory for the existence of a user-supplied file we should use.
            Returns the path to the file if it exists, otherwise None"""
 
         transform_filename = os.path.basename(InputTransformFullPath)
-        # Copy the input stos or converted stos to the input directory
         ManualInputStosFullPath = os.path.join(self.ManualInputDirectory, transform_filename)
         if os.path.exists(ManualInputStosFullPath):
             return ManualInputStosFullPath
