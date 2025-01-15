@@ -4,40 +4,41 @@ Created on May 22, 2012
 @author: Jamesan
 """
 
-import concurrent.futures
-import datetime
 import glob
+import logging
 import math
-import multiprocessing
+import os
 import shutil
 import subprocess
-import tempfile
-import typing
-from typing import Sequence
-
+import multiprocessing
 import numpy
-from numpy.typing import NDArray
+import datetime
+import concurrent.futures
 
-import nornir_buildmanager as nb
+import nornir_shared.misc
+import nornir_shared.images
+import nornir_shared.plot
+import nornir_shared.files
+
+import nornir_imageregistration
+from nornir_imageregistration.files import mosaicfile
+from nornir_imageregistration.transforms import *
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates
-from nornir_buildmanager.validation import image, transforms
-from nornir_buildmanager.volumemanager import *
-import nornir_imageregistration
-from nornir_imageregistration import tileset_functions
-from nornir_imageregistration.files import mosaicfile
+from nornir_buildmanager.validation import transforms, image
+from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile
+from nornir_shared.histogram import Histogram
+
+import nornir_buildmanager as nb
 import nornir_imageregistration.spatial as spatial
 import nornir_imageregistration.tileset as tiles
-import nornir_imageregistration.tileset_functions
-from nornir_imageregistration.transforms import *
 import nornir_pools
+from nornir_imageregistration import tileset_functions
+
+import nornir_imageregistration.tileset_functions
 from nornir_shared import prettyoutput
-import nornir_shared.files
-from nornir_shared.files import OutdatedFile, RemoveInvalidImageFile, RemoveOutdatedFile
-from nornir_shared.histogram import Histogram
-import nornir_shared.images
-import nornir_shared.misc
-import nornir_shared.plot
 
 HistogramTagStr = "HistogramData"
 
@@ -128,7 +129,7 @@ def VerifyTiles(level_node: LevelNode | None = None, **kwargs) -> tuple[bool, li
     level_image_files = glob.glob(os.path.join(TileImageDir, '*' + TileExt))
 
     if len(level_image_files) == 0:
-        level_node.TilesValidated = False
+        level_node.TilesValidated = 0
         try:
             level_node.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(level_node.FullPath).st_mtime)
         except FileNotFoundError:
@@ -216,59 +217,8 @@ def FilterIsPopulated(InputFilterNode: FilterNode, Downsample: int, MosaicFullPa
     return True
 
 
-#
-# def EvaluateImageList(ImageList, CmdTemplate):
-#     # FileList = list()
-#     OutputNumber = 0
-#     TempFileList = []
-# 
-#     CmdLineFileList = ""
-#     while len(TempFileList) == 0 and CmdLineFileList == "":
-# 
-#         # First we process all of the original tiles.  We can't run them all because Windows has command line length limits.  I haven't tried passing the arguments as an array though...
-#         if(len(ImageList) > 0):
-#             while len(ImageList) > 0:
-#                 # basefilename = os.path.basename(tilefullpath)
-#             #    FileList.append(basefilename)
-#             #    CmdList.append(basefilename)
-#                 if(len(CmdLineFileList) + len(ImageList[0]) < 900):
-#                     TileFileName = ImageList.pop()
-#                     CmdLineFileList = CmdLineFileList + ' ' + os.path.basename(str(TileFileName))
-#                 else:
-#                     break
-# 
-#         # This only runs after we've processed all of the original tiles
-#         elif(len(TempFileList) > 1):
-#             while len(TempFileList) > 1:
-#                 if(len(CmdLineFileList) + len(TempFileList[0]) < 900):
-#                     CmdLineFileList = CmdLineFileList + ' ' + str(TempFileList[0])
-#                     del TempFileList[0]
-#                 else:
-#                     break
-# 
-#         TempFinalTarget = os.path.join(Path, 'Temp' + str(OutputNumber) + '.png')
-#         OutputNumber = OutputNumber + 1
-#         ImageList.append(TempFinalTarget)
-#         TempFileList.append(TempFinalTarget)
-# 
-#         # CmdList.append(FileList)
-# #        CmdList.append(PreEvaluateSequenceArg)
-# #        CmdList.append("-evaluate-sequence")
-# #        CmdList.append(EvaluateSequenceArg)
-# #        CmdList.append(PostEvaluateSequenceArg)
-# #        CmdList.append(FinalTarget)
-# 
-#         Cmd = CmdBase % {'Images' : CmdLineFileList,
-#                           'PreEvaluateSequenceArg' : PreEvaluateSequenceArg,
-#                           'EvaluateSequenceArg' :  EvaluateSequenceArg,
-#                           'OutputFile' : TempFinalTarget}
-# 
-#         prettyoutput.Log(Cmd)
-#         subprocess.call(Cmd + " && exit", shell=True, cwd=TileDir)
-#         CmdLineFileList = ""
-
-
-def Evaluate(Parameters, filter_node, OutputImageName=None, Level=1, PreEvaluateSequenceArg=None,
+def Evaluate(Parameters, filter_node: FilterNode, OutputImageName: str | None = None, Level: int = 1,
+             PreEvaluateSequenceArg=None,
              EvaluateSequenceArg=None, PostEvaluateSequenceArg=None, **kwargs):
     PyramidNode = filter_node.find('TilePyramid')
     assert (PyramidNode is not None)
@@ -1207,7 +1157,7 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     image_ext = image_ext if image_ext is not None else DefaultImageExtension
     if image_ext[0] != '.':
         image_ext = '.' + image_ext
-        
+
     InputChannelNode = filter_node.FindParent('Channel')
     InputFilterMaskName = filter_node.GetOrCreateMaskName()
 
@@ -1316,7 +1266,7 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
                                                                                  image_to_source_space_scale=thisLevel)
 
         (mosaicImage, maskImage) = mosaicTileset.AssembleImage(FixedRegion=RequestedBoundingBox,
-                                                               usecluster=True,
+                                                               usecluster=UseCluster,
                                                                target_space_scale=1.0 / thisLevel)
 
         if mosaicImage is None or maskImage is None:

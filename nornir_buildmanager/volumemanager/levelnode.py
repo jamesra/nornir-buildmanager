@@ -86,7 +86,8 @@ class LevelNode(volumemanager.XContainerElementWrapper):
     @property
     def TilesValidated(self) -> int | None:
         """
-        The number of tiles that have been validated
+        The number of tiles that have been validated.  If this number matches the total number of tiles in the level
+        then the entire level is valid, otherwise more work is required to find missing invalid tiles.
         :return: Returns None if the attribute has not been set, otherwise an integer
         """
         val = self.attrib.get('TilesValidated', None)

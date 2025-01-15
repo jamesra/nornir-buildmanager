@@ -1093,8 +1093,8 @@
                     <RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 
                     <PythonCall Function="tile.AssembleTransform"
-                                OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace"
-                                Levels="#Levels" CropBox="#CropBox" image_ext="#image_ext">
+                        OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace"
+                        Levels="#Levels" CropBox="#CropBox" image_ext="#image_ext">
                         <Parameters>
                             <Entry Name="feathering" Value="binary"/>
                         </Parameters>
