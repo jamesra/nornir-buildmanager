@@ -1,18 +1,19 @@
-'''
+"""
 Created on Apr 25, 2013
 
 @author: u0490822
-'''
+"""
 import glob
 import unittest
 
 from nornir_buildmanager.operations.block import *
 import nornir_buildmanager.volumemanager.blocknode
+from nornir_imageregistration import StosFile
 from pipeline.setup_pipeline import CopySetupTestBase, EmptyVolumeTestBase
 import pipeline.test_sectionimage as test_sectionimage
 
 
-def FetchStosTransform(test, VolumeObj, groupName: str, ControlSection, MappedSection):
+def FetchStosTransform(test, VolumeObj, groupName: str, ControlSection, MappedSection) -> TransformNode:
     groupNode = VolumeObj.find("Block/StosGroup[@Name='" + groupName + "']")
     test.assertIsNotNone(groupNode, "Could not find StosGroup " + groupName)
 
@@ -23,6 +24,24 @@ def FetchStosTransform(test, VolumeObj, groupName: str, ControlSection, MappedSe
     test.assertIsNotNone(Transform, "Could not find Transform for %d -> %d" % (MappedSection, ControlSection))
 
     return Transform
+
+
+def FetchManualStosTransform(test, VolumeObj, groupName: str, ControlSection,
+                             MappedSection) -> nornir_imageregistration.StosFile:
+    groupNode = VolumeObj.find("Block/StosGroup[@Name='" + groupName + "']")
+    test.assertIsNotNone(groupNode, "Could not find StosGroup " + groupName)
+
+    sectionMappingNode = groupNode.GetSectionMapping(MappedSection)
+    test.assertIsNotNone(sectionMappingNode, "Could not find SectionMappings for " + str(MappedSection))
+
+    Transform = sectionMappingNode.GetChildByAttrib("Transform", 'ControlSectionNumber', str(ControlSection))
+    test.assertIsNotNone(Transform, "Could not find Transform for %d -> %d" % (MappedSection, ControlSection))
+
+    manual_transform_path = groupNode.PathToManualTransform(Transform.FullPath)
+    test.assertTrue(os.path.exists(manual_transform_path), "Manual transform file does not exist")
+
+    manual_stos = StosFile.Load(manual_transform_path)
+    return manual_stos
 
 
 #
@@ -74,8 +93,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
     @property
     def Platform(self):
-        '''Input for this test is a cached copy of the SliceToSliceRegistrationBruteOnlyTest test.  If the output
-        of that test changes the new output must be manually copied to the test platform directory.'''
+        """Input for this test is a cached copy of the SliceToSliceRegistrationBruteOnlyTest test.  If the output
+        of that test changes the new output must be manually copied to the test platform directory."""
         return "PMG"
 
     @property
@@ -99,10 +118,15 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         self.assertEqual(numSourceFiles, numTargetFiles)
 
-    def ValidateTransforms(self, AutoOutputTransform, AutoInputTransform, ManualOutputTransform=None,
-                           ManualInputTransform=None):
-        '''ManualInputTransform can be none after the first refine call since the manual override file does not have a <transform> node.
-           On the second pass or later ManualInputTransform refers to the transform that should have replaced the original output in the earlier pass'''
+    def ValidateTransforms(self,
+                           AutoOutputTransform: TransformNode,
+                           AutoInputTransform: TransformNode,
+                           ManualOutputTransform: ITransform | None = None,
+                           ManualInputTransform: ITransform | None = None):
+        """
+        ManualInputTransform may be none after the first refine call since the manual override file does not have a <transform> node.
+        On the second pass or later ManualInputTransform refers to the output transform that should have replaced the calculated output in the earlier pass
+        """
 
         self.assertIsNotNone(AutoInputTransform, msg='Parameter is required to not be none, missing output?')
         self.assertIsNotNone(AutoOutputTransform, msg='Parameter is required to not be none, missing output?')
@@ -142,18 +166,15 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                          "Output manual transform InputTransformChecksum should match input transform checksum")
 
     def testRefineSectionAlignment(self):
-        
-        #The data for section 7 appears to be missing from the test input folder now. 
+        # The data for section 7 appears to be missing from the test input folder now.
         # I need to dig through old copies and see if can be tracked down.  No idea
         # why the input data for this test went missing. 
         # C:\src\git\nornir-testdata\PlatformRaw\PMG\SliceToSliceRegistrationSkipBrute
-        
 
         groupNames = ['StosBrute16', 'StosGrid16', 'StosGrid8', 'SliceToVolume8']
 
         # Import the files
         buildArgs = [self.TestOutputPath, '-debug', 'AlignSections', \
- \
                      '-Downsample', '16', \
                      '-Center', '5', \
                      '-Channels', 'LeveledShading.*']
@@ -164,9 +185,19 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
 
         SixToFiveAutomaticBruteFirstPassTransform = FetchStosTransform(self, self.VolumeObj, 'StosBrute16', 6, 7)
 
+        original_brute_checksum = SixToFiveAutomaticBruteFirstPassTransform.Checksum
+        SixToFiveAutomaticBruteFirstPassTransform.ResetChecksum()
+        recalculated_brute_checksum = SixToFiveAutomaticBruteFirstPassTransform.Checksum
+
+        # Find the manual transform we are going to copy from
+        # manual_stos_file = FetchManualStosTransform(self, self.VolumeObj, 'StosGrid16', 6, 7)
+        # original_manual_checksum = None if manual_stos_file is None else manual_stos_file.Checksum
+
+        self.assertEqual(original_brute_checksum, recalculated_brute_checksum,
+                         "Checksums should match after reset.  This could indicate the checksum algorithm changed since the test data was copied.")
+
         # Try to refine the results
         FirstRefineBuildArgs = [self.TestOutputPath, '-debug', 'RefineSectionAlignment', \
- \
                                 '-Filter', '.*mosaic.*', \
                                 '-InputGroup', 'StosBrute', \
                                 '-InputDownsample', '16', \
@@ -251,7 +282,7 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
         ##################
         # OK, replace the automatic stos files with manually created stos files.  Ensure
         # the upstream stos files regenerate
-        manualDir = os.path.join(FirstRefineGroupNode.FullPath, 'Manual')
+        manualDir = os.path.join(FirstRefineGroupNode.FullPath, 'StosGrid16_Manual')
         self.InjectManualStosFiles("StosGrid16", manualDir)
 
         self.VolumeObj = self.RunBuild(FirstRefineBuildArgs)
