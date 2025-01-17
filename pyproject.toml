@@ -25,8 +25,7 @@ dependencies = [
     "nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@dev",
     "nornir_shared @ git+https://github.com/jamesra/nornir-shared.git@dev",
     "nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@dev",
-    "python-dotenv >= 1.0.1",
-    "validators > 0.34.0"
+    "python-dotenv >= 1.0.1"
 ]
 classifiers = [
     "Programming Language :: Python :: 3.10",
