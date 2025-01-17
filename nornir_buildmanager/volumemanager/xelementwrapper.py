@@ -233,7 +233,7 @@ class XElementWrapper(ElementTree.Element):
 
     @classmethod
     def __GetCreationTimeString__(cls) -> str:
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(datetime.UTC)
         now = now.replace(microsecond=0)
         return str(now)
 

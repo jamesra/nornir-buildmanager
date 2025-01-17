@@ -11,6 +11,8 @@ import platform
 import re
 import sys
 import traceback
+from os import PathLike
+from typing import Protocol, TypeVar
 from xml.etree import ElementTree
 
 import nornir_pools
@@ -20,6 +22,16 @@ import nornir_shared.reflection
 from . import argparsexml
 from .pipeline_exceptions import *
 import nornir_buildmanager.volumemanager
+
+T = TypeVar('T')
+
+
+class SupportsRead(Protocol[T]):
+    def read(self, size: int = -1) -> bytes: ...
+
+
+def read_data(obj: SupportsRead) -> bytes:
+    return obj.read()
 
 
 # import xml.etree
@@ -353,33 +365,36 @@ class PipelineManager(object):
             prettyoutput.Log('    ' + pipeline.attrib.get('Description', "") + '\n')
 
     @classmethod
-    def LoadPipelineXML(cls, PipelineXML: str | ElementTree.ElementTree) -> ElementTree.ElementTree:
+    def LoadPipelineXML(cls, PipelineXML: str | ElementTree.ElementTree | bytes | PathLike[str] | PathLike[bytes] |
+                                          SupportsRead[bytes] | SupportsRead[str]) -> ElementTree.ElementTree:
         # Python 3 switched to unicode always so the encoding should not be necessary for non-english character sets
         if int(platform.python_version_tuple()[0]) < 3:
             if isinstance(PipelineXML, str):
                 PipelineXML = PipelineXML.encode(sys.getdefaultencoding())
 
-        if isinstance(PipelineXML, str):
+        if isinstance(PipelineXML, ElementTree.ElementTree):
+            return PipelineXML
+        elif isinstance(PipelineXML, ElementTree.Element):
+            return ElementTree.ElementTree(PipelineXML)
+        elif isinstance(PipelineXML, str):
             try:
                 return ElementTree.parse(PipelineXML)
             except FileNotFoundError:
                 PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXML)
                 prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXML)
                 sys.exit()
-
-        elif isinstance(PipelineXML, ElementTree.ElementTree):
-            return PipelineXML
+        elif isinstance(PipelineXML, bytes):
+            str_xml = PipelineXML.decode('utf-8')
+            return ElementTree.ElementTree(ElementTree.fromstring(str_xml))
 
         raise Exception("Invalid argument: " + str(PipelineXML))
 
     @classmethod
-    def ListPipelines(cls, PipelineXML: str) -> list[str]:
+    def ListPipelines(cls, pipeline_tree: ElementTree.ElementTree | ElementTree.Element) -> list[str]:
 
-        PipelineXML = cls.LoadPipelineXML(PipelineXML)
+        assert (isinstance(pipeline_tree, ElementTree.ElementTree) or isinstance(pipeline_tree, ElementTree.Element))
 
-        assert (isinstance(PipelineXML, ElementTree.ElementTree))
-
-        PipelineNodes = PipelineXML.findall("Pipeline")
+        PipelineNodes = pipeline_tree.findall("Pipeline")
 
         PipelineNames = [p.attrib['Name'] for p in PipelineNodes]
         return sorted(PipelineNames)
@@ -415,7 +430,7 @@ class PipelineManager(object):
 
         Pipeline.Execute(args)
 
-    def GetArgParser(self, parser = None, IncludeGlobals: bool = True):
+    def GetArgParser(self, parser=None, IncludeGlobals: bool = True):
         '''Create the complete argument parser for the pipeline
         :param parser:
         :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation
@@ -503,7 +518,8 @@ class PipelineManager(object):
 
         nornir_pools.WaitOnAllPools()
 
-    def ExecuteChildPipelines(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
+    def ExecuteChildPipelines(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper,
+                              PipelineNode):
         '''Run all of the child pipeline elements on the volume element'''
 
         PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
@@ -539,7 +555,8 @@ class PipelineManager(object):
                     break
                 except PipelineRegExSearchFailed as e:
                     PipelineManager.logger.info(
-                        f"Regular expression did not match. regex {e.regex} != {e.attribValue}. Skipping to next iteration.\n" + str(e.attribValue))
+                        f"Regular expression did not match. regex {e.regex} != {e.attribValue}. Skipping to next iteration.\n" + str(
+                            e.attribValue))
                     break
                 except PipelineError as e:
                     errStr = "Unexpected error, exiting pipeline\n" + str(e.message)
@@ -555,9 +572,10 @@ class PipelineManager(object):
         # To prevent later calls from being able to access variables from earlier steps be sure to remove the variable from the dargs
         return PipelinesRun
 
-    def ProcessStageElement(self, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode, ArgSet=None):
+    def ProcessStageElement(self, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode,
+                            ArgSet=None):
 
-        #outStr = PipelineManager.ToElementString(PipelineNode)
+        # outStr = PipelineManager.ToElementString(PipelineNode)
         # prettyoutput.CurseString('Section', outStr)
 
         # prettyoutput.Log("Processing Stage Element: " + outStr)
@@ -712,12 +730,12 @@ class PipelineManager(object):
                 (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
                 if cleaned:
                     prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
-                    #PipelineManager._SaveNodes(VolumeElemChild.Parent)
-                    save_parent.add(VolumeElemChild.Parent) 
+                    # PipelineManager._SaveNodes(VolumeElemChild.Parent)
+                    save_parent.add(VolumeElemChild.Parent)
                     continue
 
             NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
-            
+
         for parent in save_parent:
             PipelineManager._SaveNodes(parent)
 
@@ -738,7 +756,7 @@ class PipelineManager(object):
 
     def ProcessPythonCall(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
-        #PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
+        # PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
         PipelineModule = PipelineNode.get("Module", "nornir_buildmanager.operations")
 
         PipelineFunction = PipelineNode.get('Function', PipelineNode.tag)
@@ -781,7 +799,7 @@ class PipelineManager(object):
                 if 'Parameters' not in kwargs:
                     kwargs['Parameters'] = {}
 
-                #NodesToSave = None
+                # NodesToSave = None
 
                 if not ArgSet.Arguments["debug"]:
                     try:

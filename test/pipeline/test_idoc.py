@@ -44,7 +44,8 @@ class StosRebuildHelper(setup_pipeline.NornirBuildTestBase):
     def Grid32ManualStosFullPath(self) -> str:
         return os.path.join(self.PlatformFullPath, "IDocBuildTest_Grid32Manual")
 
-    def FetchStosTransformsByInputTransformChecksum(self, input_transform_list, stos_group_name: str) -> list[TransformNode]:
+    def FetchStosTransformsByInputTransformChecksum(self, input_transform_list, stos_group_name: str) -> list[
+        TransformNode]:
         '''Find all of the transforms from a stos group with a matching path'''
 
         volumeObj = self.LoadVolume()
@@ -456,7 +457,7 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
 
     @property
     def repro_directory(self) -> str:
-        """If this test fails, copy the current state of the output to a folder in the input directory to facilitate running 
+        """If this test fails, copy the current state of the output to a folder in the input directory to facilitate running
         IDocBuildTestBootstrapDebugging which can skip successful parts of the build to focus on the failing step"""
         return os.path.join(self.PlatformFullPath, "..", "repro", f"IDocBuildTest")
 
@@ -532,11 +533,13 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
                 nornir_shared.files.rmtree(self.repro_directory)
                 shutil.copytree(self.TestOutputPath, self.repro_directory)
             except OSError as e:
-                self.Logger.error(f"\nCould not copy test output into reproduction directory: {self.TestOutputPath} -> {self.repro_directory}\n{e}\n\n")
+                self.Logger.error(
+                    f"\nCould not copy test output into reproduction directory: {self.TestOutputPath} -> {self.repro_directory}\n{e}\n\n")
 
             raise
 
 
+#
 # class IDocBuildTestBootstrapDebugging(setup_pipeline.CopySetupTestBase, StosRebuildHelper):
 #
 #     @property
@@ -592,6 +595,10 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
 #         # self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
 #         # self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel, InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
 #
+#         self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid",
+#                                        OutputLevel=GridLevelOne, Filter="Leveled")
+#         self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid",
+#                                        OutputLevel=GridLevelTwo, Filter="Leveled")
 #
 #         # self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid", OutputLevel=GridLevelOne, Filter="Leveled")
 #         # self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid", OutputLevel=GridLevelTwo, Filter="Leveled")
@@ -609,12 +616,14 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
 #         # self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 #         #
 #
+#         self.RunAssemble(Channels='TEM', Levels=[1])
+#         self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 #
 #         self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne), BruteLevel=BruteLevel,
 #                                             GridOneLevel=GridLevelOne)
 #
 #         self.RunCalculateStosGroupWarpMetrics()
-
+#
 
 # ===============================================================================
 # class IDocAlignTest(setup_pipeline.CopySetupTestBase):

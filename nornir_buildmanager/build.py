@@ -33,7 +33,7 @@ import nornir_buildmanager
 from nornir_buildmanager import *
 from nornir_shared.misc import SetupLogging, lowpriority
 from nornir_shared.tasktimer import TaskTimer
-from pkg_resources import resource_filename
+import pkgutil
 
 import nornir_shared.prettyoutput as prettyoutput
 
@@ -41,7 +41,7 @@ CommandParserDict = {}
 
 
 def ConfigDataPath():
-    return resource_filename(__name__, 'config')
+    return pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))
 
 
 def AddVolumeArgumentToParser(parser):
@@ -127,15 +127,17 @@ def _AddRecoverParser(root_parser: argparse.ArgumentParser, subparsers):
                                 help='Set this flag to save the VolumeData.xml files with the located linked elements included.',
                                 dest='save_restoration')
 
+
 def _AddXMLRepairParser(root_parser: argparse.ArgumentParser, subparsers):
     recover_parser = subparsers.add_parser('RepairXML',
                                            help='Fixes an issue where XML files have extra characters after the closing tag.  Should only apply to data before Dec 2023', )
     recover_parser.set_defaults(func=call_repair_xml, parser=root_parser)
 
 
-
-def _GetPipelineXMLPath() -> str:
-    return os.path.join(ConfigDataPath(), 'Pipelines.xml')
+def _GetPipelineXMLPath() -> bytes:
+    # return os.path.join(ConfigDataPath(), 'Pipelines.xml')
+    xml = pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))
+    return xml
 
 
 def BuildParserRoot():
@@ -172,10 +174,10 @@ def BuildParserRoot():
 def _AddPipelineParsers(subparsers: argparse.ArgumentParser):
     PipelineXML = _GetPipelineXMLPath()
     # Load the element tree once and pass it to the later functions so we aren't parsing the XML text in the loop
-    PipelineXML = pipelinemanager.PipelineManager.LoadPipelineXML(PipelineXML)
+    PipelineTree = pipelinemanager.PipelineManager.LoadPipelineXML(PipelineXML)
 
-    for pipeline_name in pipelinemanager.PipelineManager.ListPipelines(PipelineXML):
-        pipeline = pipelinemanager.PipelineManager.Load(PipelineXML, pipeline_name)
+    for pipeline_name in pipelinemanager.PipelineManager.ListPipelines(PipelineTree):
+        pipeline = pipelinemanager.PipelineManager.Load(PipelineTree, pipeline_name)
 
         pipeline_parser = subparsers.add_parser(pipeline_name, help=pipeline.Help, epilog=pipeline.Epilog)
 
@@ -258,6 +260,7 @@ def InitLogging(buildArgs):
     else:
         SetupLogging(Level=logging.WARN)
 
+
 def init_computational_library(args: argparse.Namespace):
     if args.computational_library == 'detect':
         if nornir_imageregistration.HasCupy():
@@ -268,7 +271,8 @@ def init_computational_library(args: argparse.Namespace):
         args.computational_library = args.computational_library.lower()
 
     os.environ['NORNIR_COMPUTATIONAL_LIBRARY'] = args.computational_library
-    nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.cupy if args.computational_library == 'cupy' else nornir_imageregistration.ComputationLib.numpy)
+    nornir_imageregistration.SetActiveComputationLib(
+        nornir_imageregistration.ComputationLib.cupy if args.computational_library == 'cupy' else nornir_imageregistration.ComputationLib.numpy)
 
 
 def Execute(buildArgs=None):
@@ -277,15 +281,14 @@ def Execute(buildArgs=None):
 
     if buildArgs is None:
         buildArgs = sys.argv[1:]
-        
-    #Change the temp directory if nornir specifies an alternate in the environment variables
+
+    # Change the temp directory if nornir specifies an alternate in the environment variables
     if 'NORNIR_TEMP_DIR' in os.environ:
         temp_dir = os.environ['NORNIR_TEMP_DIR']
         os.makedirs(temp_dir, exist_ok=True)
         os.environ['TEMP'] = temp_dir
         os.environ['TMP'] = temp_dir
         os.environ['TMPDIR'] = temp_dir
-        
 
     InitLogging(buildArgs)
 
@@ -299,9 +302,9 @@ def Execute(buildArgs=None):
         lowpriority()
         print("Warning, using low priority flag.  This can make builds much slower")
 
-    #init_computational_library(args)
+    # init_computational_library(args)
 
-    #print(f"Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}")
+    # print(f"Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}")
 
     # SetupLogging(OutputPath=args.volumepath)
     cmd_name = None

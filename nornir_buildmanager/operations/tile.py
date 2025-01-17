@@ -14,6 +14,10 @@ import multiprocessing
 import numpy
 import datetime
 import concurrent.futures
+import tempfile
+
+from numpy.typing import NDArray
+from typing import Sequence
 
 import nornir_shared.misc
 import nornir_shared.images
