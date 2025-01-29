@@ -608,7 +608,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
        histogram nodes would accumulate.  This function deletes the excess nodes
        and returns the valid one."""
     histogram_element = None
-    HistogramElementRemoved = False
+    histogram_element_removed = False
     check_type = 'Thr' in transform_node.Type  # If a threshold value is encoded in the transform type, ensure it matches
     for histogram_element in filterObj.findall(
             "Histogram[@InputTransformChecksum='" + checksum + "']"):  # type: HistogramNode | None
@@ -619,10 +619,12 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
         # Check that the type matches in input transform node type so we don't use the wrong histogram
         if cleaned or (check_type and histogram_element.Type != transform_node.Type):
             histogram_element = None
-            HistogramElementRemoved = HistogramElementRemoved or cleaned
+            histogram_element_removed = histogram_element_removed or cleaned
             continue
+        elif check_type and histogram_element.Type == transform_node.Type:
+            break
 
-    return HistogramElementRemoved, histogram_element
+    return histogram_element_removed, histogram_element
 
 
 def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: TransformNode, Downsample: float = 1,
@@ -657,7 +659,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
         OutputBpp = InputFilter.BitsPerPixel
 
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent,
-                                                                               MaxCutoffPercent, Gamma,
+                                                                                MaxCutoffPercent, Gamma,
                                                                                Bpp=InputFilter.BitsPerPixel)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
