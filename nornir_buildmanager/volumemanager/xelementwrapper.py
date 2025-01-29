@@ -49,7 +49,10 @@ class XElementWrapper(ElementTree.Element):
     @property
     def CreationTime(self) -> datetime.datetime:
         datestr = self.get('CreationDate', datetime.datetime.max)
-        return datetime.datetime.fromisoformat(datestr)
+        creation_time = datetime.datetime.fromisoformat(datestr)
+        if creation_time.tzinfo is None:
+            creation_time = creation_time.replace(tzinfo=datetime.timezone.utc)
+        return creation_time
 
     @property
     def SortKey(self):
