@@ -610,6 +610,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
     histogram_element = None
     histogram_element_removed = False
     check_type = 'Thr' in transform_node.Type  # If a threshold value is encoded in the transform type, ensure it matches
+    selected_histogram = None
     for histogram_element in filterObj.findall(
             "Histogram[@InputTransformChecksum='" + checksum + "']"):  # type: HistogramNode | None
         if histogram_element is None:
@@ -622,9 +623,13 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
             histogram_element_removed = histogram_element_removed or cleaned
             continue
         elif check_type and histogram_element.Type == transform_node.Type:
-            break
+            selected_histogram = histogram_element
+        elif selected_histogram is None:
+            selected_histogram = histogram_element
 
-    return histogram_element_removed, histogram_element
+        #We continune the loop even if we find a match to ensure extra histogram nodes are removed if found
+
+    return histogram_element_removed, selected_histogram
 
 
 def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: TransformNode, Downsample: float = 1,
