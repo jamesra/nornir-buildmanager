@@ -770,7 +770,7 @@
                       type="float"
                       help="How much additional area should we pad the overlapping regions with."
                       required="False"/>
-            <Argument flag="-first_pass_inter_tile_distance" default="1" dest="first_pass_inter_tile_distance"
+            <Argument flag="-first_pass_inter_tile_distance" default=".75" dest="first_pass_inter_tile_distance"
                       type="float"
                       help="A value from 0 to 1 that scales the distance between the centers of the two tiles.  A value of 0 considers the full images when registering.  A value of 1.0 only considers the overlapping regions according to the tile transforms.  Reduce this value in the first registration pass to increase the search area."
                       required="False"/>
@@ -1093,8 +1093,8 @@
                     <RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
 
                     <PythonCall Function="tile.AssembleTransform"
-                        OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace"
-                        Levels="#Levels" CropBox="#CropBox" image_ext="#image_ext">
+                                OutputChannelPrefix="#OutputChannelPrefix" Interlace="#Interlace"
+                                Levels="#Levels" CropBox="#CropBox" image_ext="#image_ext">
                         <Parameters>
                             <Entry Name="feathering" Value="binary"/>
                         </Parameters>
