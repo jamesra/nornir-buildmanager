@@ -627,7 +627,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
         elif selected_histogram is None:
             selected_histogram = histogram_element
 
-        #We continune the loop even if we find a match to ensure extra histogram nodes are removed if found
+        # We continune the loop even if we find a match to ensure extra histogram nodes are removed if found
 
     return histogram_element_removed, selected_histogram
 
@@ -664,7 +664,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
         OutputBpp = InputFilter.BitsPerPixel
 
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent,
-                                                                                MaxCutoffPercent, Gamma,
+                                                                               MaxCutoffPercent, Gamma,
                                                                                Bpp=InputFilter.BitsPerPixel)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
@@ -1818,8 +1818,9 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                 len(SourceFiles) == len(DestFiles)):
 
             # If the first pair of files are not out of data assume the 
-            # rest are current and check the next pyramid level 
-            if not OutdatedFile(SourceFiles[0], DestFiles[0]):
+            # rest are current and check the next pyramid level
+            outdated = OutdatedFile(SourceFiles[0], DestFiles[0])
+            if outdated is not None and not outdated:
                 continue
 
         # Use a frozenset to optimize the 'in' keyword use in the upcoming loop

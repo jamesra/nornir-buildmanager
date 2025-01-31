@@ -1,8 +1,8 @@
-'''
+"""
 Created on May 26, 2015
 
 @author: u0490822
-'''
+"""
 import os
 
 import nornir_buildmanager
@@ -15,7 +15,7 @@ num_contrast_pad_chars = 32
 
 
 def Print(val, **kwargs):
-    '''Allows the Pipelines.xml to print an arbitrary string to the console'''
+    """Allows the Pipelines.xml to print an arbitrary string to the console"""
     print(val)
     return None
 
@@ -28,7 +28,7 @@ def PrintContrastValuesHeader(**kwargs):
 
 
 def PrintContrastValues(node, **kwargs):
-    '''Print the contrast values used to generated the filter'''
+    """Print the contrast values used to generated the filter"""
     global num_contrast_pad_chars
     pathstr = node.FullPath
 
@@ -51,7 +51,7 @@ def PrintContrastValues(node, **kwargs):
 
 
 def PrintIfMissingTileset(filter_node, **kwargs):
-    '''Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count'''
+    """Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count"""
 
     if filter_node.HasTileset:
         return
@@ -63,12 +63,12 @@ def PrintIfMissingTileset(filter_node, **kwargs):
 
 
 def PrintNodeTreeAndAttributes(node, attributes, format_str=None, **kwargs):
-    '''
+    """
     Prints a list of attributes found in a node if they exist and the tree of the node containing them
     :param node:
     :param list attributes: A list of strings representing attribute names to print
     :param str format_str: optional format string to use to print the entire list
-    '''
+    """
 
     if attributes is None:
         raise ValueError("PriteNodeTreeAndAttributes requires list of attributes to display")
@@ -99,9 +99,9 @@ def PrintNodeTreeAndAttributes(node, attributes, format_str=None, **kwargs):
 
 
 def GetNamesToRootString(node, **kwargs):
-    '''
+    """
     Print a tab delimeted list of element names of parents to the root
-    '''
+    """
 
     iter_node = node
     names = []
@@ -124,7 +124,7 @@ def GetNamesToRootString(node, **kwargs):
 
 
 def PrintAttributes(node, attribs=None, tab_indent_count=None, **kwargs):
-    '''Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count'''
+    """Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count"""
 
     attrib_list = attribs.split(',')
 
@@ -158,7 +158,7 @@ def GetNewestTile(level_node):
 
 
 def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
-    '''Print the contrast values used to generated the filter'''
+    """Print the contrast values used to generated the filter"""
     global num_contrast_pad_chars
     if not node.HasImageset:
         # print("No Imageset for %s" % node.FullPath)
@@ -201,11 +201,12 @@ def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
     return None
 
 
-def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, Filter=None, ShowFeatureScores=False,
+def PlotMosaicOverlaps(ChannelNode, Transform: str, OutputFilename: str, Downsample: int | None = None,
+                       Filter: str | None = None, ShowFeatureScores: bool = False,
                        label_overlaps=False, **kwargs):
-    '''
+    """
     Plot the tile overlaps of a layout
-    '''
+    """
     TransformNode = None
     try:
         if isinstance(Transform, str):
@@ -250,7 +251,7 @@ def PlotMosaicOverlaps(ChannelNode, Transform, OutputFilename, Downsample=None, 
 
     removed_output = nornir_shared.files.RemoveOutdatedFile(TransformNode.FullPath, OutputImageNode.FullPath)
 
-    if not (node_added or removed_output or removed_output is None):
+    if removed_output is not None and not (node_added or removed_output):
         return
 
     OutputImageNode.SetTransform(TransformNode)
