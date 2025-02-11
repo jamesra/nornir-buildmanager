@@ -209,7 +209,8 @@
         </Iterate>
     </Pipeline>
 
-    <Pipeline Name="SetPruneCutoff" Help="Set the prune threshold for a filter">
+    <Pipeline Name="SetPruneCutoff"
+              Help="Set the prune threshold for a filter.  The new value will not update the volume until the Prune operation is run.">
         <Arguments>
             <Argument flag="-Value" dest="PruneVal" type="float"
                       help="Prune threshold to set" required="True" default="0"/>

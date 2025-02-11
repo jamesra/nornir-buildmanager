@@ -50,6 +50,8 @@ from nornir_shared.histogram import *
 from nornir_shared.images import *
 import nornir_shared.plot as plot
 
+import nornir_pools
+
 import nornir_imageregistration
 from nornir_imageregistration import image_stats
 from nornir_imageregistration.files import mosaicfile
@@ -672,7 +674,8 @@ class NornirTileset:
             #     continue
 
             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
-            ConvertedImageName = (nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
+            ConvertedImageName = (
+                                             nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
             TargetImageFullPath = os.path.join(OutputTileDir, ConvertedImageName)
 
             obj.AddTile(

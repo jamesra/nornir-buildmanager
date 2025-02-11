@@ -878,5 +878,5 @@ def _GetVariableName(PipelineNode):
 
 
 if __name__ == "__main__":
-    XmlFilename = 'D:\Buildscript\Pipelines.xml'
+    XmlFilename = 'D:\\Buildscript\\Pipelines.xml'
     PipelineManager.Load(XmlFilename)
