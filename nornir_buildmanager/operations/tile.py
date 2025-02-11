@@ -841,7 +841,7 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
     [addedOutputTilePyramid, OutputPyramidNode] = OutputFilterNode.GetOrCreateTilePyramid()
     if addedOutputTilePyramid:
         OutputPyramidNode.Type = InputPyramidNode.Type
-        OutputPyramidNode.NumberOfTiles = InputPyramidNode.NumberOfTiles
+        OutputPyramidNode.NumberOfTiles = 0
         OutputPyramidNode.LevelFormat = InputPyramidNode.LevelFormat
         OutputPyramidNode.ImageFormatExt = InputPyramidNode.ImageFormatExt
         yield OutputFilterNode
@@ -878,6 +878,12 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
             pass
 
     if tilesConverted:
+        for InputTileFullPath in InputTiles:
+            Basename = os.path.basename(InputTileFullPath)
+            OutputTileFullPath = os.path.join(OutputLevelFullPath, Basename)
+            if os.path.exists(OutputTileFullPath):
+                OutputPyramidNode.NumberOfTiles += 1
+
         yield InputFilterNode.Parent
 
     return
