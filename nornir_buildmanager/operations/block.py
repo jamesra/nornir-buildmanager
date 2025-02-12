@@ -1140,6 +1140,10 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
                                                                                              InputStosMapNode.CenterSection))
     (NewStosMap, OutputStosMapNode) = block_node.UpdateOrAddChildByAttrib(OutputStosMapNode)
 
+    if OutputStosMapNode.CenterSection != InputStosMapNode.CenterSection:
+        OutputStosMapNode.CenterSection = InputStosMapNode.CenterSection
+        yield block_node
+
     # Ensure we do not have banned control sections in the output map
     if not NewStosMap:
         NonStosSectionNumbersSet = block_node.NonStosSectionNumbers
