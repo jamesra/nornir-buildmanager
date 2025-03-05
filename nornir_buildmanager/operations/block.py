@@ -358,7 +358,7 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
     return None
 
 
-def __CallNornirStosBrute(stosNode, Downsample, ControlImageFullPath: str, MappedImageFullPath: str,
+def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImageFullPath: str, MappedImageFullPath: str,
                           ControlMaskImageFullPath: str | None = None, MappedMaskImageFullPath: str | None = None,
                           AngleSearchRange: list[float] | None = None, TestForFlip: bool = True,
                           WarpedImageScaleFactors=None,
@@ -554,7 +554,7 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
             stosNode.InputTransformChecksum = ManualInputChecksum
         else:
             # Calculate if both images have the same scale and adjust if needed
-            _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
+            xscale, yscale = _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
             if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
                 __CallNornirStosBrute(stosNode, StosGroup.Downsample,
                                       ControlImageNode.FullPath, MappedImageNode.FullPath,
@@ -1505,12 +1505,12 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
             OutputDownsample == InputDownsample and
             InputStos.HasMasks == UseMasks):
 
-        ModifiedInputStos = InputStos.ChangeStosGridPixelSpacing(oldspacing=InputDownsample,
-                                                                 newspacing=OutputDownsample,
-                                                                 ControlImageFullPath=ControlImageFullPath,
-                                                                 MappedImageFullPath=MappedImageFullPath,
-                                                                 ControlMaskFullPath=ControlMaskImageFullPath,
-                                                                 MappedMaskFullPath=MappedMaskImageFullPath)
+        ModifiedInputStos = InputStos.ChangeTransformPixelSpacing(oldspacing=InputDownsample,
+                                                                  newspacing=OutputDownsample,
+                                                                  ControlImageFullPath=ControlImageFullPath,
+                                                                  MappedImageFullPath=MappedImageFullPath,
+                                                                  ControlMaskFullPath=ControlMaskImageFullPath,
+                                                                  MappedMaskFullPath=MappedMaskImageFullPath)
 
         return ModifiedInputStos
     else:
@@ -2725,12 +2725,12 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
 
         SToV = stosfile.StosFile.Load(StosTransformNode.FullPath)
         # Make sure we are not using a downsampled transform
-        SToV = SToV.ChangeStosGridPixelSpacing(stos_group_node.Downsample, 1.0,
-                                               SToV.ControlImageFullPath,
-                                               SToV.MappedImageFullPath,
-                                               SToV.ControlMaskFullPath,
-                                               SToV.MappedMaskFullPath,
-                                               create_copy=False)
+        SToV = SToV.ChangeTransformPixelSpacing(stos_group_node.Downsample, 1.0,
+                                                SToV.ControlImageFullPath,
+                                                SToV.MappedImageFullPath,
+                                                SToV.ControlMaskFullPath,
+                                                SToV.MappedMaskFullPath,
+                                                create_copy=False)
         StoVTransform = factory.LoadTransform(SToV.Transform)
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
