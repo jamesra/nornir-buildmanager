@@ -455,7 +455,8 @@ def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumeman
 
 
 def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: nornir_buildmanager.volumemanager.FilterNode,
-                                                         MappedFilter: nornir_buildmanager.volumemanager.FilterNode):
+                                                         MappedFilter: nornir_buildmanager.volumemanager.FilterNode) -> \
+tuple[float, float] | None:
     """Given two filters, determines if scale data is available.  If they are
        calculates how much to scale the mapped image to ensure it is at the
        same scale as the ControlFilter.
@@ -554,7 +555,13 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
             stosNode.InputTransformChecksum = ManualInputChecksum
         else:
             # Calculate if both images have the same scale and adjust if needed
-            xscale, yscale = _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
+            scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
+
+            if scale_result is not None:
+                xscale, yscale = scale_result
+            else:
+                xscale, yscale = None, None
+
             if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
                 __CallNornirStosBrute(stosNode, StosGroup.Downsample,
                                       ControlImageNode.FullPath, MappedImageNode.FullPath,
