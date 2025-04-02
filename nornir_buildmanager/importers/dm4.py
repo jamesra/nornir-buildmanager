@@ -453,7 +453,7 @@ class DigitalMicrograph4Import(object):
 
         Position = grid_position * PerGridOffset
 
-        tile_transform = nornir_imageregistration.transforms.RigidNoRotation(Position)
+        tile_transform = nornir_imageregistration.transforms.RigidTranslation(Position)
 
         if tile_filename in mosaicObj.ImageToTransform:
             transform_changed = mosaicObj.ImageToTransform[tile_filename] != tile_transform

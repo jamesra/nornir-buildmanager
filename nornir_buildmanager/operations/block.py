@@ -22,10 +22,12 @@ from nornir_imageregistration.files import stosfile
 import nornir_imageregistration.stos_brute as stos_brute
 from nornir_imageregistration.transforms import *
 from nornir_imageregistration.views import TransformWarpView
+import nornir_imageregistration.settings
 import nornir_pools
 from nornir_shared import files, misc, plot, prettyoutput
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
 import nornir_shared
+from pyre.settings import AngleSearchRange
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -362,17 +364,31 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImage
                           ControlMaskImageFullPath: str | None = None, MappedMaskImageFullPath: str | None = None,
                           AngleSearchRange: list[float] | None = None, TestForFlip: bool = True,
                           WarpedImageScaleFactors=None,
+                          method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
                           argstring=None, Logger=None):
     """Call the stos-brute version from nornir-imageregistration"""
 
-    alignment = stos_brute.SliceToSliceBruteForce(FixedImageInput=ControlImageFullPath,
-                                                  WarpedImageInput=MappedImageFullPath,
-                                                  FixedImageMaskPath=ControlMaskImageFullPath,
-                                                  WarpedImageMaskPath=MappedMaskImageFullPath,
-                                                  AngleSearchRange=AngleSearchRange,
-                                                  TestFlip=TestForFlip,
-                                                  WarpedImageScaleFactors=WarpedImageScaleFactors,
-                                                  Cluster=False)
+    if method == nornir_imageregistration.settings.SliceToSliceMethod.BruteForce:
+        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=ControlImageFullPath,
+                                                             source_image=MappedImageFullPath,
+                                                             target_mask=ControlMaskImageFullPath,
+                                                             source_mask=MappedMaskImageFullPath,
+                                                             AngleSearchRange=AngleSearchRange,
+                                                             TestFlip=TestForFlip,
+                                                             WarpedImageScaleFactors=WarpedImageScaleFactors,
+                                                             method=nornir_imageregistration.settings.SliceToSliceMethod.BruteForce)
+
+    elif method == nornir_imageregistration.settings.SliceToSliceMethod.LogPolar:
+        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=ControlImageFullPath,
+                                                             source_image=MappedImageFullPath,
+                                                             target_mask=ControlMaskImageFullPath,
+                                                             source_mask=MappedMaskImageFullPath,
+                                                             AngleSearchRange=AngleSearchRange,
+                                                             TestFlip=TestForFlip,
+                                                             WarpedImageScaleFactors=WarpedImageScaleFactors,
+                                                             method=nornir_imageregistration.settings.SliceToSliceMethod.BruteForce)
+    else:
+        raise ValueError("Unknown method " + str(method))
 
     # Close pools to prevent threads from sticking around and slowing the rest of the run
     nornir_pools.ClosePools()
@@ -456,7 +472,7 @@ def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumeman
 
 def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: nornir_buildmanager.volumemanager.FilterNode,
                                                          MappedFilter: nornir_buildmanager.volumemanager.FilterNode) -> \
-tuple[float, float] | None:
+        tuple[float, float] | None:
     """Given two filters, determines if scale data is available.  If they are
        calculates how much to scale the mapped image to ensure it is at the
        same scale as the ControlFilter.
@@ -474,31 +490,32 @@ tuple[float, float] | None:
     return x_scale, y_scale
 
 
-def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager.StosGroupNode,
-                                    ControlFilter: nornir_buildmanager.volumemanager.FilterNode,
-                                    MappedFilter: nornir_buildmanager.volumemanager.FilterNode,
-                                    OutputType: str,
-                                    OutputPath: str,
-                                    UseMasks: bool,
-                                    AngleSearchRange=None,
-                                    TestForFlip=True,
-                                    Logger=None,
-                                    argstring=None):
+def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
+                                    control_filter: nornir_buildmanager.volumemanager.FilterNode,
+                                    mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
+                                    output_type: str,
+                                    output_path: str,
+                                    use_masks: bool,
+                                    angle_search_range: AngleSearchRange = None,
+                                    test_for_flip: bool = True,
+                                    method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
+                                    logger: logging.Logger | None = None,
+                                    argstring=None) -> TransformNode | None:
     """Create a transform node, populate, and generate the transform"""
     CmdRan = False
     ManualFileExists = False
 
-    if Logger is None:
-        Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
+    if logger is None:
+        logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
 
-    stosNode = StosGroup.GetStosTransformNode(ControlFilter, MappedFilter)
+    stosNode = stos_group.GetStosTransformNode(control_filter, mapped_filter)
     if stosNode is not None:
-        if StosGroup.AreStosInputImagesOutdated(stosNode, ControlFilter, MappedFilter, MaskRequired=UseMasks):
+        if stos_group.AreStosInputImagesOutdated(stosNode, control_filter, mapped_filter, MaskRequired=use_masks):
             stosNode.Clean("Input Images are Outdated")
             stosNode = None
         else:
             # Check if the manual stos file exists and is different than the output file        
-            ManualStosFileFullPath = StosGroup.PathToManualTransform(stosNode.FullPath)
+            ManualStosFileFullPath = stos_group.PathToManualTransform(stosNode.FullPath)
             ManualFileExists = ManualStosFileFullPath is not None
             ManualInputChecksum = None
             if ManualFileExists:
@@ -517,17 +534,17 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
 
     # Get or create the input images
     try:
-        (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(ControlFilter,
-                                                                                     StosGroup.Downsample,
-                                                                                     GetMask=UseMasks, Logger=Logger)
-        (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(MappedFilter, StosGroup.Downsample,
-                                                                                   GetMask=UseMasks, Logger=Logger)
+        (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(control_filter,
+                                                                                     stos_group.Downsample,
+                                                                                     GetMask=use_masks, Logger=logger)
+        (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(mapped_filter, stos_group.Downsample,
+                                                                                   GetMask=use_masks, Logger=logger)
     except NornirUserException as e:
         prettyoutput.LogErr(str(e))
         return None
 
     if stosNode is None:
-        stosNode = StosGroup.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType, OutputPath)
+        stosNode = stos_group.CreateStosTransformNode(control_filter, mapped_filter, output_type, output_path)
 
         # We just created this, so remove any old files
         if os.path.exists(stosNode.FullPath):
@@ -544,18 +561,18 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
     # print OutputFileFullPath
 
     if not os.path.exists(stosNode.FullPath):
-        ManualStosFileFullPath = StosGroup.PathToManualTransform(stosNode.FullPath)
+        ManualStosFileFullPath = stos_group.PathToManualTransform(stosNode.FullPath)
         if ManualStosFileFullPath:
             prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
             # Ensure we add or remove masks according to the parameters
-            SetStosFileMasks(stosNode.FullPath, ControlFilter, MappedFilter, UseMasks, StosGroup.Downsample)
+            SetStosFileMasks(stosNode.FullPath, control_filter, mapped_filter, use_masks, stos_group.Downsample)
             ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
 
             stosNode.InputTransformChecksum = ManualInputChecksum
         else:
             # Calculate if both images have the same scale and adjust if needed
-            scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
+            scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(control_filter, mapped_filter)
 
             if scale_result is not None:
                 xscale, yscale = scale_result
@@ -563,14 +580,16 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
                 xscale, yscale = None, None
 
             if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
-                __CallNornirStosBrute(stosNode, StosGroup.Downsample,
+                __CallNornirStosBrute(stosNode, stos_group.Downsample,
                                       ControlImageNode.FullPath, MappedImageNode.FullPath,
                                       ControlMaskImageNode.FullPath, MappedMaskImageNode.FullPath,
-                                      AngleSearchRange=AngleSearchRange, TestForFlip=TestForFlip)
+                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,
+                                      method=method)
             else:
-                __CallNornirStosBrute(stosNode, StosGroup.Downsample,
+                __CallNornirStosBrute(stosNode, stos_group.Downsample,
                                       ControlImageNode.FullPath, MappedImageNode.FullPath,
-                                      AngleSearchRange=AngleSearchRange, TestForFlip=TestForFlip)
+                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,
+                                      method=method)
 
         CmdRan = True
         # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
@@ -585,7 +604,7 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
 
         # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
         stosNode.ResetChecksum()
-        StosGroup.AddChecksumsToStos(stosNode, ControlFilter, MappedFilter)
+        stos_group.AddChecksumsToStos(stosNode, control_filter, mapped_filter)
 
     if CmdRan:
         return stosNode
@@ -593,8 +612,9 @@ def FilterToFilterBruteRegistration(StosGroup: nornir_buildmanager.volumemanager
     return
 
 
-def StosBrute(Parameters, mapping_node: MappingNode, block_node: BlockNode, ChannelsRegEx: str, FiltersRegEx: str,
-              Logger, **kwargs):
+def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode, ChannelsRegEx: str, FiltersRegEx: str,
+              Method: nornir_imageregistration.settings.SliceToSliceMethod,
+              Logger: logging.Logger, **kwargs):
     """Create an initial rotation and translation alignment for a pair of unregistered images"""
 
     Downsample = int(Parameters.get('Downsample', 32))
@@ -659,14 +679,15 @@ def StosBrute(Parameters, mapping_node: MappingNode, block_node: BlockNode, Chan
                 if added:
                     (yield stos_mapping_node.Parent)
 
-                stosNode = FilterToFilterBruteRegistration(StosGroup=stos_group_node,
-                                                           ControlFilter=ControlFilter,
-                                                           MappedFilter=MappedFilter,
-                                                           OutputType=OutputStosType,
-                                                           OutputPath=OutputFile,
-                                                           UseMasks=UseMasks,
-                                                           AngleSearchRange=AngleSearchRange,
-                                                           TestForFlip=TestForFlip
+                stosNode = FilterToFilterBruteRegistration(stos_group=stos_group_node,
+                                                           control_filter=ControlFilter,
+                                                           mapped_filter=MappedFilter,
+                                                           output_type=OutputStosType,
+                                                           output_path=OutputFile,
+                                                           use_masks=UseMasks,
+                                                           angle_search_range=AngleSearchRange,
+                                                           test_for_flip=TestForFlip,
+                                                           method=Method,
                                                            )
 
                 if stosNode is not None:

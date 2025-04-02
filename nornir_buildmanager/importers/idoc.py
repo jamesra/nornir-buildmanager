@@ -64,8 +64,8 @@ import nornir_buildmanager.importers.shared as shared
 from nornir_buildmanager.volumemanager import *
 
 
-def find_sections(extension: str, section_candidates:
-dict[int, list[shared.FilenameMetadata]]) -> dict[int, shared.FilenameMetadata]:
+def find_sections(extension: str,
+                  section_candidates: dict[int, list[shared.FilenameMetadata]]) -> dict[int, shared.FilenameMetadata]:
     """
     Find directories that contain files with the passed extension.  Parses section information from the
     directory name.  returns a dictionary mapping section number to the latest version of the section.
@@ -121,8 +121,10 @@ dict[int, list[shared.FilenameMetadata]]) -> dict[int, shared.FilenameMetadata]:
                 print(f"No valid import found for section {section_number}")
 
 
-def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = None, *args, **kwargs) -> Generator[
-    XElementWrapper, None, None]:
+def Import(VolumeElement: VolumeNode,
+           ImportPath: str,
+           extension: str | None = None,
+           *args, **kwargs) -> Generator[XElementWrapper, None, None]:
     """Import the specified directory into the volume"""
 
     if extension is None:
@@ -182,7 +184,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
         raise ValueError("No data found in ImportPath %s" % ImportPath)
 
 
-class SerialEMIDocImport(object):
+class SerialEMIDocImport:
 
     @classmethod
     def ToMosaic(cls, VolumeObj: VolumeNode, idocFileFullPath: str, ContrastCutoffs: tuple[float, float],
@@ -675,7 +677,7 @@ class NornirTileset:
 
             # I rename the converted image because I haven't checked how robust viking is with non-numbered images.  I'm 99% sure it can handle it, but I don't want to test now.
             ConvertedImageName = (
-                                             nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
+                                         nornir_buildmanager.templates.Current.TileCoordFormat % ImageNumber) + f'.{OutputImageExt}'
             TargetImageFullPath = os.path.join(OutputTileDir, ConvertedImageName)
 
             obj.AddTile(

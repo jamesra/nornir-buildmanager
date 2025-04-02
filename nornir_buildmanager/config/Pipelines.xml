@@ -795,6 +795,10 @@
                       type="float"
                       help="Do not re-register (recalculate phase correlation of) a pair of overlapping tiles if the change in overlap position compared to the previous iteration is less than this distance in pixels."
                       required="False"/>
+            <Argument flag="-PhaseCorrelationExponent" default=".65" dest="offset_acceptance_threshold"
+                      type="float"
+                      help="Setting this value to 1 is equivalent to using phase correlation.  Setting it to 0 is equivalent to using Pierson Correlation.  The default is .65.  If you have a difficult to register section changing this value to 1 may help."
+                      required="False"/>
             <Argument flag="-RelaxThreshold" default="0.5" dest="max_relax_tension_cutoff"
                       type="float"
                       help="Stop iteration of relaxation phase if the maximum weighted tension vector on all tiles is below this value (in pixels)."
@@ -1711,6 +1715,9 @@
             <Argument flag="-NoFlipCheck" action="store_true" dest="NoFlipCheck"
                       help="Do not check for flipped sections.  Use this option if it is impossible for images to be flipped.  Doubles execution speed."
                       required="False"/>
+            <Argument flag="-Method" dest="Method" help="Method to use for intitial registration"
+                      type="nornir_imageregistration.settings.SliceToSliceMethod"
+                      required="False" default="LogPolar"/>
         </Arguments>
 
         <Select VariableName="block_node" XPath="Block"/>
@@ -1729,7 +1736,7 @@
                  XPath="Mapping">
             <PythonCall Function="block.StosBrute" Root="BlockNode"
                         OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx"
-                        FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange">
+                        FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange" Method="#Method">
                 <Parameters>
                     <Entry Name="Downsample" Value="#StosBruteDownsample"/>
                     <Entry Name="refine"/>

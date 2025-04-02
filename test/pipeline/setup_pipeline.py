@@ -64,7 +64,8 @@ def BuildPathToModifiedDateMap(path_list: list[str]):
     return file_to_modified_time
 
 
-def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels: str, Filters: str) -> Generator[FilterNode, None, None]:
+def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels: str, Filters: str) -> Generator[
+    FilterNode, None, None]:
     """Generator which returns a list of matching filters contained under a list of section nodes
     :param list SectionNodes: List of sections to search
     :param str Channels: Regular expression for channel names
@@ -82,7 +83,7 @@ def EnumerateFilters(SectionNodes: Iterable[SectionNode], Channels: str, Filters
                 yield f
 
 
-def EnumerateImageSets(testObj, volumeNode: VolumeNode, Channels: str, Filter:str, RequireMasks: bool = True):
+def EnumerateImageSets(testObj, volumeNode: VolumeNode, Channels: str, Filter: str, RequireMasks: bool = True):
     """Used after assemble or blob create an imageset to ensure the correct levels exist"""
 
     sections = volumeNode.findall("Block/Section")
@@ -265,7 +266,7 @@ class NornirBuildTestBase(testbase.TestBase):
         self.assertEqual(NumExpectedTiles, len(tiles), 'Did not find %d tile in %s' % (NumExpectedTiles, globpath))
         self.assertEqual(TilePyramidNode.NumberOfTiles, len(tiles),
                          "Did not find %d tiles reported by meta-data in %s" % (
-                         TilePyramidNode.NumberOfTiles, globpath))
+                             TilePyramidNode.NumberOfTiles, globpath))
         return
 
     def ValidateAllTransforms(self, ParentNode):
@@ -608,7 +609,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
         return volumeNode
 
-    def RunCreateBlobFilter(self, Channels, Levels, Filter):
+    def RunCreateBlobFilter(self, Channels, Levels, Filter: FilterNode):
         if Channels is None:
             Channels = "*"
 
@@ -629,11 +630,11 @@ class NornirBuildTestBase(testbase.TestBase):
 
         return volumeNode
 
-    def _StosFileHasMasks(self, stosfileFullPath):
+    def _StosFileHasMasks(self, stosfileFullPath: str):
         stosfileObj = nornir_imageregistration.files.StosFile.Load(stosfileFullPath)
         return stosfileObj.HasMasks
 
-    def _StosGroupHasMasks(self, stos_group_node):
+    def _StosGroupHasMasks(self, stos_group_node: StosGroupNode):
         transformNodes = list(stos_group_node.findall("SectionMappings/Transform"))
         return self._StosFileHasMasks(transformNodes[0].FullPath)
 
@@ -658,12 +659,13 @@ class NornirBuildTestBase(testbase.TestBase):
         # Make sure our output stos file has masks if they were called for
         self.assertEqual(self._StosFileHasMasks(full_paths[0]), MasksRequired,
                          "%s does not match mask expectation, masks expected = %s" % (
-                         full_paths[0], '-UseMasks' in buildArgs))
+                             full_paths[0], '-UseMasks' in buildArgs))
 
         volumeNode = self.RunBuild(buildArgs)
         self.VerifyFilesLastModifiedDateUnchanged(transform_last_modified)
 
-    def RunAlignSections(self, Channels, Filters, Levels, Angles=None, Center=None, UseMasks=True, NoFlipCheck=False):
+    def RunAlignSections(self, Channels, Filters, Levels, Angles=None, Center=None, UseMasks: bool = True,
+                         NoFlipCheck: bool = False):
         # Build Mosaics
         buildArgs = self._CreateBuildArgs('AlignSections', '-NumAdjacentSections', '1', '-Filters', Filters,
                                           '-Downsample', str(Levels), '-Channels', Channels)
@@ -690,7 +692,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
         return volumeNode
 
-    def VerifySectionsHaveStosTransform(self, stos_group_node, center_section, sectionNodes):
+    def VerifySectionsHaveStosTransform(self, stos_group_node, center_section: int, sectionNodes):
         """Ensure that each section in the list is mapped by a transform in the stos group"""
         # Check that there are transforms 
         sectionNumbers = [n.Number for n in sectionNodes]
@@ -718,7 +720,7 @@ class NornirBuildTestBase(testbase.TestBase):
             disk_modified_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
             self.assertGreater(disk_modified_time, last_modified_reference,
                                "Last modified date for %s is %s, should be later than %s" % (
-                               file_path, str(disk_modified_time), str(last_modified_reference)))
+                                   file_path, str(disk_modified_time), str(last_modified_reference)))
 
     def RunAssembleStosOverlays(self, Group, Downsample, StosMap):
 
@@ -931,7 +933,7 @@ class NornirBuildTestBase(testbase.TestBase):
         volumeNode = self.LoadVolume()
 
         filterNode = volumeNode.find("Block/Section[@Number='%s']/Channel[@Name='%s']/Filter[@Name='%s']" % (
-        section_number, channel, filter_name))
+            section_number, channel, filter_name))
         self.assertIsNotNone(filterNode, "Missing filter node")
 
         levelNode = filterNode.TilePyramid.GetLevel(level)

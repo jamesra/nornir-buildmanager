@@ -8,6 +8,7 @@ import unittest
 
 import test.testbase
 
+import nornir_buildmanager
 from nornir_buildmanager.volumemanager import *
 
 

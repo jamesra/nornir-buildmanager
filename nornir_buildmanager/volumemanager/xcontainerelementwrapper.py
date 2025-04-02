@@ -3,29 +3,20 @@ from __future__ import annotations
 import concurrent.futures
 import os
 import shutil
-import sys 
+import sys
 from xml.etree import ElementTree as ElementTree
 
 import nornir_buildmanager
-from nornir_buildmanager.volumemanager import ValidateAttributesAreStrings, WrapElement, XElementWrapper, \
-    XResourceElementWrapper
+from nornir_buildmanager.volumemanager.exceptions import DuplicateElementError, MissingElementError
+from nornir_buildmanager.volumemanager.validation import ValidateAttributesAreStrings
+from nornir_buildmanager.volumemanager.elementwrapping import WrapElement, XElementWrapper
+from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
-
-
-class DuplicateElementError(Exception):
-
-    def __init__(self, element: XContainerElementWrapper, message):
-        self.element = element
-        super().__init__(message)
-
-    def __str__(self):
-        return f"{self.element.FullPath} had a duplicate element\n"
 
 
 class XContainerElementWrapper(XResourceElementWrapper):
     """XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid"""
-    
-    
+
     @property
     def SaveAsLinkedElement(self) -> bool:
         """
@@ -115,29 +106,29 @@ class XContainerElementWrapper(XResourceElementWrapper):
         with os.scandir(self.FullPath) as pathscan:
             for path in filter(lambda p: p.is_dir() and p.name[0] != '.', pathscan):
 
-                #possible_meta_data_path = os.path.join(path, 'VolumeData.XML')
+                # possible_meta_data_path = os.path.join(path, 'VolumeData.XML')
 
                 # prettyoutput.Log("Found potential linked element: {0}".format(item.path))
 
                 dirname = path.path
 
-                #expected_path = path.name
+                # expected_path = path.name
 
                 # Check to be sure that this is a new node
                 try:
                     existingChild = self.find(f"*[@Path='{path.name}']")
-                except nornir_buildmanager.volumemanager.DuplicateElementError as e:
+                except nornir_buildmanager.volumemanager.exceptions.DuplicateElementError as e:
                     continue
 
                 if existingChild is not None:
                     continue
 
-                 # Load the VolumeData.xml, take the root element name and create a link in our element
+                # Load the VolumeData.xml, take the root element name and create a link in our element
                 try:
                     loadedElement = self._load_wrap_setparent_link_element(dirname)
                     if loadedElement is not None:
                         self.append(loadedElement)
-                        #prettyoutput.Log("\tAdded: {0}".format(loadedElement))
+                        # prettyoutput.Log("\tAdded: {0}".format(loadedElement))
                         self.ChildrenChanged = True
                         prettyoutput.Log(f"Found missing linked container {dirname}")
                 except FileNotFoundError:
@@ -214,7 +205,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         return loaded_element
 
-    def _replace_links(self, link_nodes: list[XElementWrapper], fullpath: str = None):
+    def _replace_links(self, link_nodes: list[ElementTree.Element], fullpath: str = None):
         """Load the linked nodes.  Remove link node and replace with loaded node.  Checks that the loaded node is valid"""
 
         # Ensure we are actually working on a list
@@ -265,10 +256,15 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 # (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
                 # SubContainer = XContainerElementWrapper.wrap(XMLElement)
 
-                if wrapped:
-                    nornir_buildmanager.volumemanager.SetElementParent(wrapped_loaded_element, self)
+                try:
+                    if wrapped:
+                        nornir_buildmanager.volumemanager.SetElementParent(wrapped_loaded_element, self)
 
-                self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
+                    self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
+                except MissingElementError as e:
+                    # TODO: Check if the replaced element we expect exists in the tree
+                    prettyoutput.LogErr(f"Missing element when replacing link: {e}, it may have already been replaced")
+                    continue
 
                 if wrapped_loaded_element.NeedsValidation:
                     t = pool.submit(wrapped_loaded_element.IsValid)
@@ -297,8 +293,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # if Path is None:
         assert ('Path' in self.attrib)
-        
-       
+
         # else:
         # self.attrib['Path'] = Path
 
@@ -333,49 +328,49 @@ class XContainerElementWrapper(XResourceElementWrapper):
         If recurse = False we only save this element, no child elements are saved
         """
         try:
-            #We need to take a lock for certain containers where the meta data of child folders is not saved in the child directory.
-            #For example, if we are validating each level of a tile pyramid concurrently each level may try to save any updates at the same time.
+            # We need to take a lock for certain containers where the meta data of child folders is not saved in the child directory.
+            # For example, if we are validating each level of a tile pyramid concurrently each level may try to save any updates at the same time.
             self._save_lock.acquire(blocking=True)
 
             AnyChangesFound = self.ElementHasChangesToSave
-    
+
             if tabLevel is None:
                 tabLevel = 0
-    
+
             #         if hasattr(self, 'FullPath'):
             #             logger = logging.getLogger(__name__ + '.' + 'Save')
             #             logger.info("Saving " + self.FullPath)
-    
+
             # Don't do work sorting children or validating attributes if there is no indication they've changed
             if self.ChildrenChanged:
                 self.sort()
-    
+
             if self.AttributesChanged:
                 ValidateAttributesAreStrings(self)
-    
+
             # pool = Pools.GetGlobalThreadPool()
-    
+
             # tabs = '\t' * tabLevel
-    
+
             # if hasattr(self, 'FullPath'):
             #    logger.info("Saving " + self.FullPath)
-    
+
             # logger.info('Saving ' + tabs + str(self))
             xmlfilename = 'VolumeData.xml'
-    
+
             ValidateAttributesAreStrings(self)
-    
+
             # Create a copy of ourselves for saving.  If this is not done we have the potential to change a collection during iteration
             # which would break the pipeline manager in subtle ways
             SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
             if self.text is not None:
                 SaveElement.text = self.text
-    
+
             if self.tail is not None:
                 SaveElement.tail = self.tail
-    
+
             # SaveTree = ElementTree.ElementTree(SaveElement)
-    
+
             # Any child containers we create a link to and remove from our file
             for i in range(len(self) - 1, -1, -1):
                 child = self[i]
@@ -383,29 +378,30 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     SaveElement.append(child)
                 elif isinstance(child, XContainerElementWrapper):
                     AnyChangesFound = AnyChangesFound or child.AttributesChanged  # Since linked elements display the elements attributes, we should update if they've changed
-    
+
                     # Save the child first so it can validate attributes before we attempt to copy them to a link element
                     if recurse:
                         child._Save(tabLevel + 1)
-    
+
                     if child.SaveAsLinkedElement:
                         linktag = f'{child.tag}_Link'
-    
+
                         # Sanity check to prevent duplicate link bugs
                         try:
                             if __debug__:
                                 self.RaiseOnDuplicateLink(child, SaveElement)
-    
+
                             LinkElement = XElementWrapper(linktag, attrib=child.attrib)
                             # SaveElement.append(LinkElement)
                             SaveElement.append(LinkElement)
                         except DuplicateElementError:
-                            self.logger.error(f"Duplicate link element found when saving {self.FullPath}:\n{SaveElement}")
+                            self.logger.error(
+                                f"Duplicate link element found when saving {self.FullPath}:\n{SaveElement}")
                             continue
 
                     else:
                         SaveElement.append(child)
-    
+
                     # logger.warn("Unloading " + child.tag)
                     # del self[i]
                     # self.append(LinkElement)
@@ -413,29 +409,29 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     if isinstance(child,
                                   XElementWrapper):  # Elements not converted to an XElementWrapper should not have changed.
                         AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
-    
+
                         # Don't bother doing prep work on the child element if no changes are recorded
                         if child.AttributesChanged:
                             ValidateAttributesAreStrings(SaveElement)
-    
+
                         if child.ChildrenChanged:
                             child.sort()
-    
+
                         child._AttributesChanged = False
                         child._ChildrenChanged = False
-    
+
                     # Add a reference to the child element to the element we are serializing to XML
                     SaveElement.append(child)
-    
+
             if AnyChangesFound and self.SaveAsLinkedElement:
                 self.__SaveXML(xmlfilename, SaveElement)
                 self.ResetElementChangeFlags()
                 # prettyoutput.Log("Saving " + self.FullPath + ", state change recorded in that container or child elements.");
             # elif not AnyChangesFound:
             # prettyoutput.Log("Skipping " + self.FullPath + ", no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
-    
+
         #        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
-    
+
         # If we are the root of all saves then make sure they have all completed before returning
         # if(tabLevel == 0 or recurse==False):
         # pool.wait_completion()
@@ -492,7 +488,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 except PermissionError:
                     prettyoutput.LogErr(f"Permission error backing up {XMLFilename} before write")
                     raise
-                    
+
             else:
                 # This is a rare issue where I'd write a file but have zero bytes on disk.
                 # If this error occurs check into replacing the zero byte file with the backup if it exists

@@ -1,9 +1,9 @@
-'''
+"""
 
 .. automodule:: nornir_buildmanager.build
 .. automodule:: nornir_buildmanager.operations
 
-'''
+"""
 __all__ = ['pipelinemanager', 'templates', 'operations', 'metadata', 'volumemanager']
 
 from nornir_buildmanager.exceptions import NornirUserException, NornirMissingDependencyException, \

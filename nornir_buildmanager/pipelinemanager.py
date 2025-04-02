@@ -13,6 +13,7 @@ import sys
 import traceback
 from os import PathLike
 from typing import Protocol, TypeVar
+from dataclasses import dataclass
 from xml.etree import ElementTree
 
 import nornir_pools
@@ -81,8 +82,8 @@ class ArgumentSet:
 
         raise KeyError(str(key) + " not found")
 
-    def ReplaceVariable(self, xpath, iStart: int):
-        '''Replace # variable names in an xpath with variable string values'''
+    def ReplaceVariable(self, xpath: str, iStart: int):
+        """Replace # variable names in an xpath with variable string values"""
 
         # Find the next # if it exists
         iStart += 1  # Skip the # symbol
@@ -110,7 +111,7 @@ class ArgumentSet:
         prettyoutput.LogErr("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         sys.exit()
 
-    def TryGetSubstituteObject(self, val):
+    def TryGetSubstituteObject(self, val: str):
         """Place an object directly into a dictionary.
         :param str val: The key to lookup
         :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned."""
@@ -137,7 +138,7 @@ class ArgumentSet:
         return False, None
 
     def AddArguments(self, args):
-        '''Add arguments from the command line'''
+        """Add arguments from the command line"""
 
         if isinstance(args, dict):
             self._Arguments.update(args)
@@ -153,11 +154,11 @@ class ArgumentSet:
 
         return kwargs
 
-    def AddAttributes(self, Node):
-        '''Add attributes from an element node to the dargs dictionary.
+    def AddAttributes(self, Node: ElementTree.Element):
+        """Add attributes from an element node to the dargs dictionary.
            Parameter values preceeded by a '#' are keys to existing
-           entries in the dictionary whose values are copied to the 
-           entry for the attribute'''
+           entries in the dictionary whose values are copied to the
+           entry for the attribute"""
 
         for key in Node.attrib:
             if key in self.Attribs:
@@ -189,8 +190,8 @@ class ArgumentSet:
             except ValueError:
                 pass
 
-    def RemoveAttributes(self, Node):
-        '''Remove attributes present in the node from the attrib dictionary'''
+    def RemoveAttributes(self, Node: ElementTree.Element):
+        """Remove attributes present in the node from the attrib dictionary"""
 
         for key in Node.attrib:
             if key in self.Attribs:
@@ -205,14 +206,14 @@ class ArgumentSet:
     def ClearAttributes(self):
         self.Attribs.clear()
 
-    def AddParameters(self, Node, dargsKeyname=None):
-        '''Add entries from a dictionary node to the dargs dictionary.
+    def AddParameters(self, Node: ElementTree.Element, dargsKeyname=None):
+        """Add entries from a dictionary node to the dargs dictionary.
            Parameter values preceeded by a '#' are keys to existing
-           entries in the dictionary whose values are copied to the 
-           entry for the attribute. 
-           If dargsKeyname is none all parameters are added directly 
+           entries in the dictionary whose values are copied to the
+           entry for the attribute.
+           If dargsKeyname is none all parameters are added directly
            to dargs dictionary.  Otherwise they are added as a dictionary
-           under a key=dargsKeyname'''
+           under a key=dargsKeyname"""
 
         ParamNodes = Node.findall('Parameters')
         NewParameters = {}
@@ -252,7 +253,7 @@ class ArgumentSet:
         else:
             self.Parameters[dargsKeyname] = NewParameters
 
-    def RemoveParameters(self, Node):
+    def RemoveParameters(self, Node: ElementTree.Element):
         """
         :param Node:
         :return:
@@ -289,58 +290,55 @@ class ArgumentSet:
         del self.Variables[key]
 
 
+@dataclass
 class ExtensionData:
-    def __init__(self):
-        self.ext = None
-        self.classObj = None
-        self.ImportFunction = None
-        self.defaultArgs = dict()
-        pass
+    ext = None
+    classObj = None
+    ImportFunction = None
+    defaultArgs = dict()
 
 
-class PipelineManager(object):
+class PipelineManager:
+    """Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification"""
+
     logger = logging.getLogger('PipelineManager')
+    _description: str | None = None
+    _help: str | None = None
+    _epilog: str | None = None
 
-    '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
-
-    def __init__(self, pipelinesRoot, pipelineData):
+    def __init__(self, pipelinesRoot: ElementTree.ElementTree, pipelineData):
         self.VolumeTree = None
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
         self.PipelineRoot = pipelinesRoot
 
-        if 'Description' in pipelineData.attrib:
-            self._description = pipelineData.attrib['Description']
-
-        if 'Help' in pipelineData.attrib:
-            self._help = pipelineData.attrib['Help']
-
-        if 'Epilog' in pipelineData.attrib:
-            self._epilog = pipelineData.attrib['Epilog']
+        self._description = pipelineData.attrib['Description'] if 'Description' in pipelineData.attrib else None
+        self._help = pipelineData.attrib['Help'] if 'Help' in pipelineData.attrib else None
+        self._epilog = pipelineData.attrib['Epilog'] if 'Epilog' in pipelineData.attrib else None
 
     @property
-    def Description(self) -> str:
+    def Description(self) -> str | None:
         if hasattr(self, '_description'):
             return self._description
 
         return None
 
     @property
-    def Help(self) -> str:
+    def Help(self) -> str | None:
         if hasattr(self, '_help'):
             return self._help
 
         return None
 
     @property
-    def Epilog(self) -> str:
+    def Epilog(self) -> str | None:
         if hasattr(self, '_epilog'):
             return self._epilog
 
         return None
 
     @classmethod
-    def ToElementString(cls, element) -> str:
+    def ToElementString(cls, element: ElementTree.Element) -> str:
         if element.tag == 'Iterate':
             return "Iterate: " + element.attrib['XPath']
 
@@ -431,10 +429,10 @@ class PipelineManager(object):
         Pipeline.Execute(args)
 
     def GetArgParser(self, parser=None, IncludeGlobals: bool = True):
-        '''Create the complete argument parser for the pipeline
+        """Create the complete argument parser for the pipeline
         :param parser:
         :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation
-        '''
+        """
 
         if IncludeGlobals:
             parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineRoot.findall('Arguments/Argument'),
@@ -486,9 +484,9 @@ class PipelineManager(object):
     IndentLevel = 0
 
     def Execute(self, args):
-        '''This executes the loaded pipeline on the specified volume of data.
-           parser is an instance of the argparser class which should be 
-           extended with any pipeline specific arguments args are the parameters from the command line'''
+        """This executes the loaded pipeline on the specified volume of data.
+           parser is an instance of the argparser class which should be
+           extended with any pipeline specific arguments args are the parameters from the command line"""
 
         # DOM = self.PipelineData.toDOM()
         # PipelineElement = DOM.firstChild
@@ -520,7 +518,7 @@ class PipelineManager(object):
 
     def ExecuteChildPipelines(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper,
                               PipelineNode):
-        '''Run all of the child pipeline elements on the volume element'''
+        """Run all of the child pipeline elements on the volume element"""
 
         PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
         # prettyoutput.Log(PipelineManager.ToElementString(PipelineNode))
@@ -606,8 +604,8 @@ class PipelineManager(object):
 
     @staticmethod
     def RequireSetMembership(ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
-        '''If the attribute value is not present in the provided list the element is skipped.
-           If the provided list is none we do not skip.'''
+        """If the attribute value is not present in the provided list the element is skipped.
+           If the provided list is none we do not skip."""
 
         RootForMatch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
 
@@ -642,8 +640,8 @@ class PipelineManager(object):
 
     @staticmethod
     def ProcessRequireMatchNode(ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
-        '''If the regular expression does not match the attribute an exception is raised.
-           This skips the current iteration of an enclosing <iterate> element'''
+        """If the regular expression does not match the attribute an exception is raised.
+           This skips the current iteration of an enclosing <iterate> element"""
 
         RootForMatch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
         AttribName = PipelineNode.attrib.get("Attribute", "Name")
@@ -839,7 +837,7 @@ class PipelineManager(object):
 
     @staticmethod
     def AddPipelineNodeVariable(PipelineNode, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, ArgSet):
-        '''Adds a variable to our dictionary passed to functions'''
+        """Adds a variable to our dictionary passed to functions"""
         if 'VariableName' in PipelineNode.attrib:
             key = PipelineNode.attrib['VariableName']
 
@@ -859,7 +857,7 @@ class PipelineManager(object):
 
     @staticmethod
     def RemovePipelineNodeVariable(ArgSet, PipelineNode):
-        '''Adds a variable to our dictionary passed to functions'''
+        """Adds a variable to our dictionary passed to functions"""
         if 'VariableName' in PipelineNode.attrib:
             del ArgSet.Variables[PipelineNode.attrib['VariableName']]
 

@@ -1,5 +1,5 @@
-'''
-  
+"""
+
 *Note*: Certain arguments support regular expressions.  See the python :py:mod:`re` module for instructions on how to construct appropriate regular expressions.
 
 .. argparse::
@@ -7,7 +7,7 @@
    :func: BuildParserRoot
    :prog: nornir_build volumepath
 
-'''
+"""
 
 import argparse
 import logging
@@ -40,7 +40,7 @@ import nornir_shared.prettyoutput as prettyoutput
 CommandParserDict = {}
 
 
-def ConfigDataPath():
+def ConfigDataPath() -> str:
     return pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))
 
 
@@ -140,7 +140,7 @@ def _GetPipelineXMLPath() -> bytes:
     return xml
 
 
-def BuildParserRoot():
+def BuildParserRoot() -> argparse.ArgumentParser:
     # conflict_handler = 'resolve' replaces old arguments with new if both use the same option flag
     parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve',
                                      description='Options available to all build commands.  Specific pipelines may extend the argument list.')
@@ -200,7 +200,7 @@ def print_help(args):
 
 
 def call_recover_links(args):
-    '''This function checks for missing link elements in a volume and adds them back to the volume'''
+    """This function checks for missing link elements in a volume and adds them back to the volume"""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
     volumeObj.RepairMissingLinkElements(recurse=args.recurse)
 
@@ -212,13 +212,13 @@ def call_recover_links(args):
 
 
 def call_repair_xml(args):
-    '''This function checks for missing link elements in a volume and adds them back to the volume'''
+    """This function checks for missing link elements in a volume and adds them back to the volume"""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
     nornir_buildmanager.operations.migration.RepairCroppedXMLFilesInElement(volumeObj)
 
 
 def call_recover_import_meta_data(args):
-    '''This function checks for missing link elements in a volume and adds them back to the volume'''
+    """This function checks for missing link elements in a volume and adds them back to the volume"""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
     notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)
 

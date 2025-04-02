@@ -6,8 +6,10 @@ import operator
 import threading
 from typing import *
 from xml.etree import ElementTree as ElementTree
+from xml.etree.ElementTree import Element
 
 import nornir_buildmanager
+from nornir_buildmanager.volumemanager.exceptions import MissingElementError
 from nornir_shared import prettyoutput as prettyoutput
 
 # Used for debugging with conditional break's, each node gets a temporary unique ID
@@ -232,7 +234,7 @@ class XElementWrapper(ElementTree.Element):
             if x == obj:
                 return i
 
-        raise ValueError("Element:\t{0}\n is not a child of:\n\t{1}".format(str(obj), str(self)))
+        raise MissingElementError(obj, "Element:\t{0}\n is not a child of:\n\t{1}".format(str(obj), str(self)))
 
     @classmethod
     def __GetCreationTimeString__(cls) -> str:
@@ -342,8 +344,6 @@ class XElementWrapper(ElementTree.Element):
 
     def Clean(self, reason: str | None = None):
         """Remove node from element tree and remove any external resources such as files"""
-
-        '''Remove the contents referred to by this node from the disk'''
         prettyoutput.Log(f' --- Cleaning {self.ToElementString()}. ')
         if reason is not None:
             prettyoutput.Log("  --- " + reason)
@@ -733,7 +733,7 @@ class XElementWrapper(ElementTree.Element):
 
         return
 
-    def _ReplaceChildElementInPlace(self, old, new):
+    def _ReplaceChildElementInPlace(self, old: ElementTree.Element, new: XElementWrapper):
 
         # print("Removing {0}".format(str(old)))
         i = self.indexofchild(old)

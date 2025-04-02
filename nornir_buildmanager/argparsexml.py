@@ -1,20 +1,26 @@
-'''
+"""
 
-Converts XML argparser definitions from pipelines and importers into argparsers. 
+Converts XML argparser definitions from pipelines and importers into argparsers.
 
-'''
+"""
 
 import argparse
 import copy
+import enum
 import logging
+from typing import Type
 
 from nornir_shared.argparse_helpers import *
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 
 
-def _ConvertValueToPythonType(val: str) -> bool | int | float | str:
-    if val.lower() == 'true':
+def _ConvertValueToPythonType(val: str, type: Type | None = None) -> bool | int | float | str:
+    if not isinstance(val, str):
+        return val  # Already converted to a python type
+    elif type is not None and isinstance(type, enum.EnumType):
+        return type[val]
+    elif val.lower() == 'true':
         return True
     elif val.lower() == 'false':
         return False
@@ -33,12 +39,16 @@ def _ConvertValueToPythonType(val: str) -> bool | int | float | str:
 
 
 def _AddArgumentNodeToParser(parser, argNode):
-    '''Returns a dictionary that can be added to a parser'''
+    """Returns a dictionary that can be added to a parser"""
 
     attribDictCopy = copy.copy(argNode.attrib)
     Flag = ""
 
-    for key in attribDictCopy:
+    keys = list(attribDictCopy.keys())
+
+    found_type = None  # The type, if we have determined it.  Needed to detect enums.
+
+    for key in keys:
         val = attribDictCopy[key]
 
         # Starts as a string, try to convert to bool, int, or float
@@ -48,20 +58,46 @@ def _AddArgumentNodeToParser(parser, argNode):
 
         elif key == 'type':
             if val in __builtins__:
-                val = __builtins__[val]
+                found_type = __builtins__[val]
             elif val in globals():
-                val = globals()[val]
+                found_type = globals()[val]
+            elif '.' in val:  # Try to import the package in case it is an enum
+                try:
+                    package, typename = val.rsplit('.', maxsplit=1)
+                    import importlib
+                    module = importlib.import_module(package)
+                    found_type = getattr(module, typename)
+                    globals()[package] = module
+
+                except:
+                    logger = logging.getLogger(__name__ + "._AddArgumentNodeToParser")
+                    logger.error(f'Failed to import {val}')
+                    prettyoutput.LogErr(f'Failed to import {val}')
+                    raise
             else:
                 logger = logging.getLogger(__name__ + "._AddArgumentNodeToParser")
-                logger.error('Type not found in __builtins__ or module __dict__' + val)
-                prettyoutput.LogErr('Type not found in __builtins__ or module __dict__ ' + val)
-                raise Exception(
-                    f"{val} type specified by argument node is not present in __builtins__ or module dictionary.  Must use a standard python type.")
-                continue
+                error_str = f'Type {val} not found in __builtins__ or module __dict__'
+                logger.error(error_str)
+                prettyoutput.LogErr(error_str)
+                raise
 
-            attribDictCopy[key] = val
+            attribDictCopy[key] = found_type
+
+            # If the type is an Enum, add the choices to the argument automatically
+            if isinstance(found_type, enum.EnumType):
+                attribDictCopy['choices'] = list(found_type)  # [e.name for e in found_type]
+                if 'default' in attribDictCopy:
+                    try:
+                        # Convert the default to the matching enum value in case we've already populated the default value
+                        attribDictCopy['default'] = _ConvertValueToPythonType(attribDictCopy['default'], found_type)
+                    except:
+                        logger = logging.getLogger(__name__ + "._AddArgumentNodeToParser")
+                        error_str = f'Failed to convert default value {attribDictCopy["default"]} to enum type {found_type}'
+                        logger.error(error_str)
+                        prettyoutput.LogErr(error_str)
+                        raise
         elif key == 'default':
-            attribDictCopy[key] = _ConvertValueToPythonType(val)
+            attribDictCopy[key] = _ConvertValueToPythonType(val, found_type)
         elif key == 'required':
             attribDictCopy[key] = _ConvertValueToPythonType(val)
         elif key == 'choices':
@@ -80,13 +116,13 @@ def _AddArgumentNodeToParser(parser, argNode):
 
 
 def CreateOrExtendParserForArguments(ArgumentNodes, parser: argparse.ArgumentParser | None = None):
-    '''
+    """
        Converts a list of <Argument> nodes into an argument parser, or extends an existing argument parser
        :param XElement ArgumentNodes: Argument nodes.  Usually found with the xquery "Arguments/Argument" on the pipeline node
        :param argparse.ArgumentParser parser: Existing Argument parser to extend, otherwise a new parser is created
        :returns: An argument parser
        :rtype: argparse.ArgumentParser
-    '''
+    """
 
     if parser is None:
         parser = argparse.ArgumentParser()

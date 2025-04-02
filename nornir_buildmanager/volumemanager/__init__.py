@@ -10,6 +10,9 @@ from nornir_buildmanager.volumemanager.versions import *
 import nornir_buildmanager.volumemanager.xelementwrapper as xelementwrapper
 from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 
+import nornir_buildmanager.volumemanager.exceptions as exceptions
+from nornir_buildmanager.volumemanager.exceptions import *
+
 import nornir_buildmanager.volumemanager.elementwrapping as elementwrapping
 from nornir_buildmanager.volumemanager.elementwrapping import *
 
@@ -29,7 +32,7 @@ import nornir_buildmanager.volumemanager.xresourceelementwrapper as xresourceele
 from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceElementWrapper
 
 import nornir_buildmanager.volumemanager.xcontainerelementwrapper as xcontainerelementwrapper
-from nornir_buildmanager.volumemanager.xcontainerelementwrapper import XContainerElementWrapper, DuplicateElementError
+from nornir_buildmanager.volumemanager.xcontainerelementwrapper import XContainerElementWrapper
 
 import nornir_buildmanager.volumemanager.xlinkedcontainerelementwrapper as xlinkedcontainerelementwrapper
 from nornir_buildmanager.volumemanager.xlinkedcontainerelementwrapper import XLinkedContainerElementWrapper
@@ -118,14 +121,5 @@ from nornir_buildmanager.volumemanager.sectionmappingsnode import SectionMapping
 import nornir_buildmanager.volumemanager.volumenode as volumenode
 from nornir_buildmanager.volumemanager.volumenode import VolumeNode
 
-
 import nornir_buildmanager.volumemanager.prunenode as prunenode
 from nornir_buildmanager.volumemanager.prunenode import PruneNode
-
-
-
-
-
-
-
-
