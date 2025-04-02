@@ -27,7 +27,7 @@ import nornir_pools
 from nornir_shared import files, misc, plot, prettyoutput
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
 import nornir_shared
-from pyre.settings import AngleSearchRange
+from nornir_imageregistration.settings import AngleSearchRange
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
