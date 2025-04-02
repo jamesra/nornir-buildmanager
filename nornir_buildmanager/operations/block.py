@@ -368,6 +368,9 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImage
                           argstring=None, Logger=None):
     """Call the stos-brute version from nornir-imageregistration"""
 
+    if method is None:
+        method = nornir_imageregistration.settings.SliceToSliceMethod.BruteForce
+
     if method == nornir_imageregistration.settings.SliceToSliceMethod.BruteForce:
         alignment = stos_brute.SliceToSliceRigidRegistration(target_image=ControlImageFullPath,
                                                              source_image=MappedImageFullPath,
