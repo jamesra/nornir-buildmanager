@@ -40,6 +40,14 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         return obj
 
     @property
+    def TargetSectionNumber(self) -> int | None:
+        return self.ControlSectionNumber
+
+    @TargetSectionNumber.setter
+    def TargetSectionNumber(self, value: int | None):
+        self.ControlSectionNumber = value
+
+    @property
     def ControlSectionNumber(self) -> int | None:
         if 'ControlSectionNumber' in self.attrib:
             return int(self.attrib['ControlSectionNumber'])
@@ -54,6 +62,14 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
                 del self.attrib['ControlSectionNumber']
         else:
             self.attrib['ControlSectionNumber'] = "%d" % value
+
+    @property
+    def SourceSectionNumber(self) -> int | None:
+        return self.MappedSectionNumber
+
+    @SourceSectionNumber.setter
+    def SourceSectionNumber(self, value: int | None):
+        self.MappedSectionNumber = value
 
     @property
     def MappedSectionNumber(self) -> int | None:

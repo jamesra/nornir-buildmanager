@@ -636,6 +636,9 @@ class NornirBuildTestBase(testbase.TestBase):
 
     def _StosGroupHasMasks(self, stos_group_node: StosGroupNode):
         transformNodes = list(stos_group_node.findall("SectionMappings/Transform"))
+        if transformNodes is None or len(transformNodes) == 0:
+            return False
+
         return self._StosFileHasMasks(transformNodes[0].FullPath)
 
     def VerifyStosTransformPipelineSharedTests(self, volumeNode: nornir_buildmanager.volumemanager.VolumeNode,
