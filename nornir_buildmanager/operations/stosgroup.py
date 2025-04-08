@@ -56,12 +56,12 @@ def ListGroupSectionMappings(BlockNode, GroupName, Downsample, **kwargs):
                                                   'Section'.ljust(10), 'Channel'.ljust(10), 'Filter'.ljust(10)))
 
     for transforms in [sm.Transforms for sm in
-                       sorted(StosGroup.SectionMappings, key=lambda sm: sm.MappedSectionNumber)]:
+                       sorted(StosGroup.SectionMappings, key=lambda sm: sm.SourceSectionNumber)]:
         for t in transforms:
-            print("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}{6:s}".format(repr(t.MappedSectionNumber).ljust(10),
+            print("{0:s}{1:s}{2:s}{3:s}{4:s}{5:s}{6:s}".format(repr(t.SourceSectionNumber).ljust(10),
                                                                t.MappedChannelName.ljust(10),
                                                                t.MappedFilterName.ljust(10),
-                                                               repr(t.ControlSectionNumber).ljust(10),
+                                                               repr(t.TargetSectionNumber).ljust(10),
                                                                t.ControlChannelName.ljust(10),
                                                                t.ControlFilterName.ljust(10),
                                                                t.Type.ljust(10)))
@@ -85,7 +85,7 @@ def CopyStosGroup(BlockNode, SourceGroupName, TargetGroupName, Downsample, **kwa
 
     for sourceSectionMapping in SourceGroup.SectionMappings:
         (created_mapping, targetSectionMapping) = TargetGroup.GetOrCreateSectionMapping(
-            sourceSectionMapping.MappedSectionNumber)
+            sourceSectionMapping.SourceSectionNumber)
         CopySectionMappingTransforms(sourceSectionMapping, targetSectionMapping)
 
     return TargetGroup
@@ -101,9 +101,9 @@ def CopySectionMappingTransforms(SourceMapping, TargetMapping):
 
     for source_transform in SourceMapping.Transforms:
         # Copy the file that 
-        ControlFilter = BlockNode.GetSection(source_transform.ControlSectionNumber).GetChannel(
+        ControlFilter = BlockNode.GetSection(source_transform.TargetSectionNumber).GetChannel(
             source_transform.ControlChannelName).GetFilter(source_transform.ControlFilterName)
-        MappedFilter = BlockNode.GetSection(source_transform.MappedSectionNumber).GetChannel(
+        MappedFilter = BlockNode.GetSection(source_transform.SourceSectionNumber).GetChannel(
             source_transform.MappedChannelName).GetFilter(source_transform.MappedFilterName)
 
         # Remove the existing transform and replace it

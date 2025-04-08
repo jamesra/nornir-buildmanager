@@ -379,7 +379,7 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImage
                                                              AngleSearchRange=AngleSearchRange,
                                                              TestFlip=TestForFlip,
                                                              WarpedImageScaleFactors=WarpedImageScaleFactors,
-                                                             method=nornir_imageregistration.settings.SliceToSliceMethod.BruteForce)
+                                                             method=method)
 
     elif method == nornir_imageregistration.settings.SliceToSliceMethod.LogPolar:
         alignment = stos_brute.SliceToSliceRigidRegistration(target_image=ControlImageFullPath,
@@ -389,7 +389,7 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImage
                                                              AngleSearchRange=AngleSearchRange,
                                                              TestFlip=TestForFlip,
                                                              WarpedImageScaleFactors=WarpedImageScaleFactors,
-                                                             method=nornir_imageregistration.settings.SliceToSliceMethod.BruteForce)
+                                                             method=method)
     else:
         raise ValueError("Unknown method " + str(method))
 
@@ -520,15 +520,26 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
             # Check if the manual stos file exists and is different than the output file        
             ManualStosFileFullPath = stos_group.PathToManualTransform(stosNode.FullPath)
             ManualFileExists = ManualStosFileFullPath is not None
-            ManualInputChecksum = None
+            manual_input_checksum = None
             if ManualFileExists:
                 if 'InputTransformChecksum' in stosNode.attrib:
-                    ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
-                    stosNode = transforms.RemoveOnMismatch(stosNode, 'InputTransformChecksum', ManualInputChecksum)
+                    manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+                    stosNode = transforms.RemoveOnMismatch(stosNode, 'InputTransformChecksum', manual_input_checksum)
                 else:
-                    stosNode.Clean(
-                        "No input checksum to test manual stos file against. Replacing with new manual input")
-                    stosNode = None
+                    manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+                    try:
+                        existing_stos_checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
+                        if manual_input_checksum != existing_stos_checksum:
+                            stosNode.Clean(
+                                "No input checksum to test manual stos file against. Replacing with new manual input")
+                            stosNode = None
+                        else:
+                            stosNode.InputTransformChecksum = manual_input_checksum
+
+                    except FileNotFoundError:
+                        stosNode.Clean(
+                            "No existing stos file found to compare manual file against.  Using Manual input.")
+                        stosNode = None
 
             if not ManualFileExists:
                 if 'InputTransformChecksum' in stosNode.attrib:
@@ -570,9 +581,9 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
             # Ensure we add or remove masks according to the parameters
             SetStosFileMasks(stosNode.FullPath, control_filter, mapped_filter, use_masks, stos_group.Downsample)
-            ManualInputChecksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+            manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
 
-            stosNode.InputTransformChecksum = ManualInputChecksum
+            stosNode.InputTransformChecksum = manual_input_checksum
         else:
             # Calculate if both images have the same scale and adjust if needed
             scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(control_filter, mapped_filter)
@@ -1606,7 +1617,10 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
                                                    **kwargs)
     except ValueError as e:
         prettyoutput.LogErr(f'Refining {InputStosFullPath} to {OutputStosFullPath} Failed!')
-        return
+        if nornir_imageregistration.in_debug_mode():
+            raise
+        else:
+            return
 
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
 
@@ -2120,7 +2134,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
             OutputTransform = OutputSectionMappingsNode.FindStosTransform(ControlSectionNumber=ControlSectionNumber,
                                                                           ControlChannelName=ControlChannelName,
                                                                           ControlFilterName=ControlFilterName,
-                                                                          MappedSectionNumber=MappedToControlTransform.MappedSectionNumber,
+                                                                          MappedSectionNumber=MappedToControlTransform.SourceSectionNumber,
                                                                           MappedChannelName=MappedToControlTransform.MappedChannelName,
                                                                           MappedFilterName=MappedToControlTransform.MappedFilterName)
 
@@ -2272,18 +2286,18 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
             ControlFilterName = None
 
             if ControlToVolumeTransform is None:
-                ControlSectionNumber = MappedToControlTransform.ControlSectionNumber
+                ControlSectionNumber = MappedToControlTransform.TargetSectionNumber
                 ControlChannelName = MappedToControlTransform.ControlChannelName
                 ControlFilterName = MappedToControlTransform.ControlFilterName
             else:
-                ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
+                ControlSectionNumber = ControlToVolumeTransform.TargetSectionNumber
                 ControlChannelName = ControlToVolumeTransform.ControlChannelName
                 ControlFilterName = ControlToVolumeTransform.ControlFilterName
 
             OutputTransform = OutputSectionMappingsNode.FindStosTransform(ControlSectionNumber=ControlSectionNumber,
                                                                           ControlChannelName=ControlChannelName,
                                                                           ControlFilterName=ControlFilterName,
-                                                                          MappedSectionNumber=MappedToControlTransform.MappedSectionNumber,
+                                                                          MappedSectionNumber=MappedToControlTransform.SourceSectionNumber,
                                                                           MappedChannelName=MappedToControlTransform.MappedChannelName,
                                                                           MappedFilterName=MappedToControlTransform.MappedFilterName)
 
@@ -2301,7 +2315,7 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
 
             if ControlToVolumeTransform is not None:
                 OutputTransform.Path = str(mappedSectionNumber) + '-' + str(
-                    ControlToVolumeTransform.ControlSectionNumber) + '.stos'
+                    ControlToVolumeTransform.TargetSectionNumber) + '.stos'
 
             if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
                 Logger.info(" %s: Removed outdated transform %s" % (logStr, OutputTransform.Path))
@@ -2332,7 +2346,7 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                     yield OutputSectionMappingsNode
 
             else:
-                OutputTransform.ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
+                OutputTransform.ControlSectionNumber = ControlToVolumeTransform.TargetSectionNumber
                 OutputTransform.ControlChannelName = ControlToVolumeTransform.ControlChannelName
                 OutputTransform.ControlFilterName = ControlToVolumeTransform.ControlFilterName
 
@@ -2384,6 +2398,7 @@ def RegistrationTreeFromStosMapNode(stos_map_node) -> registrationtree.Registrat
 
 
 def __MappedFilterForTransform(transform_node):
+    """Mapped = Source section"""
     return __GetFilterAndMaskFilter(transform_node,
                                     transform_node.MappedSectionNumber,
                                     transform_node.MappedChannelName,
@@ -2391,6 +2406,7 @@ def __MappedFilterForTransform(transform_node):
 
 
 def __ControlFilterForTransform(transform_node):
+    """Control = Target section"""
     return __GetFilterAndMaskFilter(transform_node,
                                     transform_node.ControlSectionNumber,
                                     transform_node.ControlChannelName,

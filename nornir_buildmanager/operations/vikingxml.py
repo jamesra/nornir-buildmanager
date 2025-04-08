@@ -206,17 +206,17 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
                 OutputStosNode = ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName': StosGroup.Name,
                                                                              'controlSection': str(
-                                                                                 transform.ControlSectionNumber),
+                                                                                 transform.TargetSectionNumber),
                                                                              'mappedSection': str(
-                                                                                 transform.MappedSectionNumber),
+                                                                                 transform.SourceSectionNumber),
                                                                              'path': os.path.join(BlockNode.Path,
                                                                                                   StosGroup.Path,
                                                                                                   transform.Path),
                                                                              'pixelspacing': '%g' % StosGroup.Downsample,
                                                                              'type': transform.Type})
 
-                UpdateString = UpdateTemplate % {'mapped': int(transform.MappedSectionNumber),
-                                                 'control': int(transform.ControlSectionNumber)}
+                UpdateString = UpdateTemplate % {'mapped': int(transform.SourceSectionNumber),
+                                                 'control': int(transform.TargetSectionNumber)}
 
                 if not ECLIPSE:
                     print(('\b' * 80))
