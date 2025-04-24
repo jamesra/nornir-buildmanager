@@ -1621,38 +1621,39 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                                                                                           tile_dims[1], tile_dims[0],
                                                                                           section_node.Number))
 
-        temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
-        os.makedirs(temp_level_dir, exist_ok=True)
+        with tempfile.TemporaryDirectory(get_temp_dir_for_tileset_level(LevelOne)) as temp_level_dir:
+            os.makedirs(temp_level_dir, exist_ok=True)
 
-        if max_temp_image_area is None:
-            max_temp_image_area = EstimateMaxTempImageArea()
-            prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(
-                float(max_temp_image_area) / float(2 << 20)))
+            if max_temp_image_area is None:
+                max_temp_image_area = EstimateMaxTempImageArea()
+                prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(
+                    float(max_temp_image_area) / float(2 << 20)))
 
-        task_timer = nornir_shared.tasktimer.TaskTimer()
-        task_timer.Start(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
-        for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
-                target_space_scale=1.0 / InputLevelNode.Downsample,
-                tile_dims=tile_dims,
-                max_temp_image_area=max_temp_image_area,
-                usecluster=True):
-            tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': TileSetNode.FilePrefix,
-                                                                                     'X': iCol,
-                                                                                     'Y': iRow,
-                                                                                     'postfix': TileSetNode.FilePostfix}
-            temp_output_tile_fullpath = os.path.join(temp_level_dir,
-                                                     tilename)  # A temporary output file, this is cached for building pyramids later, and allows moving to a network location in one step
-            output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-            # pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
+            task_timer = nornir_shared.tasktimer.TaskTimer()
+            task_timer.Start(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+            for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
+                    target_space_scale=1.0 / InputLevelNode.Downsample,
+                    tile_dims=tile_dims,
+                    max_temp_image_area=max_temp_image_area,
+                    usecluster=True):
+                tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+                    'prefix': TileSetNode.FilePrefix,
+                    'X': iCol,
+                    'Y': iRow,
+                    'postfix': TileSetNode.FilePostfix}
+                temp_output_tile_fullpath = os.path.join(temp_level_dir,
+                                                         tilename)  # A temporary output file, this is cached for building pyramids later, and allows moving to a network location in one step
+                output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
+                # pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
 
-            pool.add_task(tilename, _SaveImageAndCopy, ImageFullPath=output_tile_fullpath,
-                          temp_output_tile_fullpath=temp_output_tile_fullpath, tile_image=tile_image, bpp=bpp,
-                          optimize=True)
+                pool.add_task(tilename, _SaveImageAndCopy, ImageFullPath=output_tile_fullpath,
+                              temp_output_tile_fullpath=temp_output_tile_fullpath, tile_image=tile_image, bpp=bpp,
+                              optimize=True)
 
-        # Wait for the tiles to save
-        pool.wait_completion()
-        task_timer.End(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
-        prettyoutput.Log("Generation of tileset complete")
+            # Wait for the tiles to save
+            pool.wait_completion()
+            task_timer.End(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+            prettyoutput.Log("Generation of tileset complete")
         #         else:
         #             Logger.info("Assemble tiles output already exists")
 
