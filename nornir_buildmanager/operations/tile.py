@@ -1621,7 +1621,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                                                                                           tile_dims[1], tile_dims[0],
                                                                                           section_node.Number))
 
-        with tempfile.TemporaryDirectory(get_temp_dir_for_tileset_level(LevelOne)) as temp_level_dir:
+        with tempfile.TemporaryDirectory(dir=get_temp_dir_for_tileset_level(LevelOne)) as temp_level_dir:
             os.makedirs(temp_level_dir, exist_ok=True)
 
             if max_temp_image_area is None:
@@ -2297,8 +2297,10 @@ def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.Leve
     root = level.FindParent('Volume')
     root_name = 'assemble_root' if root is None else os.path.basename(root.Path)
 
-    return os.path.join(tempfile.gettempdir(), 'nornir', 'assemble_tiles', root_name, section_name,
-                        os.path.basename(level.FullPath))
+    result = os.path.join(nornir_imageregistration.gettempdir(), 'nornir', 'assemble_tiles', root_name, section_name,
+                          os.path.basename(level.FullPath))
+    os.makedirs(result, exist_ok=True)
+    return result
 
 
 # OK, now build/check the remaining levels of the tile pyramids
