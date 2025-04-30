@@ -360,8 +360,9 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
     return None
 
 
-def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImageFullPath: str, MappedImageFullPath: str,
-                          ControlMaskImageFullPath: str | None = None, MappedMaskImageFullPath: str | None = None,
+def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int,
+                          target_image_fullpath: str, source_image_fullpath: str,
+                          target_mask_fullpath: str | None = None, source_mask_fullpath: str | None = None,
                           AngleSearchRange: list[float] | None = None, TestForFlip: bool = True,
                           WarpedImageScaleFactors=None,
                           method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
@@ -372,20 +373,20 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImage
         method = nornir_imageregistration.settings.SliceToSliceMethod.BruteForce
 
     if method == nornir_imageregistration.settings.SliceToSliceMethod.BruteForce:
-        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=ControlImageFullPath,
-                                                             source_image=MappedImageFullPath,
-                                                             target_mask=ControlMaskImageFullPath,
-                                                             source_mask=MappedMaskImageFullPath,
+        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=target_image_fullpath,
+                                                             source_image=source_image_fullpath,
+                                                             target_mask=target_mask_fullpath,
+                                                             source_mask=source_mask_fullpath,
                                                              AngleSearchRange=AngleSearchRange,
                                                              TestFlip=TestForFlip,
                                                              WarpedImageScaleFactors=WarpedImageScaleFactors,
                                                              method=method)
 
     elif method == nornir_imageregistration.settings.SliceToSliceMethod.LogPolar:
-        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=ControlImageFullPath,
-                                                             source_image=MappedImageFullPath,
-                                                             target_mask=ControlMaskImageFullPath,
-                                                             source_mask=MappedMaskImageFullPath,
+        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=target_image_fullpath,
+                                                             source_image=source_image_fullpath,
+                                                             target_mask=target_mask_fullpath,
+                                                             source_mask=source_mask_fullpath,
                                                              AngleSearchRange=AngleSearchRange,
                                                              TestFlip=TestForFlip,
                                                              WarpedImageScaleFactors=WarpedImageScaleFactors,
@@ -396,10 +397,10 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int, ControlImage
     # Close pools to prevent threads from sticking around and slowing the rest of the run
     nornir_pools.ClosePools()
 
-    stos = alignment.ToStos(ControlImageFullPath,
-                            MappedImageFullPath,
-                            ControlMaskImageFullPath,
-                            MappedMaskImageFullPath,
+    stos = alignment.ToStos(target_image_fullpath,
+                            source_image_fullpath,
+                            target_mask_fullpath,
+                            source_mask_fullpath,
                             PixelSpacing=Downsample)
 
     stos.Save(stosNode.FullPath)
@@ -438,36 +439,45 @@ def __CallIrToolsStosBrute(stosNode, ControlImageNode: ImageNode, MappedImageNod
         return None
 
 
-def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumemanager.FilterNode, Downsample: float,
-                                      GetMask: bool, Logger=None):
-    """
-    :param Logger:
-    :param object filter_node: Filter meta-data to get images for
-    :param int Downsample: Resolution of the image node to fetch or create
-    :param bool GetMask: True if the mask node should be returned
-    :return: Tuple of (image_node, mask_node) for the filter at the given downsample level
-    """
-    if Logger is None:
-        Logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
+def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumemanager.FilterNode, downsample: float,
+                                      get_mask: bool, logger=None):
+    """Retrieves or creates image nodes and their corresponding mask nodes for a given filter at a specified downsample level.
 
-    image_node = filter_node.GetOrCreateImage(Downsample)
-    if image_node is None:
-        Logger.error("Image metadata missing %s" % filter_node.FullPath)
+    Args:
+        filter_node: Filter meta-data to get images for
+        downsample: Resolution of the image node to fetch or create
+        get_mask: True if the mask node should be returned
+        logger: Logger instance for error reporting. If None, a default logger will be created.
+
+    Returns:
+        Tuple of (image_node, mask_node) for the filter at the given downsample level.
+        If any required node cannot be created or found, returns (None, None).
+    """
+    if logger is None:
+        logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
+
+    def _validate_node(node, node_type, path):
+        """Helper function to validate if a node exists and its file is present."""
+        if node is None:
+            logger.error(f"{node_type} metadata missing {path}")
+            return False
+
+        if not os.path.exists(node.FullPath):
+            logger.error(f"{node_type} file missing {node.FullPath}")
+            return False
+
+        return True
+
+    # Get or create the image node
+    image_node = filter_node.GetOrCreateImage(downsample)
+    if not _validate_node(image_node, "Image", filter_node.FullPath):
         return None, None
 
-    if not os.path.exists(image_node.FullPath):
-        Logger.error("Image image file missing %s" % image_node.FullPath)
-        return None, None
-
+    # Get or create the mask node if requested
     mask_image_node = None
-    if GetMask:
-        mask_image_node = filter_node.GetOrCreateMaskImage(Downsample)
-        if mask_image_node is None:
-            Logger.error("Mask image metadata missing %s" % filter_node.FullPath)
-            return None, None
-
-        if not os.path.exists(mask_image_node.FullPath):
-            Logger.error("Mask image file missing %s" % mask_image_node.FullPath)
+    if get_mask:
+        mask_image_node = filter_node.GetOrCreateMaskImage(downsample)
+        if not _validate_node(mask_image_node, "Mask image", filter_node.FullPath):
             return None, None
 
     return image_node, mask_image_node
@@ -550,9 +560,9 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
     try:
         (ControlImageNode, ControlMaskImageNode) = GetOrCreateRegistrationImageNodes(control_filter,
                                                                                      stos_group.Downsample,
-                                                                                     GetMask=use_masks, Logger=logger)
+                                                                                     get_mask=use_masks, logger=logger)
         (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(mapped_filter, stos_group.Downsample,
-                                                                                   GetMask=use_masks, Logger=logger)
+                                                                                   get_mask=use_masks, logger=logger)
     except NornirUserException as e:
         prettyoutput.LogErr(str(e))
         return None
@@ -586,12 +596,12 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
             stosNode.InputTransformChecksum = manual_input_checksum
         else:
             # Calculate if both images have the same scale and adjust if needed
-            scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(control_filter, mapped_filter)
+            # scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(control_filter, mapped_filter)
 
-            if scale_result is not None:
-                xscale, yscale = scale_result
-            else:
-                xscale, yscale = None, None
+            # if scale_result is not None:
+            #    xscale, yscale = scale_result
+            # else:
+            #    xscale, yscale = None, None
 
             if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
                 __CallNornirStosBrute(stosNode, stos_group.Downsample,
@@ -1779,8 +1789,8 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
             try:
                 # Ensure the input images exist on disk and generate them if not
-                GetOrCreateRegistrationImageNodes(ControlFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
-                GetOrCreateRegistrationImageNodes(MappedFilter, OutputDownsample, GetMask=UseMasks, Logger=Logger)
+                GetOrCreateRegistrationImageNodes(ControlFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
+                GetOrCreateRegistrationImageNodes(MappedFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
             except NornirUserException as e:
                 # This exception is raised if the input images cannot be generated
                 prettyoutput.LogErr(str(e))
