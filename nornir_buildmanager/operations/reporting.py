@@ -1,8 +1,8 @@
-'''
+"""
 Created on Oct 3, 2012
 
 @author: u0490822
-'''
+"""
 
 import datetime
 import logging
@@ -29,12 +29,12 @@ if __name__ == '__main__':
 
 
 class RowList(list):
-    '''class used for HTML to place into rows'''
+    """class used for HTML to place into rows"""
     pass
 
 
 class ColumnList(list):
-    '''Class used for HTML to place into columns'''
+    """Class used for HTML to place into columns"""
 
     def __init__(self, *args):
         self._caption = None
@@ -53,12 +53,12 @@ class ColumnList(list):
 
 
 class UnorderedItemList(list):
-    '''Class used for HTML to create unordered list from items'''
+    """Class used for HTML to create unordered list from items"""
     pass
 
 
 class HTMLBuilder(list):
-    '''A list of strings that contain HTML'''
+    """A list of strings that contain HTML"""
 
     @property
     def IndentLevel(self):
@@ -182,14 +182,14 @@ class HTMLPaths(object):
         return FullPath
 
     def __ThumbnailPaths(self):
-        '''Return relative and absolute thumbnails for an OutputFile'''
+        """Return relative and absolute thumbnails for an OutputFile"""
         (ThumbnailDirectory, ext) = os.path.splitext(self.OutputFile)
         ThumbnailDirectoryFullPath = os.path.join(self.OutputDir, ThumbnailDirectory)
 
         return ThumbnailDirectory, ThumbnailDirectoryFullPath
 
     def GetFileAnchorHTML(self, Node, text):
-        '''Returns an <A> anchor node pointing at the nodes file.  If the file does not exist an empty string is returned'''
+        """Returns an <A> anchor node pointing at the nodes file.  If the file does not exist an empty string is returned"""
         # Temp patch
         FullPath = None
         patchedPath = _patchupNotesPath(Node)
@@ -220,10 +220,11 @@ def GetTempFileSaltString(node: nornir_buildmanager.volumemanager.XElementWrappe
     saltString = None
 
     if isinstance(node, nornir_buildmanager.volumemanager.XElementWrapper):
-        b_node = node.FindParent('Block') # type: nornir_buildmanager.volumemanager.BlockNode | None # type: ignore
-        s_node = node.FindParent('Section') # type: nornir_buildmanager.volumemanager.SectionNode | None # type: ignore
-        c_node = node.FindParent('Channel') # type: nornir_buildmanager.volumemanager.ChannelNode | None  # type: ignore
-        f_node = node.FindParent('Filter') # type: nornir_buildmanager.volumemanager.FilterNode | None # type: ignore
+        b_node = node.FindParent('Block')  # type: nornir_buildmanager.volumemanager.BlockNode | None # type: ignore
+        s_node = node.FindParent('Section')  # type: nornir_buildmanager.volumemanager.SectionNode | None # type: ignore
+        c_node = node.FindParent(
+            'Channel')  # type: nornir_buildmanager.volumemanager.ChannelNode | None  # type: ignore
+        f_node = node.FindParent('Filter')  # type: nornir_buildmanager.volumemanager.FilterNode | None # type: ignore
 
         if b_node is not None:
             saltString = b_node.Name
@@ -248,7 +249,7 @@ def GetTempFileSaltString(node: nornir_buildmanager.volumemanager.XElementWrappe
         TempFileSalt += 1
 
         return saltString
-    
+
     return saltString
 
 
@@ -276,7 +277,7 @@ def CopyFiles(DataNode, OutputDir=None, Move=False, **kwargs):
 
 
 def _AbsoluePathFromRelativePath(node, path):
-    '''If path is relative then make it relative from the directory containing the volume_node'''
+    """If path is relative then make it relative from the directory containing the volume_node"""
 
     if not os.path.isabs(path):
         volume_dir = node.Root.FullPath
@@ -338,7 +339,7 @@ def MoveFiles(DataNode, OutputDir, Move=False, **kwargs):
 
 
 def _patchupNotesPath(NotesNode):
-    '''Temp fix for old notes elements without a path attribute'''
+    """Temp fix for old notes elements without a path attribute"""
     if 'SourceFilename' in NotesNode.attrib:
         return NotesNode.SourceFilename
     elif 'Path' in NotesNode.attrib:
@@ -348,7 +349,7 @@ def _patchupNotesPath(NotesNode):
 
 
 def __RemoveRTFBracket(rtfStr):
-    '''Removes brackets from rtfStr in pairs'''
+    """Removes brackets from rtfStr in pairs"""
 
     assert (rtfStr[0] == '{')
     rtfStr = rtfStr[1:]
@@ -370,11 +371,11 @@ def __RemoveRTFBracket(rtfStr):
 
 
 def __RTFToHTML(rtfStr):
-    '''Crudely convert a rich-text string to html'''
+    """Crudely convert a rich-text string to html"""
 
-    translationTable = {'\pard': '<br\>',
-                        '\par': '<br\>',
-                        '\viewkind': ''}
+    translationTable = {r'\pard': r'<br\>',
+                        r'\par': r'<br\>',
+                        r'\viewkind': ''}
 
     if rtfStr[0] == '{':
         rtfStr = rtfStr[1:-2]
@@ -422,8 +423,8 @@ def __RTFToHTML(rtfStr):
             rtfStr = rtfStr[1:]
 
     outStr = str(HTMLOut).strip()
-    while outStr.endswith('<br\>'):
-        outStr = outStr[:-len('<br\>')].strip()
+    while outStr.endswith(r'<br\>'):
+        outStr = outStr[:-len(r'<br\>')].strip()
 
     if len(HTMLOut) > 0:
         return '<p>' + outStr
@@ -656,11 +657,11 @@ def __ExtractIDocDataText(DataNode):
 
 
 def HTMLFromIDocDataNode(DataNode, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
-    '''
+    """
     <Data CreationDate="2013-12-16 11:58:15" DataMode="6" ExposureDose="0" ExposureTime="0.5" Image="10000.tif"
-     ImageSeries="1" Intensity="0.52256" Magnification="5000" Montage="1" Name="IDoc" Path="1.idoc" PixelSpacing="21.76" 
+     ImageSeries="1" Intensity="0.52256" Magnification="5000" Montage="1" Name="IDoc" Path="1.idoc" PixelSpacing="21.76"
      RotationAngle="-178.3" SpotSize="3" TargetDefocus="-0.5" TiltAngle="0.1" Version="1.0" />
-    '''
+    """
 
     TableEntries = {'1': htmlpaths.GetFileAnchorHTML(DataNode, "Tile data (idoc file)")}
     # rows.insert(0, htmlpaths.GetFileAnchorHTML(DataNode, "Capture Settings Summary"))
@@ -811,9 +812,9 @@ def AddImageToTable(TableEntries, htmlPaths, DriftSettleThumbnailFilename):
 
 
 def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth: int, MaxImageHeight: int):
-    '''Scale an image to be smaller than the maximum dimensions.  Vector based images such as SVG will not be scaled
+    """Scale an image to be smaller than the maximum dimensions.  Vector based images such as SVG will not be scaled
     :return: (Image_source_path, Width, Height) Image source path may refer to a copy or the original.
-    '''
+    """
     Height = MaxImageHeight
     Width = MaxImageWidth
     try:
@@ -856,7 +857,7 @@ def __ScaleImage(ImageNode, HtmlPaths, MaxImageWidth: int, MaxImageHeight: int):
 
 
 def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=None, **kwargs):
-    '''Create the HTML to display the basic information about a filter'''
+    """Create the HTML to display the basic information about a filter"""
     assert (not filter is None)
 
     HTML = HTMLBuilder()
@@ -889,7 +890,7 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
 
     if not (filter.Gamma is None or filter.MinIntensityCutoff is None or filter.MaxIntensityCutoff is None):
         HTML.Add('<TR><TD align="center">%d - %d</TD><TD align="center">Gamma %g</TD></TR>' % (
-        filter.MinIntensityCutoff, filter.MaxIntensityCutoff, filter.Gamma))
+            filter.MinIntensityCutoff, filter.MaxIntensityCutoff, filter.Gamma))
 
     HTML.Add("</TABLE>")
 
@@ -897,10 +898,10 @@ def HTMLFromFilterNode(filter, htmlpaths, MaxImageWidth=None, MaxImageHeight=Non
 
 
 def ImgTagFromImageSetNode(Imageset, HtmlPaths, MaxImageWidth=None, MaxImageHeight=None, Logger=None, **kwargs):
-    '''
+    """
     Returns an image tag with an anchor link to the highest resolution image.  Generates a thumbnail matching the Max Width/Height limits using
     the closest downsample level from the ImageSet for speed.
-    '''
+    """
 
     if Imageset is None:
         raise ValueError("Imageset is None")
@@ -918,10 +919,11 @@ def ImgTagFromImageSetNode(Imageset, HtmlPaths, MaxImageWidth=None, MaxImageHeig
                                MaxImageHeight=MaxImageHeight, Logger=Logger, **kwargs)
 
 
-def ImgTagFromImageNode(ImageNode, HtmlPaths, AnchorHREF=None, MaxImageWidth: int | None = None, MaxImageHeight: int | None = None, Logger=None,
+def ImgTagFromImageNode(ImageNode, HtmlPaths, AnchorHREF=None, MaxImageWidth: int | None = None,
+                        MaxImageHeight: int | None = None, Logger=None,
                         **kwargs):
-    '''Create the HTML to display an image with an anchor to the full image.
-       If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute'''
+    """Create the HTML to display an image with an anchor to the full image.
+       If specified RelPath should be added to the elements path for references in HTML instead of using the fullpath attribute"""
 
     assert (not ImageNode is None)
     assert (not Logger is None)
@@ -958,7 +960,7 @@ def HTMLFromTransformNode(ColSubElement, HtmlPaths, **kwargs):
 
 
 def RowReport(RowElement, HTMLPaths, RowLabelAttrib: str | None = None, ColumnXPaths=None, Logger=None, **kwargs):
-    '''Create HTML to describe an element'''
+    """Create HTML to describe an element"""
     if Logger is None:
         Logger = logging.getLogger(__name__ + ".RowReport")
 
@@ -1051,9 +1053,9 @@ def AddBobButtons(BobEndpoint):
 
 def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=None, ColumnXPaths=None,
                         RowsPerPage=None, BuilderEndpoint=None, Logger=None, **kwargs):
-    '''Create an HTML table that uses the RowXPath as the root for searches listed under ColumnXPaths
+    """Create an HTML table that uses the RowXPath as the root for searches listed under ColumnXPaths
        ColumnXPaths are a list of comma delimited XPath searches.  Each XPath search results in a new column for the row
-       Much more sophisticated reports would be possible by building a framework similiar to the pipeline manager, but time'''
+       Much more sophisticated reports would be possible by building a framework similiar to the pipeline manager, but time"""
 
     if BuilderEndpoint is not None:
         if not validators.url(BuilderEndpoint):
@@ -1135,7 +1137,7 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
 
 
 def DictToPages(RowDict, Paths, RowsPerPage, IndentLevel=0):
-    ''':return: A list of HTMLBuilder objects, each describing a page'''
+    """:return: A list of HTMLBuilder objects, each describing a page"""
     pages = []
 
     if RowDict is None:
@@ -1194,9 +1196,9 @@ def __getFirstAndLastKeysForPage(SortedKeys, iPage, RowsPerPage):
 
 
 def DictToPage(HTML, RowDict, Paths, SortedKeys, iPage=0, RowsPerPage=50, IndentLevel=0):
-    '''
+    """
     Create a set of pages with next/prev links to adjacent pages
-    '''
+    """
 
     if SortedKeys is None:
         raise Exception('Missing SortedKeys')
@@ -1222,7 +1224,7 @@ def DictToPage(HTML, RowDict, Paths, SortedKeys, iPage=0, RowsPerPage=50, Indent
 
 
 def AddPageNavigation(HTML, Paths, SortedKeys, NumPages, iPage=0, RowsPerPage=50, ):
-    '''Add next/prev buttons and a button for every page number'''
+    """Add next/prev buttons and a button for every page number"""
     if iPage < NumPages:
         pageRange = __getFirstAndLastKeysForPage(SortedKeys, iPage, RowsPerPage)
         nextPage = HTMLAnchorTemplate % {'href': Paths.OutputPage(iPage + 1),
@@ -1392,7 +1394,7 @@ def __ValueToTableRow(value, IndentLevel):
 
 
 def __ValueToTableCell(value, IndentLevel):
-    '''Converts a value to a table cell'''
+    """Converts a value to a table cell"""
     HTML = HTMLBuilder(IndentLevel)
     if hasattr(value, 'bgColor'):
         bgColor = value.bgColor
@@ -1431,7 +1433,7 @@ def __ValueToTableCell(value, IndentLevel):
 
 
 def __ListToTableColumns(listColumns, IndentLevel):
-    '''Convert a list to a set of <tf> columns in a table'''
+    """Convert a list to a set of <tf> columns in a table"""
 
     HTML = HTMLBuilder(IndentLevel)
 
@@ -1456,7 +1458,7 @@ def __ListToTableColumns(listColumns, IndentLevel):
 
 
 def __ListToTableRows(listColumns, IndentLevel):
-    '''Convert a list to a set of <tf> columns in a table'''
+    """Convert a list to a set of <tf> columns in a table"""
 
     HTML = HTMLBuilder(IndentLevel)
 
@@ -1482,7 +1484,7 @@ def __ListToTableRows(listColumns, IndentLevel):
 
 
 def __ListToUnorderedList(listEntries, IndentLevel):
-    '''Convert a list to a set of <tf> columns in a table'''
+    """Convert a list to a set of <tf> columns in a table"""
 
     HTML = HTMLBuilder(IndentLevel)
 
@@ -1499,7 +1501,7 @@ def __ListToUnorderedList(listEntries, IndentLevel):
 
 
 def MatrixToTable(RowBodyList=None, IndentLevel=None):
-    '''Convert a list of lists containing HTML fragments into a table'''
+    """Convert a list of lists containing HTML fragments into a table"""
 
     if IndentLevel is None:
         IndentLevel = 0
