@@ -21,9 +21,9 @@ dependencies = [
     "scipy >= 1.11",
     "matplotlib >= 3.8",
     "validators >= 0.23",
-    "nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@dev",
-    "nornir_shared @ git+https://github.com/jamesra/nornir-shared.git@dev",
-    "nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@CuPy",
+    "nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@dev-v1.5.2",
+    "nornir_shared @ git+https://github.com/jamesra/nornir-shared.git@dev-v1.5.2",
+    "nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@CuPy-v1.5.2",
     "python-dotenv >= 1.0.1"
 ]
 classifiers = [
