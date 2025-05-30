@@ -3,7 +3,8 @@ Created on May 22, 2012
 
 @author: Jamesan
 """
-
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, ALL_COMPLETED, FIRST_EXCEPTION, as_completed
 import glob
 import logging
 import math
@@ -15,6 +16,7 @@ import numpy
 import datetime
 import concurrent.futures
 import tempfile
+from functools import partial
 
 from numpy.typing import NDArray
 from typing import Sequence
@@ -1472,23 +1474,48 @@ def AssembleTileset(Parameters, filter_node, pyramid_node, transform_node, TileS
         Logger.warning("No input tiles found for assembletiles")
         return
 
-    TileSetNode = nornir_buildmanager.volumemanager.TilesetNode.Create()
-    [added, TileSetNode] = filter_node.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
+    def GetOrCreateTilesetNode(new_node: nornir_buildmanager.volumemanager.TilesetNode | None):
+        """Get or create the tileset node for the filter"""
+        tile_set_node = nornir_buildmanager.volumemanager.TilesetNode.Create() if new_node is None else new_node
+        [added, tile_set_node] = filter_node.GetOrCreateChildByAttrib(tile_set_node, 'Path')
+        return added, tile_set_node
 
-    TileSetNode.TileXDim = str(TileWidth)
-    TileSetNode.TileYDim = str(TileHeight)
-    TileSetNode.FilePostfix = '.png'
-    TileSetNode.FilePrefix = filter_node.Name + '_'
-    TileSetNode.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
+    tile_set_node = nornir_buildmanager.volumemanager.TilesetNode.Create()
+    [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+    if not added:
+        if tile_set_node.TileXDim != str(TileWidth) or tile_set_node.TileYDim != str(TileHeight):
+            Logger.warning(
+                "Tileset dimensions do not match requested tile size, cleaning tileset: %s" % tile_set_node.FullPath)
+            tile_set_node.Clean("Tileset dimensions do not match requested tile size")
+            [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+        elif InputTransformNode.CreationTime > tile_set_node.CreationTime:
+            Logger.warning(
+                "Input Transform was created after the existing optimized tileset, cleaning tileset: %s" % tile_set_node.FullPath)
+            tile_set_node.Clean("Input Transform was created after the existing optimized tileset")
+            [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+        elif tile_set_node.InputTransformChecksum is not None and tile_set_node.InputTransformChecksum != InputTransformNode.Checksum:
+            Logger.warning(
+                "Input Transform checksum does not match the existing optimized tileset, cleaning tileset: %s" % tile_set_node.FullPath)
+            tile_set_node.Clean("Input Transform checksum does not match the existing optimized tileset")
+            [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+        else:
+            # Check if the size of the first tile matches the requested tile size
+            pass
 
-    os.makedirs(TileSetNode.FullPath, exist_ok=True)
+    tile_set_node.TileXDim = str(TileWidth)
+    tile_set_node.TileYDim = str(TileHeight)
+    tile_set_node.FilePostfix = '.png'
+    tile_set_node.FilePrefix = filter_node.Name + '_'
+    tile_set_node.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
+
+    os.makedirs(tile_set_node.FullPath, exist_ok=True)
 
     # OK, check if the first level of the tileset exists
-    LevelOne = TileSetNode.GetChildByAttrib('Level', 'Downsample', 1)
+    LevelOne = tile_set_node.GetChildByAttrib('Level', 'Downsample', 1)
     if LevelOne is None:
         # Need to call ir-assemble
         LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
-        [added, LevelOne] = TileSetNode.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
+        [added, LevelOne] = tile_set_node.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
 
         os.makedirs(LevelOne.FullPath, exist_ok=True)
 
@@ -1530,7 +1557,7 @@ def _SaveImageAndCopy(ImageFullPath: str, temp_output_tile_fullpath: str, tile_i
     """Used to pass to the thread pool.  Saves the image to a temporary path and copies the image to final output location.
     """
     nornir_imageregistration.SaveImage(ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp,
-                                       optimize=True)
+                                       optimize=optimize)
     shutil.copyfile(temp_output_tile_fullpath, ImageFullPath)
     return
 
@@ -1554,7 +1581,6 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
 
     InputTransformNode = transform_node
     filter_node = pyramid_node.FindParent('Filter')
-
     section_node = filter_node.FindParent('Section')
 
     if TileSetName is None:
@@ -1565,35 +1591,62 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
         Logger.warning("No input tiles found for assembletiles")
         return
 
-    TileSetNode = nornir_buildmanager.volumemanager.TilesetNode.Create()
-    [added, TileSetNode] = filter_node.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
+    def GetOrCreateTilesetNode(new_node: nornir_buildmanager.volumemanager.TilesetNode | None):
+        """Get or create the tileset node for the filter"""
+        tile_set_node = nornir_buildmanager.volumemanager.TilesetNode.Create() if new_node is None else new_node
+        [added, tile_set_node] = filter_node.UpdateOrAddChildByAttrib(tile_set_node, 'Path')
+        return added, tile_set_node
+
+    tile_set_node = nornir_buildmanager.volumemanager.TilesetNode.Create()
+    [added, tile_set_node] = filter_node.UpdateOrAddChildByAttrib(tile_set_node, 'Path')
 
     # Check if the tileset is older than the transform we are building from
-    if not added and not ignore_stale and InputTransformNode.CreationTime > TileSetNode.CreationTime:
-        TileSetNode.Clean("Input Transform was created after the existing optimized tileset")
-        TileSetNode = nornir_buildmanager.volumemanager.TilesetNode.Create()
-        [added, TileSetNode] = filter_node.UpdateOrAddChildByAttrib(TileSetNode, 'Path')
+    if not added and not ignore_stale:
+        if InputTransformNode.CreationTime > tile_set_node.CreationTime:
+            tile_set_node.Clean("Input Transform was created after the existing optimized tileset")
+            [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+        elif tile_set_node.InputTransformChecksum is not None and tile_set_node.InputTransformChecksum != InputTransformNode.Checksum:
+            tile_set_node.Clean("Input Transform checksum does not match the existing optimized tileset")
+            [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+        elif tile_set_node.TileXDim != TileWidth or tile_set_node.TileYDim != TileHeight:
+            Logger.warning(
+                "Tileset dimensions do not match requested tile size, cleaning tileset: %s" % tile_set_node.FullPath)
+            tile_set_node.Clean("Tileset dimensions do not match requested tile size")
+            [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+        else:
+            # Check if the size of the first tile matches the requested tile size
+            LevelOne = tile_set_node.GetChildByAttrib('Level', 'Downsample', downsample_level)
+            if LevelOne is not None:
+                # Get the first png file in the folder, check its size
+                first_tile = tile_set_node.GetTileAtLevel(LevelOne)
+                if first_tile is not None:
+                    first_tile_size = nornir_imageregistration.GetImageSize(first_tile)
+                    if first_tile_size[0] != TileWidth or first_tile_size[1] != TileHeight:
+                        Logger.warning(
+                            f"Tileset tile file actual size did not match requested tile size or meta-data size.  Cleaning tileset and rebuilding at {tile_set_node.TileXDim}x{tile_set_node.TileYDim}")
+                        tile_set_node.Clean("Tileset dimensions do not match requested tile size")
+                        [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
 
     # TODO: Validate that the tileset is populated in a more robust way
 
-    TileSetNode.TileXDim = str(TileWidth)
-    TileSetNode.TileYDim = str(TileHeight)
-    TileSetNode.FilePostfix = '.png'
-    TileSetNode.FilePrefix = filter_node.Name + '_'
-    TileSetNode.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
-    TileSetNode.SetTransform(InputTransformNode)
+    tile_set_node.TileXDim = str(TileWidth)
+    tile_set_node.TileYDim = str(TileHeight)
+    tile_set_node.FilePostfix = '.png'
+    tile_set_node.FilePrefix = filter_node.Name + '_'
+    tile_set_node.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
+    tile_set_node.SetTransform(InputTransformNode)
 
-    os.makedirs(TileSetNode.FullPath, exist_ok=True)
+    os.makedirs(tile_set_node.FullPath, exist_ok=True)
 
     # OK, check if the first level of the tileset exists
-    LevelOne = TileSetNode.GetChildByAttrib('Level', 'Downsample', downsample_level)
+    LevelOne = tile_set_node.GetChildByAttrib('Level', 'Downsample', downsample_level)
 
     bpp = filter_node.BitsPerPixel
 
     if LevelOne is None:
         # Need to call ir-assemble
         LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
-        [added, LevelOne] = TileSetNode.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
+        [added, LevelOne] = tile_set_node.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
 
         os.makedirs(LevelOne.FullPath, exist_ok=True)
 
@@ -1602,7 +1655,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
         # OutputXML = os.path.join(LevelOne.FullPath, FilterNode.Name + '.xml')
 
         # pool = nornir_pools.GetGlobalThreadPool()
-        pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
+        # pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
 
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
         expected_scale = 1.0 / LevelOne.Downsample
@@ -1621,39 +1674,59 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                                                                                           tile_dims[1], tile_dims[0],
                                                                                           section_node.Number))
 
-        with tempfile.TemporaryDirectory(dir=get_temp_dir_for_tileset_level(LevelOne)) as temp_level_dir:
+        with tempfile.TemporaryDirectory(dir=get_temp_dir_for_tileset_level(LevelOne), delete=False) as temp_level_dir:
             os.makedirs(temp_level_dir, exist_ok=True)
 
-            if max_temp_image_area is None:
-                max_temp_image_area = EstimateMaxTempImageArea()
-                prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(
-                    float(max_temp_image_area) / float(2 << 20)))
+            active_tasks = []
+            max_active_tasks = multiprocessing.cpu_count() * 4
+            with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 2) as executor:
 
-            task_timer = nornir_shared.tasktimer.TaskTimer()
-            task_timer.Start(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
-            for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
-                    target_space_scale=1.0 / InputLevelNode.Downsample,
-                    tile_dims=tile_dims,
-                    max_temp_image_area=max_temp_image_area,
-                    usecluster=True):
-                tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-                    'prefix': TileSetNode.FilePrefix,
-                    'X': iCol,
-                    'Y': iRow,
-                    'postfix': TileSetNode.FilePostfix}
-                temp_output_tile_fullpath = os.path.join(temp_level_dir,
-                                                         tilename)  # A temporary output file, this is cached for building pyramids later, and allows moving to a network location in one step
-                output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-                # pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
+                _save_image_and_copy_partial = partial(_SaveImageAndCopy, bpp=bpp, optimize=True)
 
-                pool.add_task(tilename, _SaveImageAndCopy, ImageFullPath=output_tile_fullpath,
-                              temp_output_tile_fullpath=temp_output_tile_fullpath, tile_image=tile_image, bpp=bpp,
-                              optimize=True)
+                if max_temp_image_area is None:
+                    max_temp_image_area = EstimateMaxTempImageArea()
+                    prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(
+                        float(max_temp_image_area) / float(2 << 20)))
 
-            # Wait for the tiles to save
-            pool.wait_completion()
-            task_timer.End(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
-            prettyoutput.Log("Generation of tileset complete")
+                task_timer = nornir_shared.tasktimer.TaskTimer()
+                task_timer.Start(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+                for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
+                        target_space_scale=1.0 / InputLevelNode.Downsample,
+                        tile_dims=tile_dims,
+                        max_temp_image_area=max_temp_image_area,
+                        usecluster=True):
+                    tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+                        'prefix': tile_set_node.FilePrefix,
+                        'X': iCol,
+                        'Y': iRow,
+                        'postfix': tile_set_node.FilePostfix}
+                    temp_output_tile_fullpath = os.path.join(temp_level_dir,
+                                                             tilename)  # A temporary output file, this is cached for building pyramids later, and allows moving to a network location in one step
+                    output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
+                    # pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
+
+                    task = executor.submit(_save_image_and_copy_partial, ImageFullPath=output_tile_fullpath,
+                                           temp_output_tile_fullpath=temp_output_tile_fullpath, tile_image=tile_image)
+                    active_tasks.append(task)
+
+                    # while len(active_tasks) >= max_active_tasks:
+                    #     done, not_done = wait(active_tasks, return_when=FIRST_COMPLETED)
+                    #     for d in done:
+                    #         d.result()  # Ensure we get any exceptions raised
+                    #         active_tasks.remove(d)
+
+                for t in as_completed(active_tasks):
+                    try:
+                        t.result()  # Ensure we get any exceptions raised
+                    except Exception as e:
+                        Logger.error(f"Error while processing tile: {e}")
+                        raise
+
+                # Wait for the tiles to save
+                # pool.wait_completion()
+                task_timer.End(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+
+        prettyoutput.Log("Generation of tileset complete")
         #         else:
         #             Logger.info("Assemble tiles output already exists")
 
@@ -2173,122 +2246,82 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     """
 
     os.makedirs(DestPath, exist_ok=True)
-
-    ############################################################################
-    # Pre-create directories so we aren't calling exist and create for every tile
-    # temp_dir = tempfile.gettempdir()
-    # level_dir = os.path.basename(SourcePath)
-    # temp_input_dir = os.path.join(temp_dir, level_dir)
     os.makedirs(temp_input_dir, exist_ok=True)
-    #
-    # output_level_dir = os.path.basename(DestPath)
-    # temp_output_dir = os.path.join(temp_dir, output_level_dir)
     os.makedirs(temp_output_dir, exist_ok=True)
-    ############################################################################
 
-    if pool is None:
-        # Pool = nornir_pools.GetMultithreadingPool("IOPool", num_threads=multiprocessing.cpu_count() * 16)
-        # Pool = nornir_pools.GetGlobalMultithreadingPool()
-        # Pool = nornir_pools.GetGlobalThreadPool()
-        pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
-        # Pool = nornir_pools.GetGlobalSerialPool()
+    def process_tile(coords: tuple[int, int], executor: ThreadPoolExecutor):
+        """Process a single tile with the given parameters"""
+        iY, iX = coords
+        X1 = iX * 2
+        X2 = X1 + 1
+        Y1 = iY * 2
+        Y2 = Y1 + 1
 
-    # Merge all the tiles we can find into tiles of the same size
+        OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+            'prefix': FilePrefix,
+            'X': iX,
+            'Y': iY,
+            'postfix': FilePostfix
+        }
+        OutputFileFullPath = os.path.join(DestPath, OutputFile)
 
-    # tile_params = []
+        TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+            'prefix': FilePrefix,
+            'X': X1,
+            'Y': Y1,
+            'postfix': FilePostfix
+        }
+        TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+            'prefix': FilePrefix,
+            'X': X2,
+            'Y': Y1,
+            'postfix': FilePostfix
+        }
+        BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+            'prefix': FilePrefix,
+            'X': X1,
+            'Y': Y2,
+            'postfix': FilePostfix
+        }
+        BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+            'prefix': FilePrefix,
+            'X': X2,
+            'Y': Y2,
+            'postfix': FilePostfix
+        }
 
-    for iY in range(0, DestGridDimensions[0]):
+        TopLeft = os.path.join(SourcePath, TopLeft)
+        TopRight = os.path.join(SourcePath, TopRight)
+        BottomLeft = os.path.join(SourcePath, BottomLeft)
+        BottomRight = os.path.join(SourcePath, BottomRight)
 
-        # We wait for the last task we queued for each row so we do not swamp the ProcessPool but are not waiting for the entire pool to empty
-        FirstTaskForRow = None
+        # Skip if all input files are missing
+        if not any(os.path.exists(f) for f in [TopLeft, TopRight, BottomLeft, BottomRight]):
+            return
 
-        for iX in range(0, DestGridDimensions[1]):
+        return tileset_functions.CreateOneTilesetTileWithPillowOverNetwork(
+            TileDim,
+            TopLeft=TopLeft, TopRight=TopRight,
+            BottomLeft=BottomLeft, BottomRight=BottomRight,
+            OutputFileFullPath=OutputFileFullPath,
+            input_level_temp_dir=temp_input_dir,
+            output_level_temp_dir=temp_output_dir,
+            executor=executor)
 
-            X1 = iX * 2
-            X2 = X1 + 1
-            Y1 = iY * 2
-            Y2 = Y1 + 1
+    with ThreadPoolExecutor() as tile_executor:
+        with ThreadPoolExecutor() as executor:
+            # Create a new function with executor pre-bound
+            process_tile_with_executor = partial(process_tile, executor=tile_executor)
 
-            # OutputFile = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % iX + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY + FilePostfix
-            OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                       'X': iX,
-                                                                                       'Y': iY,
-                                                                                       'postfix': FilePostfix}
+            # Use a generator expression for tile coords
+            # for iY in range(DestGridDimensions[0])
+            #               for iX in range(DestGridDimensions[1]))
 
-            OutputFileFullPath = os.path.join(DestPath, OutputFile)
+            for iY in range(DestGridDimensions[0]):
+                tile_coords = [(iY, iX) for iX in range(DestGridDimensions[1])]
 
-            # Skip if file already exists
-            # if(os.path.exists(OutputFileFullPath)):
-            #    continue
-
-            # TopLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
-            # TopRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
-            # BottomLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
-            # BottomRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
-            TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                    'X': X1,
-                                                                                    'Y': Y1,
-                                                                                    'postfix': FilePostfix}
-            TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                     'X': X2,
-                                                                                     'Y': Y1,
-                                                                                     'postfix': FilePostfix}
-            BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                       'X': X1,
-                                                                                       'Y': Y2,
-                                                                                       'postfix': FilePostfix}
-            BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                        'X': X2,
-                                                                                        'Y': Y2,
-                                                                                        'postfix': FilePostfix}
-
-            TopLeft = os.path.join(SourcePath, TopLeft)
-            TopRight = os.path.join(SourcePath, TopRight)
-            BottomLeft = os.path.join(SourcePath, BottomLeft)
-            BottomRight = os.path.join(SourcePath, BottomRight)
-
-            #             tile_params.append([TileDim,
-            #                            TopLeft, TopRight,
-            #                            BottomLeft, BottomRight,
-            #                            OutputFileFullPath])
-            # task = Pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillow, TileDim,
-            t = pool.add_task(OutputFileFullPath, tileset_functions.CreateOneTilesetTileWithPillowOverNetwork,
-                              TileDim,
-                              TopLeft=TopLeft, TopRight=TopRight,
-                              BottomLeft=BottomLeft, BottomRight=BottomRight,
-                              OutputFileFullPath=OutputFileFullPath,
-                              input_level_temp_dir=temp_input_dir,
-                              output_level_temp_dir=temp_output_dir)
-
-            if FirstTaskForRow is None:
-                FirstTaskForRow = t
-
-    # Pool.starmap_async(name=DestPath, func=tileset_functions.CreateOneTilesetTileWithPillow, iterable=tile_params)
-
-    # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
-    # prettyoutput.CurseProgress(TaskString, iY + 1, newYDim)
-
-    # We can easily saturate the pool with hundreds of thousands of tasks.
-    # If the pool has a reasonable number of tasks then we should wait for
-    # a task from a row to complete before queueing more.
-    #             if hasattr(Pool, 'num_active_tasks'):
-    #                 if Pool.num_active_tasks > 2048:#multiprocessing.cpu_count() * 8:
-    #                     FirstTaskForRow.wait()
-    #                     FirstTaskForRow = None
-    #         elif hasattr(Pool, 'tasks') and isinstance(Pool.tasks, queue.Queue):
-    #             if Pool.num_active_tasks > multiprocessing.cpu_count() * 8:
-    #                 FirstTaskForRow.wait()
-    #                 FirstTaskForRow = None
-    #         elif hasattr(Pool, 'ActiveTasks'):
-    #             if Pool.num_active_tasks > multiprocessing.cpu_count() * 8:
-    #                 FirstTaskForRow.wait()
-    #                 FirstTaskForRow = None
-
-    # prettyoutput.Log("\nBeginning Row %d of %d" % (iY + 1, DestGridDimensions[0]))
-
-    if pool is not None:
-        pool.wait_completion()
-        # Pool.shutdown()
+                # Map only needs to pass the coordinates now
+                executor.map(process_tile_with_executor, tile_coords)
 
 
 def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.LevelNode):
@@ -2304,7 +2337,7 @@ def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.Leve
 
 
 # OK, now build/check the remaining levels of the tile pyramids
-def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, **kwargs):
+def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, Logger=None, **kwargs):
     """@TileSetNode"""
 
     MinResolutionLevel = tile_set_node.MaxResLevel
@@ -2312,64 +2345,94 @@ def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, **kwar
     input_temp_dir = get_temp_dir_for_tileset_level(MinResolutionLevel)
     temp_level_paths = [input_temp_dir]  # Paths to levels we generate to ensure temp directories are cleaned later
 
-    while MinResolutionLevel is not None:
+    TileWidth = tile_set_node.TileXDim
+    TileHeight = tile_set_node.TileYDim
 
-        # The grid attributes are missing if the meta-data was created but there are no tiles
-        if not (hasattr(MinResolutionLevel, 'GridDimX') and hasattr(MinResolutionLevel, 'GridDimY')):
-            prettyoutput.Log("Tileset incomplete: " + tile_set_node.FullPath)
-            break
+    with tempfile.TemporaryDirectory(dir=input_temp_dir, prefix='tileset_') as input_temp_dir:
 
-            # If the tileset is already a single tile, then do not downsample
-        if MinResolutionLevel.GridDimX == 1 and MinResolutionLevel.GridDimY == 1:
-            break
+        while MinResolutionLevel is not None:
 
-        if HighestDownsample is not None and (MinResolutionLevel.Downsample >= float(HighestDownsample)):
-            break
+            # The grid attributes are missing if the meta-data was created but there are no tiles
+            if not (hasattr(MinResolutionLevel, 'GridDimX') and hasattr(MinResolutionLevel, 'GridDimY')):
+                prettyoutput.Log("Tileset incomplete: " + tile_set_node.FullPath)
+                break
 
-        ShrinkFactor = 0.5
-        newYDim = float(MinResolutionLevel.GridDimY) * ShrinkFactor
-        newXDim = float(MinResolutionLevel.GridDimX) * ShrinkFactor
+                # If the tileset is already a single tile, then do not downsample
+            if MinResolutionLevel.GridDimX == 1 and MinResolutionLevel.GridDimY == 1:
+                break
 
-        newXDim = int(math.ceil(newXDim))
-        newYDim = int(math.ceil(newYDim))
+            if HighestDownsample is not None and (MinResolutionLevel.Downsample >= float(HighestDownsample)):
+                break
 
-        # If there is only one tile in the next level, try to find a thumbnail image and change the downsample level
-        if newXDim == 1 and newYDim == 1:
-            break
+            ShrinkFactor = 0.5
+            newYDim = float(MinResolutionLevel.GridDimY) * ShrinkFactor
+            newXDim = float(MinResolutionLevel.GridDimX) * ShrinkFactor
 
-        # Need to call ir-assemble
-        NextLevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(MinResolutionLevel.Downsample * 2)
-        [added, NextLevelNode] = tile_set_node.UpdateOrAddChildByAttrib(NextLevelNode, 'Downsample')
-        NextLevelNode.GridDimX = newXDim
-        NextLevelNode.GridDimY = newYDim
-        if added is True:
-            yield tile_set_node
+            newXDim = int(math.ceil(newXDim))
+            newYDim = int(math.ceil(newYDim))
 
-        output_temp_dir = get_temp_dir_for_tileset_level(NextLevelNode)
+            # If there is only one tile in the next level, try to find a thumbnail image and change the downsample level
+            if newXDim == 1 and newYDim == 1:
+                break
 
-        # Check to make sure the level hasn't already been generated and we've just missed the
-        [Valid, Reason] = NextLevelNode.IsValid()
-        if not Valid:
-            temp_level_paths.append(output_temp_dir)
+            # Need to call ir-assemble
+            new_level_node = nornir_buildmanager.volumemanager.LevelNode.Create(MinResolutionLevel.Downsample * 2)
+            [added, NextLevelNode] = tile_set_node.UpdateOrAddChildByAttrib(new_level_node, 'Downsample')
 
-            # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
-            BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
-                                        DestGridDimensions=(newYDim, newXDim),
-                                        TileDim=(tile_set_node.TileYDim, tile_set_node.TileXDim),
-                                        FilePrefix=tile_set_node.FilePrefix,
-                                        FilePostfix=tile_set_node.FilePostfix,
-                                        temp_input_dir=input_temp_dir,
-                                        temp_output_dir=output_temp_dir,
-                                        pool=pool)
+            output_temp_dir = get_temp_dir_for_tileset_level(NextLevelNode)
 
-            # This was a lot of work, make sure it is saved before queueing the next level
-            yield tile_set_node
-            prettyoutput.Log("\nTileset level %d completed" % NextLevelNode.Downsample)
-        else:
-            logging.info("Level was already generated " + str(tile_set_node))
+            if added is True:
+                NextLevelNode.GridDimX = newXDim
+                NextLevelNode.GridDimY = newYDim
+                yield tile_set_node
+            elif NextLevelNode.GridDimX != newXDim or NextLevelNode.GridDimY != newYDim:
+                # If the level already exists, but the dimensions do not match, we need to regenerate it
+                Logger.warning(
+                    f"Tileset level {NextLevelNode.Downsample} already exists but dimensions do not match requested size.  Cleaning tileset and rebuilding at {newYDim}x{newXDim}")
+                NextLevelNode.Clean("Tileset dimensions do not match requested tile size")
+                nornir_shared.files.rmtree(os.path.dirname(NextLevelNode.FullPath))
+                [added, NextLevelNode] = tile_set_node.UpdateOrAddChildByAttrib(new_level_node, 'Downsample')
+                NextLevelNode.GridDimX = newXDim
+                NextLevelNode.GridDimY = newYDim
+            else:
+                # Check if the tile size matches the tileset, if not, delete the layer and regenerate
+                random_tile = tile_set_node.GetTileAtLevel(NextLevelNode)
+                if random_tile is not None:
+                    first_tile_size = nornir_imageregistration.GetImageSize(random_tile)
+                    if first_tile_size[0] != TileWidth or first_tile_size[1] != TileHeight:
+                        Logger.warning(
+                            f"Tileset tile file actual size did not match requested tile size or meta-data size.  Cleaning tileset and rebuilding at {tile_set_node.TileXDim}x{tile_set_node.TileYDim}")
+                        NextLevelNode.Clean("Tileset dimensions do not match requested tile size")
+                        nornir_shared.files.rmtree(input_temp_dir)  # Delete any temporary files
+                        [added, NextLevelNode] = tile_set_node.UpdateOrAddChildByAttrib(new_level_node, 'Downsample')
+                        NextLevelNode.GridDimX = newXDim
+                        NextLevelNode.GridDimY = newYDim
+                else:
+                    nornir_shared.files.rmtree(input_temp_dir)  # Delete any temporary files
 
-        input_temp_dir = output_temp_dir
-        MinResolutionLevel = NextLevelNode
+            # Check to make sure the level hasn't already been generated and we've just missed the
+            [Valid, Reason] = NextLevelNode.IsValid()
+            if not Valid:
+                temp_level_paths.append(output_temp_dir)
+
+                # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
+                BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
+                                            DestGridDimensions=(newYDim, newXDim),
+                                            TileDim=(tile_set_node.TileYDim, tile_set_node.TileXDim),
+                                            FilePrefix=tile_set_node.FilePrefix,
+                                            FilePostfix=tile_set_node.FilePostfix,
+                                            temp_input_dir=input_temp_dir,
+                                            temp_output_dir=output_temp_dir,
+                                            pool=pool)
+
+                # This was a lot of work, make sure it is saved before queueing the next level
+                yield tile_set_node
+                prettyoutput.Log("\nTileset level %d completed" % NextLevelNode.Downsample)
+            else:
+                logging.info("Level was already generated " + str(tile_set_node))
+
+            input_temp_dir = output_temp_dir
+            MinResolutionLevel = NextLevelNode
 
     tileset_functions.ClearTempDirectories(temp_level_paths)
     return

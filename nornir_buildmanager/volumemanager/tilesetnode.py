@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+import re
+from pathlib import Path
 
 import nornir_imageregistration
-import nornir_buildmanager 
-from nornir_buildmanager.volumemanager import XContainerElementWrapper, PyramidLevelHandler, InputTransformHandler
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import XContainerElementWrapper, PyramidLevelHandler, InputTransformHandler, \
+    LevelNode
 from nornir_shared import prettyoutput as prettyoutput
 import nornir_imageregistration
 
@@ -113,7 +116,59 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
 
         return valid, reason
 
-    def IsLevelValid(self, level_node, GridDimX: int, GridDimY: int):
+    def GetTileAtLevel(self, level_node: LevelNode | int) -> str | None:
+        """
+        Return an arbitrary tile at the given level and grid coordinates.
+        :param level_node:
+        :param GridX:
+        :param GridY:
+        :return:
+        """
+
+        if isinstance(level_node, int):
+            # If we are given an integer, assume it is the level index
+            level_node = self.GetLevel(level_node)
+            if level_node is None:
+                raise ValueError("Level {0} does not exist in tileset {1}".format(level_node, self.FullPath))
+
+        level_full_path = level_node.FullPath
+        GridXDim = level_node.GridDimX - 1  # int(GridDimX) - 1
+        GridYDim = level_node.GridDimY - 1  # int(GridDimY) - 1
+
+        FilePrefix = self.FilePrefix
+        FilePostfix = self.FilePostfix
+
+        GridXString = nornir_buildmanager.templates.Current.GridTileCoordTemplate % GridXDim
+        # MatchString = os.path.join(OutputDir, FilePrefix + 'X%' + nornir_buildmanager.templates.GridTileCoordFormat % GridXDim + '_Y*' + FilePostfix)
+
+        # Start with the middle because it is more likely to have a match earlier
+        test_x_indicies = list(range(GridXDim // 2, GridXDim))
+        test_x_indicies.extend(list(range((GridXDim // 2) - 1, -1, -1)))
+
+        test_y_indicies = list(range(GridYDim // 2, GridYDim))
+        test_y_indicies.extend(list(range((GridYDim // 2) - 1, -1, -1)))
+
+        # folder_path = Path(level_node.FullPath)
+        # pattern = f"{self.FilePrefix}X*_Y*{self.FilePostfix}"
+        # for file in folder_path.iterdir():
+        #     if file.is_file() and file.match(pattern):
+        #         output = os.path.join(level_full_path, file.name)
+        #         print(f"Found: {output}")
+        #         return output
+
+        folder_path = level_node.FullPath
+        regex_pattern = re.compile(rf"{re.escape(self.FilePrefix)}X\d+_Y\d+{re.escape(self.FilePostfix)}")
+
+        with os.scandir(folder_path) as entries:
+            for entry in entries:
+                if entry.is_file() and regex_pattern.match(entry.name):
+                    output = os.path.join(level_full_path, entry.name)
+                    print(f"Found: {output}")
+                    return output
+
+        return None
+
+    def IsLevelValid(self, level_node: LevelNode, GridDimX: int, GridDimY: int):
         """
         :param level_node:
         :param GridDimX:

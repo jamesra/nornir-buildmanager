@@ -99,7 +99,7 @@ class XResourceElementWrapper(lockable.Lockable,
         try:
             self.ValidationTime = self.LastFileSystemModificationTime
         except FileNotFoundError:
-            self.ValidationTime = None #No validation time if we cannot find the file/directory
+            self.ValidationTime = None  # No validation time if we cannot find the file/directory
 
     @property
     def ChangesSinceLastValidation(self) -> bool | None:
@@ -109,9 +109,8 @@ class XResourceElementWrapper(lockable.Lockable,
         try:
             dir_mod_time = self.LastFileSystemModificationTime
             return self.ValidationTime < dir_mod_time
-        except FileNotFoundError: # If the file or directory is missing that is a change :-)
+        except FileNotFoundError:  # If the file or directory is missing that is a change :-)
             return True
-
 
     @property
     def LastFileSystemModificationTime(self) -> datetime.datetime | None:
@@ -160,14 +159,19 @@ class XResourceElementWrapper(lockable.Lockable,
             return False
 
         '''Remove the contents referred to by this node from the disk'''
-        if os.path.exists(self.FullPath):
-            try:
-                if os.path.isdir(self.FullPath):
-                    nornir_shared.files.rmtree(self.FullPath)
-                else:
-                    os.remove(self.FullPath)
-            except Exception as e:
-                Logger = logging.getLogger(__name__ + '.' + 'Clean')
-                Logger.warning('Could not delete cleaned directory: {self.FullPath}\n{e}')
+
+        try:
+            if os.path.isdir(self.FullPath):
+                nornir_shared.files.rmtree(self.FullPath)
+            else:
+                os.remove(self.FullPath)
+        except FileNotFoundError:
+            pass
+        except IOError:
+            pass
+        except Exception as e:
+            Logger = logging.getLogger(__name__ + '.' + 'Clean')
+            Logger.warning(f'Could not delete cleaned directory: {self.FullPath}\n{e}')
+            raise
 
         return super(XResourceElementWrapper, self).Clean(reason=reason)

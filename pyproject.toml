@@ -8,7 +8,7 @@ include = ["nornir_buildmanager*"]
 
 [project]
 name = "nornir_buildmanager"
-version = "1.6.5"
+version = "1.6.6"
 authors = [
     { name = "James Anderson", email = "James.R.Anderson@utah.edu" },
 ]
