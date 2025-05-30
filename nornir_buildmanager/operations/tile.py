@@ -2310,8 +2310,8 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             output_level_temp_dir=temp_output_dir,
             executor=executor)
 
-    with ThreadPoolExecutor() as tile_executor:
-        with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor() as tile_executor:
             # Create a new function with executor pre-bound
             process_tile_with_executor = partial(process_tile, executor=tile_executor)
 
@@ -2319,11 +2319,33 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             # for iY in range(DestGridDimensions[0])
             #               for iX in range(DestGridDimensions[1]))
 
+            # # This code maps one column then waits for the previous column to complete.  This ensures we don't
+            # # try to use too much memory and we don't saturate the pool.'
+            # this_column_tasks = []
+            # for iY in range(DestGridDimensions[0]):
+            #     last_column_tasks = this_column_tasks
+            #     tile_coords = [(iY, iX) for iX in range(DestGridDimensions[1])]
+            #
+            #     # Map only needs to pass the coordinates now
+            #     this_column_tasks = executor.map(process_tile_with_executor, tile_coords)
+            #     for _ in last_column_tasks:
+            #         pass
+            #
+            # for _ in this_column_tasks:
+            #     pass
+
+            # This code maps one column then waits for the previous column to complete.  This ensures we don't
+            # try to use too much memory and we don't saturate the pool.'
+            this_column_tasks = []
             for iY in range(DestGridDimensions[0]):
+                last_column_tasks = this_column_tasks
                 tile_coords = [(iY, iX) for iX in range(DestGridDimensions[1])]
 
                 # Map only needs to pass the coordinates now
-                executor.map(process_tile_with_executor, tile_coords)
+                this_column_tasks.extend(executor.map(process_tile_with_executor, tile_coords))
+
+            for _ in this_column_tasks:
+                pass
 
 
 def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.LevelNode):

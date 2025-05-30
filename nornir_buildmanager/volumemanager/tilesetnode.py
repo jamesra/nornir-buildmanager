@@ -159,12 +159,15 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
         folder_path = level_node.FullPath
         regex_pattern = re.compile(rf"{re.escape(self.FilePrefix)}X\d+_Y\d+{re.escape(self.FilePostfix)}")
 
-        with os.scandir(folder_path) as entries:
-            for entry in entries:
-                if entry.is_file() and regex_pattern.match(entry.name):
-                    output = os.path.join(level_full_path, entry.name)
-                    print(f"Found: {output}")
-                    return output
+        try:
+            with os.scandir(folder_path) as entries:
+                for entry in entries:
+                    if entry.is_file() and regex_pattern.match(entry.name):
+                        output = os.path.join(level_full_path, entry.name)
+                        print(f"Found: {output}")
+                        return output
+        except FileNotFoundError:
+            return None  # Occurs if the level directory does not exist to be scanned.
 
         return None
 
