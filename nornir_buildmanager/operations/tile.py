@@ -1626,6 +1626,9 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                             f"Tileset tile file actual size did not match requested tile size or meta-data size.  Cleaning tileset and rebuilding at {tile_set_node.TileXDim}x{tile_set_node.TileYDim}")
                         tile_set_node.Clean("Tileset dimensions do not match requested tile size")
                         [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+                else:
+                    tile_set_node.Clean("Tileset empty")
+                    [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
 
     # TODO: Validate that the tileset is populated in a more robust way
 
@@ -2304,7 +2307,6 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             TopLeft=TopLeft, TopRight=TopRight,
             BottomLeft=BottomLeft, BottomRight=BottomRight,
             OutputFileFullPath=OutputFileFullPath,
-            input_level_temp_dir=temp_input_dir,
             output_level_temp_dir=temp_output_dir,
             executor=executor)
 
