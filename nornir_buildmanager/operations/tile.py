@@ -2254,6 +2254,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
 
     def process_tile(coords: tuple[int, int], executor: ThreadPoolExecutor):
         """Process a single tile with the given parameters"""
+        nonlocal TileDim
         iY, iX = coords
         X1 = iX * 2
         X2 = X1 + 1
