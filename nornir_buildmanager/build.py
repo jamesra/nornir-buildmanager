@@ -23,7 +23,10 @@ import nornir_imageregistration
 # Nornir build must use a backend that does not allocate windows in the GUI should be used.
 # Otherwise bugs will appear in multi-threaded environments
 if 'DEBUG' not in os.environ:
-    matplotlib.use('Agg')
+    try:
+        matplotlib.use('QtAgg')
+    except ImportError:
+        matplotlib.use('Agg')  # Fallback to non-interactive backend
 
 import matplotlib.pyplot as plt
 
@@ -40,10 +43,6 @@ import nornir_shared.prettyoutput as prettyoutput
 CommandParserDict = {}
 
 
-def ConfigDataPath() -> str:
-    return pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))
-
-
 def AddVolumeArgumentToParser(parser):
     parser.add_argument('volumepath',
                         action='store',
@@ -53,12 +52,6 @@ def AddVolumeArgumentToParser(parser):
 
 
 def _AddParserRootArguments(parser: argparse.ArgumentParser):
-    parser.add_argument('volumepath',
-                        action='store',
-                        type=str,
-                        help='Directory containing volume to execute command on',
-                        )
-
     parser.add_argument('-debug',
                         action='store_true',
                         required=False,
@@ -134,10 +127,11 @@ def _AddXMLRepairParser(root_parser: argparse.ArgumentParser, subparsers):
     recover_parser.set_defaults(func=call_repair_xml, parser=root_parser)
 
 
-def _GetPipelineXMLPath() -> bytes:
-    # return os.path.join(ConfigDataPath(), 'Pipelines.xml')
-    xml = pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))
-    return xml
+def _GetPipelineXMLPath() -> str:
+    if __spec__ is None:
+        return os.path.join(os.path.dirname(__file__), 'config', 'Pipelines.xml')
+    else:
+        return pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))
 
 
 def BuildParserRoot() -> argparse.ArgumentParser:
@@ -146,27 +140,26 @@ def BuildParserRoot() -> argparse.ArgumentParser:
                                      description='Options available to all build commands.  Specific pipelines may extend the argument list.')
     _AddParserRootArguments(parser)
 
-    pipeline_subparsers = parser.add_subparsers(title='Commands')
+    # Create subparsers for commands
+    pipeline_subparsers = parser.add_subparsers(title='Commands', dest='command')
+
+    # Add a special help command that doesn't require volumepath
+    help_parser = pipeline_subparsers.add_parser('help', help='Show help for a specific command')
+    help_parser.add_argument('command_name', nargs='?', help='Name of the command to show help for')
+    help_parser.set_defaults(func=print_help, parser=parser)
+
     _AddRecoverParser(parser, pipeline_subparsers)
     _AddRecoverNotesParser(parser, pipeline_subparsers)
     _AddXMLRepairParser(parser, pipeline_subparsers)
-    # subparsers = parser.add_subparsers(title='Utilities')
-
-    # subparsers = parser.add_subparsers(title='help')
-    # help_parser = subparsers.add_parser('help', help='Print help information')
-    #
-    # help_parser.set_defaults(func=print_help, parser=parser)
-    # help_parser.add_argument('pipelinename',
-    # default=None,
-    # nargs='?',
-    # type=str,
-    # help='Print help for a pipeline, or all pipelines if unspecified')
-
-    # CommandParserDict['help'] = help_parser
-
-    # update_parser = subparsers.add_parser('update', help='If directories have been copied directly into the volume this flag is required to detect them')
-
     _AddPipelineParsers(pipeline_subparsers)
+
+    # Add volumepath as a positional argument after the command
+    parser.add_argument('volumepath',
+                        action='store',
+                        type=str,
+                        nargs='?',  # Make it optional
+                        help='The path to the volume',
+                        )
 
     return parser
 
@@ -190,12 +183,17 @@ def _AddPipelineParsers(subparsers: argparse.ArgumentParser):
 
 
 def print_help(args):
-    if args.pipelinename is None:
+    if not hasattr(args, 'parser'):
+        print("Error: Parser reference not found")
+        return
+
+    if not hasattr(args, 'command_name') or args.command_name is None:
         args.parser.print_help()
-    elif args.pipelinename in CommandParserDict:
-        parser = CommandParserDict[args.pipelinename]
+    elif args.command_name in CommandParserDict:
+        parser = CommandParserDict[args.command_name]
         parser.print_help()
     else:
+        print(f"Unknown command: {args.command_name}")
         args.parser.print_help()
 
 
@@ -275,12 +273,43 @@ def init_computational_library(args: argparse.Namespace):
         nornir_imageregistration.ComputationLib.cupy if args.computational_library == 'cupy' else nornir_imageregistration.ComputationLib.numpy)
 
 
+def _GetValidCommands() -> list[str]:
+    """Get list of all valid commands/pipelines."""
+    commands = ['help', 'RecoverLinks', 'RecoverNotes', 'RepairXML']
+    # Add pipeline commands from XML
+    PipelineXML = _GetPipelineXMLPath()
+    PipelineTree = pipelinemanager.PipelineManager.LoadPipelineXML(PipelineXML)
+    commands.extend(pipelinemanager.PipelineManager.ListPipelines(PipelineTree))
+    return commands
+
+
+def _ReorderArgs(args: list[str]) -> list[str]:
+    """Reorder arguments to handle both command-first and volumepath-first patterns."""
+    if not args:
+        return args
+
+    valid_commands = _GetValidCommands()
+
+    # If first arg is a valid command, no reordering needed
+    if args[0] in valid_commands:
+        return args
+
+    # If second arg is a valid command, reorder to put command first
+    if len(args) > 1 and args[1] in valid_commands:
+        return [args[1], args[0]] + args[2:]
+
+    return args
+
+
 def Execute(buildArgs=None):
     # Spend more time on each thread before switching
     # sys.setswitchinterval(500)
 
     if buildArgs is None:
         buildArgs = sys.argv[1:]
+
+    # Reorder arguments to support both command-first and volumepath-first patterns
+    buildArgs = _ReorderArgs(buildArgs)
 
     # Change the temp directory if nornir specifies an alternate in the environment variables
     if 'NORNIR_TEMP_DIR' in os.environ:
@@ -298,15 +327,19 @@ def Execute(buildArgs=None):
 
     args = parser.parse_args(buildArgs)
 
+    # If help command is used, don't require volumepath
+    if hasattr(args, 'func'):
+        args.func(args)
+        return
+
+    # For all other commands, require volumepath
+    if not hasattr(args, 'volumepath') or not args.volumepath:
+        parser.error("the following arguments are required: volumepath")
+
     if args.lowpriority:
         lowpriority()
         print("Warning, using low priority flag.  This can make builds much slower")
 
-    # init_computational_library(args)
-
-    # print(f"Computational library is {os.environ['NORNIR_COMPUTATIONAL_LIBRARY']}")
-
-    # SetupLogging(OutputPath=args.volumepath)
     cmd_name = None
     if hasattr(args, 'PipelineName'):
         cmd_name = args.PipelineName
