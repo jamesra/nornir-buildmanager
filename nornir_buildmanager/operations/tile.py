@@ -1568,7 +1568,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
     """Create full resolution tiles of specfied size for the mosaics
        @FilterNode
        @TransformNode"""
-    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")
+    prettyoutput.CurseString('Stage', "Assemble Tileset Level 001")
 
     TileWidth = TileShape[0]
     TileHeight = TileShape[1]

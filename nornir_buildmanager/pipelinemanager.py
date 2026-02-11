@@ -581,6 +581,9 @@ class PipelineManager:
         # Copy dargs so we do not modify what the parent passed us
         # dargs = copy.copy(dargs)
 
+        if isinstance(VolumeElem, nornir_buildmanager.volumemanager.XResourceElementWrapper):
+            prettyoutput.CurseString("Meta", VolumeElem.FullPath)
+
         if PipelineNode.tag == 'Select':
             self.ProcessSelectNode(ArgSet, VolumeElem, PipelineNode)
 

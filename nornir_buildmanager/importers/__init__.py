@@ -20,9 +20,21 @@ class OldVersionException(Exception):
 
 
 def CreateDefaultHistogramCutoffFile(histogramFilename: str):
-    with open(histogramFilename, 'w+') as histogramFilehandle:
-        histogramFilehandle.write("#Section Min Max Gamma")
-        histogramFilehandle.close()
+    try:
+        with open(histogramFilename, 'w+') as histogramFilehandle:
+            histogramFilehandle.write("#Section Min Max Gamma")
+            histogramFilehandle.close()
+    except:
+        # Check if the directory exists, if not create the directory and continue
+        directory = os.path.dirname(histogramFilename)
+        if not os.path.exists(directory):
+            try:
+                os.makedirs(directory)
+            except IOError:
+                print("Unable to create directory %s" % directory)
+                raise
+        else:
+            raise
 
 
 def LoadHistogramCutoffs(filename: str) -> dict[int, ContrastValue]:

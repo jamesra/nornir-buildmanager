@@ -43,14 +43,6 @@ import nornir_shared.prettyoutput as prettyoutput
 CommandParserDict = {}
 
 
-def AddVolumeArgumentToParser(parser):
-    parser.add_argument('volumepath',
-                        action='store',
-                        type=str,
-                        help='The path to the volume',
-                        )
-
-
 def _AddParserRootArguments(parser: argparse.ArgumentParser):
     parser.add_argument('-debug',
                         action='store_true',
@@ -93,6 +85,11 @@ def _AddRecoverNotesParser(root_parser: argparse.ArgumentParser, subparsers):
                                            help='Used to recover or update notes files in a folder.  This searches a path for *.txt files and creates/updates a notes element with the information in the file.', )
     recover_parser.set_defaults(func=call_recover_import_meta_data, parser=root_parser)
 
+    recover_parser.add_argument('volumepath',
+                                action='store',
+                                type=str,
+                                help='The path to the volume')
+
     recover_parser.add_argument('-save',
                                 action='store_true',
                                 required=False,
@@ -105,6 +102,11 @@ def _AddRecoverParser(root_parser: argparse.ArgumentParser, subparsers):
     recover_parser = subparsers.add_parser('RecoverLinks',
                                            help='Used to recover missing meta-data.  This searches child directories for VolumeData.xml files and re-links them to the parent element in volume path.  This command does not recurse and does not need to be run on the top-level volume directory.', )
     recover_parser.set_defaults(func=call_recover_links, parser=root_parser)
+
+    recover_parser.add_argument('volumepath',
+                                action='store',
+                                type=str,
+                                help='The path to the volume')
 
     recover_parser.add_argument('-recurse',
                                 action='store_true',
@@ -125,6 +127,11 @@ def _AddXMLRepairParser(root_parser: argparse.ArgumentParser, subparsers):
     recover_parser = subparsers.add_parser('RepairXML',
                                            help='Fixes an issue where XML files have extra characters after the closing tag.  Should only apply to data before Dec 2023', )
     recover_parser.set_defaults(func=call_repair_xml, parser=root_parser)
+
+    recover_parser.add_argument('volumepath',
+                                action='store',
+                                type=str,
+                                help='The path to the volume')
 
 
 def _GetPipelineXMLPath() -> str:
@@ -153,14 +160,6 @@ def BuildParserRoot() -> argparse.ArgumentParser:
     _AddXMLRepairParser(parser, pipeline_subparsers)
     _AddPipelineParsers(pipeline_subparsers)
 
-    # Add volumepath as a positional argument after the command
-    parser.add_argument('volumepath',
-                        action='store',
-                        type=str,
-                        nargs='?',  # Make it optional
-                        help='The path to the volume',
-                        )
-
     return parser
 
 
@@ -173,6 +172,12 @@ def _AddPipelineParsers(subparsers: argparse.ArgumentParser):
         pipeline = pipelinemanager.PipelineManager.Load(PipelineTree, pipeline_name)
 
         pipeline_parser = subparsers.add_parser(pipeline_name, help=pipeline.Help, epilog=pipeline.Epilog)
+
+        # Add volumepath as first positional argument
+        pipeline_parser.add_argument('volumepath',
+                                     action='store',
+                                     type=str,
+                                     help='The path to the volume')
 
         pipeline.GetArgParser(pipeline_parser, IncludeGlobals=True)
 
