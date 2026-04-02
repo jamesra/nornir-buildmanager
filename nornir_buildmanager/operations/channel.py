@@ -17,9 +17,9 @@ from nornir_shared import *
 
 
 def CreateBlobFilter(Parameters: dict[str, Any], Logger: logging.Logger,
-                     InputFilter: nornir_buildmanager.volumemanager.FilterNode,
+                     InputFilter: FilterNode,
                      OutputFilterName: str, ImageExtension: str | None = None,
-                     **kwargs) -> nornir_buildmanager.volumemanager.XElementWrapper | None:
+                     **kwargs) -> XElementWrapper | None:
     """@FilterNode.  Create  a new filter which has been processed with blob"""
     Radius = Parameters.get('r', '3')
     Median = Parameters.get('median', '3')
@@ -27,8 +27,8 @@ def CreateBlobFilter(Parameters: dict[str, Any], Logger: logging.Logger,
     if ImageExtension is None:
         ImageExtension = '.png'
 
-    if hasattr(ImageSetNode, 'Type'):
-        MangledName = misc.GenNameFromDict(Parameters) + ImageSetNode.Type
+    if hasattr(ImageSetNode, 'Type'):  # type: ignore[attr-defined]
+        MangledName = misc.GenNameFromDict(Parameters) + ImageSetNode.Type  # type: ignore[attr-defined]
     else:
         MangledName = misc.GenNameFromDict(Parameters)
 
@@ -40,7 +40,7 @@ def CreateBlobFilter(Parameters: dict[str, Any], Logger: logging.Logger,
     # STOPPED HERE.  NEED TO CREATE A FILTER  #
     ###########################################
     SaveFilterNode = False
-    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(
+    (SaveFilterNode, OutputFilterNode) = InputFilter.Parent.UpdateOrAddChildByAttrib(  # type: ignore[union-attr]
         FilterNode.Create(Name=OutputFilterName), "Name")
 
     # DownsampleSearchTemplate = "Level[@Downsample='%(Level)d']/Image"

@@ -13,6 +13,13 @@ import shutil
 
 import nornir_buildmanager
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.volumemanager import (
+    XElementWrapper,
+    BlockNode,
+    SectionNode,
+    ChannelNode,
+    FilterNode,
+)
 import nornir_buildmanager.importers.idoc as idoc
 import nornir_buildmanager.importers.serialemlog as serialemlog
 from nornir_buildmanager.pipelinemanager import ArgumentSet
@@ -36,8 +43,10 @@ class RowList(list):
 class ColumnList(list):
     """Class used for HTML to place into columns"""
 
-    def __init__(self, *args):
-        self._caption = None
+    def __init__(self, *args: object) -> None:
+        super().__init__()
+        self._caption: str | None = None
+        self.bgColor: str | None = None
         self.extend(args)
 
     @property
@@ -216,15 +225,14 @@ HTMLAnchorTemplate = '<a href="%(href)s">%(body)s</a>'
 TempFileSalt = 0
 
 
-def GetTempFileSaltString(node: nornir_buildmanager.volumemanager.XElementWrapper | None = None) -> str:
+def GetTempFileSaltString(node: XElementWrapper | None = None) -> str:
     saltString = None
 
-    if isinstance(node, nornir_buildmanager.volumemanager.XElementWrapper):
-        b_node = node.FindParent('Block')  # type: nornir_buildmanager.volumemanager.BlockNode | None # type: ignore
-        s_node = node.FindParent('Section')  # type: nornir_buildmanager.volumemanager.SectionNode | None # type: ignore
-        c_node = node.FindParent(
-            'Channel')  # type: nornir_buildmanager.volumemanager.ChannelNode | None  # type: ignore
-        f_node = node.FindParent('Filter')  # type: nornir_buildmanager.volumemanager.FilterNode | None # type: ignore
+    if isinstance(node, XElementWrapper):
+        b_node = node.FindParent('Block')  # type: ignore[assignment]  # type: BlockNode | None
+        s_node = node.FindParent('Section')  # type: ignore[assignment]  # type: SectionNode | None
+        c_node = node.FindParent('Channel')  # type: ignore[assignment]  # type: ChannelNode | None
+        f_node = node.FindParent('Filter')  # type: ignore[assignment]  # type: FilterNode | None
 
         if b_node is not None:
             saltString = b_node.Name
@@ -973,7 +981,7 @@ def RowReport(RowElement, HTMLPaths, RowLabelAttrib: str | None = None, ColumnXP
 
     ColumnBodyList = ColumnList()
 
-    if hasattr(RowElement, RowLabelAttrib):
+    if RowLabelAttrib is not None and hasattr(RowElement, RowLabelAttrib):
         RowLabel = str(getattr(RowElement, RowLabelAttrib))
     else:
         RowLabel = str(RowElement)
@@ -1128,8 +1136,9 @@ def GenerateTableReport(OutputFile, ReportingElement, RowXPath, RowLabelAttrib=N
     # HTML = MatrixToTable(RowBodyList=RowBodyList)
     Pages = DictToPages(tableDict, Paths, RowsPerPage)
 
-    for iPage in range(0, len(Pages)):
-        CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputPage(iPage)), HTMLBody=Pages[iPage])
+    if Pages is not None:
+        for iPage in range(0, len(Pages)):
+            CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputPage(iPage)), HTMLBody=Pages[iPage])
     # HTML = DictToTable(tableDict) #paginate here
 
     # CreateHTMLDoc(os.path.join(Paths.OutputDir, Paths.OutputFile), HTMLBody=HTML)
@@ -1155,8 +1164,8 @@ def DictToPages(RowDict, Paths, RowsPerPage, IndentLevel=0):
     NumPages = math.ceil(len(keys) / RowsPerPage)
     if NumPages < 2:
         HTML = DictToTable(RowDict)  # paginate here
-        pages.add(HTML)
-        return
+        pages.append(HTML)
+        return pages
 
     keys.sort(reverse=True)
 
@@ -1508,7 +1517,7 @@ def MatrixToTable(RowBodyList=None, IndentLevel=None):
 
     HTML = ' ' * IndentLevel + "<table>\n"
 
-    for columnList in RowBodyList:
+    for columnList in (RowBodyList or []):
         HTML = HTML + ' ' * IndentLevel + '<tr>\n'
 
         IndentLevel += 1
@@ -1559,6 +1568,8 @@ def GenerateImageReport(xpaths, VolumeElement, Logger, OutputFile=None, **kwargs
 
 
 def RecursiveReportGenerator(VolumeElement, xpaths, Logger=None):
+    if Logger is None:
+        Logger = logging.getLogger(__name__ + ".RecursiveReportGenerator")
     List = []
     for xpath in xpaths:
         for element in VolumeElement.findall(xpath):

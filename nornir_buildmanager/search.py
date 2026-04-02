@@ -1,3 +1,6 @@
+import re
+
+
 def IsMatch(in_string: str, RegExStr: str, CaseSensitive: bool = False) -> bool:
     """
     :returns: true if the in_string matches the regular expression string

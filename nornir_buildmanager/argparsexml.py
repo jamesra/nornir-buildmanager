@@ -19,7 +19,7 @@ def _ConvertValueToPythonType(val: str, type: Type | None = None) -> bool | int 
     if not isinstance(val, str):
         return val  # Already converted to a python type
     elif type is not None and isinstance(type, enum.EnumType):
-        return type[val]
+        return type[val]  # type: ignore[return-value]
     elif val.lower() == 'true':
         return True
     elif val.lower() == 'false':

@@ -14,6 +14,13 @@ from typing import Iterable, NamedTuple, Callable
 
 import nornir_buildmanager
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.volumemanager import (
+    XElementWrapper,
+    HistogramNode,
+    ImageNode,
+    DataNode,
+    NotesNode,
+)
 import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.histogram import Histogram
@@ -39,7 +46,7 @@ class ContrastValue(NamedTuple):
     Section: int
     Min: int
     Max: int
-    Gamma: int = 1.0
+    Gamma: float = 1.0
 
 
 # FilenameMetadata = collections.namedtuple('SectionInfo', 'fullpath number version name downsample extension')
@@ -57,7 +64,7 @@ def GetSectionInfo(fullpath) -> FilenameMetadata:
 
     d = ParseMetadataFromFilename(fileName)
 
-    return FilenameMetadata(fullpath, d['Number'], d['Version'], d['Name'], d['Downsample'], d['Extension'])
+    return FilenameMetadata(fullpath, d['Number'], d['Version'], d['Name'], d['Downsample'], d['Extension'])  # type: ignore[arg-type]
 
 
 def FileMetaDataStrHeader():
@@ -76,8 +83,8 @@ def FileMetaDataStr(data):
 
 
 def _TryCleanDataWithNotInCurrentImport(input_path: str,
-                                        elements: Iterable[nornir_buildmanager.volumemanager.XElementWrapper],
-                                        new_section_info: FilenameMetadata | None = None) -> str:
+                                        elements: Iterable[XElementWrapper],
+                                        new_section_info: FilenameMetadata | None = None) -> bool:
     removed = False
     for elem in elements:
         try:
@@ -128,7 +135,7 @@ def TryCleanIdocCaptureData(containerObj, input_path: str, logger,
     return _TryCleanDataWithNotInCurrentImport(input_path, filtered_list, new_section_info)
 
 
-def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrapper,
+def TryAddHistogram(containerObj: XElementWrapper,
                     InputPath: str,
                     image_ext: str | None = None,
                     min_cutoff=None,
@@ -147,13 +154,13 @@ def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrap
     if image_ext is None:
         image_ext = '.png'
 
-    histogram_node = nornir_buildmanager.volumemanager.HistogramNode.Create(Type='RawDataHistogram')
+    histogram_node = HistogramNode.Create(Type='RawDataHistogram')
     [added, histogram_node] = containerObj.UpdateOrAddChildByAttrib(histogram_node, 'Type')
 
     histogram_image_path = os.path.join(InputPath, f'Histogram{image_ext}')
     if os.path.exists(histogram_image_path):
-        image_node = nornir_buildmanager.volumemanager.ImageNode.Create(Path=f'RawDataHistogram{image_ext}',
-                                                                        attrib={'Name': 'RawDataHistogram'})
+        image_node = ImageNode.Create(Path=f'RawDataHistogram{image_ext}',
+                                     attrib={'Name': 'RawDataHistogram'})
         [image_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
         existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
         if image_added or existing_removed:
@@ -161,17 +168,17 @@ def TryAddHistogram(containerObj: nornir_buildmanager.volumemanager.XElementWrap
 
     histogram_xml_path = os.path.join(InputPath, 'Histogram.xml')
     if os.path.exists(histogram_xml_path):
-        image_node = nornir_buildmanager.volumemanager.DataNode.Create(Path='RawDataHistogram.xml',
-                                                                       attrib={'Name': 'RawDataHistogram'})
+        image_node = DataNode.Create(Path='RawDataHistogram.xml',
+                                    attrib={'Name': 'RawDataHistogram'})
         [data_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
         existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
         if data_added or existing_removed:
             shutil.copyfile(histogram_image_path, image_node.FullPath)
 
     autolevel_hint = histogram_node.GetOrCreateAutoLevelHint()
-    autolevel_hint.UserRequestedGamma = gamma
-    autolevel_hint.UserRequestedMaxIntensityCutoff = max_cutoff
-    autolevel_hint.UserRequestedMinIntensityCutoff = min_cutoff
+    autolevel_hint.UserRequestedGamma = gamma  # type: ignore[assignment]
+    autolevel_hint.UserRequestedMaxIntensityCutoff = max_cutoff  # type: ignore[assignment]
+    autolevel_hint.UserRequestedMinIntensityCutoff = min_cutoff  # type: ignore[assignment]
 
     return added or data_added or image_added or autolevel_hint.AttributesChanged or histogram_node.ChildrenChanged
 
@@ -220,8 +227,8 @@ def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: Filename
                     XMLnotesTxt = escape(notesTxt)
 
                     # Create a Notes node to save the notes into
-                    NotesNodeObj = nornir_buildmanager.volumemanager.NotesNode.Create(Text=XMLnotesTxt,
-                                                                                      SourceFilename=NotesFilename)
+                    NotesNodeObj = NotesNode.Create(Text=XMLnotesTxt,
+                                                    SourceFilename=NotesFilename)
                     containerObj.RemoveOldChildrenByAttrib('Notes', 'Path', NotesFilename)
                     [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
 
@@ -237,7 +244,7 @@ def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: Filename
 
         except:
             (etype, evalue, etraceback) = sys.exc_info()
-            prettyoutput.Log("Attempt to include notes from " + filename + " failed.\n" + evalue.message)
+            prettyoutput.Log("Attempt to include notes from " + filename + " failed.\n" + str(evalue))
             prettyoutput.Log(etraceback)
 
     return NotesAdded

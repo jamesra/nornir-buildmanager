@@ -40,8 +40,8 @@ def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **k
 
     matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles=f"*.{extension}")
     for m in matches:
-        (path, foundfiles) = m
-        foundfiles = [os.path.join(path, f) for f in foundfiles]
+        (path, foundfiles) = m.path, m.matched_files
+        foundfiles = [os.path.join(path, f) for f in (foundfiles or [])]
         for idocFullPath in foundfiles:
             result = SectionImage.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args,
                                            **kwargs)
@@ -101,12 +101,12 @@ class SectionImage(object):
         if fileData is None:
             raise Exception("Could not parse section from PMG filename: " + filename)
 
-        SectionNumber = fileData.Section
+        SectionNumber = fileData.Section  # type: ignore[attr-defined]
         sectionObj = SectionNode.Create(SectionNumber)
 
         [addedSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
 
-        ChannelName = fileData.Channel
+        ChannelName = fileData.Channel  # type: ignore[attr-defined]
         ChannelName = ChannelName.replace(' ', '_')
         channelObj = ChannelNode.Create(ChannelName)
         channelObj.SetScale(scaleValueInNm)
@@ -114,7 +114,7 @@ class SectionImage(object):
 
         # Create a filter for the images
         # Create a filter and mosaic
-        FilterName = fileData.Filter
+        FilterName = fileData.Filter  # type: ignore[attr-defined]
         if FilterName is None:
             if TargetBpp is None:
                 FilterName = 'Import'
@@ -125,10 +125,10 @@ class SectionImage(object):
         filterObj.BitsPerPixel = TargetBpp
 
         # Create an image for the filter
-        ImageSetNode = metadatautils.CreateImageSetForImage(filterObj, filename, Downsample=fileData.Downsample)
+        ImageSetNode = metadatautils.CreateImageSetForImage(filterObj, filename, Downsample=fileData.Downsample)  # type: ignore[attr-defined]
 
         # Find the image node
-        levelNode = ImageSetNode.GetChildByAttrib('Level', 'Downsample', fileData.Downsample)
+        levelNode = ImageSetNode.GetChildByAttrib('Level', 'Downsample', fileData.Downsample)  # type: ignore[attr-defined]
         imageNode = levelNode.GetChildByAttrib('Image', 'Path', imagebasename)
 
         os.makedirs(os.path.dirname(imageNode.FullPath), exist_ok=True)

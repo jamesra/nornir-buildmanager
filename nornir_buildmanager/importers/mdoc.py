@@ -43,7 +43,10 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         # ok, try to find the .st file
         for mdoc in mdocFiles:
             basename = os.path.basename(mdoc)
-            [SectionNumber, SectionName, Downsample] = shared.GetSectionInfo(basename)
+            meta = shared.GetSectionInfo(basename)
+            SectionNumber = meta.number
+            SectionName = meta.name
+            Downsample = meta.downsample
 
             MDocImportDir = str(SectionNumber)
 
@@ -107,8 +110,9 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             idocFilenameFullPath = os.path.join(MDocImportDirFullPath, idocFilename)
             cls.ConvertMDocToIDoc(mdoc, idocFilenameFullPath)
 
-            super(SerialEMMDocImport, cls).ToMosaic(VolumeObj, MDocImportDirFullPath, OutputPath, 'idoc',
-                                                    OutputImageExt, TileOverlap, TargetBpp)
+            super(SerialEMMDocImport, cls).ToMosaic(
+                VolumeObj, MDocImportDirFullPath, (0.0, 100.0), OutputImageExt, TargetBpp
+            )
 
     @classmethod
     def ConvertMDocToIDoc(cls, MDocFilename, IDocFilename):

@@ -10,15 +10,15 @@ class VolumeNode(XNamedContainerElementWrapped):
 
     @property
     def Blocks(self) -> Generator[BlockNode]:
-        return self.findall('Block')
+        return self.findall('Block')  # type: ignore[return-value]
 
     def GetBlock(self, name: str) -> BlockNode:
-        return self.GetChildByAttrib('Block', 'Name', name)
+        return self.GetChildByAttrib('Block', 'Name', name)  # type: ignore[return-value]
 
     @property
     def NeedsValidation(self) -> bool:
         return True
 
     @classmethod
-    def Create(cls, Name: str, Path: str = None, **extra) -> VolumeNode:
-        return super(VolumeNode, cls).Create(tag='Volume', Name=Name, Path=Path, **extra)
+    def Create(cls, Name: str, Path: str | None = None, **extra) -> VolumeNode:
+        return super(VolumeNode, cls).Create(tag='Volume', Name=Name, Path=Path or "", **extra)  # type: ignore[return-value]

@@ -22,7 +22,7 @@ def CreateXMLIndex(path, server=None):
 
     for directory in VolumeXMLDirs:
 
-        InputVolumeNode = nornir_buildmanager.volumemanager.VolumeManager.Load(directory, Create=False)
+        InputVolumeNode = nornir_buildmanager.volumemanager.VolumeManager.Load(directory.path, Create=False)
         if not InputVolumeNode is None:
             CreateVikingXML(VolumeNode=InputVolumeNode)
 
@@ -30,6 +30,8 @@ def CreateXMLIndex(path, server=None):
 def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=None, **kwargs):
     """When passed a volume node, creates a VikingXML file"""
     InputVolumeNode = kwargs.get('VolumeNode')
+    if InputVolumeNode is None:
+        raise ValueError("VolumeNode is required")
     path = InputVolumeNode.Path
 
     if OutputFile is None:
@@ -408,7 +410,8 @@ def MergeAboutXML(volumeXML, aboutXML):
 
     Url = None
     # Volume path is a special case so we append the path to the host name
-    if (volumeNode.nodeName == "Volume" and aboutNode.nodeName == "Volume"):
+    if (volumeNode is not None and aboutNode is not None
+            and volumeNode.nodeName == "Volume" and aboutNode.nodeName == "Volume"):
         baseVolumeDir = os.path.dirname(volumeXML)
         baseAboutDir = os.path.dirname(aboutXML)
         relPath = baseVolumeDir.replace(baseAboutDir, '')

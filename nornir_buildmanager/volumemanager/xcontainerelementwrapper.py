@@ -6,10 +6,10 @@ import shutil
 import sys
 from xml.etree import ElementTree as ElementTree
 
-import nornir_buildmanager
 from nornir_buildmanager.volumemanager.exceptions import DuplicateElementError, MissingElementError
 from nornir_buildmanager.volumemanager.validation import ValidateAttributesAreStrings
-from nornir_buildmanager.volumemanager.elementwrapping import WrapElement, XElementWrapper
+from nornir_buildmanager.volumemanager.elementwrapping import WrapElement, SetElementParent
+from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
 
@@ -54,7 +54,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
     @Path.setter
     def Path(self, val: str):
 
-        super(XContainerElementWrapper, self.__class__).Path.fset(self, val)
+        super(XContainerElementWrapper, self.__class__).Path.fset(self, val)  # type: ignore[attr-defined]
 
         try:
             os.makedirs(self.FullPath)
@@ -117,7 +117,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 # Check to be sure that this is a new node
                 try:
                     existingChild = self.find(f"*[@Path='{path.name}']")
-                except nornir_buildmanager.volumemanager.exceptions.DuplicateElementError as e:
+                except DuplicateElementError as e:
                     continue
 
                 if existingChild is not None:
@@ -138,7 +138,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if recurse:
                 for child in self:
                     if hasattr(child, "RepairMissingLinkElements"):
-                        child.RepairMissingLinkElements(recurse)
+                        child.RepairMissingLinkElements(recurse)  # type: ignore[union-attr]
 
     @staticmethod
     def _load_link_element(fullpath: str):
@@ -165,11 +165,11 @@ class XContainerElementWrapper(XResourceElementWrapper):
         # SubContainer = XContainerElementWrapper.wrap(XMLElement)
 
         if wrapped:
-            nornir_buildmanager.volumemanager.SetElementParent(NewElement, self)
+            SetElementParent(NewElement, self)
 
         return NewElement
 
-    def _replace_link(self, link_node, fullpath: str = None) -> XElementWrapper | None:
+    def _replace_link(self, link_node, fullpath: str | None = None) -> XElementWrapper | None:
         """Load the linked node.  Remove link node and replace with loaded node.  Checks that the loaded node is valid"""
 
         if fullpath is None:
@@ -205,7 +205,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         return loaded_element
 
-    def _replace_links(self, link_nodes: list[ElementTree.Element], fullpath: str = None):
+    def _replace_links(self, link_nodes: list[ElementTree.Element], fullpath: str | None = None):
         """Load the linked nodes.  Remove link node and replace with loaded node.  Checks that the loaded node is valid"""
 
         # Ensure we are actually working on a list
@@ -228,14 +228,14 @@ class XContainerElementWrapper(XResourceElementWrapper):
             tasks = []
             for i, fullpath in enumerate(SubContainerPaths):
                 t = pool.submit(XContainerElementWrapper._load_wrap_link_element, fullpath)
-                t.link_node = link_nodes[i]
+                t.link_node = link_nodes[i]  # type: ignore[attr-defined]
                 tasks.append(t)
 
             clean_tasks = []
 
             for task in concurrent.futures.as_completed(tasks):
                 try:
-                    link_node = task.link_node
+                    link_node = task.link_node  # type: ignore[attr-defined]
                     (wrapped, wrapped_loaded_element) = task.result()
                 except IOError as e:
                     self.remove(link_node)
@@ -258,7 +258,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
                 try:
                     if wrapped:
-                        nornir_buildmanager.volumemanager.SetElementParent(wrapped_loaded_element, self)
+                        SetElementParent(wrapped_loaded_element, self)
 
                     self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
                 except MissingElementError as e:
@@ -318,7 +318,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         elif self.Parent is not None:
             return self.Parent.Save()
 
-        raise NotImplemented("Cannot save a container node that is not linked without a parent node to save it under")
+        raise NotImplementedError("Cannot save a container node that is not linked without a parent node to save it under")
 
     def _Save(self, tabLevel: int | None = None, recurse: bool = True):
         """
@@ -389,7 +389,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                         # Sanity check to prevent duplicate link bugs
                         try:
                             if __debug__:
-                                self.RaiseOnDuplicateLink(child, SaveElement)
+                                self.RaiseOnDuplicateLink(child, SaveElement)  # type: ignore[arg-type]
 
                             LinkElement = XElementWrapper(linktag, attrib=child.attrib)
                             # SaveElement.append(LinkElement)
@@ -438,7 +438,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         finally:
             self._save_lock.release()
 
-    def __SaveXML(self, xmlfilename: str, SaveElement: bool):
+    def __SaveXML(self, xmlfilename: str, SaveElement: ElementTree.Element):
         """Intended to be called on a thread from the save function"""
         self.logger.info(f'Writing {xmlfilename}')
         try:

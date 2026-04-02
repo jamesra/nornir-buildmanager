@@ -11,10 +11,10 @@ class TransformDataNode(InputTransformHandler, XFileElementWrapper):
     """
 
     @classmethod
-    def Create(cls, Path: str, attrib: dict = None, **extra) -> TransformDataNode:
-        return cls(tag='TransformData', Path=Path, attrib=attrib, **extra)
+    def Create(cls, Path: str, attrib: dict | None = None, **extra) -> TransformDataNode:
+        return cls(tag='TransformData', Path=Path, attrib=attrib or {}, **extra)
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
 
         '''Checking the last modified time also checks if the file exists, so we just check file existence'''
         if not os.path.exists(self.FullPath):

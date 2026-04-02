@@ -35,8 +35,8 @@ class MosaicVolume(volume.Volume):
 
             Channel = transform.FindParent('Channel')
             Section = transform.FindParent('Section')
-            task.transformNode = transform
-            task.sectionKey = "%d_%s" % (Section.Number, Channel.Name)
+            task.transformNode = transform  # type: ignore[attr-defined]
+            task.sectionKey = "%d_%s" % (Section.Number, Channel.Name)  # type: ignore[attr-defined]
             # mosaicObj.transformNode = transform
             # sectionKey = "%d_%s" % (Section.Number, Channel.Name)
 

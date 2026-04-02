@@ -66,7 +66,7 @@ class PipelineArgumentNotFound(PipelineError):
     @property
     def __CoreErrorList(self):
         s = ["Argument Name: " + self.argname]
-        s.extend(super(PipelineArgumentNotFound, self).__CoreErrorList)
+        s.extend(super(PipelineArgumentNotFound, self).__CoreErrorList)  # type: ignore[attr-defined]
         return s
 
 
@@ -81,7 +81,7 @@ class PipelineSearchRootNotFound(PipelineArgumentNotFound):
     @property
     def __CoreErrorList(self):
         s = ["Rootname specified in nornir_buildmanager is not available: " + self.argname]
-        s.extend(super(PipelineSearchRootNotFound, self).__CoreErrorList)
+        s.extend(super(PipelineSearchRootNotFound, self).__CoreErrorList)  # type: ignore[attr-defined]
         return s
 
 
@@ -99,7 +99,7 @@ class PipelineRegExSearchFailed(PipelineError):
     @property
     def __CoreErrorList(self):
         s = ["A search has failed", "Regular Expression: " + self.regex, "Attrib value: " + self.attribValue]
-        s.extend(super(PipelineError, self).__CoreErrorList)
+        s.extend(super(PipelineError, self).__CoreErrorList)  # type: ignore[attr-defined]
         return s
 
 
@@ -124,7 +124,7 @@ class PipelineListIntersectionFailed(PipelineError):
     @property
     def __CoreErrorList(self):
         s = PipelineListIntersectionFailed.GenErrorMessage(list_of_valid=self.listOfValid, value=self.attribValue)
-        s.extend(super(PipelineError, self).__CoreErrorList)
+        s.extend(super(PipelineError, self).__CoreErrorList)  # type: ignore[attr-defined]
         return s
 
 
@@ -139,7 +139,7 @@ class PipelineSearchFailed(PipelineError):
     @property
     def __CoreErrorList(self):
         s = ["A search has failed", "XPath: " + self.xpath]
-        s.extend(super(PipelineError, self).__CoreErrorList)
+        s.extend(super(PipelineError, self).__CoreErrorList)  # type: ignore[attr-defined]
         return s
 
 
@@ -157,5 +157,5 @@ class PipelineSelectFailed(PipelineError):
     @property
     def __CoreErrorList(self):
         s = ["A select statement has failed", "XPath: " + self.xpath]
-        s.extend(super(PipelineError, self).__CoreErrorList)
+        s.extend(super(PipelineError, self).__CoreErrorList)  # type: ignore[attr-defined]
         return s

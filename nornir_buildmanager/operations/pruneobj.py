@@ -218,6 +218,7 @@ class PruneObj:
                 HistogramImageNode.Threshold = Threshold
 
                 PruneObjInstance = PruneObj.ReadPruneMap(PruneDataNode.FullPath)
+                assert PruneObjInstance is not None
 
                 PruneObj.CreateHistogram(PruneObjInstance.MapImageToScore, HistogramXMLFileFullPath)
                 assert (HistogramImageNode.FullPath == HistogramImageFileFullPath)
@@ -225,7 +226,7 @@ class PruneObj:
                 # pool = nornir_pools.GetMultithreadingPool("Histograms")
                 # pool.add_task("Create Histogram %s" % HistogramImageFile, plot.Histogram, HistogramXMLFile, HistogramImageFile, LinePosList=self.Tolerance, Title=Title)
                 # else:
-                plot.Histogram(HistogramXMLFileFullPath, HistogramImageNode.FullPath, LinePosList=Threshold,
+                plot.Histogram(HistogramXMLFileFullPath, HistogramImageNode.FullPath, LinePosList=[Threshold],
                                Title="Threshold " + str(Threshold))
                 prettyoutput.Log('Generated histogram image {0}'.format(HistogramImageNode.FullPath))
 
@@ -254,12 +255,12 @@ class PruneObj:
 
         if LevelNode is None:
             prettyoutput.LogErr("Missing InputPyramidLevelNode attribute on PruneTiles")
-            Logger.error("Missing InputPyramidLevelNode attribute on PruneTiles")
+            Logger.error("Missing InputPyramidLevelNode attribute on PruneTiles")  # type: ignore[union-attr]
             return
 
         if TransformNode is None:
             prettyoutput.LogErr("Missing TransformNode attribute on PruneTiles")
-            Logger.error("Missing TransformNode attribute on PruneTiles")
+            Logger.error("Missing TransformNode attribute on PruneTiles")  # type: ignore[union-attr]
             return
 
         FilterNode = LevelNode.FindParent("Filter")
@@ -369,14 +370,8 @@ class PruneObj:
             prettyoutput.Log("No prune scores to create histogram with")
             return
 
-        scores = [None] * len(list(MapImageToScore.items()))
+        scores: list[float] = [pair[1] for pair in list(MapImageToScore.items())]
         numScores = len(scores)
-
-        i = 0
-        for pair in list(MapImageToScore.items()):
-            #         prettyoutput.Log("pair: " + str(pair))
-            scores[i] = pair[1]
-            i += 1
 
         # Figure out what type of histogram we should create
         #       prettyoutput.Log('Scores: ' + str(scores))

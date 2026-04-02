@@ -12,26 +12,26 @@ class ChannelNode(XNamedContainerElementWrapped):
         self._scale = None
 
     @property
-    def Filters(self) -> [FilterNode]:
-        return self.findall('Filter')
+    def Filters(self) -> list[FilterNode]:
+        return self.findall('Filter')  # type: ignore[return-value]
 
     def GetFilter(self, Filter: str) -> FilterNode | None:
-        return self.GetChildByAttrib('Filter', 'Name', Filter)
+        return self.GetChildByAttrib('Filter', 'Name', Filter)  # type: ignore[return-value]
 
     def HasFilter(self, FilterName: str) -> bool:
         return not self.GetFilter(FilterName) is None
 
-    def GetOrCreateFilter(self, Name: str) -> (bool, FilterNode):
+    def GetOrCreateFilter(self, Name: str) -> tuple[bool, FilterNode]:
         (added, filterNode) = self.UpdateOrAddChildByAttrib(FilterNode.Create(Name), 'Name')
         return added, filterNode
 
-    def MatchFilterPattern(self, filterPattern: str) -> [FilterNode]:
-        return nornir_buildmanager.volumemanager.SearchCollection(self.Filters,
+    def MatchFilterPattern(self, filterPattern: str) -> list[FilterNode]:
+        return nornir_buildmanager.volumemanager.SearchCollection(self.Filters,  # type: ignore[return-value]
                                                                   'Name',
                                                                   filterPattern)
 
     def GetTransform(self, transform_name) -> TransformNode | None:
-        return self.GetChildByAttrib('Transform', 'Name', transform_name)
+        return self.GetChildByAttrib('Transform', 'Name', transform_name)  # type: ignore[return-value]
 
     def RemoveFilterOnContrastMismatch(self, FilterName, MinIntensityCutoff, MaxIntensityCutoff, Gamma) -> bool:
         """
@@ -101,7 +101,7 @@ class ChannelNode(XNamedContainerElementWrapped):
 
         if isinstance(scale_value_in_nm, Scale):
             (added, scaleNode) = self.UpdateOrAddChild(ScaleNode.CreateFromScale(scale_value_in_nm),
-                                                       f"ScaleNode[X='{scale_value_in_nm.X.UnitsPerPixel}'][Y='{scale_value_in_nm.Y.UnitsPerPixel}'][Z='{scale_value_in_nm.Z.UnitsPerPixel}']")
+                                                       f"ScaleNode[X='{scale_value_in_nm.X.UnitsPerPixel}'][Y='{scale_value_in_nm.Y.UnitsPerPixel}'][Z='{scale_value_in_nm.Z.UnitsPerPixel}']")  # type: ignore[union-attr]
         else:
             [added, scaleNode] = self.UpdateOrAddChild(ScaleNode.Create())
 
@@ -127,15 +127,15 @@ class ChannelNode(XNamedContainerElementWrapped):
 
         self._scale = Scale.Create(scaleNode)
 
-        return added, scaleNode
+        return added, scaleNode  # type: ignore[return-value]
 
     @property
     def NeedsValidation(self):
         return True
 
     def __str__(self):
-        return "Channel: %s Section: %d" % (self.Name, self.Parent.Number)
+        return "Channel: %s Section: %d" % (self.Name, self.Parent.Number)  # type: ignore[union-attr]
 
     @classmethod
     def Create(cls, Name, Path=None, **extra) -> ChannelNode:
-        return super(ChannelNode, cls).Create(tag='Channel', Name=Name, Path=Path, **extra)
+        return super(ChannelNode, cls).Create(tag='Channel', Name=Name, Path=Path, **extra)  # type: ignore[return-value]

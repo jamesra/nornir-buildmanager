@@ -12,9 +12,9 @@ class XFileElementWrapper(volumemanager.XResourceElementWrapper):
     @property
     def Name(self) -> str:
         if 'Name' not in self.attrib:
-            return self._GetAttribFromParent('Name')
+            return self._GetAttribFromParent('Name') or ""
 
-        return self.attrib.get('Name', None)
+        return self.attrib.get('Name') or ""
 
     @Name.setter
     def Name(self, value):
@@ -24,9 +24,9 @@ class XFileElementWrapper(volumemanager.XResourceElementWrapper):
     @property
     def Type(self) -> str:
         if 'Type' not in self.attrib:
-            return self._GetAttribFromParent('Type')
+            return self._GetAttribFromParent('Type') or ""
 
-        return self.attrib['Type']
+        return self.attrib.get('Type', '')
 
     @Type.setter
     def Type(self, value):
@@ -53,7 +53,7 @@ class XFileElementWrapper(volumemanager.XResourceElementWrapper):
             del self.__dict__['__fullpath']
         return
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """
         Checks that the file exists by attempting to update the validation time
         """

@@ -95,7 +95,8 @@ class TilesetInfo(object):
         Info = TilesetInfo()
 
         try:
-            dom = xml.dom.minidom.parse(XmlFilePath)
+            from xml.dom import minidom
+            dom = minidom.parse(XmlFilePath)
             levels = dom.getElementsByTagName("Level")
             level = levels[0]
 
@@ -110,8 +111,9 @@ class TilesetInfo(object):
             Info.FilePostfix = level.getAttribute('FilePostfix')
             Info.Downsample = float(level.getAttribute('Downsample'))
         except Exception as e:
-            Logger.warning("Failed to parse XML File: " + XmlFilePath)
-            Logger.warning(str(e))
+            if Logger is not None:
+                Logger.warning("Failed to parse XML File: " + XmlFilePath)
+                Logger.warning(str(e))
             return
 
         return Info

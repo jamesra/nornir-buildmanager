@@ -72,33 +72,35 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                     line = line.lower()
                     if line.find("loading") >= 0:
                         parts = line.split()
-                        [name, ext] = os.path.splitext(parts[1])
-                        if self.stosfilename is None:
-                            self.stosfilename = name
-                        else:
-                            self.LastLoadedFile = name
+                        if len(parts) >= 2:
+                            [name, ext] = os.path.splitext(str(parts[1]))
+                            if self.stosfilename is None:
+                                self.stosfilename = name
+                            else:
+                                self.LastLoadedFile = name
 
                     elif line.find("saving") >= 0:
                         parts = line.split()
-                        outputFile = parts[1]
-                        # Figure out if the output file has a different path
-                        # path = os.path.dirname(outputFile)
+                        if len(parts) >= 2:
+                            outputFile = str(parts[1])
+                            # Figure out if the output file has a different path
+                            # path = os.path.dirname(outputFile)
 
-                        [name, ext] = os.path.splitext(outputFile)
-                        if ext is None:
-                            ext = '.tif'
+                            [name, ext] = os.path.splitext(outputFile)
+                            if ext is None:
+                                ext = '.tif'
 
-                        if len(ext) <= 0:
-                            ext = '.tif'
+                            if len(ext) <= 0:
+                                ext = '.tif'
 
-                        outputfiles.append(outputFile)
+                            outputfiles.append(outputFile)
                         # prettyoutput.Log("Renaming " + outputFile + " to " + os.path.join(path, self.LastLoadedFile + ext))
 
                         # shutil.move(outputFile, os.path.join(path, self.LastLoadedFile + ext))
                 except:
                     pass
 
-            if len(outputfiles) == 2:
+            if len(outputfiles) == 2 and self.stosfilename is not None:
 
                 [OverlayFile, ext] = os.path.splitext(self.stosfilename)
                 path = os.path.dirname(outputfiles[0])
@@ -158,25 +160,28 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
 
 def SectionNumberKey(SectionNodeA) -> int:
     """Sort section nodes by number"""
-    return int(SectionNodeA.get('Number', None))
+    val = SectionNodeA.get('Number', 0)
+    return int(val) if val is not None else 0
 
 
 def SectionNumberCompare(SectionNodeA, SectionNodeB) -> int:
     """Sort section nodes by number"""
-    a = int(SectionNodeA.get('Number', None))
-    b = int(SectionNodeB.get('Number', None))
+    a_val = SectionNodeA.get('Number', 0)
+    b_val = SectionNodeB.get('Number', 0)
+    a = int(a_val) if a_val is not None else 0
+    b = int(b_val) if b_val is not None else 0
     return (a > b) - (a < b)
 
 
 def _GetCenterSection(Parameters, mapping_node: nornir_buildmanager.volumemanager.StosMapNode) -> int | None:
     """Returns the number of the center section from the Block Node if possible, otherwise it checks the parameters.  Returns None if unspecified"""
 
-    CenterSection = Parameters.get('CenterSection', None)
-    try:
-        CenterSection = int(CenterSection)
-        return CenterSection
-    except:
-        CenterSection = None
+    _center = Parameters.get('CenterSection', None)
+    if _center is not None:
+        try:
+            return int(_center)
+        except (TypeError, ValueError):
+            pass
 
     CenterSection = mapping_node.CenterSection
     if CenterSection is not None:
@@ -205,7 +210,8 @@ def UpdateStosMapWithRegistrationTree(StosMap: nornir_buildmanager.volumemanager
     else:
         for mapping in mappings:
             control = mapping.Control
-
+            if control is None:
+                continue
             rt_node = RT.Nodes.get(control, None)
             if not rt_node:
                 Logger.info("Removing mapping missing from registration tree: " + str(mapping))
@@ -244,7 +250,7 @@ def UpdateStosMapWithRegistrationTree(StosMap: nornir_buildmanager.volumemanager
     for mapping in StosMap.Mappings:
         control_section = mapping.Control
         if control_section not in RT.Nodes:
-            StosMap.RemoveMapping(control_section)
+            StosMap.RemoveMapping(control_section)  # type: ignore[arg-type]
             Logger.info(f"\tRemoved missing control section {control_section}")
             continue
 
@@ -271,11 +277,13 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
     NumAdjacentSections = int(Parameters.get('NumAdjacentSections', '1'))
     StosMapName = Parameters.get('OutputStosMapName', 'PotentialRegistrationChain')  # type: str
 
-    CenterSectionParameter = Parameters.get('CenterSection', None)
-    try:
-        CenterSectionParameter = int(CenterSectionParameter)
-    except:
-        CenterSectionParameter = None
+    _center = Parameters.get('CenterSection', None)
+    CenterSectionParameter: int | None = None
+    if _center is not None:
+        try:
+            CenterSectionParameter = int(_center)
+        except (TypeError, ValueError):
+            pass
 
     StosMapType = StosMapName + misc.GenNameFromDict(Parameters)
 
@@ -311,9 +319,10 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
 
     adjusted_center_section = CenterSectionParameter
     if CenterSectionParameter in NonStosSectionNumbersSet:
-        adjusted_center_section = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)
-        Logger.warning(
-            "Requested center section %1d was invalid.  Using %2d" % (CenterSectionParameter, adjusted_center_section))
+        adjusted_center_section = registrationtree.NearestSection(StosControlSectionNumbers, CenterSectionParameter)  # type: ignore[arg-type]
+        if Logger is not None:
+            Logger.warning(
+                "Requested center section %1d was invalid.  Using %2d" % (CenterSectionParameter, adjusted_center_section))
         # CenterSectionParameter = adjusted_center_section  
 
     if not NewStosMap:
@@ -323,8 +332,9 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
         CenterChanged = adjusted_center_section != OutputMappingNode.CenterSection
         if CenterChanged:
             # We are changing the center section, so remove all of the section mappings
-            Logger.warning(
-                f"Requested center section {CenterSectionParameter} has changed from current value of {OutputMappingNode.CenterSection}.  Replacing existing mappings.")
+            if Logger is not None:
+                Logger.warning(
+                    f"Requested center section {CenterSectionParameter} has changed from current value of {OutputMappingNode.CenterSection}.  Replacing existing mappings.")
             OutputMappingNode.CenterSection = adjusted_center_section
     else:
         if adjusted_center_section is not None:
@@ -435,11 +445,12 @@ def __CallIrToolsStosBrute(stosNode, ControlImageNode: ImageNode, MappedImageNod
     CmdRan = True
 
     if not os.path.exists(stosNode.FullPath):
-        Logger.error("Stos brute did not produce useable output\n" + cmd)
+        if Logger is not None:
+            Logger.error("Stos brute did not produce useable output\n" + cmd)
         return None
 
 
-def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumemanager.FilterNode, downsample: float,
+def GetOrCreateRegistrationImageNodes(filter_node: FilterNode, downsample: float,
                                       get_mask: bool, logger=None):
     """Retrieves or creates image nodes and their corresponding mask nodes for a given filter at a specified downsample level.
 
@@ -483,8 +494,8 @@ def GetOrCreateRegistrationImageNodes(filter_node: nornir_buildmanager.volumeman
     return image_node, mask_image_node
 
 
-def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: nornir_buildmanager.volumemanager.FilterNode,
-                                                         MappedFilter: nornir_buildmanager.volumemanager.FilterNode) -> \
+def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: FilterNode,
+                                                         MappedFilter: FilterNode) -> \
         tuple[float, float] | None:
     """Given two filters, determines if scale data is available.  If they are
        calculates how much to scale the mapped image to ensure it is at the
@@ -497,8 +508,8 @@ def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: nornir_b
     if ControlScale is None or MappedScale is None:
         return None
 
-    x_scale = ControlScale.X / MappedScale.X
-    y_scale = ControlScale.Y / MappedScale.Y
+    x_scale = ControlScale.X / MappedScale.X  # type: ignore[operator]
+    y_scale = ControlScale.Y / MappedScale.Y  # type: ignore[operator]
 
     return x_scale, y_scale
 
@@ -509,7 +520,7 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
                                     output_type: str,
                                     output_path: str,
                                     use_masks: bool,
-                                    angle_search_range: AngleSearchRange = None,
+                                    angle_search_range: AngleSearchRange | None = None,
                                     test_for_flip: bool = True,
                                     method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
                                     logger: logging.Logger | None = None,
@@ -533,10 +544,10 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
             manual_input_checksum = None
             if ManualFileExists:
                 if 'InputTransformChecksum' in stosNode.attrib:
-                    manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+                    manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)  # type: ignore[arg-type]
                     stosNode = transforms.RemoveOnMismatch(stosNode, 'InputTransformChecksum', manual_input_checksum)
                 else:
-                    manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+                    manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)  # type: ignore[arg-type]
                     try:
                         existing_stos_checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
                         if manual_input_checksum != existing_stos_checksum:
@@ -551,7 +562,7 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
                             "No existing stos file found to compare manual file against.  Using Manual input.")
                         stosNode = None
 
-            if not ManualFileExists:
+            if not ManualFileExists and stosNode is not None:
                 if 'InputTransformChecksum' in stosNode.attrib:
                     stosNode.Clean("Manual file used to create transform but the manual file has been removed")
                     stosNode = None
@@ -590,7 +601,7 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
             prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
             # Ensure we add or remove masks according to the parameters
-            SetStosFileMasks(stosNode.FullPath, control_filter, mapped_filter, use_masks, stos_group.Downsample)
+            SetStosFileMasks(stosNode.FullPath, control_filter, mapped_filter, use_masks, stos_group.Downsample)  # type: ignore[arg-type]
             manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
 
             stosNode.InputTransformChecksum = manual_input_checksum
@@ -604,15 +615,17 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
             #    xscale, yscale = None, None
 
             if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
-                __CallNornirStosBrute(stosNode, stos_group.Downsample,
-                                      ControlImageNode.FullPath, MappedImageNode.FullPath,
-                                      ControlMaskImageNode.FullPath, MappedMaskImageNode.FullPath,
-                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,
+                control_mask_path = ControlMaskImageNode.FullPath if ControlMaskImageNode is not None else None
+                mapped_mask_path = MappedMaskImageNode.FullPath if MappedMaskImageNode is not None else None
+                __CallNornirStosBrute(stosNode, stos_group.Downsample,  # type: ignore[arg-type]
+                                      ControlImageNode.FullPath, MappedImageNode.FullPath,  # type: ignore[union-attr]
+                                      control_mask_path, mapped_mask_path,
+                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,  # type: ignore[arg-type]
                                       method=method)
             else:
-                __CallNornirStosBrute(stosNode, stos_group.Downsample,
-                                      ControlImageNode.FullPath, MappedImageNode.FullPath,
-                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,
+                __CallNornirStosBrute(stosNode, stos_group.Downsample,  # type: ignore[arg-type]
+                                      ControlImageNode.FullPath, MappedImageNode.FullPath,  # type: ignore[union-attr]
+                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,  # type: ignore[arg-type]
                                       method=method)
 
         CmdRan = True
@@ -662,7 +675,7 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
     AdjacentSections = mapping_node.Mapped
 
     # Find the nodes for the control and mapped sections
-    ControlSectionNode = block_node.GetSection(ControlNumber)
+    ControlSectionNode = block_node.GetSection(ControlNumber)  # type: ignore[arg-type]
     if ControlSectionNode is None:
         Logger.error("Missing control section node for # " + str(ControlNumber))
         return
@@ -697,19 +710,19 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
                 print("\tCtrl - " + ControlFilter.FullPath)
 
                 OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-                    ControlFilter, MappedFilter)
+                    ControlFilter, MappedFilter)  # type: ignore[arg-type]
 
                 (added, stos_mapping_node) = stos_group_node.GetOrCreateSectionMapping(MappedSection)
                 if added:
                     (yield stos_mapping_node.Parent)
 
                 stosNode = FilterToFilterBruteRegistration(stos_group=stos_group_node,
-                                                           control_filter=ControlFilter,
-                                                           mapped_filter=MappedFilter,
+                                                           control_filter=ControlFilter,  # type: ignore[arg-type]
+                                                           mapped_filter=MappedFilter,  # type: ignore[arg-type]
                                                            output_type=OutputStosType,
                                                            output_path=OutputFile,
                                                            use_masks=UseMasks,
-                                                           angle_search_range=AngleSearchRange,
+                                                           angle_search_range=AngleSearchRange,  # type: ignore[arg-type]
                                                            test_for_flip=TestForFlip,
                                                            method=Method,
                                                            )
@@ -747,22 +760,22 @@ class StosImageNodesOutput(typing.NamedTuple):
 
 
 def StosImageNodes(StosTransformNode: TransformNode, Downsample: int) -> StosImageNodesOutput:
-    block_node = StosTransformNode.FindParent('Block')  # type: BlockNode | None
+    block_node = StosTransformNode.FindParent('Block')  # type: ignore[assignment]  # type: BlockNode | None
 
-    (ControlImageNode, ControlImageMaskNode) = GetImage(block_node,
-                                                        SectionNumber=StosTransformNode.ControlSectionNumber,
+    (ControlImageNode, ControlImageMaskNode) = GetImage(block_node,  # type: ignore[arg-type]
+                                                        SectionNumber=StosTransformNode.ControlSectionNumber,  # type: ignore[arg-type]
                                                         Channel=StosTransformNode.ControlChannelName,
                                                         Filter=StosTransformNode.ControlFilterName,
                                                         Downsample=Downsample)
 
-    (MappedImageNode, MappedImageMaskNode) = GetImage(block_node,
-                                                      SectionNumber=StosTransformNode.MappedSectionNumber,
+    (MappedImageNode, MappedImageMaskNode) = GetImage(block_node,  # type: ignore[arg-type]
+                                                      SectionNumber=StosTransformNode.MappedSectionNumber,  # type: ignore[arg-type]
                                                       Channel=StosTransformNode.MappedChannelName,
                                                       Filter=StosTransformNode.MappedFilterName,
                                                       Downsample=Downsample)
 
-    return StosImageNodesOutput(ControlImageNode=ControlImageNode, ControlImageMaskNode=ControlImageMaskNode,
-                                MappedImageNode=MappedImageNode, MappedImageMaskNode=MappedImageMaskNode)
+    return StosImageNodesOutput(ControlImageNode=ControlImageNode, ControlImageMaskNode=ControlImageMaskNode,  # type: ignore[arg-type]
+                                MappedImageNode=MappedImageNode, MappedImageMaskNode=MappedImageMaskNode)  # type: ignore[arg-type]
 
 
 def ValidateSectionMappingPipeline(Parameters, Logger, section_mapping_node: SectionMappingsNode, **kwargs) \
@@ -795,13 +808,13 @@ def ValidateSectionMappingTransformPipeline(Parameters, Logger, stos_transform_n
 def ValidateSectionMappingTransform(stos_transform_node: TransformNode, Logger) -> XElementWrapper | None:
     parent = stos_transform_node.Parent
     stos_group = stos_transform_node.FindParent('StosGroup')
-    downsample = int(stos_group.Downsample)
-    (mapped_filter, mapped_mask_filter) = __MappedFilterForTransform(stos_transform_node)
-    (control_filter, control_mask_filter) = __ControlFilterForTransform(stos_transform_node)
+    downsample = int(stos_group.Downsample)  # type: ignore[union-attr]
+    (mapped_filter, mapped_mask_filter) = __MappedFilterForTransform(stos_transform_node)  # type: ignore[union-attr]
+    (control_filter, control_mask_filter) = __ControlFilterForTransform(stos_transform_node)  # type: ignore[union-attr]
 
     if mapped_filter is None or control_filter is None:
         Logger.warn("Removed stos file for missing filters: %s" % stos_transform_node.FullPath)
-        parent.remove(stos_transform_node)
+        parent.remove(stos_transform_node)  # type: ignore[union-attr]
         return parent
 
     # Could be a generated transform not pointing at actual images, move on if the input image does not exist at that level 
@@ -857,14 +870,14 @@ def FixStosFilePaths(ControlFilter: FilterNode, MappedFilter: FilterNode, StosTr
 
     if ControlFilter.GetMaskImage(Downsample) is None or MappedFilter.GetMaskImage(Downsample) is None:
         return UpdateStosImagePaths(StosFilePath,
-                                    ControlFilter.GetImage(Downsample).FullPath,
-                                    MappedFilter.GetImage(Downsample).FullPath)
+                                    ControlFilter.GetImage(Downsample).FullPath,  # type: ignore[union-attr]
+                                    MappedFilter.GetImage(Downsample).FullPath)  # type: ignore[union-attr]
     else:
         return UpdateStosImagePaths(StosFilePath,
-                                    ControlFilter.GetImage(Downsample).FullPath,
-                                    MappedFilter.GetImage(Downsample).FullPath,
-                                    ControlFilter.GetMaskImage(Downsample).FullPath,
-                                    MappedFilter.GetMaskImage(Downsample).FullPath)
+                                    ControlFilter.GetImage(Downsample).FullPath,  # type: ignore[union-attr]
+                                    MappedFilter.GetImage(Downsample).FullPath,  # type: ignore[union-attr]
+                                    ControlFilter.GetMaskImage(Downsample).FullPath,  # type: ignore[union-attr]
+                                    MappedFilter.GetMaskImage(Downsample).FullPath)  # type: ignore[union-attr]
 
 
 def SectionToVolumeImage(Parameters, transform_node: TransformNode, Logger, CropUndefined: bool = True,
@@ -876,16 +889,16 @@ def SectionToVolumeImage(Parameters, transform_node: TransformNode, Logger, Crop
 
     SectionMappingNode = transform_node.FindParent('SectionMappings')
 
-    FilePrefix = str(SectionMappingNode.MappedSectionNumber) + '-' + str(transform_node.ControlSectionNumber) + '_'
-    WarpedOutputFilename = FilePrefix + 'warped_' + GroupNode.Name + "_" + transform_node.Type + '.png'
-    WarpedOutputFileFullPath = os.path.join(GroupNode.FullPath, WarpedOutputFilename)
+    FilePrefix = str(SectionMappingNode.MappedSectionNumber) + '-' + str(transform_node.ControlSectionNumber) + '_'  # type: ignore[union-attr]
+    WarpedOutputFilename = FilePrefix + 'warped_' + GroupNode.Name + "_" + transform_node.Type + '.png'  # type: ignore[union-attr]
+    WarpedOutputFileFullPath = os.path.join(GroupNode.FullPath, WarpedOutputFilename)  # type: ignore[union-attr]
 
     # Create a node in the XML records
 
     (created, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode, WarpedOutputFileFullPath)
     WarpedImageNode.Type = 'Warped_' + transform_node.Type
 
-    stosImages = StosImageNodes(transform_node, GroupNode.Downsample)
+    stosImages = StosImageNodes(transform_node, GroupNode.Downsample)  # type: ignore[union-attr]
 
     # Compare the .stos file creation date to the output
 
@@ -935,7 +948,7 @@ def AssembleStosOverlays(Parameters,
 
                 # StosTransformNode = GroupNode.find(TransformXPath)
 
-                StosTransformNodes = group_node.TransformsForMapping(MappedSection, mapping_node.Control)
+                StosTransformNodes = group_node.TransformsForMapping(MappedSection, mapping_node.Control)  # type: ignore[arg-type]
                 if StosTransformNodes is None:
                     Logger.warn(
                         "No transform found for mapping: " + str(MappedSection) + " -> " + str(mapping_node.Control))
@@ -969,7 +982,7 @@ def AssembleStosOverlays(Parameters,
 
                     SectionMappingSaveRequired = SectionMappingSaveRequired or created_overlay or created_diff or created_warped
 
-                    stosImages = StosImageNodes(StosTransformNode, group_node.Downsample)
+                    stosImages = StosImageNodes(StosTransformNode, group_node.Downsample)  # type: ignore[arg-type]
 
                     if stosImages.ControlImageNode is None or stosImages.MappedImageNode is None:
                         continue
@@ -1166,7 +1179,7 @@ def CalculateStosGroupWarpMeasurementImages(Parameters, stos_map_node: StosMapNo
         # pass
 
     if SaveRequired:
-        return block_node
+        return block_node  # type: ignore[return-value]
     else:
         return group_node
 
@@ -1190,7 +1203,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
                                                                                          Type=OutputStosMapName,
                                                                                          CenterSection=str(
                                                                                              InputStosMapNode.CenterSection))
-    (NewStosMap, OutputStosMapNode) = block_node.UpdateOrAddChildByAttrib(OutputStosMapNode)
+    (NewStosMap, OutputStosMapNode) = block_node.UpdateOrAddChildByAttrib(OutputStosMapNode)  # type: ignore[union-attr]
 
     if OutputStosMapNode.CenterSection != InputStosMapNode.CenterSection:
         OutputStosMapNode.CenterSection = InputStosMapNode.CenterSection
@@ -1198,14 +1211,14 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
 
     # Ensure we do not have banned control sections in the output map
     if not NewStosMap:
-        NonStosSectionNumbersSet = block_node.NonStosSectionNumbers
+        NonStosSectionNumbersSet = block_node.NonStosSectionNumbers  # type: ignore[union-attr]
         removedControls = OutputStosMapNode.ClearBannedControlMappings(NonStosSectionNumbersSet)
         if removedControls:
             yield block_node
 
     OutputStosGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode(
         attrib=InputGroupNode.attrib.copy())
-    (added, OutputStosGroupNode) = block_node.UpdateOrAddChildByAttrib(OutputStosGroupNode, 'Path')
+    (added, OutputStosGroupNode) = block_node.UpdateOrAddChildByAttrib(OutputStosGroupNode, 'Path')  # type: ignore[union-attr]
 
     # Look at all of the mappings and create a list of potential control sections for each mapped section
     # Mappings = list(InputStosMapNode.findall('Mapping'))
@@ -1237,7 +1250,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
             Logger.info(str(mappedSection) + " -> " + str(knownControlSections) + " was previously mapped, skipping")
             continue
         else:
-            excess_control_sections = knownControlSections - potentialControls
+            excess_control_sections = knownControlSections - potentialControls  # type: ignore[operator]
             for control in excess_control_sections:
                 OutputStosMapNode.RemoveMapping(control=control, mapped=mappedSection)
                 Logger.info(f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
@@ -1281,7 +1294,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
                             Pool = nornir_pools.GetLocalMachinePool()
 
                         task = Pool.add_process(image_node.attrib['Path'], identifyCmd + " && exit", shell=True)
-                        task.transform_node = Transform
+                        task.transform_node = Transform  # type: ignore[attr-defined]
                         TaskList.append(task)
                         Logger.info("Evaluating " + str(mappedSection) + ' -> ' + str(controlSection))
 
@@ -1344,7 +1357,7 @@ def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, In
     ManualInputStosFullPath = stos_group_node.PathToManualTransform(ExpectedStosFileName)
 
     InputStosFullPath = __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath=AutomaticInputStosFullPath,
-                                                              ManualInputStosFullPath=ManualInputStosFullPath)
+                                                              ManualInputStosFullPath=ManualInputStosFullPath)  # type: ignore[arg-type]
     InputChecksum = None
     if InputStosFullPath == AutomaticInputStosFullPath:
         __GenerateStosFileIfOutdated(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter,
@@ -1373,8 +1386,8 @@ def SetStosFileMasks(stosFullPath: str, ControlFilter: FilterNode, MappedFilter:
 
             return
         else:
-            ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)
-            MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)
+            ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)  # type: ignore[union-attr]
+            MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)  # type: ignore[union-attr]
 
             OutputStos.ControlMaskFullPath = ControlMaskImageFullPath
             OutputStos.MappedMaskFullPath = MappedMaskImageFullPath
@@ -1429,8 +1442,8 @@ def IsStosNodeOutdated(InputTransformNode: TransformNode, OutputTransformNode: T
     ControlMaskImageFullPath = None
     MappedMaskImageFullPath = None
     if UseMasks:
-        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
-        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
+        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
 
     return not (OutputStos.ControlImagePath == ControlImageFullPath and
                 OutputStos.MappedImagePath == MappedImageFullPath and
@@ -1476,8 +1489,8 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
     ControlMaskImageFullPath = None
     MappedMaskImageFullPath = None
     if UseMasks:
-        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
-        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
+        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
 
         if not OutputStos.ControlMaskFullPath == ControlMaskImageFullPath and OutputStos.MappedMaskFullPath == MappedMaskImageFullPath:
             return True
@@ -1506,7 +1519,7 @@ def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransf
         result = __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter,
                                     MappedFilter,
                                     UseMasks)
-        result.Save(OutputTransformPath)
+        result.Save(OutputTransformPath)  # type: ignore[union-attr]
         return True
 
     return False
@@ -1534,7 +1547,7 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
     """
 
     stos_group_node = InputTransformNode.FindParent('StosGroup')
-    InputDownsample = stos_group_node.Downsample
+    InputDownsample = stos_group_node.Downsample  # type: ignore[union-attr]
 
     InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
     if UseMasks is None:
@@ -1546,8 +1559,8 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
     ControlMaskImageFullPath = None
     MappedMaskImageFullPath = None
     if UseMasks:
-        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
-        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
+        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
 
     # If all the core details are the same we can save time by copying the data instead
     if not (InputStos.ControlImagePath == ControlImageFullPath and
@@ -1662,7 +1675,7 @@ def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: Stos
 
 def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, IgnoreMasks, Downsample=32,
                    ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
-                   Type=None, MappedSections: None | list[int] = None, **kwargs) -> Generator[
+                   Type=None, MappedSections: None | list[int] | frozenset[int] = None, **kwargs) -> Generator[
     XElementWrapper, None, None]:
     """
     Invoke a command to execute a function with an input and output .stos file.  The function
@@ -1724,11 +1737,11 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
     if Type is None:
         Type = 'Grid'
 
-    (added, OutputStosGroupNode) = block_node.GetOrCreateStosGroup(OutputStosGroupName, Downsample)
+    (added, OutputStosGroupNode) = block_node.GetOrCreateStosGroup(OutputStosGroupName, Downsample)  # type: ignore[union-attr]
     OutputStosGroupNode.CreateDirectories()
 
     if added:
-        yield block_node
+        yield block_node  # type: ignore[misc]
 
     for MappedSection in mapping_node.Mapped:
 
@@ -1736,7 +1749,7 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             continue
 
         # Find the inputTransformNode in the InputGroupNode
-        InputTransformNodes = list(InputGroupNode.TransformsForMapping(MappedSection, mapping_node.Control))
+        InputTransformNodes = list(InputGroupNode.TransformsForMapping(MappedSection, mapping_node.Control))  # type: ignore[arg-type]
         if InputTransformNodes is None or len(InputTransformNodes) == 0:
             Logger.warning("No transform found for mapping " + str(MappedSection) + " -> " + str(mapping_node.Control))
             continue
@@ -1746,7 +1759,7 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
             InputSectionMappingNode = InputTransformNode.FindParent('SectionMappings')
             OutputSectionMappingNode = nornir_buildmanager.volumemanager.sectionmappingsnode.SectionMappingsNode.Create(
-                **InputSectionMappingNode.attrib)
+                **InputSectionMappingNode.attrib)  # type: ignore[union-attr]
 
             ControlFilter = __GetFirstMatchingFilter(block_node,
                                                      InputTransformNode.ControlSectionNumber,
@@ -1910,7 +1923,7 @@ def __StosMapToRegistrationTree(stos_map_node: StosMapNode):
 
     for mappingNode in stos_map_node.Mappings:
         for mappedSection in mappingNode.Mapped:
-            rt.AddPair(mappingNode.Control, mappedSection)
+            rt.AddPair(mappingNode.Control, mappedSection)  # type: ignore[arg-type]
 
     return rt
 
@@ -1921,8 +1934,8 @@ def __RegistrationTreeToSliceToVolumeMap(rt: registrationtree.RegistrationTree, 
     OutputStosMap = nornir_buildmanager.volumemanager.stosmapnode.StosMapNode.Create(StosMapName)
 
     for step in rt.GenerateOrderedMappingsToRoots():
-        rootNode = step.RootNode
-        mappedNode = step.MappedNode
+        rootNode = step.RootNode  # type: ignore[attr-defined]
+        mappedNode = step.MappedNode  # type: ignore[attr-defined]
         print("Mapping {0} -> {1}".format(mappedNode.SectionNumber, rootNode.SectionNumber))
         OutputStosMap.AddMapping(rootNode.SectionNumber, mappedNode.SectionNumber)
 
@@ -2042,23 +2055,23 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
         Tolerance = None
     else:
         # Scale the tolerance for the downsample level
-        Tolerance /= float(Downsample)
+        Tolerance /= float(Downsample)  # type: ignore[operator]
 
     rt = __StosMapToRegistrationTree(stos_map_node)
 
     if len(rt.RootNodes) == 0:
         return
 
-    (AddedGroupNode, OutputGroupNode) = block_node.GetOrCreateStosGroup(OutputGroupFullname,
+    (AddedGroupNode, OutputGroupNode) = block_node.GetOrCreateStosGroup(OutputGroupFullname,  # type: ignore[union-attr]
                                                                         InputStosGroupNode.Downsample)
     if AddedGroupNode:
         (yield block_node)
 
     # build the stos map again if it exists
-    block_node.RemoveStosMap(map_name=OutputMap)
+    block_node.RemoveStosMap(map_name=OutputMap)  # type: ignore[union-attr]
 
     OutputStosMap = __RegistrationTreeToSliceToVolumeMap(rt, OutputMap)
-    (AddedStosMap, OutputStosMap) = block_node.UpdateOrAddChildByAttrib(OutputStosMap)
+    (AddedStosMap, OutputStosMap) = block_node.UpdateOrAddChildByAttrib(OutputStosMap)  # type: ignore[union-attr]
     OutputStosMap.CenterSection = stos_map_node.CenterSection
 
     if AddedStosMap:
@@ -2083,7 +2096,7 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
 def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                           rootNode: registrationtree.RegistrationTreeNode,
                                           InputGroupNode: StosGroupNode, OutputGroupNode: StosGroupNode,
-                                          EnrichTolerance=float | None,
+                                          EnrichTolerance: float | None = None,
                                           ControlToVolumeTransform=None,
                                           linear_blend_factor: float | None = None,
                                           travel_limit: float | None = None,
@@ -2092,8 +2105,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
 
     SectionToRootTransformMap = {}
     for step in rt.GenerateOrderedMappingsToRootNode(rootNode):
-        MappedSectionNode = step.MappedNode
-        IntermediateControlSection = step.ParentNode.SectionNumber
+        MappedSectionNode = step.MappedNode  # type: ignore[attr-defined]
+        IntermediateControlSection = step.ParentNode.SectionNumber  # type: ignore[attr-defined]
 
         mappedSectionNumber = MappedSectionNode.SectionNumber
 
@@ -2141,10 +2154,10 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 ControlChannelName = ControlToVolumeTransform.ControlChannelName
                 ControlFilterName = ControlToVolumeTransform.ControlFilterName
 
-            OutputTransform = OutputSectionMappingsNode.FindStosTransform(ControlSectionNumber=ControlSectionNumber,
+            OutputTransform = OutputSectionMappingsNode.FindStosTransform(ControlSectionNumber=ControlSectionNumber,  # type: ignore[arg-type]
                                                                           ControlChannelName=ControlChannelName,
                                                                           ControlFilterName=ControlFilterName,
-                                                                          MappedSectionNumber=MappedToControlTransform.SourceSectionNumber,
+                                                                          MappedSectionNumber=MappedToControlTransform.SourceSectionNumber,  # type: ignore[arg-type]
                                                                           MappedChannelName=MappedToControlTransform.MappedChannelName,
                                                                           MappedFilterName=MappedToControlTransform.MappedFilterName)
 
@@ -2397,7 +2410,7 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                 yield retval
 
 
-def RegistrationTreeFromStosMapNode(stos_map_node) -> registrationtree.RegistrationTree():
+def RegistrationTreeFromStosMapNode(stos_map_node) -> registrationtree.RegistrationTree:
     rt = registrationtree.RegistrationTree()
 
     for mappingNode in stos_map_node.findall('Mapping'):
@@ -2477,7 +2490,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
     # TODO: Skip transforms using filters which no longer exist.  Should live in a separate function.
     filter_matches = nornir_buildmanager.volumemanager.SearchCollection(channel_node.Filters,
                                                                         'Name', filter_pattern,
-                                                                        CaseSensitive=True)  # type: Generator[FilterNode, None, None]
+                                                                        CaseSensitive=True)  # type: ignore[assignment]  # type: Generator[FilterNode, None, None]
 
     result = next(filter_matches, None)
 
@@ -2486,7 +2499,7 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
         Logger.warning("No %s.%s filters match pattern %s" % (section_number, channel_node, filter_pattern))
         return None
 
-    return result
+    return result  # type: ignore[return-value]
 
 
 # def __MatchMappedFiltersForTransform(InputTransformNode, channelPattern=None, filterPattern=None):
@@ -2527,7 +2540,7 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
 
     OutputGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.Create(OutputGroupName,
                                                                                            OutputDownsample)
-    (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)
+    (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)  # type: ignore[union-attr]
 
     os.makedirs(OutputGroupNode.FullPath, exist_ok=True)
 
@@ -2537,7 +2550,7 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
     for inputSectionMapping in InputStosGroupNode.SectionMappings:
 
         (SectionMappingNodeAdded, OutputSectionMapping) = OutputGroupNode.GetOrCreateSectionMapping(
-            inputSectionMapping.MappedSectionNumber)
+            inputSectionMapping.MappedSectionNumber)  # type: ignore[arg-type]
         if SectionMappingNodeAdded:
             (yield OutputGroupNode)
 
@@ -2551,8 +2564,8 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
             # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
             # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
             try:
-                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)
-                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)
+                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
+                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
             except AttributeError as e:
                 prettyoutput.LogErr(
                     "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
@@ -2586,7 +2599,7 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
 
             if not os.path.exists(output_stos_node.FullPath):
                 try:
-                    stosGenerated = __GenerateStosFile(InputTransformNode,
+                    stosGenerated = __GenerateStosFile(InputTransformNode,  # type: ignore[arg-type]
                                                        output_stos_node.FullPath,
                                                        OutputDownsample,
                                                        ControlFilter,
@@ -2617,8 +2630,8 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
     OutputDownsample = InputStosGroupNode.Downsample
 
     OutputGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.Create(OutputGroupName,
-                                                                                           OutputDownsample)
-    (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)
+                                                                                           OutputDownsample)  # type: ignore[arg-type]
+    (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)  # type: ignore[union-attr]
 
     os.makedirs(OutputGroupNode.FullPath, exist_ok=True)
 
@@ -2628,7 +2641,7 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
     for inputSectionMapping in InputStosGroupNode.SectionMappings:
 
         (SectionMappingNodeAdded, OutputSectionMapping) = OutputGroupNode.GetOrCreateSectionMapping(
-            inputSectionMapping.MappedSectionNumber)
+            inputSectionMapping.MappedSectionNumber)  # type: ignore[arg-type]
         if SectionMappingNodeAdded:
             (yield OutputGroupNode)
 
@@ -2641,8 +2654,8 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
             # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
             # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
             try:
-                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)
-                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)
+                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
+                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
             except AttributeError as e:
                 prettyoutput.LogErr(
                     "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
@@ -2719,14 +2732,14 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
 
 
 def _GetOrCreateStosToMosaicTransform(StosTransformNode, transform_node: TransformNode, OutputTransformName: str):
-    OutputTransformNode = transform_node.Parent.GetTransform(OutputTransformName)
+    OutputTransformNode = transform_node.Parent.GetTransform  # type: ignore[reportAttributeAccessIssue](OutputTransformName)  # type: ignore[union-attr]
     added = False
     if OutputTransformNode is None:
         # Create transform node for the output
         OutputTransformNode = nornir_buildmanager.volumemanager.TransformNode.Create(Name=OutputTransformName,
                                                                                      Type="MosaicToVolume_Untranslated",
                                                                                      Path=OutputTransformName + '.mosaic')
-        transform_node.Parent.AddChild(OutputTransformNode)
+        transform_node.Parent.AddChild(OutputTransformNode)  # type: ignore[union-attr]
         added = True
 
     return added, OutputTransformNode
@@ -2782,13 +2795,13 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
 
         SToV = stosfile.StosFile.Load(StosTransformNode.FullPath)
         # Make sure we are not using a downsampled transform
-        SToV = SToV.ChangeTransformPixelSpacing(stos_group_node.Downsample, 1.0,
+        SToV = SToV.ChangeTransformPixelSpacing(stos_group_node.Downsample, 1.0,  # type: ignore[union-attr, arg-type]
                                                 SToV.ControlImageFullPath,
                                                 SToV.MappedImageFullPath,
                                                 SToV.ControlMaskFullPath,
                                                 SToV.MappedMaskFullPath,
                                                 create_copy=False)
-        StoVTransform = factory.LoadTransform(SToV.Transform)
+        StoVTransform = factory.LoadTransform(SToV.Transform)  # type: ignore[arg-type]
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
         assert (MosaicTransform.FixedBoundingBox.BottomLeft[0] == 0 and MosaicTransform.FixedBoundingBox.BottomLeft[
@@ -2804,11 +2817,11 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
             for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
                 task = Pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms, StoVTransform,
                                      MosaicToSectionTransform)
-                task.imagename = imagename
+                task.imagename = imagename  # type: ignore[attr-defined]
                 if hasattr(MosaicToSectionTransform, 'gridWidth'):
-                    task.dimX = MosaicToSectionTransform.gridWidth
+                    task.dimX = MosaicToSectionTransform.gridWidth  # type: ignore[attr-defined]
                 if hasattr(MosaicToSectionTransform, 'gridHeight'):
-                    task.dimY = MosaicToSectionTransform.gridHeight
+                    task.dimY = MosaicToSectionTransform.gridHeight  # type: ignore[attr-defined]
 
                 Tasks.append(task)
 
@@ -2821,7 +2834,7 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
                     pass
         else:
             for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
-                MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)
+                MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)  # type: ignore[attr-defined]
                 MosaicTransform.ImageToTransform[imagename] = MosaicToVolume
 
         if len(MosaicTransform.ImageToTransform) > 0:
@@ -2844,14 +2857,14 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
     Channels = block_node.findall('Section/Channel')
 
     MatchingChannelNodes = nornir_buildmanager.volumemanager.SearchCollection(Channels, 'Name',
-                                                                              ChannelsRegEx)  # type: Generator[ChannelNode, None, None]
+                                                                              ChannelsRegEx)  # type: ignore[assignment]  # type: Generator[ChannelNode, None, None]
 
     StosMosaicTransforms = []  # type: list[TransformNode]
 
     UntranslatedOutputTransformName = OutputTransformName + "_Untranslated"
 
     for channelNode in MatchingChannelNodes:
-        transform_node = channelNode.GetTransform(InputTransformName)
+        transform_node = channelNode.GetTransform(InputTransformName)  # type: ignore[reportAttributeAccessIssue]
 
         if transform_node is None:
             continue
@@ -2861,9 +2874,9 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
         if node_to_save is not None:
             yield node_to_save
 
-        output_transform_node = channelNode.GetChildByAttrib('Transform', 'Name', UntranslatedOutputTransformName)
+        output_transform_node = channelNode.GetChildByAttrib('Transform', 'Name', UntranslatedOutputTransformName)  # type: ignore[reportAttributeAccessIssue]
         if output_transform_node is not None:
-            StosMosaicTransforms.append(output_transform_node)
+            StosMosaicTransforms.append(output_transform_node)  # type: ignore[arg-type]
 
     if len(StosMosaicTransforms) == 0:
         return
@@ -2883,13 +2896,13 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
 
     for input_transform_node in StosMosaicTransforms:
         channel_node = input_transform_node.Parent
-        output_transform_node = channel_node.GetTransform(OutputStosMosaicTransformName)
+        output_transform_node = channel_node.GetTransform(OutputStosMosaicTransformName)  # type: ignore[reportAttributeAccessIssue]
         if output_transform_node is None:
             output_transform_node = input_transform_node.Copy()
             output_transform_node.Name = OutputStosMosaicTransformName
             output_transform_node.Path = OutputStosMosaicTransformName + '.mosaic'
 
-            channel_node.AddChild(output_transform_node)
+            channel_node.AddChild(output_transform_node)  # type: ignore[union-attr]
         else:
             if not output_transform_node.IsInputTransformMatched(input_transform_node):
                 if os.path.exists(output_transform_node.FullPath):
@@ -2908,7 +2921,7 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
     # and set the CropBox property so each image is the same size after assemble is used.
     translation_to_zero = mosaicToVolume.TranslateToZeroOrigin()
 
-    if translation_to_zero[0] == 0 and translation_to_zero[1] == 0:
+    if translation_to_zero[0] == 0 and translation_to_zero[1] == 0:  # type: ignore[index]
         return None
 
     new_bbox = mosaicToVolume.VolumeBounds
@@ -2933,8 +2946,8 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
 
 
 def FetchVolumeTransforms(stos_map_node: StosMapNode, ChannelsRegEx: str | None, TransformRegEx: str | None):
-    block_node = stos_map_node.FindParent('Block')
-    Channels = block_node.findall('Section/Channel')
+    block_node = stos_map_node.FindParent('Block')  # type: ignore[reportAttributeAccessIssue]
+    Channels = block_node.findall('Section/Channel')  # type: ignore[union-attr]
     MatchingChannelNodes = nornir_buildmanager.volumemanager.SearchCollection(Channels, 'Name', ChannelsRegEx)
 
     MatchingTransformNodes = nornir_buildmanager.volumemanager.SearchCollection(MatchingChannelNodes, 'Name',
@@ -2942,7 +2955,7 @@ def FetchVolumeTransforms(stos_map_node: StosMapNode, ChannelsRegEx: str | None,
 
     StosMosaicTransforms = []
     for transform_node in MatchingTransformNodes:
-        sectionNode = transform_node.FindParent('Section')
+        sectionNode = transform_node.FindParent('Section')  # type: ignore[reportAttributeAccessIssue]
         if sectionNode is None:
             continue
 
@@ -2999,10 +3012,10 @@ def BuildChannelMosaicToVolumeTransform(stos_map_node: StosMapNode,
 
     else:
         for stostransform in SectionMappingNode.Transforms:
-            if not stostransform.MappedChannelName == MappedChannelNode.Name:
+            if not stostransform.MappedChannelName == MappedChannelNode.Name:  # type: ignore[union-attr]
                 continue
 
-            if not int(stostransform.ControlSectionNumber) in ControlSectionNumbers:
+            if not int(stostransform.ControlSectionNumber) in ControlSectionNumbers:  # type: ignore[arg-type]
                 continue
 
             stosMosaicTransform = _ApplyStosToMosaicTransform(stostransform, transform_node, OutputTransformName,

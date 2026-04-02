@@ -126,6 +126,8 @@ def GetNamesToRootString(node, **kwargs):
 def PrintAttributes(node, attribs=None, tab_indent_count=None, **kwargs):
     """Print a comma delimited set of attributes from the node in order.  Indent the output according to tab_indent_count"""
 
+    if attribs is None:
+        raise ValueError("PrintAttributes requires attribs to be specified")
     attrib_list = attribs.split(',')
 
     if tab_indent_count is None:
@@ -138,9 +140,9 @@ def PrintAttributes(node, attribs=None, tab_indent_count=None, **kwargs):
     for attrib in attrib_list:
         if attrib in node:
             val = getattr(node, attrib)
-            output_str.append("\t{0}".format(str(val)))
+            output_str += "\t{0}".format(str(val))
         else:
-            output_str.append("\t\t".format(str(val)))
+            output_str += "\t\t"
 
     print(output_str)
 
@@ -194,7 +196,7 @@ def PrintImageSetsOlderThanTilePyramids(node, **kwargs):
 
     first_tile_path = GetNewestTile(pyramid_level_node)
 
-    if first_tile_path == nornir_shared.files.NewestFile(image_node.FullPath, first_tile_path):
+    if first_tile_path is not None and first_tile_path == nornir_shared.files.NewestFile(image_node.FullPath, first_tile_path):
         print("Imageset is out of date %s" % image_node.FullPath)
         return node
 

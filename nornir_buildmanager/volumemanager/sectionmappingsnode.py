@@ -24,14 +24,14 @@ class SectionMappingsNode(XElementWrapper):
 
     @property
     def Transforms(self) -> Generator[TransformNode]:
-        return self.findall('Transform')
+        return self.findall('Transform')  # type: ignore[return-value]
 
     @property
     def Images(self) -> Generator[ImageNode]:
-        return self.findall('Image')
+        return self.findall('Image')  # type: ignore[return-value]
 
     def TransformsToSection(self, sectionNumber: int) -> Generator[TransformNode]:
-        return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)
+        return self.GetChildrenByAttrib('Transform', 'ControlSectionNumber', sectionNumber)  # type: ignore[return-value]
 
     def FindStosTransform(self, 
                           ControlSectionNumber: int,
@@ -47,7 +47,7 @@ class SectionMappingsNode(XElementWrapper):
         # TODO: 3/10/2017 I believe I can stop checking MappedSectionNumber because it is built into the SectionMapping node.  This is a sanity check before I pull the plug
         assert (MappedSectionNumber == self.MappedSectionNumber)
         
-        return nornir_shared.find_first_match(self.Transforms, {'ControlSectionNumber' : ControlSectionNumber,
+        return nornir_shared.find_first_match(self.Transforms, {'ControlSectionNumber' : ControlSectionNumber,  # type: ignore[return-value]
                                                                 'ControlChannelName' : ControlChannelName,
                                                                 'ControlFilterName'  : ControlFilterName,
                                                                 'MappedSectionNumber': self.MappedSectionNumber,
@@ -59,7 +59,7 @@ class SectionMappingsNode(XElementWrapper):
         :rtype bool:
         :return: True if transform removed
         """
-        return self.TryRemoveTransform(transform_node.ControlSectionNumber,
+        return self.TryRemoveTransform(transform_node.ControlSectionNumber,  # type: ignore[arg-type]
                                        transform_node.ControlChannelName,
                                        transform_node.ControlFilterName,
                                        transform_node.MappedChannelName,
@@ -77,7 +77,7 @@ class SectionMappingsNode(XElementWrapper):
         """
 
         existing_transform = self.FindStosTransform(ControlSectionNumber, ControlChannelName, ControlFilterName,
-                                                    self.MappedSectionNumber, MappedChannelName, MappedFilterName)
+                                                    self.MappedSectionNumber, MappedChannelName, MappedFilterName)  # type: ignore[arg-type]
         if existing_transform is not None:
             existing_transform.Clean()
             return True
@@ -99,7 +99,7 @@ class SectionMappingsNode(XElementWrapper):
                                  block: BlockNode,
                                  section_number: int,
                                  channel_name: str,
-                                 filter_name: str) -> (bool, str):
+                                 filter_name: str) -> tuple[bool, str]:
 
         section_node = block.GetSection(section_number)
         if section_node is None:
@@ -113,17 +113,17 @@ class SectionMappingsNode(XElementWrapper):
         if filter_node is None:
             return False, "Transform filter not found %d.%s.%s" % (section_number, channel_name, filter_name)
 
-        return True, None
+        return True, None  # type: ignore[return-value]
 
-    def CleanIfInvalid(self) -> (bool, str):
+    def CleanIfInvalid(self) -> tuple[bool, str]:
         cleaned, reason = XElementWrapper.CleanIfInvalid(self)
         if not cleaned:
             return self.CleanTransformsIfInvalid()
 
         return cleaned, reason
 
-    def CleanTransformsIfInvalid(self) -> (bool, str):
-        block = self.FindParent('Block')  # type : BlockNode
+    def CleanTransformsIfInvalid(self) -> tuple[bool, str]:
+        block = self.FindParent('Block')  # type: ignore[assignment]  # type: BlockNode
         reason = ""
         transform_cleaned = False
 
@@ -136,7 +136,7 @@ class SectionMappingsNode(XElementWrapper):
                 transform_cleaned = True
                 continue
 
-            ControlResult = SectionMappingsNode._CheckForFilterExistence(block, t.ControlSectionNumber,
+            ControlResult = SectionMappingsNode._CheckForFilterExistence(block, t.ControlSectionNumber,  # type: ignore[arg-type]
                                                                          t.ControlChannelName, t.ControlFilterName)
             if ControlResult[0] is False:
                 reason += f"Cleaning transform {t.Path}.  Control input did not exist: {ControlResult[1]}"
@@ -144,7 +144,7 @@ class SectionMappingsNode(XElementWrapper):
                 transform_cleaned = True
                 continue
 
-            MappedResult = SectionMappingsNode._CheckForFilterExistence(block, t.MappedSectionNumber,
+            MappedResult = SectionMappingsNode._CheckForFilterExistence(block, t.MappedSectionNumber,  # type: ignore[arg-type]
                                                                         t.MappedChannelName, t.MappedFilterName)
             if MappedResult[0] is False:
                 reason += f"Cleaning transform {t.Path}.  Mapped input did not exist: {MappedResult[1]}"
@@ -155,13 +155,13 @@ class SectionMappingsNode(XElementWrapper):
         if transform_cleaned:
             prettyoutput.Log(reason)
 
-        return transform_cleaned
+        return transform_cleaned, reason
 
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
             tag = 'SectionMappings'
 
-        super(SectionMappingsNode, self).__init__(tag=tag, attrib=attrib, **extra)
+        super(SectionMappingsNode, self).__init__(tag=tag, attrib=attrib, **extra)  # type: ignore[arg-type]
 
     @classmethod
     def Create(cls, Path=None, MappedSectionNumber=None, attrib=None, **extra) -> SectionMappingsNode:

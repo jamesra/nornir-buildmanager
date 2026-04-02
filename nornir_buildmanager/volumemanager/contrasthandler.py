@@ -9,46 +9,46 @@ class ContrastHandler(object):
 
     @property
     def MaxIntensityCutoff(self):
-        if 'MaxIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MaxIntensityCutoff']), 3)
+        if 'MaxIntensityCutoff' in self.attrib:  # type: ignore[attr-defined]
+            return round(float(self.attrib['MaxIntensityCutoff']), 3)  # type: ignore[attr-defined]
 
         return None
 
     @MaxIntensityCutoff.setter
     def MaxIntensityCutoff(self, value):
         if value is None:
-            if 'MaxIntensityCutoff' in self.attrib:
-                del self.attrib['MaxIntensityCutoff']
+            if 'MaxIntensityCutoff' in self.attrib:  # type: ignore[attr-defined]
+                del self.attrib['MaxIntensityCutoff']  # type: ignore[attr-defined]
         else:
-            self.attrib['MaxIntensityCutoff'] = "%g" % round(value, 3)
+            self.attrib['MaxIntensityCutoff'] = "%g" % round(value, 3)  # type: ignore[attr-defined]
 
     @property
     def MinIntensityCutoff(self):
-        if 'MinIntensityCutoff' in self.attrib:
-            return round(float(self.attrib['MinIntensityCutoff']), 3)
+        if 'MinIntensityCutoff' in self.attrib:  # type: ignore[attr-defined]
+            return round(float(self.attrib['MinIntensityCutoff']), 3)  # type: ignore[attr-defined]
         return None
 
     @MinIntensityCutoff.setter
     def MinIntensityCutoff(self, value):
         if value is None:
-            if 'MinIntensityCutoff' in self.attrib:
-                del self.attrib['MinIntensityCutoff']
+            if 'MinIntensityCutoff' in self.attrib:  # type: ignore[attr-defined]
+                del self.attrib['MinIntensityCutoff']  # type: ignore[attr-defined]
         else:
-            self.attrib['MinIntensityCutoff'] = "%g" % round(value, 3)
+            self.attrib['MinIntensityCutoff'] = "%g" % round(value, 3)  # type: ignore[attr-defined]
 
     @property
     def Gamma(self) -> float | None:
-        if 'Gamma' in self.attrib:
-            return round(float(self.attrib['Gamma']), 3)
+        if 'Gamma' in self.attrib:  # type: ignore[attr-defined]
+            return round(float(self.attrib['Gamma']), 3)  # type: ignore[attr-defined]
         return None
 
     @Gamma.setter
-    def Gamma(self, value: float):
+    def Gamma(self, value: float | None):
         if value is None:
-            if 'Gamma' in self.attrib:
-                del self.attrib['Gamma']
+            if 'Gamma' in self.attrib:  # type: ignore[attr-defined]
+                del self.attrib['Gamma']  # type: ignore[attr-defined]
         else:
-            self.attrib['Gamma'] = "%g" % round(value, 3)
+            self.attrib['Gamma'] = "%g" % round(value, 3)  # type: ignore[attr-defined]
 
     def SetContrastValues(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma: float):
         self.MinIntensityCutoff = MinIntensityCutoff
@@ -103,7 +103,7 @@ class ContrastHandler(object):
                         not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'MaxIntensityCutoff',
                                                                                      MaxIntensityCutoff, 0) or \
                         not nornir_buildmanager.validation.transforms.IsValueMatched(self, 'Gamma', Gamma, 3):
-                    ContrastHandler.logger.warning("Contrast mismatch ignored due to lock on %s" % self.FullPath)
+                    ContrastHandler.logger.warning("Contrast mismatch ignored due to lock on %s" % self.FullPath)  # type: ignore[attr-defined]
                     self._LogContrastMismatch(MinIntensityCutoff, MaxIntensityCutoff, Gamma)
                 return False
 

@@ -37,7 +37,7 @@ class LogTileData(object):
         if self.endAcquisitionTime is None:
             return None
 
-        return self.totalTime - self.settleTime
+        return self.totalTime - self.settleTime  # type: ignore[operator]
 
     @property
     def dwellTime(self):
@@ -85,15 +85,15 @@ class LogTileData(object):
 
     def __init__(self, startDoNextPieceStageMove):
         self.startAcquisitionTime = startDoNextPieceStageMove  # Time when DoNextPiece Starting Capture was logged to begin this tile
-        self.endAcquisitionTime = None  # Time when DoNextPiece Starting stage move was logged to start the next tile
+        self.endAcquisitionTime: float | None = None  # Time when DoNextPiece Starting stage move was logged to start the next tile
 
-        self.stageStopTime = None  # Time when the stage stopped moving
+        self.stageStopTime: float | None = None  # Time when the stage stopped moving
 
         self.driftStamps = []  # Contains tuples of time after stage move completion, measured drift, and measured defocus
-        self.number = None  # The tile number in the capture
+        self.number: int | float | None = None  # The tile number in the capture
         self.driftUnits = None  # nm/sec
         self.defocusUnits = None  # microns
-        self.coordinates = None
+        self.coordinates: tuple[int, int] | None = None
 
 
 class SerialEMLog(object):
@@ -268,13 +268,13 @@ class SerialEMLog(object):
         The time from startup to montage start, minus all other known macro activities such as cooking and filament warmup.
         '''
 
-        return (self.MontageStart - self.StartupTimeStamp) - (
+        return (self.MontageStart - self.StartupTimeStamp) - (  # type: ignore[operator]
                     self.LowMagCookTime + self.HighMagCookTime + self.FilamentStabilizationTime)
 
     @property
     def TotalTileAcquisitionTime(self):
         '''Total time it took to acquire tiles after all preparation steps such as cooking'''
-        return self.MontageEnd - self.MontageStart
+        return self.MontageEnd - self.MontageStart  # type: ignore[operator]
 
     @property
     def ISCalibrationDone(self):
@@ -314,7 +314,7 @@ class SerialEMLog(object):
     @property
     def FinishDateTime(self):
         '''Datetime when the capture was finished, extrapolated from StartupDateTime and other measured durations.'''
-        return self.StartupDateTime + datetime.timedelta(seconds=self.CaptureSetupTime + self.TotalTime)
+        return self.StartupDateTime + datetime.timedelta(seconds=self.CaptureSetupTime + self.TotalTime)  # type: ignore[operator]
 
     @property
     def StartupTimeStamp(self):
@@ -356,13 +356,17 @@ class SerialEMLog(object):
         self._HighMagCookTime = 0
         self._FilamentStabilizationTime = 0
 
-        self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()
+        self._stable_filament_checked: bool = False
+        self._HighMagCookDone: bool = False
+        self._LowMagCookDone: bool = False
+
+        self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()  # type: ignore[attr-defined]
 
     @classmethod
     def VersionCheck(cls, loaded):
-        if loaded.__SerialEMLogVersion != cls._SerialEMLog__ObjVersion():
+        if loaded.__SerialEMLogVersion != cls._SerialEMLog__ObjVersion():  # type: ignore[attr-defined]
             raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (
-            loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion()))
+            loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion()))  # type: ignore[attr-defined]
 
         return
 
@@ -376,10 +380,10 @@ class SerialEMLog(object):
 
         if os.path.exists(picklePath):
             try:
-                with open(picklePath, 'r') as filehandle:
+                with open(picklePath, 'rb') as filehandle:
                     obj = pickle.load(filehandle)
 
-                    if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+                    if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():  # type: ignore[attr-defined]
                         raise Exception("Version mismatch in pickled file: " + picklePath)
             except Exception:
                 try:
@@ -396,7 +400,7 @@ class SerialEMLog(object):
         picklePath = logfullPath + ".pickle"
 
         try:
-            with open(picklePath, 'w') as filehandle:
+            with open(picklePath, 'wb') as filehandle:
                 pickle.dump(self, filehandle)
         except:
             try:
@@ -405,7 +409,7 @@ class SerialEMLog(object):
                 pass
 
     @staticmethod
-    def ReadLine(hLog):
+    def ReadLine(hLog) -> tuple[str | None, float | None, str | None]:
         '''
         Fetch the next line with information from the log
         '''
@@ -438,6 +442,8 @@ class SerialEMLog(object):
             entry = entry.strip()
 
             return line, timestamp, entry
+
+        return None, None, None  # Unreachable but satisfies return type
 
     @staticmethod
     def TryParseLine(line):
@@ -527,6 +533,9 @@ class SerialEMLog(object):
                 if line is None:  # No more lines in the file
                     break
 
+                if entry is None:  # Line had no parseable entry
+                    continue
+
                 # Rarely a log will not have a startup message because it was reset after serialEM was started
                 # In these cases use the earliest timestamp in the file
                 if not timestamp is None:
@@ -570,9 +579,9 @@ class SerialEMLog(object):
                         (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
                         driftTimestamp = None
                         if nextTimestamp is None:
-                            driftTimestamp = LastAutofocusStart - NextTile.stageStopTime
+                            driftTimestamp = LastAutofocusStart - NextTile.stageStopTime  # type: ignore[operator]
                         else:
-                            driftTimestamp = nextTimestamp - NextTile.stageStopTime
+                            driftTimestamp = nextTimestamp - NextTile.stageStopTime  # type: ignore[operator]
 
                         driftValueUnits = cls.ParseValueAndUnits(entry, 'drift')
                         if driftValueUnits is not None:
@@ -605,14 +614,15 @@ class SerialEMLog(object):
 
                 elif entry.endswith('finished stage move'):
                     # Save the last tile
-                    NextTile.stageStopTime = timestamp
+                    if NextTile is not None:
+                        NextTile.stageStopTime = timestamp
 
                 elif entry.startswith('Last update properties file'):
                     (entry, time) = line.split(':', 1)
                     time = time.strip()
                     Data.PropertiesVersion = time
                 elif entry.startswith('Checking for stable filament'):
-                    if Data.StartupDateTime >= datetime.datetime.strptime('04/03/2020', '%m/%d/%Y'):
+                    if Data.StartupDateTime is not None and Data.StartupDateTime >= datetime.datetime.strptime('04/03/2020', '%m/%d/%Y'):
                         continue
                     else:  # The old, less correct, cooking macro that did not reset the timespan measurement from high mag cooking
                         LegacyFilamentWarmupStartTime = LastElapsedTimeReport
@@ -621,7 +631,7 @@ class SerialEMLog(object):
 
                     (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
                     try:
-                        elapsed_str = nextEntry.split()[0]
+                        elapsed_str = nextEntry.split()[0]  # type: ignore[union-attr]
                         elapsed = float(elapsed_str)
 
                         if LegacyFilamentWarmupStartTime is not None:
@@ -637,7 +647,7 @@ class SerialEMLog(object):
                 elif entry.find('Cooking done!') >= 0:
                     (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
                     try:
-                        elapsed_str = nextEntry.split()[0]
+                        elapsed_str = nextEntry.split()[0]  # type: ignore[union-attr]
                         elapsed = float(elapsed_str)
                         Data._HighMagCookTime = elapsed
                     except:
@@ -703,6 +713,9 @@ class SerialEMLog(object):
         while True:
             (line, timestamp, entry) = SerialEMLog.ReadLine(hLog)
             if line is None:
+                break
+
+            if entry is None:
                 break
 
             # No BurnWobble log messages have a timestamp, so if we find one we are done

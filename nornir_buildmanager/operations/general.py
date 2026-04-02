@@ -8,7 +8,8 @@ import logging
 import os
 import shutil
 
-import nornir_buildmanager.volumemanager
+import nornir_buildmanager
+from nornir_buildmanager.volumemanager import XElementWrapper, FilterNode
 import nornir_shared
 from nornir_shared import *
 
@@ -47,7 +48,7 @@ def MovePath(Node, NewPath, **kwargs):
     return Node.Parent
 
 
-def CleanNodeIfInvalid(node: nornir_buildmanager.volumemanager.XElementWrapper, **kwargs):
+def CleanNodeIfInvalid(node: XElementWrapper, **kwargs):
     parent = node.Parent
     (cleaned, reason) = node.CleanIfInvalid()
     if cleaned:
@@ -100,7 +101,7 @@ def RemoveChannelChildNode(Node, IgnoreLock, **kwargs):
     '''Delete a child element of a filter, respecting locks if necessary'''
     Parent = Node.Parent
 
-    if not isinstance(Node, nornir_buildmanager.volumemanager.FilterNode):
+    if not isinstance(Node, FilterNode):
         ParentFilter = Node.FindParent('Channel')
 
     if not ParentFilter is None:
@@ -130,4 +131,4 @@ def SaveVolumeDataToSingleFile(VolumeNode, save_filename=None, **kwargs):
         save_filename = os.path.join(VolumeNode.FullPath, 'VolumeData.SingleFileBackup.xml')
 
     VolumeNode.LoadAllLinkedNodes()
-    VolumeManager.SaveSingleFile(VolumeNode, save_filename)
+    nornir_buildmanager.volumemanager.VolumeManager.SaveSingleFile(VolumeNode, save_filename)

@@ -4,8 +4,11 @@ Created on Jun 7, 2012
 @author: Jamesan
 '''
 
+from __future__ import annotations
+
 import re
 import sys
+from typing import Any
 
 import nornir_shared.prettyoutput as prettyoutput
 
@@ -13,14 +16,20 @@ import nornir_shared.prettyoutput as prettyoutput
 class XSubPath(object):
     '''Represents a level of an XPath string, returned by XPathIterator'''
 
-    def __init__(self):
-        #        IsAttribute = False;
-        #        Name = None;
-        #        Operator = None;
-        #        Value = None;
-        #        Path = None;
-        #        RawPath = None;
-        return
+    RawPath: str | None
+    IsAttribute: bool
+    Value: str | float | None
+    Name: str | None
+    Operator: str | None
+    Path: str | None
+
+    def __init__(self) -> None:
+        self.RawPath = None
+        self.IsAttribute = False
+        self.Value = None
+        self.Name = None
+        self.Operator = None
+        self.Path = None
 
     def __str__(self):
         s = ""
@@ -75,7 +84,7 @@ def XPathIterator(XPath: str):
 
         obj.IsAttribute = not matches.group('IsAttribute') is None
 
-        if obj.Value is not None:
+        if obj.Value is not None and isinstance(obj.Value, str):
             if obj.Value[0] == "'" and obj.Value[-1] == "'" and len(obj.Value) >= 3:
                 obj.Value = obj.Value[1:-2]
             elif obj.Value[0] == '"' and obj.Value[-1] == '"' and len(obj.Value) >= 3:

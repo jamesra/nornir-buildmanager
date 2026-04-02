@@ -47,7 +47,7 @@ def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | Non
                     continue
 
             if meta_data.number is None:
-                prettyoutput.error("Could not parse section number from {0} filename".format(idocFullPath))
+                prettyoutput.error("Could not parse section number from {0} filename".format(os.path.join(ImportPath, entry.name)))
             else:
                 if meta_data.number in found_sections:
                     found_sections[meta_data.number].append(meta_data)

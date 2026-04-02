@@ -22,9 +22,18 @@ import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
 from . import argparsexml
 from .pipeline_exceptions import *
-import nornir_buildmanager.volumemanager
+from nornir_buildmanager.exceptions import (
+    NornirMissingDependencyException,
+    NornirRethrownException,
+)
+from nornir_buildmanager.volumemanager import (
+    XElementWrapper,
+    XResourceElementWrapper,
+    XContainerElementWrapper,
+    VolumeManager,
+)
 
-T = TypeVar('T')
+T = TypeVar('T', covariant=True)
 
 
 class SupportsRead(Protocol[T]):
@@ -357,7 +366,7 @@ class PipelineManager:
 
         cls.logger.info("Enumerating available pipelines")
         prettyoutput.Log("Enumerating available pipelines")
-        for pipeline in PipelineXML.getroot():
+        for pipeline in PipelineXML.getroot() or []:  # type: ignore[union-attr]
             cls.logger.info('  ' + pipeline.attrib.get('Name', ""))
             prettyoutput.Log('  ' + pipeline.attrib.get('Name', ""))
             prettyoutput.Log('    ' + pipeline.attrib.get('Description', "") + '\n')
@@ -376,14 +385,14 @@ class PipelineManager:
             return ElementTree.ElementTree(PipelineXML)
         elif isinstance(PipelineXML, str):
             try:
-                return ElementTree.parse(PipelineXML)
+                return ElementTree.parse(PipelineXML)  # type: ignore[return-value]
             except FileNotFoundError:
                 PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXML)
                 prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXML)
                 sys.exit()
         elif isinstance(PipelineXML, bytes):
             str_xml = PipelineXML.decode('utf-8')
-            return ElementTree.ElementTree(ElementTree.fromstring(str_xml))
+            return ElementTree.ElementTree(ElementTree.fromstring(str_xml))  # type: ignore[return-value]
 
         raise Exception("Invalid argument: " + str(PipelineXML))
 
@@ -418,7 +427,7 @@ class PipelineManager:
                 cls.PrintPipelineEnumeration(XMLDoc)
                 return None
 
-        return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)
+        return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)  # type: ignore[arg-type]
 
     @classmethod
     def RunPipeline(cls, PipelineXmlFile: str | ElementTree.ElementTree, PipelineName: str, args):
@@ -426,7 +435,7 @@ class PipelineManager:
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
         Pipeline = cls.Load(PipelineXmlFile, PipelineName)
 
-        Pipeline.Execute(args)
+        Pipeline.Execute(args)  # type: ignore[union-attr]
 
     def GetArgParser(self, parser=None, IncludeGlobals: bool = True):
         """Create the complete argument parser for the pipeline
@@ -470,7 +479,7 @@ class PipelineManager:
         return xpath
 
     @classmethod
-    def GetSearchRoot(cls, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode, ArgSet):
+    def GetSearchRoot(cls, VolumeElem: XElementWrapper, PipelineNode, ArgSet):
         RootIterNodeName = PipelineNode.get('Root', None)
         RootForSearch = VolumeElem
         if RootIterNodeName is not None:
@@ -503,7 +512,7 @@ class PipelineManager:
         ArgSet.AddParameters(PipelineElement)
 
         # Load the Volume.XML file in the output directory
-        self.VolumeTree = nornir_buildmanager.volumemanager.VolumeManager.Load(args.volumepath, Create=True)
+        self.VolumeTree = VolumeManager.Load(args.volumepath, Create=True)
 
         if self.VolumeTree is None:
             PipelineManager.logger.critical("Could not load or create volume.xml " + args.outputpath)
@@ -516,7 +525,7 @@ class PipelineManager:
 
         nornir_pools.WaitOnAllPools()
 
-    def ExecuteChildPipelines(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper,
+    def ExecuteChildPipelines(self, ArgSet, VolumeElem: XElementWrapper,
                               PipelineNode):
         """Run all of the child pipeline elements on the volume element"""
 
@@ -533,11 +542,11 @@ class PipelineManager:
                     self.ProcessStageElement(VolumeElem, ChildNode, ArgSet)
                     PipelinesRun += 1
 
-                except nornir_buildmanager.NornirMissingDependencyException as e:
+                except NornirMissingDependencyException as e:
                     # This means builds cannot succeed.  We should clearly warn the user and stop so the cause of failure is clear
                     PipelineManager.logger.error(e.message)
                     prettyoutput.LogErr(e.message)
-                    raise nornir_buildmanager.NornirRethrownException() from e
+                    raise NornirRethrownException() from e
                 except PipelineSelectFailed as e:
                     if ArgSet.Arguments["debug"]:
                         PipelineManager.logger.info(str(e))
@@ -549,7 +558,7 @@ class PipelineManager:
                     break
                 except PipelineListIntersectionFailed as e:
                     PipelineManager.logger.info(
-                        "Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + e.message)
+                        "Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + str(e.message))  # type: ignore[operator]
                     break
                 except PipelineRegExSearchFailed as e:
                     PipelineManager.logger.info(
@@ -560,7 +569,7 @@ class PipelineManager:
                     errStr = "Unexpected error, exiting pipeline\n" + str(e.message)
                     PipelineManager.logger.error(errStr)
                     prettyoutput.LogErr(errStr)
-                    raise nornir_buildmanager.NornirRethrownException() from e
+                    raise NornirRethrownException() from e
                 finally:
                     prettyoutput.DecreaseIndent()
 
@@ -570,7 +579,7 @@ class PipelineManager:
         # To prevent later calls from being able to access variables from earlier steps be sure to remove the variable from the dargs
         return PipelinesRun
 
-    def ProcessStageElement(self, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode,
+    def ProcessStageElement(self, VolumeElem: XElementWrapper, PipelineNode,
                             ArgSet=None):
 
         # outStr = PipelineManager.ToElementString(PipelineNode)
@@ -581,7 +590,7 @@ class PipelineManager:
         # Copy dargs so we do not modify what the parent passed us
         # dargs = copy.copy(dargs)
 
-        if isinstance(VolumeElem, nornir_buildmanager.volumemanager.XResourceElementWrapper):
+        if isinstance(VolumeElem, XResourceElementWrapper):
             prettyoutput.CurseString("Meta", VolumeElem.FullPath)
 
         if PipelineNode.tag == 'Select':
@@ -606,7 +615,7 @@ class PipelineManager:
             raise Exception("Unexpected element name in Pipeline.XML: " + PipelineNode.tag)
 
     @staticmethod
-    def RequireSetMembership(ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
+    def RequireSetMembership(ArgSet, VolumeElem: XElementWrapper, PipelineNode):
         """If the attribute value is not present in the provided list the element is skipped.
            If the provided list is none we do not skip."""
 
@@ -642,7 +651,7 @@ class PipelineManager:
         return
 
     @staticmethod
-    def ProcessRequireMatchNode(ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
+    def ProcessRequireMatchNode(ArgSet, VolumeElem: XElementWrapper, PipelineNode):
         """If the regular expression does not match the attribute an exception is raised.
            This skips the current iteration of an enclosing <iterate> element"""
 
@@ -674,7 +683,7 @@ class PipelineManager:
 
         return
 
-    def ProcessSelectNode(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
+    def ProcessSelectNode(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, ArgSet)
 
@@ -689,7 +698,7 @@ class PipelineManager:
 
             # Containers will be tested at load time.  The load linked element code checks containers
             if not isinstance(SelectedVolumeElem,
-                              nornir_buildmanager.volumemanager.xcontainerelementwrapper.XContainerElementWrapper):
+                              XContainerElementWrapper):
                 if SelectedVolumeElem.NeedsValidation:
                     (IsValid, Reason) = SelectedVolumeElem.IsValid()
                     if not IsValid:
@@ -707,7 +716,7 @@ class PipelineManager:
         if SelectedVolumeElem is not None:
             self.AddPipelineNodeVariable(PipelineNode, SelectedVolumeElem, ArgSet)
 
-    def ProcessIterateNode(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
+    def ProcessIterateNode(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, ArgSet)
 
@@ -751,11 +760,11 @@ class PipelineManager:
                     if node is None:
                         continue
 
-                    nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(node)
+                    VolumeManager.Save(node)
             else:
-                nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(NodesToSave)
+                VolumeManager.Save(NodesToSave)
 
-    def ProcessPythonCall(self, ArgSet, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, PipelineNode):
+    def ProcessPythonCall(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
         # PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
         PipelineModule = PipelineNode.get("Module", "nornir_buildmanager.operations")
@@ -814,8 +823,8 @@ class PipelineManager:
                         PipelineManager.logger.error(errorStr)
                         # prettyoutput.LogErr(errorStr)
 
-                        self.VolumeTree = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(
-                            self.VolumeTree.attrib["Path"], UseCache=False)
+                        self.VolumeTree = VolumeManager.Load(
+                            self.VolumeTree.attrib["Path"], UseCache=False)  # type: ignore[union-attr]
                         return
 
 
@@ -839,7 +848,7 @@ class PipelineManager:
     #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
 
     @staticmethod
-    def AddPipelineNodeVariable(PipelineNode, VolumeElem: nornir_buildmanager.volumemanager.XElementWrapper, ArgSet):
+    def AddPipelineNodeVariable(PipelineNode, VolumeElem: XElementWrapper, ArgSet):
         """Adds a variable to our dictionary passed to functions"""
         if 'VariableName' in PipelineNode.attrib:
             key = PipelineNode.attrib['VariableName']

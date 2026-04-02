@@ -108,6 +108,8 @@ class XResourceElementWrapper(lockable.Lockable,
         """
         try:
             dir_mod_time = self.LastFileSystemModificationTime
+            if dir_mod_time is None:
+                return True
             return self.ValidationTime < dir_mod_time
         except FileNotFoundError:  # If the file or directory is missing that is a change :-)
             return True

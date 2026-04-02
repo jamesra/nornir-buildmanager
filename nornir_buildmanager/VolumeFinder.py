@@ -64,12 +64,12 @@ def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
     assert (isinstance(RowOrderList, list))
 
     try:
-        ImageWidth = int(kwargs.get('ImageWidth', None))
+        ImageWidth = int(kwargs.get('ImageWidth', None))  # type: ignore[arg-type]
     except:
         ImageWidth = None
 
     try:
-        ImageHeight = int(kwargs.get('ImageHeight', None))
+        ImageHeight = int(kwargs.get('ImageHeight', None))  # type: ignore[arg-type]
     except:
         ImageHeight = None
 
@@ -175,14 +175,14 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
         dirImageList = dirDict.get(directory, [])
 
         for pattern in RegExpPatterns:
-            filesMatchingPattern = glob.glob(os.path.join(directory, pattern))
+            filesMatchingPattern = glob.glob(os.path.join(str(directory), pattern))
 
             for filename in filesMatchingPattern:
-                filenameFullPath = os.path.join(directory, filename)
+                filenameFullPath = os.path.join(str(directory), filename)
                 dirImageList.append(filenameFullPath)  # Should check if it exists maybe
 
         for filename in requiredFiles:
-            filenameFullPath = os.path.join(directory, filename)
+            filenameFullPath = os.path.join(str(directory), filename)
             if os.path.exists(filenameFullPath):
                 dirImageList.append(filenameFullPath)  # Should check if it exists maybe
 
@@ -276,7 +276,7 @@ if __name__ == '__main__':
 
     webPageFullPath = os.path.join(path, 'Index.html')
     f = open(webPageFullPath, 'w')
-    f.write(webPageStr)
+    f.write(webPageStr or '')
     f.close()
 
     print("All Done!")

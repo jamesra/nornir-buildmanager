@@ -1,34 +1,39 @@
+from __future__ import annotations
+
 from _operator import attrgetter
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager as volumemanager
+from nornir_buildmanager.volumemanager import LevelNode
 
 
 class PyramidLevelHandler(object):
 
     @property
-    def Levels(self) -> [volumemanager.LevelNode]:
-        return sorted(self.findall('Level'), key=attrgetter('Downsample'))
+    def Levels(self) -> list[LevelNode]:
+        return sorted(self.findall('Level'), key=attrgetter('Downsample'))  # type: ignore[attr-defined]
+
 
     @property
-    def MaxResLevel(self) -> volumemanager.LevelNode:
+    def MaxResLevel(self) -> LevelNode:
         """Return the level with the highest resolution"""
         return self.Levels[0]
 
     @property
-    def MinResLevel(self) -> volumemanager.LevelNode:
+    def MinResLevel(self) -> LevelNode:
         """Return the level with the highest resolution"""
         return self.Levels[-1]
 
-    def GetLevel(self, Downsample: float) -> volumemanager.LevelNode:
+    def GetLevel(self, Downsample: float) -> LevelNode:
         """
         :param float Downsample: Level downsample factor from full-res data
         :return: Level node for downsample node
         :rtype LevelNode:
         """
-        return self.GetChildByAttrib("Level", "Downsample", "%g" % Downsample)
+        return self.GetChildByAttrib("Level", "Downsample", "%g" % Downsample)  # type: ignore[attr-defined]
 
-    def GetOrCreateLevel(self, Downsample: float, GenerateData: bool = True) -> (bool, volumemanager.LevelNode | None):
+
+    def GetOrCreateLevel(self, Downsample: float, GenerateData: bool = True) -> tuple[bool, LevelNode | None]:
         """
             :param float Downsample: Level downsample factor from full-res data
             :param bool GenerateData: True if missing data should be generated.  Defaults to true.
@@ -44,7 +49,7 @@ class PyramidLevelHandler(object):
                             nornir_buildmanager.volumemanager.TilePyramidNode):  # hasattr(self, 'NumberOfTiles'): #If this is a tile pyramid with many images regenerate if the verified tile count != NumberOfTiles.  If there is a mismatch regenerate
                 self.TryToMakeLevelValid(existingLevel)
 
-        (added, lnode) = self.UpdateOrAddChildByAttrib(
+        (added, lnode) = self.UpdateOrAddChildByAttrib(  # type: ignore[attr-defined]
             nornir_buildmanager.volumemanager.LevelNode.Create(Downsample), "Downsample")
         return added, lnode
 
@@ -62,12 +67,12 @@ class PyramidLevelHandler(object):
     def GetScale(self) -> float | None:
         """Return the size of a pixel at full resolution"""
 
-        Parent = self.Parent
+        Parent = self.Parent  # type: ignore[attr-defined]
         while Parent is not None:
-            if Parent.hasattr('Scale'):
+            if hasattr(Parent, 'Scale'):
                 return Parent.Scale
 
-            Parent = self.Parent
+            Parent = self.Parent  # type: ignore[attr-defined]
 
         return None
 

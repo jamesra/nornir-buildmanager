@@ -203,6 +203,8 @@ def reverse_angle_for_rigid_transforms(filename: str) -> tuple[bool, nornir_imag
         return False, None
 
     obj = nornir_imageregistration.files.StosFile.Load(filename)
+    if obj.Transform is None:
+        return False, None
     transform = nornir_imageregistration.transforms.LoadTransform(obj.Transform, pixelSpacing=1)
     #This patch only applies to rigid transforms
     if not isinstance(transform, nornir_imageregistration.transforms.Rigid):
@@ -272,7 +274,7 @@ def ReverseRigidTransformAngles(transform_node: nornir_buildmanager.volumemanage
 def RepairCroppedXMLFilesInElement(volume_element: nornir_buildmanager.volumemanager.VolumeNode, **kwargs):
     for child_folder, matches in nornir_shared.files.RecurseSubdirectoriesGenerator(volume_element.FullPath,
                                                                                     ExcludedFiles=[],
-                                                                                    ExcludeNames=nornir_shared.files.DefaultLevelStrings):
+                                                                                    ExcludeNames=list(nornir_shared.files.DefaultLevelStrings)):
         #print(child_folder)
         TryRepairXMLFileAppendError(os.path.join(child_folder, "VolumeData.xml"))
 

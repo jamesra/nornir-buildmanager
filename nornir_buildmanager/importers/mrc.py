@@ -16,8 +16,9 @@ from typing import Literal
 
 import numpy
 import numpy as np
-from numpy.typing import DTypeLike
+from numpy.typing import DTypeLike, NDArray
 
+import nornir_pools
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 import nornir_buildmanager.importers.shared as shared
 from nornir_buildmanager.volumemanager import *
@@ -36,8 +37,8 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     if extension is None:
         extension = 'mrc'
 
-    MinCutoff = float(kwargs.get('Min'))
-    MaxCutoff = float(kwargs.get('Max'))
+    MinCutoff = float(kwargs.get('Min'))  # type: ignore[arg-type]
+    MaxCutoff = float(kwargs.get('Max'))  # type: ignore[arg-type]
     ContrastCutoffs = (MinCutoff, MaxCutoff)
 
     if not os.path.exists(ImportPath):
@@ -55,7 +56,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                                                    ExcludedDownsampleLevels=[])
     for m in matches:
         (path, foundfiles) = m
-        foundfiles = [os.path.join(path, f) for f in foundfiles]
+        foundfiles = [os.path.join(path, f) for f in (foundfiles or [])]
         prettyoutput.CurseString("MRCImport", "Importing *.{0} from {1}".format(extension, path))
         for file_fullpath in foundfiles:
             yield from MRCImport.ToMosaic(VolumeElement,
@@ -79,7 +80,7 @@ class MRCImport:
     @classmethod
     def ToMosaic(cls, VolumeObj: VolumeNode, mrc_fullpath: str,
                  ContrastCutoffs: tuple[float, float],
-                 Extension: str | None = None, OutputImageExt: str = None,
+                 Extension: str | None = None, OutputImageExt: str | None = None,
                  TileOverlap=None, TargetBpp: int | None = None, FlipList: list[int] | None = None,
                  ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
                  CameraBpp: int | None = None,
@@ -155,7 +156,7 @@ class MRCImport:
         contrast_settings = shared.GetSectionContrastSettings(section_number=SectionNumber,
                                                               contrast_map=ContrastMap,
                                                               contrast_cutoffs=ContrastCutoffs,
-                                                              calculate_histogram=lambda: cls.CalculateHistogram(
+                                                              calculate_histogram=lambda: cls.CalculateHistogram(  # type: ignore[arg-type]
                                                                   mrc_obj=mrcfile, bpp=bpp),
                                                               histogram_cache_path=histogram_cache_path)
 
@@ -199,7 +200,7 @@ class MRCImport:
             (yield channelObj)
 
         (added_tilepyramid, PyramidNodeObj) = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode.Create(Type='stage',
-                                                                                                        NumberOfTiles=mrcfile.num_tiles),
+                                                                                                        NumberOfTiles=mrcfile.num_tiles),  # type: ignore[arg-type]
                                                                                  'Path')
         if added_tilepyramid:
             (yield filterObj)
@@ -208,6 +209,7 @@ class MRCImport:
         if added_level:
             (yield PyramidNodeObj)
 
+        assert LevelObj is not None
         os.makedirs(LevelObj.FullPath, exist_ok=True)
 
         if not os.path.exists(transformObj.FullPath):
@@ -232,9 +234,9 @@ class MRCImport:
 
     @staticmethod
     def cache_tiles(mrcfile: MRCFile, output_dir: str, img_ext: str, min_max_gamma: shared.MinMaxGamma | None):
-        with tempfile.gettempdir() as temp_dir:
-            pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)
-            for iTile in range(0, mrcfile.num_tiles):
+        with tempfile.gettempdir() as temp_dir:  # type: ignore[attr-defined]
+            pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)  # type: ignore[operator]
+            for iTile in range(0, mrcfile.num_tiles):  # type: ignore[arg-type]
                 pool.add_task(str(iTile),
                               MRCImport.ExportImage,
                               mrcfile,
@@ -248,6 +250,9 @@ class MRCImport:
     @staticmethod
     def CalculateHistogram(mrc_obj: str | MRCFile, bpp: float):
         """Construct a composite histogram from all images in the MRC file"""
+        if isinstance(mrc_obj, str):
+            mrc_obj = MRCFile.Load(mrc_obj)
+
         composite_histogram = None
 
         pool = nornir_pools.GetGlobalThreadPool()
@@ -265,7 +270,7 @@ class MRCImport:
                               img,
                               bpp=bpp,
                               num_bins=num_bins)
-            t.iTile = iTile
+            t.iTile = iTile  # type: ignore[attr-defined]
             tasks.append(t)
 
         for t in tasks:
@@ -291,7 +296,7 @@ class MRCImport:
         #pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)
         #pool = nornir_pools.GetGlobalSerialPool()
 
-        for iTile in range(0, mrc_obj.num_tiles):
+        for iTile in range(0, mrc_obj.num_tiles):  # type: ignore[arg-type]
             pool.add_task(str(iTile),
                           cls.ExportImage,
                           mrc_obj,
@@ -305,6 +310,9 @@ class MRCImport:
     @staticmethod
     def ExportImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
                     min_max_gamma: shared.MinMaxGamma | None = None) -> bool:
+        if isinstance(mrc_obj, str):
+            mrc_obj = MRCFile.Load(mrc_obj)
+
         filename = GetFileNameForTileNumber(tile_number=iTile, ext=img_ext)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(output_dir, filename)
         if nornir_shared.images.IsValidImage(output_fullpath):
@@ -353,14 +361,14 @@ class MRCImport:
 
         if CameraBpp is not None:
             camera_max_val = (1 << CameraBpp) - 1
-            maxval = min(maxval, camera_max_val)
+            maxval = min(maxval, camera_max_val)  # type: ignore[arg-type]
 
         if SectionNumber in ContrastMap:
             minval = ContrastMap[SectionNumber].Min
             maxval = ContrastMap[SectionNumber].Max
             Gamma = ContrastMap[SectionNumber].Gamma
 
-        return shared.MinMaxGamma(minval, maxval, Gamma)
+        return shared.MinMaxGamma(minval, maxval, Gamma)  # type: ignore[arg-type]
 
     @staticmethod
     def CreateMosaic(mrcfile, img_ext: str) -> nornir_imageregistration.Mosaic:
@@ -393,26 +401,29 @@ class MRCFile:
     """
     HeaderLength = 1024
 
-    grid_dim: NDArray[int]
-    grid_cell_dim: NDArray[np.floating]
-    pixel_spacing: NDArray[np.floating]
-    min_pixel_value: float
-    max_pixel_value: float
-    mean_pixel_value: float
-    extended_header_size: int
-    tile_header_size: int
-    tile_header_flags: int
-    img_origin: NDArray[np.floating]
-    imod_flags: int
+    grid_dim: NDArray[np.integer] | None
+    grid_cell_dim: NDArray[np.floating] | None
+    pixel_spacing: NDArray[np.floating] | None
+    min_pixel_value: float | None
+    max_pixel_value: float | None
+    mean_pixel_value: float | None
+    extended_header_size: int | None
+    tile_header_size: int | None
+    tile_header_flags: int | None
+    img_origin: NDArray[np.floating] | None
+    imod_flags: int | None
+    mapx: int | None
+    mapy: int | None
+    mapz: int | None
     tile_meta: list[MRCTileHeader]
 
     _temp_dir: str  # Temporary directory to store numpy arrays of each tile image in the MRC file.  Used with a context manager to clean up the temporary files
 
     @property
     def scale(self) -> Scale:
-        return Scale(X=self.pixel_spacing[0],
-                     Y=self.pixel_spacing[1],
-                     Z=self.pixel_spacing[2])
+        return Scale(X=self.pixel_spacing[0],  # type: ignore[index]
+                     Y=self.pixel_spacing[1],  # type: ignore[index]
+                     Z=self.pixel_spacing[2])  # type: ignore[index]
 
     @staticmethod
     def IsBigEndian(Header: bytes) -> bool:
@@ -463,12 +474,12 @@ class MRCFile:
 
         (imod_stamp,) = struct.unpack(obj.EndianChar + 'I', Header[0x98: 0x9C])
         if imod_stamp == 1146047817:
-            obj.imod_flags = struct.unpack(obj.EndianChar + 'I', Header[0x9C: 0xA0])
+            (obj.imod_flags,) = struct.unpack(obj.EndianChar + 'I', Header[0x9C: 0xA0])
 
         (img_origin_x, img_origin_y, img_origin_z,) = struct.unpack(obj.EndianChar + 'fff', Header[0xC4: 0xD0])
         obj.img_origin = numpy.asarray((img_origin_x, img_origin_y, img_origin_z), numpy.float64)
 
-        for i in range(obj.num_tiles):
+        for i in range(obj.num_tiles):  # type: ignore[arg-type]
             tile_meta = obj.ReadTileMeta(mrc, i)
             obj.tile_meta.append(tile_meta)
 
@@ -507,11 +518,11 @@ class MRCFile:
         elif self.img_pixel_mode == 1:
             dtype = numpy.int16
         elif self.img_pixel_mode == 2:
-            dtype = numpy.float
+            dtype = numpy.float32
         elif self.img_pixel_mode == 3:
             dtype = numpy.dtype([('real', numpy.uint16), ('i', numpy.uint16)])
         elif self.img_pixel_mode == 4:
-            dtype = numpy.complex
+            dtype = numpy.complex128
         elif self.img_pixel_mode == 6:
             dtype = numpy.uint16
         elif self.img_pixel_mode == 16:
@@ -522,7 +533,7 @@ class MRCFile:
         sys_is_be = sys.byteorder == 'big'
         if sys_is_be != self.IsBigEndian:
             # OK, change the byte order of the numpy type
-            dtype = dtype.newbyteorder(self.EndianChar)
+            dtype = numpy.dtype(dtype).newbyteorder(self.EndianChar)
 
         return dtype
 
@@ -574,7 +585,7 @@ class MRCFile:
         """
         Return the offset to the first pixel of a tile
         """
-        first_image_offset = MRCFile.HeaderLength + self.extended_header_size
+        first_image_offset = MRCFile.HeaderLength + self.extended_header_size  # type: ignore[operator]
         image_byte_size = self.img_shape.prod() * self.bytes_per_pixel
 
         image_offset = first_image_offset + (image_byte_size * iTile)
@@ -646,9 +657,9 @@ class MRCFile:
         img = numpy.frombuffer(image_bytes, dtype=self.pixel_dtype, count=self.img_shape.prod()).reshape(self.img_shape)
         return img
 
-    def get_tile_as_numpy_memmap(self, iTile: int) -> bytes:
+    def get_tile_as_numpy_memmap(self, iTile: int) -> NDArray:
         """
-        Return bytes
+        Return a numpy memmap array
         """
         image_offset = self._get_image_offset(iTile)
         return np.memmap(filename=self.mrc, mode='c', dtype=self.pixel_dtype, shape=self.img_shape.prod(),
@@ -659,21 +670,21 @@ class MRCFile:
         Return a pillow image
         """
         image_bytes = self.get_tile_as_bytes(iTile)
-        im = PIL.Image.frombytes(data=image_bytes, mode=self.pil_pixel_mode,
+        im = PIL.Image.frombytes(data=image_bytes, mode=self.pil_pixel_mode,  # type: ignore[attr-defined]
                                  size=(self.img_shape[1], self.img_shape[0]))
         im = im.convert(mode='I')
         return im
 
     def ReadTileMeta(self, mrc, iTile: int) -> MRCTileHeader:
-        mrc.seek(MRCFile.HeaderLength + (iTile * self.tile_header_size))
+        mrc.seek(MRCFile.HeaderLength + (iTile * self.tile_header_size))  # type: ignore[operator]
         TileHeader = mrc.read(self.tile_header_size)
-        while len(TileHeader) < self.tile_header_size:
-            TileHeader = TileHeader + mrc.read(self.tile_header_size - len(TileHeader))
+        while len(TileHeader) < self.tile_header_size:  # type: ignore[operator]
+            TileHeader = TileHeader + mrc.read(self.tile_header_size - len(TileHeader))  # type: ignore[operator]
 
         return MRCTileHeader.Load(iTile, TileHeader,
-                                  tile_flags=self.tile_header_flags,
-                                  nm_per_pixel=self.pixel_spacing[0:2],
-                                  big_endian=self.IsBigEndian)
+                                  tile_flags=self.tile_header_flags,  # type: ignore[arg-type]
+                                  nm_per_pixel=self.pixel_spacing[0:2],  # type: ignore[arg-type]
+                                  big_endian=self.IsBigEndian)  # type: ignore[arg-type]
 
     @property
     def img_shape(self) -> NDArray[np.int64]:
@@ -681,17 +692,15 @@ class MRCFile:
 
     def __init__(self, mrc, isBigEndian: bool = False):
         self.mrc = mrc
-        self.IsBigEndian = isBigEndian  # True for big-endian
+        self.IsBigEndian = isBigEndian  # type: ignore[assignment]
 
         self.img_XDim = None
         self.img_YDim = None
         self.num_tiles = None
-
         self.img_pixel_mode = None
-
         self.grid_dim = None
         self.grid_cell_dim = None
-        self.pixel_spacing = None  # Pixel spacing in nanometers 
+        self.pixel_spacing = None  # Pixel spacing in nanometers
 
         self.min_pixel_value = None
         self.max_pixel_value = None
@@ -704,6 +713,10 @@ class MRCFile:
 
         self.tile_header_size = None
         self.tile_header_flags = None
+
+        self.mapx = None
+        self.mapy = None
+        self.mapz = None
 
         self.tile_meta = []
 
@@ -721,7 +734,7 @@ class MRCTileHeader:
     ID: int
     nm_per_pixel: float | NDArray[np.floating]
     tilt_angle: float | None
-    piece_coords: NDArray[int] | None
+    piece_coords: NDArray[np.integer] | None
     stage_coords: NDArray[np.floating] | None
     mag: float | None
     intensity: float | None
@@ -739,7 +752,7 @@ class MRCTileHeader:
         return pixel_coord
 
     @property
-    def pixel_coords(self) -> NDArray[np.floating]:
+    def pixel_coords(self) -> NDArray[np.floating] | None:
         return self._pixel_coords
 
     @staticmethod
@@ -760,7 +773,7 @@ class MRCTileHeader:
 
         if tile_flags & MRCTileHeaderFlags.TiltAngle:
             (obj.tilt_angle,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
-            obj.tilt_angle = float(obj.tilt_angle) / 100.0
+            obj.tilt_angle = float(obj.tilt_angle) / 100.0  # type: ignore[arg-type]
             offset += 2
 
         if tile_flags & MRCTileHeaderFlags.PieceCoord:
@@ -776,12 +789,12 @@ class MRCTileHeader:
 
         if tile_flags & MRCTileHeaderFlags.Magnification:
             (obj.mag,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
-            obj.mag = float(obj.mag) * 100.0
+            obj.mag = float(obj.mag) * 100.0  # type: ignore[arg-type]
             offset += 2
 
         if tile_flags & MRCTileHeaderFlags.Intensity:
             (obj.intensity,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
-            obj.intensity = float(obj.intensity) / 25000.0
+            obj.intensity = float(obj.intensity) / 25000.0  # type: ignore[arg-type]
             offset += 2
 
         if tile_flags & MRCTileHeaderFlags.Exposure:

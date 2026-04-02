@@ -15,7 +15,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
 
     @property
     def LevelFormat(self) -> str:
-        return self.attrib.get('LevelFormat', None)
+        return self.attrib.get('LevelFormat', None)  # type: ignore[return-value]
 
     @LevelFormat.setter
     def LevelFormat(self, val: str):
@@ -32,7 +32,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
 
     @property
     def ImageFormatExt(self) -> str:
-        return self.attrib.get('ImageFormatExt', None)
+        return self.attrib.get('ImageFormatExt', None)  # type: ignore[return-value]
 
     @ImageFormatExt.setter
     def ImageFormatExt(self, val: str):
@@ -47,7 +47,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
             if len(m) == 0:
                 m = None
 
-        return m
+        return m  # type: ignore[return-value]
 
     @Type.setter
     def Type(self, val: str | None):
@@ -80,7 +80,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
                     if ext != expectedExtension:
                         continue
 
-                    images.add(item.path)
+                    images.append(item.path)
 
             return True, images
 
@@ -91,7 +91,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
     def NeedsValidation(self) -> bool:
         return True
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """Remove level directories without files, or with more files than they should have"""
 
         (valid, reason) = super(TilePyramidNode, self).IsValid()
@@ -121,7 +121,7 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         level_has_changes = level_node.ChangesSinceLastValidation
 
         if level_has_changes is None:
-            return [False, '{0} directory does not exist'.format(level_full_path)]
+            return (False, '{0} directory does not exist'.format(level_full_path))
 
         if level_has_changes:
             prettyoutput.Log('Validating tiles in {0}, directory was modified since last check'.format(level_full_path))
@@ -131,12 +131,12 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         if self.NumberOfTiles == level_node.TilesValidated:
             return (
                 True, "Tiles validated previously, directory has not been modified, and # validated == # in Pyramid")
-        elif self.NumberOfTiles < level_node.TilesValidated:
+        elif self.NumberOfTiles < level_node.TilesValidated:  # type: ignore[operator]
             return True, "More tiles validated than expected in level"
         else:
             return False, "Fewer tiles validated than expected in level"
 
-    def TryToMakeLevelValid(self, level_node: LevelNode):
+    def TryToMakeLevelValid(self, level_node: LevelNode) -> tuple[bool, str]:
         """
         :param level_node:
     """

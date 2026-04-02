@@ -64,6 +64,8 @@ class AutoLevelHintNode(XElementWrapper):
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
             tag = 'AutoLevelHint'
+        if attrib is None:
+            attrib = {}
 
         super(AutoLevelHintNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
@@ -75,8 +77,8 @@ class AutoLevelHintNode(XElementWrapper):
 
         obj = AutoLevelHintNode(attrib=attrib)
 
-        obj.UserRequestedMinIntensityCutoff = MinIntensityCutoff
-        obj.UserRequestedMaxIntensityCutoff = MaxIntensityCutoff
-        obj.UserRequestedGamma = Gamma
+        obj.UserRequestedMinIntensityCutoff = MinIntensityCutoff  # type: ignore[assignment]
+        obj.UserRequestedMaxIntensityCutoff = MaxIntensityCutoff  # type: ignore[assignment]
+        obj.UserRequestedGamma = Gamma  # type: ignore[assignment]
 
         return obj

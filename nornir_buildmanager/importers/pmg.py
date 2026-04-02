@@ -32,6 +32,7 @@ Example:
 
 """
 
+from typing import cast
 from nornir_buildmanager.importers import GetFlipList, filenameparser
 from nornir_buildmanager.operations.tile import VerifyTiles
 from nornir_buildmanager.volumemanager import *
@@ -51,9 +52,9 @@ def Import(VolumeElement, ImportPath, scaleValueInNm, extension=None, *args, **k
 
     matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension,
                                                                  ExcludeNames=[], ExcludedDownsampleLevels=[])
-    for m in matches:
+    for m in matches:  # type: ignore[union-attr]
         (path, foundfiles) = m
-        foundfiles = [os.path.join(path, f) for f in foundfiles]
+        foundfiles = [os.path.join(path, f) for f in (foundfiles or [])]
         for idocFullPath in foundfiles:
             PMGImport.ToMosaic(VolumeElement, idocFullPath, scaleValueInNm, VolumeElement.FullPath, *args, **kwargs)
 
@@ -133,7 +134,7 @@ class PMGImport(object):
 
         ChannelName = None
         # TODO wrap in try except and print nice error on badly named files?
-        PMG = ParseFilename(PMGFullPath, pmgMappings)
+        PMG = cast(PMGInfo, ParseFilename(PMGFullPath, pmgMappings))
         PMGDir = os.path.dirname(PMGFullPath)
 
         if PMG is None:
@@ -148,7 +149,7 @@ class PMGImport(object):
 
         # Calculate our output directory.  The scripts expect directories to have section numbers, so use that.
         ChannelName = PMG.Probe
-        ChannelName = ChannelName.replace(' ', '_')
+        ChannelName = ChannelName.replace(' ', '_') if ChannelName is not None else ''
         channelObj = ChannelNode.Create(ChannelName)
         channelObj.SetScale(scaleValueInNm)
         [channelAdded, channelObj] = sectionObj.UpdateOrAddChildByAttrib(channelObj, 'Name')

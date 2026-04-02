@@ -36,14 +36,14 @@ class HistogramNode(HistogramBase):
 
     @property
     def Image(self) -> ImageNode | None:
-        return self.find('Image')
+        return self.find('Image')  # type: ignore[return-value]
 
     @property
     def Data(self) -> DataNode | None:
-        return self.find('Data')
+        return self.find('Data')  # type: ignore[return-value]
 
     def GetAutoLevelHint(self) -> AutoLevelHintNode | None:
-        return self.find('AutoLevelHint')
+        return self.find('AutoLevelHint')  # type: ignore[return-value]
 
     def GetOrCreateAutoLevelHint(self) -> AutoLevelHintNode:
         existing_hint = self.GetAutoLevelHint()
@@ -52,4 +52,6 @@ class HistogramNode(HistogramBase):
         else:
             # Create a new AutoLevelData node using the calculated values as overrides so users can find and edit it later
             self.UpdateOrAddChild(AutoLevelHintNode.Create())
-            return self.GetAutoLevelHint()
+            hint = self.GetAutoLevelHint()
+            assert hint is not None
+            return hint

@@ -47,7 +47,7 @@ def ForceUpdateInputTransformNode(Node: nornir_buildmanager.volumemanager.Transf
     if transform.HasInputTransform is False:
         return
 
-    input_transform = parent.GetChildByAttrib('Transform', 'Name', transform.InputTransform)
+    input_transform = parent.GetChildByAttrib('Transform', 'Name', transform.InputTransform)  # type: ignore[union-attr,arg-type]
     if input_transform is not None:
         transform.SetTransform(input_transform)
         nornir_shared.prettyoutput.Log(

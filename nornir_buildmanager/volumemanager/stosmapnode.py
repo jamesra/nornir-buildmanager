@@ -18,7 +18,7 @@ class StosMapNode(XElementWrapper):
         self.attrib['Name'] = value
 
     @property
-    def Type(self) -> str:
+    def Type(self) -> str | None:
         """Type of Stos Map"""
         return self.attrib.get("Type", None)
 
@@ -34,10 +34,10 @@ class StosMapNode(XElementWrapper):
     def CenterSection(self) -> int | None:
         if 'CenterSection' in self.attrib:
             val = self.attrib.get('CenterSection', None)
-            if len(val) == 0:
+            if len(val) == 0:  # type: ignore[arg-type]
                 return None
             else:
-                return int(val)
+                return int(val)  # type: ignore[arg-type]
 
         return None
 
@@ -51,9 +51,9 @@ class StosMapNode(XElementWrapper):
 
     @property
     def Mappings(self) -> Generator[MappingNode]:
-        return self.findall('Mapping')
+        return self.findall('Mapping')  # type: ignore[return-value]
 
-    def MappedToControls(self) -> {int: dict[int, set[int]]}:
+    def MappedToControls(self) -> dict[int, dict[int, set[int]]]:
         """Return dictionary of possible control sections for a given mapped section number"""
         MappedToControlCandidateList = {}
         for mappingNode in self.Mappings:
@@ -66,18 +66,18 @@ class StosMapNode(XElementWrapper):
         return MappedToControlCandidateList
 
     def GetMappingsForControl(self, Control: int) -> Generator[MappingNode]:
-        return self.findall(f"Mapping[@Control='{Control}']")
+        return self.findall(f"Mapping[@Control='{Control}']")  # type: ignore[return-value]
 
     def ClearMissingSections(self, existing_section_numbers: Iterable[int]):
         """Remove any control sections that are not in the list of known sections"""
         # good_set = frozenset(existing_section_numbers)
-        missing_controls = filter(lambda m: m.Control not in existing_section_numbers, self.Mappings)
+        missing_controls = filter(lambda m: m.Control not in existing_section_numbers, self.Mappings)  # type: ignore[operator]
 
         missing_section_numbers = frozenset([mc.Control for mc in missing_controls])
         for control_mapping in missing_controls:
             self.remove(control_mapping)
 
-        missing_mappings = filter(lambda m: m.Mapped & missing_section_numbers, self.Mappings)
+        missing_mappings = filter(lambda m: m.Mapped & missing_section_numbers, self.Mappings)  # type: ignore[operator]
         found_missing_mappings = False
         for missing_mapping in missing_mappings:
             for missing_section in missing_mapping.Mapped & missing_section_numbers:
@@ -142,7 +142,7 @@ class StosMapNode(XElementWrapper):
         :return: True if mapped section is found and removed
         """
 
-        mapped = StosMapNode._SectionNumberFromParameter(mapped)
+        mapped = StosMapNode._SectionNumberFromParameter(mapped)  # type: ignore[arg-type]
         control = StosMapNode._SectionNumberFromParameter(control)
 
         childMapping = self.GetChildByAttrib('Mapping', 'Control', control)
@@ -161,7 +161,7 @@ class StosMapNode(XElementWrapper):
 
         return False
 
-    def FindAllControlsForMapped(self, MappedSection: int) -> Generator[MappingNode]:
+    def FindAllControlsForMapped(self, MappedSection: int) -> Generator[int | None, None, None]:
         """Given a section to be mapped, return the first control section found"""
         for m in self.Mappings:
             if MappedSection in m.Mapped:
@@ -191,13 +191,13 @@ class StosMapNode(XElementWrapper):
     def NeedsValidation(self) -> bool:
         return True  # Checking the mapping is easier than checking if volumedata.xml has changed
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """Check for mappings whose control section is in the non-stos section numbers list"""
 
         if not hasattr(self, 'Parent'):
             return super(StosMapNode, self).IsValid()
 
-        NonStosSectionsNode = self.Parent.find('NonStosSectionNumbers')
+        NonStosSectionsNode = self.Parent.find('NonStosSectionNumbers')  # type: ignore[union-attr]
 
         AlreadyMappedSections = []
 
@@ -243,5 +243,5 @@ class StosMapNode(XElementWrapper):
 
     @classmethod
     def Create(cls, Name, attrib=None, **extra) -> StosMapNode:
-        obj = StosMapNode(tag='StosMap', Name=Name, attrib=attrib, **extra)
+        obj = StosMapNode(tag='StosMap', Name=Name, attrib=attrib, **extra)  # type: ignore[arg-type]
         return obj

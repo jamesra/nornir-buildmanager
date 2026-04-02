@@ -16,7 +16,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
 
         self._validity_checked = None
 
-        super(TransformNode, self).__init__(tag=tag, attrib=attrib, **extra)
+        super(TransformNode, self).__init__(tag=tag, attrib=attrib, **extra)  # type: ignore[arg-type]
 
     @staticmethod
     def get_threshold_format() -> str:
@@ -31,7 +31,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         return float(TransformNode.get_threshold_format() % value)  # Number of digits to save in XML file
 
     @classmethod
-    def Create(cls, Name: str, Type: str, Path: str = None, attrib: dict = None, **extra) -> TransformNode:
+    def Create(cls, Name: str, Type: str, Path: str | None = None, attrib: dict | None = None, **extra) -> TransformNode:
 
         if Path is None:
             Path = MosaicBaseNode.GetFilename(Name, Type)
@@ -130,7 +130,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         return nornir_shared.misc.ListFromAttribute(value) if value is not None else None
 
     def CropBoxDownsampled(self, downsample):
-        (Xo, Yo, Width, Height) = self.CropBox
+        (Xo, Yo, Width, Height) = self.CropBox  # type: ignore[misc]
         Xo //= float(downsample)
         Yo //= float(downsample)
         Width = int(math.ceil(Width / float(downsample)))
@@ -155,7 +155,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
                 "Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
     @property
-    def NeedsValidation(self) -> (bool, str):
+    def NeedsValidation(self) -> tuple[bool, str]:
         try:
             if self._validity_checked is True:
                 return False, "Validity already checked"
@@ -168,7 +168,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
         input_needs_validation = InputTransformHandler.InputTransformNeedsValidation(self)
         return input_needs_validation
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data.
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched"""
 
@@ -200,7 +200,7 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
     def Threshold(self) -> float | None:
         val = self.attrib.get('Threshold', None)
         try:
-            return float(val)
+            return float(val)  # type: ignore[arg-type]
         except TypeError:  # val is None
             return None
         except ValueError:  # val is zero length string

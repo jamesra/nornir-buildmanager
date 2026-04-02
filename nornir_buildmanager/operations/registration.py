@@ -114,13 +114,14 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 
     if OutputTransformNode is not None:
         if OutputTransformNode.Locked:
-            Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
+            if Logger is not None:
+                Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
             return None
         else:
-            if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):
+            if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):  # type: ignore[union-attr]
                 OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} settings file was updated")
                 OutputTransformNode = None
-            elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):
+            elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):  # type: ignore[union-attr]
                 OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
                 OutputTransformNode = None
 
@@ -140,7 +141,8 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
             mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
             if mfileObj is None:
-                Logger.warning("Could not load %s" % InputTransformNode.FullPath)
+                if Logger is not None:
+                    Logger.warning("Could not load %s" % InputTransformNode.FullPath)
                 return None
 
             invalidFiles = mfileObj.RemoveInvalidMosaicImages(LevelNode.FullPath)
@@ -347,7 +349,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
             NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
             output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
 
-            if len(output) == 0:
+            if output is None or len(output) == 0:
                 raise nornir_buildmanager.NornirMissingDependencyException(
                     "No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
 

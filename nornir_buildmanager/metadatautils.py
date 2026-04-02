@@ -78,7 +78,7 @@ def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, Create
     :param function CreateFunc: Function to call if a new node is created and needs to be initialized
     :param function ReplaceFunc: Function to call if an existing node is found that does not pass the test
     '''
-    raise NotImplemented()
+    raise NotImplementedError()
 
 
 def CreateLevelNodes(ParentNode, DownsampleLevels):
@@ -134,9 +134,9 @@ def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample) -> G
     for ImageSet in ImageSets:
         ImageXPath = InputImageXPathTemplate % {'Downsample': Downsample}
         ImageNode = ImageSet.find(ImageXPath)
-        return ImageSet
+        yield ImageSet
+        return
 
-    yield
     return
 
 

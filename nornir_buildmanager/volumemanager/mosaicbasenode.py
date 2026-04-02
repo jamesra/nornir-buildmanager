@@ -9,7 +9,7 @@ from . import xfileelementwrapper
 class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
 
     @classmethod
-    def GetFilename(cls, Name: str, Type: str, Ext: str = None):
+    def GetFilename(cls, Name: str, Type: str, Ext: str | None = None):
         """
         Returns the filename for a given mosaic
         :param str Name: Name of the mosaic
@@ -43,7 +43,7 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         if 'Checksum' in self.attrib:
             del self.attrib['Checksum']
 
-        self.attrib['Checksum'] = self._CalcChecksum()
+        self.attrib['Checksum'] = self._CalcChecksum()  # type: ignore[arg-type]
         self._AttributesChanged = True
 
     @property
@@ -52,8 +52,8 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         checksum = self.attrib.get('Checksum', None)
         if checksum is None:
             checksum = self._CalcChecksum()
-            self.attrib['Checksum'] = checksum
-            return checksum
+            self.attrib['Checksum'] = checksum  # type: ignore[arg-type]
+            return checksum or ""
 
         return checksum
 
@@ -64,7 +64,7 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         raise DeprecationWarning(
             "Checksums for mosaic elements will not be directly settable soon.  Use ResetChecksum instead")
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         valid, reason = super(MosaicBaseNode, self).IsValid()
 
         if valid and self.FileSystemModifiedSinceLastValidation:
@@ -88,7 +88,7 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         if Path is None:
             Path = MosaicBaseNode.GetFilename(Name, Type)
 
-        obj = MosaicBaseNode(tag=tag, Path=Path, Name=Name, Type=Type, attrib=attrib, **extra)
+        obj = MosaicBaseNode(tag=tag, Path=Path, Name=Name, Type=Type, attrib=attrib or {}, **extra)
 
         return obj
 

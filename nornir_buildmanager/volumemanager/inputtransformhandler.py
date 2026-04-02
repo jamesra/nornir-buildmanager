@@ -16,41 +16,41 @@ class InputTransformHandler:
 
     @property
     def InputTransform(self) -> str | None:
-        return self.attrib.get('InputTransform', None)
+        return self.attrib.get('InputTransform', None)  # type: ignore[attr-defined]
 
     @InputTransform.setter
     def InputTransform(self, value):
         if value is None:
-            if 'InputTransform' in self.attrib:
-                del self.attrib['InputTransform']
+            if 'InputTransform' in self.attrib:  # type: ignore[attr-defined]
+                del self.attrib['InputTransform']  # type: ignore[attr-defined]
         else:
             assert (isinstance(value, str))
-            self.attrib['InputTransform'] = value
+            self.attrib['InputTransform'] = value  # type: ignore[attr-defined]
 
     @property
     def InputTransformChecksum(self) -> str | None:
-        return self.attrib.get('InputTransformChecksum', None)
+        return self.attrib.get('InputTransformChecksum', None)  # type: ignore[attr-defined]
 
     @InputTransformChecksum.setter
     def InputTransformChecksum(self, value: str | None):
         if value is None:
-            if 'InputTransformChecksum' in self.attrib:
-                del self.attrib['InputTransformChecksum']
+            if 'InputTransformChecksum' in self.attrib:  # type: ignore[attr-defined]
+                del self.attrib['InputTransformChecksum']  # type: ignore[attr-defined]
         else:
-            self.attrib['InputTransformChecksum'] = value
+            self.attrib['InputTransformChecksum'] = value  # type: ignore[attr-defined]
 
     @property
     def InputTransformType(self) -> str | None:
-        return self.attrib.get('InputTransformType', None)
+        return self.attrib.get('InputTransformType', None)  # type: ignore[attr-defined]
 
     @InputTransformType.setter
     def InputTransformType(self, value: str | None):
         if value is None:
-            if 'InputTransformType' in self.attrib:
-                del self.attrib['InputTransformType']
+            if 'InputTransformType' in self.attrib:  # type: ignore[attr-defined]
+                del self.attrib['InputTransformType']  # type: ignore[attr-defined]
         else:
             assert (isinstance(value, str))
-            self.attrib['InputTransformType'] = value
+            self.attrib['InputTransformType'] = value  # type: ignore[attr-defined]
 
     @property
     def InputTransformCropBox(self):
@@ -59,8 +59,8 @@ class InputTransformHandler:
            :return (Xo, Yo, Width, Height):
         """
 
-        if 'InputTransformCropBox' in self.attrib:
-            return nornir_shared.misc.ListFromAttribute(self.attrib['InputTransformCropBox'])
+        if 'InputTransformCropBox' in self.attrib:  # type: ignore[attr-defined]
+            return nornir_shared.misc.ListFromAttribute(self.attrib['InputTransformCropBox'])  # type: ignore[attr-defined]
         else:
             return None
 
@@ -70,12 +70,12 @@ class InputTransformHandler:
         :param bounds:  (Xo, Yo, Width, Height) or (Width, Height)
         """
         if bounds is None:
-            if 'InputTransformCropBox' in self.attrib:
-                del self.attrib['InputTransformCropBox']
+            if 'InputTransformCropBox' in self.attrib:  # type: ignore[attr-defined]
+                del self.attrib['InputTransformCropBox']  # type: ignore[attr-defined]
         elif len(bounds) == 4:
-            self.attrib['InputTransformCropBox'] = ",".join([f'{v:g}' for v in bounds])
+            self.attrib['InputTransformCropBox'] = ",".join([f'{v:g}' for v in bounds])  # type: ignore[attr-defined]
         elif len(bounds) == 2:
-            self.attrib['InputTransformCropBox'] = "0,0," + ",".join([f'{v:g}' for v in bounds])
+            self.attrib['InputTransformCropBox'] = "0,0," + ",".join([f'{v:g}' for v in bounds])  # type: ignore[attr-defined]
         else:
             raise Exception(
                 "Invalid argument passed to InputTransformCropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
@@ -108,27 +108,27 @@ class InputTransformHandler:
         :rtype: bool
         """
         if not self.IsInputTransformMatched(transform_node):
-            self.Clean("Input transform %s did not match" % transform_node.FullPath)
+            self.Clean("Input transform %s did not match" % transform_node.FullPath)  # type: ignore[attr-defined]
             return True
 
         return False
 
-    def InputTransformNeedsValidation(self) -> (bool, str):
+    def InputTransformNeedsValidation(self) -> tuple[bool, str]:
         """
         :return: True if the MetaData indicates the input transform has changed
         and InputTransformIsValid should be called.
         """
-        InputTransformType = self.attrib.get('InputTransformType', None)
+        InputTransformType = self.attrib.get('InputTransformType', None)  # type: ignore[attr-defined]
         if InputTransformType is None:
             return False, "No input transform to validate"
 
         if self.InputTransformType is None:
             return False, "No input transform to validate"
 
-        if len(self.InputTransformType) == 0:
+        if len(self.InputTransformType) == 0:  # type: ignore[arg-type]
             return False, "No input transform to validate"
 
-        InputTransformNodes = self.FindAllFromParent("Transform[@Type='" + self.InputTransformType + "']")
+        InputTransformNodes = self.FindAllFromParent("Transform[@Type='" + self.InputTransformType + "']")  # type: ignore[attr-defined]
 
         for it in InputTransformNodes:
             if it is not self and it is not None and it.NeedsValidation:
@@ -136,18 +136,18 @@ class InputTransformHandler:
 
         return False, "No Input Transforms found requiring validation"
 
-    def InputTransformIsValid(self) -> (bool, str):
+    def InputTransformIsValid(self) -> tuple[bool, str]:
         """ Verify that the input transform matches the checksum recorded for the input. """
 
-        InputTransformType = self.attrib.get('InputTransformType', None)
+        InputTransformType = self.attrib.get('InputTransformType', None)  # type: ignore[attr-defined]
         if InputTransformType is None:
             return True, "No input transform"
 
-        if len(self.InputTransformType) > 0:
+        if len(self.InputTransformType) > 0:  # type: ignore[arg-type]
 
             # Check all of our transforms with a matching type until we find a match that is valid
             nMatches = 0
-            InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")
+            InputTransformNode = self.FindFromParent("Transform[@Type='" + self.InputTransformType + "']")  # type: ignore[attr-defined, operator]
 
             # Due to an obnoxious mistake the StosGroupTransforms can have the same input type as the .mosaic files.
             # To work around this we check that the InputTransform is not ourselves
@@ -161,8 +161,8 @@ class InputTransformHandler:
             while InputTransformNode is not None:
 
                 if InputTransformNode is None:
-                    self.logger.warning(
-                        'Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())
+                    self.logger.warning(  # type: ignore[attr-defined]
+                        'Expected input transform not found.  This can occur when the transform lives in a different channel.  Leaving node alone: ' + self.ToElementString())  # type: ignore[attr-defined]
                     return True, ""
                 else:
                     nMatches += 1

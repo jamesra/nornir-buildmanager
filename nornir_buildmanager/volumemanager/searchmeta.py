@@ -1,13 +1,13 @@
 import re
 from typing import Generator, Iterable
-import xml.etree
+from xml.etree import ElementTree as ElementTree
 
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager import XElementWrapper
 
 
-def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.Element], AttribName: str,
-                     RegExStr: str | None, CaseSensitive: bool = False) -> Generator[XElementWrapper, None, None]:
+def SearchCollection(Objects: Iterable[XElementWrapper | ElementTree.Element], AttribName: str,
+                     RegExStr: str | None, CaseSensitive: bool = False) -> Generator[XElementWrapper | ElementTree.Element, None, None]:
     """
     Search a list of object's attributes using a regular express.
     Returns a generator of objects with matching attributes.
@@ -34,7 +34,7 @@ def SearchCollection(Objects: Iterable[XElementWrapper | xml.etree.ElementTree.E
             yield MatchObj
             continue
 
-        match = re.match(RegExStr, attrib, flags)
+        match = re.match(RegExStr or "", attrib, flags)
         if match is not None:
             (wrapped, MatchObj) = nornir_buildmanager.volumemanager.WrapElement(MatchObj)
             assert (wrapped is False)

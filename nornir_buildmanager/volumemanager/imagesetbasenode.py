@@ -19,13 +19,13 @@ class ImageSetBaseNode(InputTransformHandler,
         return obj
 
     @property
-    def Images(self) -> [ImageNode]:
+    def Images(self) -> list[ImageNode]:  # type: ignore[override]
         """Iterate over images in the ImageSet, highest to lowest res"""
         for levelNode in self.Levels:
             image = levelNode.find('Image')
             if image is None:
                 continue
-            yield image
+            yield image  # type: ignore[misc]
 
         return
 
@@ -40,7 +40,7 @@ class ImageSetBaseNode(InputTransformHandler,
         if level_node is None:
             return None
 
-        image = level_node.find('Image')  # type: ImageNode
+        image = level_node.find('Image')  # type: ignore[assignment]
         if image is None:
             return None
 
@@ -50,7 +50,7 @@ class ImageSetBaseNode(InputTransformHandler,
 
             return None
 
-        return image
+        return image  # type: ignore[return-value]
 
     def HasImage(self, Downsample) -> bool:
         return not self.GetImage(Downsample) is None
@@ -59,7 +59,7 @@ class ImageSetBaseNode(InputTransformHandler,
         """Returns image node for the specified downsample. Generates image if requested image is missing.  If unable to generate a ValueError is raised"""
         [added_level, level_node] = self.GetOrCreateLevel(Downsample, GenerateData=False)
 
-        imageNode = level_node.find("Image")
+        imageNode = level_node.find("Image")  # type: ignore[assignment]
         if imageNode is None or not os.path.exists(
                 imageNode.FullPath):  # We have to check for existence in case image file is deleted but meta-data remains.
             if GenerateData and not self.CanGenerate(Downsample):
@@ -70,7 +70,7 @@ class ImageSetBaseNode(InputTransformHandler,
                 Path = self.__PredictImageFilename()
 
             imageNode = ImageNode.Create(Path)
-            [level_added, imageNode] = level_node.UpdateOrAddChild(imageNode)
+            [level_added, imageNode] = level_node.UpdateOrAddChild(imageNode)  # type: ignore[union-attr]
             if not os.path.exists(imageNode.FullPath):
                 os.makedirs(os.path.dirname(imageNode.FullPath), exist_ok=True)
 
@@ -79,7 +79,7 @@ class ImageSetBaseNode(InputTransformHandler,
 
             self.Save()
 
-        return imageNode
+        return imageNode  # type: ignore[return-value]
 
     def __PredictImageFilename(self) -> str:
         """Get the path of the highest resolution image in this ImageSet"""
@@ -119,7 +119,7 @@ class ImageSetBaseNode(InputTransformHandler,
         return SourceImage, SourceDownsample
 
     def GenerateLevels(self, Levels):
-        node = nornir_buildmanager.operations.tile.BuildImagePyramid(self, Levels, Interlace=False)
+        node = nornir_buildmanager.operations.tile.BuildImagePyramid(self, Levels, Interlace=False)  # type: ignore[arg-type]
         if node is not None:
             node.Save()
 
@@ -152,7 +152,7 @@ class ImageSetBaseNode(InputTransformHandler,
             self)
         return input_needs_validation[0]
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """Check if the image set is valid.  Be careful using this, because it only checks the existing meta-data.
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched"""
 

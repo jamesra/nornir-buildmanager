@@ -35,7 +35,7 @@ class VolumeManager:
                 # Volumes.CreateFromDOM(XMLTree)
                 VolumeRoot.attrib['Path'] = VolumePath
                 (wrapped, VolumeRoot) = nornir_buildmanager.volumemanager.WrapElement(VolumeRoot)
-                nornir_buildmanager.volumemanager.SetElementParent(VolumeRoot, None)
+                nornir_buildmanager.volumemanager.SetElementParent(VolumeRoot, None)  # type: ignore[arg-type]
                 VolumeRoot.Save()
 
         SaveNewVolume = False
@@ -70,7 +70,7 @@ class VolumeManager:
 
         VolumeRoot.attrib['Path'] = VolumePath
         VolumeRoot = nornir_buildmanager.volumemanager.VolumeNode.wrap(VolumeRoot)
-        nornir_buildmanager.volumemanager.SetElementParent(VolumeRoot, None)
+        nornir_buildmanager.volumemanager.SetElementParent(VolumeRoot, None)  # type: ignore[arg-type]
 
         if SaveNewVolume:
             VolumeRoot.Save()
@@ -103,7 +103,7 @@ class VolumeManager:
         return
 
     def __str__(self):
-        return self.VolumeData.toxml()
+        return self.VolumeData.toxml()  # type: ignore[union-attr]
 
     @classmethod
     def CalcVolumeChecksum(cls, VolumeObj):

@@ -1,7 +1,9 @@
+# pyright: reportReturnType=false
 from __future__ import annotations
 
 import datetime
 import os
+from typing import cast
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager as volumemanager
@@ -55,9 +57,8 @@ class LevelNode(volumemanager.XContainerElementWrapper):
     def GridDimX(self) -> int:
         val = self.attrib.get('GridDimX', None)
         if val is not None:
-            val = int(val)
-
-        return val
+            return int(val)
+        raise ValueError("GridDimX not set")
 
     @GridDimX.setter
     def GridDimX(self, val: int):
@@ -71,9 +72,8 @@ class LevelNode(volumemanager.XContainerElementWrapper):
     def GridDimY(self) -> int:
         val = self.attrib.get('GridDimY', None)
         if val is not None:
-            val = int(val)
-
-        return val
+            return int(val)
+        raise ValueError("GridDimY not set")
 
     @GridDimY.setter
     def GridDimY(self, val: int):
@@ -115,7 +115,8 @@ class LevelNode(volumemanager.XContainerElementWrapper):
 
         PyramidNode = self.Parent
         if isinstance(PyramidNode, nornir_buildmanager.volumemanager.TilePyramidNode):
-            return PyramidNode.TryToMakeLevelValid(self)
+            result = PyramidNode.TryToMakeLevelValid(self)
+            return (bool(result[0]), str(result[1]) if result[1] is not None else "")
         elif isinstance(PyramidNode, nornir_buildmanager.volumemanager.TilesetNode):
             return PyramidNode.IsLevelValid(self, self.GridDimX, self.GridDimY)
         elif isinstance(PyramidNode, nornir_buildmanager.volumemanager.ImageSetNode):
@@ -123,7 +124,7 @@ class LevelNode(volumemanager.XContainerElementWrapper):
                 return False, "No image node found"
             # Make sure each level has at least one tile from the last column on the disk.
 
-        return True, None
+        return (True, "")
 
     @classmethod
     def Create(cls, Level, attrib=None, **extra) -> LevelNode:

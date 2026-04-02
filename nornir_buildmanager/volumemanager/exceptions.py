@@ -12,7 +12,7 @@ class DuplicateElementError(Exception):
         super().__init__(message)
 
     def __str__(self):
-        return f"{self.element.FullPath} had a duplicate element\n{self}"
+        return f"{self.element.FullPath} had a duplicate element\n{self}"  # type: ignore[union-attr]
 
 
 class MissingElementError(Exception):

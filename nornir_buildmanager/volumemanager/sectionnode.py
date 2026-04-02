@@ -20,8 +20,8 @@ class SectionNode(XNamedContainerElementWrapped):
         return SectionNode.ClassSortKey(self)
 
     @property
-    def Channels(self) -> Generator[ChannelNode]:
-        return self.findall('Channel')
+    def Channels(self) -> Generator[ChannelNode]:  # type: ignore[type-arg]
+        return self.findall('Channel')  # type: ignore[return-value]
 
     @property
     def Number(self) -> int:
@@ -32,26 +32,26 @@ class SectionNode(XNamedContainerElementWrapped):
         self.attrib['Number'] = str(int(Value))
 
     def GetChannel(self, Channel: str) -> ChannelNode:
-        return self.GetChildByAttrib('Channel', 'Name', Channel)  # type: ChannelNode
+        return self.GetChildByAttrib('Channel', 'Name', Channel)  # type: ignore[return-value]
 
     def GetOrCreateChannel(self, ChannelName: str) -> ChannelNode:
         channelObj = self.GetChildByAttrib('Channel', 'Name', ChannelName)
         if channelObj is None:
             channelObj = ChannelNode.Create(ChannelName)
-            return self.UpdateOrAddChildByAttrib(channelObj, 'Name')
+            return self.UpdateOrAddChildByAttrib(channelObj, 'Name')  # type: ignore[return-value]
         else:
-            return False, channelObj
+            return False, channelObj  # type: ignore[return-value]
 
-    def MatchChannelPattern(self, channelPattern) -> Generator[ChannelNode]:
-        return nornir_buildmanager.volumemanager.SearchCollection(self.Channels,
+    def MatchChannelPattern(self, channelPattern) -> Generator[ChannelNode]:  # type: ignore[type-arg]
+        return nornir_buildmanager.volumemanager.SearchCollection(self.Channels,  # type: ignore[return-value]
                                                                   'Name',
                                                                   channelPattern)
 
-    def MatchChannelFilterPattern(self, channelPattern, filterPattern) -> Generator[ChannelNode]:
+    def MatchChannelFilterPattern(self, channelPattern, filterPattern) -> Generator[ChannelNode]:  # type: ignore[type-arg]
         for channelNode in self.MatchChannelPattern(channelPattern):
             result = channelNode.MatchFilterPattern(filterPattern)
             if result is not None:
-                yield from result
+                yield from result  # type: ignore[misc]
 
         return
 
@@ -71,4 +71,4 @@ class SectionNode(XNamedContainerElementWrapped):
         obj = super(SectionNode, cls).Create(tag='Section', Name=Name, Path=Path, attrib=attrib, **extra)
         obj.Number = Number
 
-        return obj
+        return obj  # type: ignore[return-value]

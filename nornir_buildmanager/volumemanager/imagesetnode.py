@@ -20,21 +20,21 @@ class ImageSetNode(ImageSetBaseNode):
         """
 
         level = self.MinResLevel
-        while level.Downsample > self.MaxResLevel.Downsample:
+        while level.Downsample > self.MaxResLevel.Downsample:  # type: ignore[union-attr]
             levelImg = self.GetImage(level)
             if levelImg is None:
-                level = self.MoreDetailedLevel(level.Downsample)
+                level = self.MoreDetailedLevel(level.Downsample)  # type: ignore[union-attr]
 
-            dim = self.GetImage(level).Dimensions
+            dim = self.GetImage(level).Dimensions  # type: ignore[union-attr]
             if isinstance(requested_size, tuple):
                 if dim[0] >= requested_size[0] and dim[1] >= requested_size[1]:
-                    return level.Downsample
+                    return level.Downsample  # type: ignore[union-attr]
             elif dim[0] >= requested_size or dim[1] >= requested_size:
-                return level.Downsample
+                return level.Downsample  # type: ignore[union-attr]
 
-            level = self.MoreDetailedLevel(level.Downsample)
+            level = self.MoreDetailedLevel(level.Downsample)  # type: ignore[union-attr]
 
-        return self.MaxResLevel.Downsample
+        return self.MaxResLevel.Downsample  # type: ignore[union-attr]
 
 
     def NameMatchesSectionNumber(self, section_number: int) -> bool:
@@ -47,7 +47,7 @@ class ImageSetNode(ImageSetBaseNode):
 
         # Determine if we have any images
         try:
-            first_image = next(self.Images)
+            first_image = next(iter(self.Images))
         except StopIteration:
             return False
         
@@ -68,7 +68,7 @@ class ImageSetNode(ImageSetBaseNode):
 
 
     def IsLevelValid(self, level_node) -> bool:
-        raise NotImplemented("HasImage is being used.  I considered this a dead code path.")
+        raise NotImplementedError("HasImage is being used.  I considered this a dead code path.")
 
     #         '''
     #         :param str level_full_path: The path to the directories containing the image files
@@ -98,7 +98,7 @@ class ImageSetNode(ImageSetBaseNode):
         super(ImageSetNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
     @classmethod
-    def Create(cls, Type: str = None, attrib: dict = None, **extra) -> ImageSetNode:
+    def Create(cls, Type: str | None = None, attrib: dict | None = None, **extra) -> ImageSetNode:
         if Type is None:
             Type = ""
 

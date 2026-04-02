@@ -53,7 +53,7 @@ class MappingNode(XElementWrapper):
             return
         else:
             updated_map.append(value)
-            self.Mapped = updated_map
+            self.Mapped = frozenset(updated_map)  # type: ignore[assignment]
             # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def RemoveMapping(self, value: int):
@@ -63,7 +63,7 @@ class MappingNode(XElementWrapper):
             return
 
         updated_map.remove(intval)
-        self.Mapped = updated_map
+        self.Mapped = frozenset(updated_map)  # type: ignore[assignment]
         # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def __str__(self):
@@ -73,14 +73,16 @@ class MappingNode(XElementWrapper):
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:
             tag = 'Mapping'
+        if attrib is None:
+            attrib = {}
 
         super(MappingNode, self).__init__(tag=tag, attrib=attrib, **extra)
 
         self._mapped_cache = None
 
     @classmethod
-    def Create(cls, ControlNumber, MappedNumbers, attrib=None, **extra) -> MappingNode:
-        obj = MappingNode(tag='Mapping', attrib=attrib, **extra)
+    def Create(cls, ControlNumber, MappedNumbers, attrib: dict | None = None, **extra) -> MappingNode:
+        obj = MappingNode(tag='Mapping', attrib=attrib or {}, **extra)
 
         obj.attrib['Control'] = str(ControlNumber)
         obj._mapped_cache = None

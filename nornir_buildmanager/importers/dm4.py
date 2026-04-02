@@ -7,6 +7,7 @@ Created on Aug 7, 2015
 import collections
 
 import PIL
+import PIL.Image
 import numpy as np
 
 import dm4
@@ -55,9 +56,9 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles=f'*.{extension}',
                                                                  ExcludeNames=[], ExcludedDownsampleLevels=[])
-    for m in matches:
+    for m in matches:  # type: ignore[union-attr]
         (path, foundfiles) = m
-        foundfiles = [os.path.join(path, f) for f in foundfiles]
+        foundfiles = [os.path.join(path, f) for f in (foundfiles or [])]
         prettyoutput.CurseString("DM4Import", "Importing *.dm4 from {0}".format(path))
         for idocFullPath in foundfiles:
             yield from DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath,
@@ -140,23 +141,23 @@ class DM4FileHandler(object):
             'ImageData'].named_tags['PixelDepth']
 
     def __init__(self, dm4fullpath):
-        self._dm4file = dm4.dm4file.DM4File.open(dm4fullpath)
-        self._tags = self._dm4file.read_directory()
+        self._dm4file = dm4.dm4file.DM4File.open(dm4fullpath)  # type: ignore[attr-defined]
+        self._tags = self._dm4file.read_directory()  # type: ignore[attr-defined]
 
         # This is probably not entirely correct.  I suspect the DM4 file could have multiple images in the ImageSourceList.
         # This implementation just reads the first, which covers the use cases I am aware of right now
         imageSourceIndexTag = self.tags.named_subdirs['ImageSourceList'].unnamed_subdirs[0].named_tags['ImageRef']
-        self._imageSourceIndex = int(self.dm4file.read_tag_data(imageSourceIndexTag))
+        self._imageSourceIndex = int(self.dm4file.read_tag_data(imageSourceIndexTag))  # type: ignore[attr-defined]
 
     def _ReadDimensionScaleTag(self, DM4DimensionTag, index):
         '''Read the scale for a particular index'''
         UnitsPerPixelTag = DM4DimensionTag.unnamed_subdirs[index].named_tags['Scale']
         ScaleUnitsTag = DM4DimensionTag.unnamed_subdirs[index].named_tags['Units']
-        ScaleUnitsRawArray = self.dm4file.read_tag_data(ScaleUnitsTag)
+        ScaleUnitsRawArray = self.dm4file.read_tag_data(ScaleUnitsTag)  # type: ignore[attr-defined]
         ScaleUnits = "".join(
             map(chr, ScaleUnitsRawArray))  # Convert byte array into a string containing unit of measure as a string
 
-        return DimensionScale(self.dm4file.read_tag_data(UnitsPerPixelTag), ScaleUnits)
+        return DimensionScale(self.dm4file.read_tag_data(UnitsPerPixelTag), ScaleUnits)  # type: ignore[attr-defined]
 
     def ReadXYUnitsPerPixel(self):
         DM4DimensionTag = self.DimensionScaleTag
@@ -169,21 +170,21 @@ class DM4FileHandler(object):
     def ReadImageShape(self):
         ''':return: Image shape as array, [YDim,XDim] as uint64'''
         DM4ImageDimensionsTag = self.ImageDimensionsTag
-        XDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[0])
-        YDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[1])
+        XDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[0])  # type: ignore[attr-defined]
+        YDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[1])  # type: ignore[attr-defined]
 
         return np.asarray((YDim, XDim), dtype=np.uint64)
 
     def ReadImageAsNumpy(self):
         image_shape = self.ReadImageShape()
-        np_array = np.array(self.dm4file.read_tag_data(self.ImageDataTag), dtype=self.image_dtype)
+        np_array = np.array(self.dm4file.read_tag_data(self.ImageDataTag), dtype=self.image_dtype)  # type: ignore[attr-defined]
         np_array = np.reshape(np_array, image_shape)
 
         return np_array
 
     def ReadImageAsPIL(self):
         image_shape = self.ReadImageShape()
-        im = PIL.Image.frombytes(data=self.dm4file.read_tag_data(self.ImageDataTag).tobytes(),
+        im = PIL.Image.frombytes(data=self.dm4file.read_tag_data(self.ImageDataTag).tobytes(),  # type: ignore[attr-defined]
                                  mode='I;%d' % self.image_bpp, size=(image_shape[1], image_shape[0]))
         im = im.convert(mode='I')
 
@@ -196,8 +197,8 @@ class DM4FileHandler(object):
         YDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
             'ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of Y Steps']
 
-        XDim = self.dm4file.read_tag_data(XDim_tag)
-        YDim = self.dm4file.read_tag_data(YDim_tag)
+        XDim = self.dm4file.read_tag_data(XDim_tag)  # type: ignore[attr-defined]
+        YDim = self.dm4file.read_tag_data(YDim_tag)  # type: ignore[attr-defined]
 
         return np.asarray((YDim, XDim), dtype=np.uint64)
 
@@ -205,12 +206,12 @@ class DM4FileHandler(object):
         ''':return: Overlap scalar array, [Y,X] from 0 to 1.0'''
         Overlap_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
             'ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Overlap between images (%)']
-        overlap = self.dm4file.read_tag_data(Overlap_tag) / 100.0
+        overlap = self.dm4file.read_tag_data(Overlap_tag) / 100.0  # type: ignore[attr-defined]
         return np.asarray((overlap, overlap), dtype=np.float32)
 
     @property
     def image_bpp(self):
-        return int(self.dm4file.read_tag_data(self.ImageBppTag) * 8)
+        return int(self.dm4file.read_tag_data(self.ImageBppTag) * 8)  # type: ignore[attr-defined]
 
     @property
     def image_dtype(self):

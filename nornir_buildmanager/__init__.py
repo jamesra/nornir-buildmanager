@@ -6,6 +6,8 @@
 """
 __all__ = ['pipelinemanager', 'templates', 'operations', 'metadata', 'volumemanager']
 
+import nornir_buildmanager.metadata as metadata
+
 from nornir_buildmanager.exceptions import NornirUserException, NornirMissingDependencyException, \
     NornirRethrownException
 from nornir_buildmanager.pipeline_exceptions import *

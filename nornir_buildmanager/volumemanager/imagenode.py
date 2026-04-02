@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
 from numpy.typing import NDArray
 
 import nornir_buildmanager.volumemanager as volumemanager
@@ -23,7 +24,7 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
     def Create(cls, Path: str, attrib=None, **extra) -> ImageNode:
         return ImageNode(tag='Image', Path=Path, attrib=attrib, **extra)
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         if self.NeedsValidation:
             try:
                 if self.Checksum != nornir_shared.checksum.FilesizeChecksum(self.FullPath):
@@ -100,7 +101,7 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
             # assert (actual_dims[0] == dims[0])
             # assert (actual_dims[1] == dims[1])
 
-        return dims
+        return dims  # type: ignore[return-value]
 
     @Dimensions.setter
     def Dimensions(self, dims: NDArray[np.integer] | tuple[int, int] | None):

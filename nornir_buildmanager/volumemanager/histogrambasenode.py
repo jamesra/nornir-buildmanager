@@ -9,11 +9,11 @@ class HistogramBase(InputTransformHandler, XElementWrapper):
 
     @property
     def DataNode(self) -> DataNode:
-        return self.find('Data')  # data: DataNode
+        return self.find('Data')  # type: ignore[return-value]
 
     @property
     def ImageNode(self) -> ImageNode:
-        return self.find('Image')  # data: ImageNode
+        return self.find('Image')  # type: ignore[return-value]
 
     @property
     def DataFullPath(self) -> str:
@@ -34,7 +34,7 @@ class HistogramBase(InputTransformHandler, XElementWrapper):
         if self.DataNode is None:
             return ""
         else:
-            return self.DataNode.Checksum
+            return self.DataNode.Checksum or ""
 
     @property
     def NeedsValidation(self) -> bool:
@@ -47,7 +47,7 @@ class HistogramBase(InputTransformHandler, XElementWrapper):
 
         return self.DataNode.NeedsValidation
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """Remove this node if our output does not exist"""
         if self.DataNode is None:
             return False, "No data node found"

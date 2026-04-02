@@ -38,9 +38,10 @@ import datetime
 import sys
 import shutil
 import math
-from typing import Callable, Sequence
+from typing import Any, Callable, Generator, Sequence
 
 import matplotlib
+import matplotlib.colors
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 import numpy as np
@@ -65,7 +66,7 @@ from nornir_buildmanager.volumemanager import *
 
 
 def find_sections(extension: str,
-                  section_candidates: dict[int, list[shared.FilenameMetadata]]) -> dict[int, shared.FilenameMetadata]:
+                  section_candidates: dict[int, list[shared.FilenameMetadata]]) -> Generator[Any, None, None]:
     """
     Find directories that contain files with the passed extension.  Parses section information from the
     directory name.  returns a dictionary mapping section number to the latest version of the section.
@@ -81,7 +82,7 @@ def find_sections(extension: str,
 
     best_section_results = {}  # type: dict[int, tuple[shared.FilenameMetadata, list[str]]]
 
-    for section_meta_data, idocFileList in find.section_directory_metadata_generator(match_names, matching_pattern):
+    for section_meta_data, idocFileList in find.section_directory_metadata_generator(match_names, matching_pattern):  # type: ignore[arg-type]
         # The problem with using the directory name is that there could be more than one
         # .idoc file in a directory if a two-part capture of a section is done.
         # However, the extensive use of 1.idoc naming
@@ -124,7 +125,7 @@ def find_sections(extension: str,
 def Import(VolumeElement: VolumeNode,
            ImportPath: str,
            extension: str | None = None,
-           *args, **kwargs) -> Generator[XElementWrapper, None, None]:
+           *args, **kwargs) -> Generator[XElementWrapper | None, None, None]:
     """Import the specified directory into the volume"""
 
     if extension is None:
@@ -133,8 +134,8 @@ def Import(VolumeElement: VolumeNode,
     # TODO, set the defaults at the volume level in the meta-data and pull from there
     DesiredSectionList = kwargs.get('Sections', None)
 
-    MinCutoff = float(kwargs.get('Min'))
-    MaxCutoff = float(kwargs.get('Max'))
+    MinCutoff = float(kwargs.get('Min'))  # type: ignore[arg-type]
+    MaxCutoff = float(kwargs.get('Max'))  # type: ignore[arg-type]
     ContrastCutoffs = (MinCutoff, MaxCutoff)
     CameraBpp = kwargs.get('CameraBpp', None)
 
@@ -188,7 +189,7 @@ class SerialEMIDocImport:
 
     @classmethod
     def ToMosaic(cls, VolumeObj: VolumeNode, idocFileFullPath: str, ContrastCutoffs: tuple[float, float],
-                 OutputImageExt: str = None,
+                 OutputImageExt: str | None = None,
                  TargetBpp: int | None = None, FlipList: list[int] | None = None,
                  ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
                  CameraBpp: int | None = None,
@@ -378,6 +379,7 @@ class SerialEMIDocImport:
                                                                                'Path')
 
         added_level, LevelObj = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
+        assert LevelObj is not None
 
         Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=section_source_dir,
                                                             OutputTileDir=LevelObj.FullPath,
@@ -409,7 +411,7 @@ class SerialEMIDocImport:
             # nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
             nornir_imageregistration.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
                                                          OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False,
-                                                         MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)
+                                                         MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)  # type: ignore[arg-type]
 
         elif Tileset.ImageMoveRequired:
             for f in SourceToMissingTargetMap:
@@ -534,7 +536,7 @@ class SerialEMIDocImport:
             bpp = nornir_shared.images.GetImageBpp(listfilenames[0])
 
         num_bins = 256
-        if bpp >= 11:
+        if bpp is not None and bpp >= 11:
             num_bins = 2048
 
         maxVal = idoc_data.Max
@@ -742,19 +744,19 @@ class IDocTileData:
     """Class that holds the meta-data for a single tile in a SerialEM idoc file"""
 
     Image: str
-    TiltAngle: float
-    PieceCoordinates: tuple[float, float]
-    StagePosition: tuple[float, float]
-    Intensity: float
-    ExposureDose: float
-    SpotSize: int
-    _Defocus: float
-    ImageShift: tuple[float, float]
-    RotationAngle: float
-    ExposureTime: float
-    _MinMaxMean: tuple[int, int, float]
-    TargetDefocus: float
-    Magnification: float
+    TiltAngle: float | None
+    PieceCoordinates: tuple[float, float] | None
+    StagePosition: tuple[float, float] | None
+    Intensity: float | None
+    ExposureDose: float | None
+    SpotSize: int | None
+    _Defocus: float | None
+    ImageShift: tuple[float, float] | None
+    RotationAngle: float | None
+    ExposureTime: float | None
+    _MinMaxMean: tuple[int, int, float] | None
+    TargetDefocus: float | None
+    Magnification: float | None
 
     def __init__(self, ImageName):
         """Populate all known SerialEM Idoc meta-data"""
@@ -781,7 +783,7 @@ class IDocTileData:
         return self.Image
 
     @property
-    def Defocus(self) -> float:
+    def Defocus(self) -> float | None:
         return self._Defocus
 
     @Defocus.setter
@@ -789,7 +791,7 @@ class IDocTileData:
         self._Defocus = val
 
     @property
-    def Min(self) -> int:
+    def Min(self) -> int | None:
         return self._Min
 
     @Min.setter
@@ -797,7 +799,7 @@ class IDocTileData:
         self._Min = val
 
     @property
-    def Max(self) -> int:
+    def Max(self) -> int | None:
         return self._Max
 
     @Max.setter
@@ -805,11 +807,11 @@ class IDocTileData:
         self._Max = val
 
     @property
-    def Mean(self) -> float:
+    def Mean(self) -> float | None:
         return self._Mean
 
     @property
-    def MinMaxMean(self) -> tuple[int, int, float]:
+    def MinMaxMean(self) -> tuple[int, int, float] | None:
         return self._MinMaxMean
 
     @MinMaxMean.setter
@@ -836,7 +838,7 @@ class IDoc:
         return len(self.tiles)
 
     @property
-    def CameraBpp(self) -> int:
+    def CameraBpp(self) -> int | None:
         return self._CameraBpp
 
     @property
@@ -862,14 +864,14 @@ class IDoc:
 
         return
 
-    def _SetCameraBpp(self, bpp: int):
+    def _SetCameraBpp(self, bpp: int | None):
         """Ensure the maximum intensity reported for tiles does not exceed the known capability of the camera"""
         self._CameraBpp = bpp
 
         if self._CameraBpp is not None:
-            maxPossible = 1 << bpp
+            maxPossible = 1 << self._CameraBpp
             for t in self.tiles:
-                if t.Max > maxPossible:
+                if t.Max is not None and t.Max > maxPossible:
                     t.Max = maxPossible
 
     def RemoveMissingTiles(self, path: str):
@@ -905,12 +907,12 @@ class IDoc:
             :return: Max pixel value across all tiles
         """
 
-        return max([t.Max for t in self.tiles])
+        return max([t.Max for t in self.tiles])  # type: ignore[arg-type]
 
     @property
     def Min(self) -> int:
         """:return: Min pixel value across all tiles"""
-        minVal = min([t.Min for t in self.tiles])
+        minVal = min([t.Min for t in self.tiles])  # type: ignore[arg-type]
 
         # Sanity check for a bug in SerialEM
         minVal = max(minVal, 0)
@@ -922,7 +924,7 @@ class IDoc:
         return float(np.mean(np.array([t.Mean for t in self.tiles])))
 
     @property
-    def Note(self) -> str:
+    def Note(self) -> str | None:
         return self.note
 
     @classmethod
@@ -1094,7 +1096,7 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
 
     points = None
     for t in list(data.Tiles):
-        if t.Defocus is not None:
+        if t.Defocus is not None and t.StagePosition is not None:
             x.append(t.StagePosition[0])
             y.append(t.StagePosition[1])
             z.append(t.Defocus)
@@ -1105,6 +1107,9 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
                 points = row
             else:
                 points = np.vstack((points, row))
+
+    if points is None:
+        return
 
     points[:, 0:2] = points[:, 0:2] - center
     # points = points - np.min(points,0)

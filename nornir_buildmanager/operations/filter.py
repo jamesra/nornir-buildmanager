@@ -79,6 +79,7 @@ def AssembleTilesetFromImageSet(Parameters,
 
     added_outputlevel = True
     if added_outputlevel:
+        assert output_level is not None
         [YDim, XDim] = nornir_shared.images.GetImageSize(image_node.FullPath)
 
         tile_output = os.path.join(tile_set_node.FullPath, 'Tile%d.png')

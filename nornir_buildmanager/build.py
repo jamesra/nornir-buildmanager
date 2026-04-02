@@ -138,7 +138,7 @@ def _GetPipelineXMLPath() -> str:
     if __spec__ is None:
         return os.path.join(os.path.dirname(__file__), 'config', 'Pipelines.xml')
     else:
-        return pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))
+        return pkgutil.get_data(__name__, os.path.join('config', 'Pipelines.xml'))  # type: ignore[return-value]
 
 
 def BuildParserRoot() -> argparse.ArgumentParser:
@@ -163,7 +163,7 @@ def BuildParserRoot() -> argparse.ArgumentParser:
     return parser
 
 
-def _AddPipelineParsers(subparsers: argparse.ArgumentParser):
+def _AddPipelineParsers(subparsers: argparse._SubParsersAction):
     PipelineXML = _GetPipelineXMLPath()
     # Load the element tree once and pass it to the later functions so we aren't parsing the XML text in the loop
     PipelineTree = pipelinemanager.PipelineManager.LoadPipelineXML(PipelineXML)
@@ -171,7 +171,7 @@ def _AddPipelineParsers(subparsers: argparse.ArgumentParser):
     for pipeline_name in pipelinemanager.PipelineManager.ListPipelines(PipelineTree):
         pipeline = pipelinemanager.PipelineManager.Load(PipelineTree, pipeline_name)
 
-        pipeline_parser = subparsers.add_parser(pipeline_name, help=pipeline.Help, epilog=pipeline.Epilog)
+        pipeline_parser = subparsers.add_parser(pipeline_name, help=pipeline.Help, epilog=pipeline.Epilog)  # type: ignore[union-attr]
 
         # Add volumepath as first positional argument
         pipeline_parser.add_argument('volumepath',
@@ -179,7 +179,7 @@ def _AddPipelineParsers(subparsers: argparse.ArgumentParser):
                                      type=str,
                                      help='The path to the volume')
 
-        pipeline.GetArgParser(pipeline_parser, IncludeGlobals=True)
+        pipeline.GetArgParser(pipeline_parser, IncludeGlobals=True)  # type: ignore[union-attr]
 
         pipeline_parser.set_defaults(func=call_pipeline, PipelineXmlFile=_GetPipelineXMLPath(),
                                      PipelineName=pipeline_name)
@@ -205,10 +205,10 @@ def print_help(args):
 def call_recover_links(args):
     """This function checks for missing link elements in a volume and adds them back to the volume"""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
-    volumeObj.RepairMissingLinkElements(recurse=args.recurse)
+    volumeObj.RepairMissingLinkElements(recurse=args.recurse)  # type: ignore[union-attr]
 
     if args.save_restoration:
-        volumeObj.Save()
+        volumeObj.Save()  # type: ignore[union-attr]
         prettyoutput.Log("Recovered links saved (if found).")
     else:
         prettyoutput.Log("Save flag not set, recovered links not saved.")
@@ -217,20 +217,20 @@ def call_recover_links(args):
 def call_repair_xml(args):
     """This function checks for missing link elements in a volume and adds them back to the volume"""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
-    nornir_buildmanager.operations.migration.RepairCroppedXMLFilesInElement(volumeObj)
+    nornir_buildmanager.operations.migration.RepairCroppedXMLFilesInElement(volumeObj)  # type: ignore[arg-type]
 
 
 def call_recover_import_meta_data(args):
     """This function checks for missing link elements in a volume and adds them back to the volume"""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
-    notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)
+    notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)  # type: ignore[union-attr]
 
     if not notesAdded:
-        prettyoutput.Log(f"No notes recovered from {volumeObj.FullPath}.")
+        prettyoutput.Log(f"No notes recovered from {volumeObj.FullPath}.")  # type: ignore[union-attr]
         return
 
     if notesAdded and args.save_restoration:
-        volumeObj.Save(recurse=False)
+        volumeObj.Save(recurse=False)  # type: ignore[union-attr]
         prettyoutput.Log("Recovered notes file saved.")
     else:
         prettyoutput.Log("Save flag not set, recovered notes, but not saved.")

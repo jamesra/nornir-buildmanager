@@ -5,7 +5,7 @@ from nornir_buildmanager.volumemanager import XElementWrapper
 import nornir_shared.reflection as reflection
 
 
-def SetElementParent(Element: XElementWrapper, ParentElement: XElementWrapper = None):
+def SetElementParent(Element: XElementWrapper, ParentElement: XElementWrapper | None = None):  # type: ignore[arg-type]
     """
     An internal use only helper method that sets change flags on the parent element
     and updates the parent child relationship of the elements involved
@@ -24,7 +24,7 @@ def SetElementParent(Element: XElementWrapper, ParentElement: XElementWrapper = 
         e = Element[i]
         if isinstance(e, nornir_buildmanager.volumemanager.XElementWrapper):
             # Find out if we have an override class defined
-            e.OnParentChanged()
+            e.OnParentChanged()  # type: ignore[attr-defined]
 
     return
 
@@ -55,4 +55,4 @@ def WrapElement(e) -> tuple[bool, XElementWrapper]:
     if isinstance(e, OverrideClass):
         return False, e
     else:
-        return True, OverrideClass.wrap(e)
+        return True, OverrideClass.wrap(e)  # type: ignore[attr-defined]

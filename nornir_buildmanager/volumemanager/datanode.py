@@ -7,5 +7,5 @@ class DataNode(volumemanager.XFileElementWrapper):
     """Refers to an external file containing data"""
 
     @classmethod
-    def Create(cls, Path: str, attrib: dict = None, **extra) -> DataNode:
-        return cls(tag='Data', Path=Path, attrib=attrib, **extra)
+    def Create(cls, Path: str, attrib: dict | None = None, **extra) -> DataNode:
+        return cls(tag='Data', Path=Path, attrib=attrib or {}, **extra)

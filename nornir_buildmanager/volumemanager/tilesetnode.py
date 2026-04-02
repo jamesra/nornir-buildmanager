@@ -17,7 +17,7 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
 
     @property
     def CoordFormat(self) -> str:
-        return self.attrib.get('CoordFormat', None)
+        return self.attrib.get('CoordFormat', None)  # type: ignore[return-value]
 
     @CoordFormat.setter
     def CoordFormat(self, val):
@@ -25,7 +25,7 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
 
     @property
     def FilePrefix(self) -> str:
-        return self.attrib.get('FilePrefix', None)
+        return self.attrib.get('FilePrefix', None)  # type: ignore[return-value]
 
     @FilePrefix.setter
     def FilePrefix(self, val):
@@ -33,7 +33,7 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
 
     @property
     def FilePostfix(self) -> str:
-        return self.attrib.get('FilePostfix', None)
+        return self.attrib.get('FilePostfix', None)  # type: ignore[return-value]
 
     @FilePostfix.setter
     def FilePostfix(self, val):
@@ -45,7 +45,7 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
         if val is not None:
             val = int(val)
 
-        return val
+        return val  # type: ignore[return-value]
 
     @TileXDim.setter
     def TileXDim(self, val):
@@ -57,7 +57,7 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
         if val is not None:
             val = int(val)
 
-        return val
+        return val  # type: ignore[return-value]
 
     @TileYDim.setter
     def TileYDim(self, val):
@@ -82,9 +82,9 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
             self.attrib['Path'] = TilesetNode.DefaultPath
 
     def GenerateLevels(self, Levels):
-        node = nornir_buildmanager.operations.tile.BuildTilesetPyramid(self)
+        node = nornir_buildmanager.operations.tile.BuildTilesetPyramid(self)  # type: ignore[attr-defined]
         if node is not None:
-            node.Save()
+            node.Save()  # type: ignore[attr-defined]
 
     @property
     def NeedsValidation(self) -> bool:
@@ -99,7 +99,7 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
         input_needs_validation = InputTransformHandler.InputTransformNeedsValidation(self)
         return input_needs_validation[0]
 
-    def IsValid(self) -> (bool, str):
+    def IsValid(self) -> tuple[bool, str]:
         """Check if the TileSet is valid.  Be careful using this, because it only checks the existing meta-data.
            If you are comparing to a new input transform you should use VMH.IsInputTransformMatched"""
 

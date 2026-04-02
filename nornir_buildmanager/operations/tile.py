@@ -19,7 +19,7 @@ import tempfile
 from functools import partial
 
 from numpy.typing import NDArray
-from typing import Sequence
+from typing import Sequence, cast
 
 import nornir_shared.misc
 import nornir_shared.images
@@ -29,6 +29,7 @@ import nornir_shared.files
 import nornir_imageregistration
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
+from nornir_imageregistration.transforms.base import IDiscreteTransform, ITransformScaling
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.exceptions import NornirUserException
@@ -65,7 +66,7 @@ def EstimateMaxTempImageArea() -> int:
 
     if estimated_max_temp_image_area is None:
         try:
-            import psutil
+            import psutil  # type: ignore[reportMissingModuleSource]
         except ImportError:
             prettyoutput.LogErr(
                 "Could not import psutil to estimate available memory.  Set -MaxWorkingImageArea manually or run 'pip install psutil'")
@@ -92,7 +93,7 @@ def VerifyImages(tile_pyramid_node: TilePyramidNode, **kwargs) -> TilePyramidNod
     levels = tile_pyramid_node.Levels
     LNodeSaveList = []
     for LNode in levels:
-        downsample = int(LNode.attrib.get('Downsample', None))
+        downsample = int(LNode.attrib.get('Downsample', 0) or 0)
         if downsample not in PyramidLevels:
             continue
 
@@ -173,7 +174,7 @@ def VerifyTiles(level_node: LevelNode | None = None, **kwargs) -> tuple[bool, li
     return True, InvalidTiles
 
 
-def FilterIsPopulated(InputFilterNode: FilterNode, Downsample: int, MosaicFullPath: str, OutputFilterName: str) -> bool:
+def FilterIsPopulated(InputFilterNode: FilterNode, Downsample: int | float, MosaicFullPath: str, OutputFilterName: str) -> bool:
     """
     :return: True if the filter has all the tiles the mosaic file indicates it should have at the provided downsample level
     """
@@ -290,6 +291,7 @@ def _CreateMinCorrectionImage(image_node: ImageNode, OutputImageName: str, **kwa
     """Creates an image from the source image whose min pixel value is zero"""
 
     ParentNode = image_node.Parent
+    assert ParentNode is not None
     OutputFile = OutputImageName + ".png"
 
     # Find out if the output image node exists already
@@ -308,7 +310,7 @@ def _CreateMinCorrectionImage(image_node: ImageNode, OutputImageName: str, **kwa
     OutputFileUniformFullPath = os.path.join(ParentNode.FullPath, 'UniformMinBackground_' + OutputFile)
     CreateBackgroundCmdTemplate = 'convert %(OperatorImage)s  +matte -background "gray(%(BackgroundIntensity)f)" -compose Dst -flatten %(OutputFile)s'
     CreateBackgroundCmd = CreateBackgroundCmdTemplate % {'OperatorImage': image_node.FullPath,
-                                                         'BackgroundIntensity': float(Min / 256.0),
+                                                         'BackgroundIntensity': float((Min or 0) / 256.0),
                                                          # TODO This only works for 8-bit
                                                          'OutputFile': OutputFileUniformFullPath}
     prettyoutput.Log(CreateBackgroundCmd)
@@ -346,6 +348,7 @@ def CorrectTiles(Parameters, CorrectionType: str, filter_node: FilterNode, Outpu
     assert (InputLevelNode is not None)
 
     FilterParent = filter_node.Parent
+    assert FilterParent is not None
 
     SaveFilterParent = False
 
@@ -379,7 +382,7 @@ def CorrectTiles(Parameters, CorrectionType: str, filter_node: FilterNode, Outpu
 
     if not os.path.exists(OutputImageNode.FullPath):
         correctionImage = tiles.CalculateShadeImage(InputTiles, correction_type=correctionType)
-        nornir_imageregistration.SaveImage(OutputImageNode.FullPath, correctionImage, bpp=OutputFilterNode.BitsPerPixel)
+        nornir_imageregistration.SaveImage(OutputImageNode.FullPath, correctionImage, bpp=OutputFilterNode.BitsPerPixel)  # type: ignore[arg-type]
     else:
         correctionImage = nornir_imageregistration.LoadImage(OutputImageNode.FullPath)
 
@@ -403,6 +406,7 @@ def _CorrectTilesDeprecated(Parameters, filter_node=None, image_node=None, Outpu
     assert (InputLevelNode is not None)
 
     assert (image_node is not None)
+    assert (OutputFilterName is not None)
 
     if ComposeOperator is None:
         ComposeOperator = 'minus'
@@ -412,6 +416,7 @@ def _CorrectTilesDeprecated(Parameters, filter_node=None, image_node=None, Outpu
         InvertOperator = '-negate'
 
     FilterParent = filter_node.Parent
+    assert FilterParent is not None
 
     SaveFilterParent = False
 
@@ -474,8 +479,9 @@ def TranslateToZeroOrigin(channel_node: ChannelNode, transform_node: TransformNo
     outputFilename = OutputTransform + ".mosaic"
     outputFileFullPath = os.path.join(os.path.dirname(transform_node.FullPath), outputFilename)
 
+    assert transform_node.Parent is not None
     OutputTransformNode = transform_node.Parent.GetChildByAttrib('Transform', 'Path', outputFilename)
-    if not OutputTransformNode.CleanIfInputTransformMismatched(transform_node):
+    if OutputTransformNode is None or not OutputTransformNode.CleanIfInputTransformMismatched(transform_node):
         return None
 
     if os.path.exists(outputFileFullPath) and (OutputTransformNode is not None):
@@ -495,6 +501,7 @@ def TranslateToZeroOrigin(channel_node: ChannelNode, transform_node: TransformNo
     for imagename, transform in list(mosaic.ImageToTransformString.items()):
         MosaicToSectionTransform = factory.LoadTransform(transform)
         Transforms[imagename] = MosaicToSectionTransform
+        assert isinstance(MosaicToSectionTransform, IDiscreteTransform)
         bbox = MosaicToSectionTransform.FixedBoundingBox.ToArray()
 
         minX = min(minX, bbox[spatial.iRect.MinX])
@@ -535,7 +542,7 @@ def TranslateToZeroOrigin(channel_node: ChannelNode, transform_node: TransformNo
 
 
 def CutoffValuesForHistogram(HistogramElement: HistogramNode, MinCutoffPercent: float, MaxCutoffPercent: float,
-                             Gamma: float, Bpp: int = 8):
+                             Gamma: float | None, Bpp: int = 8):
     """Returns the (Min, Max, Gamma) values for a histogram.  If an AutoLevelHint node is available those values are used.
 
     :param HistogramElement HistogramElement: Histogram data node
@@ -604,8 +611,7 @@ def CutoffValuesForHistogram(HistogramElement: HistogramNode, MinCutoffPercent: 
     return MinIntensityCutoff, MaxIntensityCutoff, Gamma
 
 
-def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: TransformNode, checksum: str) -> (
-        bool, HistogramNode):
+def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: TransformNode, checksum: str) -> tuple[bool, HistogramNode | None]:
     """I believe this is complicated due to legacy.  In the past multiple
        histogram nodes would accumulate.  This function deletes the excess nodes
        and returns the valid one."""
@@ -614,7 +620,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
     check_type = 'Thr' in transform_node.Type  # If a threshold value is encoded in the transform type, ensure it matches
     selected_histogram = None
     for histogram_element in filterObj.findall(
-            "Histogram[@InputTransformChecksum='" + checksum + "']"):  # type: HistogramNode | None
+            "Histogram[@InputTransformChecksum='" + checksum + "']"):
         if histogram_element is None:
             raise NornirUserException(
                 "Missing input histogram in %s.  Did you run the histogram pipeline?" % filterObj.FullPath)
@@ -631,7 +637,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
 
         # We continune the loop even if we find a match to ensure extra histogram nodes are removed if found
 
-    return histogram_element_removed, selected_histogram
+    return histogram_element_removed, cast(HistogramNode | None, selected_histogram)
 
 
 def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: TransformNode, Downsample: float = 1,
@@ -639,10 +645,11 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
     """Create a new filter using the histogram of the input filter"""
 
     [added_level, InputLevelNode] = InputFilter.TilePyramid.GetOrCreateLevel(Downsample)
+    assert InputLevelNode is not None, "InputLevelNode must exist for AutolevelTiles"
     InputTransformNode = transform_node
     InputPyramidNode = InputFilter.TilePyramid
 
-    channel_node = InputFilter.Parent  # type: ChannelNode
+    channel_node = cast(ChannelNode, InputFilter.Parent)
 
     if OutputFilterName is None:
         OutputFilterName = 'Leveled'
@@ -667,7 +674,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
 
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent,
                                                                                MaxCutoffPercent, Gamma,
-                                                                               Bpp=InputFilter.BitsPerPixel)
+                                                                               Bpp=InputFilter.BitsPerPixel or 8)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
     (saveFilter, OutputFilterNode) = channel_node.GetOrCreateFilter(OutputFilterName)
@@ -829,6 +836,7 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
        @ChannelNode"""
 
     # Find out if the output filter already exists
+    assert InputFilterNode.Parent is not None
     [addedOutputFilter, OutputFilterNode] = InputFilterNode.Parent.GetOrCreateFilter(OutputFilterName)
     OutputFilterNode.BitsPerPixel = InputFilterNode.BitsPerPixel
     InputPyramidNode = InputFilterNode.TilePyramid
@@ -897,6 +905,7 @@ def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, 
     NodeToSave = None
 
     [added_level, level_node] = filter_node.TilePyramid.GetOrCreateLevel(Downsample)
+    assert level_node is not None
 
     if transform_node is None:
         prettyoutput.LogErr("Missing TransformNode attribute on PruneTiles")
@@ -1036,11 +1045,15 @@ def GenerateHistogramImage(HistogramElement: HistogramNode,
 
         filter_node = HistogramElement.FindParent('Filter')
         channel_node = HistogramElement.FindParent('Channel')
-        section_node = channel_node.FindParent('Section')
+        section_node = channel_node.FindParent('Section') if channel_node is not None else None
         data_node = HistogramElement.find('Data')
 
-        TitleStr = str(section_node.Number) + " " + channel_node.Name + " " + filter_node.Name + " histogram"
+        filter_name = filter_node.Name if filter_node is not None else ''
+        channel_name = channel_node.Name if channel_node is not None else ''
+        section_number = section_node.Number if section_node is not None else ''
+        TitleStr = str(section_number) + " " + channel_name + " " + filter_name + " histogram"
 
+        assert data_node is not None, "Histogram data node not found"
         prettyoutput.Log("Creating Section Autoleveled Histogram Image: " + data_node.FullPath)
 
         # if Async:
@@ -1078,6 +1091,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix: str | None, InputChannelNode: Ch
     else:
         return False, InputChannelNode
 
+    assert InputChannelNode.Parent is not None
     return InputChannelNode.Parent.UpdateOrAddChildByAttrib(
         nornir_buildmanager.volumemanager.ChannelNode.Create(output_name, output_name))
 
@@ -1085,6 +1099,7 @@ def __GetOrCreateOutputChannelForPrefix(prefix: str | None, InputChannelNode: Ch
 def GetOrCreateCleanedImageNode(imageset_node: ImageSetNode, transform_node: TransformNode, level: float,
                                 image_name: str):
     [added_level, image_level_node] = imageset_node.GetOrCreateLevel(level, GenerateData=False)
+    assert image_level_node is not None
 
     os.makedirs(image_level_node.FullPath, exist_ok=True)
 
@@ -1129,8 +1144,10 @@ def UpdateImageName(imageNode: ImageNode, ExpectedImageName: str) -> bool:
     return True
 
 
-def AddDotToExtension(Extension=None):
+def AddDotToExtension(Extension: str | None = None) -> str | None:
     """Ensure that the extension has a . prefix"""
+    if Extension is None:
+        return None
     if not Extension[0] == '.':
         return '.' + Extension
 
@@ -1138,7 +1155,7 @@ def AddDotToExtension(Extension=None):
 
 
 def GetImageName(SectionNumber: int | str, ChannelName: str, FilterName: str, Extension: str | None = None) -> str:
-    Extension = AddDotToExtension(Extension)
+    Extension = AddDotToExtension(Extension) or ''
     return (nornir_buildmanager.templates.Current.SectionTemplate % int(
         SectionNumber)) + "_" + ChannelName + "_" + FilterName + Extension
 
@@ -1169,7 +1186,7 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     """@ChannelNode - TransformNode lives under ChannelNode"""
 
     if CropBox is not None:
-        RequestedBoundingBox = [CropBox[1], CropBox[0], CropBox[3], CropBox[2]]
+        RequestedBoundingBox: nornir_imageregistration.Rectangle | None = nornir_imageregistration.Rectangle.PrimitiveToRectangle([CropBox[1], CropBox[0], CropBox[3], CropBox[2]])
     else:
         RequestedBoundingBox = None
 
@@ -1177,7 +1194,7 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     if image_ext[0] != '.':
         image_ext = '.' + image_ext
 
-    InputChannelNode = filter_node.FindParent('Channel')
+    InputChannelNode = cast(ChannelNode, filter_node.FindParent('Channel'))
     InputFilterMaskName = filter_node.GetOrCreateMaskName()
 
     if not filter_node.HasTilePyramid:
@@ -1206,16 +1223,17 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     OutputImageMaskNameTemplate = InputMaskFilterNode.DefaultImageName(image_ext)
 
     section_node = filter_node.FindParent('Section')
+    section_number = section_node.Number if section_node is not None else None
 
     if OutputFilterNode.HasImageset:
         if OutputFilterNode.Imageset.CleanIfInputTransformMismatched(
-                transform_node) or OutputFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_node.Number):
+                transform_node) or (section_number is not None and OutputFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(section_number)):
             yield OutputFilterNode
 
     if OutputMaskFilterNode.HasImageset:
         if OutputMaskFilterNode.Imageset.CleanIfInputTransformMismatched(
-                transform_node) or OutputMaskFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(
-            section_node.Number):
+                transform_node) or (section_number is not None and OutputMaskFilterNode.Imageset.CleanIfNameHasSectionNumberMismatch(
+            section_number)):
             yield OutputMaskFilterNode
 
     OutputFilterNode.Imageset.SetTransform(transform_node)
@@ -1227,6 +1245,8 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     [added_level, ImageLevelNode] = OutputFilterNode.Imageset.GetOrCreateLevel(thisLevel, GenerateData=False)
     [added_mask_level, ImageMaskLevelNode] = OutputMaskFilterNode.Imageset.GetOrCreateLevel(thisLevel,
                                                                                             GenerateData=False)
+    assert ImageLevelNode is not None
+    assert ImageMaskLevelNode is not None
 
     os.makedirs(ImageLevelNode.FullPath, exist_ok=True)
     os.makedirs(ImageMaskLevelNode.FullPath, exist_ok=True)
@@ -1258,6 +1278,7 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
 
     # LevelFormatStr = LevelFormatTemplate % thisLevel
     [added_input_level, InputLevelNode] = filter_node.TilePyramid.GetOrCreateLevel(thisLevel)
+    assert InputLevelNode is not None
     if added_input_level:
         yield filter_node.TilePyramid
 
@@ -1301,8 +1322,8 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
             mosaicImage = nornir_imageregistration.CropImage(mosaicImage, Xo, Yo, Width, Height)
             maskImage = nornir_imageregistration.CropImage(maskImage, Xo, Yo, Width, Height)
 
-        nornir_imageregistration.SaveImage(tempOutputFullPath, mosaicImage, bpp=OutputFilterNode.BitsPerPixel)
-        nornir_imageregistration.SaveImage(tempMaskOutputFullPath, maskImage)
+        nornir_imageregistration.SaveImage(tempOutputFullPath, mosaicImage, bpp=OutputFilterNode.BitsPerPixel)  # type: ignore[arg-type]
+        nornir_imageregistration.SaveImage(tempMaskOutputFullPath, maskImage)  # type: ignore[arg-type]
 
         # Run convert on the output to make sure it is interlaced
         if Interlace and image_ext == 'png':
@@ -1451,13 +1472,16 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
 
 
 def AssembleTileset(Parameters, filter_node, pyramid_node, transform_node, TileShape=None, TileSetName=None,
-                    Logger=None,
+                    Logger: logging.Logger | None = None,
                     **kwargs):
     """Create full resolution tiles of specfied size for the mosaics
        @FilterNode
        @TransformNode"""
     prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")
+    if Logger is None:
+        Logger = logging.getLogger(__name__)
 
+    assert TileShape is not None, "TileShape must be provided"
     TileWidth = TileShape[0]
     TileHeight = TileShape[1]
 
@@ -1546,8 +1570,9 @@ def AssembleTileset(Parameters, filter_node, pyramid_node, transform_node, TileS
             return None
 
         Info = nornir_buildmanager.metadata.tilesetinfo.TilesetInfo.Load(OutputXML, Logger=Logger)
-        LevelOne.GridDimX = Info.GridDimX
-        LevelOne.GridDimY = Info.GridDimY
+        if Info is not None:
+            LevelOne.GridDimX = Info.GridDimX
+            LevelOne.GridDimY = Info.GridDimY
 
     return filter_node
 
@@ -1564,11 +1589,13 @@ def _SaveImageAndCopy(ImageFullPath: str, temp_output_tile_fullpath: str, tile_i
 
 def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node: TilePyramidNode,
                          transform_node: TransformNode, TileShape, TileSetName=None,
-                         max_temp_image_area=None, ignore_stale=False, Logger=None, **kwargs):
+                         max_temp_image_area=None, ignore_stale=False, Logger: logging.Logger | None = None, **kwargs):
     """Create full resolution tiles of specfied size for the mosaics
        @FilterNode
        @TransformNode"""
     prettyoutput.CurseString('Stage', "Assemble Tileset Level 001")
+    if Logger is None:
+        Logger = logging.getLogger(__name__)
 
     TileWidth = TileShape[0]
     TileHeight = TileShape[1]
@@ -1580,8 +1607,8 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
     #    Feathering = Parameters.get('Feathering', 'binary')
 
     InputTransformNode = transform_node
-    filter_node = pyramid_node.FindParent('Filter')
-    section_node = filter_node.FindParent('Section')
+    filter_node = cast(FilterNode, pyramid_node.FindParent('Filter'))
+    section_node = filter_node.FindParent('Section') if filter_node is not None else None
 
     if TileSetName is None:
         TileSetName = 'Tileset'
@@ -1615,7 +1642,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
             [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
         else:
             # Check if the size of the first tile matches the requested tile size
-            LevelOne = tile_set_node.GetChildByAttrib('Level', 'Downsample', downsample_level)
+            LevelOne = cast(LevelNode | None, tile_set_node.GetChildByAttrib('Level', 'Downsample', downsample_level))
             if LevelOne is not None:
                 # Get the first png file in the folder, check its size
                 first_tile = tile_set_node.GetTileAtLevel(LevelOne)
@@ -1675,7 +1702,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
         prettyoutput.Log("Section {4}: Generating a {0}x{1} grid of {2}x{3} tiles".format(expected_grid_dims[1],
                                                                                           expected_grid_dims[0],
                                                                                           tile_dims[1], tile_dims[0],
-                                                                                          section_node.Number))
+                                                                                          section_node.Number if section_node is not None else '?'))
 
         temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
         os.makedirs(temp_level_dir, exist_ok=True)
@@ -1776,6 +1803,7 @@ def BuildImagePyramid(image_set_node: ImageSetNode,
         assert (SourceLevel != thisLevel)
         TargetImageNode = image_set_node.GetOrCreateImage(thisLevel, SourceImageNode.Path, GenerateData=False)
 
+        assert TargetImageNode.Parent is not None
         os.makedirs(TargetImageNode.Parent.FullPath, exist_ok=True)
 
         if os.path.exists(TargetImageNode.FullPath):
@@ -1926,16 +1954,17 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                 t = executor.submit(
                     lambda infile, outfile: not RemoveOutdatedFile(infile, outfile) and not RemoveInvalidImageFile(
                         outfile), inputFile, outputFile)
-                t.filename = filename
+                t.filename = filename  # type: ignore[attr-defined]
                 tasks.append(t)
 
             for t in concurrent.futures.as_completed(tasks):
                 try:
-                    DestFileIsValid.append((t.filename, t.result()))
+                    DestFileIsValid.append((t.filename, t.result()))  # type: ignore[attr-defined]
                 except Exception as e:
-                    DestFileIsValid = (t.filename, False)
+                    DestFileIsValid.append((t.filename, False))  # type: ignore[attr-defined]
                     prettyoutput.error(
-                        f'Could not validate tile, regenerating {os.path.join(OutputTileDir, t.filename)}')
+                        f'Could not validate tile, regenerating {os.path.join(OutputTileDir, t.filename)}'  # type: ignore[attr-defined]
+                    )
 
         del DestNeedsReplacmentTasks
         DestNeedsReplacment = list(filter(lambda disv: not disv[1], DestFileIsValid))
@@ -1953,7 +1982,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
             inputFile = os.path.join(InputTileDir, filename)
 
             t = local_thread_pool.add_task(f'Check if {filename} is valid', os.path.getsize, inputFile)
-            t.filename = filename
+            t.filename = filename  # type: ignore[attr-defined]
             SourceFileIsValidTasks.append(t)
 
         SourceFileIsValidSet = set(PreviouslyGeneratedOutputFiles)
@@ -1961,7 +1990,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
             try:
                 # Check that the input file has a non-zero size
                 if t.wait_return() > 0:
-                    SourceFileIsValidSet.add(t.filename)
+                    SourceFileIsValidSet.add(t.filename)  # type: ignore[attr-defined]
             except Exception as e:
                 prettyoutput.error(f'Input file getsize excepption {e}')
 
@@ -2092,7 +2121,7 @@ def _SortedNumberListFromLevelsParameter(Levels=None):
 # return
 
 
-def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: (int, int), TileDim: (int, int),
+def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[int, int], TileDim: tuple[int, int],
                       FilePrefix: str, FilePostfix: str, pool=None, **kwargs):
     """
     :param SourcePath:
@@ -2221,13 +2250,15 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: (int, 
         # If the pool has a reasonable number of tasks then we should wait for
         # a task from a row to complete before queueing more.
         if hasattr(pool, 'tasks'):
-            if pool.tasks.qsize() > 256:
-                FirstTaskForRow.wait()
-                FirstTaskForRow = None
+            if pool.tasks.qsize() > 256:  # type: ignore[union-attr]
+                if FirstTaskForRow is not None:
+                    FirstTaskForRow.wait()
+                    FirstTaskForRow = None
         elif hasattr(pool, 'ActiveTasks'):
-            if pool.ActiveTasks > 512:
-                FirstTaskForRow.wait()
-                FirstTaskForRow = None
+            if pool.ActiveTasks > 512:  # type: ignore[union-attr]
+                if FirstTaskForRow is not None:
+                    FirstTaskForRow.wait()
+                    FirstTaskForRow = None
 
         prettyoutput.Log("\nBeginning Row %d of %d" % (iY + 1, DestGridDimensions[0]))
 
@@ -2235,8 +2266,8 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: (int, 
         pool.wait_completion()
 
 
-def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensions: (int, int), TileDim: (int, int),
-                                FilePrefix: str, FilePostfix: str, temp_input_dir: str, temp_output_dir: str, pool=None,
+def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensions: tuple[int, int], TileDim: tuple[int, int],
+                                FilePrefix: str, FilePostfix: str, temp_input_dir: str | None, temp_output_dir: str, pool=None,
                                 **kwargs):
     """
     :param SourcePath:
@@ -2252,7 +2283,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     os.makedirs(DestPath, exist_ok=True)
     os.makedirs(temp_output_dir, exist_ok=True)
 
-    temp_input_dir = None if os.path.exists(temp_input_dir) is False else temp_input_dir
+    temp_input_dir = None if (temp_input_dir is None or not os.path.exists(temp_input_dir)) else temp_input_dir
 
     def process_tile(coords: tuple[int, int], executor: ThreadPoolExecutor):
         """Process a single tile with the given parameters"""
@@ -2364,8 +2395,10 @@ def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.Leve
 
 
 # OK, now build/check the remaining levels of the tile pyramids
-def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, Logger=None, **kwargs):
+def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, Logger: logging.Logger | None = None, **kwargs):
     """@TileSetNode"""
+    if Logger is None:
+        Logger = logging.getLogger(__name__)
 
     MinResolutionLevel = tile_set_node.MaxResLevel
 

@@ -44,10 +44,7 @@ class PruneNode(HistogramBase):
 
     @UserRequestedCutoff.setter
     def UserRequestedCutoff(self, val: float | None):
-        if val is None:
-            val = ""
-
-        self.attrib['UserRequestedCutoff'] = str(val)
+        self.attrib['UserRequestedCutoff'] = str(val) if val is not None else ""
 
     def __init__(self, tag=None, attrib=None, **extra):
         if tag is None:

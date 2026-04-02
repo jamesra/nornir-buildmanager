@@ -35,7 +35,7 @@ def ListStosMap(BlockNode: nornir_buildmanager.volumemanager.BlockNode, StosMapN
     if ControlSection:
         mappings = [m for m in mappings if m.Control == ControlSection]
 
-    for mapping in sorted(mappings, key=lambda m: m.Control):
+    for mapping in sorted(mappings, key=lambda m: m.Control or 0):
         print("{0:s}{1:s}".format(repr(mapping.Control).ljust(10),
                                   ', '.join([str(n) for n in sorted(mapping.Mapped)])))
 

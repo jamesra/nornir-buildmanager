@@ -25,12 +25,14 @@ class StosGroupVolume(volume.Volume):
         for mappingNode in StosGroupNode.SectionMappings:
             for transformNode in mappingNode.Transforms:
                 stosObj = stosfile.StosFile.Load(transformNode.FullPath)
+                if stosObj.Transform is None:
+                    continue
                 stosTransform = factory.LoadTransform(stosObj.Transform, StosGroupNode.Downsample)
 
                 sectionKey = "%s_%s" % (transformNode.MappedSectionNumber, transformNode.MappedChannelName)
 
-                stosTransform.transformNode = transformNode
-                stosTransform.stosObj = stosObj
+                stosTransform.transformNode = transformNode  # type: ignore[attr-defined]
+                stosTransform.stosObj = stosObj  # type: ignore[attr-defined]
 
                 vol.AddOrUpdateSection(sectionKey, stosTransform)
 

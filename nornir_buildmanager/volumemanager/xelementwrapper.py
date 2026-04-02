@@ -4,13 +4,15 @@ import datetime
 import logging
 import operator
 import threading
-from typing import *
+from typing import Any, Generator, TypeVar
 from xml.etree import ElementTree as ElementTree
 from xml.etree.ElementTree import Element
 
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager.exceptions import MissingElementError
 from nornir_shared import prettyoutput as prettyoutput
+
+_XT = TypeVar('_XT', bound='XElementWrapper')
 
 # Used for debugging with conditional break's, each node gets a temporary unique ID
 nid = 0
@@ -51,7 +53,7 @@ class XElementWrapper(ElementTree.Element):
     @property
     def CreationTime(self) -> datetime.datetime:
         datestr = self.get('CreationDate', datetime.datetime.max)
-        creation_time = datetime.datetime.fromisoformat(datestr)
+        creation_time = datetime.datetime.fromisoformat(str(datestr))
         if creation_time.tzinfo is None:
             creation_time = creation_time.replace(tzinfo=datetime.timezone.utc)
         return creation_time
@@ -147,7 +149,7 @@ class XElementWrapper(ElementTree.Element):
                 if child.SaveAsLinkedElement is False:
                     ReturnValue = ReturnValue or child.ElementHasChangesToSave
             else:
-                ReturnValue = ReturnValue or child.ElementHasChangesToSave
+                ReturnValue = ReturnValue or child.ElementHasChangesToSave  # type: ignore[union-attr]
 
         return ReturnValue
 
@@ -167,7 +169,7 @@ class XElementWrapper(ElementTree.Element):
                 if child.SaveAsLinkedElement is False:
                     child.ResetElementChangeFlags()
             else:
-                child.ResetElementChangeFlags()
+                child.ResetElementChangeFlags()  # type: ignore[union-attr]
 
         return
 
@@ -204,8 +206,8 @@ class XElementWrapper(ElementTree.Element):
         return node
 
     @property
-    def Parent(self) -> XElementWrapper:
-        return self._Parent
+    def Parent(self) -> XElementWrapper | None:
+        return self._Parent  # type: ignore[return-value]
 
     def SetParentNoChangeFlag(self, value):
         """
@@ -295,7 +297,7 @@ class XElementWrapper(ElementTree.Element):
 
     @property
     def NeedsValidation(self) -> bool:
-        raise NotImplemented("NeedsValidation should be implemented in derived class {0}".format(str(self)))
+        raise NotImplementedError("NeedsValidation should be implemented in derived class {0}".format(str(self)))
 
     def IsValidLazy(self) -> tuple[bool, str]:
         """
@@ -361,7 +363,7 @@ class XElementWrapper(ElementTree.Element):
                 # Sometimes we have not been added to the parent at this point
                 pass
 
-    def Copy(self) -> Self:
+    def Copy(self) -> "XElementWrapper":
         """Creates a copy of the element"""
         t = type(self)
         cpy = t(tag=self.tag, attrib=self.attrib.copy())
@@ -435,7 +437,7 @@ class XElementWrapper(ElementTree.Element):
 
         return outStr
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
 
         """Called when an attribute lookup has not found the attribute in the usual places (i.e. it is not an instance attribute nor is it found in the class tree for self). name is the attribute name. This method should return the (computed) attribute value or raise an AttributeError exception.
 
@@ -454,7 +456,7 @@ class XElementWrapper(ElementTree.Element):
         if superClass is not None:
             try:
                 if hasattr(superClass, '__getattr__'):
-                    return superClass.__getattr__(name)
+                    return superClass.__getattr__(name)  # type: ignore[union-attr]
             except AttributeError:
                 pass
 
@@ -615,7 +617,7 @@ class XElementWrapper(ElementTree.Element):
                         return False
         return True
 
-    def UpdateOrAddChildByAttrib(self, element: XElementWrapper, AttribNames=None) -> (bool, XElementWrapper):
+    def UpdateOrAddChildByAttrib(self, element: _XT, AttribNames=None) -> tuple[bool, _XT]:  # type: ignore[override]
         if AttribNames is None:
             AttribNames = ['Name']
         elif isinstance(AttribNames, str):
@@ -633,9 +635,9 @@ class XElementWrapper(ElementTree.Element):
 
         XPathStr = "%(ElementName)s[%(QueryString)s]" % {'ElementName': element.tag,
                                                          'QueryString': ' and '.join(attribXPaths)}
-        return self.UpdateOrAddChild(element, XPathStr)
+        return self.UpdateOrAddChild(element, XPathStr)  # type: ignore[return-value]
 
-    def UpdateOrAddChild(self, element: XElementWrapper, XPath: str = None) -> (bool, XElementWrapper):
+    def UpdateOrAddChild(self, element: XElementWrapper, XPath: str | None = None) -> tuple[bool, XElementWrapper]:
         """Adds an element using the specified XPath.  If the XPath is unspecified the element name is used
            Returns a tuple with (True/False, Element).
            True indicates the element did not exist and was added.
@@ -872,10 +874,10 @@ class XElementWrapper(ElementTree.Element):
 
                         (yield sm)
             else:
-                (yield m)
+                (yield m)  # type: ignore[misc]
 
     @classmethod
-    def __ElementLinkNameFromXPath(cls, xpath: str) -> (str, str, str, bool):
+    def __ElementLinkNameFromXPath(cls, xpath: str) -> tuple[str, str, str, bool]:
         """
         :Return: The name to search for the linked and unlinked version of the search term.
                  If only attributes are specified the Link search term will return all
@@ -928,7 +930,7 @@ class XElementWrapper(ElementTree.Element):
 
         # Check all of our child nodes for links
         for n in self:
-            n.LoadAllLinkedNodes()
+            n.LoadAllLinkedNodes()  # type: ignore[union-attr]
 
         #         for n in child_nodes:
         #             if n.tag.endswith('_Link'):

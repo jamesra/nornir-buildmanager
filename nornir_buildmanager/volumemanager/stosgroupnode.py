@@ -22,7 +22,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
 
         obj = super(StosGroupNode, cls).Create(tag='StosGroup', Name=Name, attrib=None, Path=Path, **extra)
         obj.Downsample = Downsample
-        return obj
+        return obj  # type: ignore[return-value]
 
     @property
     def Downsample(self) -> float:
@@ -56,23 +56,23 @@ class StosGroupNode(XNamedContainerElementWrapped):
 
     @property
     def SectionMappings(self) -> Generator[SectionMappingsNode]:
-        return self.findall('SectionMappings')
+        return self.findall('SectionMappings')  # type: ignore[return-value]
 
     def GetSectionMapping(self, MappedSectionNumber: int) -> SectionMappingsNode:
-        return self.GetChildByAttrib('SectionMappings', 'MappedSectionNumber', MappedSectionNumber)
+        return self.GetChildByAttrib('SectionMappings', 'MappedSectionNumber', MappedSectionNumber)  # type: ignore[return-value]
 
-    def GetOrCreateSectionMapping(self, MappedSectionNumber: int) -> (bool, SectionMappingsNode):
+    def GetOrCreateSectionMapping(self, MappedSectionNumber: int) -> tuple[bool, SectionMappingsNode]:
         (added, sectionMappings) = self.UpdateOrAddChildByAttrib(
             nornir_buildmanager.volumemanager.SectionMappingsNode.Create(MappedSectionNumber=MappedSectionNumber),
             'MappedSectionNumber')
         return added, sectionMappings
 
-    def TransformsForMapping(self, MappedSectionNumber: int, ControlSectionNumber: int) -> [TransformNode]:
+    def TransformsForMapping(self, MappedSectionNumber: int, ControlSectionNumber: int) -> list[TransformNode]:
         sectionMapping = self.GetSectionMapping(MappedSectionNumber)
         if sectionMapping is None:
             return []
 
-        return sectionMapping.TransformsToSection(ControlSectionNumber)
+        return list(sectionMapping.TransformsToSection(ControlSectionNumber))
 
     @property
     def NeedsValidation(self) -> bool:
@@ -86,17 +86,17 @@ class StosGroupNode(XNamedContainerElementWrapped):
         ControlSectionNode = ControlFilter.FindParent("Section")
         ControlChannelNode = ControlFilter.FindParent("Channel")
 
-        section_mappings_node = self.GetSectionMapping(MappedSectionNode.Number)
+        section_mappings_node = self.GetSectionMapping(MappedSectionNode.Number)  # type: ignore[union-attr]
         if section_mappings_node is None:
             return None
 
         # assert(not nornir_buildmanager.volumemanager.SectionMappingsNode is None) #We expect the caller to arrange for a section mappings node in advance
 
-        stosNode = section_mappings_node.FindStosTransform(ControlSectionNode.Number,
-                                                           ControlChannelNode.Name,
+        stosNode = section_mappings_node.FindStosTransform(ControlSectionNode.Number,  # type: ignore[union-attr]
+                                                           ControlChannelNode.Name,  # type: ignore[union-attr]
                                                            ControlFilter.Name,
-                                                           MappedSectionNode.Number,
-                                                           MappedChannelNode.Name,
+                                                           MappedSectionNode.Number,  # type: ignore[union-attr]
+                                                           MappedChannelNode.Name,  # type: ignore[union-attr]
                                                            MappedFilter.Name)
 
         return stosNode
@@ -128,16 +128,16 @@ class StosGroupNode(XNamedContainerElementWrapped):
             stosNode.attrib['ControlImageChecksum'] = ""
 
         if MappedFilter.HasMask and ControlFilter.HasMask:
-            if MappedFilter.MaskImageset.HasImage(self.Downsample) or MappedFilter.MaskImageset.CanGenerate(
+            if MappedFilter.MaskImageset.HasImage(self.Downsample) or MappedFilter.MaskImageset.CanGenerate(  # type: ignore[union-attr]
                     self.Downsample):
-                stosNode.attrib['MappedMaskImageChecksum'] = MappedFilter.MaskImageset.GetOrCreateImage(
+                stosNode.attrib['MappedMaskImageChecksum'] = MappedFilter.MaskImageset.GetOrCreateImage(  # type: ignore[union-attr]
                     self.Downsample).Checksum
             else:
                 stosNode.attrib['MappedMaskImageChecksum'] = ""
 
-            if ControlFilter.MaskImageset.HasImage(self.Downsample) or ControlFilter.MaskImageset.CanGenerate(
+            if ControlFilter.MaskImageset.HasImage(self.Downsample) or ControlFilter.MaskImageset.CanGenerate(  # type: ignore[union-attr]
                     self.Downsample):
-                stosNode.attrib['ControlMaskImageChecksum'] = ControlFilter.MaskImageset.GetOrCreateImage(
+                stosNode.attrib['ControlMaskImageChecksum'] = ControlFilter.MaskImageset.GetOrCreateImage(  # type: ignore[union-attr]
                     self.Downsample).Checksum
             else:
                 stosNode.attrib['ControlMaskImageChecksum'] = ""
@@ -160,22 +160,23 @@ class StosGroupNode(XNamedContainerElementWrapped):
         ControlSectionNode = ControlFilter.FindParent("Section")
         ControlChannelNode = ControlFilter.FindParent("Channel")
 
-        section_mappings_node = self.GetSectionMapping(MappedSectionNode.Number)
+        section_mappings_node = self.GetSectionMapping(MappedSectionNode.Number)  # type: ignore[union-attr]
         assert (
                 section_mappings_node is not None)  # We expect the caller to arrange for a section mappings node in advance
 
-        stosNode = nornir_buildmanager.volumemanager.TransformNode.Create(str(ControlSectionNode.Number), OutputType,
+        stosNode = nornir_buildmanager.volumemanager.TransformNode.Create(str(ControlSectionNode.Number),  # type: ignore[union-attr]
+                                                                          OutputType,
                                                                           OutputPath,
                                                                           {'ControlSectionNumber': str(
-                                                                              ControlSectionNode.Number),
+                                                                              ControlSectionNode.Number),  # type: ignore[union-attr]
                                                                               'MappedSectionNumber': str(
-                                                                                  MappedSectionNode.Number),
+                                                                                  MappedSectionNode.Number),  # type: ignore[union-attr]
                                                                               'MappedChannelName': str(
-                                                                                  MappedChannelNode.Name),
+                                                                                  MappedChannelNode.Name),  # type: ignore[union-attr]
                                                                               'MappedFilterName': str(
                                                                                   MappedFilter.Name),
                                                                               'ControlChannelName': str(
-                                                                                  ControlChannelNode.Name),
+                                                                                  ControlChannelNode.Name),  # type: ignore[union-attr]
                                                                               'ControlFilterName': str(
                                                                                   ControlFilter.Name)})
 
@@ -195,10 +196,10 @@ class StosGroupNode(XNamedContainerElementWrapped):
     @staticmethod
     def GenerateStosFilename(ControlFilter: FilterNode, MappedFilter: FilterNode) -> str:
 
-        ControlSectionNode = ControlFilter.FindParent('Section')  # type: SectionNode
-        MappedSectionNode = MappedFilter.FindParent('Section')  # type: SectionNode
+        ControlSectionNode = ControlFilter.FindParent('Section')  # type: ignore[assignment]
+        MappedSectionNode = MappedFilter.FindParent('Section')  # type: ignore[assignment]
 
-        OutputFile = f'{MappedSectionNode.Number}-{ControlSectionNode.Number}_ctrl-{ControlFilter.Parent.Name}_{ControlFilter.Name}_map-{MappedFilter.Parent.Name}_{MappedFilter.Name}.stos'
+        OutputFile = f'{MappedSectionNode.Number}-{ControlSectionNode.Number}_ctrl-{ControlFilter.Parent.Name}_{ControlFilter.Name}_map-{MappedFilter.Parent.Name}_{MappedFilter.Name}.stos'  # type: ignore[union-attr]
         return OutputFile
 
     @classmethod
@@ -292,9 +293,9 @@ class StosGroupNode(XNamedContainerElementWrapped):
             XElementWrapper.logger.warning(renamedPath + " -> " + stosNode.FullPath)
             shutil.move(renamedPath, stosNode.FullPath)
             stosNode.Path = OutputPath
-            stosNode.MappedChannelName = MappedChannelNode.Name
+            stosNode.MappedChannelName = MappedChannelNode.Name  # type: ignore[union-attr]
             stosNode.MappedFilterName = MappedFilter.Name
-            stosNode.ControlChannelName = ControlChannelNode.Name
+            stosNode.ControlChannelName = ControlChannelNode.Name  # type: ignore[union-attr]
             stosNode.ControlFilterName = ControlFilter.Name
             stosNode.ControlImageChecksum = str(ControlFilter.Imageset.Checksum)
             stosNode.MappedImageChecksum = str(MappedFilter.Imageset.Checksum)
@@ -307,7 +308,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
         """
         return "{0:s} {1:3d}".format(self.Name.ljust(20), int(self.Downsample))
 
-    def CleanIfInvalid(self) -> (bool, str):
+    def CleanIfInvalid(self) -> tuple[bool, str]:
         cleaned, reason = super(StosGroupNode, self).CleanIfInvalid()
 
         # TODO: Deleting stale transforms and section mappinds needs to be enabled, but I identified this shortcoming in a remote and

@@ -12,7 +12,9 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
     def DefaultImageName(self, extension: str) -> str:
         """Default name for an image in this filters imageset"""
         InputChannelNode = self.FindParent('Channel')
+        assert InputChannelNode is not None
         section_node = InputChannelNode.FindParent('Section')
+        assert section_node is not None
         return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
 
     @property
@@ -159,15 +161,15 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
 
         assert (isinstance(MaskName, str))
 
-        return self.Parent.GetFilter(MaskName)
+        return self.Parent.GetFilter(MaskName)  # type: ignore[union-attr]
 
-    def GetOrCreateMaskFilter(self, MaskName: str | None = None) -> FilterNode:
+    def GetOrCreateMaskFilter(self, MaskName: str | None = None) -> tuple[bool, FilterNode]:
         if MaskName is None:
             MaskName = self.GetOrCreateMaskName()
 
         assert (isinstance(MaskName, str))
 
-        return self.Parent.GetOrCreateFilter(MaskName)
+        return self.Parent.GetOrCreateFilter(MaskName)  # type: ignore[union-attr]
 
     def GetImage(self, Downsample) -> ImageNode | None:
         if not self.HasImageset:
@@ -193,15 +195,15 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         return maskFilter.GetOrCreateImage(Downsample)
 
     def GetHistogram(self) -> HistogramNode:
-        return self.find('Histogram')
+        return self.find('Histogram')  # type: ignore[return-value]
 
     @property
     def NeedsValidation(self) -> bool:
         return True
 
     @classmethod
-    def Create(cls, Name: str, Path: str = None, **extra) -> FilterNode:
-        return super(FilterNode, cls).Create(tag='Filter', Name=Name, Path=Path, **extra)
+    def Create(cls, Name: str, Path: str | None = None, **extra) -> FilterNode:
+        return super(FilterNode, cls).Create(tag='Filter', Name=Name, Path=Path, **extra)  # type: ignore[return-value]
 
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
         print("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (
