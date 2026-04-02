@@ -127,13 +127,8 @@ class TestBase(unittest.TestCase):
     def setUp(self):
         self.VolumeDir = self.TestOutputPath
 
-        # Remove output of earlier tests
-
-        try:
-            if os.path.exists(self.VolumeDir):
-                shutil.rmtree(self.VolumeDir)
-        except:
-            pass
+        if os.path.exists(self.VolumeDir):
+            shutil.rmtree(self.VolumeDir, ignore_errors=True)
         
         os.makedirs(self.VolumeDir, exist_ok=True)
 
