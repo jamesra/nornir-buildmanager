@@ -1330,8 +1330,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
     def __SaveXML(self, xmlfilename, SaveElement):
         '''Intended to be called on a thread from the save function'''
         try: 
-            os.makedirs(self.FullPath)
-        except (OSError , WindowsError) as e:
+            os.makedirs(self.FullPath, exist_ok=True)
+        except OSError as e:
             if not os.path.isdir(self.FullPath):
                 raise e
 
@@ -3723,7 +3723,7 @@ class PruneNode(HistogramBase):
 
 
 if __name__ == '__main__':
-    VolumeManager.Load("C:\Temp")
+    VolumeManager.Load(r"C:\Temp")
 
     tagdict = XPropertiesElementWrapper.wrap(ElementTree.Element("Tag"))
     tagdict.V = 5
