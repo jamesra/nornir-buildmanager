@@ -4,6 +4,7 @@ Created on Apr 2, 2012
 '''
 
 import collections
+import collections.abc
 import copy
 import logging
 import os
@@ -707,7 +708,7 @@ class PipelineManager(object):
     @classmethod
     def _SaveNodes(cls, NodesToSave):
         if not NodesToSave is None:
-            if isinstance(NodesToSave, collections.Iterable) or isgenerator(NodesToSave):
+            if isinstance(NodesToSave, collections.abc.Iterable) or isgenerator(NodesToSave):
                 for node in NodesToSave:
                     if node is None:
                         continue 
@@ -838,5 +839,5 @@ def _GetVariableName(PipelineNode):
 
 if __name__ == "__main__":
 
-    XmlFilename = 'D:\Buildscript\Pipelines.xml'
+    XmlFilename = r'D:\Buildscript\Pipelines.xml'
     PipelineManager.Load(XmlFilename)
