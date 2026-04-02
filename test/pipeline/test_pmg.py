@@ -65,7 +65,8 @@ class PMGTest(setup_pipeline.PlatformTest):
         clsstr = str(self.__class__.__name__)
         return clsstr
 
-class ParseBasicFilename(PMGTest):
+class ParseBasicFilename(unittest.TestCase):
+    '''Filename parsing tests do not require platform test data'''
 
     def runTest(self):
 
@@ -82,7 +83,8 @@ class ParseBasicFilename(PMGTest):
 
         pass
 
-class ParseSectionFilename(PMGTest):
+class ParseSectionFilename(unittest.TestCase):
+    '''Filename parsing tests do not require platform test data'''
 
     def runTest(self):
 
@@ -99,7 +101,8 @@ class ParseSectionFilename(PMGTest):
         self.assertEqual(info.Probe, 'yy', "Incorrect probe name")
         pass
 
-class ParseSpacesInFilename(PMGTest):
+class ParseSpacesInFilename(unittest.TestCase):
+    '''Filename parsing tests do not require platform test data'''
 
     def runTest(self):
 

@@ -325,9 +325,9 @@ def __RemoveRTFBracket(rtfStr):
 def __RTFToHTML(rtfStr):
     '''Crudely convert a rich-text string to html'''
 
-    translationTable = {'\pard' : '<br\>',
-                        '\par' : '<br\>',
-                        '\viewkind' : ''}
+    translationTable = {r'\pard' : '<br/>',
+                        r'\par' : '<br/>',
+                        r'\viewkind' : ''}
 
     if(rtfStr[0] == '{'):
         rtfStr = rtfStr[1:-2]
@@ -375,8 +375,8 @@ def __RTFToHTML(rtfStr):
             rtfStr = rtfStr[1:]
 
     outStr = str(HTMLOut).strip()
-    while outStr.endswith('<br\>'):
-        outStr = outStr[:-len('<br\>')].strip()
+    while outStr.endswith('<br/>'):
+        outStr = outStr[:-len('<br/>')].strip()
 
     if len(HTMLOut) > 0:
         return '<p>' + outStr

@@ -974,7 +974,8 @@ class PlatformTest(NornirBuildTestBase):
     def setUp(self):
         '''Imports a volume and stops, tests call pipeline functions'''
         super(PlatformTest, self).setUp()
-        self.assertTrue(os.path.exists(self.PlatformFullPath), "Test data for platform does not exist:" + self.PlatformFullPath)
+        if not os.path.exists(self.PlatformFullPath):
+            self.skipTest("Test data for platform does not exist: " + self.PlatformFullPath)
 
     def RunImport(self):
         if 'idoc' in self.Platform.lower():
