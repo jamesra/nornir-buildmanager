@@ -251,6 +251,8 @@ def _GetFromNamespace(ns, attribname, default=None):
 def InitLogging(buildArgs):
     #    nornir_shared.Misc.RunWithProfiler('Execute()', "C:/Temp/profile.pr")
 
+    buildArgs = _ReorderArgs(list(buildArgs))
+
     parser = BuildParserRoot()
 
     (args, extraargs) = parser.parse_known_args(buildArgs)
@@ -288,20 +290,61 @@ def _GetValidCommands() -> list[str]:
     return commands
 
 
+# Flags defined on the root parser only (see _AddParserRootArguments). Used to recognize
+# [volumepath, <root flags...>, <command>, ...] test/harness argv and normalize to
+# [<root flags...>, <command>, volumepath, ...] before subparser dispatch.
+_ROOT_FLAGS_NO_VALUE = frozenset({'-debug', '-verbose', '-lowpriority', '-lp'})
+_ROOT_FLAGS_WITH_VALUE = frozenset({'-computational_library'})
+
+
+def _segment_is_root_only_flags(segment: list[str]) -> bool:
+    """True if *segment* is a sequence of root-parser flags (and values for value-taking flags)."""
+    j = 0
+    while j < len(segment):
+        t = segment[j]
+        if t in _ROOT_FLAGS_NO_VALUE:
+            j += 1
+            continue
+        if t in _ROOT_FLAGS_WITH_VALUE:
+            if j + 1 >= len(segment):
+                return False
+            j += 2
+            continue
+        return False
+    return True
+
+
 def _ReorderArgs(args: list[str]) -> list[str]:
-    """Reorder arguments to handle both command-first and volumepath-first patterns."""
+    """Reorder argv so root flags and subcommand precede volumepath (argparse subparser layout).
+
+    Accepts legacy test orderings:
+    - ``[volumepath, command, ...]`` (swap first two when command is second)
+    - ``[volumepath, -debug, ..., command, ...]`` (move root flags + command before volumepath)
+
+    Leaves canonical ``[flags..., command, volumepath, ...]`` unchanged.
+    """
     if not args:
         return args
 
-    valid_commands = _GetValidCommands()
+    valid_commands = frozenset(_GetValidCommands())
 
-    # If first arg is a valid command, no reordering needed
+    # Command-first: nothing to do
     if args[0] in valid_commands:
         return args
 
-    # If second arg is a valid command, reorder to put command first
-    if len(args) > 1 and args[1] in valid_commands:
+    # [volumepath, command, ...] — do not swap when args[0] is a flag (e.g. -debug ImportPMG vol)
+    if len(args) > 1 and not args[0].startswith('-') and args[1] in valid_commands:
         return [args[1], args[0]] + args[2:]
+
+    # [volumepath, <root flags...>, command, <tail>]
+    if not args[0].startswith('-'):
+        volumepath = args[0]
+        for i in range(2, len(args)):
+            if args[i] not in valid_commands:
+                continue
+            middle = args[1:i]
+            if _segment_is_root_only_flags(middle):
+                return middle + [args[i], volumepath] + args[i + 1 :]
 
     return args
 
