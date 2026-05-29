@@ -155,18 +155,18 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
                 "Invalid argument passed to TransformNode.CropBox %s.  Expected 2 or 4 element tuple." % str(bounds))
 
     @property
-    def NeedsValidation(self) -> tuple[bool, str]:
+    def NeedsValidation(self) -> bool:
         try:
             if self._validity_checked is True:
-                return False, "Validity already checked"
+                return False
         except AttributeError:
             pass
 
         if super(TransformNode, self).NeedsValidation:
-            return True, ""
+            return True
 
         input_needs_validation = InputTransformHandler.InputTransformNeedsValidation(self)
-        return input_needs_validation
+        return input_needs_validation[0]
 
     def IsValid(self) -> tuple[bool, str]:
         """Check if the transform is valid.  Be careful using this, because it only checks the existing meta-data.

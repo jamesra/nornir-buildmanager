@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import datetime
 import glob
+import importlib.util
 import math
+import sys
 import shutil
 import unittest
+from pathlib import Path
 
 from nornir_buildmanager.argparsexml import IntegerList
 import nornir_buildmanager.build as build
@@ -17,7 +20,27 @@ from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration.files
 from nornir_imageregistration.files.mosaicfile import *
 import nornir_shared.misc
-from .. import testbase
+
+
+def _load_local_testbase_module():
+    """Load buildmanager testbase by file path to avoid `tests` package collisions."""
+    module_name = "nornir_buildmanager_tests_testbase"
+    existing = sys.modules.get(module_name, None)
+    if existing is not None:
+        return existing
+
+    module_path = Path(__file__).resolve().parents[1] / "testbase.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create import spec for {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+testbase = _load_local_testbase_module()
 
 
 def VerifyVolume(test, VolumeObj: VolumeNode, listVolumeEntries: list[VolumeEntry]):
@@ -93,13 +116,7 @@ def EnumerateImageSets(testObj, volumeNode: VolumeNode, Channels: str, Filter: s
         if RequireMasks:
             testObj.assertTrue(f.HasMask, "Mask expected for filters")
 
-        image_sets = f.findall('ImageSet')
-        image_set = next(image_sets, None)
-        testObj.assertIsNotNone(image_set, "ImageSet node not found")
-
-        next_image_set = next(image_sets, None)
-        testObj.assertIsNone(next_image_set, f"Multiple ImageSet nodes found in {f.FullPath}")
-        yield image_set
+        yield _GetSingleChildByTag(testObj, f, 'ImageSet')
 
 
 def EnumerateTileSets(testObj, volumeNode, Channels, Filter=None):
@@ -112,12 +129,16 @@ def EnumerateTileSets(testObj, volumeNode, Channels, Filter=None):
     filters = EnumerateFilters(sections, Channels, Filter)
 
     for f in filters:
-        tile_sets = f.findall('Tileset')
-        tile_set = next(tile_sets, None)
-        testObj.assertIsNotNone(tile_set, "Tileset node not found")
-        next_tile_set = next(tile_sets, None)
-        testObj.assertIsNone(next_tile_set, f"Multiple Tileset nodes found in {f.FullPath}")
-        yield tile_set
+        yield _GetSingleChildByTag(testObj, f, 'Tileset')
+
+
+def _GetSingleChildByTag(testObj, parent_node: XElementWrapper, child_tag: str):
+    child_nodes = parent_node.findall(child_tag)
+    child_node = next(child_nodes, None)
+    testObj.assertIsNotNone(child_node, f"{child_tag} node not found")
+    next_child_node = next(child_nodes, None)
+    testObj.assertIsNone(next_child_node, f"Multiple {child_tag} nodes found in {parent_node.FullPath}")
+    return child_node
 
 
 def ConvertLevelsToList(Levels):
@@ -1049,6 +1070,11 @@ class PlatformTest(NornirBuildTestBase):
         buildArgs = self._CreateImportArgs('ImportDM4', self.ImportedDataPath)
         self.RunBuild(buildArgs)
 
+    def _LoadCachedVolume(self):
+        # Load the meta-data from the volumedata.xml file
+        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
+        self.assertIsNotNone(self.VolumeObj)
+
 
 class EmptyVolumeTestBase(NornirBuildTestBase):
     """The class to use when one only wants an empty volume"""
@@ -1086,9 +1112,7 @@ class ImportOnlySetup(PlatformTest):
             self.assertTrue(os.path.exists(self.TestOutputPath), "Test input was not copied")
             self.SaveTestSetupToCache(CacheName)
 
-        # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
-        self.assertIsNotNone(self.VolumeObj)
+        self._LoadCachedVolume()
 
 
 class PrepareSetup(PlatformTest):
@@ -1104,9 +1128,7 @@ class PrepareSetup(PlatformTest):
             self.RunHistogram()
             self.SaveTestSetupToCache(CacheName)
 
-        # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
-        self.assertIsNotNone(self.VolumeObj)
+        self._LoadCachedVolume()
 
 
 class PrepareAndMosaicSetup(PlatformTest):
@@ -1121,9 +1143,7 @@ class PrepareAndMosaicSetup(PlatformTest):
             self.RunImportThroughMosaic()
             self.SaveTestSetupToCache(CacheName)
 
-        # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
-        self.assertIsNotNone(self.VolumeObj)
+        self._LoadCachedVolume()
 
 
 class PrepareThroughAssembleSetup(PlatformTest):
@@ -1137,9 +1157,7 @@ class PrepareThroughAssembleSetup(PlatformTest):
             self.RunImportThroughMosaicAssemble()
             self.SaveTestSetupToCache(CacheName)
 
-        # Load the meta-data from the volumedata.xml file
-        self.VolumeObj = VolumeManager.Load(self.TestOutputPath)
-        self.assertIsNotNone(self.VolumeObj)
+        self._LoadCachedVolume()
 
 
 if __name__ == "__main__":

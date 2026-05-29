@@ -39,7 +39,7 @@ class HistogramBase(InputTransformHandler, XElementWrapper):
     @property
     def NeedsValidation(self) -> bool:
 
-        if self.InputTransformNeedsValidation():
+        if self.InputTransformNeedsValidation()[0]:
             return True
 
         if self.DataNode is None:

@@ -3,12 +3,11 @@ Created on May 17, 2018
 
 @author: u0490822
 '''
-from ..setup_pipeline import VerifyVolume, VolumeEntry
+from ..setup_pipeline import VerifyVolume, VolumeEntry, testbase
 from .. import test_sectionimage
 
 from nornir_buildmanager.operations.block import *
 from nornir_imageregistration.transforms import registrationtree
-from ... import testbase
 
 
 def _RTNodesToNumberList(Nodes):

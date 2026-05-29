@@ -35,6 +35,7 @@ from __future__ import annotations
 import collections
 import concurrent.futures
 import datetime
+import errno
 import sys
 import shutil
 import math
@@ -152,7 +153,15 @@ def Import(VolumeElement: VolumeNode,
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
     if len(ContrastMap) == 0:
-        nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
+        try:
+            nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
+        except OSError as e:
+            if e.errno == errno.EROFS:
+                prettyoutput.Log(
+                    f"Warning: Unable to create default histogram cutoff file on read-only filesystem: {histogramFilename}"
+                )
+            else:
+                raise
 
     if not os.path.exists(ImportPath):
         raise ValueError("Import Path does not exist: %s" % ImportPath)

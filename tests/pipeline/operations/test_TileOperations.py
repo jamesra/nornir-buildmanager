@@ -54,7 +54,7 @@ class ShadeCorrectionTest(ImportOnlySetup):
     def Platform(self):
         return "PMG"
 
-    def runTest(self):
+    def test_shade_correction_test(self):
         self.FilterNode = self.VolumeObj.find("Block/Section[@Number='2']/Channel/Filter")
         self.assertIsNotNone(self.FilterNode)
 
@@ -94,7 +94,7 @@ class HistogramFilterTest(ImportOnlySetup):
     def Platform(self):
         return "PMG"
 
-    def runTest(self):
+    def test_histogram_filter_test(self):
         self.ChannelData = self.VolumeObj.find("Block/Section[@Number='2']/Channel")
         self.assertIsNotNone(self.ChannelData)
 
@@ -153,7 +153,7 @@ class HistogramFilterTest2(ImportOnlySetup):
     def Platform(self):
         return "PMG"
 
-    def runTest(self):
+    def test_histogram_filter_test2(self):
         self.ChannelData = self.VolumeObj.find("Block/Section[@Number='2']/Channel")
         self.assertIsNotNone(self.ChannelData)
 
@@ -208,7 +208,7 @@ class BuildTilePyramidTest(PrepareSetup):
     def Platform(self):
         return "IDOC"
 
-    def runTest(self):
+    def test_build_tile_pyramid_test(self):
         volumeNode = self.RunAdjustContrast(Sections=690)
 
         # Remove a tile from the tile pyramid and ensure that it is rebuilt if a tile is removed
@@ -254,7 +254,7 @@ class AutoLevelHistogramTest(PrepareSetup):
         self.OutputLevelNode = self.OutputFilterNode.find("TilePyramid/Level[@Downsample='1']")
         self.assertIsNotNone(self.OutputLevelNode)
 
-    def runTest(self):
+    def test_auto_level_histogram_test(self):
         '''This test determines whether the userrequested attributes of the AutoLevelHint element are functioning'''
         OutputFilterName = 'LeveledTest'
 

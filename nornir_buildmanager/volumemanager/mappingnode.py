@@ -27,12 +27,12 @@ class MappingNode(XElementWrapper):
         return self._mapped_cache
 
     @Mapped.setter
-    def Mapped(self, value: frozenset[int] | int):
+    def Mapped(self, value: frozenset[int] | list[int] | int | None):
         AdjacentSectionString = None
-        if isinstance(value, list):
-            value.sort()
-            AdjacentSectionString = ','.join(str(x) for x in value)
-            self._mapped_cache = frozenset(value)
+        if isinstance(value, (list, frozenset)):
+            sorted_values = sorted(value)
+            AdjacentSectionString = ','.join(str(x) for x in sorted_values)
+            self._mapped_cache = frozenset(sorted_values)
         elif isinstance(value, int):
             AdjacentSectionString = str(value)
             self._mapped_cache = frozenset([value])
@@ -53,7 +53,7 @@ class MappingNode(XElementWrapper):
             return
         else:
             updated_map.append(value)
-            self.Mapped = frozenset(updated_map)  # type: ignore[assignment]
+            self.Mapped = updated_map
             # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def RemoveMapping(self, value: int):
@@ -63,7 +63,7 @@ class MappingNode(XElementWrapper):
             return
 
         updated_map.remove(intval)
-        self.Mapped = frozenset(updated_map)  # type: ignore[assignment]
+        self.Mapped = updated_map
         # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def __str__(self):

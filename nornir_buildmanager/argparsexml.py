@@ -5,14 +5,29 @@ Converts XML argparser definitions from pipelines and importers into argparsers.
 """
 
 import argparse
+import builtins
 import copy
 import enum
 import logging
+import re
 from typing import Type
 
 from nornir_shared.argparse_helpers import *
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
+
+
+_ARGPARSE_HELP_PERCENT_PATTERN = re.compile(r'(?<!%)%(?!\(|%)')
+
+
+def _EscapeLiteralPercentInHelp(help_string: str) -> str:
+    """Escape literal percent signs while preserving argparse placeholders.
+
+    Argparse help strings use %-formatting with mappings (for example `%(default)s`).
+    A literal `%` in XML help text (for example `99%`) must be escaped as `%%`.
+    """
+
+    return _ARGPARSE_HELP_PERCENT_PATTERN.sub('%%', help_string)
 
 
 def _ConvertValueToPythonType(val: str, type: Type | None = None) -> bool | int | float | str:
@@ -57,8 +72,9 @@ def _AddArgumentNodeToParser(parser, argNode):
             continue
 
         elif key == 'type':
-            if val in __builtins__:
-                found_type = __builtins__[val]
+            builtin_type = getattr(builtins, val, None)
+            if builtin_type is not None:
+                found_type = builtin_type
             elif val in globals():
                 found_type = globals()[val]
             elif '.' in val:  # Try to import the package in case it is an enum
@@ -108,6 +124,8 @@ def _AddArgumentNodeToParser(parser, argNode):
                                 f"string is: {val}")
 
             attribDictCopy[key] = listOfChoices
+        elif key == 'help':
+            attribDictCopy[key] = _EscapeLiteralPercentInHelp(val)
 
     if 'flag' in attribDictCopy:
         del attribDictCopy['flag']

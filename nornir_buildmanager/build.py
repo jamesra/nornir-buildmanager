@@ -44,6 +44,7 @@ CommandParserDict = {}
 
 
 def _AddParserRootArguments(parser: argparse.ArgumentParser):
+    """Add global flags shared by all build subcommands."""
     parser.add_argument('-debug',
                         action='store_true',
                         required=False,
@@ -144,7 +145,11 @@ def _GetPipelineXMLPath() -> str:
 def BuildParserRoot() -> argparse.ArgumentParser:
     # conflict_handler = 'resolve' replaces old arguments with new if both use the same option flag
     parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve',
-                                     description='Options available to all build commands.  Specific pipelines may extend the argument list.')
+                                     description='Options available to all build commands. Specific pipelines extend this argument list.',
+                                     epilog='Examples:\n'
+                                            '  nornir-build ImportIDoc /data/volume ImportDir=/data/idoc\n'
+                                            '  nornir-build -debug -computational_library cupy Mosaic /data/volume -Sections 1-10\n'
+                                            '  nornir-build help Mosaic')
     _AddParserRootArguments(parser)
 
     # Create subparsers for commands
@@ -215,13 +220,17 @@ def call_recover_links(args):
 
 
 def call_repair_xml(args):
-    """This function checks for missing link elements in a volume and adds them back to the volume"""
+    """Repair malformed VolumeData XML files with trailing content.
+
+    This migration-style repair targets older metadata where characters were written
+    after the closing XML tag (primarily pre-Dec 2023 data sets).
+    """
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
     nornir_buildmanager.operations.migration.RepairCroppedXMLFilesInElement(volumeObj)  # type: ignore[arg-type]
 
 
 def call_recover_import_meta_data(args):
-    """This function checks for missing link elements in a volume and adds them back to the volume"""
+    """Recover notes metadata from text files under the target volume path."""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
     notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)  # type: ignore[union-attr]
 
@@ -249,6 +258,12 @@ def _GetFromNamespace(ns, attribname, default=None):
 
 
 def InitLogging(buildArgs):
+    """Initialize persistent logging for the current command invocation.
+
+    Logging writes through ``nornir_shared.misc.SetupLogging``. When a
+    ``volumepath`` is present and ``-debug`` is enabled, the log level is DEBUG;
+    otherwise WARN is used.
+    """
     #    nornir_shared.Misc.RunWithProfiler('Execute()', "C:/Temp/profile.pr")
 
     buildArgs = _ReorderArgs(list(buildArgs))
@@ -267,6 +282,11 @@ def InitLogging(buildArgs):
 
 
 def init_computational_library(args: argparse.Namespace):
+    """Select CPU/GPU computation backend and export process environment.
+
+    Sets ``NORNIR_COMPUTATIONAL_LIBRARY`` and updates
+    ``nornir_imageregistration``'s active backend.
+    """
     if args.computational_library == 'detect':
         if nornir_imageregistration.HasCupy():
             args.computational_library = 'cupy'
@@ -350,6 +370,11 @@ def _ReorderArgs(args: list[str]) -> list[str]:
 
 
 def Execute(buildArgs=None):
+    """Run the nornir-build command line entrypoint.
+
+    The argv parser accepts canonical subcommand ordering and legacy test
+    ordering that starts with ``volumepath``.
+    """
     # Spend more time on each thread before switching
     # sys.setswitchinterval(500)
 

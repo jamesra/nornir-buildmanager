@@ -4,9 +4,30 @@ Created on Feb 18, 2013
 @author: u0490822
 '''
 import shutil
+import importlib.util
+import sys
 import unittest
+from pathlib import Path
 
-from .. import testbase
+
+def _load_local_testbase_module():
+    module_name = "nornir_buildmanager_tests_testbase"
+    existing = sys.modules.get(module_name, None)
+    if existing is not None:
+        return existing
+
+    module_path = Path(__file__).resolve().parents[1] / "testbase.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create import spec for {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+testbase = _load_local_testbase_module()
 
 import nornir_buildmanager
 from nornir_buildmanager.volumemanager import *
@@ -108,7 +129,7 @@ class VolumeManagerFilterTest(VolumeManagerTestBase):
 
 class VolumeManagerAppendTest(VolumeManagerTestBase):
 
-    def runTest(self):
+    def test_volume_manager_append_test(self):
         logger = logging.getLogger(__name__ + "VolumeManagerAppendTest")
         self.assertEqual(self.VolumeObj.tag, "Volume")
 

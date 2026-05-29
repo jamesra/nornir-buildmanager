@@ -31,7 +31,7 @@ class IDocTest(setup_pipeline.PlatformTest):
 
     @property
     def Platform(self) -> str:
-        return "IDoc"
+        return "IDOC"
 
     @property
     def Grid32ManualStosFullPath(self) -> str:
@@ -278,7 +278,7 @@ class StosRebuildHelper(setup_pipeline.NornirBuildTestBase):
         return updatedTransforms
 
 
-class IDocSingleSectionImportTest(IDocTest):
+class TestIDocSingleSectionImport(IDocTest):
 
     @property
     def VolumePath(self):
@@ -346,7 +346,7 @@ class IDocSingleSectionImportTest(IDocTest):
 
         self.assertFalse(FilterObj.IsContrastMismatched(MinVal, MaxVal, Gamma))
 
-    def runTest(self):
+    def test_i_doc_single_section_import_test(self):
         self.RunImport()
         self.LoadMetaData()
 
@@ -445,7 +445,7 @@ class IDocSingleSectionImportTest(IDocTest):
 #         self.RunAssembleMosaicToVolume(Channels="TEM")
 
 
-class IDocBuildTest(IDocTest, StosRebuildHelper):
+class TestIDocBuild(IDocTest, StosRebuildHelper):
 
     def StosGridManualStosPath(self, level):
         """Name of the folder containing manual stos file overrides"""
@@ -461,7 +461,7 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
         IDocBuildTestBootstrapDebugging which can skip successful parts of the build to focus on the failing step"""
         return os.path.join(self.PlatformFullPath, "..", "repro", f"IDocBuildTest")
 
-    def runTest(self):
+    def test_i_doc_build_test(self):
         try:
             BruteLevel = 16
             GridLevelOne = 16
@@ -652,13 +652,13 @@ class IDocBuildTest(IDocTest, StosRebuildHelper):
 #         self.RunExportImages(Channels="Registered", Filters="Leveled", AssembleLevel=16)
 # # ===============================================================================
 
-class IdocReaderTest(IDocTest):
+class TestIdocReader(IDocTest):
 
     @property
     def VolumePath(self):
         return "RC2_Micro"
 
-    def runTest(self):
+    def test_idoc_reader_test(self):
         NumLogTiles = 25
 
         idocDir = os.path.join(self.ImportedDataPath, '17', '*.idoc')
@@ -695,7 +695,7 @@ class IdocReaderTest(IDocTest):
         return
 
 
-class LogReaderTest(IDocTest):
+class TestLogReader(IDocTest):
 
     @property
     def VolumePath(self):
@@ -738,7 +738,7 @@ class LogReaderTest(IDocTest):
         self.assertEqual(TileData.startAcquisitionTime, 5402.328)
         self.assertEqual(TileData.endAcquisitionTime, 5433.453)
 
-    def runTest(self):
+    def test_log_reader_test(self):
         logDir = os.path.join(self.ImportedDataPath, '17', '*.log')
         logFiles = glob.glob(logDir)
 

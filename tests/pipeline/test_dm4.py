@@ -316,7 +316,7 @@ class StosRebuildHelper(object):
 #         self.ForceStosRebuildFromBruteLevel(self.Grid32ManualStosFullPath, BruteLevel)  
 
 # #   
-class DM4BuildTest_Reproduction(setup_pipeline.CopySetupTestBase, StosRebuildHelper):
+class TestDM4BuildReproduction(setup_pipeline.CopySetupTestBase, StosRebuildHelper):
 
     @property
     def VolumePath(self):
@@ -331,7 +331,7 @@ class DM4BuildTest_Reproduction(setup_pipeline.CopySetupTestBase, StosRebuildHel
     def Grid32ManualStosFullPath(self):
         return os.path.join(self.PlatformFullPath, "DM4BuildTest_Reproduction")
 
-    def runTest(self):
+    def test_dm4_build_test__reproduction(self):
 #                    
 #         self.RunImport()
 #         # self.RunPrune(Filter='Raw16')

@@ -72,7 +72,7 @@ def LoadHistogramCutoffs(filename: str) -> dict[int, ContrastValue]:
                     MaxCutoff = None
 
                 try:
-                    Gamma = None if len(line) < 3 else float(line[3])
+                    Gamma = None if len(line) < 4 else float(line[3])
                 except ValueError:
                     Gamma = None
 

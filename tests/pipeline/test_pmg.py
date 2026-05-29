@@ -65,7 +65,7 @@ class PMGTest(setup_pipeline.PlatformTest):
 
 class ParseBasicFilename(PMGTest):
 
-    def runTest(self):
+    def test_parse_basic_filename(self):
         filename = os.path.join("FakeDir1", "FakeDir2", '1234_5678_ja_40x_04_yy.pmg')
 
         info = ParsePMGFilename(filename)
@@ -82,7 +82,7 @@ class ParseBasicFilename(PMGTest):
 
 class ParseSectionFilename(PMGTest):
 
-    def runTest(self):
+    def test_parse_section_filename(self):
         filename = os.path.join("FakeDir1", '1234_5678_0001_ja_40x_04_yy.pmg')
 
         info = ParsePMGFilename(filename)
@@ -99,7 +99,7 @@ class ParseSectionFilename(PMGTest):
 
 class ParseSpacesInFilename(PMGTest):
 
-    def runTest(self):
+    def test_parse_spaces_in_filename(self):
         filename = os.path.join("FakeDir1", "FakeDir2", '1234_5678_0001_ja_40x_04_yy GFP.pmg')
 
         info = ParsePMGFilename(filename)
@@ -116,7 +116,7 @@ class ParseSpacesInFilename(PMGTest):
 
 class ImportPMG(PMGTest):
 
-    def runTest(self):
+    def test_import_pmg(self):
 
         pmgImportDir = os.path.join(self.PlatformFullPath, "6750")
 
@@ -188,7 +188,7 @@ class PMGBuildTest(PMGTest):
         return os.path.join(self.PlatformFullPath, '6263_ManualStos')
 
 
-    def runTest(self):
+    def test_pmg_build_test(self):
 
         self.RunImport()
         self.RunShadingCorrection(ChannelPattern="(?![D|d]api)", CorrectionType='brightfield', FilterPattern="Raw8")
@@ -344,7 +344,7 @@ class ParsePMG(PMGTest):
         self.pmgDirs.extend(extraDirs)
         self.assertTrue(len(self.pmgDirs) > 0, "No test input found")
 
-    def runTest(self):
+    def test_parse_pmg(self):
 
         global PMGData
 

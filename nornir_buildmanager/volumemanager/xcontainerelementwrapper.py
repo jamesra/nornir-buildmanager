@@ -454,7 +454,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         try:
             os.makedirs(self.FullPath, exist_ok=True)
-        except (OSError, FileExistsError, WindowsError) as e:
+        except (OSError, FileExistsError) as e:
             if not os.path.isdir(self.FullPath):
                 raise ValueError(
                     "{0} is trying to save to a non directory path {1}\n{2}".format(str(SaveElement), self.FullPath,

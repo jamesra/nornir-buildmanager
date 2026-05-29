@@ -86,9 +86,9 @@ def XPathIterator(XPath: str):
 
         if obj.Value is not None and isinstance(obj.Value, str):
             if obj.Value[0] == "'" and obj.Value[-1] == "'" and len(obj.Value) >= 3:
-                obj.Value = obj.Value[1:-2]
+                obj.Value = obj.Value[1:-1]
             elif obj.Value[0] == '"' and obj.Value[-1] == '"' and len(obj.Value) >= 3:
-                obj.Value = obj.Value[1:-2]
+                obj.Value = obj.Value[1:-1]
             else:
                 try:
                     obj.Value = float(obj.Value)

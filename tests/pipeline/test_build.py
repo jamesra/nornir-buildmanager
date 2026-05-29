@@ -58,7 +58,7 @@ class PrepareThenMosaicTest(PrepareThroughAssembleSetup):
                          os.path.basename(DSTwoTiles[0]),
                          "Tiles at different downsample levels should use the same naming convention")
 
-    def runTest(self):
+    def test_prepare_then_mosaic_test(self):
         # Import the files
 
         # self.CheckTransformsExist(VolumeObj)

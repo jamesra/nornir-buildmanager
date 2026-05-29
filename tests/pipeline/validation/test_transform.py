@@ -50,7 +50,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
         self.LoadMetaData()
 
-    def runTest(self):
+    def test_transform_is_valid_test(self):
 
         self.ValidateAllTransforms(self.ChannelData)
 

@@ -757,7 +757,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
         # If the path does exist make sure it is a directory 
         os.makedirs(OutputImageDir, exist_ok=True)
         EntireTilePyramidNeedsBuilding = True
-    except (OSError, WindowsError, FileExistsError):
+    except (OSError, FileExistsError):
         if not os.path.isdir(OutputImageDir):
             raise
 

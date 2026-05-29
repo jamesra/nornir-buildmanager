@@ -13,7 +13,6 @@ import sys
 import traceback
 from os import PathLike
 from typing import Protocol, TypeVar
-from dataclasses import dataclass
 from xml.etree import ElementTree
 
 import nornir_pools
@@ -297,14 +296,6 @@ class ArgumentSet:
 
     def RemoveVariable(self, key):
         del self.Variables[key]
-
-
-@dataclass
-class ExtensionData:
-    ext = None
-    classObj = None
-    ImportFunction = None
-    defaultArgs = dict()
 
 
 class PipelineManager:
@@ -683,6 +674,14 @@ class PipelineManager:
 
         return
 
+    @staticmethod
+    def _ElementNeedsValidation(element: XElementWrapper) -> bool:
+        """Return whether an element supports and requests validation."""
+        try:
+            return bool(element.NeedsValidation)
+        except (NotImplementedError, AttributeError):
+            return False
+
     def ProcessSelectNode(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, ArgSet)
@@ -699,7 +698,7 @@ class PipelineManager:
             # Containers will be tested at load time.  The load linked element code checks containers
             if not isinstance(SelectedVolumeElem,
                               XContainerElementWrapper):
-                if SelectedVolumeElem.NeedsValidation:
+                if PipelineManager._ElementNeedsValidation(SelectedVolumeElem):
                     (IsValid, Reason) = SelectedVolumeElem.IsValid()
                     if not IsValid:
                         # Check if the node is locked, otherwise clean it and look for another node
@@ -736,7 +735,7 @@ class PipelineManager:
         NumProcessed = 0
         save_parent = set()
         for VolumeElemChild in VolumeElemIter:
-            if validate and VolumeElem.NeedsValidation:
+            if validate and PipelineManager._ElementNeedsValidation(VolumeElemChild):
                 (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
                 if cleaned:
                     prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
@@ -814,18 +813,16 @@ class PipelineManager:
                 if not ArgSet.Arguments["debug"]:
                     try:
                         NodesToSave = stageFunc(**kwargs)
-                    except:
+                    except Exception as e:
                         errorStr = '\n' + '-' * 60 + '\n'
                         errorStr = errorStr + str(PipelineModule) + '.' + str(PipelineFunction) + " Exception\n"
                         errorStr = errorStr + '-' * 60 + '\n'
                         errorStr += traceback.format_exc()
                         errorStr = errorStr + '-' * 60 + '\n'
                         PipelineManager.logger.error(errorStr)
-                        # prettyoutput.LogErr(errorStr)
-
-                        self.VolumeTree = VolumeManager.Load(
-                            self.VolumeTree.attrib["Path"], UseCache=False)  # type: ignore[union-attr]
-                        return
+                        raise PipelineError(VolumeElem=VolumeElem,
+                                            PipelineNode=PipelineNode,
+                                            message=errorStr) from e
 
 
                 else:

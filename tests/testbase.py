@@ -216,7 +216,7 @@ class TransformTestBase(TestBase):
         return os.path.join(self.ImportedDataPath, self.TestName, "Leveled", "TilePyramid", downsamplePath)
 
     def setUp(self):
-        self.ImportedDataPath = os.path.join(self.TestInputPath, "Transforms", "Mosaics")
+        self.ImportedDataPath = os.path.join(self.TestInputPath, "Transforms", "mosaics")
 
         os.makedirs(self.TestOutputPath, exist_ok=True)
 

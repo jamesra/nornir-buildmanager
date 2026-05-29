@@ -4,9 +4,31 @@ Created on Oct 26, 2017
 @author: u0490822
 """
 import os
+import importlib.util
+import sys
 import unittest
+from pathlib import Path
 import nornir_buildmanager.metadata.tilesetinfo
-from ... import testbase
+
+
+def _load_local_testbase_module():
+    module_name = "nornir_buildmanager_tests_testbase"
+    existing = sys.modules.get(module_name, None)
+    if existing is not None:
+        return existing
+
+    module_path = Path(__file__).resolve().parents[2] / "testbase.py"
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create import spec for {module_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+testbase = _load_local_testbase_module()
 
 
 class TestTilesetInfo(testbase.TestBase):
