@@ -4,6 +4,7 @@ Created on Apr 25, 2013
 @author: u0490822
 """
 import glob
+import os
 import unittest
 
 from nornir_buildmanager.operations.block import *
@@ -400,8 +401,8 @@ class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
                      '-Radius', '1',
                      '-Median', '1',
                      '-Levels', '1,4']
-
         VolumeObj = self.RunBuild(buildArgs)
+
         BlobFilterNode = VolumeObj.find('Block/Section/Channel/Filter[@Name="Blob_mosaic"]')
         self.assertIsNotNone(BlobFilterNode)
 

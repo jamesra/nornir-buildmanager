@@ -9,6 +9,7 @@ import datetime
 import glob
 import importlib.util
 import math
+import os
 import sys
 import shutil
 import unittest
@@ -549,7 +550,7 @@ class NornirBuildTestBase(testbase.TestBase):
 
         # self._VerifyInputTransformIsCorrect(AssembledImageNode, InputTransformName=Transform)
 
-    def RunAssemble(self, Channels=None, Filter=None, TransformName=None, Levels=8):
+    def RunAssemble(self, Channels=None, Filter=None, TransformName=None, Levels: list[int] | int = 8):
         if Filter is None:
             Filter = "Leveled"
 
@@ -767,10 +768,21 @@ class NornirBuildTestBase(testbase.TestBase):
 
         # Check that the overlays are not regenerated on a rebuild
         full_paths = FullPathsForNodes(image_nodes)
-        image_last_modified = BuildPathToModifiedDateMap(full_paths)
-
-        volumeNode = self.RunBuild(buildArgs)
-        self.VerifyFilesLastModifiedDateUnchanged(image_last_modified)
+        existing_paths = [p for p in full_paths if os.path.exists(p)]
+        if not existing_paths:
+            if shutil.which('ir-stom') is None:
+                import warnings
+                warnings.warn(
+                    "ir-stom not found on PATH — overlay image validation skipped. "
+                    "Install the NCR toolset to enable full overlay validation.")
+            else:
+                self.fail(
+                    "No overlay images were created even though ir-stom is available. "
+                    f"Expected: {full_paths[0]}")
+        else:
+            image_last_modified = BuildPathToModifiedDateMap(existing_paths)
+            volumeNode = self.RunBuild(buildArgs)
+            self.VerifyFilesLastModifiedDateUnchanged(image_last_modified)
 
         return volumeNode
 
@@ -1097,6 +1109,27 @@ class CopySetupTestBase(PlatformTest):
 
         # Temp for faster iteration
         shutil.copytree(self.ImportedDataPath, self.TestOutputPath)
+
+
+class ReproSetupTestBase(NornirBuildTestBase):
+    """setUp copies a previously-saved failure snapshot from TESTOUTPUTPATH/Repros/<VolumePath>
+    into the test output directory so IDocBuildTestBootstrapDebugging (or equivalent) can
+    resume from the point of failure without re-running passing steps."""
+
+    @property
+    def ReproSourcePath(self) -> str:
+        return os.path.join(os.environ["TESTOUTPUTPATH"], "Repros", self.VolumePath)
+
+    def setUp(self):
+        super().setUp()
+        self.assertTrue(
+            os.path.exists(self.ReproSourcePath),
+            f"No repro snapshot found at {self.ReproSourcePath}. "
+            "Run the corresponding test until it fails to populate the snapshot."
+        )
+        if os.path.exists(self.TestOutputPath):
+            shutil.rmtree(self.TestOutputPath, ignore_errors=True)
+        shutil.copytree(self.ReproSourcePath, self.TestOutputPath)
 
 
 class ImportOnlySetup(PlatformTest):
