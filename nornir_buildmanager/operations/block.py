@@ -6,6 +6,7 @@ Created on Jun 22, 2012
 import math
 import random
 import shutil
+import numpy as np
 import subprocess
 import tempfile
 import typing
@@ -1643,6 +1644,9 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
         if nornir_imageregistration.in_debug_mode():
             raise
         else:
+            # Fall back to the input transform so the section stays in the pipeline
+            prettyoutput.Log(f'Using input transform as fallback: {InputStosFullPath} -> {OutputStosFullPath}')
+            shutil.copy(InputStosFullPath, OutputStosFullPath)
             return
 
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
@@ -2732,7 +2736,7 @@ def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
 
 
 def _GetOrCreateStosToMosaicTransform(StosTransformNode, transform_node: TransformNode, OutputTransformName: str):
-    OutputTransformNode = transform_node.Parent.GetTransform  # type: ignore[reportAttributeAccessIssue](OutputTransformName)  # type: ignore[union-attr]
+    OutputTransformNode = transform_node.Parent.GetTransform(OutputTransformName)  # type: ignore[reportAttributeAccessIssue, union-attr]
     added = False
     if OutputTransformNode is None:
         # Create transform node for the output
@@ -2804,9 +2808,8 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
         StoVTransform = factory.LoadTransform(SToV.Transform)  # type: ignore[arg-type]
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
-        assert (MosaicTransform.FixedBoundingBox.BottomLeft[0] == 0 and MosaicTransform.FixedBoundingBox.BottomLeft[
-            1] == 0)
-        # MosaicTransform.TranslateToZeroOrigin() 
+        if not MosaicTransform.IsOriginAtZero():
+            MosaicTransform.TranslateToZeroOrigin()
         Tasks = []
 
         UsePool = True
@@ -2931,9 +2934,21 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
     maxX = int(math.ceil(maxX))
     maxY = int(math.ceil(maxY))
 
-    # Failing these asserts means the translate to zero origin function is not actually translating to a zero origin
-    assert (minX >= 0)
-    assert (minY >= 0)
+    if minX < 0 or minY < 0:
+        # TranslateToZeroOrigin may not perfectly zero out all sections when composed transforms
+        # extrapolate outside the declared bounding box (e.g. rigid fallback sections).
+        # Apply a corrective second-pass shift using the measured residual.
+        Logger = logging.getLogger(__name__)
+        Logger.warning(
+            "__MoveMosaicsToZeroOrigin: bounding box still has negative origin after first "
+            "translation (minX=%.3f, minY=%.3f); applying corrective shift.", minX, minY)
+        correction = np.array([-minY, -minX])
+        for mosaic_obj in mosaicToVolume.SectionToVolumeTransforms.values():
+            mosaic_obj.TranslateFixed(correction)
+        new_bbox = mosaicToVolume.VolumeBounds
+        (minY, minX, maxY, maxX) = new_bbox.ToTuple()
+        maxX = int(math.ceil(maxX))
+        maxY = int(math.ceil(maxY))
 
     for transform in output_transform_list:
         transform.CropBox = (maxX, maxY)
