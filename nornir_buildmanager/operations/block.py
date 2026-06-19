@@ -405,8 +405,9 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int,
     else:
         raise ValueError("Unknown method " + str(method))
 
-    # Close pools to prevent threads from sticking around and slowing the rest of the run
-    nornir_pools.ClosePools()
+    # Close thread pools to prevent workers from sticking around and slowing the rest of the run.
+    # Process pools stay warm; all tasks must finish before continuing (ReleaseStagePools waits first).
+    nornir_pools.ReleaseStagePools()
 
     stos = alignment.ToStos(target_image_fullpath,
                             source_image_fullpath,

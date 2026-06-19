@@ -209,6 +209,11 @@ def PlotMosaicOverlaps(ChannelNode, Transform: str, OutputFilename: str, Downsam
     """
     Plot the tile overlaps of a layout
     """
+    import nornir_imageregistration.headless as ir_headless
+
+    if ir_headless.is_headless():
+        return None
+
     TransformNode = None
     try:
         if isinstance(Transform, str):

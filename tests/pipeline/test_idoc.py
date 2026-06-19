@@ -297,6 +297,28 @@ class StosRebuildHelper(setup_pipeline.NornirBuildTestBase):
 
 class TestIDocSingleSectionImport(IDocTest):
 
+    _import_source_cache_path: str | None = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Stage read-only import input once; each test copies from this cache."""
+        super(TestIDocSingleSectionImport, cls).setUpClass()
+        section_number = 17
+        source_path = os.path.join(
+            os.environ["TESTINPUTPATH"],
+            "PlatformRaw",
+            "IDOC",
+            "RC2_Micro",
+            str(section_number),
+        )
+        if not os.path.exists(source_path):
+            raise unittest.SkipTest(f"Missing source import data: {source_path}")
+        cache_root = os.path.join(os.environ.get("TESTOUTPUTPATH", "/tmp/nornir-test-output"), "_ImportSourceCache")
+        cls._import_source_cache_path = os.path.join(cache_root, str(section_number))
+        if not os.path.isdir(cls._import_source_cache_path):
+            os.makedirs(os.path.dirname(cls._import_source_cache_path), exist_ok=True)
+            shutil.copytree(source_path, cls._import_source_cache_path)
+
     @property
     def SourceImportedDataPath(self) -> str:
         return os.path.join(self.PlatformFullPath, self.VolumePath)
@@ -321,10 +343,11 @@ class TestIDocSingleSectionImport(IDocTest):
 
     def setUp(self):
         super(TestIDocSingleSectionImport, self).setUp()
-        self.assertTrue(os.path.exists(self.SourceImportedDataPath),
-                        f"Missing source import data: {self.SourceImportedDataPath}")
+        self.assertIsNotNone(self._import_source_cache_path)
         os.makedirs(os.path.dirname(self.ImportedDataPath), exist_ok=True)
-        shutil.copytree(self.SourceImportedDataPath, self.ImportedDataPath)
+        if os.path.exists(self.ImportedDataPath):
+            shutil.rmtree(self.ImportedDataPath)
+        shutil.copytree(self._import_source_cache_path, self.ImportedDataPath)
 
     def LoadMetaData(self):
         '''Updates the object's meta-data variables from disk'''

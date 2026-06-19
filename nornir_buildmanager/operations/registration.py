@@ -181,7 +181,7 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                 pass
 
     if SaveRequired or added_transform_settings_node or added_manual_offsets_node:
-        nornir_pools.ClosePools()  # A workaround to avoid running out of memory
+        nornir_pools.ReleaseStagePools()
         return TransformParentNode
     else:
         return None
