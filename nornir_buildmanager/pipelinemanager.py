@@ -5,8 +5,11 @@ Created on Apr 2, 2012
 
 import collections.abc
 import copy
+from datetime import datetime, timezone
 from inspect import isgenerator
+import json
 import logging
+import os
 import platform
 import re
 import sys
@@ -19,6 +22,7 @@ import nornir_pools
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
+from nornir_shared.tasktimer import TaskTimer
 from . import argparsexml
 from .pipeline_exceptions import *
 from nornir_buildmanager.exceptions import (
@@ -311,6 +315,9 @@ class PipelineManager:
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
         self.PipelineRoot = pipelinesRoot
+        self._StageTimer: TaskTimer | None = None
+        self._PipelineName: str | None = None
+        self._VolumePath: str | None = None
 
         self._description = pipelineData.attrib['Description'] if 'Description' in pipelineData.attrib else None
         self._help = pipelineData.attrib['Help'] if 'Help' in pipelineData.attrib else None
@@ -510,11 +517,47 @@ class PipelineManager:
             prettyoutput.LogErr("Could not load or create volume.xml " + args.outputpath)
             sys.exit()
 
+        self._StageTimer = TaskTimer()
+        self._PipelineName = getattr(args, 'PipelineName', None) or self.PipelineData.get('Name', 'unknown')
+        self._VolumePath = args.volumepath
+
         # dargs = copy.deepcopy(defaultDargs)
 
         self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
 
+        self._WriteStageTimings()
+
         nornir_pools.ReleaseStagePools()
+
+    def _WriteStageTimings(self) -> None:
+        """Append per-stage timing records for this pipeline execute to StageTimings.json."""
+        if self._StageTimer is None or self._VolumePath is None:
+            return
+
+        stages = [
+            {"stage": stage_name, "seconds": elapsed}
+            for stage_name, elapsed in self._StageTimer.ElapsedTimes.items()
+        ]
+        if not stages:
+            return
+
+        record = {
+            "pipeline": self._PipelineName or "unknown",
+            "utc_timestamp": datetime.now(timezone.utc).isoformat(),
+            "stages": stages,
+            "total_seconds": sum(stage["seconds"] for stage in stages),
+        }
+
+        output_path = os.path.join(self._VolumePath, "StageTimings.json")
+        existing: list[dict] = []
+        if os.path.exists(output_path):
+            with open(output_path, "r", encoding="utf-8") as input_file:
+                existing = json.load(input_file)
+
+        existing.append(record)
+
+        with open(output_path, "w", encoding="utf-8") as output_file:
+            json.dump(existing, output_file, indent=2)
 
     def ExecuteChildPipelines(self, ArgSet, VolumeElem: XElementWrapper,
                               PipelineNode):
@@ -791,6 +834,8 @@ class PipelineManager:
             ArgSet.AddAttributes(PipelineNode)
             ArgSet.AddParameters(PipelineNode)
 
+            stage_key = f"{PipelineModule}.{PipelineFunction} @ {VolumeElem.FullPath}"
+
             try:
                 # PipelineManager.AddAttributes(dargs, PipelineNode)
 
@@ -807,6 +852,9 @@ class PipelineManager:
                 # Add an empty dictionary if no parameters set
                 if 'Parameters' not in kwargs:
                     kwargs['Parameters'] = {}
+
+                if self._StageTimer is not None:
+                    self._StageTimer.Start(stage_key)
 
                 # NodesToSave = None
 
@@ -836,6 +884,8 @@ class PipelineManager:
                 PipelineManager._SaveNodes(NodesToSave)
 
             finally:
+                if self._StageTimer is not None:
+                    self._StageTimer.End(stage_key, print_elapsed=False)
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
 

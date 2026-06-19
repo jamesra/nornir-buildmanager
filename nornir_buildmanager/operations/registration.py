@@ -299,18 +299,6 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
 
     PixelSpacing = int(LevelNode.Downsample)
 
-    CellString = ''
-    if not (Cell is None):
-        CellString = f' -cell {Cell} '
-
-    ThresholdString = ''
-    if Threshold is not None:
-        ThresholdString = ' -displacement_threshold %g ' % Threshold
-
-    MeshString = f' -mesh {MeshWidth} {MeshHeight} '
-    ItString = f' -it {Iterations} '
-    SpacingString = f' -sp {PixelSpacing} '
-
     # Check if there is an existing prune map, and if it exists if it is out of date
     TransformParentNode = InputTransformNode.Parent
 
@@ -332,41 +320,51 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         return None
 
     if not os.path.exists(OutputTransformNode.FullPath):
-        # This is a workaround for ir-refine-grid appearing to reverse the X,Y coordinates from the documented order on ITK's website for Rigid and and CenteredSimiliarity transforms
-        InputMosaic = InputTransformNode.FullPath
-        TempInputMosaic = os.path.join(os.path.dirname(InputMosaic), f'Corrected_{os.path.basename(InputMosaic)}')
         try:
-            # TempInputMosaic = InputMosaic
-            mosaic = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
-            # NeedsXYSwap = mosaic.HasTransformsNotUnderstoodByIrTools()
-            workaroundMosaic = mosaic.CreateCorrectedXYMosaicForStupidITKWorkaround()
-            workaroundMosaic.Save(TempInputMosaic)
+            cell_size = None if Cell is None else (int(Cell), int(Cell))
+            # RefineGridMosaic expects (rows, cols)
+            mesh_shape = (int(MeshHeight), int(MeshWidth))
+            displacement_threshold = 1.0 if Threshold is None else float(Threshold)
+            image_scale = 1.0 / float(PixelSpacing)
 
-            CmdLineTemplate = "ir-refine-grid -load %(InputMosaic)s -save %(OutputMosaic)s -image_dir %(ImageDir)s " + ThresholdString + ItString + CellString + MeshString + SpacingString
-            cmd = CmdLineTemplate % {'InputMosaic': TempInputMosaic, 'OutputMosaic': OutputTransformNode.FullPath,
-                                     'ImageDir': LevelNode.FullPath}
-            prettyoutput.CurseString('Cmd', cmd)
-            NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-            output = ProcessOutputInterceptor.Intercept(ProgressOutputInterceptor(NewP))
+            refined_mosaic, diagnostics = nornir_imageregistration.RefineGridMosaic(
+                InputTransformNode.FullPath,
+                LevelNode.FullPath,
+                iterations=int(Iterations),
+                cell_size=cell_size,
+                mesh_shape=mesh_shape,
+                displacement_threshold=displacement_threshold,
+                imageScale=image_scale,
+                return_diagnostics=True,
+            )
 
-            if output is None or len(output) == 0:
-                raise nornir_buildmanager.NornirMissingDependencyException(
-                    "No output from ir-refine-grid.  Ensure that ir-refine-grid executable from the SCI ir-tools package is on the system path.")
+            refined_mosaic.SaveToMosaicFile(OutputTransformNode.FullPath)
 
-            OutputTransformNode.cmd = cmd
+            OutputTransformNode.cmd = (
+                "python:nornir_imageregistration.RefineGridMosaic("
+                f"input='{InputTransformNode.FullPath}', image_dir='{LevelNode.FullPath}', "
+                f"iterations={int(Iterations)}, cell_size={cell_size}, mesh_shape={mesh_shape}, "
+                f"displacement_threshold={displacement_threshold:g}, imageScale={image_scale:g})"
+            )
             SaveRequired = True
 
-            TransformNodeToZeroOrigin(OutputTransformNode)
+            if Logger is not None:
+                last_displacement = (
+                    diagnostics.average_displacement_per_iteration[-1]
+                    if diagnostics.average_displacement_per_iteration
+                    else 0.0
+                )
+                Logger.info(
+                    "RefineGridMosaic completed %d pass(es), converged=%s, last max displacement=%g",
+                    diagnostics.iterations_completed,
+                    diagnostics.converged,
+                    last_displacement,
+                )
 
-            # Reverse the output of ir-refine-grid on the X,Y axis dues ot
+            TransformNodeToZeroOrigin(OutputTransformNode)
         except Exception as e:
             OutputTransformNode.Clean(f"Exception generating mosaic grid transform:\n{e}")
             raise
-        finally:
-            try:
-                os.remove(TempInputMosaic)
-            except FileNotFoundError:
-                pass
 
     if SaveRequired:
         nornir_pools.ReleaseStagePools()

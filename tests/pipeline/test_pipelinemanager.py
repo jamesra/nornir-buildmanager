@@ -3,11 +3,15 @@ Created on Jan 6, 2014
 
 @author: u0490822
 '''
+import json
+import os
+import tempfile
 import unittest
 import xml.etree.ElementTree as etree
 
 import nornir_buildmanager.argparsexml as argparsexml
 import nornir_buildmanager.pipelinemanager as pm
+import nornir_shared.tasktimer
 
 ArgumentXML = '<Arguments> \
                  <Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/> \
@@ -76,6 +80,30 @@ def LoadArguments(xml):
 
 def LoadPipeline(xml):
     return etree.XML(xml)
+
+
+class TestStageTimings(unittest.TestCase):
+    """Verify stage timing export writes structured JSON."""
+
+    def test_write_stage_timings_appends_entry(self):
+        """_WriteStageTimings should append a JSON record with stage durations."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = pm.PipelineManager(pipelinesRoot=etree.Element('Root'), pipelineData=etree.Element('Pipeline'))
+            manager._VolumePath = temp_dir
+            manager._PipelineName = 'TestPipeline'
+            manager._StageTimer = nornir_shared.tasktimer.TaskTimer()
+            manager._StageTimer.Start('stage.one')
+            manager._StageTimer.End('stage.one', print_elapsed=False)
+
+            manager._WriteStageTimings()
+
+            output_path = os.path.join(temp_dir, 'StageTimings.json')
+            self.assertTrue(os.path.exists(output_path))
+            with open(output_path, 'r', encoding='utf-8') as input_file:
+                records = json.load(input_file)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]['pipeline'], 'TestPipeline')
+            self.assertEqual(records[0]['stages'][0]['stage'], 'stage.one')
 
 
 class Test(unittest.TestCase):

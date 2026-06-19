@@ -146,7 +146,10 @@ class TestBase(unittest.TestCase):
         self.Logger = logging.getLogger(self.classname)
 
     def tearDown(self):
-        nornir_pools.ClosePools()
+        if os.environ.get("NORNIR_FAST_POOL_TEARDOWN", "1").strip().lower() in ("1", "true", "yes", "on"):
+            nornir_pools.FastClosePools()
+        else:
+            nornir_pools.ClosePools()
         if not self.profiler is None:
             self.profiler.dump_stats(self.TestProfilerOutputPath)
 

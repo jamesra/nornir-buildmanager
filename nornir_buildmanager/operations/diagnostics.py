@@ -214,6 +214,9 @@ def PlotMosaicOverlaps(ChannelNode, Transform: str, OutputFilename: str, Downsam
     if ir_headless.is_headless():
         return None
 
+    if os.environ.get("NORNIR_SKIP_MOSAIC_PLOTS", "").strip().lower() in ("1", "true", "yes", "on"):
+        return None
+
     TransformNode = None
     try:
         if isinstance(Transform, str):
