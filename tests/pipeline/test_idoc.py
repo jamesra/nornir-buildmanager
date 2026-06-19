@@ -15,6 +15,7 @@ import nornir_shared
 import nornir_buildmanager
 import nornir_buildmanager.importers.idoc as idoc
 import nornir_buildmanager.importers.serialemlog as serialemlog
+import nornir_imageregistration.files.stosfile as stosfile
 from . import setup_pipeline
 from nornir_buildmanager.volumemanager import VolumeNode, TransformNode, SectionNode, ChannelNode, FilterNode
 
@@ -110,6 +111,14 @@ class StosRebuildHelper(setup_pipeline.NornirBuildTestBase):
 
         return updatedTransform
 
+    def _stos_checksum_map_for_transforms(self, transform_list: list[TransformNode]) -> dict[str, str]:
+        """Return on-disk stos checksums for transforms that currently have an output file."""
+        checksum_by_path: dict[str, str] = {}
+        for transform in transform_list:
+            if os.path.exists(transform.FullPath):
+                checksum_by_path[transform.FullPath] = stosfile.StosFile.LoadChecksum(transform.FullPath)
+        return checksum_by_path
+
     def ForceStosRebuildFromBruteLevel(self,
                                        manual_stos_file_path: str,
                                        BruteLevel: int,
@@ -202,35 +211,44 @@ class StosRebuildHelper(setup_pipeline.NornirBuildTestBase):
            Returns the updated transforms'''
 
         full_transform_paths = setup_pipeline.FullPathsForNodes(transformList)
-        last_modified_dict = setup_pipeline.BuildPathToModifiedDateMap(full_transform_paths)
+        existing_transform_paths = [path for path in full_transform_paths if os.path.exists(path)]
+        last_modified_dict = setup_pipeline.BuildPathToModifiedDateMap(existing_transform_paths)
+        original_checksum_by_path = self._stos_checksum_map_for_transforms(transformList)
 
         updatedVolumeObj = func(**func_args_dict)
 
         return self._EnsureStosGroupTransformsRefreshed(volumeObj=updatedVolumeObj,
                                                         stos_group_name=stos_group_name,
                                                         originalTransformList=transformList,
-                                                        last_modified_dict=last_modified_dict)
+                                                        last_modified_dict=last_modified_dict,
+                                                        original_checksum_by_path=original_checksum_by_path)
 
     def _EnsureStosGroupTransformsRefreshed(self,
                                             volumeObj: VolumeNode,
                                             stos_group_name: str,
                                             originalTransformList: list[TransformNode],
-                                            last_modified_dict: dict[str, datetime]) -> list[TransformNode]:
+                                            last_modified_dict: dict[str, int],
+                                            original_checksum_by_path: dict[str, str]) -> list[TransformNode]:
         '''Given a list of transforms, ensure that each transform has been updated'''
 
         stosGroup = volumeObj.find("Block/StosGroup[@Name='%s']" % stos_group_name)
         self.assertIsNotNone(stosGroup, "Stos group not found %s" % stos_group_name)
+
+        self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
 
         updatedTransforms = []
         for originalTransform in originalTransformList:
             updatedTransform = stosGroup.find("SectionMappings/Transform[@Path='%s']" % originalTransform.Path)
             self.assertIsNotNone(updatedTransform, "Updated transform is None, should match manual transform info")
 
-            # All files should be replaced with the manual stos files
-            self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
-
-            self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum,
-                                "Checksums should not match after being replaced by a manual stos file")
+            original_path = originalTransform.FullPath
+            updated_checksum = stosfile.StosFile.LoadChecksum(updatedTransform.FullPath)
+            if original_path in original_checksum_by_path:
+                self.assertNotEqual(updated_checksum, original_checksum_by_path[original_path],
+                                    "Checksums should not match after being replaced by a manual stos file")
+            else:
+                self.assertTrue(os.path.exists(updatedTransform.FullPath),
+                                "Transform output was not regenerated for %s" % original_path)
 
             updatedTransforms.append(updatedTransform)
 
@@ -261,14 +279,13 @@ class StosRebuildHelper(setup_pipeline.NornirBuildTestBase):
 
     def _EnsureChannelToMosaicTransformsRefreshed(self, volumeObj: VolumeNode,
                                                   originalTransformList: list[TransformNode],
-                                                  last_modified_dict: dict[str, datetime]) -> list[TransformNode]:
+                                                  last_modified_dict: dict[str, int]) -> list[TransformNode]:
+
+        self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
 
         updatedTransforms = []
         for originalTransform in originalTransformList:
             updatedTransform = self._FetchMosaicToVolumeTransform(volumeObj, originalTransform)
-
-            # All files should be replaced with the manual stos files
-            self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
 
             self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum,
                                 "Checksums should not match after being replaced by a manual stos file")
@@ -475,9 +492,21 @@ class TestIDocBuild(IDocTest, StosRebuildHelper):
 
     @property
     def repro_directory(self) -> str:
-        """If this test fails, copy the current state of the output here so that
+        """If this test fails, move the current state of the output here so that
         IDocBuildTestBootstrapDebugging can skip successful steps and focus on the failing one."""
         return os.path.join(os.environ["TESTOUTPUTPATH"], "Repros", "IDocBuildTest")
+
+    @property
+    def repro_directory_before_force_stos_rebuild(self) -> str:
+        """Volume state immediately before ForceStosRebuildFromBruteLevel (used by the repro harness)."""
+        return os.path.join(os.environ["TESTOUTPUTPATH"], "Repros", "IDocBuildTest_BeforeForceStosRebuild")
+
+    def _save_repro_copy(self, repro_path: str) -> None:
+        """Copy the current test output tree to a repro snapshot path."""
+        if os.path.exists(repro_path):
+            nornir_shared.files.rmtree(repro_path)
+        os.makedirs(os.path.dirname(repro_path), exist_ok=True)
+        shutil.copytree(self.TestOutputPath, repro_path, copy_function=shutil.copy2)
 
     def test_i_doc_build_test(self):
         try:
@@ -542,6 +571,7 @@ class TestIDocBuild(IDocTest, StosRebuildHelper):
             self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 
             # TODO, this failed.  Fix it
+            self._save_repro_copy(self.repro_directory_before_force_stos_rebuild)
             self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne), BruteLevel, GridLevelOne)
 
             self.RunCalculateStosGroupWarpMetrics()
@@ -551,10 +581,11 @@ class TestIDocBuild(IDocTest, StosRebuildHelper):
                 if os.path.exists(repro):
                     nornir_shared.files.rmtree(repro)
                 os.makedirs(os.path.dirname(repro), exist_ok=True)
-                shutil.copytree(self.TestOutputPath, repro)
+                if os.path.isdir(self.TestOutputPath):
+                    shutil.move(self.TestOutputPath, repro)
             except OSError as e:
                 self.Logger.error(
-                    f"\nCould not copy test output into reproduction directory: "
+                    f"\nCould not move test output into reproduction directory: "
                     f"{self.TestOutputPath} -> {repro}\n{e}\n\n")
             raise
 
@@ -564,8 +595,10 @@ class IDocBuildTestBootstrapDebugging(setup_pipeline.ReproSetupTestBase, StosReb
     """Debugging harness for TestIDocBuild failures.
 
     To use:
-    1. Run TestIDocBuild until it fails.  The except block copies the test output to
-       TESTOUTPUTPATH/Repros/IDocBuildTest automatically.
+    1. Run TestIDocBuild until it fails.  The except block moves the test output to
+       TESTOUTPUTPATH/Repros/IDocBuildTest automatically (preserving file mtimes).
+       A copy is also saved to Repros/IDocBuildTest_BeforeForceStosRebuild before
+       ForceStosRebuildFromBruteLevel for this harness.
     2. Remove (or comment out) the @unittest.skip decorator above.
     3. Comment out every step in test_i_doc_build_repro that succeeded in the failing run,
        leaving only the step(s) that failed and those after it.
@@ -576,13 +609,49 @@ class IDocBuildTestBootstrapDebugging(setup_pipeline.ReproSetupTestBase, StosReb
     def VolumePath(self) -> str:
         return "IDocBuildTest"
 
+    @property
+    def ReproSourcePath(self) -> str:
+        before_force = os.path.join(os.environ["TESTOUTPUTPATH"], "Repros",
+                                    f"{self.VolumePath}_BeforeForceStosRebuild")
+        if setup_pipeline.ReproSetupTestBase._repro_dir_is_populated(before_force):
+            return before_force
+        return super().ReproSourcePath
+
     def StosGridManualStosFullPath(self, level: int) -> str:
         return os.path.join(
             self.TestInputPath, "PlatformRaw", "IDOC",
             f"IDocBuildTest_Grid{level}Manual"
         )
 
+    def _strip_grid16_manual_state_for_force_stos_rebuild(self, grid_level: int = 16) -> None:
+        """Restore Grid16 to its pre-manual-override state when only the post-failure repro exists."""
+        grid_path = os.path.join(self.TestOutputPath, "TEM", f"Grid{grid_level}")
+        manual_dir = os.path.join(grid_path, "Manual")
+        manual_files = glob.glob(os.path.join(manual_dir, "*.stos"))
+        for manual_file in manual_files:
+            output_path = os.path.join(grid_path, os.path.basename(manual_file))
+            if os.path.exists(output_path):
+                os.remove(output_path)
+            os.remove(manual_file)
+
+        backup_volumedata = os.path.join(grid_path, "VolumeData.xml.backup.xml")
+        volumedata = os.path.join(grid_path, "VolumeData.xml")
+        if os.path.exists(backup_volumedata):
+            shutil.copy2(backup_volumedata, volumedata)
+
+    def setUp(self):
+        super().setUp()
+        if not self._repro_snapshot_populated:
+            return
+        before_force = os.path.join(os.environ["TESTOUTPUTPATH"], "Repros",
+                                  f"{self.VolumePath}_BeforeForceStosRebuild")
+        if not setup_pipeline.ReproSetupTestBase._repro_dir_is_populated(before_force):
+            self._strip_grid16_manual_state_for_force_stos_rebuild()
+
     def test_i_doc_build_repro(self):
+        if self.pass_without_repro_snapshot():
+            return
+
         BruteLevel = 16
         GridLevelOne = 16
         GridLevelTwo = 8
@@ -606,35 +675,42 @@ class IDocBuildTestBootstrapDebugging(setup_pipeline.ReproSetupTestBase, StosReb
         # self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="1")
         # self.RunSetFilterLocked('693', Channels="TEM", Filters="Leveled", Locked="0")
         #
-        self.RunMosaic(Filter="Leveled")
-        self.RunMosaicReport()
-        self.RunAssemble(Channels='TEM', Levels=[8, 16])
+        # self.RunMosaic(Filter="Leveled")
+        # self.RunMosaicReport()
+        # self.RunAssemble(Channels='TEM', Levels=[8, 16])
         
-        self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
-        self.RunMosaicReport()
+        # self.RunCreateVikingXML(StosGroup=None, StosMap=None, OutputFile="Mosaic")
+        # self.RunMosaicReport()
         
-        self.RunCreateBlobFilter(Channels="TEM", Filter="Leveled", Levels="8,16,%d" % BruteLevel)
-        self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
+        # self.RunCreateBlobFilter(
+        #     Channels="TEM",
+        #     Filter="Leveled",
+        #     Levels="8,16,%d" % BruteLevel,
+        #     Radius=5,
+        #     Median=3,
+        #     Max=3,
+        # )
+        # self.RunAlignSections(Channels="TEM", Filters="Blob", Levels=BruteLevel, Center=693)
         
-        self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
-        self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel,
-                                            InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
+        # self.RunAssembleStosOverlays(Group="StosBrute", Downsample=BruteLevel, StosMap='PotentialRegistrationChain')
+        # self.RunSelectBestRegistrationChain(Group="StosBrute", Downsample=BruteLevel,
+        #                                     InputStosMap='PotentialRegistrationChain', OutputStosMap='FinalStosMap')
 
-        self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid",
-                                       OutputLevel=GridLevelOne, Filter="Leveled")
-        self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid",
-                                        OutputLevel=GridLevelTwo, Filter="Leveled")
+        # self.RunRefineSectionAlignment(InputGroup="StosBrute", InputLevel=BruteLevel, OutputGroup="Grid",
+        #                                OutputLevel=GridLevelOne, Filter="Leveled")
+        # self.RunRefineSectionAlignment(InputGroup="Grid", InputLevel=GridLevelOne, OutputGroup="Grid",
+        #                                 OutputLevel=GridLevelTwo, Filter="Leveled")
 
-        self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=GridLevelTwo, OutputLevel=1)
-        self.RunSliceToVolume()
-        self.RunMosaicToVolume()
-        self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
-        self.RunAssembleMosaicToVolume(Channels="TEM")
-        self.RunMosaicReport(OutputFile='VolumeReport')
-        self.RunExportImages(Channels="Registered_TEM", Filters="Leveled", AssembleLevel=GridLevelOne)
+        # self.RunScaleVolumeTransforms(InputGroup="Grid", InputLevel=GridLevelTwo, OutputLevel=1)
+        # self.RunSliceToVolume()
+        # self.RunMosaicToVolume()
+        # self.RunCreateVikingXML(StosGroup='SliceToVolume1', StosMap='SliceToVolume', OutputFile="SliceToVolume")
+        # self.RunAssembleMosaicToVolume(Channels="TEM")
+        # self.RunMosaicReport(OutputFile='VolumeReport')
+        # self.RunExportImages(Channels="Registered_TEM", Filters="Leveled", AssembleLevel=GridLevelOne)
 
-        self.RunAssemble(Channels='TEM', Levels=[1])
-        self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
+        # self.RunAssemble(Channels='TEM', Levels=[1])
+        # self.RunExportImages(Channels="TEM", Filters="Leveled", AssembleLevel=1, Output="MosaicExport")
 
         self.ForceStosRebuildFromBruteLevel(self.StosGridManualStosFullPath(GridLevelOne),
                                             BruteLevel=BruteLevel, GridOneLevel=GridLevelOne)

@@ -191,13 +191,12 @@ class StosRebuildHelper(object):
         stosGroup = volumeObj.find("Block/StosGroup[@Name='%s']" % stos_group_name)
         self.assertIsNotNone(stosGroup, "Stos group not found %s" % stos_group_name)
 
+        self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
+
         updatedTransforms = []
         for originalTransform in originalTransformList:
             updatedTransform = stosGroup.find("SectionMappings/Transform[@Path='%s']" % originalTransform.Path)
             self.assertIsNotNone(updatedTransform, "Updated transform is None, should match manual transform info")
-
-            # All files should be replaced with the manual stos files
-            self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
 
             self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum,
                                 "Checksums should not match after being replaced by a manual stos file")
@@ -229,12 +228,11 @@ class StosRebuildHelper(object):
 
     def _EnsureChannelToMosaicTransformsRefreshed(self, volumeObj, originalTransformList, last_modified_dict):
 
+        self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
+
         updatedTransforms = []
         for originalTransform in originalTransformList:
             updatedTransform = self._FetchMosaicToVolumeTransform(volumeObj, originalTransform)
-
-            # All files should be replaced with the manual stos files
-            self.VerifyFilesLastModifiedDateChanged(last_modified_dict)
 
             self.assertNotEqual(updatedTransform.Checksum, originalTransform.Checksum,
                                 "Checksums should not match after being replaced by a manual stos file")

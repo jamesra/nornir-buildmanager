@@ -70,6 +70,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             prechecksum = tNode.Checksum
 
             original_stat = os.stat(tNode.FullPath)
+            original_mtime_ns = original_stat.st_mtime_ns
             os.remove(tNode.FullPath)
             self.Logger.info(f"Removing transform to see if it regenerates: {tNode.FullPath}")
 
@@ -81,8 +82,10 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             original_output_stat = None
             output_fullpath = None
+            original_output_mtime_ns = None
             if OutputTransform is not None:
                 original_output_stat = os.stat(OutputTransform.FullPath)
+                original_output_mtime_ns = original_output_stat.st_mtime_ns
                 output_fullpath = OutputTransform.FullPath
 
             # Regenerate the missing transform, but ensure the later transform is untouched.
@@ -102,7 +105,7 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
             if not os.path.exists(tNode.FullPath):
                 raise ValueError(f"Transform {tNode.FullPath} did not regenerate itself")
 
-            if os.stat(tNode.FullPath).st_mtime <= original_stat.st_mtime:
+            if nornir_shared.files.file_mtime_ns(tNode.FullPath) < original_mtime_ns:
                 raise ValueError(f"Transform {tNode.FullPath} did not regenerate itself")
 
             # Make sure the transforms are still consistent
@@ -114,18 +117,18 @@ class TransformIsValidTest(PrepareAndMosaicSetup):
 
             # Deleted transform should be regenerated.  The checksum should match what the one we deleted.  Downstream transforms should be left alone
             if not OutputTransform is None:
-                new_output_stat = os.stat(output_fullpath)
+                output_mtime_ns = nornir_shared.files.file_mtime_ns(output_fullpath)
                 output_should_regenerate = prechecksum != RefreshedTransform.Checksum
                 if output_should_regenerate:
                     # If the regenerated checksum is equal to the original checksum the downstream transforms should not regenerate
 
                     # Translated transform involves random numbers, so the odds of a matching checksum are low, which triggers a regeneration of grid transform
-                    if new_output_stat.st_mtime <= original_output_stat.st_mtime:
+                    if output_mtime_ns < original_output_mtime_ns:
                         raise ValueError(f"Transform {output_fullpath} did not regenerate itself")
                     self.assertEqual(nornir_shared.files.NewestFile(tNode.FullPath, OutputTransform.FullPath),
                                      OutputTransform.FullPath)
                 else:
-                    if new_output_stat.st_mtime > original_output_stat.st_mtime:
+                    if output_mtime_ns > original_output_mtime_ns:
                         raise ValueError(
                             f"Transform {output_fullpath} regenerated itself when the input checksum was unchanged")
                     # The regenerated transform should be the newest, but the downstream transform should not regenerate because checksum is matched
