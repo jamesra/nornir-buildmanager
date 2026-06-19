@@ -514,7 +514,7 @@ class PipelineManager:
 
         self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
 
-        nornir_pools.WaitOnAllPools()
+        nornir_pools.ReleaseStagePools()
 
     def ExecuteChildPipelines(self, ArgSet, VolumeElem: XElementWrapper,
                               PipelineNode):

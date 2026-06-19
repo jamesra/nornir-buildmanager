@@ -76,7 +76,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                                           ContrastMap=ContrastMap,
                                           )
 
-    nornir_pools.WaitOnAllPools()
+    nornir_pools.ReleaseStagePools()
 
 
 class MRCImport:

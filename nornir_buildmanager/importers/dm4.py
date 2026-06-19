@@ -75,7 +75,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
                                                          tile_overlap=tile_overlap,
                                                          DesiredSectionList=DesiredSectionList)
 
-    nornir_pools.WaitOnAllPools()
+    nornir_pools.ReleaseStagePools()
 
     for transform_fullpath in mosaics_loaded:
         mosaicObj = mosaics_loaded[transform_fullpath]

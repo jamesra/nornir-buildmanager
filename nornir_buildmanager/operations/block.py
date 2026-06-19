@@ -1057,7 +1057,7 @@ def AssembleStosOverlays(Parameters,
 
         # Pool = nornir_pools.GetGlobalProcessPool()
         # Pool.wait_completion()
-        nornir_pools.WaitOnAllPools()
+        nornir_pools.ReleaseStagePools()
     finally:
         files.rmtree(tempdir, ignore_errors=True)
 

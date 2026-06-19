@@ -369,6 +369,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
                 pass
 
     if SaveRequired:
+        nornir_pools.ReleaseStagePools()
         return TransformParentNode
     else:
         return None
