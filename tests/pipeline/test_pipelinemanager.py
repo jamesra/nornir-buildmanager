@@ -105,6 +105,15 @@ class TestStageTimings(unittest.TestCase):
             self.assertEqual(records[0]['pipeline'], 'TestPipeline')
             self.assertEqual(records[0]['stages'][0]['stage'], 'stage.one')
 
+    def test_stage_volume_label_for_mapping_node(self):
+        """Mapping nodes lack FullPath; stage keys should use a descriptive label."""
+        from nornir_buildmanager.volumemanager.mappingnode import MappingNode
+
+        mapping = MappingNode.Create(693, [692, 694])
+        label = pm.PipelineManager._StageVolumeLabel(mapping)
+        self.assertNotIn('FullPath', label)
+        self.assertIn('693', label)
+
 
 class Test(unittest.TestCase):
 

@@ -138,7 +138,10 @@ def VerifyTiles(level_node: LevelNode | None = None, **kwargs) -> tuple[bool, li
     if len(level_image_files) == 0:
         level_node.TilesValidated = 0
         try:
-            level_node.ValidationTime = datetime.datetime.utcfromtimestamp(os.stat(level_node.FullPath).st_mtime)
+            level_node.ValidationTime = datetime.datetime.fromtimestamp(
+                os.stat(level_node.FullPath).st_mtime,
+                datetime.UTC,
+            )
         except FileNotFoundError:
             level_node.ValidationTime = None
 
@@ -1104,13 +1107,11 @@ def GetOrCreateCleanedImageNode(imageset_node: ImageSetNode, transform_node: Tra
     os.makedirs(image_level_node.FullPath, exist_ok=True)
 
     image_node = image_level_node.find('Image')
-    # ===========================================================================
-    # if not image_node is None:
-    #     if image_node.CleanIfInputTransformMismatched(transform_node):
-    #         image_node = None
-    # ===========================================================================
-
-    if image_node is None:
+    if image_node is not None:
+        if image_node.CleanIfInputTransformMismatched(transform_node):
+            image_node = nornir_buildmanager.volumemanager.ImageNode.Create(image_name)
+            image_level_node.append(image_node)
+    else:
         image_node = nornir_buildmanager.volumemanager.ImageNode.Create(image_name)
         image_level_node.append(image_node)
 
@@ -1292,7 +1293,14 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     except FileNotFoundError:
         pass
 
-    if not (os.path.exists(image_node.FullPath) and os.path.exists(MaskImageNode.FullPath)):
+    assemble_outputs_current = (
+            os.path.exists(image_node.FullPath)
+            and os.path.exists(MaskImageNode.FullPath)
+            and image_node.IsInputTransformMatched(transform_node)
+            and MaskImageNode.IsInputTransformMatched(transform_node))
+    if assemble_outputs_current:
+        Logger.info("Skipping assemble; outputs are current for " + transform_node.FullPath)
+    elif not (os.path.exists(image_node.FullPath) and os.path.exists(MaskImageNode.FullPath)):
 
         ImageDir = InputLevelNode.FullPath
         # ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
@@ -1333,6 +1341,9 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
 
         shutil.move(tempOutputFullPath, image_node.FullPath)
         shutil.move(tempMaskOutputFullPath, MaskImageNode.FullPath)
+
+        image_node.SetTransform(transform_node)
+        MaskImageNode.SetTransform(transform_node)
 
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)

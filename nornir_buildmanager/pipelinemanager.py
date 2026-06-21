@@ -358,6 +358,13 @@ class PipelineManager:
 
         return outStr
 
+    @staticmethod
+    def _StageVolumeLabel(volume_elem: XElementWrapper) -> str:
+        """Return a filesystem path or descriptive label for stage timing keys."""
+        if isinstance(volume_elem, XResourceElementWrapper):
+            return volume_elem.FullPath
+        return str(volume_elem)
+
     @classmethod
     def PrintPipelineEnumeration(cls, PipelineXML: str | ElementTree.ElementTree):
         PipelineXML = cls.LoadPipelineXML(PipelineXML)
@@ -834,7 +841,7 @@ class PipelineManager:
             ArgSet.AddAttributes(PipelineNode)
             ArgSet.AddParameters(PipelineNode)
 
-            stage_key = f"{PipelineModule}.{PipelineFunction} @ {VolumeElem.FullPath}"
+            stage_key = f"{PipelineModule}.{PipelineFunction} @ {PipelineManager._StageVolumeLabel(VolumeElem)}"
 
             try:
                 # PipelineManager.AddAttributes(dargs, PipelineNode)

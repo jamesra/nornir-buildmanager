@@ -1919,6 +1919,15 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
                     stosNode.InputTransformChecksum = InputStosFileChecksum
 
                 yield OutputSectionMappingNode
+            elif stosNode is not None and stosfile.StosFile.IsValid(OutputStosFullPath):
+                if transforms.IsValueMatched(stosNode, 'InputTransformChecksum', InputStosFileChecksum):
+                    Logger.info("Skipping refine; existing output matches input checksum: " + OutputStosFullPath)
+                    continue
+                Logger.warning(
+                    "Refine output exists but input checksum metadata mismatch was not cleaned: " + OutputStosFullPath)
+                stosNode.Clean("InputTransformChecksum mismatch for existing refine output")
+                stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
+                                                                       OutputPath=OutputFile)
 
 
 def __StosMapToRegistrationTree(stos_map_node: StosMapNode):
