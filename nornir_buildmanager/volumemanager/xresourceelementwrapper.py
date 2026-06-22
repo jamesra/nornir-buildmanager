@@ -82,6 +82,13 @@ class XResourceElementWrapper(lockable.Lockable,
 
         return val
 
+    @staticmethod
+    def _as_utc_aware(value: datetime.datetime) -> datetime.datetime:
+        """Normalize a datetime for comparison with UTC filesystem timestamps."""
+        if value.tzinfo is None:
+            return value.replace(tzinfo=datetime.UTC)
+        return value.astimezone(datetime.UTC)
+
     @ValidationTime.setter
     def ValidationTime(self, val: datetime.datetime | None):
         if val is None:
@@ -110,7 +117,8 @@ class XResourceElementWrapper(lockable.Lockable,
             dir_mod_time = self.LastFileSystemModificationTime
             if dir_mod_time is None:
                 return True
-            return self.ValidationTime < dir_mod_time
+            validation_time = self._as_utc_aware(self.ValidationTime)
+            return validation_time < dir_mod_time
         except FileNotFoundError:  # If the file or directory is missing that is a change :-)
             return True
 
@@ -124,7 +132,7 @@ class XResourceElementWrapper(lockable.Lockable,
         """
         try:
             level_stats = os.stat(self.FullPath)
-            level_last_filesystem_modification = datetime.datetime.utcfromtimestamp(level_stats.st_mtime)
+            level_last_filesystem_modification = datetime.datetime.fromtimestamp(level_stats.st_mtime, datetime.UTC)
             return level_last_filesystem_modification
         except FileNotFoundError:
             raise

@@ -334,12 +334,30 @@ def _segment_is_root_only_flags(segment: list[str]) -> bool:
     return True
 
 
+def _leading_root_flag_segment_length(args: list[str]) -> int:
+    """Return the length of a leading argv prefix consumed by root-parser flags."""
+    j = 0
+    while j < len(args):
+        token = args[j]
+        if token in _ROOT_FLAGS_NO_VALUE:
+            j += 1
+            continue
+        if token in _ROOT_FLAGS_WITH_VALUE:
+            if j + 1 >= len(args):
+                break
+            j += 2
+            continue
+        break
+    return j
+
+
 def _ReorderArgs(args: list[str]) -> list[str]:
     """Reorder argv so root flags and subcommand precede volumepath (argparse subparser layout).
 
     Accepts legacy test orderings:
     - ``[volumepath, command, ...]`` (swap first two when command is second)
     - ``[volumepath, -debug, ..., command, ...]`` (move root flags + command before volumepath)
+    - ``[-debug, ..., volumepath, command, ...]`` (launch.json / flags-before-path order)
 
     Leaves canonical ``[flags..., command, volumepath, ...]`` unchanged.
     """
@@ -365,6 +383,13 @@ def _ReorderArgs(args: list[str]) -> list[str]:
             middle = args[1:i]
             if _segment_is_root_only_flags(middle):
                 return middle + [args[i], volumepath] + args[i + 1 :]
+
+    # [<root flags...>, volumepath, command, <tail>] — e.g. launch.json TEM configs
+    prefix_len = _leading_root_flag_segment_length(args)
+    if prefix_len < len(args):
+        rest = args[prefix_len:]
+        if len(rest) > 1 and not rest[0].startswith('-') and rest[1] in valid_commands:
+            return args[:prefix_len] + [rest[1], rest[0]] + rest[2:]
 
     return args
 
@@ -400,8 +425,8 @@ def Execute(buildArgs=None):
 
     args = parser.parse_args(buildArgs)
 
-    # If help command is used, don't require volumepath
-    if hasattr(args, 'func'):
+    # Help command does not require volumepath or timing output.
+    if getattr(args, 'command', None) == 'help':
         args.func(args)
         return
 
@@ -412,6 +437,9 @@ def Execute(buildArgs=None):
     if args.lowpriority:
         lowpriority()
         print("Warning, using low priority flag.  This can make builds much slower")
+
+    if hasattr(args, 'computational_library'):
+        init_computational_library(args)
 
     cmd_name = None
     if hasattr(args, 'PipelineName'):

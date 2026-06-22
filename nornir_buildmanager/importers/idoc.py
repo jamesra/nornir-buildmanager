@@ -150,13 +150,15 @@ def Import(VolumeElement: VolumeNode,
         raise ValueError("Max must be greater than Min: %f is not less than %f" % (MinCutoff, MaxCutoff))
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
-    histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
+    histogramFilename = os.path.join(
+        serialem_utils.get_import_cache_path(ImportPath),
+        nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
     if len(ContrastMap) == 0:
         try:
             nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
         except OSError as e:
-            if e.errno == errno.EROFS:
+            if e.errno in (errno.EROFS, errno.EACCES):
                 prettyoutput.Log(
                     f"Warning: Unable to create default histogram cutoff file on read-only filesystem: {histogramFilename}"
                 )
@@ -330,7 +332,8 @@ class SerialEMIDocImport:
         if TargetBpp is None:
             FilterName = 'Raw'
 
-        histogram_cache_path = os.path.join(section_source_dir, 'Histogram.xml')
+        histogram_cache_path = os.path.join(
+            serialem_utils.get_import_cache_path(section_source_dir), 'Histogram.xml')
 
         IDocData.RemoveMissingTiles(section_source_dir)
         if len(IDocData.Tiles) == 0:
@@ -430,9 +433,9 @@ class SerialEMIDocImport:
         try:
             # Check if we need to reimport the stage.mosaic file
             cutoff_time = datetime.datetime(year=2022, month=7,
-                                            day=18)  # The deployment date of the updated nornir version
+                                            day=18, tzinfo=datetime.UTC)  # The deployment date of the updated nornir version
             mosaic_fd = os.stat(SupertilePath)
-            file_creation_time = datetime.datetime.utcfromtimestamp(mosaic_fd.st_ctime)
+            file_creation_time = datetime.datetime.fromtimestamp(mosaic_fd.st_ctime, datetime.UTC)
 
             if cutoff_time > file_creation_time and 'RC3' in VolumeObj.FullPath:
                 os.remove(SupertilePath)
@@ -1135,7 +1138,8 @@ def PlotDefocusSurface(DataSource, OutputImageFile=None, title=None):
     residual = np.linalg.norm(errors)
 
     # print( "solution:")
-    defocus_solution = "%f x + %f y + %f = z" % (fit[0], fit[1], fit[2])
+    fit_coef = np.asarray(fit, dtype=float).ravel()
+    defocus_solution = "%f x + %f y + %f = z" % tuple(fit_coef[:3])
     # print( defocus_solution )
     # print( "errors:")
     # print( errors)

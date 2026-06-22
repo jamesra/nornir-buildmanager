@@ -26,6 +26,13 @@ class BlockNode(XNamedContainerElementWrapped):
     def GetSection(self, Number: int) -> SectionNode:
         return self.GetChildByAttrib('Section', 'Number', Number)  # type: ignore[return-value]  # type: SectionNode
 
+    def IterSectionsByNumber(self, numbers: Iterable[int]) -> Generator[SectionNode, None, None]:
+        """Yield existing section nodes for each requested number without enumerating all sections."""
+        for number in numbers:
+            section_node = self.GetSection(number)
+            if section_node is not None:
+                yield section_node
+
     def GetOrCreateSection(self, Number: int) -> tuple[bool, SectionNode]:
         """
         :param Number: Section Number

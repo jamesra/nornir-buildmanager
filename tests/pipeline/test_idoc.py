@@ -347,6 +347,7 @@ class TestIDocSingleSectionImport(IDocTest):
         os.makedirs(os.path.dirname(self.ImportedDataPath), exist_ok=True)
         if os.path.exists(self.ImportedDataPath):
             shutil.rmtree(self.ImportedDataPath)
+        # Must be a real copy, not hardlinks: import/histogram metadata is written here during the test.
         shutil.copytree(self._import_source_cache_path, self.ImportedDataPath)
 
     def LoadMetaData(self):
