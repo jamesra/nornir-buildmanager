@@ -363,6 +363,7 @@ def PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float, 
             HistogramImageFullPath, datetime.date(year=2022, month=10, day=25)):
         #        pool = nornir_pools.GetGlobalMultithreadingPool()
         # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d\nRaw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+        os.makedirs(os.path.dirname(HistogramImageFullPath), exist_ok=True)
         plot.Histogram(histogramFullPath, HistogramImageFullPath,
                        Title=f"Section {sectionNumber}\nRaw Data Pixel Intensity", LinePosList=[minCutoff, maxCutoff],
                        range_is_power_of_two=True)
@@ -389,6 +390,7 @@ def _GetMinMaxCutoffs(calculate_histogram: Callable[[], Histogram],
 
         if histogram_cache_path is not None:
             histogramObj = CleanOutliersFromHistogram(histogramObj)
+            os.makedirs(os.path.dirname(histogram_cache_path), exist_ok=True)
             histogramObj.Save(histogram_cache_path)
 
     assert (histogramObj is not None)

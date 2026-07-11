@@ -10,14 +10,45 @@ from nornir_shared import files
 import nornir_shared.prettyoutput as prettyoutput
 
 
+def get_import_cache_path(source_path: str) -> str:
+    """Return the path to use for import cache files.
+
+    When NORNIR_IMPORT_CACHE_PATH is set, mirrors source_path under that root
+    (relative to TESTINPUTPATH when available, otherwise relative to the
+    filesystem root). When the env var is absent, returns source_path unchanged
+    so existing behaviour is preserved.
+    """
+    cache_root = os.environ.get('NORNIR_IMPORT_CACHE_PATH')
+    if not cache_root:
+        return source_path
+
+    input_root = os.environ.get('TESTINPUTPATH')
+    if input_root:
+        try:
+            rel = os.path.relpath(source_path, input_root)
+            if not rel.startswith('..'):
+                return os.path.join(cache_root, rel)
+        except ValueError:
+            pass  # different drives on Windows
+
+    # Fallback: mirror from filesystem root (strip drive letter / leading sep)
+    _, path_no_drive = os.path.splitdrive(os.path.abspath(source_path))
+    return os.path.join(cache_root, path_no_drive.lstrip(os.sep))
+
+
 def try_remove_spaces_from_dirname(sectionDir):
-    """:return: Renamed directory if there were spaced in the filename, otherwise none"""
+    """:return: Renamed directory if there were spaces in the filename, otherwise none"""
     sectionDirNoSpaces = sectionDir.replace(' ', '_')
     ParentDir = os.path.dirname(sectionDir)
     if sectionDirNoSpaces != sectionDir:
         sectionDirNoSpacesFullPath = os.path.join(ParentDir, sectionDirNoSpaces)
-        shutil.move(sectionDir, sectionDirNoSpacesFullPath)
-
+        try:
+            shutil.move(sectionDir, sectionDirNoSpacesFullPath)
+        except OSError as e:
+            prettyoutput.Log(
+                f"Warning: could not rename '{sectionDir}' to remove spaces "
+                f"(read-only source?): {e}")
+            return None
         sectionDir = sectionDirNoSpaces
         return sectionDir
 
@@ -145,7 +176,7 @@ def PickleLoad(logfullPath, version_func):
     """
 
     obj = None
-    picklePath = logfullPath + ".pickle"
+    picklePath = get_import_cache_path(logfullPath) + ".pickle"
 
     removed = files.RemoveOutdatedFile(logfullPath, picklePath)
     if removed is True:
@@ -182,14 +213,15 @@ def PickleLoad(logfullPath, version_func):
 
 
 def PickleSave(obj, logfullPath):
-    picklePath = logfullPath + ".pickle"
+    picklePath = get_import_cache_path(logfullPath) + ".pickle"
 
     try:
+        os.makedirs(os.path.dirname(picklePath), exist_ok=True)
         with open(picklePath, 'wb') as filehandle:
             pickle.dump(obj, filehandle)
     except Exception as e:
-        prettyoutput.LogErr(str.format("Could not cache {0}: {1}", picklePath, str(e)))
+        prettyoutput.Log(str.format("Could not cache {0}: {1}", picklePath, str(e)))
         try:
             os.remove(picklePath)
-        except:
+        except Exception:
             pass
