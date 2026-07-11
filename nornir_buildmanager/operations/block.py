@@ -394,14 +394,20 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int,
                                                              method=method)
 
     elif method == nornir_imageregistration.settings.SliceToSliceMethod.LogPolar:
-        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=target_image_fullpath,
-                                                             source_image=source_image_fullpath,
-                                                             target_mask=target_mask_fullpath,
-                                                             source_mask=source_mask_fullpath,
-                                                             AngleSearchRange=AngleSearchRange,
-                                                             TestFlip=TestForFlip,
-                                                             WarpedImageScaleFactors=WarpedImageScaleFactors,
-                                                             method=method)
+        # Match Pyre Operations→Log Polar (Fast): overlap 0.75 and max dim 818.
+        # Independent of computation backend (NumPy or CuPy).
+        alignment = stos_brute.SliceToSliceRigidRegistration(
+            target_image=target_image_fullpath,
+            source_image=source_image_fullpath,
+            target_mask=target_mask_fullpath,
+            source_mask=source_mask_fullpath,
+            AngleSearchRange=AngleSearchRange,
+            TestFlip=TestForFlip,
+            WarpedImageScaleFactors=WarpedImageScaleFactors,
+            method=method,
+            MinOverlap=stos_brute.LOGPOLAR_PIPELINE_MIN_OVERLAP,
+            LargestDimension=stos_brute.LOGPOLAR_PIPELINE_LARGEST_DIMENSION,
+        )
     else:
         raise ValueError("Unknown method " + str(method))
 
@@ -516,6 +522,20 @@ def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: FilterNo
     return x_scale, y_scale
 
 
+def _IsotropicWarpedImageScaleFactor(ControlFilter: FilterNode,
+                                     MappedFilter: FilterNode) -> float | None:
+    """Return one isotropic scale factor for stos brute, or None if unavailable.
+
+    Collapses per-axis VolumeData Scale ratios via geometric mean so registration
+    never receives an anisotropic (sx, sy) pair.
+    """
+    scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
+    if scale_result is None:
+        return None
+    x_scale, y_scale = scale_result
+    return float(np.sqrt(float(x_scale) * float(y_scale)))
+
+
 def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
                                     control_filter: nornir_buildmanager.volumemanager.FilterNode,
                                     mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
@@ -608,14 +628,7 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
 
             stosNode.InputTransformChecksum = manual_input_checksum
         else:
-            # Calculate if both images have the same scale and adjust if needed
-            # scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(control_filter, mapped_filter)
-
-            # if scale_result is not None:
-            #    xscale, yscale = scale_result
-            # else:
-            #    xscale, yscale = None, None
-
+            warped_scale = _IsotropicWarpedImageScaleFactor(control_filter, mapped_filter)
             if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
                 control_mask_path = ControlMaskImageNode.FullPath if ControlMaskImageNode is not None else None
                 mapped_mask_path = MappedMaskImageNode.FullPath if MappedMaskImageNode is not None else None
@@ -623,11 +636,13 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
                                       ControlImageNode.FullPath, MappedImageNode.FullPath,  # type: ignore[union-attr]
                                       control_mask_path, mapped_mask_path,
                                       AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,  # type: ignore[arg-type]
+                                      WarpedImageScaleFactors=warped_scale,
                                       method=method)
             else:
                 __CallNornirStosBrute(stosNode, stos_group.Downsample,  # type: ignore[arg-type]
                                       ControlImageNode.FullPath, MappedImageNode.FullPath,  # type: ignore[union-attr]
                                       AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,  # type: ignore[arg-type]
+                                      WarpedImageScaleFactors=warped_scale,
                                       method=method)
 
         CmdRan = True

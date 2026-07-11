@@ -107,9 +107,11 @@ class TilePyramidNode(XContainerElementWrapper, PyramidLevelHandler):
         """
         Using the meta-data, returns whether there is a reasonable belief that
         the passed level has all of the tiles and that they are valid
-        :return: True if the level should have its contents validated
+        :return: True if the level should not have its contents validated
         """
-
+        if level_node.TilesValidated is None:
+            return False, 'TilesValidated is not set'
+            
         level_full_path = level_node.FullPath
 
         if self.Parent is None:  # Don't check for validity if our node has not been added to the tree yet

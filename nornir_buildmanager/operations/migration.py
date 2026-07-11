@@ -6,15 +6,22 @@ Created on May 15, 2015
 All the code, often throwaway, to migrate from one version to another.
 '''
 
+from __future__ import annotations
+
 import datetime
 import glob
+import logging
 import os
 import re
+from typing import Iterator
 
+import nornir_buildmanager.volumemanager as volumemanager
 import nornir_buildmanager.volumemanager.inputtransformhandler
 import nornir_imageregistration
 import nornir_imageregistration.files
 import nornir_shared.files
+from nornir_buildmanager.volumemanager.xcontainerelementwrapper import XContainerElementWrapper
+from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceElementWrapper
 
 
 def GetTileNumber(filename: str) -> int:
@@ -336,3 +343,63 @@ def TryRepairXMLFileAppendError(filename: str) -> bool:
         return False
 
 
+def _ResourceUsesFilesystemValidation(node: object) -> bool:
+    """Return True if *node* may use directory/file mtime for validation.
+
+    Linked container elements save meta-data into the same directory they
+    represent, so their directory mtime is not a reliable change signal
+    (see ``XResourceElementWrapper.NeedsValidation``).
+    """
+    if not isinstance(node, XResourceElementWrapper):
+        return False
+    if isinstance(node, XContainerElementWrapper) and node.SaveAsLinkedElement:
+        return False
+    return True
+
+
+def _iter_element_tree(root: volumemanager.XElementWrapper) -> Iterator[volumemanager.XElementWrapper]:
+    """Yield *root* and every descendant element."""
+    yield root
+    for child in list(root):
+        if isinstance(child, volumemanager.XElementWrapper):
+            yield from _iter_element_tree(child)
+
+
+def SyncValidationTimes(VolumeElement: volumemanager.VolumeNode | None = None,
+                        dryrun: bool = False,
+                        **kwargs) -> volumemanager.VolumeNode | None:
+    """Realign ``ValidationTime`` on filesystem-backed nodes to current mtimes.
+
+    After a volume copy, file timestamps often post-date stored ValidationTime
+    values, which makes levels look modified and triggers unnecessary pyramid
+    rebuilds. This stage updates ValidationTime to match the filesystem for
+    nodes that use that check.
+
+    :param VolumeElement: Root volume node to walk (linked children are loaded).
+    :param dryrun: When True, report what would change but do not modify nodes.
+    :return: *VolumeElement* if any nodes were (or would be) updated; otherwise None.
+    """
+    if VolumeElement is None:
+        return None
+
+    logger = logging.getLogger(__name__ + '.SyncValidationTimes')
+    VolumeElement.LoadAllLinkedNodes()
+
+    updates = 0
+    for node in _iter_element_tree(VolumeElement):
+        if not _ResourceUsesFilesystemValidation(node):
+            continue
+        if not node.ChangesSinceLastValidation:
+            continue
+
+        updates += 1
+        if dryrun:
+            logger.info('Would sync ValidationTime for %s', getattr(node, 'FullPath', node.tag))
+            continue
+
+        node.UpdateValidationTime()
+        logger.info('Synced ValidationTime for %s', getattr(node, 'FullPath', node.tag))
+
+    if updates == 0 or dryrun:
+        return None
+    return VolumeElement
