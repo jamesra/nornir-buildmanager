@@ -250,11 +250,43 @@ def call_pipeline(args):
                                                 args=args)
 
 
+def _run_pipeline_segment(args: argparse.Namespace, volume_tree=None, flush_at_boundary: bool = False):
+    """Run one pipeline segment, optionally reusing an in-memory volume tree."""
+    tree = pipelinemanager.PipelineManager.RunPipeline(
+        PipelineXmlFile=args.PipelineXmlFile,
+        PipelineName=args.PipelineName,
+        args=args,
+        volume_tree=volume_tree,
+    )
+    if flush_at_boundary and tree is not None:
+        nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Save(tree)
+    return tree
+
+
 def _GetFromNamespace(ns, attribname, default=None):
     if attribname in ns:
         return getattr(ns, attribname)
     else:
         return default
+
+
+def _publish_early_run_meta_from_args(args: argparse.Namespace) -> None:
+    """Publish retained dashboard meta as soon as CLI args are known.
+
+    Uses ``PipelineName`` when present (pipeline commands); otherwise ``command``
+    (utilities such as RecoverLinks). Skips when volumepath is missing.
+    """
+    volumepath = getattr(args, 'volumepath', None)
+    if not volumepath:
+        return
+
+    pipeline = getattr(args, 'PipelineName', None)
+    if not pipeline:
+        pipeline = getattr(args, 'command', None)
+    if not pipeline:
+        return
+
+    prettyoutput.publish_early_run_meta(pipeline=pipeline, volumepath=volumepath)
 
 
 def InitLogging(buildArgs):
@@ -394,6 +426,87 @@ def _ReorderArgs(args: list[str]) -> list[str]:
     return args
 
 
+def _SplitChainSegments(buildArgs: list[str]) -> list[list[str]]:
+    """Split argv on ``--then`` into per-pipeline segments."""
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for token in buildArgs:
+        if token == '--then':
+            if not current:
+                raise ValueError('--then cannot precede the first pipeline segment')
+            segments.append(current)
+            current = []
+        else:
+            current.append(token)
+    if not current:
+        raise ValueError('no pipeline segment after final --then')
+    segments.append(current)
+    return segments
+
+
+def _AppendTimingOutput(volumepath: str, timer: TaskTimer) -> None:
+    """Append a timing record for one pipeline invocation to Timing.txt."""
+    out_str = str(timer)
+    prettyoutput.Log(out_str)
+    time_text_full_path = os.path.join(volumepath, 'Timing.txt')
+    try:
+        with open(time_text_full_path, 'a') as output_file:
+            output_file.writelines(out_str)
+    except OSError:
+        prettyoutput.Log('Could not write %s' % time_text_full_path)
+
+
+def ExecuteChain(buildArgs: list[str]) -> None:
+    """Run multiple pipelines sequentially in one process, separated by ``--then``."""
+    segments = _SplitChainSegments(buildArgs)
+    first_segment = _ReorderArgs(segments[0])
+
+    InitLogging(first_segment)
+
+    parser = BuildParserRoot()
+    first_args = parser.parse_args(first_segment)
+
+    if getattr(first_args, 'command', None) == 'help':
+        first_args.func(first_args)
+        return
+
+    if not hasattr(first_args, 'volumepath') or not first_args.volumepath:
+        parser.error("the following arguments are required: volumepath")
+
+    if first_args.lowpriority:
+        lowpriority()
+        print("Warning, using low priority flag.  This can make builds much slower")
+
+    if hasattr(first_args, 'computational_library'):
+        init_computational_library(first_args)
+
+    root_flags = first_segment[:_leading_root_flag_segment_length(first_segment)]
+    volumepath = first_args.volumepath
+    valid_commands = frozenset(_GetValidCommands())
+
+    volume_tree = None
+    for index, segment in enumerate(segments):
+        if index > 0 and segment[0] not in valid_commands:
+            parser.error(f"unknown pipeline in chain segment: {segment[0]}")
+
+        if index == 0:
+            segment_argv = first_segment
+        else:
+            segment_argv = _ReorderArgs(root_flags + [segment[0], volumepath] + segment[1:])
+
+        args = parser.parse_args(segment_argv)
+        _publish_early_run_meta_from_args(args)
+
+        cmd_name = args.PipelineName
+        timer = TaskTimer()
+        try:
+            timer.Start(cmd_name)
+            volume_tree = _run_pipeline_segment(args, volume_tree=volume_tree, flush_at_boundary=True)
+        finally:
+            timer.End(cmd_name)
+            _AppendTimingOutput(volumepath, timer)
+
+
 def Execute(buildArgs=None):
     """Run the nornir-build command line entrypoint.
 
@@ -405,6 +518,10 @@ def Execute(buildArgs=None):
 
     if buildArgs is None:
         buildArgs = sys.argv[1:]
+
+    if '--then' in buildArgs:
+        ExecuteChain(buildArgs)
+        return
 
     # Reorder arguments to support both command-first and volumepath-first patterns
     buildArgs = _ReorderArgs(buildArgs)
@@ -441,6 +558,8 @@ def Execute(buildArgs=None):
     if hasattr(args, 'computational_library'):
         init_computational_library(args)
 
+    _publish_early_run_meta_from_args(args)
+
     cmd_name = None
     if hasattr(args, 'PipelineName'):
         cmd_name = args.PipelineName
@@ -457,15 +576,7 @@ def Execute(buildArgs=None):
         if cmd_name is not None:
             Timer.End(cmd_name)
 
-        OutStr = str(Timer)
-        prettyoutput.Log(OutStr)
-        timeTextFullPath = os.path.join(args.volumepath, 'Timing.txt')
-        try:
-            with open(timeTextFullPath, 'a') as OutputFile:
-                OutputFile.writelines(OutStr)
-                OutputFile.close()
-        except:
-            prettyoutput.Log('Could not write %s' % timeTextFullPath)
+        _AppendTimingOutput(args.volumepath, Timer)
 
 
 if __name__ == '__main__':

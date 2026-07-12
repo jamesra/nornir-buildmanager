@@ -1584,6 +1584,19 @@
         </Iterate>
     </Pipeline>
 
+    <Pipeline Name="SyncValidationTimes"
+              Help="Sync ValidationTime metadata to filesystem mtimes after a volume copy."
+              Description="Walks filesystem-backed volume nodes and realigns ValidationTime to current mtimes so copied volumes do not look modified and trigger unnecessary pyramid rebuilds."
+              Epilog="Example: nornir-build SyncValidationTimes /data/volume">
+        <Arguments>
+            <Argument flag="-dryrun" action="store_true" dest="dryrun"
+                      help="Report nodes that would change without updating ValidationTime"
+                      required="False"/>
+        </Arguments>
+        <PythonCall Module="nornir_buildmanager.operations.migration"
+                    Function="SyncValidationTimes" dryrun="#dryrun"/>
+    </Pipeline>
+
     <Pipeline Name="Cleanup" Help="Clean common errors from the volume meta-data">
         <Arguments>
             <Argument flag="-Sections" dest="Sections" type="IntegerList"

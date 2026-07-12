@@ -435,12 +435,13 @@ class PipelineManager:
         return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)  # type: ignore[arg-type]
 
     @classmethod
-    def RunPipeline(cls, PipelineXmlFile: str | ElementTree.ElementTree, PipelineName: str, args):
+    def RunPipeline(cls, PipelineXmlFile: str | ElementTree.ElementTree, PipelineName: str, args,
+                    volume_tree=None):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
         Pipeline = cls.Load(PipelineXmlFile, PipelineName)
 
-        Pipeline.Execute(args)  # type: ignore[union-attr]
+        return Pipeline.Execute(args, volume_tree=volume_tree)  # type: ignore[union-attr]
 
     def GetArgParser(self, parser=None, IncludeGlobals: bool = True):
         """Create the complete argument parser for the pipeline
@@ -497,7 +498,7 @@ class PipelineManager:
 
     IndentLevel = 0
 
-    def Execute(self, args):
+    def Execute(self, args, volume_tree=None):
         """This executes the loaded pipeline on the specified volume of data.
            parser is an instance of the argparser class which should be
            extended with any pipeline specific arguments args are the parameters from the command line"""
@@ -517,7 +518,10 @@ class PipelineManager:
         ArgSet.AddParameters(PipelineElement)
 
         # Load the Volume.XML file in the output directory
-        self.VolumeTree = VolumeManager.Load(args.volumepath, Create=True)
+        if volume_tree is not None:
+            self.VolumeTree = volume_tree
+        else:
+            self.VolumeTree = VolumeManager.Load(args.volumepath, Create=True)
 
         if self.VolumeTree is None:
             PipelineManager.logger.critical("Could not load or create volume.xml " + args.outputpath)
@@ -535,6 +539,8 @@ class PipelineManager:
         self._WriteStageTimings()
 
         nornir_pools.ReleaseStagePools()
+
+        return self.VolumeTree
 
     def _WriteStageTimings(self) -> None:
         """Append per-stage timing records for this pipeline execute to StageTimings.json."""
