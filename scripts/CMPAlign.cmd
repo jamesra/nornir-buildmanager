@@ -9,9 +9,9 @@ nornir-build %1 AssembleStosOverlays  -StosGroup StosBrute -Downsample 8 -StosMa
 title SelectBestRegistrationChain
 nornir-build %1 SelectBestRegistrationChain -StosGroup StosBrute -Downsample 8 -InputStosMap PotentialRegistrationChain -OutputStosMap FinalStosMap
 title RefineSectionAlignment
-nornir-build %1 RefineSectionAlignment -Filters LeveledShadingCorrected -InputGroup StosBrute -InputDownsample 8 -OutputGroup Grid -OutputDownsample 8 -UseMasks
+nornir-build %1 RefineSectionAlignment -Filters LeveledShadingCorrected -InputGroup StosBrute -InputDownsample 8 -OutputGroup Grid -OutputDownsample 8
 title RefineSectionAlignment
-nornir-build %1 RefineSectionAlignment -Filters LeveledShadingCorrected -InputGroup Grid -InputDownsample 8 -OutputGroup Grid -OutputDownsample 2 -UseMasks
+nornir-build %1 RefineSectionAlignment -Filters LeveledShadingCorrected -InputGroup Grid -InputDownsample 8 -OutputGroup Grid -OutputDownsample 2
 title SliceToVolume
 nornir-build %1 SliceToVolume -Downsample 2 -InputGroup Grid -OutputGroup SliceToVolume
 title ScaleVolumeTransforms

@@ -15,6 +15,7 @@ from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.metadatautils import *
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
+from nornir_buildmanager.operations.transform_refine_orchestrator import TransformRefineOrchestrator
 from nornir_buildmanager.validation import transforms
 from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
@@ -1656,14 +1657,16 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
                                                    OutputStosPath=OutputStosFullPath,
                                                    **kwargs)
     except ValueError as e:
-        prettyoutput.LogErr(f'Refining {InputStosFullPath} to {OutputStosFullPath} Failed!')
-        if nornir_imageregistration.in_debug_mode():
-            raise
-        else:
-            # Fall back to the input transform so the section stays in the pipeline
-            prettyoutput.Log(f'Using input transform as fallback: {InputStosFullPath} -> {OutputStosFullPath}')
+        prettyoutput.LogErr(f'Refining {InputStosFullPath} to {OutputStosFullPath} Failed!\n{e}')
+        # Default: re-raise. Opt in with NORNIR_STOS_REFINE_FALLBACK=1 to copy the
+        # input transform and keep the pipeline alive (legacy behavior).
+        if nornir_imageregistration.refine_shared.get_runtime_config(refresh=True).stos_refine_fallback:
+            prettyoutput.LogErr(
+                f'Using input transform as fallback (NORNIR_STOS_REFINE_FALLBACK=1): '
+                f'{InputStosFullPath} -> {OutputStosFullPath}')
             shutil.copy(InputStosFullPath, OutputStosFullPath)
             return
+        raise
 
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
 
@@ -1935,12 +1938,17 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
                 yield OutputSectionMappingNode
             elif stosNode is not None and stosfile.StosFile.IsValid(OutputStosFullPath):
-                if transforms.IsValueMatched(stosNode, 'InputTransformChecksum', InputStosFileChecksum):
-                    Logger.info("Skipping refine; existing output matches input checksum: " + OutputStosFullPath)
+                orchestrator = TransformRefineOrchestrator(logger=Logger)
+                decision = orchestrator.should_skip_refine(
+                    InputTransformNode,
+                    stosNode,
+                    input_checksum=InputStosFileChecksum)
+                if decision.skip:
+                    Logger.info("Skipping refine; %s: %s", decision.reason, OutputStosFullPath)
                     continue
                 Logger.warning(
-                    "Refine output exists but input checksum metadata mismatch was not cleaned: " + OutputStosFullPath)
-                stosNode.Clean("InputTransformChecksum mismatch for existing refine output")
+                    "Refine output exists but is stale (%s): %s", decision.reason, OutputStosFullPath)
+                orchestrator.invalidate_stale_output(stosNode, decision.reason)
                 stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
                                                                        OutputPath=OutputFile)
 

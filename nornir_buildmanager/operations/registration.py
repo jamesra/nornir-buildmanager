@@ -10,6 +10,7 @@ import subprocess
 
 import nornir_buildmanager
 from nornir_buildmanager.validation import transforms
+from nornir_buildmanager.operations.transform_refine_orchestrator import TransformRefineOrchestrator
 import nornir_buildmanager.volumemanager.datanode
 import nornir_buildmanager.volumemanager.mosaicbasenode
 import nornir_buildmanager.volumemanager.transformnode
@@ -319,6 +320,24 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
         Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
         return None
 
+    orchestrator = TransformRefineOrchestrator(logger=Logger)
+    decision = orchestrator.should_skip_refine(InputTransformNode, OutputTransformNode)
+    if decision.skip and os.path.exists(OutputTransformNode.FullPath):
+        Logger.info("Skipping mosaic grid refine; %s: %s", decision.reason, OutputTransformNode.FullPath)
+    elif not decision.skip and os.path.exists(OutputTransformNode.FullPath):
+        orchestrator.invalidate_stale_output(OutputTransformNode, decision.reason)
+        OutputTransformNode = transforms.LoadOrCleanExistingTransformForInputTransform(
+            channel_node=TransformParentNode,
+            InputTransformNode=InputTransformNode,
+            OutputTransformPath=OutputTransformPath)
+        if OutputTransformNode is None:
+            OutputTransformNode = nornir_buildmanager.volumemanager.transformnode.TransformNode.Create(
+                Name=OutputTransformName, Path=OutputTransformPath, Type=MangledName,
+                attrib={'InputImageDir': LevelNode.FullPath})
+            OutputTransformNode.SetTransform(InputTransformNode)
+            (SaveRequired, OutputTransformNode) = TransformParentNode.UpdateOrAddChildByAttrib(
+                OutputTransformNode, 'Path')
+
     if not os.path.exists(OutputTransformNode.FullPath):
         try:
             cell_size = None if Cell is None else (int(Cell), int(Cell))
@@ -346,6 +365,7 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
                 f"iterations={int(Iterations)}, cell_size={cell_size}, mesh_shape={mesh_shape}, "
                 f"displacement_threshold={displacement_threshold:g}, imageScale={image_scale:g})"
             )
+            OutputTransformNode.SetTransform(InputTransformNode)
             SaveRequired = True
 
             if Logger is not None:
