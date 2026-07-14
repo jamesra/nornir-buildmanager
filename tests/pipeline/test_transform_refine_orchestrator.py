@@ -60,6 +60,32 @@ class TestTransformRefineOrchestrator(unittest.TestCase):
             self.assertFalse(decision.skip)
             self.assertIn('newer', decision.reason)
 
+    def test_skip_with_input_checksum_when_source_file_missing(self) -> None:
+        """Provided input_checksum avoids loading a missing source transform path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = os.path.join(tmp, 'out.mosaic')
+            missing_input_path = os.path.join(tmp, 'missing.mosaic')
+            with open(output_path, 'w', encoding='utf-8') as handle:
+                handle.write('out')
+            input_node = SimpleNamespace(
+                Name='InputTransform',
+                Type='Leveled',
+                CropBox=None,
+                FullPath=missing_input_path,
+            )
+            output_node = SimpleNamespace(
+                Locked=False,
+                FullPath=output_path,
+                InputTransform='InputTransform',
+                InputTransformType='Leveled',
+                InputTransformChecksum='abc',
+                InputTransformCropBox=None,
+                attrib={'InputTransformChecksum': 'abc'},
+            )
+            decision = TransformRefineOrchestrator().should_skip_refine(
+                input_node, output_node, input_checksum='abc')
+            self.assertTrue(decision.skip)
+
 
 if __name__ == '__main__':
     unittest.main()

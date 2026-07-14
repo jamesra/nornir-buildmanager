@@ -26,10 +26,8 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         (file, ext) = os.path.splitext(self.Path)
         ext = ext.lower()
 
-        # Checking for the file here is a waste of time
-        # since both stos and mosaic file loaders also check
-        # if not os.path.exists(self.FullPath):
-        # return None
+        if not os.path.exists(self.FullPath):
+            return None
 
         if ext == '.stos':
             return stosfile.StosFile.LoadChecksum(self.FullPath)

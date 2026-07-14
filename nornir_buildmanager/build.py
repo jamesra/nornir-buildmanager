@@ -286,7 +286,20 @@ def _publish_early_run_meta_from_args(args: argparse.Namespace) -> None:
     if not pipeline:
         return
 
-    prettyoutput.publish_early_run_meta(pipeline=pipeline, volumepath=volumepath)
+    prettyoutput.publish_early_run_meta(
+        pipeline=pipeline,
+        volumepath=volumepath,
+        compute=os.environ.get('NORNIR_COMPUTATIONAL_LIBRARY'),
+    )
+
+
+def _publish_run_completion(succeeded: bool) -> None:
+    """Publish retained final run status for the dashboard."""
+    import time
+    prettyoutput.publish_run_meta(
+        status="completed" if succeeded else "failed",
+        end_ts=time.time(),
+    )
 
 
 def InitLogging(buildArgs):
@@ -485,26 +498,31 @@ def ExecuteChain(buildArgs: list[str]) -> None:
     valid_commands = frozenset(_GetValidCommands())
 
     volume_tree = None
-    for index, segment in enumerate(segments):
-        if index > 0 and segment[0] not in valid_commands:
-            parser.error(f"unknown pipeline in chain segment: {segment[0]}")
+    succeeded = False
+    try:
+        for index, segment in enumerate(segments):
+            if index > 0 and segment[0] not in valid_commands:
+                parser.error(f"unknown pipeline in chain segment: {segment[0]}")
 
-        if index == 0:
-            segment_argv = first_segment
-        else:
-            segment_argv = _ReorderArgs(root_flags + [segment[0], volumepath] + segment[1:])
+            if index == 0:
+                segment_argv = first_segment
+            else:
+                segment_argv = _ReorderArgs(root_flags + [segment[0], volumepath] + segment[1:])
 
-        args = parser.parse_args(segment_argv)
-        _publish_early_run_meta_from_args(args)
+            args = parser.parse_args(segment_argv)
+            _publish_early_run_meta_from_args(args)
 
-        cmd_name = args.PipelineName
-        timer = TaskTimer()
-        try:
-            timer.Start(cmd_name)
-            volume_tree = _run_pipeline_segment(args, volume_tree=volume_tree, flush_at_boundary=True)
-        finally:
-            timer.End(cmd_name)
-            _AppendTimingOutput(volumepath, timer)
+            cmd_name = args.PipelineName
+            timer = TaskTimer()
+            try:
+                timer.Start(cmd_name)
+                volume_tree = _run_pipeline_segment(args, volume_tree=volume_tree, flush_at_boundary=True)
+            finally:
+                timer.End(cmd_name)
+                _AppendTimingOutput(volumepath, timer)
+        succeeded = True
+    finally:
+        _publish_run_completion(succeeded)
 
 
 def Execute(buildArgs=None):
@@ -566,17 +584,20 @@ def Execute(buildArgs=None):
     elif len(buildArgs) >= 2:
         cmd_name = buildArgs[1]
 
+    succeeded = False
     try:
         if cmd_name is not None:
             Timer.Start(cmd_name)
 
         args.func(args)
+        succeeded = True
 
     finally:
         if cmd_name is not None:
             Timer.End(cmd_name)
 
         _AppendTimingOutput(args.volumepath, Timer)
+        _publish_run_completion(succeeded)
 
 
 if __name__ == '__main__':

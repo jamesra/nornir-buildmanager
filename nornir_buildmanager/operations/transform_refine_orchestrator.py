@@ -52,6 +52,21 @@ class TransformRefineOrchestrator:
             return RefineSkipDecision(
                 skip=False, reason='output file missing', output_node=output_node)
 
+        if input_checksum is not None and self._output_matches_input_transform(
+                output_node, input_node, input_checksum=input_checksum):
+            if output_path and self._input_file_newer_than_output(input_node, output_path):
+                return RefineSkipDecision(
+                    skip=False,
+                    reason='input transform file is newer than refine output',
+                    output_node=output_node)
+            return RefineSkipDecision(
+                skip=True,
+                reason='existing output matches input transform',
+                output_node=output_node)
+        if input_checksum is not None:
+            return RefineSkipDecision(
+                skip=False, reason='input transform checksum mismatch', output_node=output_node)
+
         matched = getattr(output_node, 'IsInputTransformMatched', None)
         if callable(matched):
             if matched(input_node):
@@ -104,6 +119,24 @@ class TransformRefineOrchestrator:
         cleaner = getattr(output_node, 'Clean', None)
         if callable(cleaner):
             cleaner(reason)
+
+    @staticmethod
+    def _output_matches_input_transform(
+            output_node: Any,
+            input_node: Any,
+            *,
+            input_checksum: str) -> bool:
+        """Return whether *output_node* metadata matches *input_node* using a precomputed checksum."""
+        stored_checksum = getattr(output_node, 'InputTransformChecksum', None)
+        if stored_checksum is None and hasattr(output_node, 'attrib'):
+            stored_checksum = output_node.attrib.get('InputTransformChecksum')
+
+        return (
+            getattr(output_node, 'InputTransform', None) == getattr(input_node, 'Name', None)
+            and getattr(output_node, 'InputTransformType', None) == getattr(input_node, 'Type', None)
+            and stored_checksum == input_checksum
+            and getattr(output_node, 'InputTransformCropBox', None) == getattr(input_node, 'CropBox', None)
+        )
 
     @staticmethod
     def _input_file_newer_than_output(input_node: Any, output_path: str) -> bool:

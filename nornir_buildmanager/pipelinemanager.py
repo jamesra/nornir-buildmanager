@@ -518,9 +518,13 @@ class PipelineManager:
         ArgSet.AddParameters(PipelineElement)
 
         # Load the Volume.XML file in the output directory
+        volume_xml_existed = True
         if volume_tree is not None:
             self.VolumeTree = volume_tree
         else:
+            volume_data_xml = os.path.join(args.volumepath, "VolumeData.xml")
+            legacy_volume_xml = os.path.join(args.volumepath, "Volume.xml")
+            volume_xml_existed = os.path.exists(volume_data_xml) or os.path.exists(legacy_volume_xml)
             self.VolumeTree = VolumeManager.Load(args.volumepath, Create=True)
 
         if self.VolumeTree is None:
@@ -531,6 +535,26 @@ class PipelineManager:
         self._StageTimer = TaskTimer()
         self._PipelineName = getattr(args, 'PipelineName', None) or self.PipelineData.get('Name', 'unknown')
         self._VolumePath = args.volumepath
+
+        # Fail fast when Create=True invented an empty volume for a non-import pipeline.
+        # Alignment/assemble stages select Block/Section and otherwise skip silently.
+        if volume_tree is None:
+            block_count = len(list(self.VolumeTree.findall('Block')))
+            pipeline_name = self._PipelineName or ""
+            is_import_pipeline = pipeline_name.startswith("Import")
+            if (not volume_xml_existed or block_count == 0) and not is_import_pipeline:
+                err = (
+                    f"Volume at {args.volumepath} has no usable data "
+                    f"(VolumeData.xml existed={volume_xml_existed}, Block count={block_count}). "
+                    f"Pipeline '{pipeline_name}' cannot run — every Block/Section select will skip. "
+                    f"Set launch input nornirVolumesRoot to a host path that contains a real "
+                    f"TEM volume with VolumeData.xml after Import/Prune/Mosaic, then set nornirVolumeName."
+                )
+                PipelineManager.logger.critical(err)
+                prettyoutput.LogErr(err)
+                if getattr(args, 'debug', False):
+                    raise RuntimeError(err)
+                sys.exit(2)
 
         # dargs = copy.deepcopy(defaultDargs)
 

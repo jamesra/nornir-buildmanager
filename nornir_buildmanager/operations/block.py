@@ -973,6 +973,11 @@ def AssembleStosOverlays(Parameters,
                     continue
 
                 for StosTransformNode in StosTransformNodes:
+                    if not os.path.exists(StosTransformNode.FullPath):
+                        Logger.warn(
+                            "Skipping AssembleStosOverlays; transform file missing: " + StosTransformNode.FullPath)
+                        continue
+
                     SectionMappingNode = StosTransformNode.FindParent('SectionMappings')
                     [TransformBaseFilename, ext] = os.path.splitext(StosTransformNode.Path)
                     OverlayOutputFilename = 'overlay_' + TransformBaseFilename + '.png'
@@ -1380,7 +1385,12 @@ def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, In
     if InputStosFullPath == AutomaticInputStosFullPath:
         __GenerateStosFileIfOutdated(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter,
                                      MappedFilter, UseMasks)
-        InputChecksum = InputTransformNode.Checksum
+        InputChecksum = InputTransformNode.attrib.get('Checksum')
+        if InputChecksum is None:
+            if os.path.exists(InputTransformNode.FullPath):
+                InputChecksum = InputTransformNode.Checksum
+            elif os.path.exists(AutomaticInputStosFullPath):
+                InputChecksum = stosfile.StosFile.LoadChecksum(AutomaticInputStosFullPath)
     else:
         InputChecksum = stosfile.StosFile.LoadChecksum(InputStosFullPath)
 
@@ -1643,6 +1653,48 @@ def __RunIrStosGridCmd(InputStosFullPath: str, OutputStosFullPath: str, **kwargs
     subprocess.call(cmd + " && exit", shell=True)
 
 
+def _stos_refine_recovery_path(OutputStosFullPath: str) -> str:
+    """Sibling path for a Pyre-loadable recovery .stos when refine fails but the build still fails."""
+    stem, _ext = os.path.splitext(OutputStosFullPath)
+    return f'{stem}.unrefined.stos'
+
+
+def _write_stos_refine_failure_recovery(InputStosFullPath: str, recovery_path: str) -> str:
+    """Write a Pyre-loadable .stos after refine failure.
+
+    Prefers the scaled input transform. If that file is missing or unloadable, writes the
+    same image/mask paths with an identity (zero-translation) rigid transform.
+
+    :return: short description of what was written (``scaled_input`` or ``identity``)
+    """
+    out_dir = os.path.dirname(recovery_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+
+    if os.path.isfile(InputStosFullPath):
+        try:
+            if stosfile.StosFile.IsValid(InputStosFullPath):
+                shutil.copy(InputStosFullPath, recovery_path)
+                return 'scaled_input'
+        except Exception as copy_err:
+            prettyoutput.LogErr(
+                f'Could not copy scaled input STOS for recovery ({InputStosFullPath}): {copy_err}')
+
+        try:
+            recovery = stosfile.StosFile.Load(InputStosFullPath)
+            recovery.Transform = nornir_imageregistration.transforms.TransformToIRToolsString(
+                nornir_imageregistration.transforms.RigidTranslation((0.0, 0.0)))
+            recovery.Save(recovery_path)
+            return 'identity'
+        except Exception as identity_err:
+            prettyoutput.LogErr(
+                f'Could not write identity STOS recovery from {InputStosFullPath}: {identity_err}')
+            raise
+
+    raise FileNotFoundError(
+        f'No scaled input STOS at {InputStosFullPath}; cannot write refine failure recovery')
+
+
 def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str, **kwargs):
     """Run the native python refinement algorithm"""
 
@@ -1656,16 +1708,17 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
         local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
                                                    OutputStosPath=OutputStosFullPath,
                                                    **kwargs)
-    except ValueError as e:
+    except Exception as e:
         prettyoutput.LogErr(f'Refining {InputStosFullPath} to {OutputStosFullPath} Failed!\n{e}')
-        # Default: re-raise. Opt in with NORNIR_STOS_REFINE_FALLBACK=1 to copy the
-        # input transform and keep the pipeline alive (legacy behavior).
-        if nornir_imageregistration.refine_shared.get_runtime_config(refresh=True).stos_refine_fallback:
+        # Write a sibling Pyre-loadable recovery .stos, keep the official output absent, re-raise.
+        recovery_path = _stos_refine_recovery_path(OutputStosFullPath)
+        try:
+            kind = _write_stos_refine_failure_recovery(InputStosFullPath, recovery_path)
             prettyoutput.LogErr(
-                f'Using input transform as fallback (NORNIR_STOS_REFINE_FALLBACK=1): '
-                f'{InputStosFullPath} -> {OutputStosFullPath}')
-            shutil.copy(InputStosFullPath, OutputStosFullPath)
-            return
+                f'Wrote {kind} refine recovery for Pyre at {recovery_path} '
+                f'(build still fails; open this file in Pyre to fix manually)')
+        except Exception as recovery_err:
+            prettyoutput.LogErr(f'Failed to write refine recovery STOS: {recovery_err}')
         raise
 
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
