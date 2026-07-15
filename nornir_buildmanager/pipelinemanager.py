@@ -15,13 +15,14 @@ import re
 import sys
 import traceback
 from os import PathLike
-from typing import Protocol, TypeVar
+from typing import Any, Protocol, TypeVar
 from xml.etree import ElementTree
 
 import nornir_pools
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_shared.reflection
+from nornir_shared.mqtt_telemetry import publish_run_event
 from nornir_shared.tasktimer import TaskTimer
 from . import argparsexml
 from .pipeline_exceptions import *
@@ -29,6 +30,7 @@ from nornir_buildmanager.exceptions import (
     NornirMissingDependencyException,
     NornirRethrownException,
 )
+from nornir_buildmanager.pipelinemanager_iterate_filters import resolve_iterate_candidates
 from nornir_buildmanager.volumemanager import (
     XElementWrapper,
     XResourceElementWrapper,
@@ -318,6 +320,7 @@ class PipelineManager:
         self._StageTimer: TaskTimer | None = None
         self._PipelineName: str | None = None
         self._VolumePath: str | None = None
+        self._iterate_depth: int = 0
 
         self._description = pipelineData.attrib['Description'] if 'Description' in pipelineData.attrib else None
         self._help = pipelineData.attrib['Help'] if 'Help' in pipelineData.attrib else None
@@ -364,6 +367,42 @@ class PipelineManager:
         if isinstance(volume_elem, XResourceElementWrapper):
             return volume_elem.FullPath
         return str(volume_elem)
+
+    @staticmethod
+    def _ElementTelemetryFields(
+            element: XElementWrapper,
+            pipeline_node: ElementTree.Element | None = None) -> dict[str, Any]:
+        """Return MQTT event fields describing *element* for dashboard progress.
+
+        ``pipeline_node`` is accepted for call-site symmetry but does not override
+        the descriptive label derived from the volume element type.
+        """
+        del pipeline_node  # Label comes from the element, not VariableName.
+        fields: dict[str, Any] = {}
+        cls_name = type(element).__name__
+        name = getattr(element, "Name", None)
+        number = getattr(element, "Number", None)
+
+        if cls_name == "SectionNode" and number is not None:
+            fields["section"] = number
+            padded = name if name is not None else f"{int(number):04d}"
+            fields["label"] = f"section_node - {padded}"
+        elif cls_name == "ChannelNode":
+            if name is not None:
+                fields["element"] = name
+            fields["label"] = f"ChannelNode - {name}"
+        elif cls_name == "FilterNode":
+            if name is not None:
+                fields["element"] = name
+            fields["label"] = f"filter node - {name}"
+        else:
+            if name is not None:
+                fields["element"] = name
+            if number is not None:
+                fields["section"] = number
+            fields["label"] = f"{cls_name} - {name if name is not None else element}"
+
+        return fields
 
     @classmethod
     def PrintPipelineEnumeration(cls, PipelineXML: str | ElementTree.ElementTree):
@@ -801,8 +840,9 @@ class PipelineManager:
 
         RootForSearch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
 
-        # TODO: Update args from the element
-        VolumeElemIter = RootForSearch.findall(xpath)
+        candidates = list(resolve_iterate_candidates(
+            RootForSearch, xpath, PipelineNode, ArgSet, VolumeElem,
+            PipelineManager.GetSearchRoot))
 
         validate = True
         if 'Validate' in PipelineNode.attrib:
@@ -812,18 +852,44 @@ class PipelineManager:
         # Make sure downstream activities do not corrupt the dictionary for the caller
         CopiedArgSet = copy.copy(ArgSet)
 
+        variable_name = PipelineNode.attrib.get('VariableName', 'Iterate')
+        track_id = f"iterate:{variable_name}"
+        total = len(candidates)
+        depth = self._iterate_depth
+        self._iterate_depth += 1
+
         NumProcessed = 0
         save_parent = set()
-        for VolumeElemChild in VolumeElemIter:
-            if validate and PipelineManager._ElementNeedsValidation(VolumeElemChild):
-                (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
-                if cleaned:
-                    prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
-                    # PipelineManager._SaveNodes(VolumeElemChild.Parent)
-                    save_parent.add(VolumeElemChild.Parent)
-                    continue
+        try:
+            publish_run_event(
+                "iterate_progress",
+                current=0,
+                total=total,
+                depth=depth,
+                track_id=track_id,
+                label=variable_name)
 
-            NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
+            progress_current = 0
+            for VolumeElemChild in candidates:
+                if validate and PipelineManager._ElementNeedsValidation(VolumeElemChild):
+                    (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
+                    if cleaned:
+                        prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
+                        save_parent.add(VolumeElemChild.Parent)
+                        continue
+
+                NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
+                progress_current += 1
+                tele = PipelineManager._ElementTelemetryFields(VolumeElemChild, PipelineNode)
+                publish_run_event(
+                    "iterate_progress",
+                    current=progress_current,
+                    total=total,
+                    depth=depth,
+                    track_id=track_id,
+                    **tele)
+        finally:
+            self._iterate_depth -= 1
 
         for parent in save_parent:
             PipelineManager._SaveNodes(parent)
@@ -862,7 +928,7 @@ class PipelineManager:
             PipelineManager.logger.error(errorStr + ElementTree.tostring(PipelineNode, encoding='utf-8'))
             raise PipelineError(VolumeElem=VolumeElem, PipelineNode=PipelineNode, message=errorStr)
         else:
-            # prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
+            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
 
             # TODO: Update args from the element
 
@@ -872,6 +938,12 @@ class PipelineManager:
             ArgSet.AddParameters(PipelineNode)
 
             stage_key = f"{PipelineModule}.{PipelineFunction} @ {PipelineManager._StageVolumeLabel(VolumeElem)}"
+            tele = PipelineManager._ElementTelemetryFields(VolumeElem, PipelineNode)
+            publish_run_event(
+                "stage_start",
+                module=str(PipelineModule),
+                function=str(PipelineFunction),
+                **tele)
 
             try:
                 # PipelineManager.AddAttributes(dargs, PipelineNode)
@@ -905,6 +977,11 @@ class PipelineManager:
                         errorStr += traceback.format_exc()
                         errorStr = errorStr + '-' * 60 + '\n'
                         PipelineManager.logger.error(errorStr)
+                        publish_run_event(
+                            "stage_failed",
+                            module=str(PipelineModule),
+                            function=str(PipelineFunction),
+                            **tele)
                         raise PipelineError(VolumeElem=VolumeElem,
                                             PipelineNode=PipelineNode,
                                             message=errorStr) from e
@@ -919,6 +996,11 @@ class PipelineManager:
                     NodesToSave = stageFunc(**kwargs)
 
                 PipelineManager._SaveNodes(NodesToSave)
+                publish_run_event(
+                    "stage_end",
+                    module=str(PipelineModule),
+                    function=str(PipelineFunction),
+                    **tele)
 
             finally:
                 if self._StageTimer is not None:
@@ -926,7 +1008,7 @@ class PipelineManager:
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
 
-            # prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
+            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
     #           PipelineManager.RemoveParameters(dargs, PipelineNode)
     #           PipelineManager.RemoveAttributes(dargs, PipelineNode)

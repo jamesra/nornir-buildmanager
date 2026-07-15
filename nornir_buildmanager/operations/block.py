@@ -2272,15 +2272,17 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 if os.path.exists(OutputTransform.FullPath):
                     os.remove(OutputTransform.FullPath)
 
-            # ===================================================================
-            # if not hasattr(OutputTransform, 'InputTransformChecksum'):
-            #     if os.path.exists(OutputTransform.FullPath):
-            #         os.remove(OutputTransform.FullPath)
-            # else:
-            #     if not MappedToControlTransform.Checksum == OutputTransform.InputTransformChecksum:
-            #         if os.path.exists(OutputTransform.FullPath):
-            #             os.remove(OutputTransform.FullPath)
-            # ===================================================================
+            if not os.path.exists(MappedToControlTransform.FullPath):
+                errorStr = (
+                    f" {logStr}: Missing input mapped→control .stos, removing stale node: "
+                    f"{MappedToControlTransform.FullPath}")
+                Logger.error(errorStr)
+                prettyoutput.LogErr(errorStr)
+                try:
+                    MappedToControlTransform.Clean(errorStr)
+                except Exception as clean_err:
+                    Logger.warning("Could not clean missing transform node: %s", clean_err)
+                continue
 
             # ControlToVolumeTransform can be none if:
             # 1) There was an error generating an earlier slice to volume transform,
@@ -2313,6 +2315,14 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                     continue
 
             else:
+                if not os.path.exists(ControlToVolumeTransform.FullPath):
+                    errorStr = (
+                        f" {logStr}: Missing control→volume .stos, skipping: "
+                        f"{ControlToVolumeTransform.FullPath}")
+                    Logger.error(errorStr)
+                    prettyoutput.LogErr(errorStr)
+                    continue
+
                 OutputTransform.ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
                 OutputTransform.ControlChannelName = ControlToVolumeTransform.ControlChannelName
                 OutputTransform.ControlFilterName = ControlToVolumeTransform.ControlFilterName
@@ -2343,8 +2353,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                         OutputTransform.SetTransform(MappedToControlTransform)
                         # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
 
-                    except ValueError as e:
-                        # Probably an invalid transform.  Skip it
+                    except (ValueError, FileNotFoundError, OSError) as e:
+                        # Invalid or missing input transform. Skip and continue with other mappings.
                         prettyoutput.LogErr(str(e))
                         Logger.error(str(e))
                         OutputTransform.Clean()
@@ -2435,30 +2445,48 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                 if os.path.exists(OutputTransform.FullPath):
                     os.remove(OutputTransform.FullPath)
 
-            # ===================================================================
-            # if not hasattr(OutputTransform, 'InputTransformChecksum'):
-            #     if os.path.exists(OutputTransform.FullPath):
-            #         os.remove(OutputTransform.FullPath)
-            # else:
-            #     if not MappedToControlTransform.Checksum == OutputTransform.InputTransformChecksum:
-            #         if os.path.exists(OutputTransform.FullPath):
-            #             os.remove(OutputTransform.FullPath)
-            # ===================================================================
+            if not os.path.exists(MappedToControlTransform.FullPath):
+                errorStr = (
+                    f" {logStr}: Missing input mapped→control .stos, removing stale node: "
+                    f"{MappedToControlTransform.FullPath}")
+                Logger.error(errorStr)
+                prettyoutput.LogErr(errorStr)
+                try:
+                    MappedToControlTransform.Clean(errorStr)
+                except Exception as clean_err:
+                    Logger.warning("Could not clean missing transform node: %s", clean_err)
+                continue
 
             if ControlToVolumeTransform is None:
                 # This maps directly to the origin, add it to the output stos group
                 # Files.RemoveOutdatedFile(MappedToControlTransform.FullPath, OutputTransform.FullPath )
 
                 if not os.path.exists(OutputTransform.FullPath):
-                    Logger.info(" %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
-                    shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
-                    OutputTransform.ResetChecksum()
-                    # OutputTransform.Checksum = MappedToControlTransform.Checksum
-                    OutputTransform.SetTransform(MappedToControlTransform)
+                    try:
+                        Logger.info(
+                            " %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
+                        shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
+                        OutputTransform.ResetChecksum()
+                        # OutputTransform.Checksum = MappedToControlTransform.Checksum
+                        OutputTransform.SetTransform(MappedToControlTransform)
+                    except FileNotFoundError as e:
+                        errorStr = " %s: Unable to copy mapped to volume center stos transform %s:\n%s" % (
+                            logStr, OutputTransform.Path, str(e))
+                        Logger.error(errorStr)
+                        prettyoutput.LogErr(errorStr)
+                        continue
 
                     yield OutputSectionMappingsNode
 
             else:
+                if not os.path.exists(ControlToVolumeTransform.FullPath):
+                    errorStr = (
+                        f" {logStr}: Missing control→volume .stos, skipping: "
+                        f"{ControlToVolumeTransform.FullPath}")
+                    Logger.error(errorStr)
+                    prettyoutput.LogErr(errorStr)
+                    continue
+
                 OutputTransform.ControlSectionNumber = ControlToVolumeTransform.TargetSectionNumber
                 OutputTransform.ControlChannelName = ControlToVolumeTransform.ControlChannelName
                 OutputTransform.ControlFilterName = ControlToVolumeTransform.ControlFilterName
@@ -2484,11 +2512,13 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                         OutputTransform.ResetChecksum()
                         OutputTransform.SetTransform(MappedToControlTransform)
                         # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
-                    except ValueError:
-                        # Probably an invalid transform.  Skip it
+                    except (ValueError, FileNotFoundError, OSError) as e:
+                        # Invalid or missing input transform. Skip it
+                        prettyoutput.LogErr(str(e))
+                        Logger.error(str(e))
                         OutputTransform.Clean()
                         OutputTransform = None
-                        pass
+                        continue
                     yield OutputSectionMappingsNode
                 else:
                     Logger.info(" %s: is still valid" % logStr)
