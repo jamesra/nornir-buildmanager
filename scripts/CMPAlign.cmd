@@ -13,7 +13,7 @@ nornir-build %1 RefineSectionAlignment -Filters LeveledShadingCorrected -InputGr
 title RefineSectionAlignment
 nornir-build %1 RefineSectionAlignment -Filters LeveledShadingCorrected -InputGroup Grid -InputDownsample 8 -OutputGroup Grid -OutputDownsample 2
 title SliceToVolume
-nornir-build %1 SliceToVolume -Downsample 2 -InputGroup Grid -OutputGroup SliceToVolume
+nornir-build %1 SliceToVolume -Downsample 2 -InputGroup Grid -OutputGroup SliceToVolume -linear_factor 0.05 -travel_limit 512 -reblend_iterations 8 -reblend_tolerance 0.5
 title ScaleVolumeTransforms
 nornir-build %1 ScaleVolumeTransforms -InputGroup SliceToVolume -InputDownsample 2 -OutputDownsample 1
 title MosaicToVolume

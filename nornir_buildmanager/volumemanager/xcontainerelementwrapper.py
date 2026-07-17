@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import concurrent.futures
+import errno
 import os
-import shutil
 import sys
+import time
 from xml.etree import ElementTree as ElementTree
 
 from nornir_buildmanager.volumemanager.exceptions import DuplicateElementError, MissingElementError
@@ -12,6 +13,7 @@ from nornir_buildmanager.volumemanager.elementwrapping import WrapElement, SetEl
 from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
+from nornir_shared.files import ensure_directory
 
 
 class XContainerElementWrapper(XResourceElementWrapper):
@@ -57,12 +59,12 @@ class XContainerElementWrapper(XResourceElementWrapper):
         super(XContainerElementWrapper, self.__class__).Path.fset(self, val)  # type: ignore[attr-defined]
 
         try:
-            os.makedirs(self.FullPath)
-        except (OSError, FileExistsError):
+            ensure_directory(self.FullPath)
+        except (OSError, ValueError) as e:
             if not os.path.isdir(self.FullPath):
                 raise ValueError(
                     "{0}.Path property was set to an existing file or non-directory file system object {1}".format(
-                        self.__class__, self.FullPath))
+                        self.__class__, self.FullPath)) from e
 
         return
 
@@ -438,6 +440,13 @@ class XContainerElementWrapper(XResourceElementWrapper):
         finally:
             self._save_lock.release()
 
+    def __ensure_container_directory(self) -> str:
+        """Create ``self.FullPath`` if needed; return it.
+
+        Uses CIFS/NFS-tolerant creation (see :func:`nornir_shared.files.ensure_directory`).
+        """
+        return ensure_directory(self.FullPath)
+
     def __SaveXML(self, xmlfilename: str, SaveElement: ElementTree.Element):
         """Intended to be called on a thread from the save function"""
         self.logger.info(f'Writing {xmlfilename}')
@@ -452,18 +461,13 @@ class XContainerElementWrapper(XResourceElementWrapper):
         if len(OutputXML) == 0:
             raise Exception(f"No meta data produced for XML element {SaveElement} writing to {xmlfilename}")
 
-        try:
-            os.makedirs(self.FullPath, exist_ok=True)
-        except (OSError, FileExistsError) as e:
-            if not os.path.isdir(self.FullPath):
-                raise ValueError(
-                    "{0} is trying to save to a non directory path {1}\n{2}".format(str(SaveElement), self.FullPath,
-                                                                                    str(e)))
+        container_dir = self.__ensure_container_directory()
 
         # prettyoutput.Log("Saving %s" % xmlfilename)
         BackupXMLFilename = f"{os.path.basename(xmlfilename)}.backup.xml"
-        BackupXMLFullPath = os.path.join(self.FullPath, BackupXMLFilename)
-        XMLFilename = os.path.join(self.FullPath, xmlfilename)
+        BackupXMLFullPath = os.path.join(container_dir, BackupXMLFilename)
+        XMLFilename = os.path.join(container_dir, xmlfilename)
+        TmpFilename = XMLFilename + ".tmp"
 
         # If the current VolumeData.xml has data, then create a backup copy
         # This should prevent us removing valid backups if the current VolumeData.xml
@@ -484,10 +488,21 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
                 # Move the current file to the backup location, write the new data
                 try:
-                    shutil.move(XMLFilename, BackupXMLFullPath)
+                    os.replace(XMLFilename, BackupXMLFullPath)
+                except FileNotFoundError as e:
+                    prettyoutput.LogErr(
+                        f"Could not backup {XMLFilename} to {BackupXMLFullPath} ({e}); continuing without backup")
                 except PermissionError:
                     prettyoutput.LogErr(f"Permission error backing up {XMLFilename} before write")
                     raise
+                except OSError as e:
+                    if e.errno == errno.EMFILE:
+                        prettyoutput.LogErr(
+                            f"Too many open files backing up {XMLFilename}; continuing without backup. "
+                            "Raise ulimit -n or reduce tile I/O concurrency.")
+                    else:
+                        prettyoutput.LogErr(
+                            f"Could not backup {XMLFilename} to {BackupXMLFullPath} ({e}); continuing without backup")
 
             else:
                 # This is a rare issue where I'd write a file but have zero bytes on disk.
@@ -498,5 +513,27 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
         # prettyoutput.Log("Saving %s" % XMLFilename)
         # print OutputXML
-        with open(XMLFilename, 'wb') as hFile:
-            hFile.write(OutputXML)
+        last_open_error: OSError | None = None
+        for attempt in range(5):
+            try:
+                with open(TmpFilename, 'wb') as hFile:
+                    hFile.write(OutputXML)
+                os.replace(TmpFilename, XMLFilename)
+                return
+            except FileNotFoundError as e:
+                # Parent dir vanished or not yet visible (Clean race / CIFS cache).
+                last_open_error = e
+                self.__ensure_container_directory()
+                time.sleep(0.05 * (attempt + 1))
+            except OSError as e:
+                if e.errno == errno.EMFILE:
+                    raise OSError(
+                        errno.EMFILE,
+                        "Too many open files; raise ulimit -n or reduce tile I/O concurrency",
+                        XMLFilename,
+                    ) from e
+                raise
+
+        raise FileNotFoundError(
+            f"Unable to write {XMLFilename} after retries; last error: {last_open_error}"
+        ) from last_open_error

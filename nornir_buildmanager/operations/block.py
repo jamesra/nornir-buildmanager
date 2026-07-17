@@ -2112,6 +2112,30 @@ def TranslateVolumeToZeroOrigin(stos_group_node: StosGroupNode, **kwargs):
     return SavedStosGroupNode
 
 
+def _use_chain_consistent_linear(chain_consistent_linear: bool,
+                                 linear_blend_factor: float | None,
+                                 travel_limit: float | None) -> bool:
+    """Return True when linear blend should use the composed rigid slice-to-slice chain."""
+    return bool(chain_consistent_linear and (linear_blend_factor is not None or travel_limit is not None))
+
+
+def _rigid_chain_for_slice_to_volume_hop(mapped_to_control_stos_path: str,
+                                         control_section: int,
+                                         center_section: int,
+                                         section_to_rigid_map: dict,
+                                         ignore_rotation: bool) -> tuple[ITransform | None, ITransform]:
+    """Estimate rigid A→center and optional rigid B→C for chain-consistent linear blending."""
+    rigid_ab = stosfile.RigidTransformFromStosPath(mapped_to_control_stos_path,
+                                                   ignore_rotation=ignore_rotation)
+    if control_section == center_section:
+        return None, rigid_ab
+
+    rigid_bc = section_to_rigid_map.get((control_section, center_section),
+                                        stosfile.IdentityRigidTransform())
+    rigid_ac = nornir_imageregistration.transforms.addition.AddTransforms(rigid_bc, rigid_ab)  # type: ignore[arg-type]
+    return rigid_bc, rigid_ac
+
+
 def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanager.StosMapNode,
                                  stos_group_node: nornir_buildmanager.volumemanager.StosGroupNode,
                                  OutputMap: str,
@@ -2121,6 +2145,9 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
                                  linear_blend_factor: float | None = None,
                                  travel_limit: float | None = None,
                                  ignore_rotation: bool = False,
+                                 reblend_iterations: int | None = None,
+                                 reblend_tolerance: float | None = None,
+                                 chain_consistent_linear: bool = True,
                                  **kwargs):
     """Build a slice-to-volume transform for each section referenced in the StosMap
 
@@ -2146,6 +2173,9 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
     else:
         # Scale the tolerance for the downsample level
         Tolerance /= float(Downsample)  # type: ignore[operator]
+
+    if travel_limit is not None:
+        travel_limit = travel_limit / float(Downsample)
 
     rt = __StosMapToRegistrationTree(stos_map_node)
 
@@ -2174,7 +2204,10 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
                                                          ControlToVolumeTransform=None,
                                                          linear_blend_factor=linear_blend_factor,
                                                          travel_limit=travel_limit,
-                                                         ignore_rotation=ignore_rotation)
+                                                         ignore_rotation=ignore_rotation,
+                                                         reblend_iterations=reblend_iterations,
+                                                         reblend_tolerance=reblend_tolerance,
+                                                         chain_consistent_linear=chain_consistent_linear)
         # for saveNode in SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance, ControlToVolumeTransform=None):
         #    (yield saveNode)
 
@@ -2190,10 +2223,17 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                           ControlToVolumeTransform=None,
                                           linear_blend_factor: float | None = None,
                                           travel_limit: float | None = None,
-                                          ignore_rotation: bool = False):
+                                          ignore_rotation: bool = False,
+                                          reblend_iterations: int | None = None,
+                                          reblend_tolerance: float | None = None,
+                                          chain_consistent_linear: bool = True):
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
     SectionToRootTransformMap = {}
+    SectionToRigidTransformMap = {}
+    use_chain_linear = _use_chain_consistent_linear(chain_consistent_linear,
+                                                    linear_blend_factor,
+                                                    travel_limit)
     for step in rt.GenerateOrderedMappingsToRootNode(rootNode):
         MappedSectionNode = step.MappedNode  # type: ignore[attr-defined]
         IntermediateControlSection = step.ParentNode.SectionNumber  # type: ignore[attr-defined]
@@ -2335,20 +2375,45 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 elif os.path.exists(OutputTransform.FullPath):
                     os.remove(OutputTransform.FullPath)
 
+                if (os.path.exists(OutputTransform.FullPath)
+                        and not OutputTransform.IsLinearBlendParamsMatched(linear_blend_factor,
+                                                                         travel_limit,
+                                                                         reblend_iterations,
+                                                                         reblend_tolerance,
+                                                                         chain_consistent_linear=use_chain_linear)):
+                    Logger.info(" %s: Linear blend parameters changed, removing %s" % (logStr, OutputTransform.Path))
+                    os.remove(OutputTransform.FullPath)
+
                 if not os.path.exists(OutputTransform.FullPath):
 
                     try:
                         # Logger.info(" %s: Adding transforms" % (logStr))
                         prettyoutput.Log("\tCalculating new .stos")
+                        B_To_C_Linear = None
+                        if use_chain_linear:
+                            B_To_C_Linear, _rigid_ac = _rigid_chain_for_slice_to_volume_hop(
+                                MappedToControlTransform.FullPath,
+                                IntermediateControlSection,
+                                rootNode.SectionNumber,
+                                SectionToRigidTransformMap,
+                                ignore_rotation)
                         MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath,
                                                               ControlToVolumeTransform.FullPath,
                                                               EnrichTolerance=EnrichTolerance,
                                                               linear_factor=linear_blend_factor,
                                                               travel_limit=travel_limit,
-                                                              ignore_rotation=ignore_rotation)
+                                                              ignore_rotation=ignore_rotation,
+                                                              reblend_iterations=reblend_iterations or 1,
+                                                              reblend_tolerance=reblend_tolerance,
+                                                              B_To_C_Linear=B_To_C_Linear)
                         MToVStos.Save(OutputTransform.FullPath)
 
                         OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
+                        OutputTransform.SetLinearBlendParams(linear_blend_factor,
+                                                             travel_limit,
+                                                             reblend_iterations,
+                                                             reblend_tolerance,
+                                                             chain_consistent_linear=use_chain_linear)
                         OutputTransform.ResetChecksum()
                         OutputTransform.SetTransform(MappedToControlTransform)
                         # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
@@ -2367,6 +2432,17 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
 
             newTransformKey = (OutputTransform.MappedSectionNumber, ControlToVolumeTransformKey[1])
             SectionToRootTransformMap[newTransformKey] = OutputTransform
+            if use_chain_linear:
+                try:
+                    _, rigid_ac = _rigid_chain_for_slice_to_volume_hop(
+                        MappedToControlTransform.FullPath,
+                        IntermediateControlSection,
+                        rootNode.SectionNumber,
+                        SectionToRigidTransformMap,
+                        ignore_rotation)
+                    SectionToRigidTransformMap[newTransformKey] = rigid_ac
+                except (ValueError, FileNotFoundError, OSError) as rigid_err:
+                    Logger.warning("Could not update rigid chain cache for %s: %s", logStr, rigid_err)
             # print("Added key {0}".format(newTransformKey))
 
 
@@ -2742,12 +2818,18 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
 def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str,
                          linear_blend_factor: float | None,
                          travel_limit: float | None,
-                         ignore_rotation: bool = False, **kwargs):
+                         ignore_rotation: bool = False,
+                         reblend_iterations: int | None = None,
+                         reblend_tolerance: float | None = None,
+                         **kwargs):
     """Take a stos group node, convert each transform to a rigid linear transform, blend in the linear
        transform with the control points of the original transform to "flatten" it
     """
     GroupParent = InputStosGroupNode.Parent
     OutputDownsample = InputStosGroupNode.Downsample
+
+    if travel_limit is not None:
+        travel_limit = travel_limit / float(OutputDownsample)
 
     OutputGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.Create(OutputGroupName,
                                                                                            OutputDownsample)  # type: ignore[arg-type]
@@ -2795,8 +2877,11 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                                                                                                   MappedFilter))
 
             if not stosNode_added:
-                if not (output_stos_node.IsInputTransformMatched(InputTransformNode) and
-                        output_stos_node.linear_blend_factor == InputTransformNode.linear_blend_factor):
+                if not (output_stos_node.IsInputTransformMatched(InputTransformNode)
+                        and output_stos_node.IsLinearBlendParamsMatched(linear_blend_factor,
+                                                                        travel_limit,
+                                                                        reblend_iterations,
+                                                                        reblend_tolerance)):
                     try:
                         os.remove(output_stos_node.FullPath)
                     except FileNotFoundError:
@@ -2814,8 +2899,13 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                     loaded_output_stos = nornir_imageregistration.files.StosFile.Load(output_stos_node.FullPath)
                     transform_changed = loaded_output_stos.BlendWithLinear(linear_factor=linear_blend_factor,
                                                                            travel_limit=travel_limit,
-                                                                           ignore_rotation=ignore_rotation)
-                    output_stos_node.linear_blend_factor = linear_blend_factor
+                                                                           ignore_rotation=ignore_rotation,
+                                                                           reblend_iterations=reblend_iterations or 1,
+                                                                           reblend_tolerance=reblend_tolerance)
+                    output_stos_node.SetLinearBlendParams(linear_blend_factor,
+                                                          travel_limit,
+                                                          reblend_iterations,
+                                                          reblend_tolerance)
 
                     if transform_changed:
                         loaded_output_stos.Save(output_stos_node.FullPath)

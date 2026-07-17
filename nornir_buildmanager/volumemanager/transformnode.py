@@ -114,11 +114,104 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
 
     @linear_blend_factor.setter
     def linear_blend_factor(self, value: float | None):
-        if value is None or value == 0:
+        if value is None:
             if 'linear_blend_factor' in self.attrib:
                 del self.attrib['linear_blend_factor']
         else:
-            self.attrib['linear_blend_factor'] = f'{value:3F}'
+            self.attrib['linear_blend_factor'] = f'{value:g}'
+
+    @property
+    def travel_limit(self) -> float | None:
+        """Distance scale used for per-point linear blend when creating this transform."""
+        value = self.attrib.get('travel_limit', None)
+        return float(value) if value is not None else None
+
+    @travel_limit.setter
+    def travel_limit(self, value: float | None):
+        if value is None:
+            if 'travel_limit' in self.attrib:
+                del self.attrib['travel_limit']
+        else:
+            self.attrib['travel_limit'] = f'{value:g}'
+
+    @property
+    def reblend_iterations(self) -> int | None:
+        value = self.attrib.get('reblend_iterations', None)
+        return int(value) if value is not None else None
+
+    @reblend_iterations.setter
+    def reblend_iterations(self, value: int | None):
+        if value is None:
+            if 'reblend_iterations' in self.attrib:
+                del self.attrib['reblend_iterations']
+        else:
+            self.attrib['reblend_iterations'] = str(int(value))
+
+    @property
+    def reblend_tolerance(self) -> float | None:
+        value = self.attrib.get('reblend_tolerance', None)
+        return float(value) if value is not None else None
+
+    @reblend_tolerance.setter
+    def reblend_tolerance(self, value: float | None):
+        if value is None:
+            if 'reblend_tolerance' in self.attrib:
+                del self.attrib['reblend_tolerance']
+        else:
+            self.attrib['reblend_tolerance'] = f'{value:g}'
+
+    @property
+    def chain_consistent_linear(self) -> bool:
+        """True when slice-to-volume linear blend used a composed rigid slice-to-slice chain."""
+        value = self.attrib.get('chain_consistent_linear', None)
+        if value is None:
+            return False
+        return value in ('1', 'True', 'true')
+
+    @chain_consistent_linear.setter
+    def chain_consistent_linear(self, value: bool | None):
+        if value is None:
+            if 'chain_consistent_linear' in self.attrib:
+                del self.attrib['chain_consistent_linear']
+        else:
+            self.attrib['chain_consistent_linear'] = '1' if value else '0'
+
+    def SetLinearBlendParams(self,
+                             linear_blend_factor: float | None,
+                             travel_limit: float | None,
+                             reblend_iterations: int | None,
+                             reblend_tolerance: float | None,
+                             chain_consistent_linear: bool | None = None) -> None:
+        """Persist linear-blend pipeline parameters on this transform node."""
+        self.linear_blend_factor = linear_blend_factor
+        self.travel_limit = travel_limit
+        self.reblend_iterations = reblend_iterations
+        self.reblend_tolerance = reblend_tolerance
+        if chain_consistent_linear is not None:
+            self.chain_consistent_linear = chain_consistent_linear
+
+    def IsLinearBlendParamsMatched(self,
+                                   linear_blend_factor: float | None,
+                                   travel_limit: float | None,
+                                   reblend_iterations: int | None,
+                                   reblend_tolerance: float | None,
+                                   chain_consistent_linear: bool | None = None) -> bool:
+        """Return True if stored linear-blend parameters match the expected pipeline values."""
+        def _float_eq(stored: float | None, expected: float | None) -> bool:
+            if stored is None and expected is None:
+                return True
+            if stored is None or expected is None:
+                return False
+            return abs(stored - expected) <= 1e-6
+
+        matched = (_float_eq(self.travel_limit, travel_limit)
+                   and _float_eq(self.reblend_tolerance, reblend_tolerance)
+                   and self.reblend_iterations == reblend_iterations
+                   and _float_eq(self.linear_blend_factor if 'linear_blend_factor' in self.attrib else None,
+                                 linear_blend_factor))
+        if chain_consistent_linear is None:
+            return matched
+        return matched and self.chain_consistent_linear == chain_consistent_linear
 
     @property
     def CropBox(self):

@@ -15,7 +15,7 @@ nornir-build %1 CreateVikingXML -StosGroup Grid32 -StosMap FinalStosMap -OutputF
 title RefineSectionAlignment
 nornir-build %1 RefineSectionAlignment -InputGroup Grid -InputDownsample 32 -OutputGroup Grid -OutputDownsample 16 -Filters Leveled
 title SliceToVolume
-nornir-build %1 SliceToVolume -Downsample 16 -InputGroup Grid -OutputGroup SliceToVolume
+nornir-build %1 SliceToVolume -Downsample 16 -InputGroup Grid -OutputGroup SliceToVolume -linear_factor 0.05 -travel_limit 512 -reblend_iterations 8 -reblend_tolerance 0.5
 title ScaleVolumeTransforms
 nornir-build %1 ScaleVolumeTransforms -InputGroup SliceToVolume -InputDownsample 16 -OutputDownsample 1
 title CreateVikingXML

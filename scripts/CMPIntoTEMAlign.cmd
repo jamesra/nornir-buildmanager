@@ -13,7 +13,7 @@ title Merge CMP transforms into TEM transforms
 nornir-build %1 CopyStosGroup -Input CMP -Output Grid -Downsample 8
 
 title SliceToVolume
-nornir-build %1 SliceToVolume -Downsample 8 -InputGroup Grid -OutputGroup SliceToVolume
+nornir-build %1 SliceToVolume -Downsample 8 -InputGroup Grid -OutputGroup SliceToVolume -linear_factor 0.05 -travel_limit 512 -reblend_iterations 8 -reblend_tolerance 0.5
 
 title Scale CMP Slice-to-slice alignments
 nornir-build %1 ScaleVolumeTransforms -InputGroup SliceToVolume -InputDownsample 8 -OutputDownsample 1

@@ -11,11 +11,13 @@ import math
 import os
 import shutil
 import subprocess
+import time
 import multiprocessing
 import numpy
 import datetime
 import concurrent.futures
 import tempfile
+import warnings
 from functools import partial
 
 from numpy.typing import NDArray
@@ -35,7 +37,7 @@ from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates
 from nornir_buildmanager.validation import transforms, image
-from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile
+from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile, ensure_directory
 from nornir_shared.histogram import Histogram
 
 import nornir_buildmanager as nb
@@ -61,6 +63,11 @@ all computer cores are allocating temporary images.
 estimated_max_temp_image_area = None
 
 
+# Soft cap: assembling near-full-mosaic strips spikes RAM and rarely helps latency
+# (RPC3 section 601: uncapped Estimate ≈ 2.5e9 px collapsed to one strip).
+_MAX_TEMP_IMAGE_AREA_PIXELS = 512 * 1024 * 1024  # 512 megapixels
+
+
 def EstimateMaxTempImageArea() -> int:
     global estimated_max_temp_image_area
 
@@ -80,6 +87,12 @@ def EstimateMaxTempImageArea() -> int:
         safety_factor = int(2)
         estimated_max_temp_image_area = int(memory_data.available / (
                 bytes_per_pixel * num_images_per_tile * num_duplicate_copies_in_memory * safety_factor))
+        if estimated_max_temp_image_area > _MAX_TEMP_IMAGE_AREA_PIXELS:
+            prettyoutput.Log(
+                "Maximum temporary image area capped from {0:g}MB to {1:g}MB for strip assembly.".format(
+                    float(estimated_max_temp_image_area) / float(1 << 20),
+                    float(_MAX_TEMP_IMAGE_AREA_PIXELS) / float(1 << 20)))
+            estimated_max_temp_image_area = _MAX_TEMP_IMAGE_AREA_PIXELS
         prettyoutput.Log("Maximum per-core temporary image size calculated a {0:g}MB limit.".format(
             float(estimated_max_temp_image_area) / float(1 << 20)))
 
@@ -1485,10 +1498,18 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
 def AssembleTileset(Parameters, filter_node, pyramid_node, transform_node, TileShape=None, TileSetName=None,
                     Logger: logging.Logger | None = None,
                     **kwargs):
-    """Create full resolution tiles of specfied size for the mosaics
-       @FilterNode
-       @TransformNode"""
-    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids")
+    """Legacy tileset builder via external ``ir-assemble`` CLI.
+
+    Deprecated: the active AssembleTiles pipeline uses :func:`AssembleTilesetNumpy`.
+    This entry point is retained for reference and may be removed in a future release.
+    """
+    warnings.warn(
+        'AssembleTileset (ir-assemble shell) is deprecated; use AssembleTilesetNumpy '
+        '(AssembleTiles pipeline default).',
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    prettyoutput.CurseString('Stage', "Assemble Tile Pyramids (legacy ir-assemble)")
     if Logger is None:
         Logger = logging.getLogger(__name__)
 
@@ -1588,6 +1609,39 @@ def AssembleTileset(Parameters, filter_node, pyramid_node, transform_node, TileS
     return filter_node
 
 
+_TILE_IO_WORKERS_ENV = "NORNIR_TILE_IO_WORKERS"
+_TILE_IO_WORKERS_DEFAULT = 16
+
+
+def _tile_io_worker_count() -> int:
+    """Return concurrent tile encode/copy workers (local temp + network copy).
+
+    Override with ``NORNIR_TILE_IO_WORKERS``; defaults to 16 when unset or invalid.
+    """
+    raw = os.environ.get(_TILE_IO_WORKERS_ENV)
+    if raw is None or not str(raw).strip():
+        return _TILE_IO_WORKERS_DEFAULT
+    try:
+        workers = int(str(raw).strip())
+    except ValueError:
+        logging.warning(
+            "%s=%r is not a valid integer; using default %d",
+            _TILE_IO_WORKERS_ENV,
+            raw,
+            _TILE_IO_WORKERS_DEFAULT,
+        )
+        return _TILE_IO_WORKERS_DEFAULT
+    if workers < 1:
+        logging.warning(
+            "%s=%r must be >= 1; using default %d",
+            _TILE_IO_WORKERS_ENV,
+            raw,
+            _TILE_IO_WORKERS_DEFAULT,
+        )
+        return _TILE_IO_WORKERS_DEFAULT
+    return workers
+
+
 def _SaveImageAndCopy(ImageFullPath: str, temp_output_tile_fullpath: str, tile_image: NDArray, bpp: int | None,
                       optimize=True):
     """Used to pass to the thread pool.  Saves the image to a temporary path and copies the image to final output location.
@@ -1677,7 +1731,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
     tile_set_node.CoordFormat = nornir_buildmanager.templates.Current.GridTileCoordFormat
     tile_set_node.SetTransform(InputTransformNode)
 
-    os.makedirs(tile_set_node.FullPath, exist_ok=True)
+    ensure_directory(tile_set_node.FullPath)
 
     # OK, check if the first level of the tileset exists
     LevelOne = tile_set_node.GetChildByAttrib('Level', 'Downsample', downsample_level)
@@ -1689,7 +1743,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
         LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
         [added, LevelOne] = tile_set_node.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
 
-        os.makedirs(LevelOne.FullPath, exist_ok=True)
+        ensure_directory(LevelOne.FullPath)
 
         # The output file name is used as a prefix for the tiles written
         # OutputPath = os.path.join(LevelOne.FullPath, FilterNode.Name + '.png')
@@ -1716,11 +1770,12 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                                                                                           section_node.Number if section_node is not None else '?'))
 
         temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
-        os.makedirs(temp_level_dir, exist_ok=True)
+        ensure_directory(temp_level_dir)
 
         active_tasks = []
-        max_active_tasks = multiprocessing.cpu_count() * 4
-        with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count() * 2) as executor:
+        tile_workers = _tile_io_worker_count()
+        max_active_tasks = tile_workers * 2
+        with ThreadPoolExecutor(max_workers=tile_workers) as executor:
 
             _save_image_and_copy_partial = partial(_SaveImageAndCopy, bpp=bpp, optimize=True)
 
@@ -1731,11 +1786,11 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
 
             task_timer = nornir_shared.tasktimer.TaskTimer()
             task_timer.Start(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+            output_io_wait_s = 0.0
             for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
                     target_space_scale=1.0 / InputLevelNode.Downsample,
                     tile_dims=tile_dims,
-                    max_temp_image_area=max_temp_image_area,
-                    usecluster=True):
+                    max_temp_image_area=max_temp_image_area):
                 tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
                     'prefix': tile_set_node.FilePrefix,
                     'X': iCol,
@@ -1750,22 +1805,38 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                                        temp_output_tile_fullpath=temp_output_tile_fullpath, tile_image=tile_image)
                 active_tasks.append(task)
 
-                # while len(active_tasks) >= max_active_tasks:
-                #     done, not_done = wait(active_tasks, return_when=FIRST_COMPLETED)
-                #     for d in done:
-                #         d.result()  # Ensure we get any exceptions raised
-                #         active_tasks.remove(d)
+                while len(active_tasks) >= max_active_tasks:
+                    t_wait = time.perf_counter()
+                    done, not_done = wait(active_tasks, return_when=FIRST_COMPLETED)
+                    for d in done:
+                        d.result()  # Ensure we get any exceptions raised
+                        active_tasks.remove(d)
+                    output_io_wait_s += time.perf_counter() - t_wait
 
+            remaining_output_tasks = len(active_tasks)
+            t_drain = time.perf_counter()
             for t in as_completed(active_tasks):
                 try:
                     t.result()  # Ensure we get any exceptions raised
                 except Exception as e:
                     Logger.error(f"Error while processing tile: {e}")
                     raise
+            output_io_wait_s += time.perf_counter() - t_drain
+            prettyoutput.Log(
+                f"Output I/O wait: {output_io_wait_s:.2f} s wall "
+                f"({remaining_output_tasks} tasks at drain)"
+            )
+            Logger.info(
+                "Output I/O wait: %.2f s wall (%d tasks at drain)",
+                output_io_wait_s,
+                remaining_output_tasks,
+            )
 
             # Wait for the tiles to save
             # pool.wait_completion()
             task_timer.End(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+
+        nornir_pools.ReleaseStagePools()
 
         prettyoutput.Log("Generation of tileset complete")
         #         else:
@@ -2291,8 +2362,8 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     :param pool:
     """
 
-    os.makedirs(DestPath, exist_ok=True)
-    os.makedirs(temp_output_dir, exist_ok=True)
+    ensure_directory(DestPath)
+    ensure_directory(temp_output_dir)
 
     temp_input_dir = None if (temp_input_dir is None or not os.path.exists(temp_input_dir)) else temp_input_dir
 
@@ -2342,11 +2413,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
         TopRight = os.path.join(SourcePath, TopRight)
         BottomLeft = os.path.join(SourcePath, BottomLeft)
         BottomRight = os.path.join(SourcePath, BottomRight)
-
-        # Skip if all input files are missing
-        if not any(os.path.exists(f) for f in [TopLeft, TopRight, BottomLeft, BottomRight]):
-            return
-
+ 
         return tileset_functions.CreateOneTilesetTileWithPillowOverNetwork(
             TileDim,
             TopLeft=TopLeft, TopRight=TopRight,
@@ -2356,8 +2423,10 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             output_level_temp_dir=temp_output_dir,
             executor=executor)
 
-    with ThreadPoolExecutor() as executor:
-        with ThreadPoolExecutor() as tile_executor:
+    tile_workers = _tile_io_worker_count()
+
+    with ThreadPoolExecutor(max_workers=tile_workers) as executor:
+        with ThreadPoolExecutor(max_workers=tile_workers) as tile_executor:
             # Create a new function with executor pre-bound
             process_tile_with_executor = partial(process_tile, executor=tile_executor)
 
@@ -2411,6 +2480,15 @@ def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, Logger
     if Logger is None:
         Logger = logging.getLogger(__name__)
 
+    try:
+        yield from _build_tileset_pyramid_levels(
+            tile_set_node, HighestDownsample=HighestDownsample, pool=pool, Logger=Logger, **kwargs)
+    finally:
+        nornir_pools.ReleaseStagePools()
+
+
+def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=None, Logger: logging.Logger | None = None,
+                                  **kwargs):
     MinResolutionLevel = tile_set_node.MaxResLevel
 
     input_temp_dir = get_temp_dir_for_tileset_level(MinResolutionLevel)
@@ -2455,12 +2533,15 @@ def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, Logger
             NextLevelNode.GridDimY = newYDim
             yield tile_set_node
         elif NextLevelNode.GridDimX != newXDim or NextLevelNode.GridDimY != newYDim:
-            # If the level already exists, but the dimensions do not match, we need to regenerate it
+            # If the level already exists, but the dimensions do not match, we need to regenerate it.
+            # Clean only this level directory — never rmtree(dirname(level)), which would delete
+            # the whole Tileset (including VolumeData.xml and other levels).
             Logger.warning(
                 f"Tileset level {NextLevelNode.Downsample} already exists but dimensions do not match requested size.  Cleaning tileset and rebuilding at {newYDim}x{newXDim}")
             NextLevelNode.Clean("Tileset dimensions do not match requested tile size")
-            nornir_shared.files.rmtree(os.path.dirname(NextLevelNode.FullPath))
             [added, NextLevelNode] = tile_set_node.UpdateOrAddChildByAttrib(new_level_node, 'Downsample')
+            ensure_directory(tile_set_node.FullPath)
+            ensure_directory(NextLevelNode.FullPath)
             NextLevelNode.GridDimX = newXDim
             NextLevelNode.GridDimY = newYDim
         else:
