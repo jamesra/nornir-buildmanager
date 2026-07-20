@@ -1337,10 +1337,10 @@
 
     -->
 
-    <Pipeline Name="CreateVikingXML" Help="Create a vikingxml file for use in Viking" Description="Exports volume metadata and image references into a VikingXML manifest for Viking clients." Epilog="Example: nornir-build CreateVikingXML /data/volume -OutputFile MyVolume -StosGroup Grid -StosMap FinalStosMap">
+    <Pipeline Name="CreateVikingXML" Help="Create a vikingxml file for use in Viking" Description="Exports volume metadata and image references into a VikingXML manifest for Viking clients." Epilog="Example: nornir-build CreateVikingXML /data/volume -OutputFile MyVolume -StosMap FinalStosMap -StosGroup Grid32 -StosGroup SliceToVolume1">
         <Arguments>
-            <Argument flag="-StosGroup" dest="StosGroup"
-                      help="Stos group to pull images from.  If not specified only unregistered mosaics are included."
+            <Argument flag="-StosGroup" dest="StosGroup" action="append"
+                      help="Stos group to include (repeat for multiple groups). If not specified only unregistered mosaics are included."
                       required="False"/>
             <Argument flag="-StosMap" dest="StosMap"
                       help="Slice-to-slice mapping of transforms.  If not specified only unregistered mosaics are included."

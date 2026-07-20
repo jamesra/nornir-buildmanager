@@ -17,6 +17,15 @@ import nornir_pools
 ECLIPSE = 'ECLIPSE' in os.environ
 
 
+def _normalize_stos_group_names(stos_group_name: str | list[str] | None) -> list[str]:
+    """Coerce a single group name or CLI append list into a list of names."""
+    if stos_group_name is None:
+        return []
+    if isinstance(stos_group_name, str):
+        return [stos_group_name]
+    return [name for name in stos_group_name if name]
+
+
 def CreateXMLIndex(path, server=None):
     VolumeXMLDirs = RecurseSubdirectoriesGenerator(Path=path, RequiredFiles='Volume.xml')
 
@@ -27,7 +36,8 @@ def CreateXMLIndex(path, server=None):
             CreateVikingXML(VolumeNode=InputVolumeNode)
 
 
-def CreateVikingXML(StosMapName=None, StosGroupName=None, OutputFile=None, Host=None, **kwargs):
+def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = None, OutputFile=None, Host=None,
+                    **kwargs):
     """When passed a volume node, creates a VikingXML file"""
     InputVolumeNode = kwargs.get('VolumeNode')
     if InputVolumeNode is None:
@@ -164,21 +174,29 @@ def RemoveDuplicateScaleEntries(OutputNode, volume_units_of_measure, volume_unit
             continue
 
 
-def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
-    global ECLIPSE
-
-    lastCreated = None
-    bestGroup = None
-
+def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName: str | list[str] | None):
     if StosMapName is None:
         print("No StosMapName specified, not adding stos")
         return
-    if StosGroupName is None:
+
+    stos_group_names = _normalize_stos_group_names(StosGroupName)
+    if not stos_group_names:
         print("No StosGroupName specified, not adding stos")
         return
 
     num_stos = 0
     print("Adding Slice-to-slice transforms\n")
+    for stos_group_name in stos_group_names:
+        num_stos += _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName, stos_group_name)
+
+    OutputVolumeNode.attrib["num_stos"] = '%g' % num_stos
+
+
+def _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName: str, StosGroupName: str) -> int:
+    """Add stos elements for one StosGroup; returns the number of stos entries added."""
+    global ECLIPSE
+
+    num_stos = 0
     UpdateTemplate = "%(mapped)d -> %(control)d"
     for BlockNode in InputVolumeNode.findall('Block'):
         StosMapNode = BlockNode.GetChildByAttrib("StosMap", 'Name', StosMapName)
@@ -206,16 +224,16 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
                     print("No Section Mapping Transform found for " + MappingString)
                     continue
 
-                OutputStosNode = ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName': StosGroup.Name,
-                                                                             'controlSection': str(
-                                                                                 transform.TargetSectionNumber),
-                                                                             'mappedSection': str(
-                                                                                 transform.SourceSectionNumber),
-                                                                             'path': os.path.join(BlockNode.Path,
-                                                                                                  StosGroup.Path,
-                                                                                                  transform.Path),
-                                                                             'pixelspacing': '%g' % StosGroup.Downsample,
-                                                                             'type': transform.Type})
+                ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName': StosGroup.Name,
+                                                            'controlSection': str(
+                                                                transform.TargetSectionNumber),
+                                                            'mappedSection': str(
+                                                                transform.SourceSectionNumber),
+                                                            'path': os.path.join(BlockNode.Path,
+                                                                                 StosGroup.Path,
+                                                                                 transform.Path),
+                                                            'pixelspacing': '%g' % StosGroup.Downsample,
+                                                            'type': transform.Type})
 
                 UpdateString = UpdateTemplate % {'mapped': int(transform.SourceSectionNumber),
                                                  'control': int(transform.TargetSectionNumber)}
@@ -227,7 +245,7 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName):
 
                 num_stos += 1
 
-    OutputVolumeNode.attrib["num_stos"] = '%g' % num_stos
+    return num_stos
 
 
 def ParseSections(InputVolumeNode, OutputVolumeNode):
