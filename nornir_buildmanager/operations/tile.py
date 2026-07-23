@@ -1338,7 +1338,6 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
                                                                                  image_to_source_space_scale=thisLevel)
 
         (mosaicImage, maskImage) = mosaicTileset.AssembleImage(FixedRegion=RequestedBoundingBox,
-                                                               usecluster=UseCluster,
                                                                target_space_scale=1.0 / thisLevel)
 
         if mosaicImage is None or maskImage is None:
