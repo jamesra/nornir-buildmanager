@@ -213,7 +213,10 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
                                            'Y': nornir_buildmanager.templates.Current.GridTileCoordTemplate % iY,
                                            'postfix': FilePostfix})
             if os.path.exists(MatchString):
-                [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
+                try:
+                    [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
+                except OSError:
+                    continue
                 if YSize != self.TileYDim or XSize != self.TileXDim:
                     return [False, "Image size does not match meta-data"]
 
@@ -226,7 +229,10 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
                 'Y': iY,
                 'postfix': FilePostfix})
             if os.path.exists(MatchString):
-                [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
+                try:
+                    [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)
+                except OSError:
+                    continue
                 if YSize != self.TileYDim or XSize != self.TileXDim:
                     return [False, "Image size does not match meta-data"]
 
@@ -234,3 +240,4 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
                 return [True, "Last column of tileset found"]
 
         return [False, "Last column of tileset not found"]
+

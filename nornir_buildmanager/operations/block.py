@@ -3,9 +3,12 @@ Created on Jun 22, 2012
 
 @author: Jamesan
 """
+import copy
 import math
+import logging
 import random
 import shutil
+from dataclasses import dataclass
 import numpy as np
 import subprocess
 import tempfile
@@ -15,6 +18,7 @@ from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.metadatautils import *
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
+import nornir_buildmanager.operations.stosgroup_workers as stosgroup_workers
 from nornir_buildmanager.operations.transform_refine_orchestrator import TransformRefineOrchestrator
 from nornir_buildmanager.validation import transforms
 from nornir_buildmanager.volumemanager import *
@@ -27,9 +31,97 @@ from nornir_imageregistration.views import TransformWarpView
 import nornir_imageregistration.settings
 import nornir_pools
 from nornir_shared import files, misc, plot, prettyoutput
+from nornir_shared.mqtt_telemetry import publish_run_event
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
 import nornir_shared
 from nornir_imageregistration.settings import AngleSearchRange
+
+
+def _resolve_min_blend(min_blend: float | None,
+                       linear_blend_factor: float | None) -> float | None:
+    """Accept deprecated linear_blend_factor pipeline kwarg as min_blend."""
+    if linear_blend_factor is not None:
+        if min_blend is not None and min_blend != linear_blend_factor:
+            raise ValueError("min_blend and linear_blend_factor disagree")
+        if min_blend is None:
+            return linear_blend_factor
+    return min_blend
+
+
+def _resolve_slice_to_volume_blend_params(
+        no_linear_blend: bool,
+        min_blend: float | None,
+        travel_limit: float | None,
+        max_blend: float | None,
+        linear_blend_factor: float | None) -> tuple[float | None, float | None, float | None]:
+    """Apply -NoLinearBlend and resolve deprecated linear_blend_factor alias."""
+    if no_linear_blend:
+        return None, None, None
+    return _resolve_min_blend(min_blend, linear_blend_factor), travel_limit, max_blend
+
+
+def _get_stos_group_pool(pool_name: str, workers: int | None):
+    """Return a process pool for STOS group work, or None for serial execution."""
+    workers = stosgroup_workers.resolve_stos_group_workers(workers)
+    if workers == 1:
+        return None
+    return nornir_pools.GetLocalMachinePool(pool_name, num_threads=workers)
+
+
+@dataclass
+class _LinearBlendJobContext:
+    """Main-process metadata for one linear-blend job."""
+
+    output_stos_node: TransformNode
+    input_transform_node: TransformNode
+    output_group_node: StosGroupNode
+
+
+@dataclass
+class _ScaleStosJobContext:
+    """Main-process metadata for one scale STOS job."""
+
+    output_stos_node: TransformNode
+    input_transform_node: TransformNode
+    output_group_node: StosGroupNode
+    input_stos_path: str
+
+
+def _apply_linear_blend_job(context: _LinearBlendJobContext,
+                            result: stosgroup_workers.LinearBlendResult,
+                            min_blend: float | None,
+                            travel_limit: float | None,
+                            reblend_iterations: int | None,
+                            reblend_tolerance: float | None,
+                            max_blend: float | None) -> None:
+    """Update volume metadata after a linear-blend worker completes."""
+    context.output_stos_node.SetLinearBlendParams(min_blend,
+                                                  travel_limit,
+                                                  reblend_iterations,
+                                                  reblend_tolerance,
+                                                  max_blend=max_blend)
+    context.output_stos_node.ResetChecksum()
+    context.output_stos_node.SetTransform(context.input_transform_node)
+
+
+def _scale_stos_output_stale(input_transform_node: TransformNode,
+                             output_stos_node: TransformNode) -> bool:
+    """Return True when a scaled output .stos should be regenerated from the input."""
+    if not output_stos_node.IsInputTransformMatched(input_transform_node):
+        return True
+    if not os.path.exists(output_stos_node.FullPath):
+        return True
+    return files.IsOutdated(input_transform_node.FullPath, output_stos_node.FullPath)
+
+
+def _apply_scale_stos_job(context: _ScaleStosJobContext,
+                          result: stosgroup_workers.ScaleStosResult) -> None:
+    """Update volume metadata after a scale STOS worker completes."""
+    if not result.generated:
+        shutil.copyfile(context.input_stos_path, context.output_stos_node.FullPath)
+    context.output_stos_node.ResetChecksum()
+    context.output_stos_node.SetTransform(context.input_transform_node)
+
 
 
 class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
@@ -2113,10 +2205,10 @@ def TranslateVolumeToZeroOrigin(stos_group_node: StosGroupNode, **kwargs):
 
 
 def _use_chain_consistent_linear(chain_consistent_linear: bool,
-                                 linear_blend_factor: float | None,
+                                 min_blend: float | None,
                                  travel_limit: float | None) -> bool:
     """Return True when linear blend should use the composed rigid slice-to-slice chain."""
-    return bool(chain_consistent_linear and (linear_blend_factor is not None or travel_limit is not None))
+    return bool(chain_consistent_linear and (min_blend is not None or travel_limit is not None))
 
 
 def _rigid_chain_for_slice_to_volume_hop(mapped_to_control_stos_path: str,
@@ -2136,6 +2228,88 @@ def _rigid_chain_for_slice_to_volume_hop(mapped_to_control_stos_path: str,
     return rigid_bc, rigid_ac
 
 
+def _unblended_sidecar_path(output_stos_path: str) -> str:
+    """Return the sidecar path storing the unblended composed transform for chaining."""
+    base, ext = os.path.splitext(output_stos_path)
+    return f"{base}.unblended{ext}"
+
+
+def _slice_to_volume_uses_linear_blend(min_blend: float | None,
+                                       travel_limit: float | None) -> bool:
+    """Return True when SliceToVolume should apply terminal linear blending."""
+    return min_blend is not None or travel_limit is not None
+
+
+def _compose_slice_to_volume_pair(mapped_to_control_path: str,
+                                  control_to_volume_path: str,
+                                  *,
+                                  enrich_tolerance: float | None,
+                                  min_blend: float | None,
+                                  travel_limit: float | None,
+                                  reblend_iterations: int,
+                                  reblend_tolerance: float | None,
+                                  max_blend: float | None,
+                                  rigid_ac: ITransform | None) -> tuple[stosfile.StosFile, stosfile.StosFile]:
+    """Compose mapped→center using an unblended B→C chain, then blend once at the terminal hop."""
+    unblended = stosfile.AddStosTransforms(mapped_to_control_path,
+                                           control_to_volume_path,
+                                           EnrichTolerance=enrich_tolerance,
+                                           min_blend=None,
+                                           travel_limit=None)
+    if not _slice_to_volume_uses_linear_blend(min_blend, travel_limit):
+        return unblended, unblended
+
+    if rigid_ac is None:
+        raise ValueError("rigid_ac is required when applying terminal linear blend")
+
+    nonlinear = nornir_imageregistration.transforms.LoadTransform(unblended.Transform)  # type: ignore[arg-type]
+    blend_kwargs: dict[str, float | int | None] = {
+        'min_blend': min_blend,
+        'travel_limit': travel_limit,
+        'reblend_iterations': reblend_iterations,
+    }
+    if reblend_tolerance is not None:
+        blend_kwargs['reblend_tolerance'] = reblend_tolerance
+    if max_blend is not None:
+        blend_kwargs['max_blend'] = max_blend
+
+    blended_transform = nornir_imageregistration.transforms.utils.BlendTransformsIteratively(
+        nonlinear,  # type: ignore[arg-type]
+        rigid_ac,
+        **blend_kwargs)
+    blended = copy.deepcopy(unblended)
+    blended.Transform = nornir_imageregistration.transforms.TransformToIRToolsString(blended_transform)  # type: ignore[arg-type]
+    return unblended, blended
+
+
+def _remove_stos_output_files(output_path: str) -> None:
+    """Remove a composed STOS output and any unblended sidecar."""
+    if os.path.exists(output_path):
+        os.remove(output_path)
+    sidecar = _unblended_sidecar_path(output_path)
+    if os.path.exists(sidecar):
+        os.remove(sidecar)
+
+
+def _ensure_unblended_sidecar(output_transform,
+                              mapped_to_control_path: str,
+                              control_to_volume_unblended_path: str,
+                              *,
+                              enrich_tolerance: float | None) -> str:
+    """Create or refresh the unblended sidecar used for downstream chain composition."""
+    sidecar_path = _unblended_sidecar_path(output_transform.FullPath)
+    if os.path.exists(sidecar_path):
+        return sidecar_path
+
+    unblended = stosfile.AddStosTransforms(mapped_to_control_path,
+                                           control_to_volume_unblended_path,
+                                           EnrichTolerance=enrich_tolerance,
+                                           min_blend=None,
+                                           travel_limit=None)
+    unblended.Save(sidecar_path)
+    return sidecar_path
+
+
 def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanager.StosMapNode,
                                  stos_group_node: nornir_buildmanager.volumemanager.StosGroupNode,
                                  OutputMap: str,
@@ -2143,11 +2317,14 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
                                  Downsample, Enrich: bool,
                                  Tolerance: float | None,
                                  linear_blend_factor: float | None = None,
+                                 min_blend: float | None = None,
                                  travel_limit: float | None = None,
+                                 max_blend: float | None = None,
                                  ignore_rotation: bool = False,
                                  reblend_iterations: int | None = None,
                                  reblend_tolerance: float | None = None,
                                  chain_consistent_linear: bool = True,
+                                 NoLinearBlend: bool = False,
                                  **kwargs):
     """Build a slice-to-volume transform for each section referenced in the StosMap
 
@@ -2158,7 +2335,16 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
     :param str OutputMap: Name of the StosMap to create, defaults to StosGroupNode name if None
     :param bool Enrich: True if additional control points should be added if the transformed centroids of delaunay triangles are too far from expected position
     :param float Tolerance: The maximum distance the transformed and actual centroids can be before an additional control point is added at the centroid
+    :param bool NoLinearBlend: When True, compose the transform chain without per-section linear blend.
     """
+
+    min_blend, travel_limit, max_blend = _resolve_slice_to_volume_blend_params(
+        NoLinearBlend,
+        min_blend,
+        travel_limit,
+        max_blend,
+        linear_blend_factor,
+    )
 
     block_node = stos_group_node.Parent
     InputStosGroupNode = stos_group_node
@@ -2202,7 +2388,8 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
         yield from SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode,
                                                          OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance,
                                                          ControlToVolumeTransform=None,
-                                                         linear_blend_factor=linear_blend_factor,
+                                                         min_blend=min_blend,
+                                                         max_blend=max_blend,
                                                          travel_limit=travel_limit,
                                                          ignore_rotation=ignore_rotation,
                                                          reblend_iterations=reblend_iterations,
@@ -2222,6 +2409,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                           EnrichTolerance: float | None = None,
                                           ControlToVolumeTransform=None,
                                           linear_blend_factor: float | None = None,
+                                          min_blend: float | None = None,
+                                          max_blend: float | None = None,
                                           travel_limit: float | None = None,
                                           ignore_rotation: bool = False,
                                           reblend_iterations: int | None = None,
@@ -2229,10 +2418,14 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                           chain_consistent_linear: bool = True):
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
+    min_blend = _resolve_min_blend(min_blend, linear_blend_factor)
+
     SectionToRootTransformMap = {}
     SectionToRigidTransformMap = {}
+    use_linear_blend = _slice_to_volume_uses_linear_blend(min_blend, travel_limit)
+    SectionToUnblendedPathMap: dict[tuple[int, int], str] = {} if use_linear_blend else None
     use_chain_linear = _use_chain_consistent_linear(chain_consistent_linear,
-                                                    linear_blend_factor,
+                                                    min_blend,
                                                     travel_limit)
     for step in rt.GenerateOrderedMappingsToRootNode(rootNode):
         MappedSectionNode = step.MappedNode  # type: ignore[attr-defined]
@@ -2300,8 +2493,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 OutputTransform.Path = OutputTransform.Name + '.stos'  # Path creates directory and the fullpath parameter is missing.  Needs to run after the transform is added                                
 
                 # Remove any residual transform file just in case
-                if os.path.exists(OutputTransform.FullPath):
-                    os.remove(OutputTransform.FullPath)
+                _remove_stos_output_files(OutputTransform.FullPath)
 
             if ControlToVolumeTransform is not None:
                 OutputTransform.Path = str(mappedSectionNumber) + '-' + str(
@@ -2309,8 +2501,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
 
             if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
                 Logger.info(" %s: Removed outdated transform %s" % (logStr, OutputTransform.Path))
-                if os.path.exists(OutputTransform.FullPath):
-                    os.remove(OutputTransform.FullPath)
+                _remove_stos_output_files(OutputTransform.FullPath)
 
             if not os.path.exists(MappedToControlTransform.FullPath):
                 errorStr = (
@@ -2370,49 +2561,62 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 if hasattr(OutputTransform, "ControlToVolumeTransformChecksum"):
                     if not OutputTransform.ControlToVolumeTransformChecksum == ControlToVolumeTransform.Checksum:
                         Logger.info(" %s: ControlToVolumeTransformChecksum mismatch, removing" % logStr)
-                        if os.path.exists(OutputTransform.FullPath):
-                            os.remove(OutputTransform.FullPath)
+                        _remove_stos_output_files(OutputTransform.FullPath)
                 elif os.path.exists(OutputTransform.FullPath):
-                    os.remove(OutputTransform.FullPath)
+                    _remove_stos_output_files(OutputTransform.FullPath)
 
                 if (os.path.exists(OutputTransform.FullPath)
-                        and not OutputTransform.IsLinearBlendParamsMatched(linear_blend_factor,
+                        and not OutputTransform.IsLinearBlendParamsMatched(min_blend,
                                                                          travel_limit,
                                                                          reblend_iterations,
                                                                          reblend_tolerance,
+                                                                         max_blend=max_blend,
                                                                          chain_consistent_linear=use_chain_linear)):
                     Logger.info(" %s: Linear blend parameters changed, removing %s" % (logStr, OutputTransform.Path))
-                    os.remove(OutputTransform.FullPath)
+                    _remove_stos_output_files(OutputTransform.FullPath)
+
+                control_to_volume_unblended_path = (
+                    SectionToUnblendedPathMap.get(ControlToVolumeTransformKey, ControlToVolumeTransform.FullPath)
+                    if SectionToUnblendedPathMap is not None
+                    else ControlToVolumeTransform.FullPath)
 
                 if not os.path.exists(OutputTransform.FullPath):
 
                     try:
                         # Logger.info(" %s: Adding transforms" % (logStr))
                         prettyoutput.Log("\tCalculating new .stos")
-                        B_To_C_Linear = None
-                        if use_chain_linear:
-                            B_To_C_Linear, _rigid_ac = _rigid_chain_for_slice_to_volume_hop(
+                        rigid_ac = None
+                        if use_chain_linear or use_linear_blend:
+                            _, rigid_ac = _rigid_chain_for_slice_to_volume_hop(
                                 MappedToControlTransform.FullPath,
                                 IntermediateControlSection,
                                 rootNode.SectionNumber,
                                 SectionToRigidTransformMap,
                                 ignore_rotation)
-                        MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath,
-                                                              ControlToVolumeTransform.FullPath,
-                                                              EnrichTolerance=EnrichTolerance,
-                                                              linear_factor=linear_blend_factor,
-                                                              travel_limit=travel_limit,
-                                                              ignore_rotation=ignore_rotation,
-                                                              reblend_iterations=reblend_iterations or 1,
-                                                              reblend_tolerance=reblend_tolerance,
-                                                              B_To_C_Linear=B_To_C_Linear)
-                        MToVStos.Save(OutputTransform.FullPath)
+                        unblended_stos, final_stos = _compose_slice_to_volume_pair(
+                            MappedToControlTransform.FullPath,
+                            control_to_volume_unblended_path,
+                            enrich_tolerance=EnrichTolerance,
+                            min_blend=min_blend,
+                            travel_limit=travel_limit,
+                            reblend_iterations=reblend_iterations or 1,
+                            reblend_tolerance=reblend_tolerance,
+                            max_blend=max_blend,
+                            rigid_ac=rigid_ac)
+                        final_stos.Save(OutputTransform.FullPath)
+                        if use_linear_blend:
+                            unblended_stos.Save(_unblended_sidecar_path(OutputTransform.FullPath))
+                        else:
+                            sidecar_path = _unblended_sidecar_path(OutputTransform.FullPath)
+                            if os.path.exists(sidecar_path):
+                                os.remove(sidecar_path)
 
                         OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
-                        OutputTransform.SetLinearBlendParams(linear_blend_factor,
+                        OutputTransform.SetLinearBlendParams(min_blend,
                                                              travel_limit,
                                                              reblend_iterations,
                                                              reblend_tolerance,
+                                                             max_blend=max_blend,
                                                              chain_consistent_linear=use_chain_linear)
                         OutputTransform.ResetChecksum()
                         OutputTransform.SetTransform(MappedToControlTransform)
@@ -2429,9 +2633,26 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                     (yield OutputSectionMappingsNode)
                 else:
                     Logger.info(" %s: is still valid" % logStr)
+                    if not use_linear_blend:
+                        sidecar_path = _unblended_sidecar_path(OutputTransform.FullPath)
+                        if os.path.exists(sidecar_path):
+                            os.remove(sidecar_path)
 
             newTransformKey = (OutputTransform.MappedSectionNumber, ControlToVolumeTransformKey[1])
             SectionToRootTransformMap[newTransformKey] = OutputTransform
+            if SectionToUnblendedPathMap is not None:
+                if ControlToVolumeTransform is None:
+                    SectionToUnblendedPathMap[newTransformKey] = OutputTransform.FullPath
+                else:
+                    sidecar_path = _unblended_sidecar_path(OutputTransform.FullPath)
+                    if os.path.exists(sidecar_path):
+                        SectionToUnblendedPathMap[newTransformKey] = sidecar_path
+                    else:
+                        SectionToUnblendedPathMap[newTransformKey] = _ensure_unblended_sidecar(
+                            OutputTransform,
+                            MappedToControlTransform.FullPath,
+                            control_to_volume_unblended_path,
+                            enrich_tolerance=EnrichTolerance)
             if use_chain_linear:
                 try:
                     _, rigid_ac = _rigid_chain_for_slice_to_volume_hop(
@@ -2727,12 +2948,14 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
 
 
 def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, OutputGroupName: str, UseMasks: bool,
+                   workers: int | None = None,
                    **kwargs):
     """Take a stos group node, scale the transforms, and save in new stosgroup
 
        TODO: This function used to create stos transforms between different filters to.  Port that to a separate function
     """
     GroupParent = InputStosGroupNode.Parent
+    InputDownsample = InputStosGroupNode.Downsample
 
     OutputGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.Create(OutputGroupName,
                                                                                            OutputDownsample)
@@ -2742,6 +2965,8 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
 
     if SaveBlockNode:
         (yield GroupParent)
+
+    pending_jobs: list[stosgroup_workers.StosGroupPoolJob] = []
 
     for inputSectionMapping in InputStosGroupNode.SectionMappings:
 
@@ -2757,12 +2982,10 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
             if not os.path.exists(InputTransformNode.FullPath):
                 continue
 
-            # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
-            # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
             try:
                 (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
                 (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
-            except AttributeError as e:
+            except AttributeError:
                 prettyoutput.LogErr(
                     "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
@@ -2771,7 +2994,6 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
                 prettyoutput.LogErr(
                     "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
-            # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
             (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
                                                                                               MappedFilter,
@@ -2780,51 +3002,100 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
                                                                                                   ControlFilter,
                                                                                                   MappedFilter))
 
-            if not stosNode_added:
-                if not output_stos_node.IsInputTransformMatched(InputTransformNode):
-                    try:
-                        os.remove(output_stos_node.FullPath)
-                    except FileNotFoundError:
-                        pass  # It is OK if the file doesn't exist if we tried to delete it
-            else:
-                # Remove an old file if we had to generate the meta-data
+            output_stale = _scale_stos_output_stale(InputTransformNode, output_stos_node)
+
+            if stosNode_added or output_stale:
                 try:
                     os.remove(output_stos_node.FullPath)
                 except FileNotFoundError:
-                    pass  # It is OK if the file doesn't exist if we tried to delete it
+                    pass
 
             if not os.path.exists(output_stos_node.FullPath):
-                try:
-                    stosGenerated = __GenerateStosFile(InputTransformNode,  # type: ignore[arg-type]
-                                                       output_stos_node.FullPath,
-                                                       OutputDownsample,
-                                                       ControlFilter,
-                                                       MappedFilter,
-                                                       UseMasks=None)
+                control_image_path = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+                mapped_image_path = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+                control_mask_path = None
+                mapped_mask_path = None
+                if UseMasks is not False:
+                    if ControlFilter.MaskImageset is not None:
+                        control_mask_path = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+                    if MappedFilter.MaskImageset is not None:
+                        mapped_mask_path = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
 
-                    if stosGenerated is not None:
-                        stosGenerated.Save(output_stos_node.FullPath)
-                    else:
-                        shutil.copyfile(InputTransformNode.FullPath, output_stos_node.FullPath)
+                job_context = _ScaleStosJobContext(
+                    output_stos_node=output_stos_node,
+                    input_transform_node=InputTransformNode,
+                    output_group_node=OutputGroupNode,
+                    input_stos_path=InputTransformNode.FullPath,
+                )
+                pending_jobs.append(stosgroup_workers.StosGroupPoolJob(
+                    name=os.path.basename(output_stos_node.FullPath),
+                    func=stosgroup_workers.scale_stos_file,
+                    args=(
+                        InputTransformNode.FullPath,
+                        output_stos_node.FullPath,
+                        InputDownsample,
+                        OutputDownsample,
+                        control_image_path,
+                        mapped_image_path,
+                        control_mask_path,
+                        mapped_mask_path,
+                        UseMasks,
+                    ),
+                    kwargs={},
+                    context=job_context,
+                ))
 
-                    output_stos_node.ResetChecksum()
-                    output_stos_node.SetTransform(InputTransformNode)
-                except FileNotFoundError:
-                    OutputGroupNode.remove(output_stos_node)
+    pool = _get_stos_group_pool("ScaleStosGroup", workers)
+    max_in_flight = stosgroup_workers.default_max_in_flight(workers)
+    total_jobs = len(pending_jobs)
+    scale_track_id = f"scale:{OutputGroupName}"
+    scale_label = f"ScaleStosGroup → {OutputGroupName}"
+    completed_jobs = 0
 
-                (yield OutputGroupNode)
+    def _publish_scale_progress() -> None:
+        publish_run_event(
+            "iterate_progress",
+            current=completed_jobs,
+            total=total_jobs,
+            depth=1,
+            track_id=scale_track_id,
+            label=scale_label,
+        )
+
+    if total_jobs:
+        _publish_scale_progress()
+
+    for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
+                                                                 pending_jobs,
+                                                                 max_in_flight=max_in_flight):
+        context = job.context
+        try:
+            _apply_scale_stos_job(context, result)
+        except FileNotFoundError:
+            context.output_group_node.remove(context.output_stos_node)
+            continue
+        completed_jobs += 1
+        if total_jobs:
+            _publish_scale_progress()
+        (yield context.output_group_node)
+
+    nornir_pools.ReleaseStagePools()
 
 
 def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str,
-                         linear_blend_factor: float | None,
-                         travel_limit: float | None,
+                         min_blend: float | None = None,
+                         travel_limit: float | None = None,
                          ignore_rotation: bool = False,
                          reblend_iterations: int | None = None,
                          reblend_tolerance: float | None = None,
+                         max_blend: float | None = None,
+                         workers: int | None = None,
+                         linear_blend_factor: float | None = None,
                          **kwargs):
     """Take a stos group node, convert each transform to a rigid linear transform, blend in the linear
        transform with the control points of the original transform to "flatten" it
     """
+    min_blend = _resolve_min_blend(min_blend, linear_blend_factor)
     GroupParent = InputStosGroupNode.Parent
     OutputDownsample = InputStosGroupNode.Downsample
 
@@ -2840,6 +3111,8 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
     if SaveBlockNode:
         (yield GroupParent)
 
+    pending_jobs: list[stosgroup_workers.StosGroupPoolJob] = []
+
     for inputSectionMapping in InputStosGroupNode.SectionMappings:
 
         (SectionMappingNodeAdded, OutputSectionMapping) = OutputGroupNode.GetOrCreateSectionMapping(
@@ -2853,12 +3126,10 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
             if not os.path.exists(InputTransformNode.FullPath):
                 continue
 
-            # ControlFilters = __ControlFiltersForTransform(InputTransformNode, ControlChannelPattern, ControlFilterPattern)
-            # MappedFilters = __MappedFiltersForTransform(InputTransformNode, MappedChannelPattern, MappedFilterPattern)
             try:
                 (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
                 (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
-            except AttributeError as e:
+            except AttributeError:
                 prettyoutput.LogErr(
                     "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
@@ -2867,7 +3138,6 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                 prettyoutput.LogErr(
                     "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
                 continue
-            # for (ControlFilter, MappedFilter) in itertools.product(ControlFilters, MappedFilters):
 
             (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
                                                                                               MappedFilter,
@@ -2878,45 +3148,85 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
 
             if not stosNode_added:
                 if not (output_stos_node.IsInputTransformMatched(InputTransformNode)
-                        and output_stos_node.IsLinearBlendParamsMatched(linear_blend_factor,
+                        and output_stos_node.IsLinearBlendParamsMatched(min_blend,
                                                                         travel_limit,
                                                                         reblend_iterations,
-                                                                        reblend_tolerance)):
+                                                                        reblend_tolerance,
+                                                                        max_blend=max_blend)):
                     try:
                         os.remove(output_stos_node.FullPath)
                     except FileNotFoundError:
-                        pass  # It is OK if the file doesn't exist if we tried to delete it
+                        pass
             else:
-                # Remove an old file if we had to generate the meta-data
                 try:
                     os.remove(output_stos_node.FullPath)
                 except FileNotFoundError:
-                    pass  # It is OK if the file doesn't exist if we tried to delete it
+                    pass
 
             if not os.path.exists(output_stos_node.FullPath):
-                try:
-                    shutil.copyfile(InputTransformNode.FullPath, output_stos_node.FullPath)
-                    loaded_output_stos = nornir_imageregistration.files.StosFile.Load(output_stos_node.FullPath)
-                    transform_changed = loaded_output_stos.BlendWithLinear(linear_factor=linear_blend_factor,
-                                                                           travel_limit=travel_limit,
-                                                                           ignore_rotation=ignore_rotation,
-                                                                           reblend_iterations=reblend_iterations or 1,
-                                                                           reblend_tolerance=reblend_tolerance)
-                    output_stos_node.SetLinearBlendParams(linear_blend_factor,
-                                                          travel_limit,
-                                                          reblend_iterations,
-                                                          reblend_tolerance)
+                job_context = _LinearBlendJobContext(
+                    output_stos_node=output_stos_node,
+                    input_transform_node=InputTransformNode,
+                    output_group_node=OutputGroupNode,
+                )
+                pending_jobs.append(stosgroup_workers.StosGroupPoolJob(
+                    name=os.path.basename(output_stos_node.FullPath),
+                    func=stosgroup_workers.linear_blend_stos_file,
+                    args=(
+                        InputTransformNode.FullPath,
+                        output_stos_node.FullPath,
+                        min_blend,
+                        travel_limit,
+                        ignore_rotation,
+                        reblend_iterations or 1,
+                        reblend_tolerance,
+                        max_blend,
+                    ),
+                    kwargs={},
+                    context=job_context,
+                ))
 
-                    if transform_changed:
-                        loaded_output_stos.Save(output_stos_node.FullPath)
+    pool = _get_stos_group_pool("LinearBlendStosGroup", workers)
+    max_in_flight = stosgroup_workers.default_max_in_flight(workers)
+    total_jobs = len(pending_jobs)
+    blend_track_id = f"blend:{OutputGroupName}"
+    blend_label = f"LinearBlendStosGroup → {OutputGroupName}"
+    completed_jobs = 0
 
-                    output_stos_node.ResetChecksum()
-                    output_stos_node.SetTransform(InputTransformNode)
+    def _publish_blend_progress() -> None:
+        publish_run_event(
+            "iterate_progress",
+            current=completed_jobs,
+            total=total_jobs,
+            depth=1,
+            track_id=blend_track_id,
+            label=blend_label,
+        )
 
-                except FileNotFoundError:
-                    OutputGroupNode.remove(output_stos_node)
+    if total_jobs:
+        _publish_blend_progress()
 
-                (yield OutputGroupNode)
+    for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
+                                                                 pending_jobs,
+                                                                 max_in_flight=max_in_flight):
+        context = job.context
+        try:
+            _apply_linear_blend_job(context,
+                                    result,
+                                    min_blend,
+                                    travel_limit,
+                                    reblend_iterations,
+                                    reblend_tolerance,
+                                    max_blend)
+        except FileNotFoundError:
+            context.output_group_node.remove(context.output_stos_node)
+            continue
+        completed_jobs += 1
+        if total_jobs:
+            _publish_blend_progress()
+        (yield context.output_group_node)
+
+    nornir_pools.ReleaseStagePools()
 
 
 def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):

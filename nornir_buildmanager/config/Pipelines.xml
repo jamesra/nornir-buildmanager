@@ -1987,6 +1987,8 @@
             <Argument flag="-UseMasks" action="store_true" dest="UseMasks"
                       help="Use masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes."
                       required="False"/>
+            <Argument flag="-workers" type="int" required="False" dest="workers"
+                      help="Parallel worker count for per-transform scaling. Defaults to CPU count; use 1 for serial."/>
         </Arguments>
 
         <Iterate VariableName="BlockNode" XPath="Block">
@@ -1994,7 +1996,8 @@
                     XPath="StosGroup[@Name='#ScaleGroupName#ScaleInputDownsample']"/>
             <PythonCall Function="block.ScaleStosGroup"
                         InputStosGroupNode="#StosGroupNode" OutputDownsample="#ScaleOutputDownsample"
-                        OutputGroupName="#ScaleGroupName#ScaleOutputDownsample" UseMasks="#UseMasks"/>
+                        OutputGroupName="#ScaleGroupName#ScaleOutputDownsample" UseMasks="#UseMasks"
+                        workers="#workers"/>
         </Iterate>
     </Pipeline>
 
@@ -2010,9 +2013,13 @@
                       type="int" help="Downsample level of input stosgroup" required="True"/>
             <Argument flag="-OutputGroup" dest="OutputGroupName" type="str" required="True"
                       help="Name of the output stos group"/>
-            <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
+            <Argument flag="-min_blend" type="float" required="False" dest="min_blend"
                       default="0.05"
-                      help="Floor weight for uniform linear blend (0–1). Combined with -travel_limit when both are set."/>
+                      help="Floor weight toward rigid linear blend (0–1). Uniform when -travel_limit is omitted."/>
+            <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
+                      help="Deprecated alias for -min_blend."/>
+            <Argument flag="-max_blend" type="float" required="False" dest="max_blend"
+                      help="Cap per-point rigid blend weight (0–1). Defaults to min_blend without travel_limit, else 0.9."/>
             <Argument flag="-travel_limit" type="float" required="False" dest="travel_limit"
                       default="512"
                       help="Full-resolution distance scale for smooth per-point blend toward the rigid transform prediction."/>
@@ -2024,6 +2031,8 @@
                       help="Stop re-blending when the maximum control-point movement falls below this distance (pixels at working resolution)."/>
             <Argument flag="-no_rotation" action="store_true" required="False" dest="ignore_rotation"
                       help="Added for SEM volumes where it is certain there is no rotation from section to section, defaults to False"/>
+            <Argument flag="-workers" type="int" required="False" dest="workers"
+                      help="Parallel worker count for per-transform linear blend. Defaults to CPU count; use 1 for serial."/>
         </Arguments>
 
         <Iterate VariableName="BlockNode" XPath="Block">
@@ -2032,11 +2041,14 @@
             <PythonCall Function="block.LinearBlendStosGroup"
                         InputStosGroupNode="#StosGroupNode"
                         OutputGroupName="#OutputGroupName#InputDownsample"
+                        min_blend="#min_blend"
                         linear_blend_factor="#linear_blend_factor"
+                        max_blend="#max_blend"
                         travel_limit="#travel_limit"
                         reblend_iterations="#reblend_iterations"
                         reblend_tolerance="#reblend_tolerance"
-                        ignore_rotation="#ignore_rotation"/>
+                        ignore_rotation="#ignore_rotation"
+                        workers="#workers"/>
         </Iterate>
     </Pipeline>
 
@@ -2063,9 +2075,16 @@
                       default="64"
                       help="Maximum distance, at full resolution, between the expected and actual position of transformed triangle centroids.  Above this value a control point is added at the centroid to increase transform accuracy."
                       required="False"/>
-            <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
+            <Argument flag="-NoLinearBlend" dest="NoLinearBlend" action="store_true"
+                      help="Compose slice-to-volume transforms without per-section linear blend. Overrides -min_blend and -travel_limit pipeline defaults."
+                      required="False"/>
+            <Argument flag="-min_blend" type="float" required="False" dest="min_blend"
                       default="0.05"
-                      help="Floor weight for uniform linear blend (0–1). Combined with -travel_limit when both are set."/>
+                      help="Floor weight toward rigid linear blend during composition (0–1)."/>
+            <Argument flag="-linear_factor" type="float" required="False" dest="linear_blend_factor"
+                      help="Deprecated alias for -min_blend."/>
+            <Argument flag="-max_blend" type="float" required="False" dest="max_blend"
+                      help="Cap per-point rigid blend weight during composition."/>
             <Argument flag="-travel_limit" type="float" required="False" dest="travel_limit"
                       default="512"
                       help="Full-resolution distance scale for smooth per-point blend toward the rigid transform prediction during chain composition."/>
@@ -2092,11 +2111,14 @@
                                 Downsample="#StovDownsample" Enrich="#Enrich" Tolerance="#Tolerance"
                                 stos_map_node="#StosMapNode" stos_group_node="#StosGroupNode"
                                 linear_blend_factor="#linear_blend_factor"
+                                min_blend="#min_blend"
+                                max_blend="#max_blend"
                                 travel_limit="#travel_limit"
                                 reblend_iterations="#reblend_iterations"
                                 reblend_tolerance="#reblend_tolerance"
                                 ignore_rotation="#ignore_rotation"
-                                chain_consistent_linear="#chain_consistent_linear">
+                                chain_consistent_linear="#chain_consistent_linear"
+                                NoLinearBlend="#NoLinearBlend">
                     </PythonCall>
                 </Iterate>
             </Iterate>

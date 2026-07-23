@@ -106,19 +106,45 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
             self.attrib['Compressed'] = "%d" % value
 
     @property
+    def min_blend(self) -> float | None:
+        """Floor weight toward rigid linear blend used to create this transform."""
+        value = self.attrib.get('min_blend', None)
+        if value is None:
+            legacy = self.attrib.get('linear_blend_factor', None)
+            return float(legacy) if legacy is not None else None
+        return float(value)
+
+    @min_blend.setter
+    def min_blend(self, value: float | None):
+        if value is None:
+            if 'min_blend' in self.attrib:
+                del self.attrib['min_blend']
+        else:
+            self.attrib['min_blend'] = f'{value:g}'
+
+    @property
     def linear_blend_factor(self) -> float:
-        """If not None, the amount of linear blend used to create this transform.
-        If no value is stored, the linear blend amount is zero"""
-        value = self.attrib.get('linear_blend_factor', None)
-        return float(value) if value is not None else 0
+        """Deprecated alias for min_blend; returns 0 when unset."""
+        value = self.min_blend
+        return value if value is not None else 0
 
     @linear_blend_factor.setter
     def linear_blend_factor(self, value: float | None):
+        self.min_blend = value
+
+    @property
+    def max_blend(self) -> float | None:
+        """Cap on per-point rigid blend weight used to create this transform."""
+        value = self.attrib.get('max_blend', None)
+        return float(value) if value is not None else None
+
+    @max_blend.setter
+    def max_blend(self, value: float | None):
         if value is None:
-            if 'linear_blend_factor' in self.attrib:
-                del self.attrib['linear_blend_factor']
+            if 'max_blend' in self.attrib:
+                del self.attrib['max_blend']
         else:
-            self.attrib['linear_blend_factor'] = f'{value:g}'
+            self.attrib['max_blend'] = f'{value:g}'
 
     @property
     def travel_limit(self) -> float | None:
@@ -177,13 +203,22 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
             self.attrib['chain_consistent_linear'] = '1' if value else '0'
 
     def SetLinearBlendParams(self,
-                             linear_blend_factor: float | None,
+                             min_blend: float | None,
                              travel_limit: float | None,
                              reblend_iterations: int | None,
                              reblend_tolerance: float | None,
-                             chain_consistent_linear: bool | None = None) -> None:
+                             max_blend: float | None = None,
+                             chain_consistent_linear: bool | None = None,
+                             *,
+                             linear_blend_factor: float | None = None) -> None:
         """Persist linear-blend pipeline parameters on this transform node."""
-        self.linear_blend_factor = linear_blend_factor
+        if linear_blend_factor is not None:
+            if min_blend is not None and min_blend != linear_blend_factor:
+                raise ValueError("min_blend and linear_blend_factor disagree")
+            if min_blend is None:
+                min_blend = linear_blend_factor
+        self.min_blend = min_blend
+        self.max_blend = max_blend
         self.travel_limit = travel_limit
         self.reblend_iterations = reblend_iterations
         self.reblend_tolerance = reblend_tolerance
@@ -191,12 +226,20 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
             self.chain_consistent_linear = chain_consistent_linear
 
     def IsLinearBlendParamsMatched(self,
-                                   linear_blend_factor: float | None,
+                                   min_blend: float | None,
                                    travel_limit: float | None,
                                    reblend_iterations: int | None,
                                    reblend_tolerance: float | None,
-                                   chain_consistent_linear: bool | None = None) -> bool:
+                                   max_blend: float | None = None,
+                                   chain_consistent_linear: bool | None = None,
+                                   *,
+                                   linear_blend_factor: float | None = None) -> bool:
         """Return True if stored linear-blend parameters match the expected pipeline values."""
+        if linear_blend_factor is not None:
+            if min_blend is not None and min_blend != linear_blend_factor:
+                return False
+            if min_blend is None:
+                min_blend = linear_blend_factor
         def _float_eq(stored: float | None, expected: float | None) -> bool:
             if stored is None and expected is None:
                 return True
@@ -204,11 +247,12 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
                 return False
             return abs(stored - expected) <= 1e-6
 
+        stored_min_blend = self.min_blend if 'min_blend' in self.attrib or 'linear_blend_factor' in self.attrib else None
         matched = (_float_eq(self.travel_limit, travel_limit)
                    and _float_eq(self.reblend_tolerance, reblend_tolerance)
                    and self.reblend_iterations == reblend_iterations
-                   and _float_eq(self.linear_blend_factor if 'linear_blend_factor' in self.attrib else None,
-                                 linear_blend_factor))
+                   and _float_eq(stored_min_blend, min_blend)
+                   and _float_eq(self.max_blend if 'max_blend' in self.attrib else None, max_blend))
         if chain_consistent_linear is None:
             return matched
         return matched and self.chain_consistent_linear == chain_consistent_linear

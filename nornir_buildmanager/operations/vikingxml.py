@@ -11,6 +11,7 @@ import nornir_buildmanager.volumemanager
 from nornir_imageregistration.files import *
 from nornir_shared.files import RecurseSubdirectoriesGenerator
 import nornir_shared.prettyoutput as prettyoutput
+from nornir_shared.mqtt_telemetry import publish_run_event
 import xml.etree.ElementTree as ETree
 import nornir_pools
 
@@ -53,7 +54,8 @@ def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = No
     # Create our XML File
     OutputXMLFilename = os.path.join(path, OutputFile)
 
-    # Load the inputXML file and begin parsing
+    publish_run_event("stage_start", module="vikingxml", function="CreateVikingXML",
+                      element=OutputFile)
 
     # Create the root output node
     OutputVolumeNode = ETree.Element('Volume', {'Name': InputVolumeNode.Name,
@@ -72,7 +74,6 @@ def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = No
     ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName)
 
     OutputXML = ETree.tostring(OutputVolumeNode).decode('utf-8')
-    # prettyoutput.Log(OutputXML)
 
     hFile = open(OutputXMLFilename, 'w')
     hFile.write(OutputXML)
@@ -90,6 +91,9 @@ def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = No
     vikingUrl = "http://connectomes.utah.edu/Software/Viking4/viking.application?" + finalUrl
 
     prettyoutput.Log(vikingUrl)
+
+    publish_run_event("stage_end", module="vikingxml", function="CreateVikingXML",
+                      element=OutputFile)
     return
 
 
@@ -175,17 +179,18 @@ def RemoveDuplicateScaleEntries(OutputNode, volume_units_of_measure, volume_unit
 
 
 def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName: str | list[str] | None):
+    """Parse all stos transforms from the volume and add them to the output node."""
     if StosMapName is None:
-        print("No StosMapName specified, not adding stos")
+        prettyoutput.Log("No StosMapName specified, not adding stos")
         return
 
     stos_group_names = _normalize_stos_group_names(StosGroupName)
     if not stos_group_names:
-        print("No StosGroupName specified, not adding stos")
+        prettyoutput.Log("No StosGroupName specified, not adding stos")
         return
 
     num_stos = 0
-    print("Adding Slice-to-slice transforms\n")
+    prettyoutput.Log("Adding Slice-to-slice transforms\n")
     for stos_group_name in stos_group_names:
         num_stos += _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName, stos_group_name)
 
@@ -194,10 +199,11 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName: str
 
 def _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName: str, StosGroupName: str) -> int:
     """Add stos elements for one StosGroup; returns the number of stos entries added."""
-    global ECLIPSE
-
     num_stos = 0
     UpdateTemplate = "%(mapped)d -> %(control)d"
+
+    # Pre-collect all pending transform records so we can report accurate totals.
+    pending: list[tuple] = []
     for BlockNode in InputVolumeNode.findall('Block'):
         StosMapNode = BlockNode.GetChildByAttrib("StosMap", 'Name', StosMapName)
         if StosMapNode is None:
@@ -205,79 +211,86 @@ def _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName: str, S
 
         StosGroup = BlockNode.GetChildByAttrib("StosGroup", "Name", StosGroupName)
         if StosGroup is None:
-            print("StosGroup %s not found.  No slice-to-slice transforms are being included" % StosGroupName)
+            prettyoutput.Log("StosGroup %s not found.  No slice-to-slice transforms are being included" % StosGroupName)
             continue
 
         for Mapping in StosMapNode.findall('Mapping'):
-
             for MappedSection in Mapping.Mapped:
-                MappingString = UpdateTemplate % {'mapped': int(MappedSection),
-                                                  'control': int(Mapping.Control)}
-
                 SectionMappingNode = StosGroup.GetChildByAttrib('SectionMappings', 'MappedSectionNumber', MappedSection)
                 if SectionMappingNode is None:
-                    print("No Section Mapping found for " + MappingString)
+                    prettyoutput.Log("No Section Mapping found for " +
+                                     UpdateTemplate % {'mapped': int(MappedSection), 'control': int(Mapping.Control)})
                     continue
 
                 transform = SectionMappingNode.GetChildByAttrib('Transform', 'ControlSectionNumber', Mapping.Control)
                 if transform is None:
-                    print("No Section Mapping Transform found for " + MappingString)
+                    prettyoutput.Log("No Section Mapping Transform found for " +
+                                     UpdateTemplate % {'mapped': int(MappedSection), 'control': int(Mapping.Control)})
                     continue
 
-                ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName': StosGroup.Name,
-                                                            'controlSection': str(
-                                                                transform.TargetSectionNumber),
-                                                            'mappedSection': str(
-                                                                transform.SourceSectionNumber),
-                                                            'path': os.path.join(BlockNode.Path,
-                                                                                 StosGroup.Path,
-                                                                                 transform.Path),
-                                                            'pixelspacing': '%g' % StosGroup.Downsample,
-                                                            'type': transform.Type})
+                pending.append((BlockNode, StosGroup, transform))
 
-                UpdateString = UpdateTemplate % {'mapped': int(transform.SourceSectionNumber),
-                                                 'control': int(transform.TargetSectionNumber)}
+    total_stos = len(pending)
+    track_id = f"vikingxml:stos:{StosGroupName}"
+    label = f"Stos {StosGroupName}"
+    if total_stos:
+        publish_run_event("iterate_progress", current=0, total=total_stos,
+                          depth=1, track_id=track_id, label=label)
 
-                if not ECLIPSE:
-                    print(('\b' * 80))
+    for BlockNode, StosGroup, transform in pending:
+        ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName': StosGroup.Name,
+                                                    'controlSection': str(transform.TargetSectionNumber),
+                                                    'mappedSection': str(transform.SourceSectionNumber),
+                                                    'path': os.path.join(BlockNode.Path,
+                                                                         StosGroup.Path,
+                                                                         transform.Path),
+                                                    'pixelspacing': '%g' % StosGroup.Downsample,
+                                                    'type': transform.Type})
 
-                print(UpdateString)
-
-                num_stos += 1
+        prettyoutput.Log(UpdateTemplate % {'mapped': int(transform.SourceSectionNumber),
+                                           'control': int(transform.TargetSectionNumber)})
+        num_stos += 1
+        if total_stos:
+            publish_run_event("iterate_progress", current=num_stos, total=total_stos,
+                              depth=1, track_id=track_id, label=label)
 
     return num_stos
 
 
 def ParseSections(InputVolumeNode, OutputVolumeNode):
-    # Find all of the section tags
-    # Pool = nornir_pools.GetGlobalThreadPool()
+    """Parse all sections from the volume and add them to the output node."""
     Pool = nornir_pools.GetGlobalSerialPool()
 
     SectionTasks = []
 
-    print("Adding Sections\n")
+    prettyoutput.Log("Adding Sections\n")
     for BlockNode in InputVolumeNode.findall('Block'):
         for SectionNode in BlockNode.Sections:
             OutputSectionNode = OutputVolumeNode.find("Section[@Number='%d']" % SectionNode.Number)
             assert (OutputSectionNode is None)
 
-            # if not ECLIPSE:
-            # print('\b' * 3)
-
-            print('Queue %g' % SectionNode.Number)
+            prettyoutput.Log('Queue %g' % SectionNode.Number)
 
             task = Pool.add_task(str(SectionNode.Number), ParseSection, BlockNode.Path, SectionNode)
             SectionTasks.append(task)
 
-    for t in SectionTasks:
-        if not ECLIPSE:
-            print('\b' * 8)
+    total_sections = len(SectionTasks)
+    completed_sections = 0
+    if total_sections:
+        publish_run_event("iterate_progress", current=0, total=total_sections,
+                          depth=0, track_id="vikingxml:sections", label="Sections")
 
-        print('%s' % t.name)
+    for t in SectionTasks:
+        prettyoutput.Log('%s' % t.name)
 
         OutputSectionNode = t.wait_return()
-
         OutputVolumeNode.append(OutputSectionNode)
+
+        completed_sections += 1
+        if total_sections:
+            publish_run_event("iterate_progress", current=completed_sections,
+                              total=total_sections, depth=0,
+                              track_id="vikingxml:sections", label="Sections")
 
     AllSectionNodes = list(OutputVolumeNode.findall('Section'))
     OutputVolumeNode.attrib['num_sections'] = str(len(AllSectionNodes))
@@ -321,7 +334,7 @@ def ParseChannels(SectionNode, OutputSectionNode):
                                                                 OutputTilesetNode.attrib['path'])
                 if ScaleNode is not None:
                     AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
-                print("Tileset found for section " + str(SectionNode.attrib["Number"]))
+                prettyoutput.Log("Tileset found for section " + str(SectionNode.attrib["Number"]))
 
         for NoteNode in ChannelNode.findall('Notes'):
             # Copy over Notes elements verbatim

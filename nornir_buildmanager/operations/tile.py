@@ -9,6 +9,7 @@ import glob
 import logging
 import math
 import os
+import queue
 import shutil
 import subprocess
 import time
@@ -17,11 +18,14 @@ import numpy
 import datetime
 import concurrent.futures
 import tempfile
+import threading
 import warnings
+import os
 from functools import partial
+from dataclasses import dataclass
 
 from numpy.typing import NDArray
-from typing import Sequence, cast
+from typing import Any, Sequence, cast
 
 import nornir_shared.misc
 import nornir_shared.images
@@ -37,7 +41,7 @@ from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates
 from nornir_buildmanager.validation import transforms, image
-from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile, ensure_directory
+from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile, ensure_directory, pin_directory_for_worker
 from nornir_shared.histogram import Histogram
 
 import nornir_buildmanager as nb
@@ -68,6 +72,12 @@ estimated_max_temp_image_area = None
 _MAX_TEMP_IMAGE_AREA_PIXELS = 512 * 1024 * 1024  # 512 megapixels
 
 
+def _format_pixel_area_log(area_px: int | float) -> str:
+    """Format a pixel-area limit for logs (px and Mpx, not memory MB)."""
+    area = float(area_px)
+    return f"{area:.0f} px ({area / float(1 << 20):.0f} Mpx)"
+
+
 def EstimateMaxTempImageArea() -> int:
     global estimated_max_temp_image_area
 
@@ -89,12 +99,13 @@ def EstimateMaxTempImageArea() -> int:
                 bytes_per_pixel * num_images_per_tile * num_duplicate_copies_in_memory * safety_factor))
         if estimated_max_temp_image_area > _MAX_TEMP_IMAGE_AREA_PIXELS:
             prettyoutput.Log(
-                "Maximum temporary image area capped from {0:g}MB to {1:g}MB for strip assembly.".format(
-                    float(estimated_max_temp_image_area) / float(1 << 20),
-                    float(_MAX_TEMP_IMAGE_AREA_PIXELS) / float(1 << 20)))
+                "Maximum temporary image area capped from {0} to {1} for strip assembly.".format(
+                    _format_pixel_area_log(estimated_max_temp_image_area),
+                    _format_pixel_area_log(_MAX_TEMP_IMAGE_AREA_PIXELS)))
             estimated_max_temp_image_area = _MAX_TEMP_IMAGE_AREA_PIXELS
-        prettyoutput.Log("Maximum per-core temporary image size calculated a {0:g}MB limit.".format(
-            float(estimated_max_temp_image_area) / float(1 << 20)))
+        prettyoutput.Log(
+            "Maximum per-core temporary image area: {0}.".format(
+                _format_pixel_area_log(estimated_max_temp_image_area)))
 
     return estimated_max_temp_image_area
 
@@ -1610,45 +1621,327 @@ def AssembleTileset(Parameters, filter_node, pyramid_node, transform_node, TileS
 
 
 _TILE_IO_WORKERS_ENV = "NORNIR_TILE_IO_WORKERS"
-_TILE_IO_WORKERS_DEFAULT = 16
+_TILE_IO_WORKERS_DEFAULT = os.cpu_count() or 1
+_TILE_ENCODE_WORKERS_ENV = "NORNIR_TILE_ENCODE_WORKERS"
+_TILE_COPY_WORKERS_ENV = "NORNIR_TILE_COPY_WORKERS"
+_TILE_COPY_WORKERS_DEFAULT = 3
+_TILE_TWO_STAGE_SAVE_ENV = "NORNIR_TILE_TWO_STAGE_SAVE"
+
+
+def _positive_int_from_env(
+    env_name: str,
+    default: int,
+    *,
+    label: str,
+) -> int:
+    """Parse a positive integer from an environment variable."""
+    raw = os.environ.get(env_name)
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        value = int(str(raw).strip())
+    except ValueError:
+        logging.warning(
+            "%s=%r is not a valid integer; using default %d for %s",
+            env_name,
+            raw,
+            default,
+            label,
+        )
+        return default
+    if value < 1:
+        logging.warning(
+            "%s=%r must be >= 1; using default %d for %s",
+            env_name,
+            raw,
+            default,
+            label,
+        )
+        return default
+    return value
 
 
 def _tile_io_worker_count() -> int:
     """Return concurrent tile encode/copy workers (local temp + network copy).
 
-    Override with ``NORNIR_TILE_IO_WORKERS``; defaults to 16 when unset or invalid.
+    Override with ``NORNIR_TILE_IO_WORKERS``; defaults to the number of logical
+    processors when unset or invalid.
     """
-    raw = os.environ.get(_TILE_IO_WORKERS_ENV)
-    if raw is None or not str(raw).strip():
-        return _TILE_IO_WORKERS_DEFAULT
-    try:
-        workers = int(str(raw).strip())
-    except ValueError:
-        logging.warning(
-            "%s=%r is not a valid integer; using default %d",
-            _TILE_IO_WORKERS_ENV,
-            raw,
-            _TILE_IO_WORKERS_DEFAULT,
+    return _positive_int_from_env(
+        _TILE_IO_WORKERS_ENV,
+        _TILE_IO_WORKERS_DEFAULT,
+        label="tile I/O workers",
+    )
+
+
+def _tile_encode_worker_count() -> int:
+    """Encode-stage workers for two-stage save (defaults to ``NORNIR_TILE_IO_WORKERS``)."""
+    return _positive_int_from_env(
+        _TILE_ENCODE_WORKERS_ENV,
+        _tile_io_worker_count(),
+        label="tile encode workers",
+    )
+
+
+def _tile_copy_worker_count() -> int:
+    """Copy-stage workers for two-stage save (defaults to 2; 815 CIFS io-sweep favored 2 over 3–4)."""
+    return _positive_int_from_env(
+        _TILE_COPY_WORKERS_ENV,
+        _TILE_COPY_WORKERS_DEFAULT,
+        label="tile copy workers",
+    )
+
+
+def _warn_deprecated_two_stage_save_opt_out(
+    logger: logging.Logger | None = None,
+) -> None:
+    """Warn if ``NORNIR_TILE_TWO_STAGE_SAVE=0`` is set (ignored; production is always two-stage)."""
+    raw = os.environ.get(_TILE_TWO_STAGE_SAVE_ENV)
+    if raw is None:
+        return
+    if str(raw).strip().lower() not in ("0", "false", "no"):
+        return
+    message = (
+        f"{_TILE_TWO_STAGE_SAVE_ENV}={raw!r} is deprecated and ignored; "
+        "AssembleTilesetNumpy always uses two-stage tile save."
+    )
+    logging.warning(message)
+    if logger is not None:
+        logger.warning(message)
+
+
+def _use_two_stage_tile_save() -> bool:
+    """Two-stage tile save is always used (encode pool + bounded copy queue)."""
+    return True
+
+
+@dataclass(frozen=True)
+class _TileCopyJob:
+    temp_path: str
+    dest_path: str
+
+
+def _encode_tile_to_temp(
+    temp_output_tile_fullpath: str,
+    tile_image: NDArray,
+    bpp: int | None,
+    *,
+    optimize: bool = True,
+) -> None:
+    """PNG-encode a tile to a local temp path."""
+    nornir_imageregistration.SaveImage(
+        ImageFullPath=temp_output_tile_fullpath,
+        image=tile_image,
+        bpp=bpp,
+        optimize=optimize,
+    )
+
+
+class _TwoStageTileSavePipeline:
+    """Encode tiles to local temp, then copy to dest via a bounded queue."""
+
+    def __init__(
+        self,
+        *,
+        encode_workers: int,
+        copy_workers: int,
+        bpp: int | None,
+        optimize: bool = True,
+        collect_thread_timings: bool = False,
+    ) -> None:
+        self._encode_workers = encode_workers
+        self._copy_workers = copy_workers
+        self._bpp = bpp
+        self._optimize = optimize
+        self._max_encode_active = encode_workers * 2
+        self._copy_queue: queue.Queue[_TileCopyJob | None] = queue.Queue(
+            maxsize=copy_workers * 2,
         )
-        return _TILE_IO_WORKERS_DEFAULT
-    if workers < 1:
-        logging.warning(
-            "%s=%r must be >= 1; using default %d",
-            _TILE_IO_WORKERS_ENV,
-            raw,
-            _TILE_IO_WORKERS_DEFAULT,
+        self._encode_executor = ThreadPoolExecutor(max_workers=encode_workers)
+        self._copy_executor = ThreadPoolExecutor(max_workers=copy_workers)
+        self._active_encode: list[concurrent.futures.Future[None]] = []
+        self._copy_futures = [
+            self._copy_executor.submit(self._copy_consumer)
+            for _ in range(copy_workers)
+        ]
+        self._timing_lock = threading.Lock() if collect_thread_timings else None
+        self.sum_encode_thread_s = 0.0
+        self.sum_copy_thread_s = 0.0
+
+    @property
+    def max_active_tasks(self) -> int:
+        return self._max_encode_active
+
+    @property
+    def active_encode_count(self) -> int:
+        self._prune_completed_encodes()
+        return len(self._active_encode)
+
+    def _prune_completed_encodes(self) -> None:
+        """Drop finished encode futures and propagate errors."""
+        if not self._active_encode:
+            return
+        still_pending: list[concurrent.futures.Future[None]] = []
+        for finished in self._active_encode:
+            if finished.done():
+                finished.result()
+            else:
+                still_pending.append(finished)
+        self._active_encode = still_pending
+
+    def _encode_and_enqueue(
+        self,
+        dest_path: str,
+        temp_path: str,
+        tile_image: NDArray,
+    ) -> None:
+        t0 = time.perf_counter()
+        _encode_tile_to_temp(temp_path, tile_image, self._bpp, optimize=self._optimize)
+        if self._timing_lock is not None:
+            with self._timing_lock:
+                self.sum_encode_thread_s += time.perf_counter() - t0
+        self._copy_queue.put(_TileCopyJob(temp_path=temp_path, dest_path=dest_path))
+
+    def _copy_consumer(self) -> None:
+        while True:
+            job = self._copy_queue.get()
+            try:
+                if job is None:
+                    return
+                t0 = time.perf_counter()
+                nornir_shared.files.copy_file(job.temp_path, job.dest_path)
+                if self._timing_lock is not None:
+                    with self._timing_lock:
+                        self.sum_copy_thread_s += time.perf_counter() - t0
+            finally:
+                self._copy_queue.task_done()
+
+    def submit(self, dest_path: str, temp_path: str, tile_image: NDArray) -> None:
+        """Queue one tile for encode; caller should backpressure via ``wait_one_encode``."""
+        task = self._encode_executor.submit(
+            self._encode_and_enqueue,
+            dest_path,
+            temp_path,
+            tile_image,
         )
-        return _TILE_IO_WORKERS_DEFAULT
-    return workers
+        self._active_encode.append(task)
+
+    def wait_one_encode(self) -> None:
+        """Wait for one in-flight encode to finish and propagate errors."""
+        self._prune_completed_encodes()
+        if not self._active_encode:
+            return
+        done, _ = wait(self._active_encode, return_when=FIRST_COMPLETED)
+        for finished in done:
+            finished.result()
+            self._active_encode.remove(finished)
+
+    def finish(self) -> int:
+        """Drain encodes and copies; shut down pools. Returns remaining encode count at drain start."""
+        self._prune_completed_encodes()
+        remaining = len(self._active_encode)
+        for finished in as_completed(self._active_encode):
+            finished.result()
+        self._active_encode.clear()
+        self._copy_queue.join()
+        for _ in range(self._copy_workers):
+            self._copy_queue.put(None)
+        for copy_future in self._copy_futures:
+            copy_future.result()
+        self._encode_executor.shutdown(wait=True)
+        self._copy_executor.shutdown(wait=True)
+        return remaining
+
+
+@dataclass(frozen=True)
+class Level001SaveTimeline:
+    """Structured save-tail metrics for level-001 assemble (production + bench)."""
+
+    level001_wall_s: float
+    output_io_wait_backpressure_s: float
+    output_io_wait_drain_s: float
+    save_encode_thread_s: float
+    save_copy_thread_s: float
+    tiles_saved: int
+    encode_workers: int
+    copy_workers: int
+    max_active_encode: int
+    last_strip_yield_to_drain_s: float | None
+    tasks_at_drain: int
+    two_stage: bool
+
+    @property
+    def output_io_wait_s(self) -> float:
+        """Total main-thread I/O wait (backpressure + drain)."""
+        return self.output_io_wait_backpressure_s + self.output_io_wait_drain_s
+
+    def as_dict(self) -> dict[str, float | int | bool | None]:
+        """Serialize timeline fields for structured logging or bench JSON."""
+        return {
+            'level001_wall_s': self.level001_wall_s,
+            'output_io_wait_s': self.output_io_wait_s,
+            'output_io_wait_backpressure_s': self.output_io_wait_backpressure_s,
+            'output_io_wait_drain_s': self.output_io_wait_drain_s,
+            'save_encode_thread_s': self.save_encode_thread_s,
+            'save_copy_thread_s': self.save_copy_thread_s,
+            'tiles_saved': self.tiles_saved,
+            'encode_workers': self.encode_workers,
+            'copy_workers': self.copy_workers,
+            'max_active_encode': self.max_active_encode,
+            'last_strip_yield_to_drain_s': self.last_strip_yield_to_drain_s,
+            'tasks_at_drain': self.tasks_at_drain,
+            'two_stage': self.two_stage,
+        }
+
+
+def _log_level001_save_timeline(
+    logger: logging.Logger,
+    timeline: Level001SaveTimeline,
+) -> None:
+    """Emit human-readable and structured level-001 save-tail metrics."""
+    tail = (
+        f"Level-001 save tail: drain={timeline.output_io_wait_drain_s:.2f}s  "
+        f"backpressure={timeline.output_io_wait_backpressure_s:.2f}s  "
+        f"encode_thread_s={timeline.save_encode_thread_s:.2f}  "
+        f"copy_thread_s={timeline.save_copy_thread_s:.2f}"
+    )
+    prettyoutput.Log(tail)
+    logger.info(
+        "Level-001 save tail: drain=%.2fs backpressure=%.2fs "
+        "encode_thread_s=%.2f copy_thread_s=%.2f tiles_saved=%d "
+        "encode_workers=%d copy_workers=%d max_active_encode=%d "
+        "last_strip_yield_to_drain_s=%s tasks_at_drain=%d two_stage=%s",
+        timeline.output_io_wait_drain_s,
+        timeline.output_io_wait_backpressure_s,
+        timeline.save_encode_thread_s,
+        timeline.save_copy_thread_s,
+        timeline.tiles_saved,
+        timeline.encode_workers,
+        timeline.copy_workers,
+        timeline.max_active_encode,
+        f"{timeline.last_strip_yield_to_drain_s:.2f}"
+        if timeline.last_strip_yield_to_drain_s is not None
+        else "n/a",
+        timeline.tasks_at_drain,
+        timeline.two_stage,
+    )
+    logger.info("Level-001 save timeline: %s", timeline.as_dict())
+    prettyoutput.Log(
+        f"Output I/O wait: {timeline.output_io_wait_s:.2f} s wall "
+        f"({timeline.tasks_at_drain} tasks at drain)"
+    )
+    logger.info(
+        "Output I/O wait: %.2f s wall (%d tasks at drain)",
+        timeline.output_io_wait_s,
+        timeline.tasks_at_drain,
+    )
 
 
 def _SaveImageAndCopy(ImageFullPath: str, temp_output_tile_fullpath: str, tile_image: NDArray, bpp: int | None,
                       optimize=True):
-    """Used to pass to the thread pool.  Saves the image to a temporary path and copies the image to final output location.
-    """
-    nornir_imageregistration.SaveImage(ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp,
-                                       optimize=optimize)
-    shutil.copyfile(temp_output_tile_fullpath, ImageFullPath)
+    """Monolithic save: encode to local temp then copy to final dest (legacy single pool)."""
+    _encode_tile_to_temp(temp_output_tile_fullpath, tile_image, bpp, optimize=optimize)
+    nornir_shared.files.copy_file(temp_output_tile_fullpath, ImageFullPath)
     return
 
 
@@ -1772,69 +2065,102 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
         temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
         ensure_directory(temp_level_dir)
 
-        active_tasks = []
-        tile_workers = _tile_io_worker_count()
-        max_active_tasks = tile_workers * 2
-        with ThreadPoolExecutor(max_workers=tile_workers) as executor:
-
-            _save_image_and_copy_partial = partial(_SaveImageAndCopy, bpp=bpp, optimize=True)
-
-            if max_temp_image_area is None:
-                max_temp_image_area = EstimateMaxTempImageArea()
-                prettyoutput.Log("No memory limit specified, calculated {0:g}MB limit.".format(
-                    float(max_temp_image_area) / float(2 << 20)))
-
-            task_timer = nornir_shared.tasktimer.TaskTimer()
-            task_timer.Start(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
-            output_io_wait_s = 0.0
-            for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
-                    target_space_scale=1.0 / InputLevelNode.Downsample,
-                    tile_dims=tile_dims,
-                    max_temp_image_area=max_temp_image_area):
-                tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-                    'prefix': tile_set_node.FilePrefix,
-                    'X': iCol,
-                    'Y': iRow,
-                    'postfix': tile_set_node.FilePostfix}
-                temp_output_tile_fullpath = os.path.join(temp_level_dir,
-                                                         tilename)  # A temporary output file, this is cached for building pyramids later, and allows moving to a network location in one step
-                output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-                # pool.add_task(tilename, nornir_imageregistration.SaveImage, ImageFullPath=temp_output_tile_fullpath, image=tile_image, bpp=bpp, optimize=True)
-
-                task = executor.submit(_save_image_and_copy_partial, ImageFullPath=output_tile_fullpath,
-                                       temp_output_tile_fullpath=temp_output_tile_fullpath, tile_image=tile_image)
-                active_tasks.append(task)
-
-                while len(active_tasks) >= max_active_tasks:
-                    t_wait = time.perf_counter()
-                    done, not_done = wait(active_tasks, return_when=FIRST_COMPLETED)
-                    for d in done:
-                        d.result()  # Ensure we get any exceptions raised
-                        active_tasks.remove(d)
-                    output_io_wait_s += time.perf_counter() - t_wait
-
-            remaining_output_tasks = len(active_tasks)
-            t_drain = time.perf_counter()
-            for t in as_completed(active_tasks):
-                try:
-                    t.result()  # Ensure we get any exceptions raised
-                except Exception as e:
-                    Logger.error(f"Error while processing tile: {e}")
-                    raise
-            output_io_wait_s += time.perf_counter() - t_drain
+        if max_temp_image_area is None:
+            max_temp_image_area = EstimateMaxTempImageArea()
             prettyoutput.Log(
-                f"Output I/O wait: {output_io_wait_s:.2f} s wall "
-                f"({remaining_output_tasks} tasks at drain)"
-            )
-            Logger.info(
-                "Output I/O wait: %.2f s wall (%d tasks at drain)",
-                output_io_wait_s,
-                remaining_output_tasks,
-            )
+                "No memory limit specified, calculated {0}.".format(
+                    _format_pixel_area_log(max_temp_image_area)))
 
-            # Wait for the tiles to save
-            # pool.wait_completion()
-            task_timer.End(f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}")
+        task_timer = nornir_shared.tasktimer.TaskTimer()
+        level001_task_name = f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}"
+        task_timer.Start(level001_task_name)
+        t_level_start = time.perf_counter()
+        output_io_wait_backpressure_s = 0.0
+        output_io_wait_drain_s = 0.0
+        tiles_saved = 0
+        last_tile_submit_time: float | None = None
+        t_drain: float | None = None
+        remaining_output_tasks = 0
+
+        _warn_deprecated_two_stage_save_opt_out(Logger)
+
+        encode_workers = _tile_encode_worker_count()
+        copy_workers = _tile_copy_worker_count()
+        max_active_tasks = encode_workers * 2
+        prettyoutput.Log(
+            f"Two-stage tile save: encode_workers={encode_workers}, "
+            f"copy_workers={copy_workers}, max_active_encode={max_active_tasks}, "
+            f"copy_queue_max={copy_workers * 2}")
+        Logger.info(
+            "Two-stage tile save: encode_workers=%d copy_workers=%d "
+            "max_active_encode=%d copy_queue_max=%d",
+            encode_workers,
+            copy_workers,
+            max_active_tasks,
+            copy_workers * 2,
+        )
+        two_stage_pipeline = _TwoStageTileSavePipeline(
+            encode_workers=encode_workers,
+            copy_workers=copy_workers,
+            bpp=bpp,
+            optimize=True,
+            collect_thread_timings=True,
+        )
+
+        def _submit_tile_save(
+            output_tile_fullpath: str,
+            temp_output_tile_fullpath: str,
+            tile_image: NDArray,
+        ) -> None:
+            nonlocal output_io_wait_backpressure_s, tiles_saved, last_tile_submit_time
+            tiles_saved += 1
+            last_tile_submit_time = time.perf_counter()
+            two_stage_pipeline.submit(
+                output_tile_fullpath, temp_output_tile_fullpath, tile_image)
+            while two_stage_pipeline.active_encode_count >= max_active_tasks:
+                t_wait = time.perf_counter()
+                two_stage_pipeline.wait_one_encode()
+                output_io_wait_backpressure_s += time.perf_counter() - t_wait
+
+        for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
+                target_space_scale=1.0 / InputLevelNode.Downsample,
+                tile_dims=tile_dims,
+                max_temp_image_area=max_temp_image_area):
+            tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+                'prefix': tile_set_node.FilePrefix,
+                'X': iCol,
+                'Y': iRow,
+                'postfix': tile_set_node.FilePostfix}
+            temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename)
+            output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
+            _submit_tile_save(
+                output_tile_fullpath, temp_output_tile_fullpath, tile_image)
+
+        t_drain = time.perf_counter()
+        remaining_output_tasks = two_stage_pipeline.finish()
+        output_io_wait_drain_s = time.perf_counter() - t_drain
+
+        task_timer.End(level001_task_name)
+        level001_wall_s = task_timer.ElapsedTimes.get(level001_task_name, time.perf_counter() - t_level_start)
+        last_strip_yield_to_drain_s: float | None = None
+        if last_tile_submit_time is not None and t_drain is not None:
+            last_strip_yield_to_drain_s = max(0.0, t_drain - last_tile_submit_time)
+
+        timeline = Level001SaveTimeline(
+            level001_wall_s=level001_wall_s,
+            output_io_wait_backpressure_s=output_io_wait_backpressure_s,
+            output_io_wait_drain_s=output_io_wait_drain_s,
+            save_encode_thread_s=two_stage_pipeline.sum_encode_thread_s,
+            save_copy_thread_s=two_stage_pipeline.sum_copy_thread_s,
+            tiles_saved=tiles_saved,
+            encode_workers=encode_workers,
+            copy_workers=copy_workers,
+            max_active_encode=max_active_tasks,
+            last_strip_yield_to_drain_s=last_strip_yield_to_drain_s,
+            tasks_at_drain=remaining_output_tasks,
+            two_stage=True,
+        )
+        _log_level001_save_timeline(Logger, timeline)
 
         nornir_pools.ReleaseStagePools()
 
@@ -2350,7 +2676,7 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
 
 def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensions: tuple[int, int], TileDim: tuple[int, int],
                                 FilePrefix: str, FilePostfix: str, temp_input_dir: str | None, temp_output_dir: str, pool=None,
-                                **kwargs):
+                                **kwargs) -> list[tuple[int, int]]:
     """
     :param SourcePath:
     :param DestPath:
@@ -2360,12 +2686,16 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     :param FilePrefix:
     :param FilePostfix:
     :param pool:
+    :return: Parent tile coordinates missing from DestPath after the build.
     """
 
     ensure_directory(DestPath)
     ensure_directory(temp_output_dir)
+    dest_path_abs = os.path.abspath(DestPath)
 
     temp_input_dir = None if (temp_input_dir is None or not os.path.exists(temp_input_dir)) else temp_input_dir
+
+    tile_workers = _tile_io_worker_count()
 
     def process_tile(coords: tuple[int, int], executor: ThreadPoolExecutor):
         """Process a single tile with the given parameters"""
@@ -2423,9 +2753,11 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             output_level_temp_dir=temp_output_dir,
             executor=executor)
 
-    tile_workers = _tile_io_worker_count()
-
-    with ThreadPoolExecutor(max_workers=tile_workers) as executor:
+    with ThreadPoolExecutor(
+        max_workers=tile_workers,
+        initializer=pin_directory_for_worker,
+        initargs=(dest_path_abs,),
+    ) as executor:
         with ThreadPoolExecutor(max_workers=tile_workers) as tile_executor:
             # Create a new function with executor pre-bound
             process_tile_with_executor = partial(process_tile, executor=tile_executor)
@@ -2461,6 +2793,27 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
 
             for _ in this_column_tasks:
                 pass
+
+    missing_parents = tileset_functions.find_missing_lineage_parent_tiles(
+        SourcePath, DestPath, FilePrefix, FilePostfix)
+    if missing_parents:
+        sample_limit = 10
+        sample_names = [
+            nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+                'prefix': FilePrefix,
+                'X': x,
+                'Y': y,
+                'postfix': FilePostfix,
+            }
+            for x, y in missing_parents[:sample_limit]
+        ]
+        logging.getLogger(__name__).error(
+            "Tileset pyramid level incomplete after build: dest=%s missing %d parent tile(s); examples=%s",
+            DestPath,
+            len(missing_parents),
+            sample_names,
+        )
+    return missing_parents
 
 
 def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.LevelNode):
