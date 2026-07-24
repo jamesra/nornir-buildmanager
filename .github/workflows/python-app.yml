@@ -73,3 +73,13 @@ jobs:
         tests/pipeline/test_migration.py
         tests/validation/test_validation.py
         tests/importers/test_shared.py
+        tests/test_no_delete.py
+        tests/operations/test_slice_to_volume_chain.py
+        tests/operations/test_stosgroup_workers.py
+        tests/operations/test_tile_io_worker_count.py
+        tests/operations/test_vikingxml.py
+        tests/pipeline/test_pipeline_mqtt_events.py
+        tests/pipeline/test_transform_refine_orchestrator.py
+        tests/pipeline/test_VolumeManager.py
+        tests/pipeline/metadata/test_tilesetinfo.py
+        tests/volumemanager/test_save_xml.py

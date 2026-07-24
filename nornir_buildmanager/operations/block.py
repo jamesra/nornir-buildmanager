@@ -15,6 +15,7 @@ import tempfile
 import typing
 
 from nornir_buildmanager.exceptions import NornirUserException
+import nornir_buildmanager.no_delete as _no_delete_mod
 from nornir_buildmanager.metadatautils import *
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
@@ -3153,15 +3154,30 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                                                                         reblend_iterations,
                                                                         reblend_tolerance,
                                                                         max_blend=max_blend)):
+                    if _no_delete_mod.is_no_delete():
+                        if os.path.exists(output_stos_node.FullPath):
+                            prettyoutput.Log(
+                                f'NO-DELETE WOULD_HAVE_REGENERATED: {output_stos_node.FullPath} '
+                                f'(checksum or blend-params mismatch); keeping stale output.')
+                    else:
+                        try:
+                            os.remove(output_stos_node.FullPath)
+                        except FileNotFoundError:
+                            pass
+                else:
+                    if _no_delete_mod.is_no_delete() and os.path.exists(output_stos_node.FullPath):
+                        prettyoutput.Log(f'NO-DELETE KEEP: {output_stos_node.FullPath}')
+            else:
+                if _no_delete_mod.is_no_delete():
+                    if os.path.exists(output_stos_node.FullPath):
+                        prettyoutput.Log(
+                            f'NO-DELETE WOULD_HAVE_REGENERATED: {output_stos_node.FullPath} '
+                            f'(newly added node, existing file kept); skipping rebuild.')
+                else:
                     try:
                         os.remove(output_stos_node.FullPath)
                     except FileNotFoundError:
                         pass
-            else:
-                try:
-                    os.remove(output_stos_node.FullPath)
-                except FileNotFoundError:
-                    pass
 
             if not os.path.exists(output_stos_node.FullPath):
                 job_context = _LinearBlendJobContext(

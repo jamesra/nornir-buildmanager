@@ -21,6 +21,7 @@ from xml.etree import ElementTree
 import nornir_pools
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
+import nornir_buildmanager.no_delete as _no_delete_mod
 import nornir_shared.reflection
 from nornir_shared.mqtt_telemetry import publish_run_event
 from nornir_shared.tasktimer import TaskTimer
@@ -597,11 +598,14 @@ class PipelineManager:
 
         # dargs = copy.deepcopy(defaultDargs)
 
-        self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
-
-        self._WriteStageTimings()
-
-        nornir_pools.ReleaseStagePools()
+        no_delete = getattr(args, 'no_delete', False)
+        _no_delete_mod.set_no_delete(bool(no_delete))
+        try:
+            self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
+        finally:
+            _no_delete_mod.set_no_delete(False)
+            self._WriteStageTimings()
+            nornir_pools.ReleaseStagePools()
 
         return self.VolumeTree
 
@@ -826,6 +830,18 @@ class PipelineManager:
                                 PipelineManager.logger.info(
                                     "Did not clean locked element {0}\n".format(SelectedVolumeElem.FullPath))
                                 break
+
+                        if _no_delete_mod.is_no_delete():
+                            # Under no-delete, keep the invalid node bound so the
+                            # pipeline can still run against it.  Nulling and
+                            # re-searching would loop forever because Clean() is
+                            # suppressed and the invalid element stays in the tree.
+                            PipelineManager.logger.info(
+                                "NO-DELETE: Would clean invalid element %s (%s); keeping for pipeline.",
+                                getattr(SelectedVolumeElem, 'FullPath', str(SelectedVolumeElem)),
+                                Reason,
+                            )
+                            break
 
                         SelectedVolumeElem.Clean(Reason)
                         PipelineManager._SaveNodes(SelectedVolumeElem.Parent)

@@ -73,6 +73,13 @@ def _AddParserRootArguments(parser: argparse.ArgumentParser):
                         help='If not specified, cupy will be used if a nVidia GPU is present.  Otherwise, force cupy (GPU) or numpy (CPU) use.',
                         dest='computational_library')
 
+    parser.add_argument('-no-delete',
+                        action='store_true',
+                        required=False,
+                        default=False,
+                        help='Skip all destructive Clean() and file removals; log what would have been deleted instead.  Stages still run and missing outputs are still created.',
+                        dest='no_delete')
+
 
 #     parser.add_argument('-recover',
 #                         action='store_true',
@@ -358,7 +365,7 @@ def _GetValidCommands() -> list[str]:
 # Flags defined on the root parser only (see _AddParserRootArguments). Used to recognize
 # [volumepath, <root flags...>, <command>, ...] test/harness argv and normalize to
 # [<root flags...>, <command>, volumepath, ...] before subparser dispatch.
-_ROOT_FLAGS_NO_VALUE = frozenset({'-debug', '-verbose', '-lowpriority', '-lp'})
+_ROOT_FLAGS_NO_VALUE = frozenset({'-debug', '-verbose', '-lowpriority', '-lp', '-no-delete'})
 _ROOT_FLAGS_WITH_VALUE = frozenset({'-computational_library'})
 
 

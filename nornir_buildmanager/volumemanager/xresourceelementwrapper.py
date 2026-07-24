@@ -5,6 +5,7 @@ import logging
 import os
 
 import nornir_buildmanager
+import nornir_buildmanager.no_delete as _no_delete_mod
 import nornir_shared.files
 from . import lockable, xelementwrapper
 
@@ -161,6 +162,11 @@ class XResourceElementWrapper(lockable.Lockable,
         return outStr
 
     def Clean(self, reason: str | None = None):
+        """Remove the file or directory referred to by this node, then remove the node.
+
+        Under no-delete mode, logs what would have been deleted and returns
+        without touching the filesystem or the XML tree.
+        """
         if self.Locked:
             Logger = logging.getLogger(__name__ + '.' + 'Clean')
             Logger.warning('Could not delete resource with locked flag set: %s' % self.FullPath)
@@ -168,7 +174,14 @@ class XResourceElementWrapper(lockable.Lockable,
                 Logger.warning('Reason for attempt: %s' % reason)
             return False
 
-        '''Remove the contents referred to by this node from the disk'''
+        if _no_delete_mod.is_no_delete():
+            Logger = logging.getLogger(__name__ + '.' + 'Clean')
+            Logger.info(
+                'NO-DELETE: Would remove %s%s; keeping.',
+                self.FullPath,
+                f' ({reason})' if reason else '',
+            )
+            return False
 
         try:
             if os.path.isdir(self.FullPath):

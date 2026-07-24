@@ -9,6 +9,7 @@ from xml.etree import ElementTree as ElementTree
 from xml.etree.ElementTree import Element
 
 import nornir_buildmanager
+import nornir_buildmanager.no_delete as _no_delete_mod
 from nornir_buildmanager.volumemanager.exceptions import MissingElementError
 from nornir_shared import prettyoutput as prettyoutput
 
@@ -332,20 +333,40 @@ class XElementWrapper(ElementTree.Element):
         return True, ""
 
     def CleanIfInvalid(self) -> tuple[bool, str]:
-        """Remove the contents of this node if it is out of date
-        :returns: true, reason (bool,str) if node was cleaned"""
+        """Remove the contents of this node if it is out of date.
+
+        Under no-delete mode the node is never actually removed; returns
+        (False, reason) so callers treat the element as still present.
+
+        :returns: (cleaned, reason) where cleaned is True when the node was
+                  (or would have been) removed.
+        """
         valid = self.IsValid()
 
         if isinstance(valid, bool):
             valid = (valid, "")
 
         if not valid[0]:
+            if _no_delete_mod.is_no_delete():
+                prettyoutput.Log(
+                    f' --- NO-DELETE: Would clean {self.ToElementString()} ({valid[1]}); keeping.')
+                return False, valid[1]
             self.Clean(valid[1])
 
         return valid[0] is False, valid[1]  # The return value convention is reversed from IsValid.
 
     def Clean(self, reason: str | None = None):
-        """Remove node from element tree and remove any external resources such as files"""
+        """Remove node from element tree and remove any external resources such as files.
+
+        Under no-delete mode, logs the intent and returns without removing
+        anything from the tree or the filesystem.
+        """
+        if _no_delete_mod.is_no_delete():
+            prettyoutput.Log(
+                f' --- NO-DELETE: Would clean {self.ToElementString()}'
+                + (f' ({reason})' if reason else '') + '; keeping.')
+            return
+
         prettyoutput.Log(f' --- Cleaning {self.ToElementString()}. ')
         if reason is not None:
             prettyoutput.Log("  --- " + reason)
