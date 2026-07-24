@@ -35,14 +35,16 @@ jobs:
         python-version: "3.13"
 
     - name: Install dependencies
+      shell: bash
       run: |
+        set -euo pipefail
         python -m pip install --upgrade pip
-        python -m pip install pytest python-dotenv validators "numpy>=1.26" "scipy>=1.11" "matplotlib>=3.8"
+        python -m pip install pytest python-dotenv validators "numpy>=1.26" "scipy>=1.11" "matplotlib>=3.8" "Pillow>=10.2" "pydantic>=2.9.2" "six>=1.16" "scikit-image>=0.25.1" "hypothesis>=6.96"
         python -m pip install "nornir_shared @ git+https://github.com/jamesra/nornir-shared.git@dev"
-        python -m pip install "nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@master"
-        python -m pip install "nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@dev"
+        python -m pip install "nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@master" --no-deps
+        python -m pip install "nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@dev" --no-deps
         python -m pip install . --no-deps
-        python -m pip install pytest
+        python -c "import nornir_shared.mqtt_telemetry; import nornir_buildmanager; print('install ok')"
 
     - name: Create test data folders (Unix)
       if: runner.os != 'Windows'
