@@ -61,7 +61,6 @@ def test_tile_encode_worker_count_override(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_tile_copy_worker_count_default() -> None:
-    assert tile_ops._tile_copy_worker_count() == 2
     assert tile_ops._tile_copy_worker_count() == tile_ops._TILE_COPY_WORKERS_DEFAULT
 
 
