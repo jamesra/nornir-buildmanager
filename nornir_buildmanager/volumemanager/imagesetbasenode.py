@@ -87,7 +87,8 @@ class ImageSetBaseNode(InputTransformHandler,
         if len(list_images) > 0:
             return list_images[0].Path
 
-        raise LookupError("No images found to predict path in imageset %s" % self.FullPath)
+        raise nornir_buildmanager.NornirUserException(
+            "No images found to predict path in imageset %s" % self.FullPath)
 
     def GetOrPredictImageFullPath(self, Downsample) -> str:
         """Either return what the full path to the image at the downsample is, or predict what it should be if it does not exist without creating it

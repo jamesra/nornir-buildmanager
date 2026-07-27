@@ -846,7 +846,11 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
 
 def GetImage(block_node: BlockNode, SectionNumber: int, Channel: str, Filter: str, Downsample: int) \
         -> tuple[ImageNode | None, ImageNode | None]:
-    """Will raise a NornirUserException if the image cannot be generated"""
+    """Return filter/mask images, or (None, None) when missing or not generable.
+
+    Raises are converted to None so callers such as AssembleStosOverlays can skip
+    pairs whose assembled mosaics are absent (empty ImageSet, no source level).
+    """
 
     sectionNode = block_node.GetSection(SectionNumber)
     if sectionNode is None:
@@ -860,13 +864,19 @@ def GetImage(block_node: BlockNode, SectionNumber: int, Channel: str, Filter: st
     if filterNode is None:
         return None, None
 
-    return filterNode.GetOrCreateImage(Downsample), filterNode.GetMaskImage(Downsample)
+    try:
+        return filterNode.GetOrCreateImage(Downsample), filterNode.GetMaskImage(Downsample)
+    except NornirUserException as e:
+        prettyoutput.Log(
+            f"Cannot obtain image for section {SectionNumber} {Channel}/{Filter} "
+            f"downsample {Downsample}: {e}")
+        return None, None
 
 
 class StosImageNodesOutput(typing.NamedTuple):
-    ControlImageNode: ImageNode
+    ControlImageNode: ImageNode | None
     ControlImageMaskNode: ImageNode | None
-    MappedImageNode: ImageNode
+    MappedImageNode: ImageNode | None
     MappedImageMaskNode: ImageNode | None
 
 
@@ -885,8 +895,8 @@ def StosImageNodes(StosTransformNode: TransformNode, Downsample: int) -> StosIma
                                                       Filter=StosTransformNode.MappedFilterName,
                                                       Downsample=Downsample)
 
-    return StosImageNodesOutput(ControlImageNode=ControlImageNode, ControlImageMaskNode=ControlImageMaskNode,  # type: ignore[arg-type]
-                                MappedImageNode=MappedImageNode, MappedImageMaskNode=MappedImageMaskNode)  # type: ignore[arg-type]
+    return StosImageNodesOutput(ControlImageNode=ControlImageNode, ControlImageMaskNode=ControlImageMaskNode,
+                                MappedImageNode=MappedImageNode, MappedImageMaskNode=MappedImageMaskNode)
 
 
 def ValidateSectionMappingPipeline(Parameters, Logger, section_mapping_node: SectionMappingsNode, **kwargs) \
@@ -1011,6 +1021,11 @@ def SectionToVolumeImage(Parameters, transform_node: TransformNode, Logger, Crop
 
     stosImages = StosImageNodes(transform_node, GroupNode.Downsample)  # type: ignore[union-attr]
 
+    if stosImages.ControlImageNode is None or stosImages.MappedImageNode is None:
+        prettyoutput.Log(
+            f"Skipping SectionToVolumeImage for {transform_node.Path}: missing control or mapped image")
+        return None
+
     # Compare the .stos file creation date to the output
 
     WarpedImageNode = transforms.RemoveOnMismatch(WarpedImageNode, 'InputTransformChecksum', transform_node.Checksum)
@@ -1101,6 +1116,9 @@ def AssembleStosOverlays(Parameters,
                     stosImages = StosImageNodes(StosTransformNode, group_node.Downsample)  # type: ignore[arg-type]
 
                     if stosImages.ControlImageNode is None or stosImages.MappedImageNode is None:
+                        prettyoutput.Log(
+                            f"Skipping STOS overlay for {StosTransformNode.Path}: missing control or mapped image "
+                            f"(empty or incomplete ImageSet)")
                         continue
 
                     if created_overlay:

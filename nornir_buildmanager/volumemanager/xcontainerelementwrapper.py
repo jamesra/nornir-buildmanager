@@ -300,13 +300,88 @@ class XContainerElementWrapper(XResourceElementWrapper):
         # self.attrib['Path'] = Path
 
     @staticmethod
-    def RaiseOnDuplicateLink(child: XElementWrapper, SaveElement: XElementWrapper):
+    def RaiseOnDuplicateLink(child: XElementWrapper, SaveElement: ElementTree.Element):
         link_tag = f'{child.tag}_Link'
-        find_str = f"{link_tag}[@Path='{child.Path}']"
+        path = child.attrib.get('Path', '')
+        find_str = f"{link_tag}[@Path='{path}']"
         existingNode = SaveElement.find(find_str)
         if existingNode is not None:
             raise DuplicateElementError(child,
                                         f"Found duplicate element when saving {ElementTree.tostring(SaveElement, encoding='utf-8')}\nDuplicate: {ElementTree.tostring(existingNode, encoding='utf-8')}")
+
+    @staticmethod
+    def _link_path_xpath(link_tag: str, path: str) -> str:
+        return f"{link_tag}[@Path='{path}']"
+
+    def _cleanup_duplicate_linked_container(
+            self,
+            child: XContainerElementWrapper,
+            SaveElement: ElementTree.Element) -> bool:
+        """Drop same-Path duplicates from the in-memory tree when a link collides.
+
+        Prefers a loaded container over a bare ``*_Link`` stub. Otherwise keeps
+        the link already present in *SaveElement* and removes *child*.
+
+        :return: True if the caller should append a link for *child*.
+        """
+        path = child.attrib.get('Path', '')
+        link_tag = f'{child.tag}_Link'
+
+        stubs = [
+            sibling for sibling in list(self)
+            if sibling is not child
+            and sibling.tag == link_tag
+            and sibling.attrib.get('Path', '') == path
+        ]
+
+        if stubs:
+            for stub in stubs:
+                self.logger.warning(
+                    f"Removing duplicate link stub {stub.tag}[@Path='{path}'] under {self.FullPath}; "
+                    f"keeping loaded {child.tag}")
+                # Stubs are appended to SaveElement by reference; drop them there too.
+                if stub in list(SaveElement):
+                    SaveElement.remove(stub)
+                if stub in self:
+                    self.remove(stub)
+            if SaveElement.find(self._link_path_xpath(link_tag, path)) is not None:
+                # Another full container already contributed a link; drop this child.
+                self.logger.warning(
+                    f"Removing duplicate loaded {child.tag}[@Path='{path}'] under {self.FullPath}")
+                if child in self:
+                    self.remove(child)
+                return False
+            return True
+
+        self.logger.warning(
+            f"Removing duplicate loaded {child.tag}[@Path='{path}'] under {self.FullPath}; "
+            f"keeping existing link already queued for save")
+        if child in self:
+            self.remove(child)
+        return False
+
+    def _cleanup_duplicate_link_stub(
+            self,
+            stub: XElementWrapper,
+            SaveElement: ElementTree.Element) -> bool:
+        """Drop a ``*_Link`` stub when SaveElement already has that Path.
+
+        Prefers whatever is already queued (often from a loaded container).
+
+        :return: True if the caller should append *stub* to *SaveElement*.
+        """
+        path = stub.attrib.get('Path', '')
+        link_tag = stub.tag
+        existing = SaveElement.find(self._link_path_xpath(link_tag, path))
+        if existing is None:
+            return True
+
+        self.logger.warning(
+            f"Removing duplicate link stub {link_tag}[@Path='{path}'] under {self.FullPath}; "
+            f"keeping existing link already queued for save")
+        if stub in self:
+            self.remove(stub)
+        return False
 
     def Save(self, tabLevel: int | None = None, recurse: bool = True):
         """
@@ -373,11 +448,16 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
             # SaveTree = ElementTree.ElementTree(SaveElement)
 
-            # Any child containers we create a link to and remove from our file
-            for i in range(len(self) - 1, -1, -1):
-                child = self[i]
+            # Any child containers we create a link to and remove from our file.
+            # Snapshot children so removals during duplicate cleanup do not re-visit nodes.
+            for child in list(self)[::-1]:
+                if child not in self:
+                    continue
                 if child.tag.endswith('_Link'):
-                    SaveElement.append(child)
+                    if self._cleanup_duplicate_link_stub(child, SaveElement):
+                        SaveElement.append(child)
+                    else:
+                        AnyChangesFound = True
                 elif isinstance(child, XContainerElementWrapper):
                     AnyChangesFound = AnyChangesFound or child.AttributesChanged  # Since linked elements display the elements attributes, we should update if they've changed
 
@@ -388,18 +468,19 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     if child.SaveAsLinkedElement:
                         linktag = f'{child.tag}_Link'
 
-                        # Sanity check to prevent duplicate link bugs
+                        # Sanity check to prevent duplicate link bugs; clean the
+                        # in-memory tree when Path collides (prefer loaded over stub).
                         try:
-                            if __debug__:
-                                self.RaiseOnDuplicateLink(child, SaveElement)  # type: ignore[arg-type]
-
+                            self.RaiseOnDuplicateLink(child, SaveElement)
                             LinkElement = XElementWrapper(linktag, attrib=child.attrib)
-                            # SaveElement.append(LinkElement)
                             SaveElement.append(LinkElement)
                         except DuplicateElementError:
                             self.logger.error(
                                 f"Duplicate link element found when saving {self.FullPath}:\n{SaveElement}")
-                            continue
+                            if self._cleanup_duplicate_linked_container(child, SaveElement):
+                                LinkElement = XElementWrapper(linktag, attrib=child.attrib)
+                                SaveElement.append(LinkElement)
+                            AnyChangesFound = True
 
                     else:
                         SaveElement.append(child)
