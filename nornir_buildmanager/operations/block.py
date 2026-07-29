@@ -1894,6 +1894,80 @@ def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, Ignore
                          Type=Type, MappedSections=MappedSections, **kwargs)
 
 
+def _count_stos_grid_refine_jobs(
+    mapping_node: MappingNode,
+    InputGroupNode: StosGroupNode,
+    block_node,
+    OutputStosGroupNode,
+    *,
+    UseMasks: bool,
+    Downsample: int,
+    ControlFilterPattern: str | None,
+    MappedFilterPattern: str | None,
+    MappedSections: frozenset[int] | None,
+    Logger: logging.Logger,
+) -> int:
+    """Count STOS pairs that will invoke the refine function in :func:`RefineInvoker`."""
+    job_count = 0
+    for MappedSection in mapping_node.Mapped:
+        if MappedSections is not None and MappedSection not in MappedSections:
+            continue
+
+        InputTransformNodes = list(
+            InputGroupNode.TransformsForMapping(MappedSection, mapping_node.Control))  # type: ignore[arg-type]
+        if not InputTransformNodes:
+            continue
+
+        for InputTransformNode in InputTransformNodes:
+            ControlFilter = __GetFirstMatchingFilter(
+                block_node,
+                InputTransformNode.ControlSectionNumber,
+                InputTransformNode.ControlChannelName,
+                ControlFilterPattern,
+            )
+            MappedFilter = __GetFirstMatchingFilter(
+                block_node,
+                InputTransformNode.MappedSectionNumber,
+                InputTransformNode.MappedChannelName,
+                MappedFilterPattern,
+            )
+            if ControlFilter is None or MappedFilter is None:
+                continue
+
+            try:
+                GetOrCreateRegistrationImageNodes(
+                    ControlFilter, Downsample, get_mask=UseMasks, logger=Logger)
+                GetOrCreateRegistrationImageNodes(
+                    MappedFilter, Downsample, get_mask=UseMasks, logger=Logger)
+            except NornirUserException:
+                continue
+
+            OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+                ControlFilter, MappedFilter)
+            OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
+            stosNode = OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter)
+
+            (InputStosFullPath, _) = __GetOrCreateInputStosFileForRegistration(
+                stos_group_node=OutputStosGroupNode,
+                InputTransformNode=InputTransformNode,
+                ControlFilter=ControlFilter,
+                MappedFilter=MappedFilter,
+                OutputDownsample=Downsample,
+                UseMasks=UseMasks,
+            )
+            if not os.path.exists(InputStosFullPath):
+                continue
+
+            if not os.path.exists(OutputStosFullPath):
+                manual_path = (
+                    OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
+                    if stosNode is not None else None)
+                if manual_path is None:
+                    job_count += 1
+
+    return job_count
+
+
 def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGroupNode,
                   UseMasks: bool, Downsample: int = 32,
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
@@ -1929,6 +2003,32 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
     if added:
         yield block_node  # type: ignore[misc]
+
+    refine_kwargs = dict(kwargs)
+    refine_kwargs['progress_depth_base'] = 1
+    total_refine_jobs = _count_stos_grid_refine_jobs(
+        mapping_node,
+        InputGroupNode,
+        block_node,
+        OutputStosGroupNode,
+        UseMasks=UseMasks,
+        Downsample=Downsample,
+        ControlFilterPattern=ControlFilterPattern,
+        MappedFilterPattern=MappedFilterPattern,
+        MappedSections=MappedSections,
+        Logger=Logger,
+    )
+    completed_refine_jobs = 0
+    refine_files_label = f"StosGridRefine → {OutputStosGroupName}"
+    if total_refine_jobs:
+        publish_run_event(
+            "iterate_progress",
+            current=0,
+            total=total_refine_jobs,
+            depth=0,
+            track_id="stos_refine:files",
+            label=refine_files_label,
+        )
 
     for MappedSection in mapping_node.Mapped:
 
@@ -2064,7 +2164,7 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
                 ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
                 if ManualStosFileFullPath is None:
                     try:
-                        RefineFunc(InputStosFullPath, OutputStosFullPath, **kwargs)
+                        RefineFunc(InputStosFullPath, OutputStosFullPath, **refine_kwargs)
                     except Exception as e:
                         prettyoutput.Log(f"Exception calling stos refine function {RefineFunc}:\n{e}\n\n")
                         raise
@@ -2075,15 +2175,25 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
                         stosNode = None
                         yield OutputSectionMappingNode
                         continue
-                    else:
-                        if not stosfile.StosFile.IsValid(OutputStosFullPath):
-                            os.remove(OutputStosFullPath)
-                            OutputSectionMappingNode.remove(stosNode)
-                            stosNode = None
-                            prettyoutput.Log(
-                                "Transform generated by refine was unable to be loaded. Deleting.  Check input transform: " + OutputStosFullPath)
-                            yield OutputSectionMappingNode
-                            continue
+                    if not stosfile.StosFile.IsValid(OutputStosFullPath):
+                        os.remove(OutputStosFullPath)
+                        OutputSectionMappingNode.remove(stosNode)
+                        stosNode = None
+                        prettyoutput.Log(
+                            "Transform generated by refine was unable to be loaded. Deleting.  Check input transform: " + OutputStosFullPath)
+                        yield OutputSectionMappingNode
+                        continue
+
+                    completed_refine_jobs += 1
+                    if total_refine_jobs:
+                        publish_run_event(
+                            "iterate_progress",
+                            current=completed_refine_jobs,
+                            total=total_refine_jobs,
+                            depth=0,
+                            track_id="stos_refine:files",
+                            label=refine_files_label,
+                        )
                 else:
                     prettyoutput.Log(
                         "Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
