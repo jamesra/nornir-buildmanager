@@ -50,7 +50,8 @@ echo "Python        : $PYTHON"
 echo "Compute lib   : $COMP_LIB"
 echo
 
+# ImportDir is a positional argparse arg — pass the path alone (not ImportDir=...).
 exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager.build \
   -debug -computational_library "$COMP_LIB" \
   "$VOLUME_DIR" \
-  ImportIDoc "ImportDir=${IMPORT_DIR}"
+  ImportIDoc "${IMPORT_DIR}"

@@ -154,7 +154,7 @@ def BuildParserRoot() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser('Buildscript', conflict_handler='resolve',
                                      description='Options available to all build commands. Specific pipelines extend this argument list.',
                                      epilog='Examples:\n'
-                                            '  nornir-build ImportIDoc /data/volume ImportDir=/data/idoc\n'
+                                            '  nornir-build ImportIDoc /data/volume /data/idoc\n'
                                             '  nornir-build -debug -computational_library cupy Mosaic /data/volume -Sections 1-10\n'
                                             '  nornir-build help Mosaic')
     _AddParserRootArguments(parser)

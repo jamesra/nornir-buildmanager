@@ -5,7 +5,7 @@ Constructs 2D and 3D datasets from 2D image mosaics using the Nornir tools.
 ## Quick start
 
 - CLI entrypoint: `nornir-build`
-- Typical import: `nornir-build ImportIDoc /data/volume ImportDir=/data/idoc`
+- Typical import: `nornir-build ImportIDoc /data/volume /data/idoc`
 - Typical preparation: `nornir-build Prune /data/volume -InputFilter Raw8 -DefaultThreshold 0.2`
 - Typical registration: `nornir-build Mosaic /data/volume -InputFilter Raw8 -InputTransform Prune`
 

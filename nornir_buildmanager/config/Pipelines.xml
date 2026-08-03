@@ -10,7 +10,7 @@
                   help="E-Mail addresses for reports. Use with pipelines that emit notifications." nargs="*"/>
     </Arguments>
 
-    <Pipeline Name="ImportIDoc" Help="Import SerialEM IDOC into a volume." Description="Imports SerialEM IDOC metadata and tile images into VolumeData.xml sections/channels. Use this as the normal first step for IDOC datasets before prune/mosaic alignment." Epilog="Example: nornir-build ImportIDoc /data/volume ImportDir=/data/idoc -Sections 1-10 -CameraBpp 14">
+    <Pipeline Name="ImportIDoc" Help="Import SerialEM IDOC into a volume." Description="Imports SerialEM IDOC metadata and tile images into VolumeData.xml sections/channels. Use this as the normal first step for IDOC datasets before prune/mosaic alignment." Epilog="Example: nornir-build ImportIDoc /data/volume /data/idoc -Sections 1-10 -CameraBpp 14">
         <Arguments>
             <Argument flag="ImportDir"
                       help="Directory to import from.  The .idoc files in subdirectories should be named with the desired section number after import. i.e. 0005.idoc to import the file as section #5."/>
@@ -35,7 +35,7 @@
                     CameraBpp="#CameraBpp" Sections="#Sections"/>
     </Pipeline>
 
-    <Pipeline Name="ImportPMG" Help="Import PMG file into a volume" Description="Imports PMG files named with section/channel metadata into a volume. Use -Scale to provide nanometers-per-pixel for downstream geometry and reporting." Epilog="Example: nornir-build ImportPMG /data/volume ImportDir=/data/pmg -Scale 4.0">
+    <Pipeline Name="ImportPMG" Help="Import PMG file into a volume" Description="Imports PMG files named with section/channel metadata into a volume. Use -Scale to provide nanometers-per-pixel for downstream geometry and reporting." Epilog="Example: nornir-build ImportPMG /data/volume /data/pmg -Scale 4.0">
         <Arguments>
             <Argument flag="ImportDir"
                       help="Directory to import from.  The PMG file should follow this format: Slide#_Block#_Section#_Initials_Mag_Spot_Probe.  However only Section and Probe are used as the section number and channel name respectively.  The rest is stored as meta-data."/>
@@ -87,7 +87,7 @@
 
     </Pipeline>
 
-    <Pipeline Name="ImportDM4" Help="Import Digital Micrograph 4" Description="Imports DM4 tile datasets into channels/sections and records overlap metadata for mosaic registration." Epilog="Example: nornir-build ImportDM4 /data/volume ImportDir=/data/dm4 -Sections 1-20 -overlap 10,20">
+    <Pipeline Name="ImportDM4" Help="Import Digital Micrograph 4" Description="Imports DM4 tile datasets into channels/sections and records overlap metadata for mosaic registration." Epilog="Example: nornir-build ImportDM4 /data/volume /data/dm4 -Sections 1-20 -overlap 10,20">
         <Arguments>
             <Argument flag="ImportDir" help="Directory to import from"/>
             <Argument flag="-ext" dest="extension" default="dm4"

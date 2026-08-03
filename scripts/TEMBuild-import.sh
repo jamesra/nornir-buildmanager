@@ -55,13 +55,11 @@ echo "Python        : $PYTHON"
 echo "Compute lib   : $COMP_LIB"
 echo
 
-# Same sequential chain as launch.json "TEM Build: full sequence (sequential)",
-# with ImportIDoc prepended. Volume path is first positional (legacy launch order);
-# nornir_buildmanager.build reorders to subcommand-first.
+# ImportDir is a positional argparse arg — pass the path alone (not ImportDir=...).
 exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager.build \
   -debug -computational_library "$COMP_LIB" \
   "$VOLUME_DIR" \
-  ImportIDoc "ImportDir=${IMPORT_DIR}" \
+  ImportIDoc "${IMPORT_DIR}" \
   --then Prune -InputFilter Raw8 -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \
   --then Histogram -Filters Raw8 -InputTransform Prune -Downsample 4 -Channels TEM \
   --then AdjustContrast -InputFilter Raw8 -OutputFilter Leveled -InputTransform Prune -Channels TEM \
