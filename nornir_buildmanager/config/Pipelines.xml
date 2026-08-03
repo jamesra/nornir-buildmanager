@@ -1912,9 +1912,9 @@
             <Argument flag="-IgnoreMasks" action="store_true" dest="IgnoreMasks"
                       help="Ignore masks for images if they are available.  Masked areas are replaced with random noise for alignment purposes."
                       required="False"/>
-            <Argument flag="-Spacing" default="96" dest="grid_spacing"
+            <Argument flag="-Spacing" default="192" dest="grid_spacing"
                       type="int" help="Grid cell spacing in pixels" required="False"/>
-            <Argument flag="-CellArea" default="128" dest="cell_size"
+            <Argument flag="-CellArea" default="256" dest="cell_size"
                       type="int"
                       help="Area around each grid point to register, in pixels.  It is suggested to have overlap between the cells.  So cells of [128,128] would be spaced [64,64] apart."
                       required="False"/>

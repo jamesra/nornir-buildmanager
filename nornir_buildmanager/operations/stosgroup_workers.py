@@ -7,7 +7,9 @@ import logging
 import os
 import shutil
 from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 import numpy as np
@@ -15,6 +17,7 @@ import numpy as np
 import nornir_imageregistration
 import nornir_imageregistration.transforms
 from nornir_imageregistration.files import stosfile
+from nornir_shared import files as shared_files
 
 _logger = logging.getLogger(__name__)
 
@@ -36,6 +39,55 @@ class ScaleStosResult:
     """Outcome of scaling one STOS file."""
 
     generated: bool
+
+
+class RefineScanDecision(Enum):
+    """Outcome of a path-based STOS grid refine need-check."""
+
+    SKIP = 'skip'
+    MANUAL_COPY = 'manual_copy'
+    REFINE = 'refine'
+    INVALIDATE_THEN_REFINE = 'invalidate_then_refine'
+
+
+@dataclass(frozen=True)
+class ImageCheckSnapshot:
+    """Filesystem/checksum facts for one STOS input image (or mask)."""
+
+    stored_checksum: str
+    image_checksum: str | None
+    image_path: str | None
+
+
+@dataclass(frozen=True)
+class RefineScanSnapshot:
+    """Read-only facts for deciding whether a STOS pair needs grid refine."""
+
+    output_stos_path: str
+    input_stos_path: str
+    input_checksum: str
+    input_transform_path: str | None
+    locked: bool
+    has_input_transform_checksum_attr: bool
+    stored_input_transform_checksum: str | None
+    manual_path: str | None
+    mapped_section: int
+    control_section: int
+    image_checks: tuple[ImageCheckSnapshot, ...]
+    input_transform_name: str | None = None
+    input_transform_type: str | None = None
+    input_transform_cropbox: Any = None
+    output_input_transform: str | None = None
+    output_input_transform_type: str | None = None
+    output_input_transform_cropbox: Any = None
+
+
+@dataclass(frozen=True)
+class RefineScanDecisionResult:
+    """Decision plus human-readable reason for one refine scan snapshot."""
+
+    decision: RefineScanDecision
+    reason: str
 
 
 @dataclass
@@ -143,10 +195,10 @@ def scale_stos_file(input_stos_path: str,
     if use_masks is None:
         use_masks = input_stos.HasMasks
 
-    if not (input_stos.ControlImagePath == control_image_path and
-            input_stos.MappedImagePath == mapped_image_path and
-            input_stos.ControlMaskFullPath == control_mask_path and
-            input_stos.MappedMaskFullPath == mapped_mask_path and
+    if not (stosfile.paths_refer_to_same_file(input_stos.ControlImageFullPath, control_image_path) and
+            stosfile.paths_refer_to_same_file(input_stos.MappedImageFullPath, mapped_image_path) and
+            stosfile.paths_refer_to_same_file(input_stos.ControlMaskFullPath, control_mask_path) and
+            stosfile.paths_refer_to_same_file(input_stos.MappedMaskFullPath, mapped_mask_path) and
             output_downsample == input_downsample and
             input_stos.HasMasks == use_masks):
         modified_input_stos = input_stos.ChangeTransformPixelSpacing(
@@ -183,6 +235,127 @@ def default_max_in_flight(workers: int | None) -> int:
     if workers is not None and workers > 0:
         return workers
     return os.cpu_count() or 4
+
+
+def default_refine_scan_workers() -> int:
+    """Return the thread-pool size for path-based STOS refine scan checks."""
+    return min(32, (os.cpu_count() or 4) + 4)
+
+
+def _image_check_outdated(check: ImageCheckSnapshot, output_stos_path: str) -> bool:
+    """Return whether one input image/mask makes the refine output stale."""
+    if check.image_path is None and check.image_checksum is None:
+        return True
+
+    if len(check.stored_checksum) > 0:
+        return check.stored_checksum != (check.image_checksum or '')
+
+    if not check.image_path or not os.path.exists(check.image_path):
+        return True
+
+    return shared_files.IsOutdated(check.image_path, output_stos_path)
+
+
+def _input_file_newer_than_output(input_path: str | None, output_path: str) -> bool:
+    """True when the input transform file mtime is newer than the output file."""
+    if not input_path or not os.path.exists(input_path) or not os.path.exists(output_path):
+        return False
+    try:
+        return os.path.getmtime(input_path) > os.path.getmtime(output_path)
+    except OSError:
+        return False
+
+
+def _output_matches_input_checksum(snapshot: RefineScanSnapshot) -> bool:
+    """Return whether stored output metadata matches the scanned input checksum."""
+    if snapshot.stored_input_transform_checksum != snapshot.input_checksum:
+        return False
+    if snapshot.input_transform_name is not None:
+        if snapshot.output_input_transform != snapshot.input_transform_name:
+            return False
+        if snapshot.output_input_transform_type != snapshot.input_transform_type:
+            return False
+        if snapshot.output_input_transform_cropbox != snapshot.input_transform_cropbox:
+            return False
+    return True
+
+
+def decide_stos_grid_refine_need(snapshot: RefineScanSnapshot) -> RefineScanDecisionResult:
+    """Decide whether a STOS pair needs refine using path/checksum facts only."""
+    output_exists = os.path.exists(snapshot.output_stos_path)
+
+    if not output_exists:
+        if snapshot.manual_path is not None:
+            return RefineScanDecisionResult(
+                RefineScanDecision.MANUAL_COPY,
+                'manual override present and output missing')
+        return RefineScanDecisionResult(
+            RefineScanDecision.REFINE,
+            'output transform file missing')
+
+    rebuild_reason: str | None = None
+    for check in snapshot.image_checks:
+        if _image_check_outdated(check, snapshot.output_stos_path):
+            rebuild_reason = 'input images outdated'
+            break
+
+    if rebuild_reason is None and not snapshot.has_input_transform_checksum_attr:
+        rebuild_reason = (
+            'InputTransformChecksum attribute is required on transform element and was not found')
+
+    if rebuild_reason is None and not _output_matches_input_checksum(snapshot):
+        rebuild_reason = 'input transform checksum mismatch'
+
+    if rebuild_reason is None and _input_file_newer_than_output(
+            snapshot.input_transform_path, snapshot.output_stos_path):
+        rebuild_reason = 'input transform file is newer than refine output'
+
+    if rebuild_reason is None and not stosfile.StosFile.IsValid(snapshot.output_stos_path):
+        rebuild_reason = 'existing refine output is not a valid STOS file'
+
+    if rebuild_reason is not None:
+        if snapshot.locked:
+            return RefineScanDecisionResult(
+                RefineScanDecision.SKIP,
+                'output transform is locked')
+        return RefineScanDecisionResult(
+            RefineScanDecision.INVALIDATE_THEN_REFINE,
+            rebuild_reason)
+
+    if snapshot.locked:
+        return RefineScanDecisionResult(
+            RefineScanDecision.SKIP,
+            'output transform is locked')
+
+    return RefineScanDecisionResult(
+        RefineScanDecision.SKIP,
+        'existing output matches input transform')
+
+
+def decide_stos_grid_refine_needs(
+        snapshots: Sequence[RefineScanSnapshot],
+        *,
+        max_workers: int | None = None) -> list[RefineScanDecisionResult]:
+    """Run :func:`decide_stos_grid_refine_need` over *snapshots* with a thread pool."""
+    if not snapshots:
+        return []
+
+    if len(snapshots) == 1:
+        return [decide_stos_grid_refine_need(snapshots[0])]
+
+    workers = max_workers if max_workers is not None else default_refine_scan_workers()
+    workers = max(1, min(workers, len(snapshots)))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        return list(executor.map(decide_stos_grid_refine_need, snapshots))
+
+
+def refine_scan_sort_key(snapshot: RefineScanSnapshot) -> tuple[int, int, str]:
+    """Stable sort key for refine work: mapped section, control section, basename."""
+    return (
+        snapshot.mapped_section,
+        snapshot.control_section,
+        os.path.basename(snapshot.output_stos_path),
+    )
 
 
 def run_bounded_stos_jobs(pool: Any,

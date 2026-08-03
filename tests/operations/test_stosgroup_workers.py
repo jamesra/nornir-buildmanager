@@ -56,8 +56,8 @@ def test_scale_stos_file_copy_only_when_unchanged(fixture_stos: Path, tmp_path: 
         str(tmp_path / 'scaled.stos'),
         input_downsample=16,
         output_downsample=16,
-        control_image_path=loaded.ControlImagePath,  # type: ignore[arg-type]
-        mapped_image_path=loaded.MappedImagePath,  # type: ignore[arg-type]
+        control_image_path=loaded.ControlImageFullPath,
+        mapped_image_path=loaded.MappedImageFullPath,
         control_mask_path=loaded.ControlMaskFullPath,
         mapped_mask_path=loaded.MappedMaskFullPath,
         use_masks=loaded.HasMasks,
@@ -75,8 +75,8 @@ def test_scale_stos_file_generates_when_downsample_changes(fixture_stos: Path, t
         str(output_path),
         input_downsample=16,
         output_downsample=8,
-        control_image_path=loaded.ControlImagePath,  # type: ignore[arg-type]
-        mapped_image_path=loaded.MappedImagePath,  # type: ignore[arg-type]
+        control_image_path=loaded.ControlImageFullPath,
+        mapped_image_path=loaded.MappedImageFullPath,
         control_mask_path=loaded.ControlMaskFullPath,
         mapped_mask_path=loaded.MappedMaskFullPath,
         use_masks=loaded.HasMasks,

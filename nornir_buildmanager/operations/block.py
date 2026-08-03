@@ -88,6 +88,78 @@ class _ScaleStosJobContext:
     input_stos_path: str
 
 
+@dataclass
+class _RefineStosJobContext:
+    """Main-process metadata for one STOS grid refine job."""
+
+    output_stos_node: TransformNode
+    input_transform_node: TransformNode
+    output_section_mapping_node: SectionMappingsNode
+    output_group_node: StosGroupNode
+    control_filter: FilterNode
+    mapped_filter: FilterNode
+    output_file: str
+    output_type: str
+    use_masks: bool
+    downsample: int
+    mapped_section: int
+    control_section: int
+    input_stos_path: str
+    input_stos_checksum: str
+    output_stos_path: str
+    manual_path: str | None
+    decision: stosgroup_workers.RefineScanDecision
+    decision_reason: str
+
+
+def _stos_image_check_snapshot(
+        stos_node: TransformNode,
+        checksum_attr: str,
+        image_node: ImageNode | None) -> stosgroup_workers.ImageCheckSnapshot:
+    """Capture checksum/path facts for one STOS input image or mask."""
+    if image_node is None:
+        return stosgroup_workers.ImageCheckSnapshot(
+            stored_checksum='',
+            image_checksum=None,
+            image_path=None,
+        )
+    return stosgroup_workers.ImageCheckSnapshot(
+        stored_checksum=stos_node.attrib.get(checksum_attr, '') or '',
+        image_checksum=getattr(image_node, 'Checksum', None),
+        image_path=getattr(image_node, 'FullPath', None),
+    )
+
+
+def _build_refine_image_check_snapshots(
+        output_group_node: StosGroupNode,
+        stos_node: TransformNode,
+        control_filter: FilterNode,
+        mapped_filter: FilterNode,
+        use_masks: bool) -> tuple[stosgroup_workers.ImageCheckSnapshot, ...]:
+    """Build path-based image/mask check snapshots for refine scan decisions."""
+    try:
+        control_image = control_filter.GetOrCreateImage(output_group_node.Downsample)
+        mapped_image = mapped_filter.GetOrCreateImage(output_group_node.Downsample)
+    except NornirUserException:
+        return (
+            stosgroup_workers.ImageCheckSnapshot('', None, None),
+            stosgroup_workers.ImageCheckSnapshot('', None, None),
+        )
+
+    checks: list[stosgroup_workers.ImageCheckSnapshot] = [
+        _stos_image_check_snapshot(stos_node, 'ControlImageChecksum', control_image),
+        _stos_image_check_snapshot(stos_node, 'MappedImageChecksum', mapped_image),
+    ]
+    if use_masks:
+        checks.append(_stos_image_check_snapshot(
+            stos_node, 'ControlMaskImageChecksum',
+            control_filter.GetMaskImage(output_group_node.Downsample)))
+        checks.append(_stos_image_check_snapshot(
+            stos_node, 'MappedMaskImageChecksum',
+            mapped_filter.GetMaskImage(output_group_node.Downsample)))
+    return tuple(checks)
+
+
 def _apply_linear_blend_job(context: _LinearBlendJobContext,
                             result: stosgroup_workers.LinearBlendResult,
                             min_blend: float | None,
@@ -716,8 +788,15 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
         if ManualStosFileFullPath:
             prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
             shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
-            # Ensure we add or remove masks according to the parameters
-            SetStosFileMasks(stosNode.FullPath, control_filter, mapped_filter, use_masks, stos_group.Downsample)  # type: ignore[arg-type]
+            # Relative image lines from Manual/ are wrong under the group root — rebase.
+            RebaseCopiedStosPaths(
+                stosNode.FullPath,
+                control_filter,
+                mapped_filter,
+                stos_group.Downsample,  # type: ignore[arg-type]
+                use_masks,
+                StosTransformNode=stosNode,
+            )
             manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
 
             stosNode.InputTransformChecksum = manual_input_checksum
@@ -962,10 +1041,12 @@ def UpdateStosImagePaths(StosTransformPath: str, ControlImageFullPath: str, Mapp
     # ir-stom's -slice_dirs argument is broken for masks, so we have to patch the stos file before use
     InputStos = stosfile.StosFile.Load(StosTransformPath)
 
-    NeedsUpdate = InputStos.ControlImageFullPath != ControlImageFullPath or \
-                  InputStos.MappedImageFullPath != MappedImageFullPath or \
-                  InputStos.ControlMaskFullPath != ControlImageMaskFullPath or \
-                  InputStos.MappedMaskFullPath != MappedImageMaskFullPath
+    NeedsUpdate = (
+        not stosfile.paths_refer_to_same_file(InputStos.ControlImageFullPath, ControlImageFullPath)
+        or not stosfile.paths_refer_to_same_file(InputStos.MappedImageFullPath, MappedImageFullPath)
+        or not stosfile.paths_refer_to_same_file(InputStos.ControlMaskFullPath, ControlImageMaskFullPath)
+        or not stosfile.paths_refer_to_same_file(InputStos.MappedMaskFullPath, MappedImageMaskFullPath)
+    )
 
     if NeedsUpdate:
         InputStos.ControlImageFullPath = ControlImageFullPath
@@ -999,6 +1080,43 @@ def FixStosFilePaths(ControlFilter: FilterNode, MappedFilter: FilterNode, StosTr
                                     MappedFilter.GetImage(Downsample).FullPath,  # type: ignore[union-attr]
                                     ControlFilter.GetMaskImage(Downsample).FullPath,  # type: ignore[union-attr]
                                     MappedFilter.GetMaskImage(Downsample).FullPath)  # type: ignore[union-attr]
+
+
+def RebaseCopiedStosPaths(StosFilePath: str,
+                          ControlFilter: FilterNode,
+                          MappedFilter: FilterNode,
+                          Downsample: int,
+                          UseMasks: bool,
+                          StosTransformNode: TransformNode | None = None) -> None:
+    """Rewrite image/mask paths after copying a ``.stos`` into a new directory.
+
+    Relative image lines are valid only for the source directory. After a Manual
+    → group-root (or reverse) ``shutil.copy``, rewrite absolute filter paths and
+    ``Save`` so on-disk lines are relative to the destination ``.stos``.
+    """
+    if StosTransformNode is not None:
+        FixStosFilePaths(
+            ControlFilter, MappedFilter, StosTransformNode, Downsample, StosFilePath=StosFilePath)
+    else:
+        control_image = ControlFilter.GetImage(Downsample)
+        mapped_image = MappedFilter.GetImage(Downsample)
+        if control_image is None or mapped_image is None:
+            prettyoutput.LogErr(
+                f"Cannot rebase STOS paths; missing images for {StosFilePath}")
+            return
+        control_mask = ControlFilter.GetMaskImage(Downsample)
+        mapped_mask = MappedFilter.GetMaskImage(Downsample)
+        if control_mask is None or mapped_mask is None:
+            UpdateStosImagePaths(StosFilePath, control_image.FullPath, mapped_image.FullPath)
+        else:
+            UpdateStosImagePaths(
+                StosFilePath,
+                control_image.FullPath,
+                mapped_image.FullPath,
+                control_mask.FullPath,
+                mapped_mask.FullPath,
+            )
+    SetStosFileMasks(StosFilePath, ControlFilter, MappedFilter, UseMasks, Downsample)
 
 
 def SectionToVolumeImage(Parameters, transform_node: TransformNode, Logger, CropUndefined: bool = True,
@@ -1584,11 +1702,12 @@ def IsStosNodeOutdated(InputTransformNode: TransformNode, OutputTransformNode: T
         ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
         MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
 
-    return not (OutputStos.ControlImagePath == ControlImageFullPath and
-                OutputStos.MappedImagePath == MappedImageFullPath and
-                OutputStos.ControlMaskFullPath == ControlMaskImageFullPath and
-                OutputStos.MappedMaskFullPath == MappedMaskImageFullPath and
-                OutputStos.HasMasks == UseMasks)
+    return not (
+        stosfile.paths_refer_to_same_file(OutputStos.ControlImageFullPath, ControlImageFullPath)
+        and stosfile.paths_refer_to_same_file(OutputStos.MappedImageFullPath, MappedImageFullPath)
+        and stosfile.paths_refer_to_same_file(OutputStos.ControlMaskFullPath, ControlMaskImageFullPath)
+        and stosfile.paths_refer_to_same_file(OutputStos.MappedMaskFullPath, MappedMaskImageFullPath)
+        and OutputStos.HasMasks == UseMasks)
 
 
 def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: str, OutputDownsample: int,
@@ -1605,24 +1724,29 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
     """
 
     # Replace the automatic files if they are outdated.
-    result = files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputTransformPath)
+    # RemoveOutdatedFile returns True when the output is missing or was removed as
+    # older than the input; False when the output exists and is not time-outdated.
+    # (It never returns None — that is OutdatedFile's API.)
+    if files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputTransformPath):
+        return True
 
-    if result is None:
-        # if not os.path.exists(OutputTransformPath):
+    if not os.path.exists(OutputTransformPath):
         return True
 
     if UseMasks is None:
         InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
         UseMasks = InputStos.HasMasks
 
-    OutputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+    OutputStos = stosfile.StosFile.Load(OutputTransformPath)
     if not OutputStos.HasMasks == UseMasks:
         return True
 
     ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
     MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
 
-    if not (OutputStos.ControlImagePath == ControlImageFullPath and OutputStos.MappedImagePath == MappedImageFullPath):
+    if not (
+            stosfile.paths_refer_to_same_file(OutputStos.ControlImageFullPath, ControlImageFullPath)
+            and stosfile.paths_refer_to_same_file(OutputStos.MappedImageFullPath, MappedImageFullPath)):
         return True
 
     ControlMaskImageFullPath = None
@@ -1631,7 +1755,9 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
         ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
         MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
 
-        if not OutputStos.ControlMaskFullPath == ControlMaskImageFullPath and OutputStos.MappedMaskFullPath == MappedMaskImageFullPath:
+        if not (
+                stosfile.paths_refer_to_same_file(OutputStos.ControlMaskFullPath, ControlMaskImageFullPath)
+                and stosfile.paths_refer_to_same_file(OutputStos.MappedMaskFullPath, MappedMaskImageFullPath)):
             return True
 
     return False
@@ -1702,12 +1828,13 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
         MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
 
     # If all the core details are the same we can save time by copying the data instead
-    if not (InputStos.ControlImagePath == ControlImageFullPath and
-            InputStos.MappedImagePath == MappedImageFullPath and
-            InputStos.ControlMaskFullPath == ControlMaskImageFullPath and
-            InputStos.MappedMaskFullPath == MappedMaskImageFullPath and
-            OutputDownsample == InputDownsample and
-            InputStos.HasMasks == UseMasks):
+    if not (
+            stosfile.paths_refer_to_same_file(InputStos.ControlImageFullPath, ControlImageFullPath)
+            and stosfile.paths_refer_to_same_file(InputStos.MappedImageFullPath, MappedImageFullPath)
+            and stosfile.paths_refer_to_same_file(InputStos.ControlMaskFullPath, ControlMaskImageFullPath)
+            and stosfile.paths_refer_to_same_file(InputStos.MappedMaskFullPath, MappedMaskImageFullPath)
+            and OutputDownsample == InputDownsample
+            and InputStos.HasMasks == UseMasks):
 
         ModifiedInputStos = InputStos.ChangeTransformPixelSpacing(oldspacing=InputDownsample,
                                                                   newspacing=OutputDownsample,
@@ -1862,7 +1989,7 @@ def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: Stos
 
 def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, IgnoreMasks, Downsample=32,
                    ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
-                   Type=None, MappedSections: None | list[int] | frozenset[int] = None, **kwargs) -> Generator[
+                   Type=None, MappedSections: None | list[int] | frozenset[int] = None, **kwargs) -> typing.Generator[
     XElementWrapper, None, None]:
     """
     Invoke a command to execute a function with an input and output .stos file.  The function
@@ -1894,78 +2021,226 @@ def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, Ignore
                          Type=Type, MappedSections=MappedSections, **kwargs)
 
 
-def _count_stos_grid_refine_jobs(
-    mapping_node: MappingNode,
-    InputGroupNode: StosGroupNode,
-    block_node,
-    OutputStosGroupNode,
-    *,
-    UseMasks: bool,
-    Downsample: int,
-    ControlFilterPattern: str | None,
-    MappedFilterPattern: str | None,
-    MappedSections: frozenset[int] | None,
-    Logger: logging.Logger,
-) -> int:
-    """Count STOS pairs that will invoke the refine function in :func:`RefineInvoker`."""
-    job_count = 0
-    for MappedSection in mapping_node.Mapped:
+def _enumerate_stos_grid_refine_candidates(
+        mapping_node: MappingNode,
+        InputGroupNode: StosGroupNode,
+        OutputStosGroupNode: StosGroupNode,
+        *,
+        UseMasks: bool,
+        Downsample: int,
+        ControlFilterPattern: str | None,
+        MappedFilterPattern: str | None,
+        MappedSections: frozenset[int] | None,
+        Type: str,
+        Logger: logging.Logger) -> typing.Generator[
+            tuple[stosgroup_workers.RefineScanSnapshot, _RefineStosJobContext] | XElementWrapper,
+            None,
+            None]:
+    """Yield XML updates and (snapshot, context) pairs for STOS grid refine scan."""
+    block_node = InputGroupNode.FindParent('Block')
+
+    for MappedSection in sorted(mapping_node.Mapped):
         if MappedSections is not None and MappedSection not in MappedSections:
             continue
 
         InputTransformNodes = list(
             InputGroupNode.TransformsForMapping(MappedSection, mapping_node.Control))  # type: ignore[arg-type]
         if not InputTransformNodes:
+            Logger.warning(
+                "No transform found for mapping " + str(MappedSection) + " -> " + str(mapping_node.Control))
             continue
 
         for InputTransformNode in InputTransformNodes:
-            ControlFilter = __GetFirstMatchingFilter(
-                block_node,
-                InputTransformNode.ControlSectionNumber,
-                InputTransformNode.ControlChannelName,
-                ControlFilterPattern,
-            )
-            MappedFilter = __GetFirstMatchingFilter(
-                block_node,
-                InputTransformNode.MappedSectionNumber,
-                InputTransformNode.MappedChannelName,
-                MappedFilterPattern,
-            )
+            OutputDownsample = Downsample
+
+            InputSectionMappingNode = InputTransformNode.FindParent('SectionMappings')
+            OutputSectionMappingNode = nornir_buildmanager.volumemanager.sectionmappingsnode.SectionMappingsNode.Create(
+                **InputSectionMappingNode.attrib)  # type: ignore[union-attr]
+
+            ControlFilter = __GetFirstMatchingFilter(block_node,
+                                                     InputTransformNode.ControlSectionNumber,
+                                                     InputTransformNode.ControlChannelName,
+                                                     ControlFilterPattern)
+
+            MappedFilter = __GetFirstMatchingFilter(block_node,
+                                                    InputTransformNode.MappedSectionNumber,
+                                                    InputTransformNode.MappedChannelName,
+                                                    MappedFilterPattern)
+
+            (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(
+                OutputSectionMappingNode, 'MappedSectionNumber')
+
+            existing_output_transform_node = None
+            if added:
+                yield OutputStosGroupNode
+            else:
+                existing_output_transform_node = OutputSectionMappingNode.FindStosTransform(
+                    ControlSectionNumber=mapping_node.Control,
+                    ControlChannelName=InputTransformNode.ControlChannelName,
+                    ControlFilterName=InputTransformNode.ControlFilterName,
+                    MappedSectionNumber=MappedSection,
+                    MappedChannelName=InputTransformNode.MappedChannelName,
+                    MappedFilterName=InputTransformNode.MappedFilterName)
+
+            if ControlFilter is None:
+                Logger.warning("No control filter, skipping refinement")
+                if existing_output_transform_node is not None:
+                    existing_output_transform_node.Clean("No control filter found in stos grid")
+
+            if MappedFilter is None:
+                Logger.warning("No mapped filter, skipping refinement")
+                if existing_output_transform_node is not None:
+                    existing_output_transform_node.Clean("No mapped filter found in stos grid")
+
             if ControlFilter is None or MappedFilter is None:
+                yield OutputStosGroupNode
                 continue
 
             try:
                 GetOrCreateRegistrationImageNodes(
-                    ControlFilter, Downsample, get_mask=UseMasks, logger=Logger)
+                    ControlFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
                 GetOrCreateRegistrationImageNodes(
-                    MappedFilter, Downsample, get_mask=UseMasks, logger=Logger)
-            except NornirUserException:
+                    MappedFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
+            except NornirUserException as e:
+                prettyoutput.LogErr(str(e))
                 continue
 
             OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
                 ControlFilter, MappedFilter)
             OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
-            stosNode = OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter)
+            stosNode = (
+                existing_output_transform_node
+                if existing_output_transform_node is not None
+                else OutputStosGroupNode.GetStosTransformNode(ControlFilter, MappedFilter))
+            if stosNode is None:
+                stosNode = OutputStosGroupNode.CreateStosTransformNode(
+                    ControlFilter, MappedFilter, OutputType=Type, OutputPath=OutputFile)
 
-            (InputStosFullPath, _) = __GetOrCreateInputStosFileForRegistration(
+            (InputStosFullPath, InputStosFileChecksum) = __GetOrCreateInputStosFileForRegistration(
                 stos_group_node=OutputStosGroupNode,
                 InputTransformNode=InputTransformNode,
                 ControlFilter=ControlFilter,
                 MappedFilter=MappedFilter,
-                OutputDownsample=Downsample,
-                UseMasks=UseMasks,
-            )
+                OutputDownsample=OutputDownsample,
+                UseMasks=UseMasks)
+
             if not os.path.exists(InputStosFullPath):
+                Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
+                InputGroupNode.remove(InputTransformNode)
                 continue
 
-            if not os.path.exists(OutputStosFullPath):
-                manual_path = (
-                    OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
-                    if stosNode is not None else None)
-                if manual_path is None:
-                    job_count += 1
+            manual_path = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
+            image_checks = _build_refine_image_check_snapshots(
+                OutputStosGroupNode, stosNode, ControlFilter, MappedFilter, UseMasks)
 
-    return job_count
+            snapshot = stosgroup_workers.RefineScanSnapshot(
+                output_stos_path=OutputStosFullPath,
+                input_stos_path=InputStosFullPath,
+                input_checksum=InputStosFileChecksum,
+                input_transform_path=getattr(InputTransformNode, 'FullPath', None),
+                locked=bool(getattr(stosNode, 'Locked', False)),
+                has_input_transform_checksum_attr='InputTransformChecksum' in stosNode.attrib,
+                stored_input_transform_checksum=stosNode.attrib.get('InputTransformChecksum'),
+                manual_path=manual_path,
+                mapped_section=int(MappedSection),
+                control_section=int(mapping_node.Control),
+                image_checks=image_checks,
+                input_transform_name=getattr(InputTransformNode, 'Name', None),
+                input_transform_type=getattr(InputTransformNode, 'Type', None),
+                input_transform_cropbox=getattr(InputTransformNode, 'CropBox', None),
+                output_input_transform=getattr(stosNode, 'InputTransform', None),
+                output_input_transform_type=getattr(stosNode, 'InputTransformType', None),
+                output_input_transform_cropbox=getattr(stosNode, 'InputTransformCropBox', None),
+            )
+            context = _RefineStosJobContext(
+                output_stos_node=stosNode,
+                input_transform_node=InputTransformNode,
+                output_section_mapping_node=OutputSectionMappingNode,
+                output_group_node=OutputStosGroupNode,
+                control_filter=ControlFilter,
+                mapped_filter=MappedFilter,
+                output_file=OutputFile,
+                output_type=Type,
+                use_masks=UseMasks,
+                downsample=OutputDownsample,
+                mapped_section=int(MappedSection),
+                control_section=int(mapping_node.Control),
+                input_stos_path=InputStosFullPath,
+                input_stos_checksum=InputStosFileChecksum,
+                output_stos_path=OutputStosFullPath,
+                manual_path=manual_path,
+                decision=stosgroup_workers.RefineScanDecision.SKIP,
+                decision_reason='',
+            )
+            yield (snapshot, context)
+
+
+def _prepare_refine_stos_output_node(context: _RefineStosJobContext, reason: str) -> TransformNode:
+    """Invalidate a stale refine product on the main thread and recreate the node."""
+    orchestrator = TransformRefineOrchestrator()
+    orchestrator.invalidate_stale_output(context.output_stos_node, reason)
+    stos_node = context.output_group_node.CreateStosTransformNode(
+        context.control_filter,
+        context.mapped_filter,
+        OutputType=context.output_type,
+        OutputPath=context.output_file)
+    context.output_stos_node = stos_node
+    return stos_node
+
+
+def _run_refine_or_manual_copy(
+        context: _RefineStosJobContext,
+        RefineFunc,
+        refine_kwargs: dict) -> tuple[TransformNode | None, bool]:
+    """Run refine or manual copy for one pair; return (stos node or None, refined_by_func)."""
+    if context.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE:
+        stos_node = _prepare_refine_stos_output_node(context, context.decision_reason)
+    else:
+        stos_node = context.output_stos_node
+
+    if context.decision == stosgroup_workers.RefineScanDecision.MANUAL_COPY:
+        ManualStosFileFullPath = context.manual_path
+        if ManualStosFileFullPath is None:
+            ManualStosFileFullPath = context.output_group_node.PathToManualTransform(stos_node.FullPath)
+        if ManualStosFileFullPath is None:
+            prettyoutput.LogErr(
+                f"Manual copy requested but no manual STOS found for {context.output_stos_path}")
+            return stos_node, False
+
+        prettyoutput.Log(
+            "Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
+        shutil.copy(ManualStosFileFullPath, context.output_stos_path)
+        RebaseCopiedStosPaths(
+            context.output_stos_path,
+            context.control_filter,
+            context.mapped_filter,
+            context.downsample,
+            context.use_masks,
+            StosTransformNode=stos_node,
+        )
+        return stos_node, False
+
+    try:
+        RefineFunc(context.input_stos_path, context.output_stos_path, **refine_kwargs)
+    except Exception as e:
+        prettyoutput.Log(f"Exception calling stos refine function {RefineFunc}:\n{e}\n\n")
+        raise
+
+    if not os.path.exists(context.output_stos_path):
+        Logger = logging.getLogger(__name__ + '.StosGrid')
+        Logger.error("ir-stos-grid did not produce output for " + context.input_stos_path)
+        context.output_section_mapping_node.remove(stos_node)
+        return None, False
+
+    if not stosfile.StosFile.IsValid(context.output_stos_path):
+        os.remove(context.output_stos_path)
+        context.output_section_mapping_node.remove(stos_node)
+        prettyoutput.Log(
+            "Transform generated by refine was unable to be loaded. Deleting.  Check input transform: "
+            + context.output_stos_path)
+        return None, False
+
+    return stos_node, True
 
 
 def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGroupNode,
@@ -1973,8 +2248,10 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
                   OutputStosGroup: str | None = None, Type: str | None = None,
                   MappedSections: None | frozenset[int] = None,
-                  **kwargs) -> Generator[XElementWrapper, None, None]:
+                  **kwargs) -> typing.Generator[XElementWrapper, None, None]:
     """
+    Enumerate STOS pairs needing grid refine, decide in parallel, then refine serially.
+
     :param mapping_node:
     :param InputGroupNode:
     :param UseMasks:
@@ -2006,18 +2283,56 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
     refine_kwargs = dict(kwargs)
     refine_kwargs['progress_depth_base'] = 1
-    total_refine_jobs = _count_stos_grid_refine_jobs(
-        mapping_node,
-        InputGroupNode,
-        block_node,
-        OutputStosGroupNode,
-        UseMasks=UseMasks,
-        Downsample=Downsample,
-        ControlFilterPattern=ControlFilterPattern,
-        MappedFilterPattern=MappedFilterPattern,
-        MappedSections=MappedSections,
-        Logger=Logger,
-    )
+
+    candidates: list[tuple[stosgroup_workers.RefineScanSnapshot, _RefineStosJobContext]] = []
+    for item in _enumerate_stos_grid_refine_candidates(
+            mapping_node,
+            InputGroupNode,
+            OutputStosGroupNode,
+            UseMasks=UseMasks,
+            Downsample=Downsample,
+            ControlFilterPattern=ControlFilterPattern,
+            MappedFilterPattern=MappedFilterPattern,
+            MappedSections=MappedSections,
+            Type=Type,
+            Logger=Logger):
+        if isinstance(item, tuple):
+            candidates.append(item)
+        else:
+            yield item
+
+    snapshots = [snapshot for snapshot, _context in candidates]
+    decisions = stosgroup_workers.decide_stos_grid_refine_needs(snapshots)
+
+    pending_jobs: list[_RefineStosJobContext] = []
+    for (_snapshot, context), decision_result in zip(candidates, decisions):
+        if decision_result.decision == stosgroup_workers.RefineScanDecision.SKIP:
+            Logger.info(
+                "Skipping refine; %s: %s",
+                decision_result.reason,
+                context.output_stos_path)
+            continue
+        context.decision = decision_result.decision
+        context.decision_reason = decision_result.reason
+        if decision_result.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE:
+            Logger.warning(
+                "Refine output exists but is stale (%s): %s",
+                decision_result.reason,
+                context.output_stos_path)
+        pending_jobs.append(context)
+
+    pending_jobs.sort(
+        key=lambda ctx: (
+            ctx.mapped_section,
+            ctx.control_section,
+            os.path.basename(ctx.output_stos_path),
+        ))
+
+    refine_func_jobs = [
+        job for job in pending_jobs
+        if job.decision != stosgroup_workers.RefineScanDecision.MANUAL_COPY
+    ]
+    total_refine_jobs = len(refine_func_jobs)
     completed_refine_jobs = 0
     refine_files_label = f"StosGridRefine → {OutputStosGroupName}"
     if total_refine_jobs:
@@ -2030,201 +2345,43 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             label=refine_files_label,
         )
 
-    for MappedSection in mapping_node.Mapped:
+    pool_jobs: list[stosgroup_workers.StosGroupPoolJob] = []
+    for context in pending_jobs:
+        pool_jobs.append(stosgroup_workers.StosGroupPoolJob(
+            name=os.path.basename(context.output_stos_path),
+            func=_run_refine_or_manual_copy,
+            args=(context, RefineFunc, refine_kwargs),
+            kwargs={},
+            context=context,
+        ))
 
-        if MappedSections is not None and MappedSection not in MappedSections:
+    for job, result in stosgroup_workers.run_bounded_stos_jobs(
+            None, pool_jobs, max_in_flight=1):
+        context = job.context
+        stos_node, refined_by_func = result
+        if stos_node is None:
+            yield context.output_section_mapping_node
             continue
 
-        # Find the inputTransformNode in the InputGroupNode
-        InputTransformNodes = list(InputGroupNode.TransformsForMapping(MappedSection, mapping_node.Control))  # type: ignore[arg-type]
-        if InputTransformNodes is None or len(InputTransformNodes) == 0:
-            Logger.warning("No transform found for mapping " + str(MappedSection) + " -> " + str(mapping_node.Control))
-            continue
+        stos_node.Path = context.output_file
+        if os.path.exists(context.output_stos_path):
+            stos_node.ResetChecksum()
+            stos_node.SetTransform(context.input_transform_node)
+            stos_node.InputTransformChecksum = context.input_stos_checksum
 
-        for InputTransformNode in InputTransformNodes:
-            OutputDownsample = Downsample
+        if refined_by_func:
+            completed_refine_jobs += 1
+            if total_refine_jobs:
+                publish_run_event(
+                    "iterate_progress",
+                    current=completed_refine_jobs,
+                    total=total_refine_jobs,
+                    depth=0,
+                    track_id="stos_refine:files",
+                    label=refine_files_label,
+                )
 
-            InputSectionMappingNode = InputTransformNode.FindParent('SectionMappings')
-            OutputSectionMappingNode = nornir_buildmanager.volumemanager.sectionmappingsnode.SectionMappingsNode.Create(
-                **InputSectionMappingNode.attrib)  # type: ignore[union-attr]
-
-            ControlFilter = __GetFirstMatchingFilter(block_node,
-                                                     InputTransformNode.ControlSectionNumber,
-                                                     InputTransformNode.ControlChannelName,
-                                                     ControlFilterPattern)
-
-            MappedFilter = __GetFirstMatchingFilter(block_node,
-                                                    InputTransformNode.MappedSectionNumber,
-                                                    InputTransformNode.MappedChannelName,
-                                                    MappedFilterPattern)
-
-            (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode,
-                                                                                             'MappedSectionNumber')
-
-            existing_output_transform_node = None
-            if added:
-                yield OutputStosGroupNode
-            else:
-                existing_output_transform_node = OutputSectionMappingNode.FindStosTransform(
-                    ControlSectionNumber=mapping_node.Control,
-                    ControlChannelName=InputTransformNode.ControlChannelName,
-                    ControlFilterName=InputTransformNode.ControlFilterName,
-                    MappedSectionNumber=MappedSection,
-                    MappedChannelName=InputTransformNode.MappedChannelName,
-                    MappedFilterName=InputTransformNode.MappedFilterName)
-
-            if ControlFilter is None:
-                Logger.warning("No control filter, skipping refinement")
-                if existing_output_transform_node is not None:
-                    existing_output_transform_node.Clean("No control filter found in stos grid")
-
-            if MappedFilter is None:
-                Logger.warning("No mapped filter, skipping refinement")
-                if existing_output_transform_node is not None:
-                    existing_output_transform_node.Clean("No mapped filter found in stos grid")
-
-            if ControlFilter is None or MappedFilter is None:
-                yield OutputStosGroupNode
-                continue
-
-            try:
-                # Ensure the input images exist on disk and generate them if not
-                GetOrCreateRegistrationImageNodes(ControlFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
-                GetOrCreateRegistrationImageNodes(MappedFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
-            except NornirUserException as e:
-                # This exception is raised if the input images cannot be generated
-                prettyoutput.LogErr(str(e))
-                continue
-
-            OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-                ControlFilter, MappedFilter)
-            OutputStosFullPath = os.path.join(OutputStosGroupNode.FullPath, OutputFile)
-            stosNode = existing_output_transform_node if existing_output_transform_node is not None else OutputStosGroupNode.GetStosTransformNode(
-                ControlFilter, MappedFilter)
-            if stosNode is None:
-                stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
-                                                                       OutputPath=OutputFile)
-
-            (InputStosFullPath, InputStosFileChecksum) = __GetOrCreateInputStosFileForRegistration(
-                stos_group_node=OutputStosGroupNode,
-                InputTransformNode=InputTransformNode,
-                ControlFilter=ControlFilter,
-                MappedFilter=MappedFilter,
-                OutputDownsample=OutputDownsample,
-                UseMasks=UseMasks)
-
-            if not os.path.exists(InputStosFullPath):
-                # Hmm... no input.  This is worth reporting and moving on
-                Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
-                InputGroupNode.remove(InputTransformNode)
-                continue
-
-            # If the manual or automatic stos file is newer than the output, remove the output
-            # files.RemoveOutdatedFile(InputTransformNode.FullPath, OutputStosFullPath): 
-
-            # Remove our output if it was generated from an input transform with a different checksum
-            if os.path.exists(OutputStosFullPath):
-                # stosNode = OutputSectionMappingNode.GetChildByAttrib('Transform', 'ControlSectionNumber', InputTransformNode.ControlSectionNumber)
-                if stosNode is not None:
-                    if OutputStosGroupNode.AreStosInputImagesOutdated(stosNode, ControlFilter, MappedFilter,
-                                                                      MaskRequired=UseMasks):
-                        stosNode.Clean("Input images outdated for %s" % stosNode.FullPath)
-                        stosNode = None
-                    elif 'InputTransformChecksum' in stosNode.attrib:
-                        stosNode = transforms.RemoveOnMismatch(stosNode, 'InputTransformChecksum',
-                                                               InputStosFileChecksum)
-                        # if(InputStosFileChecksum != stosNode.InputTransformChecksum):
-                        # os.remove(OutputStosFullPath)
-
-                        # Remove old stos meta-data and create from scratch to avoid stale data.
-                        # OutputSectionMappingNode.remove(stosNode)
-                    elif 'InputTransformChecksum' not in stosNode.attrib:
-                        stosNode.Clean(
-                            "InputTransformChecksum attribute is required on transform element and was not found")
-                        stosNode = None
-                        # ## Uncomment to preserve the existing file and simply update the meta-data
-                        # stosNode.ResetChecksum()
-                        # stosNode.SetTransform(InputTransformNode)
-                        # stosNode.InputTransformChecksum = InputStosFileChecksum
-                        # yield OutputSectionMappingNode
-                        # return
-
-                if stosNode is None:
-                    stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
-                                                                           OutputPath=OutputFile)
-
-            #                    else:
-            #                        os.remove(OutputStosFullPath)
-
-            # Replace the automatic files if they are outdated.
-            # GenerateStosFile(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter, MappedFilter)
-
-            #        FixStosFilePaths(ControlFilter, MappedFilter, InputTransformNode, OutputDownsample, StosFilePath=InputStosFullPath)
-            if not os.path.exists(OutputStosFullPath):
-                ManualStosFileFullPath = OutputStosGroupNode.PathToManualTransform(stosNode.FullPath)
-                if ManualStosFileFullPath is None:
-                    try:
-                        RefineFunc(InputStosFullPath, OutputStosFullPath, **refine_kwargs)
-                    except Exception as e:
-                        prettyoutput.Log(f"Exception calling stos refine function {RefineFunc}:\n{e}\n\n")
-                        raise
-
-                    if not os.path.exists(OutputStosFullPath):
-                        Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
-                        OutputSectionMappingNode.remove(stosNode)
-                        stosNode = None
-                        yield OutputSectionMappingNode
-                        continue
-                    if not stosfile.StosFile.IsValid(OutputStosFullPath):
-                        os.remove(OutputStosFullPath)
-                        OutputSectionMappingNode.remove(stosNode)
-                        stosNode = None
-                        prettyoutput.Log(
-                            "Transform generated by refine was unable to be loaded. Deleting.  Check input transform: " + OutputStosFullPath)
-                        yield OutputSectionMappingNode
-                        continue
-
-                    completed_refine_jobs += 1
-                    if total_refine_jobs:
-                        publish_run_event(
-                            "iterate_progress",
-                            current=completed_refine_jobs,
-                            total=total_refine_jobs,
-                            depth=0,
-                            track_id="stos_refine:files",
-                            label=refine_files_label,
-                        )
-                else:
-                    prettyoutput.Log(
-                        "Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
-                    shutil.copy(ManualStosFileFullPath, OutputStosFullPath)
-
-                    # Ensure we add or remove masks according to the parameters
-                    SetStosFileMasks(OutputStosFullPath, ControlFilter, MappedFilter, UseMasks,
-                                     OutputStosGroupNode.Downsample)
-
-                stosNode.Path = OutputFile
-
-                if os.path.exists(OutputStosFullPath):
-                    stosNode.ResetChecksum()
-                    stosNode.SetTransform(InputTransformNode)
-                    stosNode.InputTransformChecksum = InputStosFileChecksum
-
-                yield OutputSectionMappingNode
-            elif stosNode is not None and stosfile.StosFile.IsValid(OutputStosFullPath):
-                orchestrator = TransformRefineOrchestrator(logger=Logger)
-                decision = orchestrator.should_skip_refine(
-                    InputTransformNode,
-                    stosNode,
-                    input_checksum=InputStosFileChecksum)
-                if decision.skip:
-                    Logger.info("Skipping refine; %s: %s", decision.reason, OutputStosFullPath)
-                    continue
-                Logger.warning(
-                    "Refine output exists but is stale (%s): %s", decision.reason, OutputStosFullPath)
-                orchestrator.invalidate_stale_output(stosNode, decision.reason)
-                stosNode = OutputStosGroupNode.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType=Type,
-                                                                       OutputPath=OutputFile)
+        yield context.output_section_mapping_node
 
 
 def __StosMapToRegistrationTree(stos_map_node: StosMapNode):
