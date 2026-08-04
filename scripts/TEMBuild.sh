@@ -33,9 +33,9 @@ echo "Compute lib   : $COMP_LIB"
 echo
 
 # Same sequential chain as launch.json "TEM Build: full sequence (sequential)".
-# Volume path is first positional (legacy launch order);
-# nornir_buildmanager.build reorders to subcommand-first.
-exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager.build \
+# Volume path is first positional (legacy launch order); build reorders to subcommand-first.
+# Use -m nornir_buildmanager (not .build) to avoid runpy RuntimeWarning from package __init__ importing build.
+exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   -debug -computational_library "$COMP_LIB" \
   "$VOLUME_DIR" \
   Prune -InputFilter Raw8 -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \

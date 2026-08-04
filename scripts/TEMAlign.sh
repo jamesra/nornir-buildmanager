@@ -32,9 +32,9 @@ echo "Compute lib   : $COMP_LIB"
 echo
 
 # Same sequential chain as launch.json "TEM Full Alignment".
-# Volume path is first positional (legacy launch order);
-# nornir_buildmanager.build reorders to subcommand-first.
-exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager.build \
+# Volume path is first positional (legacy launch order); build reorders to subcommand-first.
+# Use -m nornir_buildmanager (not .build) to avoid runpy RuntimeWarning from package __init__ importing build.
+exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   -debug -computational_library "$COMP_LIB" \
   "$VOLUME_DIR" \
   CreateBlobFilter -Channels TEM -InputFilter Leveled -Levels 16,32,64 -OutputFilter Blob -Radius 9 -Median 7 -Max 3 \

@@ -51,7 +51,8 @@ echo "Compute lib   : $COMP_LIB"
 echo
 
 # ImportDir is a positional argparse arg — pass the path alone (not ImportDir=...).
-exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager.build \
+# Use -m nornir_buildmanager (not .build) to avoid runpy RuntimeWarning from package __init__ importing build.
+exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   -debug -computational_library "$COMP_LIB" \
   "$VOLUME_DIR" \
   ImportIDoc "${IMPORT_DIR}"
