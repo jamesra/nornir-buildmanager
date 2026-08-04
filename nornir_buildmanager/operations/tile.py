@@ -824,7 +824,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
 
         TilesToConvert[InputImageFullPath] = ImageSaveFilename
 
-    nornir_imageregistration.ConvertImagesInDict(TilesToConvert,
+    nornir_imageregistration.ConvertImagesInDictGpu(TilesToConvert,
                                                  MinMax=(MinIntensityCutoff16bpp, MaxIntensityCutoff16bpp),
                                                  Gamma=Gamma,
                                                  InputBpp=InputFilter.BitsPerPixel,

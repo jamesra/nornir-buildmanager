@@ -195,6 +195,8 @@ def Import(VolumeElement: VolumeNode,
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
 
+    nornir_pools.ReleaseStagePools()
+
 
 class SerialEMIDocImport:
 
@@ -420,10 +422,18 @@ class SerialEMIDocImport:
             filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
-            # nornir_shared.images.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, Bpp=TargetBpp, Invert=Invert, bDeleteOriginal=False, MinMax=[ActualMosaicMin, ActualMosaicMax])
-            nornir_imageregistration.ConvertImagesInDict(SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
-                                                         OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False,
-                                                         MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)  # type: ignore[arg-type]
+            # Use batched GPU convert under cupy; process-pool ConvertImagesInDict
+            # stays on NumPy (forced in _ConvertSingleImage) to avoid VRAM thrash.
+            if nornir_imageregistration.UsingCupy():
+                nornir_imageregistration.ConvertImagesInDictGpu(
+                    SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
+                    OutputBpp=TargetBpp, MinMax=[ActualMosaicMin, ActualMosaicMax],
+                    Gamma=Gamma)  # type: ignore[arg-type]
+            else:
+                nornir_imageregistration.ConvertImagesInDict(
+                    SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
+                    OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False,
+                    MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)  # type: ignore[arg-type]
 
         elif Tileset.ImageMoveRequired:
             for f in SourceToMissingTargetMap:
