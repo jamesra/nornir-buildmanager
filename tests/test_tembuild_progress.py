@@ -27,6 +27,17 @@ class TestReportIterate(unittest.TestCase):
                 section=3,
             )
 
+    def test_report_iterate_complete(self) -> None:
+        from nornir_buildmanager.progress import report_iterate_complete
+
+        with mock.patch("nornir_buildmanager.progress.publish_run_event") as publish:
+            report_iterate_complete("iterate:SectionNode", 4)
+            publish.assert_called_once_with(
+                "iterate_progress_complete",
+                track_id="iterate:SectionNode",
+                total=4,
+            )
+
 
 class TestImportIDocProgress(unittest.TestCase):
     def test_import_reports_section_progress(self) -> None:

@@ -78,6 +78,41 @@ class TestProcessIterateMqtt(unittest.TestCase):
         self.assertEqual(publish.call_args_list[0].kwargs["depth"], 0)
         self.assertEqual(publish.call_args_list[1].kwargs["current"], 1)
         self.assertEqual(publish.call_args_list[2].kwargs["current"], 2)
+        self.assertEqual(event_names[-1], "iterate_progress_complete")
+        self.assertEqual(
+            publish.call_args_list[-1].kwargs["track_id"], "iterate:SectionNode")
+        self.assertEqual(publish.call_args_list[-1].kwargs["total"], 2)
+        self.assertEqual(manager._iterate_depth, 0)
+
+    def test_iterate_publishes_complete_on_child_exception(self) -> None:
+        manager = pm.PipelineManager(
+            pipelinesRoot=ElementTree.Element("Root"),
+            pipelineData=ElementTree.Element("Pipeline"),
+        )
+        iterate_node = ElementTree.Element(
+            "Iterate", VariableName="SectionNode", XPath="Block/Section")
+        candidates = [SectionNode.Create(Number=1)]
+
+        with mock.patch.object(pm.PipelineManager, "_PipelineManager__extractXPathFromNode",
+                               return_value="Block/Section"):
+            with mock.patch.object(pm.PipelineManager, "GetSearchRoot", return_value=mock.Mock()):
+                with mock.patch(
+                        "nornir_buildmanager.pipelinemanager.resolve_iterate_candidates",
+                        return_value=candidates):
+                    with mock.patch.object(pm.PipelineManager, "_ElementNeedsValidation",
+                                           return_value=False):
+                        with mock.patch.object(
+                                manager, "ExecuteChildPipelines",
+                                side_effect=RuntimeError("boom")):
+                            with mock.patch(
+                                    "nornir_buildmanager.pipelinemanager.publish_run_event"
+                            ) as publish:
+                                with self.assertRaises(RuntimeError):
+                                    manager.ProcessIterateNode(
+                                        mock.Mock(), mock.Mock(), iterate_node)
+
+        event_names = [c.args[0] for c in publish.call_args_list]
+        self.assertEqual(event_names[-1], "iterate_progress_complete")
         self.assertEqual(manager._iterate_depth, 0)
 
 

@@ -913,6 +913,10 @@ class PipelineManager:
                     **tele)
         finally:
             self._iterate_depth -= 1
+            publish_run_event(
+                "iterate_progress_complete",
+                track_id=track_id,
+                total=total)
 
         for parent in save_parent:
             PipelineManager._SaveNodes(parent)

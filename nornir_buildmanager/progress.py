@@ -47,3 +47,12 @@ def report_iterate(
         label=label,
         **fields,
     )
+
+
+def report_iterate_complete(track_id: str, total: int) -> None:
+    """Publish ``iterate_progress_complete`` so the dashboard removes a track."""
+    publish_run_event(
+        "iterate_progress_complete",
+        track_id=str(track_id),
+        total=int(total),
+    )
