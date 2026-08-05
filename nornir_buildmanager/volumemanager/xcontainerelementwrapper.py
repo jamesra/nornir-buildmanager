@@ -21,11 +21,13 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     @property
     def SaveAsLinkedElement(self) -> bool:
-        """
-        When set to true, the element will be saved as a link element in the subdirectory
-        It may be set to false to prevent saving meta-data from updating the modification
-        time of the directory.  When set to false the element remains under the
-        parent element wherever that XML file may be.
+        """True when this container owns its own VolumeData.xml under FullPath.
+
+        Linked containers (default True) are referenced from the parent as a
+        ``*_Link`` stub and persist independently: each owns its dirty flags
+        (``AttributesChanged`` / ``ChildrenChanged``). Nested linked dirtiness
+        does not bubble to the parent. When False, meta-data remains embedded in
+        the parent's XML so parent save consults nested non-linked dirty flags.
         """
         return True
 
@@ -509,9 +511,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if AnyChangesFound and self.SaveAsLinkedElement:
                 self.__SaveXML(xmlfilename, SaveElement)
                 self.ResetElementChangeFlags()
-                # prettyoutput.Log("Saving " + self.FullPath + ", state change recorded in that container or child elements.");
-            # elif not AnyChangesFound:
-            # prettyoutput.Log("Skipping " + self.FullPath + ", no state change recorded in that container or child elements. (Child containers may have changes but could be saved directly instead)");
+            elif not AnyChangesFound and self.SaveAsLinkedElement:
+                prettyoutput.Log(
+                    f'Skipping {xmlfilename} under {self.FullPath} '
+                    f'(no dirty flags on this container; nested linked containers may still have written)')
 
         #        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
 
@@ -530,7 +533,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
     def __SaveXML(self, xmlfilename: str, SaveElement: ElementTree.Element):
         """Intended to be called on a thread from the save function"""
-        self.logger.info(f'Writing {xmlfilename}')
+        msg = f'Writing {xmlfilename} under {self.FullPath}'
+        self.logger.info(msg)
+        prettyoutput.Log(msg)
         try:
             OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         except Exception as e:

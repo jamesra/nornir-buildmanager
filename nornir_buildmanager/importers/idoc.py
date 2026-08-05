@@ -63,6 +63,7 @@ import nornir_buildmanager.importers.find as find
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
 import nornir_buildmanager.importers.shared as shared
+from nornir_buildmanager.progress import report_iterate
 from nornir_buildmanager.volumemanager import *
 
 
@@ -179,18 +180,41 @@ def Import(VolumeElement: VolumeNode,
         for meta_data in section_number_dirlist:
             prettyoutput.Log(shared.FileMetaDataStr(meta_data))
 
-    found_sections = find_sections(extension, found_section_candidates)
+    found_sections = list(find_sections(extension, found_section_candidates))
+    total_idocs = sum(len(idocFileList) for _, idocFileList in found_sections)
+    completed_idocs = 0
+    section_track_id = "import_idoc:sections"
+    section_label = "ImportIDoc"
+    if total_idocs:
+        report_iterate(section_track_id, 0, total_idocs, section_label, depth=0)
 
     for (section_meta_data, idocFileList) in found_sections:
         DataFound = True
         for idocFileFullPath in idocFileList:
-            yield SerialEMIDocImport.ToMosaic(VolumeElement,
-                                              idocFileFullPath,
-                                              ContrastCutoffs=ContrastCutoffs,
-                                              OutputImageExt=None,
-                                              FlipList=FlipList,
-                                              CameraBpp=CameraBpp,
-                                              ContrastMap=ContrastMap)
+            if total_idocs:
+                report_iterate(
+                    section_track_id, completed_idocs, total_idocs, section_label, depth=0,
+                    section=section_meta_data.number,
+                    element=os.path.basename(idocFileFullPath),
+                    path=idocFileFullPath,
+                )
+            # ToMosaic yields after each meta-data unit so _SaveNodes can persist
+            # VolumeData.xml before long tile/histogram work (same pattern as mrc/dm4).
+            yield from SerialEMIDocImport.ToMosaic(VolumeElement,
+                                                    idocFileFullPath,
+                                                    ContrastCutoffs=ContrastCutoffs,
+                                                    OutputImageExt=None,
+                                                    FlipList=FlipList,
+                                                    CameraBpp=CameraBpp,
+                                                    ContrastMap=ContrastMap)
+            completed_idocs += 1
+            if total_idocs:
+                report_iterate(
+                    section_track_id, completed_idocs, total_idocs, section_label, depth=0,
+                    section=section_meta_data.number,
+                    element=os.path.basename(idocFileFullPath),
+                    path=idocFileFullPath,
+                )
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
@@ -206,21 +230,13 @@ class SerialEMIDocImport:
                  TargetBpp: int | None = None, FlipList: list[int] | None = None,
                  ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
                  CameraBpp: int | None = None,
-                 debug: bool | None = None):
+                 debug: bool | None = None) -> Generator[XElementWrapper, None, None]:
         """
-        This function will convert an idoc file in the given path to a .mosaic file.
-        It will also rename image files to the requested extension and subdirectory.
-        TargetBpp is calculated based on the number of bits required to encode the values
-        between the median min and max values
-        :param VolumeObj:
-        :param idocFileFullPath:
-        :param ContrastCutoffs: Percentile at which to set min,max pixel values if section is not in ContrastMap
-        :param OutputImageExt:
-        :param TargetBpp:
-        :param CameraBpp:
-        :param debug:
-        :param list FlipList: List of section numbers which should have images flipped
-        :param dict ContrastMap: Dictionary mapping section number to (Min, Max, Gamma) tuples
+        Convert an idoc to a .mosaic and populate volume meta-data.
+
+        Yields the owning container after each meta-data mutation so ``_SaveNodes``
+        can write VolumeData.xml before long tile/histogram work (same pattern as
+        MRC/DM4 importers — do not wait until the entire idoc finishes).
         """
         if OutputImageExt is None:
             OutputImageExt = 'png'
@@ -233,8 +249,6 @@ class SerialEMIDocImport:
 
         if ContrastMap is None:
             ContrastMap = {}
-
-        SaveChannel = False
 
         idocFilePath = serialem_utils.GetPathWithoutSpaces(idocFileFullPath)
 
@@ -252,6 +266,8 @@ class SerialEMIDocImport:
 
         BlockObj = BlockNode.Create('TEM')
         [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
+        if saveBlock:
+            yield VolumeObj
 
         # If the parent directory doesn't have the section number in the name, change it
         ExistingSectionInfo = shared.GetSectionInfo(section_source_dir)
@@ -282,16 +298,13 @@ class SerialEMIDocImport:
 
         [saveSection, sectionObj] = BlockObj.UpdateOrAddChildByAttrib(sectionObj, 'Number')
         sectionObj.Name = SectionName
+        if saveSection:
+            yield BlockObj
 
-        # Create a channel group 
+        # Create a channel group
         [saveChannel, channelObj] = sectionObj.UpdateOrAddChildByAttrib(ChannelNode.Create('TEM'), 'Name')
-
-        # Create a channel group for the section
-
-        # I started ignoring existing supertile.mosaic files so I could rebuild sections where
-        # a handful of tiles were corrupt
-        # if(os.path.exists(SupertilePath)):
-        #    continue
+        if saveChannel:
+            yield sectionObj
 
         Flip = SectionNumber in FlipList
         if Flip:
@@ -307,7 +320,7 @@ class SerialEMIDocImport:
         assert (hasattr(IDocData, 'DataMode'))
         assert (hasattr(IDocData, 'ImageSize'))
 
-        # If there are no tiles... return
+        # If there are no tiles... structure above already yielded when created
         if IDocData.NumTiles == 0:
             prettyoutput.Log("No tiles found in IDoc: " + idocFilePath)
             return
@@ -324,6 +337,8 @@ class SerialEMIDocImport:
 
         # Set the scale
         [added, ScaleObj] = cls.CreateScaleNode(IDocData, channelObj)
+        if added:
+            yield channelObj
 
         # Parse the images
         ImageBpp = IDocData.GetImageBpp()
@@ -341,16 +356,24 @@ class SerialEMIDocImport:
         if len(IDocData.Tiles) == 0:
             prettyoutput.Log(
                 "After removing missing file names there were no tiles remaining. Do the filename extensions match?" + idocFilePath)
+            if saveChannel:
+                yield channelObj
             return
 
         source_tile_list = [os.path.join(section_source_dir, t.Image) for t in IDocData.tiles]
 
-        contrast_settings = shared.GetSectionContrastSettings(section_number=SectionNumber,
-                                                              contrast_map=ContrastMap,
-                                                              contrast_cutoffs=ContrastCutoffs,
-                                                              calculate_histogram=lambda: SerialEMIDocImport.CalculateHistogram(
-                                                                  IDocData, source_tile_list),
-                                                              histogram_cache_path=histogram_cache_path)
+        import_hist_stride = 4
+        contrast_settings = shared.GetSectionContrastSettings(
+            section_number=SectionNumber,
+            contrast_map=ContrastMap,
+            contrast_cutoffs=ContrastCutoffs,
+            calculate_histogram=lambda: SerialEMIDocImport.CalculateHistogram(
+                IDocData, source_tile_list, stride=import_hist_stride,
+                progress_task_key="import_idoc:histogram",
+                progress_name=f"Import histogram {SectionNumber}"),
+            histogram_cache_path=histogram_cache_path,
+            cache_inputs=source_tile_list + [idocFileFullPath],
+            histogram_stride=import_hist_stride)
 
         ActualMosaicMax = np.around(contrast_settings.max)
         ActualMosaicMin = np.around(contrast_settings.min)
@@ -372,6 +395,7 @@ class SerialEMIDocImport:
         added_filter, filterObj = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
         if added_filter:
             image_conversion_required = True
+            yield channelObj
 
         filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
         filterObj.BitsPerPixel = TargetBpp
@@ -387,13 +411,19 @@ class SerialEMIDocImport:
                                                                                                  Path=SupertileTransform,
                                                                                                  Type='Stage'),
                                                                             'Path')
+        if added_transform:
+            yield channelObj
 
         added_tilepyramid, PyramidNodeObj = filterObj.UpdateOrAddChildByAttrib(TilePyramidNode.Create(Type='stage',
                                                                                                       NumberOfTiles=IDocData.NumTiles),
                                                                                'Path')
+        if added_tilepyramid:
+            yield filterObj
 
         added_level, LevelObj = PyramidNodeObj.GetOrCreateLevel(1, GenerateData=False)
         assert LevelObj is not None
+        if added_level:
+            yield PyramidNodeObj
 
         Tileset = NornirTileset.CreateTilesFromIDocTileData(IDocData.tiles, InputTileDir=section_source_dir,
                                                             OutputTileDir=LevelObj.FullPath,
@@ -424,20 +454,34 @@ class SerialEMIDocImport:
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
             # Use batched GPU convert under cupy; process-pool ConvertImagesInDict
             # stays on NumPy (forced in _ConvertSingleImage) to avoid VRAM thrash.
+            tile_progress_name = f"Import tiles {os.path.basename(idocFileFullPath)}"
+            tile_progress_key = "import_idoc:tiles"
             if nornir_imageregistration.UsingCupy():
                 nornir_imageregistration.ConvertImagesInDictGpu(
                     SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
                     OutputBpp=TargetBpp, MinMax=[ActualMosaicMin, ActualMosaicMax],
-                    Gamma=Gamma)  # type: ignore[arg-type]
+                    Gamma=Gamma,  # type: ignore[arg-type]
+                    progress_name=tile_progress_name,
+                    progress_task_key=tile_progress_key)
             else:
                 nornir_imageregistration.ConvertImagesInDict(
                     SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
                     OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False,
-                    MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma)  # type: ignore[arg-type]
+                    MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma,  # type: ignore[arg-type]
+                    progress_name=tile_progress_name,
+                    progress_task_key=tile_progress_key)
 
         elif Tileset.ImageMoveRequired:
-            for f in SourceToMissingTargetMap:
+            tile_progress_name = f"Import tiles {os.path.basename(idocFileFullPath)}"
+            tile_sources = list(SourceToMissingTargetMap.keys())
+            tile_reporter = prettyoutput.TaskProgressReporter(
+                "import_idoc:tiles", len(tile_sources), name=tile_progress_name,
+                section=SectionNumber)
+            tile_reporter.start()
+            for i, f in enumerate(tile_sources, start=1):
                 shutil.copy(f, SourceToMissingTargetMap[f])
+                tile_reporter.update(i, element=os.path.basename(f), path=f)
+            tile_reporter.complete()
 
         UpdateMosaicFile = False
         try:
@@ -477,24 +521,16 @@ class SerialEMIDocImport:
 
             Mosaic.TranslateMosaicFileToZeroOrigin(SupertilePath)
             transformObj.ResetChecksum()
-            SaveChannel = True
-            # transformObj.Checksum = MFile.Checksum
+            saveChannel = True
+            yield channelObj
 
         # It has been a while, check if the histogram is done and try to add meta-data for it
         histogram_creation_task.wait()
-        saveChannel |= shared.TryAddHistogram(filterObj, section_source_dir, image_ext=".png",
-                                              min_cutoff=ActualMosaicMin,
-                                              max_cutoff=ActualMosaicMax, gamma=Gamma)
-
-        if saveBlock:
-            return VolumeObj
-        elif saveSection:
-            return BlockObj
-        elif saveChannel:
-            return sectionObj
-        elif added_transform or added_tilepyramid or added_level or image_conversion_required or SaveChannel or contrast_mismatch:
-            return channelObj
-        return None
+        hist_added = shared.TryAddHistogram(filterObj, section_source_dir, image_ext=".png",
+                                            min_cutoff=ActualMosaicMin,
+                                            max_cutoff=ActualMosaicMax, gamma=Gamma)
+        if hist_added:
+            yield filterObj
 
     @staticmethod
     def GetImageBpp(IDocData, sectionDir):
@@ -548,8 +584,15 @@ class SerialEMIDocImport:
         return andValue
 
     @staticmethod
-    def CalculateHistogram(idoc_data: IDoc, listfilenames: Sequence[str]) -> Histogram:
-        """Calculate the histogram for the section images"""
+    def CalculateHistogram(idoc_data: IDoc, listfilenames: Sequence[str],
+                           stride: int = 4,
+                           progress_task_key: str | None = None,
+                           progress_name: str | None = None) -> Histogram:
+        """Calculate the histogram for the section images.
+
+        Uses a spatial *stride* (default 4 → 1/16 of pixels) for AutoLevel tails
+        at ImportIDoc defaults (0.01%); deterministic vs random NumSamples.
+        """
         prettyoutput.Log("Calculating histogram")
         prettyoutput.Log("Collecting mosaic min/max data")
 
@@ -566,8 +609,10 @@ class SerialEMIDocImport:
             if (1 << idoc_data.CameraBpp) - 1 < maxVal:
                 maxVal = (1 << idoc_data.CameraBpp) - 1
 
-        return image_stats.Histogram(listfilenames, Bpp=bpp, MinVal=idoc_data.Min, MaxVal=idoc_data.Max,
-                                     numBins=num_bins)
+        return image_stats.Histogram(
+            listfilenames, Bpp=bpp, MinVal=idoc_data.Min, MaxVal=maxVal,
+            numBins=num_bins, stride=stride,
+            progress_task_key=progress_task_key, progress_name=progress_name)
 
 
 class NornirTileset:

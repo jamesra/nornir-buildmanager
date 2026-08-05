@@ -52,6 +52,7 @@ from nornir_imageregistration import tileset_functions
 
 import nornir_imageregistration.tileset_functions
 from nornir_shared import prettyoutput
+from nornir_buildmanager.progress import report_iterate
 
 HistogramTagStr = "HistogramData"
 
@@ -2545,6 +2546,12 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
     if pool is None:
         pool = nornir_pools.GetGlobalThreadPool()
 
+    total_rows = int(DestGridDimensions[0])
+    assemble_track_id = "assemble:rows"
+    assemble_label = f"Assemble pyramid rows → {os.path.basename(DestPath)}"
+    if total_rows:
+        report_iterate(assemble_track_id, 0, total_rows, assemble_label, depth=1)
+
     # Merge all the tiles we can find into tiles of the same size
     for iY in range(0, DestGridDimensions[0]):
         # We wait for the last task we queued for each row so we do not swamp the ProcessPool but are not waiting for the entire pool to empty
@@ -2651,7 +2658,8 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
                 FirstTaskForRow = t
 
         # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
-        # prettyoutput.CurseProgress(TaskString, iY + 1, newYDim)
+        if total_rows:
+            report_iterate(assemble_track_id, iY + 1, total_rows, assemble_label, depth=1)
 
         # We can easily saturate the pool with hundreds of thousands of tasks.
         # If the pool has a reasonable number of tasks then we should wait for

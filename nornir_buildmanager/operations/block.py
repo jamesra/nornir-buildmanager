@@ -27,6 +27,7 @@ import nornir_imageregistration
 from nornir_imageregistration import assemble, local_distortion_correction, mosaic
 from nornir_imageregistration.files import stosfile
 import nornir_imageregistration.stos_brute as stos_brute
+import nornir_imageregistration.stos_quality as stos_quality
 from nornir_imageregistration.transforms import *
 from nornir_imageregistration.views import TransformWarpView
 import nornir_imageregistration.settings
@@ -36,6 +37,7 @@ from nornir_shared.mqtt_telemetry import publish_run_event
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
 import nornir_shared
 from nornir_imageregistration.settings import AngleSearchRange
+from nornir_buildmanager.progress import report_iterate
 
 
 def _resolve_min_blend(min_blend: float | None,
@@ -879,46 +881,57 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
 
     os.makedirs(stos_group_node.FullPath, exist_ok=True)
 
+    # Pre-count mapped×control filter pairs for a nested dashboard track.
+    pair_jobs: list[tuple[typing.Any, typing.Any, typing.Any]] = []
     for MappedSection in AdjacentSections:
         mapped_section_node = block_node.GetSection(MappedSection)
-
         if mapped_section_node is None:
             prettyoutput.LogErr("Could not find expected section for StosBrute: " + str(MappedSection))
             continue
-
-        # Figure out all the combinations of assembled images between the two section and test them
         MappedFilterList = mapped_section_node.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
-
-        if 'Downsample' in Parameters:
-            del Parameters['Downsample']
-
+        ControlFilterList = ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
         for MappedFilter in MappedFilterList:
-            print("\tMap - " + MappedFilter.FullPath)
-
-            ControlFilterList = ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
             for ControlFilter in ControlFilterList:
-                print("\tCtrl - " + ControlFilter.FullPath)
+                pair_jobs.append((MappedSection, MappedFilter, ControlFilter))
 
-                OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-                    ControlFilter, MappedFilter)  # type: ignore[arg-type]
+    total_pairs = len(pair_jobs)
+    completed_pairs = 0
+    brute_track_id = "stos_brute:pairs"
+    brute_label = f"StosBrute {AdjacentSections} → {ControlNumber}"
+    if total_pairs:
+        report_iterate(brute_track_id, 0, total_pairs, brute_label, depth=1)
 
-                (added, stos_mapping_node) = stos_group_node.GetOrCreateSectionMapping(MappedSection)
-                if added:
-                    (yield stos_mapping_node.Parent)
+    if 'Downsample' in Parameters:
+        del Parameters['Downsample']
 
-                stosNode = FilterToFilterBruteRegistration(stos_group=stos_group_node,
-                                                           control_filter=ControlFilter,  # type: ignore[arg-type]
-                                                           mapped_filter=MappedFilter,  # type: ignore[arg-type]
-                                                           output_type=OutputStosType,
-                                                           output_path=OutputFile,
-                                                           use_masks=UseMasks,
-                                                           angle_search_range=AngleSearchRange,  # type: ignore[arg-type]
-                                                           test_for_flip=TestForFlip,
-                                                           method=Method,
-                                                           )
+    for MappedSection, MappedFilter, ControlFilter in pair_jobs:
+        print("\tMap - " + MappedFilter.FullPath)
+        print("\tCtrl - " + ControlFilter.FullPath)
 
-                if stosNode is not None:
-                    (yield stosNode.Parent)
+        OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+            ControlFilter, MappedFilter)  # type: ignore[arg-type]
+
+        (added, stos_mapping_node) = stos_group_node.GetOrCreateSectionMapping(MappedSection)
+        if added:
+            (yield stos_mapping_node.Parent)
+
+        stosNode = FilterToFilterBruteRegistration(stos_group=stos_group_node,
+                                                   control_filter=ControlFilter,  # type: ignore[arg-type]
+                                                   mapped_filter=MappedFilter,  # type: ignore[arg-type]
+                                                   output_type=OutputStosType,
+                                                   output_path=OutputFile,
+                                                   use_masks=UseMasks,
+                                                   angle_search_range=AngleSearchRange,  # type: ignore[arg-type]
+                                                   test_for_flip=TestForFlip,
+                                                   method=Method,
+                                                   )
+
+        completed_pairs += 1
+        if total_pairs:
+            report_iterate(brute_track_id, completed_pairs, total_pairs, brute_label, depth=1)
+
+        if stosNode is not None:
+            (yield stosNode.Parent)
 
     return
 
@@ -1181,132 +1194,124 @@ def AssembleStosOverlays(Parameters,
 
     tempdir = tempfile.mkdtemp() + os.path.sep
 
-    try:
-        for mapping_node in stos_map_node.Mappings:
-            MappedSectionList = mapping_node.Mapped
-
-            for MappedSection in MappedSectionList:
-                # Find the inputTransformNode in the InputGroupNode
-                # TransformXPath = TransformXPathTemplate % {'MappedSection' : MappedSection,
-                #                                           'ControlSection' : MappingNode.Control}
-
-                # StosTransformNode = GroupNode.find(TransformXPath)
-
-                StosTransformNodes = group_node.TransformsForMapping(MappedSection, mapping_node.Control)  # type: ignore[arg-type]
-                if StosTransformNodes is None:
+    overlay_jobs: list[tuple[typing.Any, typing.Any, typing.Any]] = []
+    for mapping_node in stos_map_node.Mappings:
+        for MappedSection in mapping_node.Mapped:
+            StosTransformNodes = group_node.TransformsForMapping(MappedSection, mapping_node.Control)  # type: ignore[arg-type]
+            if StosTransformNodes is None:
+                Logger.warn(
+                    "No transform found for mapping: " + str(MappedSection) + " -> " + str(mapping_node.Control))
+                continue
+            for StosTransformNode in StosTransformNodes:
+                if not os.path.exists(StosTransformNode.FullPath):
                     Logger.warn(
-                        "No transform found for mapping: " + str(MappedSection) + " -> " + str(mapping_node.Control))
+                        "Skipping AssembleStosOverlays; transform file missing: " + StosTransformNode.FullPath)
                     continue
+                overlay_jobs.append((mapping_node, MappedSection, StosTransformNode))
 
-                for StosTransformNode in StosTransformNodes:
-                    if not os.path.exists(StosTransformNode.FullPath):
-                        Logger.warn(
-                            "Skipping AssembleStosOverlays; transform file missing: " + StosTransformNode.FullPath)
-                        continue
+    total_overlay_jobs = len(overlay_jobs)
+    completed_overlay_jobs = 0
+    overlay_track_id = "stos_overlays:jobs"
+    overlay_label = f"AssembleStosOverlays → {group_node.Name}"
+    if total_overlay_jobs:
+        report_iterate(overlay_track_id, 0, total_overlay_jobs, overlay_label, depth=0)
 
-                    SectionMappingNode = StosTransformNode.FindParent('SectionMappings')
-                    [TransformBaseFilename, ext] = os.path.splitext(StosTransformNode.Path)
-                    OverlayOutputFilename = 'overlay_' + TransformBaseFilename + '.png'
-                    DiffOutputFilename = 'diff_' + TransformBaseFilename + '.png'
-                    WarpedOutputFilename = 'warped_' + TransformBaseFilename + '.png'
+    try:
+        for mapping_node, MappedSection, StosTransformNode in overlay_jobs:
+            SectionMappingNode = StosTransformNode.FindParent('SectionMappings')
+            [TransformBaseFilename, ext] = os.path.splitext(StosTransformNode.Path)
+            OverlayOutputFilename = 'overlay_' + TransformBaseFilename + '.png'
+            DiffOutputFilename = 'diff_' + TransformBaseFilename + '.png'
+            WarpedOutputFilename = 'warped_' + TransformBaseFilename + '.png'
 
-                    OverlayOutputFileFullPath = os.path.join(group_node.FullPath, OverlayOutputFilename)
-                    DiffOutputFileFullPath = os.path.join(group_node.FullPath, DiffOutputFilename)
-                    WarpedOutputFileFullPath = os.path.join(group_node.FullPath, WarpedOutputFilename)
+            OverlayOutputFileFullPath = os.path.join(group_node.FullPath, OverlayOutputFilename)
+            DiffOutputFileFullPath = os.path.join(group_node.FullPath, DiffOutputFilename)
+            WarpedOutputFileFullPath = os.path.join(group_node.FullPath, WarpedOutputFilename)
 
-                    os.chdir(group_node.FullPath)
+            os.chdir(group_node.FullPath)
 
-                    os.makedirs('Temp', exist_ok=True)
+            os.makedirs('Temp', exist_ok=True)
 
-                    # Create a node in the XML records
-                    (created_overlay, OverlayImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode,
-                                                                                     OverlayOutputFileFullPath)
-                    OverlayImageNode.Type = 'Overlay_' + StosTransformNode.Type
-                    (created_diff, DiffImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode,
-                                                                               DiffOutputFileFullPath)
-                    DiffImageNode.Type = 'Diff_' + StosTransformNode.Type
-                    (created_warped, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode,
-                                                                                   WarpedOutputFileFullPath)
-                    WarpedImageNode.Type = 'Warped_' + StosTransformNode.Type
+            # Create a node in the XML records
+            (created_overlay, OverlayImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode,
+                                                                             OverlayOutputFileFullPath)
+            OverlayImageNode.Type = 'Overlay_' + StosTransformNode.Type
+            (created_diff, DiffImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode,
+                                                                       DiffOutputFileFullPath)
+            DiffImageNode.Type = 'Diff_' + StosTransformNode.Type
+            (created_warped, WarpedImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode,
+                                                                           WarpedOutputFileFullPath)
+            WarpedImageNode.Type = 'Warped_' + StosTransformNode.Type
 
-                    SectionMappingSaveRequired = SectionMappingSaveRequired or created_overlay or created_diff or created_warped
+            SectionMappingSaveRequired = SectionMappingSaveRequired or created_overlay or created_diff or created_warped
 
-                    stosImages = StosImageNodes(StosTransformNode, group_node.Downsample)  # type: ignore[arg-type]
+            stosImages = StosImageNodes(StosTransformNode, group_node.Downsample)  # type: ignore[arg-type]
 
-                    if stosImages.ControlImageNode is None or stosImages.MappedImageNode is None:
-                        prettyoutput.Log(
-                            f"Skipping STOS overlay for {StosTransformNode.Path}: missing control or mapped image "
-                            f"(empty or incomplete ImageSet)")
-                        continue
+            if stosImages.ControlImageNode is None or stosImages.MappedImageNode is None:
+                prettyoutput.Log(
+                    f"Skipping STOS overlay for {StosTransformNode.Path}: missing control or mapped image "
+                    f"(empty or incomplete ImageSet)")
+                completed_overlay_jobs += 1
+                if total_overlay_jobs:
+                    report_iterate(
+                        overlay_track_id, completed_overlay_jobs, total_overlay_jobs, overlay_label, depth=0
+                    )
+                continue
 
-                    if created_overlay:
-                        OverlayImageNode.SetTransform(StosTransformNode)
-                    else:
-                        if not OverlayImageNode.CleanIfInputTransformMismatched(StosTransformNode):
-                            files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
-                            files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
-                            files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
+            if created_overlay:
+                OverlayImageNode.SetTransform(StosTransformNode)
+            else:
+                if not OverlayImageNode.CleanIfInputTransformMismatched(StosTransformNode):
+                    files.RemoveOutdatedFile(StosTransformNode.FullPath, OverlayImageNode.FullPath)
+                    files.RemoveOutdatedFile(stosImages.ControlImageNode.FullPath, OverlayImageNode.FullPath)
+                    files.RemoveOutdatedFile(stosImages.MappedImageNode.FullPath, OverlayImageNode.FullPath)
 
-                    if created_diff:
-                        DiffImageNode.SetTransform(StosTransformNode)
-                    else:
-                        DiffImageNode.CleanIfInputTransformMismatched(StosTransformNode)
+            if created_diff:
+                DiffImageNode.SetTransform(StosTransformNode)
+            else:
+                DiffImageNode.CleanIfInputTransformMismatched(StosTransformNode)
 
-                    if created_warped:
-                        WarpedImageNode.SetTransform(StosTransformNode)
-                    else:
-                        WarpedImageNode.CleanIfInputTransformMismatched(StosTransformNode)
+            if created_warped:
+                WarpedImageNode.SetTransform(StosTransformNode)
+            else:
+                WarpedImageNode.CleanIfInputTransformMismatched(StosTransformNode)
 
-                    # Compare the .stos file creation date to the output
+            if not (os.path.exists(OverlayImageNode.FullPath) and os.path.exists(
+                    DiffImageNode.FullPath) and os.path.exists(WarpedImageNode.FullPath)):
 
-                    # ===========================================================
-                    # if hasattr(OverlayImageNode, 'InputTransformChecksum'):
-                    #     transforms.RemoveOnMismatch(OverlayImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
-                    # if hasattr(DiffImageNode, 'InputTransformChecksum'):
-                    #     transforms.RemoveOnMismatch(DiffImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
-                    # if hasattr(WarpedImageNode, 'InputTransformChecksum'):
-                    #     transforms.RemoveOnMismatch(WarpedImageNode, 'InputTransformChecksum', StosTransformNode.Checksum)
-                    # ===========================================================
+                # ir-stom's -slice_dirs argument is broken for masks, so we have to patch the stos file before use
+                if stosImages.ControlImageMaskNode is None or stosImages.MappedImageMaskNode is None:
+                    UpdateStosImagePaths(StosTransformNode.FullPath,
+                                         stosImages.ControlImageNode.FullPath,
+                                         stosImages.MappedImageNode.FullPath, )
+                else:
+                    UpdateStosImagePaths(StosTransformNode.FullPath,
+                                         stosImages.ControlImageNode.FullPath,
+                                         stosImages.MappedImageNode.FullPath,
+                                         stosImages.ControlImageMaskNode.FullPath,
+                                         stosImages.MappedImageMaskNode.FullPath)
 
-                    if not (os.path.exists(OverlayImageNode.FullPath) and os.path.exists(
-                            DiffImageNode.FullPath) and os.path.exists(WarpedImageNode.FullPath)):
+                cmd = f'ir-stom -load {StosTransformNode.FullPath} -save {tempdir} ' + misc.ArgumentsFromDict(
+                    Parameters)
 
-                        # ir-stom's -slice_dirs argument is broken for masks, so we have to patch the stos file before use
-                        if stosImages.ControlImageMaskNode is None or stosImages.MappedImageMaskNode is None:
-                            UpdateStosImagePaths(StosTransformNode.FullPath,
-                                                 stosImages.ControlImageNode.FullPath,
-                                                 stosImages.MappedImageNode.FullPath, )
-                        else:
-                            UpdateStosImagePaths(StosTransformNode.FullPath,
-                                                 stosImages.ControlImageNode.FullPath,
-                                                 stosImages.MappedImageNode.FullPath,
-                                                 stosImages.ControlImageMaskNode.FullPath,
-                                                 stosImages.MappedImageMaskNode.FullPath)
+                NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
+                ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
+                                                                                OverlayFilename=OverlayImageNode.FullPath,
+                                                                                DiffFilename=DiffImageNode.FullPath,
+                                                                                WarpedFilename=WarpedImageNode.FullPath))
 
-                        cmd = f'ir-stom -load {StosTransformNode.FullPath} -save {tempdir} ' + misc.ArgumentsFromDict(
-                            Parameters)
+                SectionMappingSaveRequired = True
 
-                        NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-                        ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
-                                                                                        OverlayFilename=OverlayImageNode.FullPath,
-                                                                                        DiffFilename=DiffImageNode.FullPath,
-                                                                                        WarpedFilename=WarpedImageNode.FullPath))
+                OverlayImageNode.SetTransform(StosTransformNode)
+                DiffImageNode.SetTransform(StosTransformNode)
+                WarpedImageNode.SetTransform(StosTransformNode)
 
-                        SectionMappingSaveRequired = True
+            completed_overlay_jobs += 1
+            if total_overlay_jobs:
+                report_iterate(
+                    overlay_track_id, completed_overlay_jobs, total_overlay_jobs, overlay_label, depth=0
+                )
 
-                        OverlayImageNode.SetTransform(StosTransformNode)
-                        DiffImageNode.SetTransform(StosTransformNode)
-                        WarpedImageNode.SetTransform(StosTransformNode)
-
-            # Figure out where our output should live...
-
-            # try:
-            # shutil.rmtree('Temp')
-            # except:
-            # pass
-
-        # Pool = nornir_pools.GetGlobalProcessPool()
-        # Pool.wait_completion()
         nornir_pools.ReleaseStagePools()
     finally:
         files.rmtree(tempdir, ignore_errors=True)
@@ -1436,6 +1441,116 @@ def CalculateStosGroupWarpMeasurementImages(Parameters, stos_map_node: StosMapNo
         return group_node
 
 
+def _merge_refine_quality_summary(output_stos_path: str) -> None:
+    """Merge refine-pass diagnostics into ``stos_quality.json`` for *output_stos_path*.
+
+    Does not recompute pair ZNCC. Safe no-op when diagnostics or the output file
+    are missing.
+    """
+    if not os.path.isfile(output_stos_path):
+        return
+    group_folder = os.path.dirname(output_stos_path)
+    found = stos_quality.find_latest_refine_diagnostics(group_folder)
+    if found is None:
+        return
+    npz_path, pass_index = found
+    refine = stos_quality.refine_summary_from_diagnostics(
+        npz_path, pass_index=pass_index)
+    if refine is None:
+        return
+    cache = stos_quality.load_quality_cache(group_folder)
+    key = stos_quality.cache_key_for_stos(group_folder, output_stos_path)
+    stos_quality.merge_entry(cache, key, refine=refine)
+    stos_quality.save_quality_cache(group_folder, cache)
+
+
+def ScoreStosGroupQuality(Parameters,
+                          stos_map_node: nornir_buildmanager.volumemanager.StosMapNode,
+                          group_node: StosGroupNode,
+                          Logger,
+                          **kwargs) -> XElementWrapper | None:
+    """Score Automatic (and Manual) STOS files with full-pair ZNCC.
+
+    Writes ``stos_quality.json`` under the group folder and sets Transform
+    ``PairZNCC`` when a transform node exists. Skips non-stale cache entries
+    unless ``Force`` is true.
+    """
+    force_raw = kwargs.get('Force', Parameters.get('Force', False))
+    if isinstance(force_raw, str):
+        force = force_raw.strip().lower() in ('1', 'true', 'yes', 'y')
+    else:
+        force = bool(force_raw)
+    max_side = kwargs.get('MaxSide', Parameters.get('MaxSide', None))
+    if max_side is not None and str(max_side).strip() != '':
+        try:
+            max_side = int(max_side)
+        except (TypeError, ValueError):
+            max_side = stos_quality.DEFAULT_MAX_SIDE
+    else:
+        max_side = stos_quality.DEFAULT_MAX_SIDE
+
+    group_folder = group_node.FullPath
+    cache = stos_quality.load_quality_cache(group_folder)
+    save_meta = False
+    scored = 0
+    skipped = 0
+
+    for mapping_node in stos_map_node.Mappings:
+        for MappedSection in mapping_node.Mapped:
+            StosTransformNodes = group_node.TransformsForMapping(MappedSection, mapping_node.Control)  # type: ignore[arg-type]
+            if not StosTransformNodes:
+                Logger.warn(
+                    "No transform found for mapping: " + str(MappedSection) + " -> " + str(mapping_node.Control))
+                continue
+
+            for StosTransformNode in StosTransformNodes:
+                paths_to_score: list[tuple[str, TransformNode | None]] = []
+                if os.path.isfile(StosTransformNode.FullPath):
+                    paths_to_score.append((StosTransformNode.FullPath, StosTransformNode))
+                manual_path = group_node.PathToManualTransform(StosTransformNode.FullPath)
+                if manual_path is not None and os.path.isfile(manual_path):
+                    paths_to_score.append((manual_path, None))
+
+                for stos_path, transform_node in paths_to_score:
+                    try:
+                        cache, entry, computed = stos_quality.score_stos_into_cache(
+                            group_folder,
+                            stos_path,
+                            cache=cache,
+                            force=force,
+                            max_side=max_side,
+                            refine_diagnostics_dir=group_folder,
+                        )
+                    except Exception as exc:
+                        Logger.warn(f"ScoreStosGroupQuality failed for {stos_path}: {exc}")
+                        prettyoutput.LogErr(f"ScoreStosGroupQuality failed for {stos_path}: {exc}")
+                        continue
+
+                    if computed:
+                        scored += 1
+                    else:
+                        skipped += 1
+
+                    pair_zncc = entry.get('pair_zncc')
+                    if transform_node is not None and pair_zncc is not None:
+                        try:
+                            value = float(pair_zncc)
+                        except (TypeError, ValueError):
+                            continue
+                        if transform_node.PairZNCC != value:
+                            transform_node.PairZNCC = value
+                            save_meta = True
+
+    stos_quality.save_quality_cache(group_folder, cache)
+    prettyoutput.Log(
+        f"ScoreStosGroupQuality: scored={scored} reused={skipped} cache={os.path.join(group_folder, 'stos_quality.json')}")
+
+    if save_meta:
+        block_node = group_node.FindParent('Block')
+        return block_node if block_node is not None else group_node
+    return group_node
+
+
 def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.volumemanager.StosGroupNode,
                                 InputStosMapNode: nornir_buildmanager.volumemanager.StosMapNode,
                                 OutputStosMapName: str, Logger, **kwargs):
@@ -1488,105 +1603,116 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
     mappedSectionNumbers = list(MappedToControlCandidateList.keys())
     mappedSectionNumbers.sort()
 
+    total_mapped = len(mappedSectionNumbers)
+    completed_mapped = 0
+    chain_track_id = "stos_chain:mappings"
+    chain_label = f"SelectBestRegistrationChain → {OutputStosMapName}"
+    if total_mapped:
+        report_iterate(chain_track_id, 0, total_mapped, chain_label, depth=0)
+
     # If a section is used as a control, then prefer it when generat
     for mappedSection in mappedSectionNumbers:
+        try:
+            potentialControls = MappedToControlCandidateList[mappedSection]
+            if len(potentialControls) == 0:
+                # No need to test, copy over the transform
+                Logger.error(str(mappedSection) + " -> ? No control section candidates found")
+                continue
 
-        potentialControls = MappedToControlCandidateList[mappedSection]
-        if len(potentialControls) == 0:
-            # No need to test, copy over the transform
-            Logger.error(str(mappedSection) + " -> ? No control section candidates found")
-            continue
+            knownControlSections = set(OutputStosMapNode.FindAllControlsForMapped(mappedSection))
+            if knownControlSections == potentialControls:
+                Logger.info(str(mappedSection) + " -> " + str(knownControlSections) + " was previously mapped, skipping")
+                continue
+            else:
+                excess_control_sections = knownControlSections - potentialControls  # type: ignore[operator]
+                for control in excess_control_sections:
+                    OutputStosMapNode.RemoveMapping(control=control, mapped=mappedSection)
+                    Logger.info(f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
+                    prettyoutput.Log(
+                        f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
 
-        knownControlSections = set(OutputStosMapNode.FindAllControlsForMapped(mappedSection))
-        if knownControlSections == potentialControls:
-            Logger.info(str(mappedSection) + " -> " + str(knownControlSections) + " was previously mapped, skipping")
-            continue
-        else:
-            excess_control_sections = knownControlSections - potentialControls  # type: ignore[operator]
-            for control in excess_control_sections:
-                OutputStosMapNode.RemoveMapping(control=control, mapped=mappedSection)
-                Logger.info(f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
-                prettyoutput.Log(
-                    f'Removing {mappedSection} -> {control}: No longer considered a valid control section.')
+            # Examine each stos image if it exists and determine the best match
+            WinningTransform = None
 
-        # Examine each stos image if it exists and determine the best match
-        WinningTransform = None
+            InputSectionMappingNode = InputGroupNode.GetSectionMapping(mappedSection)
+            if InputSectionMappingNode is None:
+                Logger.error(str(mappedSection) + " -> ? No SectionMapping data found")
+                continue
 
-        InputSectionMappingNode = InputGroupNode.GetSectionMapping(mappedSection)
-        if InputSectionMappingNode is None:
-            Logger.error(str(mappedSection) + " -> ? No SectionMapping data found")
-            continue
+            PotentialTransforms = []
+            for controlSection in potentialControls:
+                t = (controlSection, list(InputSectionMappingNode.TransformsToSection(controlSection)))
+                PotentialTransforms.append(t)
 
-        PotentialTransforms = []
-        for controlSection in potentialControls:
-            t = (controlSection, list(InputSectionMappingNode.TransformsToSection(controlSection)))
-            PotentialTransforms.append(t)
+            # Check if there is only one candidate
+            if len(PotentialTransforms) == 1 and len(PotentialTransforms[0][1]) == 1:
+                # No need to test, copy over the transform
+                WinningTransform = PotentialTransforms[0][1][0]
+            else:
+                TaskList = []
+                for (controlSection, Transforms) in PotentialTransforms:
+                    for Transform in Transforms:
+                        try:
+                            ImageSearchXPath = ImageSearchXPathTemplate % {'InputTransformChecksum': Transform.Checksum}
+                            image_node = InputSectionMappingNode.find(ImageSearchXPath)
 
-        # Check if there is only one candidate
-        if len(PotentialTransforms) == 1 and len(PotentialTransforms[0][1]) == 1:
-            # No need to test, copy over the transform
-            WinningTransform = PotentialTransforms[0][1][0]
-        else:
-            TaskList = []
-            for (controlSection, Transforms) in PotentialTransforms:
-                for Transform in Transforms:
+                            if image_node is None:
+                                Logger.error(f'{mappedSection} -> {controlSection}')
+                                Logger.error("No image node found for transform")
+                                Logger.error("Checksum: " + Transform.Checksum)
+                                continue
+
+                            identifyCmd = 'magick identify -format %[mean] -verbose ' + image_node.FullPath
+
+                            if Pool is None:
+                                Pool = nornir_pools.GetLocalMachinePool()
+
+                            task = Pool.add_process(image_node.attrib['Path'], identifyCmd + " && exit", shell=True)
+                            task.transform_node = Transform  # type: ignore[attr-defined]
+                            TaskList.append(task)
+                            Logger.info("Evaluating " + str(mappedSection) + ' -> ' + str(controlSection))
+
+                        except Exception as e:
+                            Logger.error("Could not evalutate mapping " + str(mappedSection) + ' -> ' + str(controlSection))
+
+                BestMean = None
+
+                for t in TaskList:
                     try:
-                        ImageSearchXPath = ImageSearchXPathTemplate % {'InputTransformChecksum': Transform.Checksum}
-                        image_node = InputSectionMappingNode.find(ImageSearchXPath)
+                        MeanStr = t.wait_return()
+                        MeanVal = float(MeanStr)
+                        if BestMean is None:
+                            WinningTransform = t.transform_node
+                            BestMean = MeanVal
+                        elif BestMean > float(MeanVal):
+                            WinningTransform = t.transform_node
+                            BestMean = MeanVal
+                    except:
+                        pass
 
-                        if image_node is None:
-                            Logger.error(f'{mappedSection} -> {controlSection}')
-                            Logger.error("No image node found for transform")
-                            Logger.error("Checksum: " + Transform.Checksum)
-                            continue
+            if WinningTransform is None:
+                Logger.error("Winning transform is none, section #" + str(mappedSection))
+                Logger.info("No mapping found for " + str(mappedSection))
+                continue
 
-                        identifyCmd = 'magick identify -format %[mean] -verbose ' + image_node.FullPath
+            OutputStosMapNode.AddMapping(WinningTransform.ControlSectionNumber, mappedSection)
 
-                        if Pool is None:
-                            Pool = nornir_pools.GetLocalMachinePool()
+            OutputSectionMappingNode = nornir_buildmanager.volumemanager.sectionmappingsnode.SectionMappingsNode.Create(
+                attrib=InputSectionMappingNode.attrib)
+            (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode,
+                                                                                             'MappedSectionNumber')
 
-                        task = Pool.add_process(image_node.attrib['Path'], identifyCmd + " && exit", shell=True)
-                        task.transform_node = Transform  # type: ignore[attr-defined]
-                        TaskList.append(task)
-                        Logger.info("Evaluating " + str(mappedSection) + ' -> ' + str(controlSection))
+            (added, OutputTransformNode) = OutputSectionMappingNode.UpdateOrAddChildByAttrib(WinningTransform, 'Path')
+            # OutputTransformNode.attrib = copy.deepcopy(WinningTransform.attrib)
 
-                    except Exception as e:
-                        Logger.error("Could not evalutate mapping " + str(mappedSection) + ' -> ' + str(controlSection))
-
-            BestMean = None
-
-            for t in TaskList:
-                try:
-                    MeanStr = t.wait_return()
-                    MeanVal = float(MeanStr)
-                    if BestMean is None:
-                        WinningTransform = t.transform_node
-                        BestMean = MeanVal
-                    elif BestMean > float(MeanVal):
-                        WinningTransform = t.transform_node
-                        BestMean = MeanVal
-                except:
-                    pass
-
-        if WinningTransform is None:
-            Logger.error("Winning transform is none, section #" + str(mappedSection))
-            Logger.info("No mapping found for " + str(mappedSection))
-            continue
-
-        OutputStosMapNode.AddMapping(WinningTransform.ControlSectionNumber, mappedSection)
-
-        OutputSectionMappingNode = nornir_buildmanager.volumemanager.sectionmappingsnode.SectionMappingsNode.Create(
-            attrib=InputSectionMappingNode.attrib)
-        (added, OutputSectionMappingNode) = OutputStosGroupNode.UpdateOrAddChildByAttrib(OutputSectionMappingNode,
-                                                                                         'MappedSectionNumber')
-
-        (added, OutputTransformNode) = OutputSectionMappingNode.UpdateOrAddChildByAttrib(WinningTransform, 'Path')
-        # OutputTransformNode.attrib = copy.deepcopy(WinningTransform.attrib)
-
-        # if controlSection is None:
-        #    Logger.info("No mapping found for " + str(mappedSection))
-        # else:
-        Logger.info("Created mapping " + str(mappedSection) + ' -> ' + str(WinningTransform.ControlSectionNumber))
+            # if controlSection is None:
+            #    Logger.info("No mapping found for " + str(mappedSection))
+            # else:
+            Logger.info("Created mapping " + str(mappedSection) + ' -> ' + str(WinningTransform.ControlSectionNumber))
+        finally:
+            completed_mapped += 1
+            if total_mapped:
+                report_iterate(chain_track_id, completed_mapped, total_mapped, chain_label, depth=0)
 
     yield block_node
 
@@ -1960,6 +2086,10 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
         raise
 
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath} Complete!')
+    try:
+        _merge_refine_quality_summary(OutputStosFullPath)
+    except Exception as quality_err:
+        prettyoutput.LogErr(f'Failed to merge refine quality summary for {OutputStosFullPath}: {quality_err}')
 
 
 def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: StosGroupNode, UseMasks: bool,
@@ -2188,11 +2318,36 @@ def _prepare_refine_stos_output_node(context: _RefineStosJobContext, reason: str
     return stos_node
 
 
+def _publish_refine_stos_progress(
+        progress: dict[str, typing.Any] | None,
+        context: _RefineStosJobContext,
+        *,
+        current: int | None = None) -> None:
+    """Publish dashboard iterate_progress for the active input ``.stos`` file."""
+    if progress is None or int(progress.get("total", 0)) <= 0:
+        return
+    completed = int(progress.get("completed", 0))
+    publish_run_event(
+        "iterate_progress",
+        current=completed if current is None else current,
+        total=int(progress["total"]),
+        depth=0,
+        track_id="stos_refine:files",
+        label=str(progress.get("label") or "StosGridRefine"),
+        element=os.path.basename(context.input_stos_path),
+        path=context.input_stos_path,
+        section=context.mapped_section,
+    )
+
+
 def _run_refine_or_manual_copy(
         context: _RefineStosJobContext,
         RefineFunc,
         refine_kwargs: dict) -> tuple[TransformNode | None, bool]:
     """Run refine or manual copy for one pair; return (stos node or None, refined_by_func)."""
+    progress = refine_kwargs.get("_refine_progress")
+    _publish_refine_stos_progress(progress, context)
+
     if context.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE:
         stos_node = _prepare_refine_stos_output_node(context, context.decision_reason)
     else:
@@ -2335,6 +2490,12 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
     total_refine_jobs = len(refine_func_jobs)
     completed_refine_jobs = 0
     refine_files_label = f"StosGridRefine → {OutputStosGroupName}"
+    refine_progress = {
+        "completed": 0,
+        "total": total_refine_jobs,
+        "label": refine_files_label,
+    }
+    refine_kwargs["_refine_progress"] = refine_progress
     if total_refine_jobs:
         publish_run_event(
             "iterate_progress",
@@ -2371,15 +2532,10 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
         if refined_by_func:
             completed_refine_jobs += 1
+            refine_progress["completed"] = completed_refine_jobs
             if total_refine_jobs:
-                publish_run_event(
-                    "iterate_progress",
-                    current=completed_refine_jobs,
-                    total=total_refine_jobs,
-                    depth=0,
-                    track_id="stos_refine:files",
-                    label=refine_files_label,
-                )
+                _publish_refine_stos_progress(
+                    refine_progress, context, current=completed_refine_jobs)
 
         yield context.output_section_mapping_node
 
@@ -2669,20 +2825,35 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
     if AddedStosMap:
         (yield block_node)
 
+    total_stv = 0
+    for sectionNumber in rt.RootNodes:
+        total_stv += sum(1 for _ in rt.GenerateOrderedMappingsToRootNode(rt.Nodes[sectionNumber]))
+
+    completed_stv = [0]
+    stv_track_id = "slice_to_volume:sections"
+    stv_label = f"SliceToVolume → {OutputGroupFullname}"
+
+    def _stv_progress() -> None:
+        completed_stv[0] += 1
+        report_iterate(stv_track_id, completed_stv[0], total_stv, stv_label, depth=0)
+
+    if total_stv:
+        report_iterate(stv_track_id, 0, total_stv, stv_label, depth=0)
+
     for sectionNumber in rt.RootNodes:
         Node = rt.Nodes[sectionNumber]
-        yield from SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode,
-                                                         OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance,
-                                                         ControlToVolumeTransform=None,
-                                                         min_blend=min_blend,
-                                                         max_blend=max_blend,
-                                                         travel_limit=travel_limit,
-                                                         ignore_rotation=ignore_rotation,
-                                                         reblend_iterations=reblend_iterations,
-                                                         reblend_tolerance=reblend_tolerance,
-                                                         chain_consistent_linear=chain_consistent_linear)
-        # for saveNode in SliceToVolumeFromRegistrationTreeNode(rt, Node, InputGroupNode=InputStosGroupNode, OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance, ControlToVolumeTransform=None):
-        #    (yield saveNode)
+        yield from SliceToVolumeFromRegistrationTreeNode(
+            rt, Node, InputGroupNode=InputStosGroupNode,
+            OutputGroupNode=OutputGroupNode, EnrichTolerance=Tolerance,
+            ControlToVolumeTransform=None,
+            min_blend=min_blend,
+            max_blend=max_blend,
+            travel_limit=travel_limit,
+            ignore_rotation=ignore_rotation,
+            reblend_iterations=reblend_iterations,
+            reblend_tolerance=reblend_tolerance,
+            chain_consistent_linear=chain_consistent_linear,
+            progress_callback=_stv_progress if total_stv else None)
 
     # TranslateVolumeToZeroOrigin(OutputGroupNode)
     # Do not use TranslateVolumeToZeroOrigin here because the center of the volume image does not get shifted with the rest of the sections. That is a problem.  We should probably create an identity transform for the root nodes in
@@ -2701,7 +2872,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                           ignore_rotation: bool = False,
                                           reblend_iterations: int | None = None,
                                           reblend_tolerance: float | None = None,
-                                          chain_consistent_linear: bool = True):
+                                          chain_consistent_linear: bool = True,
+                                          progress_callback: typing.Callable[[], None] | None = None):
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
     min_blend = _resolve_min_blend(min_blend, linear_blend_factor)
@@ -2714,6 +2886,9 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                                     min_blend,
                                                     travel_limit)
     for step in rt.GenerateOrderedMappingsToRootNode(rootNode):
+        if progress_callback is not None:
+            progress_callback()
+
         MappedSectionNode = step.MappedNode  # type: ignore[attr-defined]
         IntermediateControlSection = step.ParentNode.SectionNumber  # type: ignore[attr-defined]
 
@@ -3676,17 +3851,27 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
     """
     Channels = block_node.findall('Section/Channel')
 
-    MatchingChannelNodes = nornir_buildmanager.volumemanager.SearchCollection(Channels, 'Name',
-                                                                              ChannelsRegEx)  # type: ignore[assignment]  # type: Generator[ChannelNode, None, None]
+    MatchingChannelNodes = list(nornir_buildmanager.volumemanager.SearchCollection(Channels, 'Name',
+                                                                              ChannelsRegEx))  # type: ignore[assignment]
 
     StosMosaicTransforms = []  # type: list[TransformNode]
 
     UntranslatedOutputTransformName = OutputTransformName + "_Untranslated"
 
+    total_channels = len(MatchingChannelNodes)
+    completed_channels = 0
+    mtv_track_id = "mosaic_to_volume:sections"
+    mtv_label = f"MosaicToVolume → {OutputTransformName}"
+    if total_channels:
+        report_iterate(mtv_track_id, 0, total_channels, mtv_label, depth=0)
+
     for channelNode in MatchingChannelNodes:
         transform_node = channelNode.GetTransform(InputTransformName)  # type: ignore[reportAttributeAccessIssue]
 
         if transform_node is None:
+            completed_channels += 1
+            if total_channels:
+                report_iterate(mtv_track_id, completed_channels, total_channels, mtv_label, depth=0)
             continue
 
         node_to_save = BuildChannelMosaicToVolumeTransform(stos_map_node, stos_group_node, transform_node,
@@ -3697,6 +3882,10 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
         output_transform_node = channelNode.GetChildByAttrib('Transform', 'Name', UntranslatedOutputTransformName)  # type: ignore[reportAttributeAccessIssue]
         if output_transform_node is not None:
             StosMosaicTransforms.append(output_transform_node)  # type: ignore[arg-type]
+
+        completed_channels += 1
+        if total_channels:
+            report_iterate(mtv_track_id, completed_channels, total_channels, mtv_label, depth=0)
 
     if len(StosMosaicTransforms) == 0:
         return

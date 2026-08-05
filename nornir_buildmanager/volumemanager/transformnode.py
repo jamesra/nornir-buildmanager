@@ -106,6 +106,20 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
             self.attrib['Compressed'] = "%d" % value
 
     @property
+    def PairZNCC(self) -> float | None:
+        """Full-pair ZNCC quality score for this STOS transform, if scored."""
+        value = self.attrib.get('PairZNCC', None)
+        return float(value) if value is not None else None
+
+    @PairZNCC.setter
+    def PairZNCC(self, value: float | None):
+        if value is None:
+            if 'PairZNCC' in self.attrib:
+                del self.attrib['PairZNCC']
+        else:
+            self.attrib['PairZNCC'] = f'{value:g}'
+
+    @property
     def min_blend(self) -> float | None:
         """Floor weight toward rigid linear blend used to create this transform."""
         value = self.attrib.get('min_blend', None)

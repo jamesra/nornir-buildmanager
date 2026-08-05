@@ -162,12 +162,15 @@ class MRCImport:
 
         histogram_cache_path = os.path.join(source_dir, f'Histogram-{SectionNumber}.xml')
 
-        contrast_settings = shared.GetSectionContrastSettings(section_number=SectionNumber,
-                                                              contrast_map=ContrastMap,
-                                                              contrast_cutoffs=ContrastCutoffs,
-                                                              calculate_histogram=lambda: cls.CalculateHistogram(  # type: ignore[arg-type]
-                                                                  mrc_obj=mrcfile, bpp=bpp),
-                                                              histogram_cache_path=histogram_cache_path)
+        contrast_settings = shared.GetSectionContrastSettings(
+            section_number=SectionNumber,
+            contrast_map=ContrastMap,
+            contrast_cutoffs=ContrastCutoffs,
+            calculate_histogram=lambda: cls.CalculateHistogram(  # type: ignore[arg-type]
+                mrc_obj=mrcfile, bpp=bpp),
+            histogram_cache_path=histogram_cache_path,
+            cache_inputs=[mrc_fullpath],
+            histogram_stride=1)
 
         contrast_settings = shared.MinMaxGamma(min=np.around(contrast_settings.min),
                                                max=np.around(contrast_settings.max),

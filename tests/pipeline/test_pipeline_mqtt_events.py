@@ -8,6 +8,7 @@ import nornir_buildmanager.pipelinemanager as pm
 from nornir_buildmanager.volumemanager.sectionnode import SectionNode
 from nornir_buildmanager.volumemanager.channelnode import ChannelNode
 from nornir_buildmanager.volumemanager.filternode import FilterNode
+from nornir_buildmanager.volumemanager.mappingnode import MappingNode
 
 
 class TestElementTelemetryFields(unittest.TestCase):
@@ -27,6 +28,13 @@ class TestElementTelemetryFields(unittest.TestCase):
         filt = FilterNode.Create("Leveled")
         fields = pm.PipelineManager._ElementTelemetryFields(filt)
         self.assertEqual(fields["label"], "filter node - Leveled")
+
+    def test_mapping_node_label(self) -> None:
+        mapping = MappingNode.Create(1334, [1333])
+        fields = pm.PipelineManager._ElementTelemetryFields(mapping)
+        self.assertEqual(fields["section"], 1334)
+        self.assertEqual(fields["element"], "1334 <- 1333")
+        self.assertEqual(fields["label"], "MappingNode - 1334 <- 1333")
 
     def test_variable_name_does_not_override_descriptive_label(self) -> None:
         section = SectionNode.Create(Number=1)

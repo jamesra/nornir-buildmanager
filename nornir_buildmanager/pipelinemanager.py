@@ -396,6 +396,13 @@ class PipelineManager:
             if name is not None:
                 fields["element"] = name
             fields["label"] = f"filter node - {name}"
+        elif cls_name == "MappingNode":
+            mapping_label = str(element)
+            fields["element"] = mapping_label
+            control = getattr(element, "Control", None)
+            if control is not None:
+                fields["section"] = control
+            fields["label"] = f"MappingNode - {mapping_label}"
         else:
             if name is not None:
                 fields["element"] = name

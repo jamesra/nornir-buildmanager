@@ -5,12 +5,13 @@ Created on Apr 18, 2019
 '''
 
 import glob
+import json
 import os
 import re
 import shutil
 import sys
 import datetime
-from typing import Iterable, NamedTuple, Callable
+from typing import Iterable, NamedTuple, Callable, Sequence
 
 import nornir_buildmanager
 from nornir_buildmanager.exceptions import NornirUserException
@@ -25,6 +26,12 @@ import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.histogram import Histogram
 import nornir_shared.plot as plot
+
+
+# Bump when histogram cache semantics change (e.g. default stride).
+HISTOGRAM_CACHE_VERSION: int = 1
+# Sidecar next to Histogram.xml: Histogram.cache.json
+HISTOGRAM_CACHE_SIDECAR_SUFFIX: str = '.cache.json'
 
 
 class FilenameMetadata(NamedTuple):
@@ -369,57 +376,135 @@ def PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float, 
                        range_is_power_of_two=True)
 
 
-def _GetMinMaxCutoffs(calculate_histogram: Callable[[], Histogram],
-                      min_cutoff: float,
-                      max_cutoff: float,
-                      histogram_cache_path: str | None = None):
+def histogram_cache_sidecar_path(histogram_cache_path: str) -> str:
+    """Return path of the JSON sidecar beside ``Histogram.xml`` (``*.cache.json``)."""
+    (base, _) = os.path.splitext(histogram_cache_path)
+    return f"{base}{HISTOGRAM_CACHE_SIDECAR_SUFFIX}"
+
+
+def _cache_input_basenames(cache_inputs: Sequence[str]) -> list[str]:
+    return sorted(os.path.basename(p) for p in cache_inputs)
+
+
+def _is_histogram_cache_fresh(histogram_cache_path: str,
+                              cache_inputs: Sequence[str],
+                              expected_stride: int) -> bool:
+    """Return True if XML + sidecar match version, stride, input set, and mtimes."""
+    if not os.path.exists(histogram_cache_path):
+        return False
+    sidecar = histogram_cache_sidecar_path(histogram_cache_path)
+    if not os.path.exists(sidecar):
+        return False
+    try:
+        with open(sidecar, 'r', encoding='utf-8') as f:
+            meta = json.load(f)
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return False
+
+    if meta.get('version') != HISTOGRAM_CACHE_VERSION:
+        return False
+    if int(meta.get('stride', -1)) != int(expected_stride):
+        return False
+    if list(meta.get('inputs', [])) != _cache_input_basenames(cache_inputs):
+        return False
+
+    try:
+        xml_mtime = os.path.getmtime(histogram_cache_path)
+    except OSError:
+        return False
+    input_mtimes: list[float] = []
+    for path in cache_inputs:
+        try:
+            if os.path.exists(path):
+                input_mtimes.append(os.path.getmtime(path))
+        except OSError:
+            continue
+    if input_mtimes and xml_mtime < max(input_mtimes):
+        return False
+    return True
+
+
+def _write_histogram_cache_sidecar(histogram_cache_path: str,
+                                   cache_inputs: Sequence[str],
+                                   stride: int) -> None:
+    sidecar = histogram_cache_sidecar_path(histogram_cache_path)
+    meta = {
+        'version': HISTOGRAM_CACHE_VERSION,
+        'stride': int(stride),
+        'inputs': _cache_input_basenames(cache_inputs),
+    }
+    os.makedirs(os.path.dirname(sidecar) or '.', exist_ok=True)
+    with open(sidecar, 'w', encoding='utf-8') as f:
+        json.dump(meta, f, indent=0, sort_keys=True)
+
+
+def ensure_histogram_cache(histogram_cache_path: str,
+                           calculate_histogram: Callable[[], Histogram],
+                           cache_inputs: Sequence[str],
+                           stride: int = 1) -> Histogram:
+    """Load a fresh histogram cache or recompute, clean, and save XML + sidecar.
+
+    Freshness requires matching cache version/stride, matching input basenames,
+    and XML mtime at least as new as every existing path in *cache_inputs*.
     """
+    if _is_histogram_cache_fresh(histogram_cache_path, cache_inputs, stride):
+        histogram_obj = Histogram.Load(histogram_cache_path)
+        if histogram_obj is not None:
+            return histogram_obj
 
-    :param calculate_histogram: A function which calculates a composite histogram of the section images.  Assumed to be a costly function to call.
-    :param min_cutoff:
-    :param max_cutoff:
-    :param histogram_cache_path:
-    :return:
-    """
-    histogramObj = None
-    if histogram_cache_path is not None:
-        histogramObj = Histogram.Load(histogram_cache_path)
-
-    if histogramObj is None:
-        histogramObj = calculate_histogram()
-
-        if histogram_cache_path is not None:
-            histogramObj = CleanOutliersFromHistogram(histogramObj)
-            os.makedirs(os.path.dirname(histogram_cache_path), exist_ok=True)
-            histogramObj.Save(histogram_cache_path)
-
-    assert (histogramObj is not None)
-
-    # I am willing to clip 1 pixel every hundred thousand on the dark side, and one every ten thousand on the light
-    return histogramObj.AutoLevel(min_cutoff, max_cutoff)
+    histogram_obj = calculate_histogram()
+    histogram_obj = CleanOutliersFromHistogram(histogram_obj)
+    os.makedirs(os.path.dirname(histogram_cache_path) or '.', exist_ok=True)
+    histogram_obj.Save(histogram_cache_path)
+    _write_histogram_cache_sidecar(histogram_cache_path, cache_inputs, stride)
+    return histogram_obj
 
 
 def GetSectionContrastSettings(section_number: int,
                                contrast_map: dict[int, ContrastValue],
                                contrast_cutoffs: tuple[float, float],
                                calculate_histogram: Callable[[], Histogram],
-                               histogram_cache_path: str) -> MinMaxGamma:
-    """Clear and recreate the filters tile pyramid node if the filters contrast node does not match"""
-    Gamma = 1.0
+                               histogram_cache_path: str,
+                               cache_inputs: Sequence[str] | None = None,
+                               histogram_stride: int = 1) -> MinMaxGamma:
+    """Resolve section Min/Max/Gamma from overrides and/or AutoLevel on a cached hist.
 
-    # We don't have to run this step, but it ensures the histogram is up to date
-    (ActualMosaicMin, ActualMosaicMax) = _GetMinMaxCutoffs(
+    Always ensures ``Histogram.xml`` is fresh for plotting. When both Min and Max
+    are overridden, AutoLevel is not used for contrast values.
+    """
+    if cache_inputs is None:
+        cache_inputs = []
+
+    histogram_obj = ensure_histogram_cache(
+        histogram_cache_path=histogram_cache_path,
         calculate_histogram=calculate_histogram,
-        min_cutoff=contrast_cutoffs[0],
-        max_cutoff=1.0 - contrast_cutoffs[1],
-        histogram_cache_path=histogram_cache_path)
+        cache_inputs=cache_inputs,
+        stride=histogram_stride)
 
-    if section_number in contrast_map:
-        ActualMosaicMin = ActualMosaicMin if contrast_map[section_number].Min is None else contrast_map[
-            section_number].Min
-        ActualMosaicMax = ActualMosaicMax if contrast_map[section_number].Max is None else contrast_map[
-            section_number].Max
-        Gamma = Gamma if contrast_map[section_number].Gamma is None else contrast_map[section_number].Gamma
+    Gamma = 1.0
+    override = contrast_map.get(section_number)
+    full_override = (
+        override is not None
+        and override.Min is not None
+        and override.Max is not None
+    )
+
+    if full_override:
+        assert override is not None
+        ActualMosaicMin = override.Min
+        ActualMosaicMax = override.Max
+        if override.Gamma is not None:
+            Gamma = override.Gamma
+    else:
+        (ActualMosaicMin, ActualMosaicMax) = histogram_obj.AutoLevel(
+            contrast_cutoffs[0], 1.0 - contrast_cutoffs[1])
+        if override is not None:
+            if override.Min is not None:
+                ActualMosaicMin = override.Min
+            if override.Max is not None:
+                ActualMosaicMax = override.Max
+            if override.Gamma is not None:
+                Gamma = override.Gamma
 
     return MinMaxGamma(min=ActualMosaicMin,
                        max=ActualMosaicMax,

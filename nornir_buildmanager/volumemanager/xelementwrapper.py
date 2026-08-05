@@ -20,8 +20,14 @@ nid = 0
 
 
 class XElementWrapper(ElementTree.Element):
-    _AttributesChanged: bool  # Set to true if any attribute has changed and the node needs to be saved to disk
-    _ChildrenChanged: bool  # Set to true if any child node has changed and the node needs to be saved to disk
+    # Dirty flags for VolumeData.xml (and embedded meta-data) persistence.
+    # Contract: mutation APIs on THIS element set the flags; successful Save clears
+    # them via ResetElementChangeFlags. Save must never invent dirty. Linked-container
+    # dirtiness does not bubble to the parent (each linked container owns its own
+    # VolumeData.xml and flags). See AttributesChanged / ChildrenChanged /
+    # ElementHasChangesToSave / ResetElementChangeFlags.
+    _AttributesChanged: bool  # Set by attrib mutation on this element; cleared after save
+    _ChildrenChanged: bool  # Set by append/remove/UpdateOrAddChild* on this element; cleared after save
     _Parent: XElementWrapper | None  # Parent node in the XML tree
     _save_lock: threading.RLock  # Lock to prevent multiple threads from writing attributes of the node at the same time
 
@@ -107,15 +113,20 @@ class XElementWrapper(ElementTree.Element):
 
     @property
     def AttributesChanged(self) -> bool:
-        """
-        :return: Boolean indicating if an attribute has changed.  Used to indicate
-        the element needs to be saved to disk.
-        :rtype: bool
+        """True if this element's XML attributes need to be written to disk.
+
+        Set at mutation time by attribute assignment paths (``__setattr__`` /
+        property setters that update ``attrib``), not by Save. Cleared only by
+        :meth:`ResetElementChangeFlags` after a successful save of the XML that
+        owns this element. Prefer letting mutation APIs set this; assign True
+        manually only for rare explicit dirties when attrib was changed outside
+        those paths.
         """
         return self._AttributesChanged
 
     @AttributesChanged.setter
     def AttributesChanged(self, value: bool):
+        """Set or clear the attribute-dirty flag (normally set by mutation APIs)."""
         self._AttributesChanged = value
 
     #         if Value:
@@ -123,21 +134,30 @@ class XElementWrapper(ElementTree.Element):
 
     @property
     def ChildrenChanged(self) -> bool:
-        """
-        :return: Boolean indicating if a child (a direct child, not nested) of this element has changed.  Used to indicate
-        the element needs to be saved to disk.
-        :rtype: bool
+        """True if this element's direct child list needs to be written to disk.
+
+        Set at mutation time by ``append``, ``remove``, and
+        ``UpdateOrAddChild*`` on this element (not by nested linked containers
+        mutating themselves). Cleared only by :meth:`ResetElementChangeFlags`
+        after a successful save. Linked children own their own VolumeData.xml
+        and flags; their dirtiness does not set this parent flag.
         """
         return self._ChildrenChanged
 
     @ChildrenChanged.setter
     def ChildrenChanged(self, value: bool):
+        """Set or clear the children-dirty flag (normally set by append/remove)."""
         self._ChildrenChanged = value
 
     @property
     def ElementHasChangesToSave(self) -> bool:
-        """Check this and child elements (which are not linked containers that will save themselves) for changes to save.  We need to note any nested elements that would save with this element"""
+        """Whether this element's XML file needs a rewrite, based on dirty flags.
 
+        Reads flags already set at mutation time. Does **not** invent dirtiness
+        or walk linked containers (``SaveAsLinkedElement``) that save themselves.
+        May consult **non-linked** nested children only, because those nodes are
+        serialized into this element's XML (no separate VolumeData.xml).
+        """
         if self.AttributesChanged or self.ChildrenChanged:
             return True
 
@@ -155,10 +175,12 @@ class XElementWrapper(ElementTree.Element):
         return ReturnValue
 
     def ResetElementChangeFlags(self):
-        """Set this and child elements (which are not linked containers that
-           will save themselves) change flags to false.  Called after the
-           element is saved. for changes to save."""
+        """Clear dirty flags after this element's XML was successfully written.
 
+        Clears this element and non-linked nested children that share the same
+        file. Does not clear linked containers (they reset when they save).
+        Call only after a successful write—not to mean \"I decided nothing changed.\"
+        """
         self._AttributesChanged = False
         self._ChildrenChanged = False
 

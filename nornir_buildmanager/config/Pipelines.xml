@@ -1808,6 +1808,31 @@
                     RenderToSourceSpace="#RenderToSourceSpace"/>
     </Pipeline>
 
+    <Pipeline Name="ScoreStosGroupQuality"
+              Help="Compute full-pair ZNCC for each .stos in a group, write stos_quality.json, and set Transform PairZNCC attributes.">
+        <Arguments>
+            <Argument flag="-StosGroup" default="StosBrute" dest="StosGroup"
+                      type="str" help="Stos group to score" required="True"/>
+            <Argument flag="-Downsample" dest="InputDownsample" type="int"
+                      help="Downsample level of the stos group" required="True"/>
+            <Argument flag="-StosMap" default="FinalStosMap" dest="StosMap"
+                      type="str" help="Stos map describing which pairs to score" required="True"/>
+            <Argument flag="-MaxSide" default="2048" dest="MaxSide" type="int"
+                      help="Clamp longest image side (pixels) before scoring" required="False"/>
+            <Argument flag="-Force" action="store_true" dest="Force"
+                      help="Recompute pair ZNCC even when the cache entry is fresh" required="False"/>
+        </Arguments>
+
+        <Select VariableName="BlockNode" XPath="Block"/>
+        <Select VariableName="GroupNodeObj" Root="BlockNode"
+                XPath="StosGroup[@Name='#StosGroup#InputDownsample']"/>
+        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+                XPath="StosMap[@Name='#StosMap']"/>
+        <PythonCall Function="block.ScoreStosGroupQuality"
+                    group_node="#GroupNodeObj" stos_map_node="#StosMapNodeObj"
+                    MaxSide="#MaxSide" Force="#Force"/>
+    </Pipeline>
+
     <Pipeline Name="SelectBestRegistrationChain"
               Help="Create a new registration chain by examining the stos overlays produced by AssembleStosOverlays.  If two registrations are possible for a section the overlay with the most overlap is chosen.">
         <Arguments>
