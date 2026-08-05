@@ -234,7 +234,9 @@ class PruneObj:
 
         except Exception as E:
             prettyoutput.LogErr(f"Exception creating prunemap histogram\n{E}")
-            pass
+            return None
+
+        return None
 
     @classmethod
     def CalculatePruneScores(cls, Parameters, FilterNode, Downsample, TransformNode, OutputFile=None, Logger=None,
