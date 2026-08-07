@@ -537,6 +537,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         self.logger.info(msg)
         prettyoutput.Log(msg)
         try:
+            ElementTree.indent(SaveElement, space='  ')
             OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         except Exception as e:
             prettyoutput.Log(f"Cannot encode output XML:\n{e}")
