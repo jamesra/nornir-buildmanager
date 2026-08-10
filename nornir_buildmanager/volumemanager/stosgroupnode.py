@@ -3,9 +3,12 @@ from __future__ import annotations
 import shutil
 
 import nornir_buildmanager
+from nornir_buildmanager.validation.stos_image_check import (
+    ImageCheckSnapshot,
+    is_stos_input_image_outdated,
+)
 from nornir_buildmanager.volumemanager import *
 from nornir_shared import prettyoutput as prettyoutput
-import nornir_shared.files
 
 
 class StosGroupNode(XNamedContainerElementWrapped):
@@ -209,23 +212,15 @@ class StosGroupNode(XNamedContainerElementWrapped):
         :param str ChecksumAttribName: Name of attribute with checksum value on image node
         :param ImageNode imageNode: Image node to test
         """
-
         if imageNode is None:
-            return True
-
-        IsInvalid = False
-
-        if len(stosNode.attrib.get(ChecksumAttribName, "")) > 0:
-            IsInvalid = IsInvalid or not nornir_buildmanager.validation.transforms.IsValueMatched(stosNode,
-                                                                                                  ChecksumAttribName,
-                                                                                                  imageNode.Checksum)
+            check = ImageCheckSnapshot('', None, None)
         else:
-            if not os.path.exists(imageNode.FullPath):
-                IsInvalid = IsInvalid or True
-            else:
-                IsInvalid = IsInvalid or nornir_shared.files.IsOutdated(imageNode.FullPath, stosNode.FullPath)
-
-        return IsInvalid
+            check = ImageCheckSnapshot(
+                stored_checksum=stosNode.attrib.get(ChecksumAttribName, '') or '',
+                image_checksum=getattr(imageNode, 'Checksum', None),
+                image_path=getattr(imageNode, 'FullPath', None),
+            )
+        return is_stos_input_image_outdated(check, stosNode.FullPath)
 
     def AreStosInputImagesOutdated(self,
                                    stosNode: TransformNode,

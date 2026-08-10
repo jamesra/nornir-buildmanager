@@ -21,6 +21,24 @@ _FIXTURE_STOS = (
 )
 
 
+def _filesize_checksum(path: Path) -> str:
+    """Match production Image/FilesizeChecksum: size in bytes as a string."""
+    return str(path.stat().st_size)
+
+
+def _fresh_image_checks(tmp_path: Path, content: str = 'img') -> tuple[
+        stosgroup_workers.ImageCheckSnapshot, ...]:
+    """Write control/mapped images and return snapshots with live size checksums."""
+    paths = (tmp_path / 'ctrl.png', tmp_path / 'map.png')
+    for path in paths:
+        path.write_text(content, encoding='utf-8')
+    size = _filesize_checksum(paths[0])
+    return tuple(
+        stosgroup_workers.ImageCheckSnapshot(size, size, str(path))
+        for path in paths
+    )
+
+
 def _snapshot(
         *,
         tmp_path: Path,
@@ -64,13 +82,12 @@ def _snapshot(
         manual_path = str(manual_file)
 
     if image_checks is None:
-        image_checks = (
-            stosgroup_workers.ImageCheckSnapshot('img', 'img', str(tmp_path / 'ctrl.png')),
-            stosgroup_workers.ImageCheckSnapshot('img', 'img', str(tmp_path / 'map.png')),
-        )
-        for check in image_checks:
-            assert check.image_path is not None
-            Path(check.image_path).write_text('img', encoding='utf-8')
+        image_checks = _fresh_image_checks(tmp_path)
+        if output_exists:
+            # Images older than a fresh refine output.
+            for check in image_checks:
+                assert check.image_path is not None
+                os.utime(check.image_path, (1, 1))
 
     return stosgroup_workers.RefineScanSnapshot(
         output_stos_path=str(output_path),
@@ -171,20 +188,64 @@ def test_decide_skip_when_locked_even_if_stale(tmp_path: Path) -> None:
 
 
 def test_decide_invalidate_when_images_outdated(tmp_path: Path) -> None:
-    """Outdated input image checksums force rebuild."""
+    """Live image size mismatch vs stored transform checksum forces rebuild."""
+    ctrl = tmp_path / 'ctrl.png'
+    mapped = tmp_path / 'map.png'
+    ctrl.write_text('img', encoding='utf-8')
+    mapped.write_text('img', encoding='utf-8')
+    live = _filesize_checksum(ctrl)
     image_checks = (
-        stosgroup_workers.ImageCheckSnapshot('old', 'new', str(tmp_path / 'ctrl.png')),
-        stosgroup_workers.ImageCheckSnapshot('img', 'img', str(tmp_path / 'map.png')),
+        stosgroup_workers.ImageCheckSnapshot('999999', live, str(ctrl)),
+        stosgroup_workers.ImageCheckSnapshot(live, live, str(mapped)),
     )
-    for check in image_checks:
-        assert check.image_path is not None
-        Path(check.image_path).write_text('img', encoding='utf-8')
     snapshot = _snapshot(
         tmp_path=tmp_path,
         output_exists=True,
         valid_output=False,
         image_checks=image_checks,
     )
+    result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
+    assert result.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE
+    assert 'image' in result.reason.lower()
+
+
+def test_decide_invalidate_when_image_newer_than_output(tmp_path: Path) -> None:
+    """Matching size checksums still rebuild when an input image is newer than output."""
+    if not _FIXTURE_STOS.is_file():
+        pytest.skip('STOS fixture unavailable')
+    snapshot = _snapshot(tmp_path=tmp_path, output_exists=True, valid_output=True)
+    output_mtime = os.path.getmtime(snapshot.output_stos_path)
+    for check in snapshot.image_checks:
+        assert check.image_path is not None
+        newer = output_mtime + 10.0
+        os.utime(check.image_path, (newer, newer))
+    result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
+    assert result.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE
+    assert 'image' in result.reason.lower()
+
+
+def test_decide_invalidate_when_live_size_differs_from_image_checksum(tmp_path: Path) -> None:
+    """Stale Image-node checksum vs live file size forces rebuild."""
+    ctrl = tmp_path / 'ctrl.png'
+    mapped = tmp_path / 'map.png'
+    ctrl.write_text('img', encoding='utf-8')
+    mapped.write_text('img', encoding='utf-8')
+    live = _filesize_checksum(ctrl)
+    image_checks = (
+        stosgroup_workers.ImageCheckSnapshot(live, '1', str(ctrl)),
+        stosgroup_workers.ImageCheckSnapshot(live, live, str(mapped)),
+    )
+    snapshot = _snapshot(
+        tmp_path=tmp_path,
+        output_exists=True,
+        valid_output=False,
+        image_checks=image_checks,
+    )
+    # Ensure mtime alone is not the reason: images older than output.
+    for check in image_checks:
+        assert check.image_path is not None
+        os.utime(check.image_path, (1, 1))
+    os.utime(snapshot.output_stos_path, (2, 2))
     result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
     assert result.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE
     assert 'image' in result.reason.lower()
@@ -269,25 +330,24 @@ def test_progress_total_excludes_manual_and_skip() -> None:
     """Progress totals only count jobs that invoke RefineFunc."""
     decisions = [
         stosgroup_workers.RefineScanDecisionResult(
-            stosgroup_workers.RefineScanDecision.REFINE, 'missing'),
+            stosgroup_workers.RefineScanDecision.SKIP, 'ok'),
         stosgroup_workers.RefineScanDecisionResult(
             stosgroup_workers.RefineScanDecision.MANUAL_COPY, 'manual'),
         stosgroup_workers.RefineScanDecisionResult(
-            stosgroup_workers.RefineScanDecision.SKIP, 'fresh'),
+            stosgroup_workers.RefineScanDecision.REFINE, 'missing'),
         stosgroup_workers.RefineScanDecisionResult(
             stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE, 'stale'),
     ]
-    refine_count = sum(
-        1 for result in decisions
-        if result.decision in (
-            stosgroup_workers.RefineScanDecision.REFINE,
-            stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE,
-        ))
-    assert refine_count == 2
+    refine_func_count = sum(
+        1 for d in decisions
+        if d.decision != stosgroup_workers.RefineScanDecision.MANUAL_COPY
+        and d.decision != stosgroup_workers.RefineScanDecision.SKIP
+    )
+    assert refine_func_count == 2
 
 
-def test_stos_file_is_valid_fixture() -> None:
-    """Fixture STOS is loadable so skip tests can use a valid output file."""
+def test_stos_fixture_is_valid_when_present() -> None:
+    """Fixture STOS used by output-validity checks loads when available."""
     if not _FIXTURE_STOS.is_file():
         pytest.skip('STOS fixture unavailable')
     assert stosfile.StosFile.IsValid(str(_FIXTURE_STOS))

@@ -17,7 +17,10 @@ import numpy as np
 import nornir_imageregistration
 import nornir_imageregistration.transforms
 from nornir_imageregistration.files import stosfile
-from nornir_shared import files as shared_files
+from nornir_buildmanager.validation.stos_image_check import (
+    ImageCheckSnapshot,
+    is_stos_input_image_outdated,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -48,15 +51,6 @@ class RefineScanDecision(Enum):
     MANUAL_COPY = 'manual_copy'
     REFINE = 'refine'
     INVALIDATE_THEN_REFINE = 'invalidate_then_refine'
-
-
-@dataclass(frozen=True)
-class ImageCheckSnapshot:
-    """Filesystem/checksum facts for one STOS input image (or mask)."""
-
-    stored_checksum: str
-    image_checksum: str | None
-    image_path: str | None
 
 
 @dataclass(frozen=True)
@@ -242,20 +236,6 @@ def default_refine_scan_workers() -> int:
     return min(32, (os.cpu_count() or 4) + 4)
 
 
-def _image_check_outdated(check: ImageCheckSnapshot, output_stos_path: str) -> bool:
-    """Return whether one input image/mask makes the refine output stale."""
-    if check.image_path is None and check.image_checksum is None:
-        return True
-
-    if len(check.stored_checksum) > 0:
-        return check.stored_checksum != (check.image_checksum or '')
-
-    if not check.image_path or not os.path.exists(check.image_path):
-        return True
-
-    return shared_files.IsOutdated(check.image_path, output_stos_path)
-
-
 def _input_file_newer_than_output(input_path: str | None, output_path: str) -> bool:
     """True when the input transform file mtime is newer than the output file."""
     if not input_path or not os.path.exists(input_path) or not os.path.exists(output_path):
@@ -295,7 +275,7 @@ def decide_stos_grid_refine_need(snapshot: RefineScanSnapshot) -> RefineScanDeci
 
     rebuild_reason: str | None = None
     for check in snapshot.image_checks:
-        if _image_check_outdated(check, snapshot.output_stos_path):
+        if is_stos_input_image_outdated(check, snapshot.output_stos_path):
             rebuild_reason = 'input images outdated'
             break
 

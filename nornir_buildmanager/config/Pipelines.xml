@@ -1632,7 +1632,7 @@
                         <PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode"/>
                     </Iterate>
                     <Iterate VariableName="DataNode" XPath="Data">
-                        <PythonCall Function="general.CleanNodeIfInvalid" node="#LevelNode"/>
+                        <PythonCall Function="general.CleanNodeIfInvalid" node="#DataNode"/>
                     </Iterate>
                 </Iterate>
             </Iterate>
