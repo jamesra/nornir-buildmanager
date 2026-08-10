@@ -246,18 +246,17 @@ class MRCImport:
 
     @staticmethod
     def cache_tiles(mrcfile: MRCFile, output_dir: str, img_ext: str, min_max_gamma: shared.MinMaxGamma | None):
-        with tempfile.gettempdir() as temp_dir:  # type: ignore[attr-defined]
-            pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)  # type: ignore[operator]
-            for iTile in range(0, mrcfile.num_tiles):  # type: ignore[arg-type]
-                pool.add_task(str(iTile),
-                              MRCImport.ExportImage,
-                              mrcfile,
-                              output_dir,
-                              img_ext,
-                              iTile,
-                              min_max_gamma)
+        pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)  # type: ignore[operator]
+        for iTile in range(0, mrcfile.num_tiles):  # type: ignore[arg-type]
+            pool.add_task(str(iTile),
+                          MRCImport.ExportImage,
+                          mrcfile,
+                          output_dir,
+                          img_ext,
+                          iTile,
+                          min_max_gamma)
 
-            pool.shutdown()
+        pool.shutdown()
 
     @staticmethod
     def CalculateHistogram(mrc_obj: str | MRCFile, bpp: float):

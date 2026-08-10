@@ -67,8 +67,8 @@ def LoadHistogramCutoffs(filename: str) -> dict[int, ContrastValue]:
                     Gamma = None
 
                 Values[sectionNumber] = ContrastValue(sectionNumber, int(MinCutoff) if MinCutoff is not None else 0, int(MaxCutoff) if MaxCutoff is not None else 0, Gamma if Gamma is not None else 1.0)
-            except:
-                print(f"Could not parse histogram line #{line_number}: {', '.join(line)}")
+            except (ValueError, IndexError, TypeError) as e:
+                print(f"Could not parse histogram line #{line_number}: {', '.join(line)} ({e})")
 
     return Values
 

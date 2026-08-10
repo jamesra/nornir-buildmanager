@@ -103,7 +103,8 @@ def TryAddLogs(containerObj, InputPath, logger):
                 LogsAdded = True
             else:
                 print(f"Log file found and current, not recopied: {InputPath}")
-                return False
+                # Still parse remaining / current logs for meta-data below.
+                pass
 
             # OK, try to parse the logs
             try:
@@ -161,7 +162,7 @@ def TryAddLogs(containerObj, InputPath, logger):
                 LogNodeObj.StableFilamentChecked = '%i' % LogData.StableFilamentChecked
                 LogNodeObj.ISCalibrationDone = '%i' % LogData.ISCalibrationDone
 
-            except:
+            except Exception:
                 (etype, evalue, etraceback) = sys.exc_info()
                 prettyoutput.Log("Attempt to include logs from " + filename + " failed.\n" + str(evalue))
                 prettyoutput.Log(str(etraceback))

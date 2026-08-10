@@ -1,5 +1,6 @@
 import glob
 import os
+from collections.abc import Generator
 
 import nornir_buildmanager.importers.shared as shared
 from nornir_shared.files import OutdatedFile, rmtree
@@ -10,12 +11,12 @@ from . import idoc
 class SerialEMMDocImport(idoc.SerialEMIDocImport):
 
     def SerialEMMDocImport(self):
-        pass;
+        pass
 
     @classmethod
     def ToMosaic(cls, VolumeObj, InputPath, OutputPath=None, Extension=None, OutputImageExt=None, TileOverlap=None,
-                 TargetBpp=None, debug=None, **kwargs):
-        '''The mdoc should be paired with a .st file of the same name. 
+                 TargetBpp=None, debug=None, **kwargs) -> Generator:
+        '''The mdoc should be paired with a .st file of the same name.
        The st file is converted to tif's, the mdoc is renamed to an idoc
        and the idoc importer is run.'''
 
@@ -23,7 +24,7 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             OutputImageExt = 'png'
 
         if Extension is None:
-            Extension = 'idoc'
+            Extension = 'mdoc'
 
         # Default to the directory above ours if an output path is not specified
         if OutputPath is None:
@@ -37,8 +38,8 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
         if len(mdocFiles) == 0:
             # This shouldn't happen, but just in case
             assert (len(mdocFiles) > 0), "ToMosaic called without proper target file present in the path: " + str(
-                InputPath);
-            return [None, None]
+                InputPath)
+            return
 
         # ok, try to find the .st file
         for mdoc in mdocFiles:
@@ -77,7 +78,10 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             prettyoutput.Log(cmd)
             subprocess.call(cmd + " && exit", shell=True)
 
-            tiffFiles = glob.glob(os.path.join(InputPath, tempDirName, '.*.tif'))
+            # mrc2tif may emit either .###.tif or ###.tif depending on version/options.
+            tiffFiles = glob.glob(os.path.join(tempDirNameFullPath, '.*.tif'))
+            if len(tiffFiles) == 0:
+                tiffFiles = glob.glob(os.path.join(tempDirNameFullPath, '*.tif'))
 
             iNumber = 0
             # images from MRC2TIF appear to be named .###.tif, where ### is the ZLevel
@@ -88,8 +92,11 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
                     baseTifName = os.path.basename(tiffFile)
                     [TifRoot, TifExt] = os.path.splitext(baseTifName)
 
-                    iDot = TifRoot.index('.')
-                    ZLevelStr = TifRoot[iDot + 1:]
+                    if '.' in TifRoot:
+                        iDot = TifRoot.index('.')
+                        ZLevelStr = TifRoot[iDot + 1:]
+                    else:
+                        ZLevelStr = TifRoot
                     ZLevel = int(ZLevelStr)
                     NewFilename = str(ZLevel) + '.tif'
 
@@ -110,14 +117,16 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             idocFilenameFullPath = os.path.join(MDocImportDirFullPath, idocFilename)
             cls.ConvertMDocToIDoc(mdoc, idocFilenameFullPath)
 
-            super(SerialEMMDocImport, cls).ToMosaic(
-                VolumeObj, MDocImportDirFullPath, (0.0, 100.0), OutputImageExt, TargetBpp
+            yield from super(SerialEMMDocImport, cls).ToMosaic(
+                VolumeObj, idocFilenameFullPath, (0.0, 100.0), OutputImageExt, TargetBpp
             )
 
     @classmethod
     def ConvertMDocToIDoc(cls, MDocFilename, IDocFilename):
         '''Converts the [ZValue = ...] entries in an mdoc to the
        [Image = ...] entries of an idoc'''
+        mdocFile = None
+        idocFile = None
         try:
             mdocFile = open(MDocFilename, 'r')
             mdocLines = mdocFile.readlines()
@@ -144,8 +153,8 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
                 idocFile.write(ImageString + '\n')
 
         finally:
-            if not mdocFile is None:
+            if mdocFile is not None:
                 mdocFile.close()
 
-            if not idocFile is None:
+            if idocFile is not None:
                 idocFile.close()

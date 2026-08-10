@@ -92,30 +92,9 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
 def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
     # (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
-    dm4data = DM4FileHandler(dm4FileFullPath)
-
-    # tempdir = tempfile.mkdtemp(prefix="DM4")
-
-    # tempfilename = os.path.basename(output_fullpath + '.tif')  # cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG.  We save to TIF and convert
-    # temp_output_fullpath = os.path.join(tempdir, tempfilename)
-
-    # image_data = dm4data.ReadImage()
-    # InputImageBpp = dm4data.image_bpp
-    # im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
-    # im = im.convert(mode='I')
-    # im.save(output_fullpath)
-
-    im = dm4data.ReadImageAsPIL()
-    im.save(output_fullpath)
-
-    # cmd = "magick convert %s %s" % (temp_output_fullpath, output_fullpath)
-
-    # pools = nornir_pools.GetGlobalLocalMachinePool()
-    # pools.add_process(output_fullpath, cmd)
-    # pools.wait_completion()
-
-    # os.remove(temp_output_fullpath)
-    # os.removedirs(tempdir)
+    with DM4FileHandler(dm4FileFullPath) as dm4data:
+        im = dm4data.ReadImageAsPIL()
+        im.save(output_fullpath)
 
 
 class DM4FileHandler(object):
@@ -128,6 +107,31 @@ class DM4FileHandler(object):
     @property
     def tags(self):
         return self._tags
+
+    def __init__(self, dm4fullpath):
+        # DM4File.open is a context manager; enter it and keep the handle until close().
+        self._dm4_cm = dm4.dm4file.DM4File.open(dm4fullpath)  # type: ignore[attr-defined]
+        self._dm4file = self._dm4_cm.__enter__()
+        self._tags = self._dm4file.read_directory()
+
+        # This is probably not entirely correct.  I suspect the DM4 file could have multiple images in the ImageSourceList.
+        # This implementation just reads the first, which covers the use cases I am aware of right now
+        imageSourceIndexTag = self.tags.named_subdirs['ImageSourceList'].unnamed_subdirs[0].named_tags['ImageRef']
+        self._imageSourceIndex = int(self.dm4file.read_tag_data(imageSourceIndexTag))
+
+    def close(self) -> None:
+        """Release the underlying DM4 file handle."""
+        if getattr(self, '_dm4_cm', None) is not None:
+            self._dm4_cm.__exit__(None, None, None)
+            self._dm4_cm = None
+            self._dm4file = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
 
     @property
     def DimensionScaleTag(self):
@@ -148,15 +152,6 @@ class DM4FileHandler(object):
     def ImageBppTag(self):
         return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
             'ImageData'].named_tags['PixelDepth']
-
-    def __init__(self, dm4fullpath):
-        self._dm4file = dm4.dm4file.DM4File.open(dm4fullpath)  # type: ignore[attr-defined]
-        self._tags = self._dm4file.read_directory()  # type: ignore[attr-defined]
-
-        # This is probably not entirely correct.  I suspect the DM4 file could have multiple images in the ImageSourceList.
-        # This implementation just reads the first, which covers the use cases I am aware of right now
-        imageSourceIndexTag = self.tags.named_subdirs['ImageSourceList'].unnamed_subdirs[0].named_tags['ImageRef']
-        self._imageSourceIndex = int(self.dm4file.read_tag_data(imageSourceIndexTag))  # type: ignore[attr-defined]
 
     def _ReadDimensionScaleTag(self, DM4DimensionTag, index):
         '''Read the scale for a particular index'''
@@ -323,62 +318,65 @@ class DigitalMicrograph4Import(object):
 
         # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
-        InputImageBpp = dm4data.image_bpp
+        try:
+            InputImageBpp = dm4data.image_bpp
 
-        if tile_overlap is not None:
-            tile_overlap = np.asarray(tile_overlap, dtype=np.float32)
-        else:
-            tile_overlap = dm4data.ReadMontageOverlap()
+            if tile_overlap is not None:
+                tile_overlap = np.asarray(tile_overlap, dtype=np.float32)
+            else:
+                tile_overlap = dm4data.ReadMontageOverlap()
 
-        BlockObj = BlockNode.Create('SEM')
-        [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
-        if saveBlock:
-            yield VolumeObj
+            BlockObj = BlockNode.Create('SEM')
+            [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
+            if saveBlock:
+                yield VolumeObj
 
-        [saveSection, SectionObj] = BlockObj.GetOrCreateSection(section_number)
-        if saveSection:
-            yield BlockObj
+            [saveSection, SectionObj] = BlockObj.GetOrCreateSection(section_number)
+            if saveSection:
+                yield BlockObj
 
-        [saveChannel, ChannelObj] = SectionObj.GetOrCreateChannel('SEM')
-        if saveChannel:
-            yield SectionObj
+            [saveChannel, ChannelObj] = SectionObj.GetOrCreateChannel('SEM')
+            if saveChannel:
+                yield SectionObj
 
-        # Temporary fix for legacy DM4 imports without the scale embedded in the Nornir meta-data
-        if ChannelObj.Scale is None:
-            (XDim, YDim) = dm4data.ReadXYUnitsPerPixel()
-            scalar = 1
-            if XDim.Units == 'µm':
-                scalar = 1000.0
-            elif XDim.Units == 'um':
-                scalar = 1000.0
+            # Temporary fix for legacy DM4 imports without the scale embedded in the Nornir meta-data
+            if ChannelObj.Scale is None:
+                (XDim, YDim) = dm4data.ReadXYUnitsPerPixel()
+                scalar = 1
+                if XDim.Units == 'µm':
+                    scalar = 1000.0
+                elif XDim.Units == 'um':
+                    scalar = 1000.0
 
-            ChannelObj.SetScale(XDim.UnitsPerPixel * scalar)
-            yield SectionObj
+                ChannelObj.SetScale(XDim.UnitsPerPixel * scalar)
+                yield SectionObj
 
-        FilterName = 'Raw' + str(InputImageBpp)
-        if InputImageBpp is None:
-            FilterName = 'Raw'
+            FilterName = 'Raw' + str(InputImageBpp)
+            if InputImageBpp is None:
+                FilterName = 'Raw'
 
-        [saveFilter, FilterObj] = ChannelObj.GetOrCreateFilter(FilterName)
-        if saveFilter:
-            yield ChannelObj
+            [saveFilter, FilterObj] = ChannelObj.GetOrCreateFilter(FilterName)
+            if saveFilter:
+                yield ChannelObj
 
-        [savePyramid, TilePyramidObj] = FilterObj.GetOrCreateTilePyramid()
-        if savePyramid:
-            yield FilterObj
+            [savePyramid, TilePyramidObj] = FilterObj.GetOrCreateTilePyramid()
+            if savePyramid:
+                yield FilterObj
 
-        [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
-        if saveTransformObj:
-            yield ChannelObj
+            [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
+            if saveTransformObj:
+                yield ChannelObj
 
-        cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
+            cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
 
-        # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
-        # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
+            # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
+            # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
 
-        TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
-        if TilePyramidObj is not None:
-            yield TilePyramidObj
+            TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
+            if TilePyramidObj is not None:
+                yield TilePyramidObj
+        finally:
+            dm4data.close()
 
     @staticmethod
     def GetOrCreateStageTransform(channelObj):
