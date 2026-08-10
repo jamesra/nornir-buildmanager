@@ -6,14 +6,14 @@ Created on Jul 3, 2012
 
 import functools
 import os
+import zipfile
 
 import nornir_buildmanager.volumemanager
+from nornir_buildmanager.progress import report_iterate, report_iterate_complete
 from nornir_imageregistration.files import *
 from nornir_shared.files import RecurseSubdirectoriesGenerator
 import nornir_shared.prettyoutput as prettyoutput
-from nornir_shared.mqtt_telemetry import publish_run_event
 import xml.etree.ElementTree as ETree
-import nornir_pools
 
 ECLIPSE = 'ECLIPSE' in os.environ
 
@@ -25,6 +25,95 @@ def _normalize_stos_group_names(stos_group_name: str | list[str] | None) -> list
     if isinstance(stos_group_name, str):
         return [stos_group_name]
     return [name for name in stos_group_name if name]
+
+
+def _stos_group_zip_relpath(block_node, stos_group) -> str:
+    """Return volume-relative zip path ``{Block.Path}/{StosGroup.Name}.zip``."""
+    return os.path.join(block_node.Path, f'{stos_group.Name}.zip')
+
+
+def _stos_group_zip_fullpath(block_node, stos_group) -> str:
+    """Return on-disk zip path under the block directory."""
+    return os.path.join(block_node.FullPath, f'{stos_group.Name}.zip')
+
+
+def _pending_stos_members(pending: list[tuple]) -> list[tuple[str, str]]:
+    """Build ``(source_fullpath, arcname)`` for pending transforms that exist on disk.
+
+    Arcnames are the ``.stos`` basename only (archive root, no subfolders) so Viking
+    can open members by the same name as ``stos/@path``.
+    """
+    members: list[tuple[str, str]] = []
+    for _block_node, _stos_group, transform in pending:
+        source = transform.FullPath
+        arcname = os.path.basename(transform.Path)
+        if not os.path.isfile(source):
+            prettyoutput.Log(f"Skipping missing .stos for VikingXML zip: {source}")
+            continue
+        members.append((source, arcname))
+    return members
+
+
+def _normalize_zip_member_name(name: str) -> str:
+    """Normalize zip member paths for set comparison across platforms."""
+    return name.replace('\\', '/')
+
+
+def _stos_group_zip_is_fresh(zip_fullpath: str, members: list[tuple[str, str]]) -> bool:
+    """True when zip exists, contains exactly *members*, and is not older than any source."""
+    if not members or not os.path.isfile(zip_fullpath):
+        return False
+
+    zip_mtime = os.path.getmtime(zip_fullpath)
+    expected = set()
+    for source, arcname in members:
+        if os.path.getmtime(source) > zip_mtime:
+            return False
+        expected.add(_normalize_zip_member_name(arcname))
+
+    try:
+        with zipfile.ZipFile(zip_fullpath, 'r') as archive:
+            actual = {_normalize_zip_member_name(name) for name in archive.namelist()}
+    except zipfile.BadZipFile:
+        return False
+
+    return actual == expected
+
+
+def _write_stos_group_zip(block_node, stos_group, pending: list[tuple]) -> str | None:
+    """Write or reuse ``{Block}/{StosGroup.Name}.zip`` for StosMap-filtered pending transforms.
+
+    Returns the volume-relative zip path on success, or None when nothing was packaged.
+    Skips rewrite when the existing zip's mtime and member set already match sources.
+    """
+    members = _pending_stos_members(pending)
+    if not members:
+        return None
+
+    zip_fullpath = _stos_group_zip_fullpath(block_node, stos_group)
+    zip_relpath = _stos_group_zip_relpath(block_node, stos_group)
+    os.makedirs(block_node.FullPath, exist_ok=True)
+
+    if _stos_group_zip_is_fresh(zip_fullpath, members):
+        prettyoutput.Log(f"VikingXML zip up to date: {zip_relpath}")
+        return zip_relpath
+
+    prettyoutput.Log(f"Writing VikingXML zip (stale or membership changed): {zip_relpath}")
+    tmp_path = zip_fullpath + '.tmp'
+    try:
+        with zipfile.ZipFile(tmp_path, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            for source, arcname in members:
+                archive.write(source, arcname=arcname)
+        os.replace(tmp_path, zip_fullpath)
+    except Exception:
+        if os.path.isfile(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+    return zip_relpath
 
 
 def CreateXMLIndex(path, server=None):
@@ -54,11 +143,9 @@ def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = No
     # Create our XML File
     OutputXMLFilename = os.path.join(path, OutputFile)
 
-    publish_run_event("stage_start", module="vikingxml", function="CreateVikingXML",
-                      element=OutputFile)
-
-    # Create the root output node
-    OutputVolumeNode = ETree.Element('Volume', {'Name': InputVolumeNode.Name,
+    # Create the root output node (Version 2: nested Sections / StosGroup)
+    OutputVolumeNode = ETree.Element('Volume', {'Version': '2',
+                                                'Name': InputVolumeNode.Name,
                                                 'num_stos': '0',
                                                 'num_sections': '0',
                                                 'InputChecksum': InputVolumeNode.Checksum})
@@ -73,11 +160,11 @@ def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = No
 
     ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName)
 
-    OutputXML = ETree.tostring(OutputVolumeNode).decode('utf-8')
+    ETree.indent(OutputVolumeNode, space='  ')
+    OutputXML = ETree.tostring(OutputVolumeNode, encoding='unicode')
 
-    hFile = open(OutputXMLFilename, 'w')
-    hFile.write(OutputXML)
-    hFile.close()
+    with open(OutputXMLFilename, 'w', encoding='utf-8') as hFile:
+        hFile.write(OutputXML)
 
     # Walk down to the path from the root directory, merging about.xml's as we go
     Url = RecursiveMergeAboutXML(path, OutputXMLFilename)
@@ -92,8 +179,6 @@ def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = No
 
     prettyoutput.Log(vikingUrl)
 
-    publish_run_event("stage_end", module="vikingxml", function="CreateVikingXML",
-                      element=OutputFile)
     return
 
 
@@ -179,7 +264,7 @@ def RemoveDuplicateScaleEntries(OutputNode, volume_units_of_measure, volume_unit
 
 
 def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName: str | list[str] | None):
-    """Parse all stos transforms from the volume and add them to the output node."""
+    """Parse all stos transforms from the volume and add them under ``StosGroup`` elements."""
     if StosMapName is None:
         prettyoutput.Log("No StosMapName specified, not adding stos")
         return
@@ -198,12 +283,13 @@ def ParseStos(InputVolumeNode, OutputVolumeNode, StosMapName, StosGroupName: str
 
 
 def _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName: str, StosGroupName: str) -> int:
-    """Add stos elements for one StosGroup; returns the number of stos entries added."""
+    """Add a ``StosGroup`` with nested ``stos`` children; returns the number of stos entries added."""
     num_stos = 0
     UpdateTemplate = "%(mapped)d -> %(control)d"
 
     # Pre-collect all pending transform records so we can report accurate totals.
     pending: list[tuple] = []
+    group_meta: tuple | None = None  # (BlockNode, StosGroup) for zip / Name
     for BlockNode in InputVolumeNode.findall('Block'):
         StosMapNode = BlockNode.GetChildByAttrib("StosMap", 'Name', StosMapName)
         if StosMapNode is None:
@@ -213,6 +299,9 @@ def _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName: str, S
         if StosGroup is None:
             prettyoutput.Log("StosGroup %s not found.  No slice-to-slice transforms are being included" % StosGroupName)
             continue
+
+        if group_meta is None:
+            group_meta = (BlockNode, StosGroup)
 
         for Mapping in StosMapNode.findall('Mapping'):
             for MappedSection in Mapping.Mapped:
@@ -230,69 +319,111 @@ def _parse_stos_for_group(InputVolumeNode, OutputVolumeNode, StosMapName: str, S
 
                 pending.append((BlockNode, StosGroup, transform))
 
+    if not pending:
+        return 0
+
+    assert group_meta is not None
+    block_for_zip, stos_group_for_name = group_meta
+    group_attribs = {'Name': stos_group_for_name.Name}
+    zip_relpath = _write_stos_group_zip(block_for_zip, stos_group_for_name, pending)
+    if zip_relpath is not None:
+        group_attribs['zip'] = zip_relpath
+    output_group = ETree.SubElement(OutputVolumeNode, 'StosGroup', group_attribs)
+
     total_stos = len(pending)
     track_id = f"vikingxml:stos:{StosGroupName}"
     label = f"Stos {StosGroupName}"
     if total_stos:
-        publish_run_event("iterate_progress", current=0, total=total_stos,
-                          depth=1, track_id=track_id, label=label)
+        report_iterate(track_id, 0, total_stos, label, depth=1)
 
-    for BlockNode, StosGroup, transform in pending:
-        ETree.SubElement(OutputVolumeNode, 'stos', {'GroupName': StosGroup.Name,
-                                                    'controlSection': str(transform.TargetSectionNumber),
-                                                    'mappedSection': str(transform.SourceSectionNumber),
-                                                    'path': os.path.join(BlockNode.Path,
-                                                                         StosGroup.Path,
-                                                                         transform.Path),
-                                                    'pixelspacing': '%g' % StosGroup.Downsample,
-                                                    'type': transform.Type})
+    try:
+        for BlockNode, StosGroup, transform in pending:
+            # Basename only: matches zip members at archive root (no subfolders).
+            stos_path = os.path.basename(transform.Path)
+            pair_label = UpdateTemplate % {
+                'mapped': int(transform.SourceSectionNumber),
+                'control': int(transform.TargetSectionNumber),
+            }
+            ETree.SubElement(output_group, 'stos', {
+                'controlSection': str(transform.TargetSectionNumber),
+                'mappedSection': str(transform.SourceSectionNumber),
+                'path': stos_path,
+                'pixelspacing': '%g' % StosGroup.Downsample,
+                'type': transform.Type,
+            })
 
-        prettyoutput.Log(UpdateTemplate % {'mapped': int(transform.SourceSectionNumber),
-                                           'control': int(transform.TargetSectionNumber)})
-        num_stos += 1
+            prettyoutput.Log(pair_label)
+            num_stos += 1
+            if total_stos:
+                report_iterate(
+                    track_id,
+                    num_stos,
+                    total_stos,
+                    label,
+                    depth=1,
+                    element=pair_label,
+                    path=stos_path,
+                    section=int(transform.SourceSectionNumber),
+                )
+    finally:
         if total_stos:
-            publish_run_event("iterate_progress", current=num_stos, total=total_stos,
-                              depth=1, track_id=track_id, label=label)
+            report_iterate_complete(track_id, total_stos)
 
     return num_stos
 
 
 def ParseSections(InputVolumeNode, OutputVolumeNode):
-    """Parse all sections from the volume and add them to the output node."""
-    Pool = nornir_pools.GetGlobalSerialPool()
+    """Parse all sections from the volume and add them under a ``Sections`` wrapper."""
+    sections_parent = ETree.SubElement(OutputVolumeNode, 'Sections')
 
-    SectionTasks = []
-
+    section_jobs: list[tuple[str, object]] = []
     prettyoutput.Log("Adding Sections\n")
     for BlockNode in InputVolumeNode.findall('Block'):
         for SectionNode in BlockNode.Sections:
-            OutputSectionNode = OutputVolumeNode.find("Section[@Number='%d']" % SectionNode.Number)
+            OutputSectionNode = sections_parent.find("Section[@Number='%d']" % SectionNode.Number)
             assert (OutputSectionNode is None)
-
             prettyoutput.Log('Queue %g' % SectionNode.Number)
+            section_jobs.append((BlockNode.Path, SectionNode))
 
-            task = Pool.add_task(str(SectionNode.Number), ParseSection, BlockNode.Path, SectionNode)
-            SectionTasks.append(task)
-
-    total_sections = len(SectionTasks)
+    total_sections = len(section_jobs)
     completed_sections = 0
+    sections_label = "Sections"
+    sections_track_id = "vikingxml:sections"
     if total_sections:
-        publish_run_event("iterate_progress", current=0, total=total_sections,
-                          depth=0, track_id="vikingxml:sections", label="Sections")
+        report_iterate(sections_track_id, 0, total_sections, sections_label, depth=0)
 
-    for t in SectionTasks:
-        prettyoutput.Log('%s' % t.name)
+    try:
+        for BlockPath, SectionNode in section_jobs:
+            section_id = str(SectionNode.Number)
+            prettyoutput.Log('%s' % section_id)
+            report_iterate(
+                sections_track_id,
+                completed_sections,
+                total_sections,
+                sections_label,
+                depth=0,
+                section=section_id,
+                element=section_id,
+            )
 
-        OutputSectionNode = t.wait_return()
-        OutputVolumeNode.append(OutputSectionNode)
+            OutputSectionNode = ParseSection(BlockPath, SectionNode)
+            sections_parent.append(OutputSectionNode)
 
-        completed_sections += 1
+            completed_sections += 1
+            report_iterate(
+                sections_track_id,
+                completed_sections,
+                total_sections,
+                sections_label,
+                depth=0,
+                section=section_id,
+                element=section_id,
+            )
+    finally:
         if total_sections:
-            publish_run_event("iterate_progress", current=completed_sections,
-                              total=total_sections, depth=0,
-                              track_id="vikingxml:sections", label="Sections")
+            report_iterate_complete(sections_track_id, total_sections)
 
-    AllSectionNodes = list(OutputVolumeNode.findall('Section'))
+    AllSectionNodes = list(sections_parent.findall('Section'))
     OutputVolumeNode.attrib['num_sections'] = str(len(AllSectionNodes))
 
 
@@ -313,34 +444,76 @@ def ParseSection(BlockPath, SectionNode):
 
 
 def ParseChannels(SectionNode, OutputSectionNode):
-    for ChannelNode in SectionNode.Channels:
-        ScaleNode = ChannelNode.find('Scale')
+    """Parse channels for a section; publishes nested ``vikingxml:channels`` progress."""
+    channels = list(SectionNode.Channels)
+    total_channels = len(channels)
+    channels_track_id = "vikingxml:channels"
+    section_number = SectionNode.Number
 
-        for TransformNode in ChannelNode.findall('Transform'):
-            OutputTransformNode = ParseTransform(TransformNode, OutputSectionNode)
-            if not OutputTransformNode is None:
-                OutputTransformNode.attrib['Path'] = os.path.join(ChannelNode.Path, OutputTransformNode.attrib['Path'])
+    if total_channels:
+        report_iterate(
+            channels_track_id,
+            0,
+            total_channels,
+            "Channels",
+            depth=1,
+            section=section_number,
+        )
 
-        for FilterNode in ChannelNode.Filters:
-            for tilepyramid in FilterNode.findall('TilePyramid'):
-                OutputPyramidNode = ParsePyramidNode(FilterNode, tilepyramid, OutputSectionNode)
-                OutputPyramidNode.attrib['Path'] = os.path.join(ChannelNode.Path, FilterNode.Path,
-                                                                OutputPyramidNode.attrib['Path'])
-                if ScaleNode is not None:
-                    AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
-            for tileset in FilterNode.findall('Tileset'):
-                OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
-                OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path,
-                                                                OutputTilesetNode.attrib['path'])
-                if ScaleNode is not None:
-                    AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
-                prettyoutput.Log("Tileset found for section " + str(SectionNode.attrib["Number"]))
+    completed_channels = 0
+    try:
+        for ChannelNode in channels:
+            channel_name = getattr(ChannelNode, "Name", None) or "channel"
+            report_iterate(
+                channels_track_id,
+                completed_channels,
+                total_channels,
+                f"Channel {channel_name}",
+                depth=1,
+                section=section_number,
+                element=channel_name,
+            )
 
-        for NoteNode in ChannelNode.findall('Notes'):
-            # Copy over Notes elements verbatim
-            OutputNotesNode = ETree.SubElement(OutputSectionNode, 'Notes')
-            OutputNotesNode.text = NoteNode.text
-            OutputSectionNode.append(OutputNotesNode)
+            ScaleNode = ChannelNode.find('Scale')
+
+            for TransformNode in ChannelNode.findall('Transform'):
+                OutputTransformNode = ParseTransform(TransformNode, OutputSectionNode)
+                if not OutputTransformNode is None:
+                    OutputTransformNode.attrib['Path'] = os.path.join(ChannelNode.Path, OutputTransformNode.attrib['Path'])
+
+            for FilterNode in ChannelNode.Filters:
+                for tilepyramid in FilterNode.findall('TilePyramid'):
+                    OutputPyramidNode = ParsePyramidNode(FilterNode, tilepyramid, OutputSectionNode)
+                    OutputPyramidNode.attrib['Path'] = os.path.join(ChannelNode.Path, FilterNode.Path,
+                                                                    OutputPyramidNode.attrib['Path'])
+                    if ScaleNode is not None:
+                        AddScaleData(OutputPyramidNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
+                for tileset in FilterNode.findall('Tileset'):
+                    OutputTilesetNode = ParseTilesetNode(FilterNode, tileset, OutputSectionNode)
+                    OutputTilesetNode.attrib['path'] = os.path.join(ChannelNode.Path, FilterNode.Path,
+                                                                    OutputTilesetNode.attrib['path'])
+                    if ScaleNode is not None:
+                        AddScaleData(OutputTilesetNode, ScaleNode.X.UnitsOfMeasure, ScaleNode.X.UnitsPerPixel)
+                    prettyoutput.Log("Tileset found for section " + str(SectionNode.Number))
+
+            for NoteNode in ChannelNode.findall('Notes'):
+                # Copy over Notes elements verbatim
+                OutputNotesNode = ETree.SubElement(OutputSectionNode, 'Notes')
+                OutputNotesNode.text = NoteNode.text
+
+            completed_channels += 1
+            report_iterate(
+                channels_track_id,
+                completed_channels,
+                total_channels,
+                f"Channel {channel_name}",
+                depth=1,
+                section=section_number,
+                element=channel_name,
+            )
+    finally:
+        if total_channels:
+            report_iterate_complete(channels_track_id, total_channels)
 
 
 def ParseTransform(TransformNode, OutputSectionNode):
@@ -453,9 +626,8 @@ def MergeAboutXML(volumeXML, aboutXML):
 
     prettyoutput.Log("")
 
-    xmlFile = open(volumeXML, "w")
-    xmlFile.write(volumeDom.toxml())
-    xmlFile.close()
+    with open(volumeXML, "w", encoding="utf-8") as xmlFile:
+        volumeDom.writexml(xmlFile, addindent="  ", newl="\n")
 
     return Url
 
