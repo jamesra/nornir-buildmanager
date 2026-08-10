@@ -18,9 +18,10 @@ def SetFilterLock(Node, Locked, **kwargs):
     if not isinstance(Node, nornir_buildmanager.volumemanager.FilterNode):
         ParentFilter = Node.FindParent('Filter')
 
+    locked = bool(int(Locked))
     if not ParentFilter is None:
-        LockChanged = ParentFilter.Locked != bool(Locked)
-        ParentFilter.Locked = bool(Locked)
+        LockChanged = ParentFilter.Locked != locked
+        ParentFilter.Locked = locked
     else:
         nornir_shared.prettyoutput.LogErr("Unable to find filter for node {0}".format(str(Node)))
 
@@ -31,9 +32,10 @@ def SetFilterLock(Node, Locked, **kwargs):
 
 
 def SetLocked(Node, Locked, **kwargs):
-    LockChanged = Node.Locked != bool(Locked)
+    locked = bool(int(Locked))
+    LockChanged = Node.Locked != locked
     if LockChanged:
-        Node.Locked = bool(Locked)
+        Node.Locked = locked
         parent = Node.Parent
         if not parent is None:
             return parent

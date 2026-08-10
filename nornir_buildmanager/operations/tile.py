@@ -303,7 +303,7 @@ def Evaluate(Parameters, filter_node: FilterNode, OutputImageName: str | None = 
 
     if PostEvaluateSequenceArg is not None:
         PostCmd = 'convert ' + PreFinalTargetFullPath + ' ' + PostEvaluateSequenceArg + ' ' + OutputImageNode.FullPath
-        prettyoutput.Log(Cmd)
+        prettyoutput.Log(PostCmd)
         proc = subprocess.call(PostCmd + " && exit", shell=True)
         os.remove(PreFinalTargetFullPath)
     else:
@@ -597,7 +597,7 @@ def CutoffValuesForHistogram(HistogramElement: HistogramNode, MinCutoffPercent: 
     if Gamma is not None:
         try:
             Gamma = float(Gamma)
-        except:
+        except (TypeError, ValueError):
             prettyoutput.LogErr("Invalid gamma value passed to AutoLevel function: " + str(Gamma))
             Gamma = None
 
@@ -2456,14 +2456,14 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                             '\n*** Suspected bad input file to pyramid, deleting the source image.  Rerun scripts to attempt adding the file again.\n')
                         try:
                             os.remove(t.inputFile)
-                        except:
+                        except OSError:
                             pass
                 else:
                     try:
-                        t.wait()  # We do this to ensure any exeptions are raised
+                        t.wait()  # We do this to ensure any exceptions are raised
                         RemoveSource = False
                         DestIsValid.add(t.filename)
-                    except:
+                    except Exception:
                         RemoveSource = True
                         if t.filename in DestIsValid:
                             DestIsValid.remove(t.filename)
@@ -2474,7 +2474,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
                             '\n*** Suspected bad input file to pyramid, deleting the source image.  Rerun scripts to attempt adding the file again.\n')
                         try:
                             os.remove(t.inputFile)
-                        except:
+                        except OSError:
                             pass
 
         # Save the list of files we know are good as input the next iteration
