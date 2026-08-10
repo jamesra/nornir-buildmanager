@@ -13,7 +13,7 @@ Stage-by-stage map of dashboard `iterate_progress` tracks for the chain in
 | AssembleStosOverlays (×2) | — | `stos_overlays:jobs` | Yes | Pre-counted transform jobs; skips still increment. |
 | SelectBestRegistrationChain | — | `stos_chain:mappings` | Yes | `finally` bumps on early continue. |
 | RefineSectionAlignment (×2) | `iterate:MappingNodeObj` | `stos_refine:files` + refine pass/locked | Yes | File loop + nested refine reporter. |
-| CreateVikingXML (×2) | — | `vikingxml:sections`, `vikingxml:stos:*` | Yes | |
+| CreateVikingXML (×2) | — | `vikingxml:sections`, `vikingxml:channels`, `vikingxml:stos:*` | Yes | Section/element on sections; nested channels during mosaic loads; stos publishes path/element. |
 | SliceToVolume | `iterate:BlockNode`, `iterate:StosMapNode`, `iterate:StosGroupNode` | `slice_to_volume:sections` | Yes | Explicit track counts registration-tree mapping steps. |
 | ScaleVolumeTransforms | (pipeline Iterate if present) | `scale:{group}` | Yes | |
 | LinearizeVolume | (pipeline Iterate if present) | `blend:{group}` | Yes | |

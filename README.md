@@ -27,6 +27,7 @@ ImportIDoc uses `yield from` ToMosaic so `_SaveNodes` can write after each meta-
 - **Full manual and API (umbrella):** [https://nornir.github.io/](https://nornir.github.io/)
 - **This package:** [Packages — nornir-buildmanager](https://nornir.github.io/packages/nornir_buildmanager.html)
 - **API reference:** [`nornir_buildmanager` module](https://nornir.github.io/api/nornir_buildmanager.html)
+- **VikingXML Version 2:** nested `Sections` / `StosGroup` layout — see the package page above
 
 ## Dashboard progress tracks (TEMBuild / TEMAlign)
 
@@ -46,7 +47,7 @@ these stage-specific `track_id`s are emitted:
 | `scale:{group}` / `blend:{group}` | ScaleVolumeTransforms / LinearizeVolume |
 | `mosaic_to_volume:sections` | MosaicToVolume (per matching channel) |
 | `assemble:rows` | Assemble pyramid row build (depth 1) |
-| `vikingxml:sections` / `vikingxml:stos:*` | CreateVikingXML |
+| `vikingxml:sections` / `vikingxml:channels` / `vikingxml:stos:*` | CreateVikingXML (section + nested channel + stos) |
 
 ### TEMAlign expected bars (`TEMAlign.sh`)
 
@@ -57,7 +58,7 @@ these stage-specific `track_id`s are emitted:
 | AssembleStosOverlays | `stos_overlays:jobs` |
 | SelectBestRegistrationChain | `stos_chain:mappings` |
 | RefineSectionAlignment | `iterate:MappingNodeObj` + `stos_refine:files` (+ refine pass tracks) |
-| CreateVikingXML | `vikingxml:*` |
+| CreateVikingXML | `vikingxml:sections`, `vikingxml:channels`, `vikingxml:stos:*` |
 | SliceToVolume | `slice_to_volume:sections` (+ block/map/group Iterate) |
 | ScaleVolumeTransforms / LinearizeVolume | `scale:*` / `blend:*` |
 | MosaicToVolume | `mosaic_to_volume:sections` |
