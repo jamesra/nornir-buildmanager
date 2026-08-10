@@ -47,7 +47,7 @@ class SectionNode(XNamedContainerElementWrapped):
                                                                   'Name',
                                                                   channelPattern)
 
-    def MatchChannelFilterPattern(self, channelPattern, filterPattern) -> Generator[ChannelNode]:  # type: ignore[type-arg]
+    def MatchChannelFilterPattern(self, channelPattern, filterPattern) -> Generator[FilterNode]:  # type: ignore[type-arg]
         for channelNode in self.MatchChannelPattern(channelPattern):
             result = channelNode.MatchFilterPattern(filterPattern)
             if result is not None:

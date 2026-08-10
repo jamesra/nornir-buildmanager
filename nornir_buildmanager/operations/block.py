@@ -478,8 +478,10 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
 
     # Add sections which do not have the correct channels or filters to the non-stos section list.  These will not be used as control sections
     MissingChannelOrFilterSections = [s for s in SectionNodeList if
-                                      s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx) is False]
-    MissingChannelOrFilterSectionNumbers = [s.SectionNumber for s in MissingChannelOrFilterSections]
+                                      not any(s.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))]
+    # SectionNode exposes Number (attrib), not SectionNumber — this line was never hit
+    # while MatchChannelFilterPattern(...) is False always left the list empty.
+    MissingChannelOrFilterSectionNumbers = [SectionNumberKey(s) for s in MissingChannelOrFilterSections]
     NonStosSectionNumbersSet = NonStosSectionNumbersSet.union(MissingChannelOrFilterSectionNumbers)
 
     # Identify the sections that can be control sections
@@ -872,8 +874,6 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
         Logger.error("Missing control section node for # " + str(ControlNumber))
         return
 
-    os.makedirs(OutputStosGroupName, exist_ok=True)
-
     (added, stos_group_node) = block_node.GetOrCreateStosGroup(OutputStosGroupName, downsample=Downsample)
     stos_group_node.CreateDirectories()
     if added:
@@ -888,8 +888,8 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
         if mapped_section_node is None:
             prettyoutput.LogErr("Could not find expected section for StosBrute: " + str(MappedSection))
             continue
-        MappedFilterList = mapped_section_node.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
-        ControlFilterList = ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx)
+        MappedFilterList = list(mapped_section_node.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))
+        ControlFilterList = list(ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))
         for MappedFilter in MappedFilterList:
             for ControlFilter in ControlFilterList:
                 pair_jobs.append((MappedSection, MappedFilter, ControlFilter))
