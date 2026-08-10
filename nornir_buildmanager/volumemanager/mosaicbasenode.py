@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import warnings
 
 from nornir_imageregistration.files import mosaicfile, stosfile
 from . import xfileelementwrapper
@@ -59,8 +60,12 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
     def Checksum(self, val):
         """Checksum of the file resource when the node was last updated"""
         self.attrib['Checksum'] = val
-        raise DeprecationWarning(
-            "Checksums for mosaic elements will not be directly settable soon.  Use ResetChecksum instead")
+        self._AttributesChanged = True
+        warnings.warn(
+            "Checksums for mosaic elements will not be directly settable soon.  Use ResetChecksum instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def IsValid(self) -> tuple[bool, str]:
         valid, reason = super(MosaicBaseNode, self).IsValid()

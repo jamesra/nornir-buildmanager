@@ -926,15 +926,24 @@ class PipelineManager:
 
     @classmethod
     def _SaveNodes(cls, NodesToSave):
-        if NodesToSave is not None:
-            if isinstance(NodesToSave, collections.abc.Iterable) or isgenerator(NodesToSave):
-                for node in NodesToSave:
-                    if node is None:
-                        continue
+        if NodesToSave is None:
+            return
 
-                    VolumeManager.Save(node)
-            else:
-                VolumeManager.Save(NodesToSave)
+        # ElementTree.Element (and XElementWrapper) are Iterable over children.
+        # Saving must target the returned node itself, not walk its children.
+        if isinstance(NodesToSave, ElementTree.Element):
+            VolumeManager.Save(NodesToSave)
+            return
+
+        if isinstance(NodesToSave, collections.abc.Iterable) or isgenerator(NodesToSave):
+            for node in NodesToSave:
+                if node is None:
+                    continue
+
+                VolumeManager.Save(node)
+            return
+
+        VolumeManager.Save(NodesToSave)
 
     def ProcessPythonCall(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.

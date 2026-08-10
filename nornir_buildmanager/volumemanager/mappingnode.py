@@ -40,11 +40,13 @@ class MappingNode(XElementWrapper):
             if 'Mapped' in self.attrib:
                 del self.attrib['Mapped']
                 self._mapped_cache = None
+                self._AttributesChanged = True
             return
         else:
             raise ValueError(f"Unexpected type passed to Mapped {value}")
 
         self.attrib['Mapped'] = AdjacentSectionString
+        self._AttributesChanged = True
 
     def AddMapping(self, value: int):
         intval = int(value)
@@ -54,7 +56,6 @@ class MappingNode(XElementWrapper):
         else:
             updated_map.append(value)
             self.Mapped = updated_map
-            # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def RemoveMapping(self, value: int):
         intval = int(value)
@@ -64,10 +65,8 @@ class MappingNode(XElementWrapper):
 
         updated_map.remove(intval)
         self.Mapped = updated_map
-        # self._AttributeChanged = True #Handled by setattr of Mapped
 
     def __str__(self):
-        self._mapped_cache = None
         return f"{self.Control} <- {', '.join([str(m) for m in self.Mapped])}"
 
     def __init__(self, tag=None, attrib=None, **extra):

@@ -114,9 +114,13 @@ class BlockNode(XNamedContainerElementWrapped):
 
     @property
     def NonStosSectionNumbers(self) -> frozenset[int]:
-        """A list of integers indicating which section numbers should not be control sections for slice to slice registration"""
-        StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
-        (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
+        """Section numbers that should not be control sections for slice-to-slice registration.
+
+        Reading does not create the child node; use the setter (or MarkSectionsAs*) to add one.
+        """
+        StosExemptNode = self.find('NonStosSectionNumbers')
+        if StosExemptNode is None:
+            return frozenset([])
 
         # Fetch the list of the exempt nodes from the element text
         ExemptString = StosExemptNode.text

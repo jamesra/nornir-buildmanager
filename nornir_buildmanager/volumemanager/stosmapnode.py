@@ -70,21 +70,20 @@ class StosMapNode(XElementWrapper):
 
     def ClearMissingSections(self, existing_section_numbers: Iterable[int]):
         """Remove any control sections that are not in the list of known sections"""
-        # good_set = frozenset(existing_section_numbers)
-        missing_controls = filter(lambda m: m.Control not in existing_section_numbers, self.Mappings)  # type: ignore[operator]
+        missing_controls = [m for m in self.Mappings if m.Control not in existing_section_numbers]
 
-        missing_section_numbers = frozenset([mc.Control for mc in missing_controls])
+        missing_section_numbers = frozenset(mc.Control for mc in missing_controls)
         for control_mapping in missing_controls:
             self.remove(control_mapping)
 
-        missing_mappings = filter(lambda m: m.Mapped & missing_section_numbers, self.Mappings)  # type: ignore[operator]
+        missing_mappings = [m for m in self.Mappings if m.Mapped & missing_section_numbers]
         found_missing_mappings = False
         for missing_mapping in missing_mappings:
             for missing_section in missing_mapping.Mapped & missing_section_numbers:
                 missing_mapping.RemoveMapping(missing_section)
                 found_missing_mappings = True
 
-        return missing_section_numbers or found_missing_mappings
+        return bool(missing_section_numbers) or found_missing_mappings
 
     def ClearBannedControlMappings(self, numbers_to_remove: Iterable[int]):
         """Remove any control sections from a mapping which cannot be a control"""
@@ -100,7 +99,10 @@ class StosMapNode(XElementWrapper):
 
     @property
     def AllowDuplicates(self) -> bool:
-        return bool(self.attrib.get('AllowDuplicates', True))
+        value = self.attrib.get('AllowDuplicates', '1')
+        if isinstance(value, bool):
+            return value
+        return str(value).lower() not in ('0', 'false', '')
 
     @classmethod
     def _SectionNumberFromParameter(cls,
@@ -142,14 +144,16 @@ class StosMapNode(XElementWrapper):
         :return: True if mapped section is found and removed
         """
 
-        mapped = StosMapNode._SectionNumberFromParameter(mapped)  # type: ignore[arg-type]
+        mapped_section: int | None = None
+        if mapped is not None:
+            mapped_section = StosMapNode._SectionNumberFromParameter(mapped)
         control = StosMapNode._SectionNumberFromParameter(control)
 
         childMapping = self.GetChildByAttrib('Mapping', 'Control', control)
         if childMapping is not None:
-            if mapped is not None:
-                if mapped in childMapping.Mapped:
-                    childMapping.RemoveMapping(mapped)
+            if mapped_section is not None:
+                if mapped_section in childMapping.Mapped:
+                    childMapping.RemoveMapping(mapped_section)
 
                     if len(childMapping.Mapped) == 0:
                         self.remove(childMapping)
@@ -236,7 +240,7 @@ class StosMapNode(XElementWrapper):
                     mapping_node.Clean()
                     XElementWrapper.logger.warning(
                         'No mappings remain for control section ' + str(mapping_node.Control))
-                elif len(mapped_sections) != mapping_node.Mapped:
+                elif len(mapped_sections) != len(mapping_node.Mapped):
                     mapping_node.Mapped = mapped_sections
 
         return super(StosMapNode, self).IsValid()

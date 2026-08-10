@@ -94,7 +94,9 @@ class TransformNode(MosaicBaseNode, InputTransformHandler, ITransform):
            the time required to parse the transform at load time.
            """
         value = self.attrib.get('Compressed', None)
-        return bool(value) if value is not None else False
+        if value is None:
+            return False
+        return str(value) in ('1', 'True', 'true')
 
     @Compressed.setter
     def Compressed(self, value: bool | None):

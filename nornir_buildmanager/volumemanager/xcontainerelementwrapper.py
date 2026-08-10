@@ -392,10 +392,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
         """
 
         if self.SaveAsLinkedElement:
-            return self._Save()
+            return self._Save(tabLevel=tabLevel, recurse=recurse)
 
         elif self.Parent is not None:
-            return self.Parent.Save()
+            return self.Parent.Save(tabLevel=tabLevel, recurse=recurse)
 
         raise NotImplementedError("Cannot save a container node that is not linked without a parent node to save it under")
 
@@ -407,8 +407,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
         If recurse = False we only save this element, no child elements are saved
         """
         try:
-            # We need to take a lock for certain containers where the meta data of child folders is not saved in the child directory.
-            # For example, if we are validating each level of a tile pyramid concurrently each level may try to save any updates at the same time.
+            # Lock when child meta-data is not in the child directory (e.g. concurrent
+            # pyramid level validation may save the same parent concurrently).
             self._save_lock.acquire(blocking=True)
 
             AnyChangesFound = self.ElementHasChangesToSave
@@ -416,31 +416,15 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if tabLevel is None:
                 tabLevel = 0
 
-            #         if hasattr(self, 'FullPath'):
-            #             logger = logging.getLogger(__name__ + '.' + 'Save')
-            #             logger.info("Saving " + self.FullPath)
-
-            # Don't do work sorting children or validating attributes if there is no indication they've changed
             if self.ChildrenChanged:
                 self.sort()
 
             if self.AttributesChanged:
                 ValidateAttributesAreStrings(self)
 
-            # pool = Pools.GetGlobalThreadPool()
-
-            # tabs = '\t' * tabLevel
-
-            # if hasattr(self, 'FullPath'):
-            #    logger.info("Saving " + self.FullPath)
-
-            # logger.info('Saving ' + tabs + str(self))
             xmlfilename = 'VolumeData.xml'
 
-            ValidateAttributesAreStrings(self)
-
-            # Create a copy of ourselves for saving.  If this is not done we have the potential to change a collection during iteration
-            # which would break the pipeline manager in subtle ways
+            # Shallow copy for serialization so we do not mutate the live tree mid-pipeline.
             SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
             if self.text is not None:
                 SaveElement.text = self.text
@@ -448,9 +432,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if self.tail is not None:
                 SaveElement.tail = self.tail
 
-            # SaveTree = ElementTree.ElementTree(SaveElement)
-
-            # Any child containers we create a link to and remove from our file.
+            # Linked children become *_Link stubs; their VolumeData.xml lives in the child folder.
             # Snapshot children so removals during duplicate cleanup do not re-visit nodes.
             for child in list(self)[::-1]:
                 if child not in self:
@@ -461,7 +443,8 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     else:
                         AnyChangesFound = True
                 elif isinstance(child, XContainerElementWrapper):
-                    AnyChangesFound = AnyChangesFound or child.AttributesChanged  # Since linked elements display the elements attributes, we should update if they've changed
+                    # Link stubs mirror child attribs; keep parent XML in sync when they change.
+                    AnyChangesFound = AnyChangesFound or child.AttributesChanged
 
                     # Save the child first so it can validate attributes before we attempt to copy them to a link element
                     if recurse:
@@ -486,41 +469,27 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
                     else:
                         SaveElement.append(child)
-
-                    # logger.warn("Unloading " + child.tag)
-                    # del self[i]
-                    # self.append(LinkElement)
                 else:
-                    if isinstance(child,
-                                  XElementWrapper):  # Elements not converted to an XElementWrapper should not have changed.
+                    if isinstance(child, XElementWrapper):
+                        # Unwrapped ElementTree nodes are treated as immutable for dirty flags.
                         AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
 
-                        # Don't bother doing prep work on the child element if no changes are recorded
                         if child.AttributesChanged:
-                            ValidateAttributesAreStrings(SaveElement)
+                            ValidateAttributesAreStrings(child)
 
                         if child.ChildrenChanged:
                             child.sort()
 
-                        child._AttributesChanged = False
-                        child._ChildrenChanged = False
-
-                    # Add a reference to the child element to the element we are serializing to XML
                     SaveElement.append(child)
 
             if AnyChangesFound and self.SaveAsLinkedElement:
                 self.__SaveXML(xmlfilename, SaveElement)
                 self.ResetElementChangeFlags()
             elif not AnyChangesFound and self.SaveAsLinkedElement:
-                prettyoutput.Log(
+                # Clean linked containers are a routine no-op; keep out of info/prettyoutput spam.
+                self.logger.debug(
                     f'Skipping {xmlfilename} under {self.FullPath} '
                     f'(no dirty flags on this container; nested linked containers may still have written)')
-
-        #        pool.add_task("Saving self.FullPath",   self.__SaveXML, xmlfilename, SaveElement)
-
-        # If we are the root of all saves then make sure they have all completed before returning
-        # if(tabLevel == 0 or recurse==False):
-        # pool.wait_completion()
         finally:
             self._save_lock.release()
 

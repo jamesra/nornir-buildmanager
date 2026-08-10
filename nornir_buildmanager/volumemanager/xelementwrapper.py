@@ -39,19 +39,17 @@ class XElementWrapper(ElementTree.Element):
         if len(self) <= 1:
             return
 
-        withKeys = filter(lambda child: hasattr(child, 'SortKey'), self)
-        withoutKeys = filter(lambda child: not hasattr(child, 'SortKey'), self)
-        linked = filter(lambda child: child.tag.endswith('_Link'), withoutKeys)
-        other = filter(lambda child: not child.tag.endswith('_Link'), withoutKeys)
+        children = list(self)
+        with_keys = [child for child in children if hasattr(child, 'SortKey')]
+        without_keys = [child for child in children if not hasattr(child, 'SortKey')]
+        linked = [child for child in without_keys if child.tag.endswith('_Link')]
+        other = [child for child in without_keys if not child.tag.endswith('_Link')]
 
-        sorted_withKeys = sorted(withKeys, key=operator.attrgetter('SortKey'), reverse=True)
-        sorted_withoutKeys = sorted(withoutKeys, key=operator.attrgetter('tag'), reverse=True)
-        sorted_linked = sorted(linked, key=lambda child: child.attrib['Path'], reverse=True)
-        sorted_other = sorted(other, key=lambda child: str(child), reverse=True)
+        sorted_with_keys = sorted(with_keys, key=operator.attrgetter('SortKey'), reverse=True)
+        sorted_linked = sorted(linked, key=lambda child: child.attrib.get('Path', ''), reverse=True)
+        sorted_other = sorted(other, key=str, reverse=True)
 
-        self[:] = sorted_withKeys + sorted_linked + sorted_other + sorted_withoutKeys
-
-        # self._children.sort(key=operator.attrgetter('SortKey'))
+        self[:] = sorted_with_keys + sorted_linked + sorted_other
 
         for c in self:
             if isinstance(c, XElementWrapper):
@@ -402,8 +400,8 @@ class XElementWrapper(ElementTree.Element):
         if self.Parent is not None:
             try:
                 self.Parent.remove(self)
-            except:
-                # Sometimes we have not been added to the parent at this point
+            except (ValueError, AttributeError):
+                # Element may not be attached to the parent yet.
                 pass
 
     def Copy(self) -> "XElementWrapper":

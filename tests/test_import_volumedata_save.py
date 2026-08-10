@@ -61,6 +61,17 @@ class TestImportVolumeDataSave(unittest.TestCase):
             PipelineManager._SaveNodes(iter([None, None]))
             save.assert_not_called()
 
+    def test_save_nodes_saves_element_not_children(self) -> None:
+        """XElementWrapper is Iterable over children; Save must target the parent."""
+        block = BlockNode.Create("TEM")
+        _, block = self.volume.UpdateOrAddChild(block)
+        section = SectionNode.Create(1001, "1001", "1001")
+        _, section = block.UpdateOrAddChildByAttrib(section, "Number")
+
+        with mock.patch.object(VolumeManager, "Save") as save:
+            PipelineManager._SaveNodes(block)
+            save.assert_called_once_with(block)
+
     def test_append_dirties_parent_save_writes_and_clears_flags(self) -> None:
         """Mutation sets ChildrenChanged; Save writes VolumeData.xml; Reset clears flags."""
         block = BlockNode.Create("TEM")
@@ -196,6 +207,52 @@ class TestImportVolumeDataSave(unittest.TestCase):
         self.assertTrue(os.path.isfile(self._volume_xml_path()))
         self.assertTrue(os.path.isfile(self._block_xml_path()))
         self.assertEqual(self._section_link_count(), 1)
+
+    def test_save_recurse_false_skips_linked_children(self) -> None:
+        """Public Save(recurse=False) must not call linked child._Save."""
+        block = BlockNode.Create("TEM")
+        _, block = self.volume.UpdateOrAddChild(block)
+        self.assertTrue(self.volume.ChildrenChanged)
+
+        with mock.patch.object(block, "_Save") as child_save:
+            self.volume.Save(recurse=False)
+            child_save.assert_not_called()
+
+        self.assertTrue(os.path.isfile(self._volume_xml_path()))
+        self.assertFalse(self.volume.ChildrenChanged)
+
+    def test_embedded_child_flags_cleared_after_parent_save(self) -> None:
+        """Non-linked XElementWrapper dirtiness clears only via Reset after write."""
+        from nornir_buildmanager.volumemanager.scalenode import ScaleNode
+
+        block = BlockNode.Create("TEM")
+        _, block = self.volume.UpdateOrAddChild(block)
+        section = SectionNode.Create(1001, "1001", "1001")
+        _, section = block.UpdateOrAddChildByAttrib(section, "Number")
+        channel = ChannelNode.Create("TEM")
+        _, channel = section.UpdateOrAddChildByAttrib(channel, "Name")
+        scale = ScaleNode.Create()
+        channel.UpdateOrAddChild(scale)
+        VolumeManager.Save(self.volume)
+
+        channel.ResetElementChangeFlags()
+        scale.ResetElementChangeFlags()
+        self.assertFalse(channel.ChildrenChanged)
+        self.assertFalse(scale.AttributesChanged)
+
+        scale.attrib["Units"] = "nm"
+        scale.AttributesChanged = True
+        self.assertTrue(channel.ElementHasChangesToSave)
+
+        VolumeManager.Save(channel)
+        self.assertFalse(scale.AttributesChanged)
+        self.assertFalse(channel.ChildrenChanged)
+        self.assertFalse(channel.ElementHasChangesToSave)
+
+        channel_root = ElementTree.parse(self._channel_xml_path("1001")).getroot()
+        scale_elem = channel_root.find("Scale")
+        self.assertIsNotNone(scale_elem)
+        self.assertEqual(scale_elem.get("Units"), "nm")
 
 
 if __name__ == "__main__":
