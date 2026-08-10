@@ -277,19 +277,35 @@ def _GetFromNamespace(ns, attribname, default=None):
         return default
 
 
-def _publish_early_run_meta_from_args(args: argparse.Namespace) -> None:
+def _pipeline_name_from_args(args: argparse.Namespace) -> str | None:
+    """Return PipelineName or utility command name from parsed CLI args."""
+    pipeline = getattr(args, 'PipelineName', None)
+    if not pipeline:
+        pipeline = getattr(args, 'command', None)
+    return pipeline
+
+
+def _chain_pipeline_display_name(name: str, index: int, total: int) -> str:
+    """Sidebar/meta title for a chain segment (``Name (k/n)`` when chained)."""
+    if total > 1:
+        return f"{name} ({index + 1}/{total})"
+    return name
+
+
+def _publish_early_run_meta_from_args(args: argparse.Namespace,
+                                      pipeline: str | None = None) -> None:
     """Publish retained dashboard meta as soon as CLI args are known.
 
     Uses ``PipelineName`` when present (pipeline commands); otherwise ``command``
     (utilities such as RecoverLinks). Skips when volumepath is missing.
+    Optional *pipeline* overrides the displayed name (e.g. ``Prune (1/6)``).
     """
     volumepath = getattr(args, 'volumepath', None)
     if not volumepath:
         return
 
-    pipeline = getattr(args, 'PipelineName', None)
-    if not pipeline:
-        pipeline = getattr(args, 'command', None)
+    if pipeline is None:
+        pipeline = _pipeline_name_from_args(args)
     if not pipeline:
         return
 
@@ -297,6 +313,50 @@ def _publish_early_run_meta_from_args(args: argparse.Namespace) -> None:
         pipeline=pipeline,
         volumepath=volumepath,
         compute=os.environ.get('NORNIR_COMPUTATIONAL_LIBRARY'),
+    )
+
+
+def _publish_chain_segment_meta(args: argparse.Namespace, *,
+                                index: int, total: int) -> None:
+    """Publish running meta for a later ``--then`` segment without resetting ``start_ts``."""
+    volumepath = getattr(args, 'volumepath', None)
+    if not volumepath:
+        return
+
+    name = _pipeline_name_from_args(args)
+    if not name:
+        return
+
+    prettyoutput.publish_run_meta(
+        pipeline=_chain_pipeline_display_name(name, index, total),
+        volumepath=volumepath,
+        status="running",
+        compute=os.environ.get('NORNIR_COMPUTATIONAL_LIBRARY'),
+    )
+
+
+def _publish_chain_progress(index: int, total: int) -> None:
+    """Publish the depth-0 ``Pipelines`` track for a ``--then`` chain."""
+    prettyoutput.publish_run_event(
+        "iterate_progress",
+        track_id="chain",
+        label="Pipelines",
+        current=index,
+        total=total,
+        depth=0,
+    )
+
+
+def _publish_pipeline_segment_complete(name: str) -> None:
+    """Publish a sticky completed depth-0 track for a finished chain segment."""
+    prettyoutput.publish_run_event(
+        "iterate_progress",
+        track_id=f"pipeline:{name}",
+        label=name,
+        current=1,
+        total=1,
+        fraction=1.0,
+        depth=0,
     )
 
 
@@ -506,6 +566,7 @@ def ExecuteChain(buildArgs: list[str]) -> None:
 
     volume_tree = None
     succeeded = False
+    num_segments = len(segments)
     try:
         for index, segment in enumerate(segments):
             if index > 0 and segment[0] not in valid_commands:
@@ -517,13 +578,24 @@ def ExecuteChain(buildArgs: list[str]) -> None:
                 segment_argv = _ReorderArgs(root_flags + [segment[0], volumepath] + segment[1:])
 
             args = parser.parse_args(segment_argv)
-            _publish_early_run_meta_from_args(args)
+            cmd_name = _pipeline_name_from_args(args) or getattr(args, 'PipelineName', None)
+            display_name = _chain_pipeline_display_name(cmd_name, index, num_segments)
 
-            cmd_name = args.PipelineName
+            if index == 0:
+                _publish_early_run_meta_from_args(args, pipeline=display_name)
+            else:
+                _publish_chain_segment_meta(args, index=index, total=num_segments)
+
+            if num_segments > 1:
+                _publish_chain_progress(index, num_segments)
+
             timer = TaskTimer()
             try:
                 timer.Start(cmd_name)
                 volume_tree = _run_pipeline_segment(args, volume_tree=volume_tree, flush_at_boundary=True)
+                if num_segments > 1:
+                    _publish_pipeline_segment_complete(cmd_name)
+                    _publish_chain_progress(index + 1, num_segments)
             finally:
                 timer.End(cmd_name)
                 _AppendTimingOutput(volumepath, timer)
