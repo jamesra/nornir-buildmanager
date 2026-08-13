@@ -22,6 +22,20 @@ Constructs 2D and 3D datasets from 2D image mosaics using the Nornir tools.
 
 ImportIDoc uses `yield from` ToMosaic so `_SaveNodes` can write after each meta-data unit (Volume/Block/Section/Channel/Filter), matching MRC/DM4 — not only after the entire idoc finishes. Each **dirty** linked container rewrites its own `VolumeData.xml`. Crash mid-import leaves prior structure recoverable when those nodes were already yielded.
 
+### VolumeData dirty / save ownership
+
+Contract for pipeline stages and volumemanager getters:
+
+| Rule | Behavior |
+|------|----------|
+| Who creates children | Setters / `GetOrCreate*` / `UpdateOrAddChild*` — **not** ordinary getters |
+| Getters | Prefer find-or-empty (e.g. `BlockNode.NonStosSectionNumbers` returns `frozenset()` if missing; does not create) |
+| Dirty flags | `_AttributesChanged` / `_ChildrenChanged` on the mutated node; linked children do **not** bubble dirtiness to parents |
+| Stage return value | Yield / return the node that should be saved (often Block or Volume after membership changes) |
+| `_SaveNodes` | If the object is an `ElementTree.Element` (including `XElementWrapper`), save **that node**, do not iterate its children. Generators/iterables of nodes are saved one-by-one; `None` entries skipped |
+
+Regression coverage: `tests/test_import_volumedata_save.py`.
+
 ## Documentation
 
 - **Full manual and API (umbrella):** [https://nornir.github.io/](https://nornir.github.io/)

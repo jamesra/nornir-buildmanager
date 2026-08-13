@@ -254,6 +254,38 @@ class TestImportVolumeDataSave(unittest.TestCase):
         self.assertIsNotNone(scale_elem)
         self.assertEqual(scale_elem.get("Units"), "nm")
 
+    def test_non_stos_getter_does_not_create_child(self) -> None:
+        """NonStosSectionNumbers getter is find-only; setter creates the node."""
+        block = BlockNode.Create("TEM")
+        _, block = self.volume.UpdateOrAddChild(block)
+        self.assertIsNone(block.find("NonStosSectionNumbers"))
+        self.assertEqual(block.NonStosSectionNumbers, frozenset())
+        self.assertIsNone(block.find("NonStosSectionNumbers"))
+
+        block.NonStosSectionNumbers = {3, 1}
+        node = block.find("NonStosSectionNumbers")
+        self.assertIsNotNone(node)
+        self.assertEqual(block.NonStosSectionNumbers, frozenset([1, 3]))
+        self.assertTrue(node.AttributesChanged)
+
+    def test_mapping_attrib_write_sets_attributes_changed(self) -> None:
+        """MappingNode.Mapped mutations mark AttributesChanged for Save."""
+        from nornir_buildmanager.volumemanager.mappingnode import MappingNode
+
+        block = BlockNode.Create("TEM")
+        _, block = self.volume.UpdateOrAddChild(block)
+        mapping = MappingNode.Create(10, [11])
+        _, mapping = block.UpdateOrAddChildByAttrib(mapping, "Control")
+        VolumeManager.Save(self.volume)
+        mapping.ResetElementChangeFlags()
+
+        mapping.AddMapping(12)
+        self.assertTrue(mapping.AttributesChanged)
+        self.assertTrue(mapping.ElementHasChangesToSave)
+        VolumeManager.Save(mapping)
+        self.assertFalse(mapping.AttributesChanged)
+        self.assertEqual(mapping.Mapped, frozenset([11, 12]))
+
 
 if __name__ == "__main__":
     unittest.main()
