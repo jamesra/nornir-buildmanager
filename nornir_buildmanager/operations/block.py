@@ -20,6 +20,10 @@ from nornir_buildmanager.metadatautils import *
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
 import nornir_buildmanager.operations.stosgroup_workers as stosgroup_workers
+from nornir_buildmanager.operations.stos_scan import (
+    iter_stos_group_transforms,
+    report_stos_work_progress,
+)
 from nornir_buildmanager.operations.transform_refine_orchestrator import TransformRefineOrchestrator
 from nornir_buildmanager.validation import transforms
 from nornir_buildmanager.volumemanager import *
@@ -33,11 +37,10 @@ from nornir_imageregistration.views import TransformWarpView
 import nornir_imageregistration.settings
 import nornir_pools
 from nornir_shared import files, misc, plot, prettyoutput
-from nornir_shared.mqtt_telemetry import publish_run_event
 from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
 import nornir_shared
 from nornir_imageregistration.settings import AngleSearchRange
-from nornir_buildmanager.progress import report_iterate
+from nornir_buildmanager.progress import report_iterate, report_iterate_complete
 
 
 def _resolve_min_blend(min_blend: float | None,
@@ -706,6 +709,44 @@ def _IsotropicWarpedImageScaleFactor(ControlFilter: FilterNode,
     return float(np.sqrt(float(x_scale) * float(y_scale)))
 
 
+def brute_stos_needs_replacement(
+        stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
+        control_filter: nornir_buildmanager.volumemanager.FilterNode,
+        mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
+        use_masks: bool) -> bool:
+    """Return True when FilterToFilterBruteRegistration would regenerate the pair."""
+    stos_node = stos_group.GetStosTransformNode(control_filter, mapped_filter)
+    if stos_node is None:
+        return True
+    if stos_group.AreStosInputImagesOutdated(
+            stos_node, control_filter, mapped_filter, MaskRequired=use_masks):
+        return True
+
+    attrib = getattr(stos_node, 'attrib', {}) or {}
+    output_path = getattr(stos_node, 'FullPath', None)
+    manual_path = stos_group.PathToManualTransform(output_path) if output_path else None
+
+    if manual_path is not None:
+        try:
+            manual_checksum = stosfile.StosFile.LoadChecksum(manual_path)
+        except (OSError, FileNotFoundError, ValueError):
+            return True
+        stored = attrib.get('InputTransformChecksum') if hasattr(attrib, 'get') else None
+        if stored is not None:
+            return stored != manual_checksum
+        try:
+            if output_path is None or not os.path.exists(output_path):
+                return True
+            existing_checksum = stosfile.StosFile.LoadChecksum(output_path)
+        except (OSError, FileNotFoundError, ValueError):
+            return True
+        return existing_checksum != manual_checksum
+
+    if 'InputTransformChecksum' in attrib:
+        return True
+    return output_path is None or not os.path.exists(output_path)
+
+
 def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
                                     control_filter: nornir_buildmanager.volumemanager.FilterNode,
                                     mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
@@ -894,12 +935,16 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
             for ControlFilter in ControlFilterList:
                 pair_jobs.append((MappedSection, MappedFilter, ControlFilter))
 
-    total_pairs = len(pair_jobs)
+    total_pairs = sum(
+        1 for _mapped, mapped_filter, control_filter in pair_jobs
+        if brute_stos_needs_replacement(
+            stos_group_node, control_filter, mapped_filter, UseMasks)
+    )
     completed_pairs = 0
     brute_track_id = "stos_brute:pairs"
     brute_label = f"StosBrute {AdjacentSections} → {ControlNumber}"
     if total_pairs:
-        report_iterate(brute_track_id, 0, total_pairs, brute_label, depth=1)
+        report_stos_work_progress(brute_track_id, 0, total_pairs, brute_label, depth=1)
 
     if 'Downsample' in Parameters:
         del Parameters['Downsample']
@@ -926,11 +971,11 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
                                                    method=Method,
                                                    )
 
-        completed_pairs += 1
-        if total_pairs:
-            report_iterate(brute_track_id, completed_pairs, total_pairs, brute_label, depth=1)
-
         if stosNode is not None:
+            completed_pairs += 1
+            if total_pairs:
+                report_stos_work_progress(
+                    brute_track_id, completed_pairs, total_pairs, brute_label, depth=1)
             (yield stosNode.Parent)
 
     return
@@ -1214,7 +1259,7 @@ def AssembleStosOverlays(Parameters,
     overlay_track_id = "stos_overlays:jobs"
     overlay_label = f"AssembleStosOverlays → {group_node.Name}"
     if total_overlay_jobs:
-        report_iterate(overlay_track_id, 0, total_overlay_jobs, overlay_label, depth=0)
+        report_stos_work_progress(overlay_track_id, 0, total_overlay_jobs, overlay_label, depth=0)
 
     try:
         for mapping_node, MappedSection, StosTransformNode in overlay_jobs:
@@ -1253,7 +1298,7 @@ def AssembleStosOverlays(Parameters,
                     f"(empty or incomplete ImageSet)")
                 completed_overlay_jobs += 1
                 if total_overlay_jobs:
-                    report_iterate(
+                    report_stos_work_progress(
                         overlay_track_id, completed_overlay_jobs, total_overlay_jobs, overlay_label, depth=0
                     )
                 continue
@@ -1308,7 +1353,7 @@ def AssembleStosOverlays(Parameters,
 
             completed_overlay_jobs += 1
             if total_overlay_jobs:
-                report_iterate(
+                report_stos_work_progress(
                     overlay_track_id, completed_overlay_jobs, total_overlay_jobs, overlay_label, depth=0
                 )
 
@@ -1495,6 +1540,7 @@ def ScoreStosGroupQuality(Parameters,
     scored = 0
     skipped = 0
 
+    paths_to_score: list[tuple[str, TransformNode | None]] = []
     for mapping_node in stos_map_node.Mappings:
         for MappedSection in mapping_node.Mapped:
             StosTransformNodes = group_node.TransformsForMapping(MappedSection, mapping_node.Control)  # type: ignore[arg-type]
@@ -1504,42 +1550,58 @@ def ScoreStosGroupQuality(Parameters,
                 continue
 
             for StosTransformNode in StosTransformNodes:
-                paths_to_score: list[tuple[str, TransformNode | None]] = []
                 if os.path.isfile(StosTransformNode.FullPath):
                     paths_to_score.append((StosTransformNode.FullPath, StosTransformNode))
                 manual_path = group_node.PathToManualTransform(StosTransformNode.FullPath)
                 if manual_path is not None and os.path.isfile(manual_path):
                     paths_to_score.append((manual_path, None))
 
-                for stos_path, transform_node in paths_to_score:
-                    try:
-                        cache, entry, computed = stos_quality.score_stos_into_cache(
-                            group_folder,
-                            stos_path,
-                            cache=cache,
-                            force=force,
-                            max_side=max_side,
-                            refine_diagnostics_dir=group_folder,
-                        )
-                    except Exception as exc:
-                        Logger.warn(f"ScoreStosGroupQuality failed for {stos_path}: {exc}")
-                        prettyoutput.LogErr(f"ScoreStosGroupQuality failed for {stos_path}: {exc}")
-                        continue
+    work_paths = [
+        item for item in paths_to_score
+        if force or stos_quality.entry_is_stale(
+            cache.entries.get(stos_quality.cache_key_for_stos(group_folder, item[0])),
+            item[0])
+    ]
+    total_quality = len(work_paths)
+    completed_quality = 0
+    quality_track_id = "stos_quality:files"
+    quality_label = f"ScoreStosGroupQuality → {getattr(group_node, 'Name', group_folder)}"
+    if total_quality:
+        report_stos_work_progress(quality_track_id, 0, total_quality, quality_label, depth=0)
 
-                    if computed:
-                        scored += 1
-                    else:
-                        skipped += 1
+    for stos_path, transform_node in paths_to_score:
+        try:
+            cache, entry, computed = stos_quality.score_stos_into_cache(
+                group_folder,
+                stos_path,
+                cache=cache,
+                force=force,
+                max_side=max_side,
+                refine_diagnostics_dir=group_folder,
+            )
+        except Exception as exc:
+            Logger.warn(f"ScoreStosGroupQuality failed for {stos_path}: {exc}")
+            prettyoutput.LogErr(f"ScoreStosGroupQuality failed for {stos_path}: {exc}")
+            continue
 
-                    pair_zncc = entry.get('pair_zncc')
-                    if transform_node is not None and pair_zncc is not None:
-                        try:
-                            value = float(pair_zncc)
-                        except (TypeError, ValueError):
-                            continue
-                        if transform_node.PairZNCC != value:
-                            transform_node.PairZNCC = value
-                            save_meta = True
+        if computed:
+            scored += 1
+            completed_quality += 1
+            if total_quality:
+                report_stos_work_progress(
+                    quality_track_id, completed_quality, total_quality, quality_label, depth=0)
+        else:
+            skipped += 1
+
+        pair_zncc = entry.get('pair_zncc')
+        if transform_node is not None and pair_zncc is not None:
+            try:
+                value = float(pair_zncc)
+            except (TypeError, ValueError):
+                continue
+            if transform_node.PairZNCC != value:
+                transform_node.PairZNCC = value
+                save_meta = True
 
     stos_quality.save_quality_cache(group_folder, cache)
     prettyoutput.Log(
@@ -1608,7 +1670,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
     chain_track_id = "stos_chain:mappings"
     chain_label = f"SelectBestRegistrationChain → {OutputStosMapName}"
     if total_mapped:
-        report_iterate(chain_track_id, 0, total_mapped, chain_label, depth=0)
+        report_stos_work_progress(chain_track_id, 0, total_mapped, chain_label, depth=0)
 
     # If a section is used as a control, then prefer it when generat
     for mappedSection in mappedSectionNumbers:
@@ -1712,7 +1774,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
         finally:
             completed_mapped += 1
             if total_mapped:
-                report_iterate(chain_track_id, completed_mapped, total_mapped, chain_label, depth=0)
+                report_stos_work_progress(chain_track_id, completed_mapped, total_mapped, chain_label, depth=0)
 
     yield block_node
 
@@ -2327,13 +2389,12 @@ def _publish_refine_stos_progress(
     if progress is None or int(progress.get("total", 0)) <= 0:
         return
     completed = int(progress.get("completed", 0))
-    publish_run_event(
-        "iterate_progress",
-        current=completed if current is None else current,
-        total=int(progress["total"]),
+    report_stos_work_progress(
+        "stos_refine:files",
+        completed if current is None else current,
+        int(progress["total"]),
+        str(progress.get("label") or "StosGridRefine"),
         depth=0,
-        track_id="stos_refine:files",
-        label=str(progress.get("label") or "StosGridRefine"),
         element=os.path.basename(context.input_stos_path),
         path=context.input_stos_path,
         section=context.mapped_section,
@@ -2457,7 +2518,14 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             yield item
 
     snapshots = [snapshot for snapshot, _context in candidates]
+    scan_track_id = "stos_refine:scan"
+    scan_label = f"Scan STOS refine → {OutputStosGroupName}"
+    if candidates:
+        report_stos_work_progress(scan_track_id, 0, len(candidates), scan_label, depth=1)
     decisions = stosgroup_workers.decide_stos_grid_refine_needs(snapshots)
+    if candidates:
+        report_stos_work_progress(scan_track_id, len(candidates), len(candidates), scan_label, depth=1)
+        report_iterate_complete(scan_track_id, len(candidates))
 
     pending_jobs: list[_RefineStosJobContext] = []
     for (_snapshot, context), decision_result in zip(candidates, decisions):
@@ -2497,14 +2565,8 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
     }
     refine_kwargs["_refine_progress"] = refine_progress
     if total_refine_jobs:
-        publish_run_event(
-            "iterate_progress",
-            current=0,
-            total=total_refine_jobs,
-            depth=0,
-            track_id="stos_refine:files",
-            label=refine_files_label,
-        )
+        report_stos_work_progress(
+            "stos_refine:files", 0, total_refine_jobs, refine_files_label, depth=0)
 
     pool_jobs: list[stosgroup_workers.StosGroupPoolJob] = []
     for context in pending_jobs:
@@ -2752,6 +2814,142 @@ def _ensure_unblended_sidecar(output_transform,
     return sidecar_path
 
 
+def _as_transform_list(raw: typing.Any) -> list[typing.Any]:
+    """Coerce TransformsForMapping results to a list without iterating mocks forever."""
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return list(raw)
+    try:
+        return list(raw)
+    except TypeError:
+        return []
+
+
+def _slice_to_volume_hop_needs_write(
+        mapped_to_control: typing.Any,
+        output_transform: typing.Any | None,
+        *,
+        is_direct_to_center: bool,
+        min_blend: float | None,
+        travel_limit: float | None,
+        reblend_iterations: int | None,
+        reblend_tolerance: float | None,
+        max_blend: float | None,
+        use_chain_linear: bool) -> bool:
+    """Return True when this hop will write a ``.stos`` given current files."""
+    mapped_path = getattr(mapped_to_control, 'FullPath', None)
+    if not mapped_path or not os.path.exists(str(mapped_path)):
+        return False
+    if output_transform is None:
+        return True
+    output_path = getattr(output_transform, 'FullPath', None)
+    matched = getattr(output_transform, 'IsInputTransformMatched', None)
+    if callable(matched):
+        try:
+            if not matched(mapped_to_control):
+                return True
+        except (TypeError, AttributeError):
+            return True
+    if not output_path or not os.path.exists(str(output_path)):
+        return True
+    if is_direct_to_center:
+        return False
+    stored = getattr(output_transform, 'ControlToVolumeTransformChecksum', None)
+    if stored is None:
+        return True
+    blend_matched = getattr(output_transform, 'IsLinearBlendParamsMatched', None)
+    if callable(blend_matched):
+        try:
+            if not blend_matched(min_blend,
+                                 travel_limit,
+                                 reblend_iterations,
+                                 reblend_tolerance,
+                                 max_blend=max_blend,
+                                 chain_consistent_linear=use_chain_linear):
+                return True
+        except TypeError:
+            return True
+    return False
+
+
+def _count_slice_to_volume_stos_writes(
+        rt: typing.Any,
+        input_group: StosGroupNode,
+        output_group: StosGroupNode,
+        *,
+        min_blend: float | None,
+        travel_limit: float | None,
+        reblend_iterations: int | None,
+        reblend_tolerance: float | None,
+        max_blend: float | None,
+        chain_consistent_linear: bool) -> int:
+    """Count registration-tree hops whose output ``.stos`` is missing or stale."""
+    use_chain_linear = _use_chain_consistent_linear(
+        chain_consistent_linear, min_blend, travel_limit)
+    total = 0
+    getter = getattr(output_group, 'GetSectionMapping', None)
+    for section_number in list(getattr(rt, 'RootNodes', []) or []):
+        nodes = getattr(rt, 'Nodes', {})
+        root_node = nodes[section_number] if section_number in nodes else None
+        if root_node is None:
+            continue
+        generate = getattr(rt, 'GenerateOrderedMappingsToRootNode', None)
+        if not callable(generate):
+            continue
+        try:
+            steps = _as_transform_list(generate(root_node))
+        except TypeError:
+            continue
+        for step in steps:
+            mapped_node = getattr(step, 'MappedNode', None)
+            parent_node = getattr(step, 'ParentNode', None)
+            if mapped_node is None or parent_node is None:
+                continue
+            mapped = mapped_node.SectionNumber
+            intermediate = parent_node.SectionNumber
+            transforms = _as_transform_list(
+                input_group.TransformsForMapping(mapped, intermediate))
+            is_direct = intermediate == section_number
+            output_mapping = None
+            if callable(getter):
+                try:
+                    output_mapping = getter(mapped)
+                except TypeError:
+                    output_mapping = None
+            finder = getattr(output_mapping, 'FindStosTransform', None) if output_mapping is not None else None
+            for mapped_to_control in transforms:
+                control_section = (
+                    getattr(mapped_to_control, 'ControlSectionNumber', intermediate)
+                    if is_direct else section_number)
+                output_transform = None
+                if callable(finder):
+                    try:
+                        output_transform = finder(
+                            ControlSectionNumber=control_section,
+                            ControlChannelName=getattr(mapped_to_control, 'ControlChannelName', None),
+                            ControlFilterName=getattr(mapped_to_control, 'ControlFilterName', None),
+                            MappedSectionNumber=getattr(
+                                mapped_to_control, 'SourceSectionNumber', mapped),
+                            MappedChannelName=getattr(mapped_to_control, 'MappedChannelName', None),
+                            MappedFilterName=getattr(mapped_to_control, 'MappedFilterName', None),
+                        )
+                    except TypeError:
+                        output_transform = None
+                if _slice_to_volume_hop_needs_write(
+                        mapped_to_control,
+                        output_transform,
+                        is_direct_to_center=is_direct,
+                        min_blend=min_blend,
+                        travel_limit=travel_limit,
+                        reblend_iterations=reblend_iterations,
+                        reblend_tolerance=reblend_tolerance,
+                        max_blend=max_blend,
+                        use_chain_linear=use_chain_linear):
+                    total += 1
+    return total
+
+
 def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanager.StosMapNode,
                                  stos_group_node: nornir_buildmanager.volumemanager.StosGroupNode,
                                  OutputMap: str,
@@ -2825,20 +3023,29 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
     if AddedStosMap:
         (yield block_node)
 
-    total_stv = 0
-    for sectionNumber in rt.RootNodes:
-        total_stv += sum(1 for _ in rt.GenerateOrderedMappingsToRootNode(rt.Nodes[sectionNumber]))
+    total_stv = _count_slice_to_volume_stos_writes(
+        rt,
+        InputStosGroupNode,
+        OutputGroupNode,
+        min_blend=min_blend,
+        travel_limit=travel_limit,
+        reblend_iterations=reblend_iterations,
+        reblend_tolerance=reblend_tolerance,
+        max_blend=max_blend,
+        chain_consistent_linear=chain_consistent_linear,
+    )
 
     completed_stv = [0]
-    stv_track_id = "slice_to_volume:sections"
+    stv_track_id = "slice_to_volume:stos"
     stv_label = f"SliceToVolume → {OutputGroupFullname}"
 
     def _stv_progress() -> None:
         completed_stv[0] += 1
-        report_iterate(stv_track_id, completed_stv[0], total_stv, stv_label, depth=0)
+        total = max(total_stv, completed_stv[0])
+        report_stos_work_progress(stv_track_id, completed_stv[0], total, stv_label, depth=0)
 
     if total_stv:
-        report_iterate(stv_track_id, 0, total_stv, stv_label, depth=0)
+        report_stos_work_progress(stv_track_id, 0, total_stv, stv_label, depth=0)
 
     for sectionNumber in rt.RootNodes:
         Node = rt.Nodes[sectionNumber]
@@ -2853,7 +3060,7 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
             reblend_iterations=reblend_iterations,
             reblend_tolerance=reblend_tolerance,
             chain_consistent_linear=chain_consistent_linear,
-            progress_callback=_stv_progress if total_stv else None)
+            progress_callback=_stv_progress)
 
     # TranslateVolumeToZeroOrigin(OutputGroupNode)
     # Do not use TranslateVolumeToZeroOrigin here because the center of the volume image does not get shifted with the rest of the sections. That is a problem.  We should probably create an identity transform for the root nodes in
@@ -2886,9 +3093,6 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                                     min_blend,
                                                     travel_limit)
     for step in rt.GenerateOrderedMappingsToRootNode(rootNode):
-        if progress_callback is not None:
-            progress_callback()
-
         MappedSectionNode = step.MappedNode  # type: ignore[attr-defined]
         IntermediateControlSection = step.ParentNode.SectionNumber  # type: ignore[attr-defined]
 
@@ -3001,6 +3205,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                             prettyoutput.LogErr(errorStr)
                             continue
 
+                        if progress_callback is not None:
+                            progress_callback()
                         (yield OutputSectionMappingsNode)
                 else:
                     # If we can't generate a transform we continue.  This allows other mapping to the center of the volume to still generate
@@ -3091,6 +3297,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                         OutputTransform = None
                         continue
 
+                    if progress_callback is not None:
+                        progress_callback()
                     (yield OutputSectionMappingsNode)
                 else:
                     Logger.info(" %s: is still valid" % logStr)
@@ -3429,82 +3637,78 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
 
     pending_jobs: list[stosgroup_workers.StosGroupPoolJob] = []
 
-    for inputSectionMapping in InputStosGroupNode.SectionMappings:
+    for InputTransformNode in iter_stos_group_transforms(InputStosGroupNode):
 
         (SectionMappingNodeAdded, OutputSectionMapping) = OutputGroupNode.GetOrCreateSectionMapping(
-            inputSectionMapping.MappedSectionNumber)  # type: ignore[arg-type]
+            InputTransformNode.MappedSectionNumber)  # type: ignore[arg-type]
         if SectionMappingNodeAdded:
             (yield OutputGroupNode)
 
-        InputTransformNodes = inputSectionMapping.findall('Transform')
+        if not os.path.exists(InputTransformNode.FullPath):
+            continue
 
-        for InputTransformNode in InputTransformNodes:
+        try:
+            (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
+            (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
+        except AttributeError:
+            prettyoutput.LogErr(
+                "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+            continue
 
-            if not os.path.exists(InputTransformNode.FullPath):
-                continue
+        if ControlFilter is None or MappedFilter is None:
+            prettyoutput.LogErr(
+                "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+            continue
 
+        (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
+                                                                                          MappedFilter,
+                                                                                          OutputType=InputTransformNode.Type,
+                                                                                          OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+                                                                                              ControlFilter,
+                                                                                              MappedFilter))
+
+        output_stale = _scale_stos_output_stale(InputTransformNode, output_stos_node)
+
+        if stosNode_added or output_stale:
             try:
-                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
-                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
-            except AttributeError:
-                prettyoutput.LogErr(
-                    "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
-                continue
+                os.remove(output_stos_node.FullPath)
+            except FileNotFoundError:
+                pass
 
-            if ControlFilter is None or MappedFilter is None:
-                prettyoutput.LogErr(
-                    "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
-                continue
+        if not os.path.exists(output_stos_node.FullPath):
+            control_image_path = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+            mapped_image_path = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
+            control_mask_path = None
+            mapped_mask_path = None
+            if UseMasks is not False:
+                if ControlFilter.MaskImageset is not None:
+                    control_mask_path = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+                if MappedFilter.MaskImageset is not None:
+                    mapped_mask_path = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
 
-            (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
-                                                                                              MappedFilter,
-                                                                                              OutputType=InputTransformNode.Type,
-                                                                                              OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-                                                                                                  ControlFilter,
-                                                                                                  MappedFilter))
-
-            output_stale = _scale_stos_output_stale(InputTransformNode, output_stos_node)
-
-            if stosNode_added or output_stale:
-                try:
-                    os.remove(output_stos_node.FullPath)
-                except FileNotFoundError:
-                    pass
-
-            if not os.path.exists(output_stos_node.FullPath):
-                control_image_path = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-                mapped_image_path = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-                control_mask_path = None
-                mapped_mask_path = None
-                if UseMasks is not False:
-                    if ControlFilter.MaskImageset is not None:
-                        control_mask_path = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
-                    if MappedFilter.MaskImageset is not None:
-                        mapped_mask_path = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
-
-                job_context = _ScaleStosJobContext(
-                    output_stos_node=output_stos_node,
-                    input_transform_node=InputTransformNode,
-                    output_group_node=OutputGroupNode,
-                    input_stos_path=InputTransformNode.FullPath,
-                )
-                pending_jobs.append(stosgroup_workers.StosGroupPoolJob(
-                    name=os.path.basename(output_stos_node.FullPath),
-                    func=stosgroup_workers.scale_stos_file,
-                    args=(
-                        InputTransformNode.FullPath,
-                        output_stos_node.FullPath,
-                        InputDownsample,
-                        OutputDownsample,
-                        control_image_path,
-                        mapped_image_path,
-                        control_mask_path,
-                        mapped_mask_path,
-                        UseMasks,
-                    ),
-                    kwargs={},
-                    context=job_context,
-                ))
+            job_context = _ScaleStosJobContext(
+                output_stos_node=output_stos_node,
+                input_transform_node=InputTransformNode,
+                output_group_node=OutputGroupNode,
+                input_stos_path=InputTransformNode.FullPath,
+            )
+            pending_jobs.append(stosgroup_workers.StosGroupPoolJob(
+                name=os.path.basename(output_stos_node.FullPath),
+                func=stosgroup_workers.scale_stos_file,
+                args=(
+                    InputTransformNode.FullPath,
+                    output_stos_node.FullPath,
+                    InputDownsample,
+                    OutputDownsample,
+                    control_image_path,
+                    mapped_image_path,
+                    control_mask_path,
+                    mapped_mask_path,
+                    UseMasks,
+                ),
+                kwargs={},
+                context=job_context,
+            ))
 
     pool = _get_stos_group_pool("ScaleStosGroup", workers)
     max_in_flight = stosgroup_workers.default_max_in_flight(workers)
@@ -3514,14 +3718,8 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
     completed_jobs = 0
 
     def _publish_scale_progress() -> None:
-        publish_run_event(
-            "iterate_progress",
-            current=completed_jobs,
-            total=total_jobs,
-            depth=1,
-            track_id=scale_track_id,
-            label=scale_label,
-        )
+        report_stos_work_progress(
+            scale_track_id, completed_jobs, total_jobs, scale_label, depth=1)
 
     if total_jobs:
         _publish_scale_progress()
@@ -3574,93 +3772,90 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
 
     pending_jobs: list[stosgroup_workers.StosGroupPoolJob] = []
 
-    for inputSectionMapping in InputStosGroupNode.SectionMappings:
+    for InputTransformNode in iter_stos_group_transforms(InputStosGroupNode):
 
         (SectionMappingNodeAdded, OutputSectionMapping) = OutputGroupNode.GetOrCreateSectionMapping(
-            inputSectionMapping.MappedSectionNumber)  # type: ignore[arg-type]
+            InputTransformNode.MappedSectionNumber)  # type: ignore[arg-type]
         if SectionMappingNodeAdded:
             (yield OutputGroupNode)
 
-        InputTransformNodes = inputSectionMapping.findall('Transform')
+        if not os.path.exists(InputTransformNode.FullPath):
+            continue
 
-        for InputTransformNode in InputTransformNodes:
-            if not os.path.exists(InputTransformNode.FullPath):
-                continue
+        try:
+            (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
+            (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
+        except AttributeError:
+            prettyoutput.LogErr(
+                "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+            continue
 
-            try:
-                (ControlFilter, ControlMaskFilter) = __ControlFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
-                (MappedFilter, MappedMaskFilter) = __MappedFilterForTransform(InputTransformNode)  # type: ignore[union-attr]
-            except AttributeError:
-                prettyoutput.LogErr(
-                    "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
-                continue
+        if ControlFilter is None or MappedFilter is None:
+            prettyoutput.LogErr(
+                "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
+            continue
 
-            if ControlFilter is None or MappedFilter is None:
-                prettyoutput.LogErr(
-                    "ScaleStosGroup missing filter for InputTransformNode " + InputTransformNode.FullPath)
-                continue
+        (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
+                                                                                          MappedFilter,
+                                                                                          OutputType=InputTransformNode.Type,
+                                                                                          OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+                                                                                              ControlFilter,
+                                                                                              MappedFilter))
 
-            (stosNode_added, output_stos_node) = OutputGroupNode.GetOrCreateStosTransformNode(ControlFilter,
-                                                                                              MappedFilter,
-                                                                                              OutputType=InputTransformNode.Type,
-                                                                                              OutputPath=nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-                                                                                                  ControlFilter,
-                                                                                                  MappedFilter))
-
-            if not stosNode_added:
-                if not (output_stos_node.IsInputTransformMatched(InputTransformNode)
-                        and output_stos_node.IsLinearBlendParamsMatched(min_blend,
-                                                                        travel_limit,
-                                                                        reblend_iterations,
-                                                                        reblend_tolerance,
-                                                                        max_blend=max_blend)):
-                    if _no_delete_mod.is_no_delete():
-                        if os.path.exists(output_stos_node.FullPath):
-                            prettyoutput.Log(
-                                f'NO-DELETE WOULD_HAVE_REGENERATED: {output_stos_node.FullPath} '
-                                f'(checksum or blend-params mismatch); keeping stale output.')
-                    else:
-                        try:
-                            os.remove(output_stos_node.FullPath)
-                        except FileNotFoundError:
-                            pass
-                else:
-                    if _no_delete_mod.is_no_delete() and os.path.exists(output_stos_node.FullPath):
-                        prettyoutput.Log(f'NO-DELETE KEEP: {output_stos_node.FullPath}')
-            else:
+        if not stosNode_added:
+            if not (output_stos_node.IsInputTransformMatched(InputTransformNode)
+                    and output_stos_node.IsLinearBlendParamsMatched(min_blend,
+                                                                    travel_limit,
+                                                                    reblend_iterations,
+                                                                    reblend_tolerance,
+                                                                    max_blend=max_blend)):
                 if _no_delete_mod.is_no_delete():
                     if os.path.exists(output_stos_node.FullPath):
                         prettyoutput.Log(
                             f'NO-DELETE WOULD_HAVE_REGENERATED: {output_stos_node.FullPath} '
-                            f'(newly added node, existing file kept); skipping rebuild.')
+                            f'(checksum or blend-params mismatch); keeping stale output.')
                 else:
                     try:
                         os.remove(output_stos_node.FullPath)
                     except FileNotFoundError:
                         pass
+            else:
+                if _no_delete_mod.is_no_delete() and os.path.exists(output_stos_node.FullPath):
+                    prettyoutput.Log(f'NO-DELETE KEEP: {output_stos_node.FullPath}')
+        else:
+            if _no_delete_mod.is_no_delete():
+                if os.path.exists(output_stos_node.FullPath):
+                    prettyoutput.Log(
+                        f'NO-DELETE WOULD_HAVE_REGENERATED: {output_stos_node.FullPath} '
+                        f'(newly added node, existing file kept); skipping rebuild.')
+            else:
+                try:
+                    os.remove(output_stos_node.FullPath)
+                except FileNotFoundError:
+                    pass
 
-            if not os.path.exists(output_stos_node.FullPath):
-                job_context = _LinearBlendJobContext(
-                    output_stos_node=output_stos_node,
-                    input_transform_node=InputTransformNode,
-                    output_group_node=OutputGroupNode,
-                )
-                pending_jobs.append(stosgroup_workers.StosGroupPoolJob(
-                    name=os.path.basename(output_stos_node.FullPath),
-                    func=stosgroup_workers.linear_blend_stos_file,
-                    args=(
-                        InputTransformNode.FullPath,
-                        output_stos_node.FullPath,
-                        min_blend,
-                        travel_limit,
-                        ignore_rotation,
-                        reblend_iterations or 1,
-                        reblend_tolerance,
-                        max_blend,
-                    ),
-                    kwargs={},
-                    context=job_context,
-                ))
+        if not os.path.exists(output_stos_node.FullPath):
+            job_context = _LinearBlendJobContext(
+                output_stos_node=output_stos_node,
+                input_transform_node=InputTransformNode,
+                output_group_node=OutputGroupNode,
+            )
+            pending_jobs.append(stosgroup_workers.StosGroupPoolJob(
+                name=os.path.basename(output_stos_node.FullPath),
+                func=stosgroup_workers.linear_blend_stos_file,
+                args=(
+                    InputTransformNode.FullPath,
+                    output_stos_node.FullPath,
+                    min_blend,
+                    travel_limit,
+                    ignore_rotation,
+                    reblend_iterations or 1,
+                    reblend_tolerance,
+                    max_blend,
+                ),
+                kwargs={},
+                context=job_context,
+            ))
 
     pool = _get_stos_group_pool("LinearBlendStosGroup", workers)
     max_in_flight = stosgroup_workers.default_max_in_flight(workers)
@@ -3670,14 +3865,8 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
     completed_jobs = 0
 
     def _publish_blend_progress() -> None:
-        publish_run_event(
-            "iterate_progress",
-            current=completed_jobs,
-            total=total_jobs,
-            depth=1,
-            track_id=blend_track_id,
-            label=blend_label,
-        )
+        report_stos_work_progress(
+            blend_track_id, completed_jobs, total_jobs, blend_label, depth=1)
 
     if total_jobs:
         _publish_blend_progress()

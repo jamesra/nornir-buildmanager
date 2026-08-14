@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -66,13 +66,19 @@ def test_score_stos_group_quality_writes_cache_and_attrib(tmp_path: Path) -> Non
     stos_map.Mappings = [mapping]
 
     logger = MagicMock()
-    result = block.ScoreStosGroupQuality(
-        {},
-        stos_map_node=stos_map,
-        group_node=group_node,
-        Logger=logger,
-        MaxSide=64,
-    )
+    with patch.object(block, "report_stos_work_progress") as report:
+        result = block.ScoreStosGroupQuality(
+            {},
+            stos_map_node=stos_map,
+            group_node=group_node,
+            Logger=logger,
+            MaxSide=64,
+        )
+    assert result is group_node
+    assert report.call_args_list[0].args[0] == "stos_quality:files"
+    assert report.call_args_list[0].args[2] == 1
+    assert report.call_args_list[0].args[1] == 0
+    assert report.call_args_list[-1].args[1] == 1
     assert result is group_node
 
     cache = load_quality_cache(str(group_dir))
