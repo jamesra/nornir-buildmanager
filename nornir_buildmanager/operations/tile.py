@@ -43,6 +43,7 @@ import nornir_buildmanager.templates
 from nornir_buildmanager.validation import transforms, image
 from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile, ensure_directory, pin_directory_for_worker
 from nornir_shared.histogram import Histogram
+import nornir_shared.checksum
 
 import nornir_buildmanager as nb
 import nornir_imageregistration.spatial as spatial
@@ -1206,6 +1207,34 @@ def VerifyAssembledImagePathIsCorrect(Parameters: dict, Logger: logging.Logger, 
             yield imageSet
 
 
+def _newest_tile_image_path(level_dir: str, image_ext: str) -> str | None:
+    """Return the newest tile image in a pyramid level, ignoring assemble temp files."""
+    if not image_ext.startswith('.'):
+        image_ext = '.' + image_ext
+    ext_lower = image_ext.lower()
+    newest_path: str | None = None
+    newest_mtime = -1
+    try:
+        names = os.listdir(level_dir)
+    except OSError:
+        return None
+    for name in names:
+        lower = name.lower()
+        if lower.startswith('temp'):
+            continue
+        if not lower.endswith(ext_lower):
+            continue
+        path = os.path.join(level_dir, name)
+        try:
+            mtime = os.stat(path).st_mtime_ns
+        except OSError:
+            continue
+        if mtime >= newest_mtime:
+            newest_mtime = mtime
+            newest_path = path
+    return newest_path
+
+
 def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transform_node: TransformNode,
                            OutputChannelPrefix: str | None = None, UseCluster=True,
                            ThumbnailSize=256, Interlace=True, CropBox=None, image_ext=None, **kwargs):
@@ -1303,16 +1332,22 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
                                         nornir_imageregistration.GetImageSize(image_node.FullPath))
 
     # LevelFormatStr = LevelFormatTemplate % thisLevel
-    [added_input_level, InputLevelNode] = filter_node.TilePyramid.GetOrCreateLevel(thisLevel)
+    # Do not GenerateData: missing Level meta-data must not run BuildTilePyramids.
+    # Assemble reads tiles from the level directory and writes the ImageSet PNG first.
+    [added_input_level, InputLevelNode] = filter_node.TilePyramid.GetOrCreateLevel(thisLevel, GenerateData=False)
     assert InputLevelNode is not None
     if added_input_level:
         yield filter_node.TilePyramid
 
     try:
-        removed_outdated_image = RemoveOutdatedFile(InputLevelNode.FullPath, image_node.FullPath,
-                                                    nornir_shared.files.FileTimeComparison.CREATION)
-        removed_outdated_mask = RemoveOutdatedFile(InputLevelNode.FullPath, MaskImageNode.FullPath,
-                                                   nornir_shared.files.FileTimeComparison.CREATION)
+        newest_tile = _newest_tile_image_path(
+            InputLevelNode.FullPath,
+            filter_node.TilePyramid.attrib.get('ImageFormatExt', DefaultImageExtension))
+        if newest_tile is not None:
+            RemoveOutdatedFile(
+                newest_tile, image_node.FullPath, nornir_shared.files.FileTimeComparison.MODIFIED)
+            RemoveOutdatedFile(
+                newest_tile, MaskImageNode.FullPath, nornir_shared.files.FileTimeComparison.MODIFIED)
         # RemoveInvalidImageFile(image_node.FullPath)
         # RemoveInvalidImageFile(MaskImageNode.FullPath)
     except FileNotFoundError:
@@ -1330,8 +1365,10 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
         ImageDir = InputLevelNode.FullPath
         # ImageDir = os.path.join(FilterNode.TilePyramid.FullPath, LevelFormatStr)
 
-        tempOutputFullPath = os.path.join(ImageDir, 'Temp' + image_ext)
-        tempMaskOutputFullPath = os.path.join(ImageDir, 'TempMask' + image_ext)
+        os.makedirs(os.path.dirname(image_node.FullPath), exist_ok=True)
+        os.makedirs(os.path.dirname(MaskImageNode.FullPath), exist_ok=True)
+        tempOutputFullPath = os.path.join(os.path.dirname(image_node.FullPath), 'Temp' + image_ext)
+        tempMaskOutputFullPath = os.path.join(os.path.dirname(MaskImageNode.FullPath), 'TempMask' + image_ext)
 
         Logger.info("Assembling " + transform_node.FullPath)
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
@@ -2179,28 +2216,125 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
     return filter_node
 
 
-def BuildImagePyramid(image_set_node: ImageSetNode,
-                      Levels: Sequence[int] | None = None,
-                      Interlace: bool = True, **kwargs):
-    """@ImageSetNode"""
+def _requested_downsample_levels(
+        Levels: Sequence[int | float] | str | int | float | None) -> list[float] | None:
+    """Parse the Levels argument; None or empty means use existing ImageSet levels only."""
+    if Levels is None:
+        return None
+    if isinstance(Levels, str) and not Levels.strip():
+        return None
+    parsed = _SortedNumberListFromLevelsParameter(Levels)
+    if not parsed:
+        return None
+    return [float(level) for level in parsed]
 
-    PyramidLevels = _SortedNumberListFromLevelsParameter(Levels)
+
+def _existing_image_downsamples(image_set_node: ImageSetNode) -> list[float]:
+    """Downsample factors that currently have an image file on disk."""
+    return [float(level.Downsample) for level in image_set_node.Levels
+            if image_set_node.HasImage(level.Downsample)]
+
+
+def _live_filesize_checksum(path: str) -> str | None:
+    """Return the live filesize checksum, or None if the file is missing."""
+    try:
+        return nornir_shared.checksum.FilesizeChecksum(path)
+    except OSError:
+        return None
+
+
+def _write_image_filesize_checksum(image_node: ImageNode, checksum: str) -> None:
+    """Set Checksum to live filesize without using the sticky ImageNode.Checksum getter."""
+    if image_node.attrib.get('Checksum') != checksum:
+        image_node.attrib['Checksum'] = checksum
+        image_node.AttributesChanged = True
+
+
+def _shrink_input_image_checksum(image_node: ImageNode) -> str | None:
+    """Parent PNG filesize recorded at Shrink time.
+
+    Read the raw attrib. Do not use ImageNode.InputImageChecksum, which aliases
+    InputTransformChecksum (the mosaic transform).
+    """
+    return image_node.attrib.get('InputImageChecksum')
+
+
+def _write_shrink_input_image_checksum(image_node: ImageNode, parent_checksum: str) -> None:
+    """Record the parent PNG filesize on a derived (shrunk) child."""
+    if image_node.attrib.get('InputImageChecksum') != parent_checksum:
+        image_node.attrib['InputImageChecksum'] = parent_checksum
+        image_node.AttributesChanged = True
+
+
+def _parent_image_rewritten(parent: ImageNode) -> bool:
+    """True when a recorded filesize Checksum exists and no longer matches the live file."""
+    live = _live_filesize_checksum(parent.FullPath)
+    stored = parent.attrib.get('Checksum')
+    return live is not None and stored is not None and stored != live
+
+
+def _should_rebuild_pyramid_child(*,
+                                  parent: ImageNode,
+                                  child: ImageNode | None,
+                                  child_path: str,
+                                  parent_dirty: bool) -> bool:
+    """Return True if child should be Shrink'd from parent.
+
+    Derived children record the parent filesize in InputImageChecksum. Existing
+    levels without that attrib are assembled or unknown and are rebuilt only
+    when the parent image was rewritten or shrunk during this call.
+    """
+    if child is None or not os.path.exists(child_path):
+        return True
+
+    recorded = _shrink_input_image_checksum(child)
+    if recorded is not None:
+        return recorded != _live_filesize_checksum(parent.FullPath)
+
+    return parent_dirty
+
+
+def _refresh_parent_filesize_checksum(parent: ImageNode) -> str | None:
+    """Write live filesize to Checksum after rebuild decisions for this parent."""
+    live = _live_filesize_checksum(parent.FullPath)
+    if live is None:
+        return None
+    _write_image_filesize_checksum(parent, live)
+    return live
+
+
+def BuildImagePyramid(image_set_node: ImageSetNode,
+                      Levels: Sequence[int | float] | str | int | float | None = None,
+                      Interlace: bool = True, **kwargs) -> ImageSetNode | None:
+    """Shrink coarser ImageSet levels from finer parents when derived children are missing or stale.
+
+    Unions requested Levels with existing on-disk downsamples so Assemble of a
+    single level still considers coarser pyramid members. Does not replace an
+    assembled neighbor from a newly added finer level.
+    """
 
     Logger = kwargs.get('Logger', None)
     if Logger is None:
         Logger = logging.getLogger('BuildImagePyramid')
 
-    SaveImageSet = False
+    requested = _requested_downsample_levels(Levels)
+    existing = _existing_image_downsamples(image_set_node)
+
+    if requested is None:
+        PyramidLevels = list(existing)
+    else:
+        PyramidLevels = sorted(frozenset(requested) | frozenset(existing))
+
+    if not PyramidLevels:
+        return None
 
     PyramidLevels = _InsertExistingLevelIfMissing(image_set_node, PyramidLevels)
+    PyramidLevels = sorted(frozenset(float(level) for level in PyramidLevels))
 
-    # Ensure each level is unique
-    PyramidLevels = sorted(frozenset(PyramidLevels))
+    SaveImageSet = False
+    shrunk_this_call: set[float] = set()
 
-    # Build downsampled images for every level below the input image level node
     for i in range(1, len(PyramidLevels)):
-
-        # OK, check for a node with the previous downsample level. If it exists use it to build this level if it does not exist
         SourceLevel = PyramidLevels[i - 1]
         SourceImageNode = image_set_node.GetImage(SourceLevel)
         if SourceImageNode is None:
@@ -2208,41 +2342,29 @@ def BuildImagePyramid(image_set_node: ImageSetNode,
             return None
 
         thisLevel = PyramidLevels[i]
-        assert (SourceLevel != thisLevel)
+        assert SourceLevel != thisLevel
         TargetImageNode = image_set_node.GetOrCreateImage(thisLevel, SourceImageNode.Path, GenerateData=False)
 
         assert TargetImageNode.Parent is not None
         os.makedirs(TargetImageNode.Parent.FullPath, exist_ok=True)
 
         if os.path.exists(TargetImageNode.FullPath):
-            RemoveOutdatedFile(SourceImageNode.FullPath, TargetImageNode.FullPath)
             RemoveInvalidImageFile(TargetImageNode.FullPath)
 
-        buildLevel = False
-        if os.path.exists(TargetImageNode.FullPath):
-            if 'InputImageChecksum' in SourceImageNode.attrib:
-                TargetImageNode = transforms.RemoveOnMismatch(TargetImageNode, "InputImageChecksum",
-                                                              SourceImageNode.InputImageChecksum)
-
-                if TargetImageNode is None:
-                    buildLevel = True
-                    # Recreate the node if needed 
-                    TargetImageNode = image_set_node.GetOrCreateImage(thisLevel, GenerateData=False)
-
-        #            RemoveOnMismatch()
-        #            if(TargetImageNode.attrib["InputImageChecksum"] != SourceImageNode.InputImageChecksum):
-        #                os.remove(TargetImageNode.FullPath)
-
-        else:
-            buildLevel = True
+        child_exists = os.path.exists(TargetImageNode.FullPath)
+        parent_dirty = (
+            _parent_image_rewritten(SourceImageNode)
+            or float(SourceLevel) in shrunk_this_call)
+        buildLevel = _should_rebuild_pyramid_child(
+            parent=SourceImageNode,
+            child=TargetImageNode if child_exists else None,
+            child_path=TargetImageNode.FullPath,
+            parent_dirty=parent_dirty)
 
         if buildLevel:
             scale = SourceLevel / thisLevel
             nornir_imageregistration.Shrink(SourceImageNode.FullPath, TargetImageNode.FullPath, scale)
             SaveImageSet = True
-
-            if 'InputImageChecksum' in SourceImageNode.attrib:
-                TargetImageNode.InputImageChecksum = str(SourceImageNode.InputImageChecksum)
 
             Logger.info('Shrunk ' + TargetImageNode.FullPath)
 
@@ -2252,7 +2374,21 @@ def BuildImagePyramid(image_set_node: ImageSetNode,
                 prettyoutput.Log(ConvertCmd)
                 subprocess.call(ConvertCmd + " && exit", shell=True)
 
-            # TargetImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(TargetImageNode.FullPath)
+            parent_live = _refresh_parent_filesize_checksum(SourceImageNode)
+            child_live = _live_filesize_checksum(TargetImageNode.FullPath)
+            if child_live is not None:
+                _write_image_filesize_checksum(TargetImageNode, child_live)
+            if parent_live is not None:
+                _write_shrink_input_image_checksum(TargetImageNode, parent_live)
+            if 'Dimensions' in TargetImageNode.attrib:
+                del TargetImageNode.attrib['Dimensions']
+                TargetImageNode.AttributesChanged = True
+            shrunk_this_call.add(float(thisLevel))
+        else:
+            stored_before = SourceImageNode.attrib.get('Checksum')
+            live = _refresh_parent_filesize_checksum(SourceImageNode)
+            if live is not None and stored_before != live:
+                SaveImageSet = True
 
     if SaveImageSet:
         return image_set_node
