@@ -6,12 +6,14 @@ Created on Apr 18, 2019
 
 import glob
 import json
+import logging
 import os
 import re
 import shutil
 import sys
 import datetime
-from typing import Iterable, NamedTuple, Callable, Sequence
+from typing import Iterable, NamedTuple, Callable, Sequence, cast
+from xml.sax.saxutils import escape
 
 import nornir_buildmanager
 from nornir_buildmanager.exceptions import NornirUserException
@@ -21,6 +23,10 @@ from nornir_buildmanager.volumemanager import (
     ImageNode,
     DataNode,
     NotesNode,
+    BlockNode,
+    VolumeNode,
+    SectionNode,
+    ChannelNode,
 )
 import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
@@ -32,6 +38,11 @@ import nornir_shared.plot as plot
 HISTOGRAM_CACHE_VERSION: int = 1
 # Sidecar next to Histogram.xml: Histogram.cache.json
 HISTOGRAM_CACHE_SIDECAR_SUFFIX: str = '.cache.json'
+
+_NOTES_SKIP_FILENAMES: frozenset[str] = frozenset({'ContrastOverrides.txt', 'Timing.txt'})
+_CAPTURE_NOTE_FALLBACK_EXTENSIONS: frozenset[str] = frozenset({'.idoc', '.mrc', '.dm4', '.pmg'})
+_DEFAULT_NOTES_BLOCK_NAME: str = 'TEM'
+_DEFAULT_NOTES_CHANNEL_NAME: str = 'TEM'
 
 
 class FilenameMetadata(NamedTuple):
@@ -190,71 +201,211 @@ def TryAddHistogram(containerObj: XElementWrapper,
     return added or data_added or image_added or autolevel_hint.AttributesChanged or histogram_node.ChildrenChanged
 
 
-def TryAddNotes(containerObj, InputPath: str, logger, new_section_info: FilenameMetadata | None = None):
-    '''
-    Check the path for a notes.txt file.  If found, add a <Notes> element to the passed containerObj
-    :param new_section_info: Section information for the section we are importing notes from
-    '''
+def _is_same_notes_path(source: str, dest: str) -> bool:
+    """Return True when source and dest refer to the same filesystem path."""
+    source_abs = os.path.normpath(os.path.abspath(source))
+    dest_abs = os.path.normpath(os.path.abspath(dest))
+    if source_abs == dest_abs:
+        return True
+    try:
+        return os.path.samefile(source, dest)
+    except OSError:
+        return False
 
-    if new_section_info is None:
-        new_section_info = GetSectionInfo(InputPath)
+
+def TryAddNotes(containerObj,
+                InputPath: str,
+                logger: logging.Logger | None = None,
+                new_section_info: FilenameMetadata | None = None) -> bool:
+    """Copy notes ``*.txt`` files from InputPath and add or update ``<Notes>`` metadata.
+
+    Recopies a notes file when the destination is missing or older than the source.
+    Returns True when a file was copied or Notes text/encoding changed.
+    ``new_section_info`` is accepted for importer call-site compatibility.
+    """
 
     NotesFiles = glob.iglob(os.path.join(InputPath, '*.txt'))
     NotesAdded = False
     for filename in NotesFiles:
-
-        if os.path.basename(filename) == 'ContrastOverrides.txt':
-            continue
-
-        if os.path.basename(filename) == 'Timing.txt':
+        NotesFilename = os.path.basename(filename)
+        if NotesFilename in _NOTES_SKIP_FILENAMES:
             continue
 
         try:
-            from xml.sax.saxutils import escape
-
-            NotesFilename = os.path.basename(filename)
             CopiedNotesFullPath = os.path.join(containerObj.FullPath, NotesFilename)
-            if not os.path.exists(CopiedNotesFullPath):
-                os.makedirs(containerObj.FullPath, exist_ok=True)
-                shutil.copyfile(filename, CopiedNotesFullPath)
-                NotesAdded = True
+            os.makedirs(containerObj.FullPath, exist_ok=True)
+            copied = False
+            if not _is_same_notes_path(filename, CopiedNotesFullPath):
+                if files.RemoveOutdatedFile(filename, CopiedNotesFullPath):
+                    shutil.copyfile(filename, CopiedNotesFullPath)
+                    copied = True
 
             with open(filename, 'r') as f:
                 notesTxt = f.read()
-                (base, ext) = os.path.splitext(filename)
-                encoding = "utf-8"
-                ext = ext.lower()
-                # notesTxt = notesTxt.encode(encoding)
 
-                notesTxt = notesTxt.replace('\0', '')
+            encoding = "utf-8"
+            notesTxt = notesTxt.replace('\0', '')
 
-                if len(notesTxt) > 0:
-                    # XMLnotesTxt = notesTxt
-                    # notesTxt = notesTxt.encode('utf-8')
-                    XMLnotesTxt = escape(notesTxt)
+            if len(notesTxt) > 0:
+                XMLnotesTxt = escape(notesTxt)
 
-                    # Create a Notes node to save the notes into
-                    NotesNodeObj = NotesNode.Create(Text=XMLnotesTxt,
-                                                    SourceFilename=NotesFilename)
-                    containerObj.RemoveOldChildrenByAttrib('Notes', 'Path', NotesFilename)
-                    [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
+                NotesNodeObj = NotesNode.Create(Text=XMLnotesTxt,
+                                                SourceFilename=NotesFilename)
+                containerObj.RemoveOldChildrenByAttrib('Notes', 'Path', NotesFilename)
+                [added, NotesNodeObj] = containerObj.UpdateOrAddChildByAttrib(NotesNodeObj, 'SourceFilename')
 
-                    if added:
-                        # Try to copy the notes to the output dir if we created a node
-                        if not os.path.exists(CopiedNotesFullPath):
-                            shutil.copyfile(filename, CopiedNotesFullPath)
+                old_text = NotesNodeObj.text
+                old_encoding = NotesNodeObj.attrib.get('encoding')
+                NotesNodeObj.text = XMLnotesTxt
+                NotesNodeObj.encoding = encoding
+                text_changed = old_text != XMLnotesTxt
+                encoding_changed = old_encoding != encoding
+                if text_changed:
+                    NotesNodeObj.AttributesChanged = True
 
-                    NotesNodeObj.text = XMLnotesTxt
-                    NotesNodeObj.encoding = encoding
+                NotesAdded = NotesAdded or added or copied or text_changed or encoding_changed
+            elif copied:
+                NotesAdded = True
 
-                    NotesAdded = NotesAdded or added
-
-        except:
-            (etype, evalue, etraceback) = sys.exc_info()
+        except Exception:
+            (_etype, evalue, etraceback) = sys.exc_info()
             prettyoutput.Log("Attempt to include notes from " + filename + " failed.\n" + str(evalue))
             prettyoutput.Log(etraceback)
 
     return NotesAdded
+
+
+def _folder_has_import_notes(folder_path: str) -> bool:
+    """Return True if folder_path contains a notes ``*.txt`` file that is not skipped."""
+    for filename in glob.iglob(os.path.join(folder_path, '*.txt')):
+        if os.path.basename(filename) not in _NOTES_SKIP_FILENAMES:
+            return True
+    return False
+
+
+def _section_info_from_capture_siblings(folder_path: str) -> FilenameMetadata | None:
+    """Parse section metadata from capture files beside notes in an unnumbered folder."""
+    try:
+        with os.scandir(folder_path) as scanner:
+            for entry in scanner:
+                if not entry.is_file():
+                    continue
+                ext = os.path.splitext(entry.name)[1].lower()
+                if ext not in _CAPTURE_NOTE_FALLBACK_EXTENSIONS:
+                    continue
+                try:
+                    info = GetSectionInfo(entry.path)
+                except NornirUserException:
+                    continue
+                return FilenameMetadata(folder_path,
+                                        info.number,
+                                        info.version,
+                                        info.name,
+                                        info.downsample,
+                                        info.extension)
+    except OSError:
+        return None
+    return None
+
+
+def _iter_notes_source_dirs(import_path: str) -> list[FilenameMetadata]:
+    """Yield one source folder per section number from an IDoc-style import tree."""
+    from nornir_buildmanager.importers import find
+
+    candidates = find.find_section_candidates(import_path, None)
+    by_number: dict[int, FilenameMetadata] = {}
+    used_paths: set[str] = set()
+    for number, metas in candidates.items():
+        if not metas:
+            continue
+        by_number[number] = metas[0]
+        used_paths.add(os.path.normpath(metas[0].fullpath))
+
+    dirs_to_check = [import_path]
+    try:
+        with os.scandir(import_path) as scanner:
+            for entry in scanner:
+                if entry.is_dir():
+                    dirs_to_check.append(entry.path)
+    except OSError:
+        return list(by_number.values())
+
+    for folder in dirs_to_check:
+        if os.path.normpath(folder) in used_paths:
+            continue
+        if not _folder_has_import_notes(folder):
+            continue
+        info = _section_info_from_capture_siblings(folder)
+        if info is None:
+            continue
+        if info.number in by_number:
+            continue
+        by_number[info.number] = info
+        used_paths.add(os.path.normpath(folder))
+
+    return list(by_number.values())
+
+
+def _find_existing_section(volume_obj: VolumeNode, section_number: int) -> SectionNode | None:
+    """Return the first section with the given number across all blocks."""
+    for block in volume_obj.Blocks:
+        section = block.GetSection(section_number)
+        if section is not None:
+            return section
+    return None
+
+
+def _get_or_create_section_for_notes(volume_obj: VolumeNode, section_number: int) -> SectionNode:
+    """Return an existing section or create TEM block/section nodes to hold notes."""
+    section = _find_existing_section(volume_obj, section_number)
+    if section is not None:
+        return section
+
+    block = volume_obj.GetBlock(_DEFAULT_NOTES_BLOCK_NAME)
+    if block is None:
+        [_added, block] = volume_obj.UpdateOrAddChildByAttrib(
+            BlockNode.Create(_DEFAULT_NOTES_BLOCK_NAME), 'Name')
+
+    [_created, section] = block.GetOrCreateSection(section_number)
+    return section
+
+
+def _channels_for_notes(section_obj: SectionNode) -> list[ChannelNode]:
+    """Return existing channels, creating a TEM channel when the section has none."""
+    channels: list[ChannelNode] = list(section_obj.Channels)  # type: ignore[arg-type]
+    if channels:
+        return channels
+
+    [_added, channel] = section_obj.UpdateOrAddChildByAttrib(
+        ChannelNode.Create(_DEFAULT_NOTES_CHANNEL_NAME), 'Name')
+    return [cast(ChannelNode, channel)]
+
+
+def RecoverNotesFromImportDir(volume_obj: VolumeNode,
+                              import_path: str,
+                              logger: logging.Logger | None = None) -> bool:
+    """Copy changed notes from an IDoc-style import tree into matching volume sections.
+
+    Creates a TEM Block/Section/Channel when the section is missing. Existing
+    sections receive notes on every channel they already have.
+    """
+    if not os.path.exists(import_path):
+        raise ValueError(f"Import Path does not exist: {import_path}")
+
+    changed = False
+    for meta in _iter_notes_source_dirs(import_path):
+        source_dir = meta.fullpath
+        if not _folder_has_import_notes(source_dir):
+            prettyoutput.Log(f"No notes files found in {source_dir}.")
+            continue
+
+        section_obj = _get_or_create_section_for_notes(volume_obj, meta.number)
+        for channel in _channels_for_notes(section_obj):
+            cleaned = TryCleanNotes(channel, source_dir, logger, meta)
+            added = TryAddNotes(channel, source_dir, logger, meta)
+            changed = changed or cleaned or added
+
+    return changed
 
 
 def ParseMetadataFromFilename(string: str):

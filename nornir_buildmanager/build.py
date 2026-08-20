@@ -90,13 +90,18 @@ def _AddParserRootArguments(parser: argparse.ArgumentParser):
 
 def _AddRecoverNotesParser(root_parser: argparse.ArgumentParser, subparsers):
     recover_parser = subparsers.add_parser('RecoverNotes',
-                                           help='Used to recover or update notes files in a folder.  This searches a path for *.txt files and creates/updates a notes element with the information in the file.', )
+                                           help='Recover or update notes from *.txt files. With ImportDir, scan an IDoc-style raw-data tree and copy changed notes into matching volume sections.', )
     recover_parser.set_defaults(func=call_recover_import_meta_data, parser=root_parser)
 
     recover_parser.add_argument('volumepath',
                                 action='store',
                                 type=str,
                                 help='The path to the volume')
+
+    recover_parser.add_argument('ImportDir',
+                                nargs='?',
+                                default=None,
+                                help='Optional raw-data directory in IDoc import layout. When provided, notes.txt files from section folders are copied into matching volume sections.')
 
     recover_parser.add_argument('-save',
                                 action='store_true',
@@ -237,16 +242,28 @@ def call_repair_xml(args):
 
 
 def call_recover_import_meta_data(args):
-    """Recover notes metadata from text files under the target volume path."""
+    """Recover notes metadata from text files under the volume or an import directory."""
     volumeObj = nornir_buildmanager.volumemanager.volumemanager.VolumeManager.Load(args.volumepath)
-    notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)  # type: ignore[union-attr]
-
-    if not notesAdded:
-        prettyoutput.Log(f"No notes recovered from {volumeObj.FullPath}.")  # type: ignore[union-attr]
+    if volumeObj is None:
+        prettyoutput.Log(f"Volume not found: {args.volumepath}")
         return
 
-    if notesAdded and args.save_restoration:
-        volumeObj.Save(recurse=False)  # type: ignore[union-attr]
+    import_dir = getattr(args, 'ImportDir', None)
+    if import_dir:
+        notesAdded = nornir_buildmanager.importers.shared.RecoverNotesFromImportDir(volumeObj, import_dir, None)  # type: ignore[union-attr]
+        recurse = True
+        scan_path = import_dir
+    else:
+        notesAdded = nornir_buildmanager.importers.shared.TryAddNotes(volumeObj, volumeObj.FullPath, None)  # type: ignore[union-attr]
+        recurse = False
+        scan_path = volumeObj.FullPath  # type: ignore[union-attr]
+
+    if not notesAdded:
+        prettyoutput.Log(f"No notes recovered from {scan_path}.")
+        return
+
+    if args.save_restoration:
+        volumeObj.Save(recurse=recurse)  # type: ignore[union-attr]
         prettyoutput.Log("Recovered notes file saved.")
     else:
         prettyoutput.Log("Save flag not set, recovered notes, but not saved.")
