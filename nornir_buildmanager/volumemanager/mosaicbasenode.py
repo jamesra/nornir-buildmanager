@@ -42,17 +42,34 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
         if 'Checksum' in self.attrib:
             del self.attrib['Checksum']
 
-        self.attrib['Checksum'] = self._CalcChecksum()  # type: ignore[arg-type]
+        self._StoreChecksum(self._CalcChecksum())
+
+    def _StoreChecksum(self, checksum: str | None) -> str:
+        """Cache a computed checksum in the XML, skipping an unavailable one.
+
+        A missing file yields None, and storing that in attrib breaks XML
+        serialization and the string validation done on the way back in, so the
+        attribute is left absent instead.
+        """
+        if checksum is None:
+            if 'Checksum' in self.attrib:
+                del self.attrib['Checksum']
+                self._AttributesChanged = True
+            return ""
+
+        self.attrib['Checksum'] = str(checksum)
         self._AttributesChanged = True
+        return str(checksum)
 
     @property
     def Checksum(self) -> str:
         """Checksum of the file resource when the node was last updated"""
         checksum = self.attrib.get('Checksum', None)
         if checksum is None:
-            checksum = self._CalcChecksum()
-            self.attrib['Checksum'] = checksum  # type: ignore[arg-type]
-            return checksum or ""
+            # Matches XFileElementWrapper.Checksum and ImageNode.Checksum: the
+            # computed value is cached, and caching it is an attribute change
+            # that has to survive the next save.
+            return self._StoreChecksum(self._CalcChecksum())
 
         return checksum
 
