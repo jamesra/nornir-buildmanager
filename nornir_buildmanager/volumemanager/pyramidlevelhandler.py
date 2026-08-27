@@ -72,7 +72,7 @@ class PyramidLevelHandler(object):
             if hasattr(Parent, 'Scale'):
                 return Parent.Scale
 
-            Parent = self.Parent  # type: ignore[attr-defined]
+            Parent = Parent.Parent
 
         return None
 
