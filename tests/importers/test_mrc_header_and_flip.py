@@ -133,18 +133,23 @@ class TestTiltAngleSignedParse(unittest.TestCase):
         self.assertAlmostEqual(float(header.tilt_angle or 0.0), -30.0)
 
 
-class TestFlipListWiring(unittest.TestCase):
-    """FlipList.txt was accepted by the importer but never read."""
+class TestPixelFlipIsAConventionNotAMirror(unittest.TestCase):
+    """The pixel flip is uniform; FlipList.txt is a coordinate concern.
 
-    def test_unlisted_section_keeps_baseline(self):
-        self.assertEqual(flip_ud_for_section(690, None), DEFAULT_FLIP_UD)
-        self.assertEqual(flip_ud_for_section(690, []), DEFAULT_FLIP_UD)
+    pmg.py mirrors tile Y positions for a listed section and leaves pixels
+    alone. Inverting the pixel flip per section instead would mirror each tile's
+    contents without reordering the tiles, which tears every horizontal seam.
+    """
+
+    def test_flip_is_uniform_across_sections(self):
+        for section in (0, 690, 1234):
+            with self.subTest(section=section):
+                self.assertEqual(flip_ud_for_section(section, None), DEFAULT_FLIP_UD)
+
+    def test_listed_section_does_not_change_the_pixel_flip(self):
+        self.assertEqual(flip_ud_for_section(690, [690]), DEFAULT_FLIP_UD)
+        self.assertEqual(flip_ud_for_section(690, [689, 690, 691]), DEFAULT_FLIP_UD)
         self.assertEqual(flip_ud_for_section(690, [691]), DEFAULT_FLIP_UD)
-
-    def test_listed_section_inverts_baseline(self):
-        self.assertEqual(flip_ud_for_section(690, [690]), not DEFAULT_FLIP_UD)
-        self.assertEqual(flip_ud_for_section(690, [689, 690, 691]),
-                         not DEFAULT_FLIP_UD)
 
 
 if __name__ == '__main__':

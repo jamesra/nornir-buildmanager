@@ -81,17 +81,26 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
 
 # SerialEM writes tiles with the image origin in the lower-left corner, so the
 # raw rows arrive bottom-up relative to the orientation the rest of the pipeline
-# expects. This baseline flip was calibrated against the original RC1 dataset.
-# A section listed in FlipList.txt inverts this baseline rather than setting it,
-# so the historical orientation is unchanged for sections that are not listed.
+# expects. This is a fixed convention conversion applied to every section, and
+# it was calibrated against the original RC1 dataset.
 DEFAULT_FLIP_UD: bool = True
 
 
 def flip_ud_for_section(section_number: int, flip_list: list[int] | None) -> bool:
-    """Return the vertical-flip flag for a section, honouring FlipList.txt."""
-    if not flip_list:
-        return DEFAULT_FLIP_UD
-    return DEFAULT_FLIP_UD != (section_number in flip_list)
+    """Return the vertical pixel-flip flag for a section.
+
+    FlipList.txt deliberately does not participate. The listed-section flip is a
+    coordinate concern: pmg.py mirrors tile Y positions and leaves pixels alone,
+    which is the established contract. Inverting this pixel flip per section
+    would mirror tile contents without reordering them, tearing every horizontal
+    seam.
+
+    # TODO: wire FlipList.txt to the mosaic coordinates in CreateMosaic, matching
+    # pmg.py. Needs a flipped dataset to verify against; no FlipList.txt exists
+    # in nornir-testdata today.
+    """
+    del section_number, flip_list
+    return DEFAULT_FLIP_UD
 
 
 class MRCImport:
