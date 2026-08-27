@@ -9,10 +9,10 @@ answers three questions per file, without importing anything:
    https://bio3d.colorado.edu/imod/doc/mrc_format.txt ("The short integers are
    signed, except for piece coordinates"). If every raw value is < 32768 the
    signed and unsigned parses are bit-identical and the fix cannot move a tile.
-2. **Stage-origin straddle** - even with signed parsing, a uniform offset is
-   absorbed by ``Mosaic.TranslateToZeroOrigin``. Only a section with mixed-sign
-   stage coordinates changes its *relative* layout, so that is called out
-   separately.
+2. **Stage-origin straddle** - a wrap shared by every tile is absorbed by
+   ``Mosaic.TranslateToZeroOrigin``, so it is reported but not counted as a
+   change. Only a section with mixed-sign stage coordinates moves its tiles
+   relative to each other, and that is what gates a reimport.
 3. **FlipList** - is there a ``FlipList.txt`` naming this section? Unlisted
    sections keep the historical baseline flip; listed sections now invert it,
    which is the one change that alters a section that imports correctly today.
@@ -57,16 +57,23 @@ FIELD_LAYOUT: list[tuple[int, str, str, bool]] = [
 ]
 
 
-def _raw_signed_fields(mrc: MRCFile) -> dict[str, list[int]]:
+def _raw_signed_fields(mrc: MRCFile, mrc_path: Path) -> dict[str, list[int]]:
     """Collect raw unsigned short values for each signed-per-spec field."""
     endian = '>' if mrc.IsBigEndian else '<'
-    flags = mrc.tile_header_flags
     collected: dict[str, list[int]] = {}
 
-    with open(mrc.mrc, 'rb') as handle:
+    if mrc.tile_header_flags is None or mrc.tile_header_size is None or mrc.num_tiles is None:
+        raise ValueError('MRC file has no extended tile headers')
+
+    flags = int(mrc.tile_header_flags)
+    header_size = int(mrc.tile_header_size)
+
+    # MRCFile.mrc is an open handle; read through our own so we never disturb
+    # its file position.
+    with open(mrc_path, 'rb') as handle:
         for i_tile in range(int(mrc.num_tiles)):
-            handle.seek(MRCFile.HeaderLength + (i_tile * mrc.tile_header_size))
-            record = handle.read(mrc.tile_header_size)
+            handle.seek(MRCFile.HeaderLength + (i_tile * header_size))
+            record = handle.read(header_size)
             offset = 0
             for flag, name, code, signed in FIELD_LAYOUT:
                 if not (flags & flag):
@@ -91,9 +98,15 @@ def inspect(mrc_path: Path) -> dict:
     """Return a per-file report of whether the fixes can change the output."""
     report: dict = {'path': str(mrc_path)}
     mrc = MRCFile.Load(str(mrc_path))
-    report['num_tiles'] = int(mrc.num_tiles)
+    try:
+        report['num_tiles'] = int(mrc.num_tiles) if mrc.num_tiles is not None else None
+        raw = _raw_signed_fields(mrc, mrc_path)
+    finally:
+        try:
+            mrc.mrc.close()
+        except Exception:
+            pass
 
-    raw = _raw_signed_fields(mrc)
     wrapped: dict[str, int] = {}
     for name, values in raw.items():
         count = sum(1 for v in values if v >= SIGN_BIT)
@@ -124,8 +137,16 @@ def inspect(mrc_path: Path) -> dict:
         report['flip_ud'] = flip_ud_for_section(int(section_number), flip_list)
         report['flip_changes_output'] = report['flip_ud'] != DEFAULT_FLIP_UD
 
-    report['any_change'] = bool(
-        report['signed_parse_changes_output'] or report.get('flip_changes_output'))
+    # A stage wrap that every tile shares is removed by TranslateToZeroOrigin,
+    # so it cannot move a tile relative to its neighbours. Only a straddling
+    # section changes its layout. Verified against SmallMouse/0001 and 0002,
+    # where signed and unsigned agree to 0.000 px, and RABBIT_SALVAGE/0226,
+    # where they differ by 1.16e6 px.
+    report['layout_changes'] = straddles
+    metadata_fields = sorted(name for name in wrapped if name != 'stage_coords')
+    report['metadata_changes'] = metadata_fields
+    report['any_change'] = bool(straddles or metadata_fields
+                                or report.get('flip_changes_output'))
     return report
 
 
@@ -167,7 +188,7 @@ def main() -> int:
         if report.get('any_change'):
             changed.append(report)
 
-        flag = 'CHANGES' if report.get('any_change') else 'identical'
+        flag = 'CHANGES ' if report.get('any_change') else 'identical'
         print(f"[{flag}] {path.name}  tiles={report.get('num_tiles')}  "
               f"wrapped={report.get('wrapped_counts') or '{}'}  "
               f"straddle={report.get('stage_straddles_origin')}  "
@@ -178,10 +199,11 @@ def main() -> int:
         print("Reimport and diff these before trusting the new output:")
         for report in changed:
             reasons = []
-            if report.get('signed_parse_changes_output'):
-                reasons.append(f"signed shorts {report['wrapped_counts']}")
-            if report.get('stage_straddles_origin'):
-                reasons.append('stage straddles origin (relative layout moves)')
+            if report.get('layout_changes'):
+                reasons.append(f"stage straddles origin, relative layout moves "
+                               f"(wrapped {report['wrapped_counts']})")
+            if report.get('metadata_changes'):
+                reasons.append(f"signed metadata fields {report['metadata_changes']}")
             if report.get('flip_changes_output'):
                 reasons.append('FlipList inverts the baseline flip')
             print(f"  {report['path']}: {'; '.join(reasons)}")
