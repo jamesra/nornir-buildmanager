@@ -76,8 +76,12 @@ class TestProcessIterateMqtt(unittest.TestCase):
         self.assertEqual(publish.call_args_list[0].kwargs["total"], 2)
         self.assertEqual(publish.call_args_list[0].kwargs["current"], 0)
         self.assertEqual(publish.call_args_list[0].kwargs["depth"], 0)
+        self.assertEqual(publish.call_args_list[0].kwargs["label"], "SectionNode")
         self.assertEqual(publish.call_args_list[1].kwargs["current"], 1)
+        self.assertEqual(publish.call_args_list[1].kwargs["label"], "SectionNode")
+        self.assertEqual(publish.call_args_list[1].kwargs["section"], 1)
         self.assertEqual(publish.call_args_list[2].kwargs["current"], 2)
+        self.assertEqual(publish.call_args_list[2].kwargs["label"], "SectionNode")
         self.assertEqual(event_names[-1], "iterate_progress_complete")
         self.assertEqual(
             publish.call_args_list[-1].kwargs["track_id"], "iterate:SectionNode")
@@ -114,6 +118,43 @@ class TestProcessIterateMqtt(unittest.TestCase):
         event_names = [c.args[0] for c in publish.call_args_list]
         self.assertEqual(event_names[-1], "iterate_progress_complete")
         self.assertEqual(manager._iterate_depth, 0)
+
+    def test_channel_iterate_keeps_variable_name_label(self) -> None:
+        manager = pm.PipelineManager(
+            pipelinesRoot=ElementTree.Element("Root"),
+            pipelineData=ElementTree.Element("Pipeline"),
+        )
+        iterate_node = ElementTree.Element(
+            "Iterate", VariableName="ChannelNode", XPath="Channel")
+        candidates = [ChannelNode.Create("TEM")]
+
+        with mock.patch.object(pm.PipelineManager, "_PipelineManager__extractXPathFromNode",
+                               return_value="Channel"):
+            with mock.patch.object(pm.PipelineManager, "GetSearchRoot", return_value=mock.Mock()):
+                with mock.patch(
+                        "nornir_buildmanager.pipelinemanager.resolve_iterate_candidates",
+                        return_value=candidates):
+                    with mock.patch.object(pm.PipelineManager, "_ElementNeedsValidation",
+                                           return_value=False):
+                        with mock.patch.object(manager, "ExecuteChildPipelines", return_value=1):
+                            with mock.patch(
+                                    "nornir_buildmanager.pipelinemanager.publish_run_event"
+                            ) as publish:
+                                manager.ProcessIterateNode(
+                                    mock.Mock(), mock.Mock(), iterate_node)
+
+        opening = publish.call_args_list[0]
+        self.assertEqual(opening.args[0], "iterate_progress")
+        self.assertEqual(opening.kwargs["label"], "ChannelNode")
+        self.assertEqual(opening.kwargs["current"], 0)
+        self.assertEqual(opening.kwargs["total"], 1)
+        self.assertNotIn("element", opening.kwargs)
+
+        item = publish.call_args_list[1]
+        self.assertEqual(item.kwargs["label"], "ChannelNode")
+        self.assertEqual(item.kwargs["element"], "TEM")
+        self.assertEqual(item.kwargs["current"], 1)
+        self.assertEqual(item.kwargs["total"], 1)
 
 
 class TestProcessPythonCallMqtt(unittest.TestCase):

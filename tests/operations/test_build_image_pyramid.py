@@ -89,6 +89,10 @@ def test_adding_finer_level_does_not_replace_assembled_neighbors(tmp_path: Path)
     bytes_8 = _read_bytes(image_8)
     bytes_16 = _read_bytes(image_16)
     bytes_32 = _read_bytes(image_32)
+    # STOS compares live filesize, so an identical-byte rewrite is still a rewrite:
+    # assert the files were not touched at all.
+    mtimes = {image.FullPath: os.stat(image.FullPath).st_mtime_ns
+              for image in (image_8, image_16, image_32)}
 
     image_4 = _add_level(imageset, 4, _gray(128, 128, 20))
     assert 'InputImageChecksum' not in image_8.attrib
@@ -98,6 +102,8 @@ def test_adding_finer_level_does_not_replace_assembled_neighbors(tmp_path: Path)
     assert _read_bytes(image_8) == bytes_8
     assert _read_bytes(image_16) == bytes_16
     assert _read_bytes(image_32) == bytes_32
+    for path, mtime in mtimes.items():
+        assert os.stat(path).st_mtime_ns == mtime
     assert image_8.attrib.get('Checksum') == checksum_8
     assert image_16.attrib.get('Checksum') == checksum_16
     assert image_32.attrib.get('Checksum') == checksum_32
@@ -157,3 +163,86 @@ def test_legacy_child_rebuilds_when_parent_filesize_checksum_stale(tmp_path: Pat
     assert _read_bytes(image_16) != stale_16
     assert image_16.attrib['InputImageChecksum'] == new_parent_checksum
     assert image_16.attrib['Checksum'] == nornir_shared.checksum.FilesizeChecksum(image_16.FullPath)
+
+
+def test_current_finer_level_rebuilds_stale_requested_child(tmp_path: Path) -> None:
+    """Current leftover 8 rebuilds 16 when 16 does not record 8's filesize."""
+    imageset = _make_imageset(tmp_path)
+    image_8 = _add_level(imageset, 8, _noise(64, 64, seed=5))
+    image_16 = _add_level(imageset, 16, _gray(32, 32, 80))
+    image_32 = _add_level(imageset, 32, _gray(16, 16, 120))
+    checksum_8 = _set_filesize_checksum(image_8)
+    _set_filesize_checksum(image_16)
+    _set_filesize_checksum(image_32)
+    image_16.attrib['InputImageChecksum'] = '99999999'
+    stale_16 = _read_bytes(image_16)
+
+    result = BuildImagePyramid(imageset, Levels=[16, 32, 64], Interlace=False)
+
+    assert result is imageset
+    assert _read_bytes(image_16) != stale_16
+    assert image_16.attrib['InputImageChecksum'] == checksum_8
+    image_64 = imageset.GetImage(64)
+    assert image_64 is not None
+    assert os.path.exists(image_64.FullPath)
+
+
+def test_current_finer_level_skips_when_child_records_parent(tmp_path: Path) -> None:
+    """Current leftover 8 does not rebuild 16/32 when they already record the parent."""
+    imageset = _make_imageset(tmp_path)
+    image_8 = _add_level(imageset, 8, _gray(64, 64, 40))
+    image_16 = _add_level(imageset, 16, _gray(32, 32, 80))
+    image_32 = _add_level(imageset, 32, _gray(16, 16, 120))
+    checksum_8 = _set_filesize_checksum(image_8)
+    checksum_16 = _set_filesize_checksum(image_16)
+    _set_filesize_checksum(image_32)
+    image_16.attrib['InputImageChecksum'] = checksum_8
+    image_32.attrib['InputImageChecksum'] = checksum_16
+    original_16 = _read_bytes(image_16)
+    original_32 = _read_bytes(image_32)
+
+    result = BuildImagePyramid(imageset, Levels=[16, 32, 64], Interlace=False)
+
+    assert _read_bytes(image_16) == original_16
+    assert _read_bytes(image_32) == original_32
+    assert image_16.attrib['InputImageChecksum'] == checksum_8
+    assert imageset.GetImage(64) is not None
+    assert result is imageset
+
+
+def test_generated_missing_level_records_derivation(tmp_path: Path) -> None:
+    """GetOrCreateImage generation records the parent filesize, not a mosaic checksum."""
+    imageset = _make_imageset(tmp_path)
+    image_8 = _add_level(imageset, 8, _noise(64, 64, seed=7))
+    parent_checksum = nornir_shared.checksum.FilesizeChecksum(image_8.FullPath)
+
+    image_16 = imageset.GetOrCreateImage(16, image_8.Path)
+    assert image_16 is not None
+    assert os.path.exists(image_16.FullPath)
+    assert image_16.attrib['InputImageChecksum'] == parent_checksum
+    assert image_16.attrib['Checksum'] == nornir_shared.checksum.FilesizeChecksum(image_16.FullPath)
+    assert 'InputTransformChecksum' not in image_16.attrib
+
+    _set_filesize_checksum(image_8)
+    original_16 = _read_bytes(image_16)
+    assert BuildImagePyramid(imageset, Levels=[8, 16], Interlace=False) is None
+    assert _read_bytes(image_16) == original_16
+
+
+def test_shrink_aligns_to_reference_shape(tmp_path: Path) -> None:
+    """A derived child is cropped or padded to the assembled reference shape."""
+    imageset = _make_imageset(tmp_path / 'blob')
+    reference = _make_imageset(tmp_path / 'leveled')
+    _add_level(imageset, 16, _gray(32, 32, 80))
+    _add_level(reference, 32, _gray(17, 17, 90))
+
+    result = BuildImagePyramid(
+        imageset,
+        Levels=[16, 32],
+        Interlace=False,
+        reference_image_sets=(reference,))
+
+    assert result is imageset
+    image_32 = imageset.GetImage(32)
+    assert image_32 is not None
+    assert tuple(nornir_imageregistration.GetImageSize(image_32.FullPath)) == (17, 17)

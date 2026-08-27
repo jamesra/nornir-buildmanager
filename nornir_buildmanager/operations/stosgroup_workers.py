@@ -186,6 +186,8 @@ def scale_stos_file(input_stos_path: str,
                     use_masks: bool | None) -> ScaleStosResult:
     """Scale one STOS file to a new downsample level when metadata differs."""
     input_stos = stosfile.StosFile.Load(input_stos_path)
+    if stosfile.transform_text_contains_nonfinite(input_stos.Transform):
+        raise ValueError(f"NaN/Inf values in input STOS transform: {input_stos_path}")
     if use_masks is None:
         use_masks = input_stos.HasMasks
 

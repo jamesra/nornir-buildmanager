@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 
 import nornir_buildmanager
@@ -114,6 +115,7 @@ class StosGroupNode(XNamedContainerElementWrapped):
             stosNode = self.CreateStosTransformNode(ControlFilter, MappedFilter, OutputType, OutputPath)
         else:
             self.__LegacyUpdateStosNode(stosNode, ControlFilter, MappedFilter, OutputPath)
+            self.EnsureConventionalStosPath(stosNode, OutputPath)
 
         return added, stosNode
 
@@ -197,13 +199,50 @@ class StosGroupNode(XNamedContainerElementWrapped):
         return stosNode
 
     @staticmethod
+    def GenerateStosFilenameFromParts(
+            mapped_section: int | str,
+            control_section: int | str,
+            control_channel: str,
+            control_filter: str,
+            mapped_channel: str,
+            mapped_filter: str) -> str:
+        """Return the conventional STOS basename used by Grid / SliceToVolume groups."""
+        return (
+            f'{mapped_section}-{control_section}'
+            f'_ctrl-{control_channel}_{control_filter}'
+            f'_map-{mapped_channel}_{mapped_filter}.stos'
+        )
+
+    @staticmethod
     def GenerateStosFilename(ControlFilter: FilterNode, MappedFilter: FilterNode) -> str:
 
         ControlSectionNode = ControlFilter.FindParent('Section')  # type: ignore[assignment]
         MappedSectionNode = MappedFilter.FindParent('Section')  # type: ignore[assignment]
 
-        OutputFile = f'{MappedSectionNode.Number}-{ControlSectionNode.Number}_ctrl-{ControlFilter.Parent.Name}_{ControlFilter.Name}_map-{MappedFilter.Parent.Name}_{MappedFilter.Name}.stos'  # type: ignore[union-attr]
-        return OutputFile
+        return StosGroupNode.GenerateStosFilenameFromParts(
+            MappedSectionNode.Number,  # type: ignore[union-attr]
+            ControlSectionNode.Number,  # type: ignore[union-attr]
+            ControlFilter.Parent.Name,  # type: ignore[union-attr]
+            ControlFilter.Name,
+            MappedFilter.Parent.Name,  # type: ignore[union-attr]
+            MappedFilter.Name)
+
+    def EnsureConventionalStosPath(self, stosNode: TransformNode, OutputPath: str) -> None:
+        """Rename an on-disk STOS and node Path to the conventional basename when they differ."""
+        desired = os.path.basename(OutputPath)
+        if not desired or stosNode.Path == desired:
+            return
+        old_full = stosNode.FullPath
+        stosNode.Path = desired
+        new_full = stosNode.FullPath
+        if old_full == new_full:
+            return
+        if os.path.exists(old_full):
+            os.makedirs(os.path.dirname(new_full), exist_ok=True)
+            if not os.path.exists(new_full):
+                shutil.move(old_full, new_full)
+            else:
+                os.remove(old_full)
 
     @classmethod
     def _IsStosInputImageOutdated(cls, stosNode, ChecksumAttribName: str, imageNode: ImageNode | None):

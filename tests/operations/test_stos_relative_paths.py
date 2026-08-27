@@ -99,3 +99,34 @@ def test_update_stos_image_paths_no_op_when_fullpaths_match(tmp_path: Path) -> N
     updated = block.UpdateStosImagePaths(str(stos_path), str(ctrl), str(mapped))
     assert updated is False
     assert os.path.getmtime(stos_path) == mtime_before
+
+
+def test_update_stos_image_paths_rewrites_windows_desktop_lines(tmp_path: Path) -> None:
+    """Manual Desktop image lines are replaced with volume-relative paths."""
+    volume = tmp_path / 'RC2' / 'TEM'
+    ctrl = volume / '1042' / 'TEM' / 'Leveled' / 'Images' / '032' / '1042_TEM_Leveled.png'
+    mapped = volume / '1044' / 'TEM' / 'Leveled' / 'Images' / '032' / '1044_TEM_Leveled.png'
+    _write_tiny_png(ctrl)
+    _write_tiny_png(mapped)
+    stos_path = volume / 'Grid32' / 'Manual' / '1044-1042.stos'
+    stos_path.parent.mkdir(parents=True)
+    stos_path.write_text(
+        "C:\\Users\\u0490822\\Desktop\\RC2_LocalEnhanced\\1042_TEM_32_Leveled.png\n"
+        "C:\\Users\\u0490822\\Desktop\\RC2_LocalEnhanced\\1044_TEM_32_Leveled.png\n"
+        "0\n0\n"
+        "1 1 4 4\n1 1 4 4\n"
+        f"{_MIN_TRANSFORM}\n",
+        encoding='utf-8')
+
+    updated = block.UpdateStosImagePaths(str(stos_path), str(ctrl), str(mapped))
+    assert updated is True
+
+    with open(stos_path, encoding='utf-8') as handle:
+        lines = handle.read().splitlines()
+    assert 'RC2_LocalEnhanced' not in lines[0]
+    assert 'C:' not in lines[0]
+    assert not os.path.isabs(lines[0].replace('/', os.sep))
+
+    loaded = StosFile.Load(str(stos_path))
+    assert paths_refer_to_same_file(loaded.ControlImageFullPath, str(ctrl))
+    assert paths_refer_to_same_file(loaded.MappedImageFullPath, str(mapped))

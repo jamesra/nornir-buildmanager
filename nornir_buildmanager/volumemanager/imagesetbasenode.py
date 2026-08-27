@@ -7,6 +7,7 @@ import nornir_buildmanager
 from nornir_buildmanager.volumemanager import ImageNode, InputTransformHandler, LevelNode, PyramidLevelHandler, \
     XContainerElementWrapper
 import nornir_imageregistration
+import nornir_shared.checksum
 from nornir_shared import prettyoutput as prettyoutput
 
 
@@ -136,11 +137,17 @@ class ImageSetBaseNode(InputTransformHandler,
             # return None
 
         OutputImage.Path = SourceImage.Path
-        if 'InputImageChecksum' in SourceImage.attrib:
-            OutputImage.InputImageChecksum = SourceImage.InputImageChecksum
 
         nornir_imageregistration.Shrink(SourceImage.FullPath, OutputImage.FullPath,
                                         float(SourceDownsample) / float(Downsample))
+
+        # Record the derivation the same way BuildImagePyramid does so a later
+        # pyramid pass can tell this child is current.  Write the raw attrib:
+        # ImageNode.InputImageChecksum aliases InputTransformChecksum (mosaic).
+        source_checksum = nornir_shared.checksum.FilesizeChecksum(SourceImage.FullPath)
+        OutputImage.attrib['InputImageChecksum'] = source_checksum
+        OutputImage.attrib['Checksum'] = nornir_shared.checksum.FilesizeChecksum(OutputImage.FullPath)
+        OutputImage.AttributesChanged = True
 
         return OutputImage
 

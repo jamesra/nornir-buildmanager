@@ -11,7 +11,6 @@ from typing import Any
 
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.operations.tile
-from nornir_buildmanager.validation import transforms
 from nornir_buildmanager.volumemanager import *
 import nornir_shared
 from nornir_shared import *
@@ -79,47 +78,76 @@ def CreateBlobFilter(Parameters: dict[str, Any], Logger: logging.Logger,
     # BlobSetNode.Type = ImageSetNode.Type + '_' + MangledName
 
     thisLevel = PyramidLevels[0]
+    assembled_references = (InputFilter.Imageset, InputFilter.MaskImageset)
+    finer_source = nornir_buildmanager.operations.tile.finest_current_finer_image(
+        OutputFilterNode.Imageset,
+        float(thisLevel),
+        reference_image_sets=assembled_references)
 
     # DownsampleSearchString = DownsampleSearchTemplate % {'Level': thisLevel}
     # InputMaskLevelNode = MaskSetNode.find(DownsampleSearchString)
 
     InputImageNode = None
-
-    try:
-        InputImageNode = InputFilter.GetOrCreateImage(thisLevel)
-    except NornirUserException as e:
-        prettyoutput.LogErr("Missing input level nodes for blob level: " + str(thisLevel))
-        Logger.error("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
-        return
-
-    if InputImageNode is None:
-        prettyoutput.LogErr("Missing input level nodes for blob level: " + str(thisLevel))
-        Logger.error("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
-        return
-
-    InputMaskPath = None
-    if InputFilter.HasMask:
-        InputMaskImageNode = InputFilter.GetOrCreateMaskImage(thisLevel)
-        if not os.path.exists(InputMaskImageNode.FullPath):
-            InputMaskImageNode = None
-
-        if not InputMaskImageNode is None:
-            OutputFilterNode.MaskName = InputFilter.MaskName
-            InputMaskPath = InputMaskImageNode.FullPath
-
     BlobImageNode = OutputFilterNode.Imageset.GetImage(thisLevel)
-    if BlobImageNode is not None and BlobImageNode.InputImageChecksum is not None:
-        BlobImageNode = transforms.RemoveOnMismatch(BlobImageNode, "InputImageChecksum", InputImageNode.Checksum)
+    recorded_input_checksum = None if BlobImageNode is None else BlobImageNode.attrib.get('InputImageChecksum')
+    leveled_checksum = None
+    skip_blob_generate = finer_source is not None
 
-    if BlobImageNode is None:
+    if not skip_blob_generate:
         try:
-            BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName, GenerateData=False)
+            InputImageNode = InputFilter.GetOrCreateImage(thisLevel)
         except NornirUserException as e:
-            prettyoutput.Log("Missing input blob image for blob level: " + str(thisLevel))
-            Logger.warning("Missing input blob image for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
+            prettyoutput.LogErr("Missing input level nodes for blob level: " + str(thisLevel))
+            Logger.error("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
             return
 
-    if not os.path.exists(BlobImageNode.FullPath):
+        if InputImageNode is None:
+            prettyoutput.LogErr("Missing input level nodes for blob level: " + str(thisLevel))
+            Logger.error("Missing input level nodes for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
+            return
+
+        InputMaskPath = None
+        if InputFilter.HasMask:
+            try:
+                InputMaskImageNode = InputFilter.GetOrCreateMaskImage(thisLevel)
+            except NornirUserException:
+                # The mask is optional here; a mask pyramid that cannot reach this
+                # level must not abort blob creation for the leveled image.
+                Logger.warning("No mask image available at blob level %s for %s",
+                               str(thisLevel), InputFilter.FullPath)
+                InputMaskImageNode = None
+
+            if InputMaskImageNode is not None and not os.path.exists(InputMaskImageNode.FullPath):
+                InputMaskImageNode = None
+
+            if not InputMaskImageNode is None:
+                OutputFilterNode.MaskName = InputFilter.MaskName
+                InputMaskPath = InputMaskImageNode.FullPath
+
+        # Compare the raw attrib. ImageNode.InputImageChecksum aliases InputTransformChecksum.
+        leveled_checksum = str(InputImageNode.Checksum) if InputImageNode.Checksum is not None else None
+        if (BlobImageNode is not None
+                and recorded_input_checksum is not None
+                and leveled_checksum is not None
+                and recorded_input_checksum != leveled_checksum):
+            BlobImageNode.Clean(
+                reason="InputImageChecksum = %s unequal to target value of %s" % (
+                    recorded_input_checksum, leveled_checksum))
+            BlobImageNode = None
+
+        if BlobImageNode is None:
+            try:
+                BlobImageNode = OutputFilterNode.Imageset.GetOrCreateImage(thisLevel, OutputBlobName, GenerateData=False)
+            except NornirUserException as e:
+                prettyoutput.Log("Missing input blob image for blob level: " + str(thisLevel))
+                Logger.warning("Missing input blob image for blob level: " + str(thisLevel) + ' ' + InputFilter.FullPath)
+                return
+
+    will_generate_blob = (
+        not skip_blob_generate
+        and BlobImageNode is not None
+        and not os.path.exists(BlobImageNode.FullPath))
+    if will_generate_blob:
         os.makedirs(os.path.dirname(BlobImageNode.FullPath), exist_ok=True)
 
         try:
@@ -144,11 +172,18 @@ def CreateBlobFilter(Parameters: dict[str, Any], Logger: logging.Logger,
 
         SaveFilterNode = True
 
-    if not hasattr(BlobImageNode, 'InputImageChecksum'):
-        BlobImageNode.InputImageChecksum = InputImageNode.Checksum
+    if (not skip_blob_generate
+            and BlobImageNode is not None
+            and leveled_checksum is not None
+            and BlobImageNode.attrib.get('InputImageChecksum') != leveled_checksum):
+        BlobImageNode.attrib['InputImageChecksum'] = leveled_checksum
+        BlobImageNode.AttributesChanged = True
         SaveFilterNode = True
 
-    BlobPyramidImageSet = nornir_buildmanager.operations.tile.BuildImagePyramid(OutputFilterNode.Imageset, **kwargs)
+    BlobPyramidImageSet = nornir_buildmanager.operations.tile.BuildImagePyramid(
+        OutputFilterNode.Imageset,
+        reference_image_sets=assembled_references,
+        **kwargs)
     SaveFilterNode = SaveFilterNode or (not BlobPyramidImageSet is None)
 
     if SaveFilterNode:

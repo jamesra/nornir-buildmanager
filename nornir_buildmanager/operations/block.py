@@ -1088,6 +1088,19 @@ def ValidateSectionMappingTransform(stos_transform_node: TransformNode, Logger) 
     return None
 
 
+def _stos_on_disk_has_windows_absolute_paths(stos_path: str) -> bool:
+    """True when image/mask lines still store a Windows drive or UNC path."""
+    try:
+        with open(stos_path, encoding='utf-8') as handle:
+            lines = handle.readlines()
+    except OSError:
+        return False
+    candidates = [lines[0], lines[1]] if len(lines) >= 2 else []
+    if len(lines) > 8:
+        candidates.extend(lines[8:10])
+    return any(stosfile._looks_like_windows_absolute(line.strip()) for line in candidates)
+
+
 def UpdateStosImagePaths(StosTransformPath: str, ControlImageFullPath: str, MappedImageFullPath: str,
                          ControlImageMaskFullPath: str | None = None,
                          MappedImageMaskFullPath: str | None = None) -> bool:
@@ -1104,6 +1117,7 @@ def UpdateStosImagePaths(StosTransformPath: str, ControlImageFullPath: str, Mapp
         or not stosfile.paths_refer_to_same_file(InputStos.MappedImageFullPath, MappedImageFullPath)
         or not stosfile.paths_refer_to_same_file(InputStos.ControlMaskFullPath, ControlImageMaskFullPath)
         or not stosfile.paths_refer_to_same_file(InputStos.MappedMaskFullPath, MappedImageMaskFullPath)
+        or _stos_on_disk_has_windows_absolute_paths(StosTransformPath)
     )
 
     if NeedsUpdate:
@@ -1809,6 +1823,13 @@ def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, In
             elif os.path.exists(AutomaticInputStosFullPath):
                 InputChecksum = stosfile.StosFile.LoadChecksum(AutomaticInputStosFullPath)
     else:
+        RebaseCopiedStosPaths(
+            InputStosFullPath,
+            ControlFilter,
+            MappedFilter,
+            OutputDownsample,
+            UseMasks,
+        )
         InputChecksum = stosfile.StosFile.LoadChecksum(InputStosFullPath)
 
     return InputStosFullPath, InputChecksum
@@ -1926,6 +1947,10 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
         UseMasks = InputStos.HasMasks
 
     OutputStos = stosfile.StosFile.Load(OutputTransformPath)
+    if not stosfile.stos_transform_maps_onto_control_image(OutputStos):
+        prettyoutput.LogErr(
+            f"Scaled STOS transform is off the control image; regenerating {OutputTransformPath}")
+        return True
     if not OutputStos.HasMasks == UseMasks:
         return True
 
@@ -2003,6 +2028,19 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
     InputDownsample = stos_group_node.Downsample  # type: ignore[union-attr]
 
     InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
+    if not stosfile.stos_transform_maps_onto_control_image(InputStos):
+        manual_path = None
+        if stos_group_node is not None:
+            manual_path = stos_group_node.PathToManualTransform(InputTransformNode.Path)
+        if manual_path is not None and os.path.exists(manual_path):
+            prettyoutput.LogErr(
+                f"Input STOS transform does not map onto its control image "
+                f"({InputTransformNode.FullPath}); using Manual {manual_path}")
+            InputStos = stosfile.StosFile.Load(manual_path)
+        else:
+            prettyoutput.LogErr(
+                f"Input STOS transform does not map onto its control image: "
+                f"{InputTransformNode.FullPath}")
     if UseMasks is None:
         UseMasks = InputStos.HasMasks
 
@@ -2795,6 +2833,85 @@ def _remove_stos_output_files(output_path: str) -> None:
         os.remove(sidecar)
 
 
+def _conventional_stos_filename(
+        mapped_section: int | str,
+        control_section: int | str,
+        control_channel: str | None,
+        control_filter: str | None,
+        mapped_channel: str | None,
+        mapped_filter: str | None) -> str:
+    """Build the Grid / SliceToVolume STOS basename from mapping attributes."""
+    if None in (control_channel, control_filter, mapped_channel, mapped_filter):
+        raise NornirUserException(
+            "Cannot build a conventional STOS filename; channel/filter names are missing "
+            f"for mapping {mapped_section}->{control_section}.")
+    return nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilenameFromParts(
+        mapped_section, control_section,
+        control_channel, control_filter,
+        mapped_channel, mapped_filter)
+
+
+def _set_slice_to_volume_stos_path(
+        output_transform: TransformNode,
+        mapped_section: int | str,
+        control_section: int | str) -> None:
+    """Assign the conventional STOS basename and migrate a short-named file if present."""
+    filename = _conventional_stos_filename(
+        mapped_section, control_section,
+        output_transform.ControlChannelName,
+        output_transform.ControlFilterName,
+        output_transform.MappedChannelName,
+        output_transform.MappedFilterName)
+    old_full = None
+    try:
+        if output_transform.Path:
+            old_full = output_transform.FullPath
+    except Exception:
+        old_full = None
+    output_transform.Name = f"{mapped_section}-{control_section}"
+    output_transform.Path = filename
+    new_full = output_transform.FullPath
+    if old_full and old_full != new_full and os.path.exists(old_full):
+        os.makedirs(os.path.dirname(new_full), exist_ok=True)
+        if not os.path.exists(new_full):
+            shutil.move(old_full, new_full)
+        else:
+            os.remove(old_full)
+        old_sidecar = _unblended_sidecar_path(old_full)
+        new_sidecar = _unblended_sidecar_path(new_full)
+        if os.path.exists(old_sidecar):
+            if not os.path.exists(new_sidecar):
+                shutil.move(old_sidecar, new_sidecar)
+            else:
+                os.remove(old_sidecar)
+
+
+def _stos_nonfinite_user_error(introduced_in: str, files: list[str]) -> NornirUserException:
+    """Build the Pyre-facing error used when a STOS transform contains NaN/Inf."""
+    listed = "\n".join(f"  - {path}" for path in files if path)
+    message = (
+        f"NaN/Inf values were introduced in the STOS transform at:\n  {introduced_in}\n\n"
+        "Open the listed .stos file(s) in Pyre, correct the registration, save the file, "
+        "then re-run this pipeline stage. Do not continue with NaN transforms.\n\n"
+        f"Files involved:\n{listed}"
+    )
+    return NornirUserException(message)
+
+
+def _raise_if_stos_path_nonfinite(path: str, *, role: str) -> None:
+    """Load a STOS file and abort if its transform contains NaN or Inf."""
+    stos = stosfile.StosFile.Load(path)
+    if stosfile.transform_text_contains_nonfinite(stos.Transform):
+        raise _stos_nonfinite_user_error(f"{role}: {path}", [path])
+
+
+def _reraise_stos_nonfinite(err: Exception, *, introduced_in: str, files: list[str]) -> None:
+    """Re-raise a compose/save failure as a Pyre-facing user error when it is NaN/Inf."""
+    text = str(err).lower()
+    if 'nan' in text or 'inf' in text:
+        raise _stos_nonfinite_user_error(introduced_in, files) from err
+
+
 def _ensure_unblended_sidecar(output_transform,
                               mapped_to_control_path: str,
                               control_to_volume_unblended_path: str,
@@ -3152,17 +3269,13 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
             if OutputTransform is None:
                 OutputTransform = nornir_buildmanager.volumemanager.TransformNode(
                     attrib=MappedToControlTransform.attrib)
-                OutputTransform.Name = str(mappedSectionNumber) + '-' + str(IntermediateControlSection)
                 OutputTransform.SetTransform(MappedToControlTransform)
                 OutputTransformAdded = OutputSectionMappingsNode.AddOrUpdateTransform(OutputTransform)
-                OutputTransform.Path = OutputTransform.Name + '.stos'  # Path creates directory and the fullpath parameter is missing.  Needs to run after the transform is added                                
+                _set_slice_to_volume_stos_path(
+                    OutputTransform, mappedSectionNumber, IntermediateControlSection)
 
                 # Remove any residual transform file just in case
                 _remove_stos_output_files(OutputTransform.FullPath)
-
-            if ControlToVolumeTransform is not None:
-                OutputTransform.Path = str(mappedSectionNumber) + '-' + str(
-                    ControlToVolumeTransform.ControlSectionNumber) + '.stos'
 
             if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
                 Logger.info(" %s: Removed outdated transform %s" % (logStr, OutputTransform.Path))
@@ -3192,6 +3305,8 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
 
                     if not os.path.exists(OutputTransform.FullPath):
                         try:
+                            _raise_if_stos_path_nonfinite(
+                                MappedToControlTransform.FullPath, role="mapped→volume center")
                             Logger.info(
                                 " %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
                             shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
@@ -3224,6 +3339,9 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 OutputTransform.ControlSectionNumber = ControlToVolumeTransform.ControlSectionNumber
                 OutputTransform.ControlChannelName = ControlToVolumeTransform.ControlChannelName
                 OutputTransform.ControlFilterName = ControlToVolumeTransform.ControlFilterName
+                _set_slice_to_volume_stos_path(
+                    OutputTransform, mappedSectionNumber,
+                    ControlToVolumeTransform.ControlSectionNumber)
 
                 if hasattr(OutputTransform, "ControlToVolumeTransformChecksum"):
                     if not OutputTransform.ControlToVolumeTransformChecksum == ControlToVolumeTransform.Checksum:
@@ -3252,6 +3370,10 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                     try:
                         # Logger.info(" %s: Adding transforms" % (logStr))
                         prettyoutput.Log("\tCalculating new .stos")
+                        _raise_if_stos_path_nonfinite(
+                            MappedToControlTransform.FullPath, role="mapped→control")
+                        _raise_if_stos_path_nonfinite(
+                            control_to_volume_unblended_path, role="control→volume")
                         rigid_ac = None
                         if use_chain_linear or use_linear_blend:
                             _, rigid_ac = _rigid_chain_for_slice_to_volume_hop(
@@ -3290,6 +3412,14 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                         # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
 
                     except (ValueError, FileNotFoundError, OSError) as e:
+                        _reraise_stos_nonfinite(
+                            e,
+                            introduced_in=OutputTransform.FullPath,
+                            files=[
+                                MappedToControlTransform.FullPath,
+                                control_to_volume_unblended_path,
+                                OutputTransform.FullPath,
+                            ])
                         # Invalid or missing input transform. Skip and continue with other mappings.
                         prettyoutput.LogErr(str(e))
                         Logger.error(str(e))
@@ -3393,18 +3523,13 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
             if OutputTransform is None:
                 OutputTransform = nornir_buildmanager.volumemanager.transformnode.TransformNode(
                     attrib=MappedToControlTransform.attrib)
-                OutputTransform.Name = str(mappedSectionNumber) + '-' + str(ControlSection)
                 OutputTransform.SetTransform(MappedToControlTransform)
                 OutputTransformAdded = OutputSectionMappingsNode.AddOrUpdateTransform(OutputTransform)
-                OutputTransform.Path = OutputTransform.Name + '.stos'  # Path creates directory and the fullpath parameter is missing.  Needs to run after the transform is added                                
+                _set_slice_to_volume_stos_path(OutputTransform, mappedSectionNumber, ControlSection)
 
                 # Remove any residual transform file just in case
                 if os.path.exists(OutputTransform.FullPath):
                     os.remove(OutputTransform.FullPath)
-
-            if ControlToVolumeTransform is not None:
-                OutputTransform.Path = str(mappedSectionNumber) + '-' + str(
-                    ControlToVolumeTransform.TargetSectionNumber) + '.stos'
 
             if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
                 Logger.info(" %s: Removed outdated transform %s" % (logStr, OutputTransform.Path))
@@ -3429,6 +3554,8 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
 
                 if not os.path.exists(OutputTransform.FullPath):
                     try:
+                        _raise_if_stos_path_nonfinite(
+                            MappedToControlTransform.FullPath, role="mapped→volume center")
                         Logger.info(
                             " %s: Copy mapped to volume center stos transform %s" % (logStr, OutputTransform.Path))
                         shutil.copy(MappedToControlTransform.FullPath, OutputTransform.FullPath)
@@ -3456,6 +3583,9 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                 OutputTransform.ControlSectionNumber = ControlToVolumeTransform.TargetSectionNumber
                 OutputTransform.ControlChannelName = ControlToVolumeTransform.ControlChannelName
                 OutputTransform.ControlFilterName = ControlToVolumeTransform.ControlFilterName
+                _set_slice_to_volume_stos_path(
+                    OutputTransform, mappedSectionNumber,
+                    ControlToVolumeTransform.TargetSectionNumber)
 
                 if hasattr(OutputTransform, "ControlToVolumeTransformChecksum"):
                     if not OutputTransform.ControlToVolumeTransformChecksum == ControlToVolumeTransform.Checksum:
@@ -3469,6 +3599,10 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                     try:
                         Logger.info(" %s: Adding transforms" % logStr)
                         prettyoutput.Log(logStr)
+                        _raise_if_stos_path_nonfinite(
+                            MappedToControlTransform.FullPath, role="mapped→control")
+                        _raise_if_stos_path_nonfinite(
+                            ControlToVolumeTransform.FullPath, role="control→volume")
                         MToVStos = stosfile.AddStosTransforms(MappedToControlTransform.FullPath,
                                                               ControlToVolumeTransform.FullPath,
                                                               EnrichTolerance=EnrichTolerance)
@@ -3479,6 +3613,14 @@ def SliceToVolumeFromRegistrationTreeNodeRecursive(rt, Node, InputGroupNode, Out
                         OutputTransform.SetTransform(MappedToControlTransform)
                         # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
                     except (ValueError, FileNotFoundError, OSError) as e:
+                        _reraise_stos_nonfinite(
+                            e,
+                            introduced_in=OutputTransform.FullPath,
+                            files=[
+                                MappedToControlTransform.FullPath,
+                                ControlToVolumeTransform.FullPath,
+                                OutputTransform.FullPath,
+                            ])
                         # Invalid or missing input transform. Skip it
                         prettyoutput.LogErr(str(e))
                         Logger.error(str(e))
@@ -3724,19 +3866,26 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
     if total_jobs:
         _publish_scale_progress()
 
-    for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
-                                                                 pending_jobs,
-                                                                 max_in_flight=max_in_flight):
-        context = job.context
-        try:
-            _apply_scale_stos_job(context, result)
-        except FileNotFoundError:
-            context.output_group_node.remove(context.output_stos_node)
-            continue
-        completed_jobs += 1
-        if total_jobs:
-            _publish_scale_progress()
-        (yield context.output_group_node)
+    try:
+        for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
+                                                                     pending_jobs,
+                                                                     max_in_flight=max_in_flight):
+            context = job.context
+            try:
+                _apply_scale_stos_job(context, result)
+            except FileNotFoundError:
+                context.output_group_node.remove(context.output_stos_node)
+                continue
+            completed_jobs += 1
+            if total_jobs:
+                _publish_scale_progress()
+            (yield context.output_group_node)
+    except ValueError as e:
+        _reraise_stos_nonfinite(
+            e,
+            introduced_in=str(e),
+            files=[str(e)])
+        raise
 
     nornir_pools.ReleaseStagePools()
 
@@ -3979,6 +4128,10 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
         stos_group_node = StosTransformNode.FindParent('StosGroup')
 
         SToV = stosfile.StosFile.Load(StosTransformNode.FullPath)
+        if stosfile.transform_text_contains_nonfinite(SToV.Transform):
+            raise _stos_nonfinite_user_error(
+                f"SliceToVolume STOS: {StosTransformNode.FullPath}",
+                [StosTransformNode.FullPath])
         # Make sure we are not using a downsampled transform
         SToV = SToV.ChangeTransformPixelSpacing(stos_group_node.Downsample, 1.0,  # type: ignore[union-attr, arg-type]
                                                 SToV.ControlImageFullPath,

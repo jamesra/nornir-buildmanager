@@ -904,12 +904,14 @@ class PipelineManager:
                 NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
                 progress_current += 1
                 tele = PipelineManager._ElementTelemetryFields(VolumeElemChild, PipelineNode)
+                tele.pop("label", None)
                 publish_run_event(
                     "iterate_progress",
                     current=progress_current,
                     total=total,
                     depth=depth,
                     track_id=track_id,
+                    label=variable_name,
                     **tele)
         finally:
             self._iterate_depth -= 1

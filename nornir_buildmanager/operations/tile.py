@@ -27,6 +27,8 @@ from dataclasses import dataclass
 from numpy.typing import NDArray
 from typing import Any, Sequence, cast
 
+from PIL import Image as PILImage
+
 import nornir_shared.misc
 import nornir_shared.images
 import nornir_shared.plot
@@ -2235,6 +2237,190 @@ def _existing_image_downsamples(image_set_node: ImageSetNode) -> list[float]:
             if image_set_node.HasImage(level.Downsample)]
 
 
+def _image_pyramid_levels(image_set_node: ImageSetNode,
+                          requested: list[float] | None,
+                          existing: list[float],
+                          reference_image_sets: Sequence[ImageSetNode | None] | None = None) -> list[float]:
+    """Levels to walk for Shrink, finest to coarsest.
+
+    Unions requested Levels with every existing on-disk downsample so a current
+    leftover finer level (for example Blob/008) can produce 16/32/64. A newly
+    added finer assembled level still does not replace neighbors that do not
+    record it as their shrink parent.
+
+    Leftover levels that do not match an assembled reference (when provided) are
+    omitted so an older Blob/8 cannot overwrite a Blob/16 generated from Leveled.
+    """
+    if requested is None:
+        levels = list(existing)
+    else:
+        levels = sorted(frozenset(requested) | frozenset(existing))
+
+    if not levels:
+        return []
+
+    if not image_set_node.HasImage(levels[0]):
+        levels = _InsertExistingLevelIfMissing(image_set_node, list(levels))
+
+    levels = sorted(frozenset(float(level) for level in levels))
+    if reference_image_sets is None:
+        return levels
+
+    requested_set = None if requested is None else {float(level) for level in requested}
+    kept: list[float] = []
+    for level in levels:
+        if requested_set is not None and level in requested_set:
+            kept.append(level)
+            continue
+        image = image_set_node.GetImage(level)
+        if image is None:
+            continue
+        if (_is_current_pyramid_source(image)
+                and _finer_image_matches_assembled_reference(
+                    image, level, reference_image_sets)):
+            kept.append(level)
+    return kept
+
+
+def _is_current_pyramid_source(image_node: ImageNode) -> bool:
+    """True when the image file exists and its recorded filesize is not stale."""
+    if not os.path.exists(image_node.FullPath):
+        return False
+    return not _parent_image_rewritten(image_node)
+
+
+def _pixel_shape(path: str) -> tuple[int, int] | None:
+    """Return ``(height, width)`` for an image file, or None if unreadable."""
+    if not os.path.exists(path):
+        return None
+    try:
+        size = nornir_imageregistration.GetImageSize(path)
+    except (OSError, ValueError):
+        return None
+    height_width = numpy.asarray(size, dtype=int).reshape(-1)
+    if height_width.size < 2:
+        return None
+    return int(height_width[0]), int(height_width[1])
+
+
+def _images_same_pixel_shape(left: ImageNode, right: ImageNode) -> bool:
+    """True when both image files exist and have the same height and width."""
+    left_hw = _pixel_shape(left.FullPath)
+    right_hw = _pixel_shape(right.FullPath)
+    return left_hw is not None and left_hw == right_hw
+
+
+def _first_reference_image(
+        downsample: float,
+        reference_image_sets: Sequence[ImageSetNode | None] | None) -> ImageNode | None:
+    """First existing reference image at ``downsample``, typically Leveled then Mask."""
+    if reference_image_sets is None:
+        return None
+    for image_set in reference_image_sets:
+        if image_set is None:
+            continue
+        image = image_set.GetImage(downsample)
+        if image is not None and os.path.exists(image.FullPath):
+            return image
+    return None
+
+
+def _finer_image_matches_assembled_reference(
+        image: ImageNode,
+        downsample: float,
+        reference_image_sets: Sequence[ImageSetNode | None] | None) -> bool:
+    """True when leftover finer image matches the assembled canvas at that level.
+
+    If ``reference_image_sets`` is None, skip the size check. If references are
+    provided but none exist at ``downsample``, the leftover is not current — it
+    cannot be verified against the latest assemble.
+    """
+    if reference_image_sets is None:
+        return True
+    reference = _first_reference_image(downsample, reference_image_sets)
+    if reference is None:
+        return False
+    return _images_same_pixel_shape(image, reference)
+
+
+def _crop_or_pad_to_shape(image: NDArray, height: int, width: int) -> NDArray:
+    """Copy ``image`` onto a ``(height, width)`` canvas, cropping or zero-padding."""
+    if image.ndim < 2:
+        raise ValueError('Expected at least a 2D image')
+    src_h = int(image.shape[0])
+    src_w = int(image.shape[1])
+    if src_h == height and src_w == width:
+        return image
+    out_shape = (height, width) + tuple(image.shape[2:])
+    out = numpy.zeros(out_shape, dtype=image.dtype)
+    copy_h = min(height, src_h)
+    copy_w = min(width, src_w)
+    out[:copy_h, :copy_w, ...] = image[:copy_h, :copy_w, ...]
+    return out
+
+
+def _load_image_pixels(path: str) -> NDArray:
+    """Load file pixels without LoadImage's mask/extrema rewrite."""
+    with PILImage.open(path) as im:
+        return numpy.asarray(im)
+
+
+def _align_image_node_to_references(
+        image_node: ImageNode,
+        downsample: float,
+        reference_image_sets: Sequence[ImageSetNode | None] | None,
+        logger: logging.Logger) -> bool:
+    """Crop or pad ``image_node`` to the assembled reference shape at this level."""
+    reference = _first_reference_image(downsample, reference_image_sets)
+    if reference is None:
+        return False
+    target_hw = _pixel_shape(image_node.FullPath)
+    reference_hw = _pixel_shape(reference.FullPath)
+    if target_hw is None or reference_hw is None or target_hw == reference_hw:
+        return False
+
+    aligned = _crop_or_pad_to_shape(
+        _load_image_pixels(image_node.FullPath),
+        reference_hw[0],
+        reference_hw[1])
+    nornir_imageregistration.SaveImage(image_node.FullPath, aligned)
+    if 'Dimensions' in image_node.attrib:
+        del image_node.attrib['Dimensions']
+        image_node.AttributesChanged = True
+    logger.info(
+        'Aligned %s from %s to %s to match assembled reference',
+        image_node.FullPath, target_hw, reference_hw)
+    return True
+
+
+def finest_current_finer_image(
+        image_set_node: ImageSetNode,
+        this_level: float,
+        reference_image_sets: Sequence[ImageSetNode | None] | None = None) -> ImageNode | None:
+    """Finest existing image strictly finer than ``this_level`` that is current.
+
+    When ``reference_image_sets`` is provided, a leftover finer level is current
+    only if the first assembled reference at that downsample has the same pixel
+    shape. A leftover Blob/8 from an older assemble is then ignored.
+    """
+    best_image: ImageNode | None = None
+    best_downsample: float | None = None
+    for level in image_set_node.Levels:
+        downsample = float(level.Downsample)
+        if downsample >= float(this_level):
+            continue
+        image = image_set_node.GetImage(downsample)
+        if image is None or not _is_current_pyramid_source(image):
+            continue
+        if not _finer_image_matches_assembled_reference(
+                image, downsample, reference_image_sets):
+            continue
+        if best_downsample is None or downsample < best_downsample:
+            best_downsample = downsample
+            best_image = image
+    return best_image
+
+
 def _live_filesize_checksum(path: str) -> str | None:
     """Return the live filesize checksum, or None if the file is missing."""
     try:
@@ -2305,12 +2491,19 @@ def _refresh_parent_filesize_checksum(parent: ImageNode) -> str | None:
 
 def BuildImagePyramid(image_set_node: ImageSetNode,
                       Levels: Sequence[int | float] | str | int | float | None = None,
-                      Interlace: bool = True, **kwargs) -> ImageSetNode | None:
+                      Interlace: bool = True,
+                      reference_image_sets: Sequence[ImageSetNode | None] | None = None,
+                      **kwargs) -> ImageSetNode | None:
     """Shrink coarser ImageSet levels from finer parents when derived children are missing or stale.
 
-    Unions requested Levels with existing on-disk downsamples so Assemble of a
-    single level still considers coarser pyramid members. Does not replace an
-    assembled neighbor from a newly added finer level.
+    Unions requested Levels with existing on-disk downsamples, including leftover
+    finer levels, so a current 8 can produce 16/32/64. Does not replace an
+    assembled neighbor from a newly added finer level that the neighbor does
+    not already record as its shrink parent.
+
+    When ``reference_image_sets`` is provided (typically assembled Leveled, then
+    Mask), each derived child is cropped or padded to that assembled shape so
+    integer Shrink rounding cannot drift one pixel from assemble.
     """
 
     Logger = kwargs.get('Logger', None)
@@ -2320,16 +2513,11 @@ def BuildImagePyramid(image_set_node: ImageSetNode,
     requested = _requested_downsample_levels(Levels)
     existing = _existing_image_downsamples(image_set_node)
 
-    if requested is None:
-        PyramidLevels = list(existing)
-    else:
-        PyramidLevels = sorted(frozenset(requested) | frozenset(existing))
+    PyramidLevels = _image_pyramid_levels(
+        image_set_node, requested, existing, reference_image_sets)
 
     if not PyramidLevels:
         return None
-
-    PyramidLevels = _InsertExistingLevelIfMissing(image_set_node, PyramidLevels)
-    PyramidLevels = sorted(frozenset(float(level) for level in PyramidLevels))
 
     SaveImageSet = False
     shrunk_this_call: set[float] = set()
@@ -2374,6 +2562,10 @@ def BuildImagePyramid(image_set_node: ImageSetNode,
                 prettyoutput.Log(ConvertCmd)
                 subprocess.call(ConvertCmd + " && exit", shell=True)
 
+            if _align_image_node_to_references(
+                    TargetImageNode, float(thisLevel), reference_image_sets, Logger):
+                SaveImageSet = True
+
             parent_live = _refresh_parent_filesize_checksum(SourceImageNode)
             child_live = _live_filesize_checksum(TargetImageNode.FullPath)
             if child_live is not None:
@@ -2385,6 +2577,12 @@ def BuildImagePyramid(image_set_node: ImageSetNode,
                 TargetImageNode.AttributesChanged = True
             shrunk_this_call.add(float(thisLevel))
         else:
+            if _align_image_node_to_references(
+                    TargetImageNode, float(thisLevel), reference_image_sets, Logger):
+                child_live = _live_filesize_checksum(TargetImageNode.FullPath)
+                if child_live is not None:
+                    _write_image_filesize_checksum(TargetImageNode, child_live)
+                SaveImageSet = True
             stored_before = SourceImageNode.attrib.get('Checksum')
             live = _refresh_parent_filesize_checksum(SourceImageNode)
             if live is not None and stored_before != live:

@@ -69,3 +69,6 @@ __pycache__
 
 .idea
 /.pytest_cache/
+
+# Hypothesis example database (local test cache)
+.hypothesis/

@@ -98,5 +98,49 @@ class TestSliceToVolumeChainComposition(unittest.TestCase):
         )
 
 
+class TestSliceToVolumeStosNaming(unittest.TestCase):
+    def test_conventional_filename_matches_grid_pattern(self) -> None:
+        name = block._conventional_stos_filename(66, 645, "TEM", "Leveled", "TEM", "Leveled")
+        self.assertEqual(name, "66-645_ctrl-TEM_Leveled_map-TEM_Leveled.stos")
+
+    def test_missing_channel_filter_is_user_error(self) -> None:
+        with self.assertRaises(block.NornirUserException):
+            block._conventional_stos_filename(66, 645, "TEM", None, "TEM", "Leveled")
+
+
+class TestStosNonfiniteUserError(unittest.TestCase):
+    def test_message_lists_files_and_pyre_instruction(self) -> None:
+        err = block._stos_nonfinite_user_error(
+            "/data/SliceToVolume1/66-645_ctrl-TEM_Leveled_map-TEM_Leveled.stos",
+            [
+                "/data/Grid16/66-67_ctrl-TEM_Leveled_map-TEM_Leveled.stos",
+                "/data/SliceToVolume16/67-645_ctrl-TEM_Leveled_map-TEM_Leveled.stos",
+            ],
+        )
+        text = str(err)
+        self.assertIn("NaN/Inf values were introduced", text)
+        self.assertIn("Open the listed .stos file(s) in Pyre", text)
+        self.assertIn("66-67_ctrl-TEM_Leveled_map-TEM_Leveled.stos", text)
+        self.assertIn("67-645_ctrl-TEM_Leveled_map-TEM_Leveled.stos", text)
+
+    def test_compose_raises_when_input_has_nan(self) -> None:
+        source = np.array([[0.0, 0.0], [100.0, 0.0], [0.0, 100.0], [100.0, 100.0]], dtype=np.float64)
+        target = source + 2.0
+        with tempfile.TemporaryDirectory() as temp_dir:
+            good = os.path.join(temp_dir, "2-1.stos")
+            bad = os.path.join(temp_dir, "3-2.stos")
+            _write_mesh_stos(good, 2, 1, source, target)
+            _write_mesh_stos(bad, 3, 2, source, target)
+            with open(bad, encoding="utf-8") as handle:
+                lines = handle.readlines()
+            lines[6] = "GridTransform_double_2_2 vp 4 nan nan nan nan\n"
+            with open(bad, "w", encoding="utf-8") as handle:
+                handle.writelines(lines)
+            with self.assertRaises(ValueError) as raised:
+                stosfile.AddStosTransforms(bad, good, EnrichTolerance=None)
+            self.assertIn("NaN/Inf", str(raised.exception))
+            self.assertIn(bad, str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
