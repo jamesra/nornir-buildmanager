@@ -79,6 +79,21 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     nornir_pools.ReleaseStagePools()
 
 
+# SerialEM writes tiles with the image origin in the lower-left corner, so the
+# raw rows arrive bottom-up relative to the orientation the rest of the pipeline
+# expects. This baseline flip was calibrated against the original RC1 dataset.
+# A section listed in FlipList.txt inverts this baseline rather than setting it,
+# so the historical orientation is unchanged for sections that are not listed.
+DEFAULT_FLIP_UD: bool = True
+
+
+def flip_ud_for_section(section_number: int, flip_list: list[int] | None) -> bool:
+    """Return the vertical-flip flag for a section, honouring FlipList.txt."""
+    if not flip_list:
+        return DEFAULT_FLIP_UD
+    return DEFAULT_FLIP_UD != (section_number in flip_list)
+
+
 class MRCImport:
     """
     Imports an .MRC file into a volume
@@ -229,7 +244,9 @@ class MRCImport:
             mosaicObj.SaveToMosaicFile(transformObj.FullPath)
             (yield channelObj)
 
-        cls.ExportImages(mrc_fullpath, LevelObj.FullPath, img_ext=OutputImageExt, min_max_gamma=contrast_settings)
+        cls.ExportImages(mrc_fullpath, LevelObj.FullPath, img_ext=OutputImageExt,
+                         min_max_gamma=contrast_settings,
+                         flip_ud=flip_ud_for_section(SectionNumber, FlipList))
 
     def __init__(self):
         """
@@ -299,7 +316,8 @@ class MRCImport:
 
     @classmethod
     def ExportImages(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str,
-                     min_max_gamma: shared.MinMaxGamma | None):
+                     min_max_gamma: shared.MinMaxGamma | None,
+                     flip_ud: bool = DEFAULT_FLIP_UD):
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
@@ -314,13 +332,15 @@ class MRCImport:
                           output_dir,
                           img_ext,
                           iTile,
-                          min_max_gamma)
+                          min_max_gamma,
+                          flip_ud)
 
         pool.shutdown()
 
     @staticmethod
     def ExportImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
-                    min_max_gamma: shared.MinMaxGamma | None = None) -> bool:
+                    min_max_gamma: shared.MinMaxGamma | None = None,
+                    flip_ud: bool = DEFAULT_FLIP_UD) -> bool:
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
@@ -331,14 +351,19 @@ class MRCImport:
 
         if min_max_gamma is None:
             im = mrc_obj.get_tile_as_image(iTile)
+            if flip_ud:
+                # Orientation must not depend on whether contrast values were
+                # supplied; the contrast branch below flips the same way.
+                im = im.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
             im.save(output_fullpath, compress_level=1)
         else:
             # This mess is here because we can't really trust the min/max pixel values reported in the MRC file for a lot of our old data
             # t = mrcfile._repair_out_of_bounds_pixels(iTile, 14)
             img = mrc_obj.get_tile_as_numpy_memmap(iTile)
             dt = img.dtype
-            img = np.flipud(
-                img)  # This was required to make the images match the orientation of the RC1 original dataset.
+            if flip_ud:
+                # This was required to make the images match the orientation of the RC1 original dataset.
+                img = np.flipud(img)
 
             # Quick correct out-of-bounds pixels
             outliers = img > min_max_gamma.max
@@ -782,29 +807,35 @@ class MRCTileHeader:
         if big_endian:
             Endian = '>'
 
+        # mrc_format.txt: "The short integers are signed, except for piece
+        # coordinates." Parsing stage position as unsigned turns a negative
+        # stage coordinate into ~+2621 px, scattering tiles that straddle the
+        # stage origin. Sections whose coordinates share one sign survive it
+        # because TranslateToZeroOrigin absorbs a uniform offset.
         if tile_flags & MRCTileHeaderFlags.TiltAngle:
-            (obj.tilt_angle,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
+            (obj.tilt_angle,) = struct.unpack(Endian + 'h', header[offset:offset + 2])
             obj.tilt_angle = float(obj.tilt_angle) / 100.0  # type: ignore[arg-type]
             offset += 2
 
         if tile_flags & MRCTileHeaderFlags.PieceCoord:
+            # The documented exception: piece coordinates are unsigned.
             (px, py, pz,) = struct.unpack(Endian + 'HHH', header[offset:offset + 6])
             obj.piece_coords = numpy.asarray((px, py, pz))
             offset += 6
 
         if tile_flags & MRCTileHeaderFlags.StageCoord:
-            (sx, sy,) = struct.unpack(Endian + 'HH', header[offset:offset + 4])
+            (sx, sy,) = struct.unpack(Endian + 'hh', header[offset:offset + 4])
             obj.stage_coords = numpy.asarray((sx, sy), dtype=numpy.float32) / 25.0
             obj._pixel_coords = MRCTileHeader.calculate_pixel_coords(obj.stage_coords, nm_per_pixel)
             offset += 4
 
         if tile_flags & MRCTileHeaderFlags.Magnification:
-            (obj.mag,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
+            (obj.mag,) = struct.unpack(Endian + 'h', header[offset:offset + 2])
             obj.mag = float(obj.mag) * 100.0  # type: ignore[arg-type]
             offset += 2
 
         if tile_flags & MRCTileHeaderFlags.Intensity:
-            (obj.intensity,) = struct.unpack(Endian + 'H', header[offset:offset + 2])
+            (obj.intensity,) = struct.unpack(Endian + 'h', header[offset:offset + 2])
             obj.intensity = float(obj.intensity) / 25000.0  # type: ignore[arg-type]
             offset += 2
 
