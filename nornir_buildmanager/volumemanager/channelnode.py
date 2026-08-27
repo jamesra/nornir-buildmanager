@@ -6,10 +6,16 @@ from nornir_buildmanager.volumemanager import FilterNode, Scale, ScaleAxis, Scal
 
 
 class ChannelNode(XNamedContainerElementWrapped):
+    _scale: Scale | None
+    # Distinguishes "not read from XML yet" from "read, and there is no Scale
+    # child". Testing _scale for None cannot tell those apart and would rescan
+    # on every access for a channel that legitimately has no Scale.
+    _scale_loaded: bool
 
     def __init__(self, **kwargs):
         super(ChannelNode, self).__init__(**kwargs)
         self._scale = None
+        self._scale_loaded = False
 
     @property
     def Filters(self) -> list[FilterNode]:
@@ -77,9 +83,11 @@ class ChannelNode(XNamedContainerElementWrapped):
 
     @property
     def Scale(self) -> Scale | None:
-        if hasattr(self, '_scale') is False:
+        """Return the channel scale, reading it from the XML on first access."""
+        if not self._scale_loaded:
             scaleNode = self.find('Scale')
             self._scale = Scale.Create(scaleNode) if scaleNode is not None else None
+            self._scale_loaded = True
 
         return self._scale
 
@@ -91,6 +99,11 @@ class ChannelNode(XNamedContainerElementWrapped):
         if existing_scale_node is not None:
             self.remove(existing_scale_node)
 
+        # Drop the cache with the node, otherwise the removed scale stays
+        # readable through the property.
+        self._scale = None
+        self._scale_loaded = False
+
     def SetScale(self, scale_value_in_nm: float | int | ScaleAxis | Scale) -> tuple[bool, ScaleNode]:
         """Create a scale node for the channel
         If a float or integer is passed, the value should be in nanometer units.
@@ -100,8 +113,13 @@ class ChannelNode(XNamedContainerElementWrapped):
         self._try_remove_scale_node()
 
         if isinstance(scale_value_in_nm, Scale):
-            (added, scaleNode) = self.UpdateOrAddChild(ScaleNode.CreateFromScale(scale_value_in_nm),
-                                                       f"ScaleNode[X='{scale_value_in_nm.X.UnitsPerPixel}'][Y='{scale_value_in_nm.Y.UnitsPerPixel}'][Z='{scale_value_in_nm.Z.UnitsPerPixel}']")  # type: ignore[union-attr]
+            # Z is optional, and CreateFromScale omits it, so the search string
+            # must omit it too rather than dereferencing None.
+            search = f"ScaleNode[X='{scale_value_in_nm.X.UnitsPerPixel}'][Y='{scale_value_in_nm.Y.UnitsPerPixel}']"  # type: ignore[union-attr]
+            if scale_value_in_nm.Z is not None:
+                search += f"[Z='{scale_value_in_nm.Z.UnitsPerPixel}']"
+
+            (added, scaleNode) = self.UpdateOrAddChild(ScaleNode.CreateFromScale(scale_value_in_nm), search)
         else:
             [added, scaleNode] = self.UpdateOrAddChild(ScaleNode.Create())
 
@@ -126,6 +144,7 @@ class ChannelNode(XNamedContainerElementWrapped):
                 raise NotImplementedError("Unknown type %s" % scale_value_in_nm)
 
         self._scale = Scale.Create(scaleNode)
+        self._scale_loaded = True
 
         return added, scaleNode  # type: ignore[return-value]
 
