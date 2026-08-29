@@ -230,14 +230,19 @@ class XContainerElementWrapper(XResourceElementWrapper):
             # pool = nornir_pools.GetThreadPool('ReplaceLinks')
 
             tasks = []
-            for i, fullpath in enumerate(SubContainerPaths):
-                t = pool.submit(XContainerElementWrapper._load_wrap_link_element, fullpath)
+            for i, sub_container_path in enumerate(SubContainerPaths):
+                t = pool.submit(XContainerElementWrapper._load_wrap_link_element, sub_container_path)
                 t.link_node = link_nodes[i]  # type: ignore[attr-defined]
+                # Carry the path so the error handlers below can name the file that
+                # actually failed. Looping over `fullpath` rebound the parameter, so
+                # every message reported the last path in the list instead.
+                t.fullpath = sub_container_path  # type: ignore[attr-defined]
                 tasks.append(t)
 
             clean_tasks = []
 
             for task in concurrent.futures.as_completed(tasks):
+                task_fullpath = task.fullpath  # type: ignore[attr-defined]
                 try:
                     link_node = task.link_node  # type: ignore[attr-defined]
                     (wrapped, wrapped_loaded_element) = task.result()
@@ -245,16 +250,18 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     self.remove(link_node)
                     # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                     prettyoutput.LogErr(
-                        "Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                        "Removing link node after IOError loading linked XML file: {0}\n{1}".format(task_fullpath,
+                                                                                                   str(e)))
                     continue
                 except ElementTree.ParseError as e:
                     # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                    prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                    prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(task_fullpath, str(e)))
                     self.remove(link_node)
                     continue
                 except Exception as e:
                     # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                    prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+                    prettyoutput.LogErr(
+                        "Unexpected error loading linked XML file: {0}\n{1}".format(task_fullpath, str(e)))
                     continue
 
                 # (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
@@ -270,21 +277,40 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     prettyoutput.LogErr(f"Missing element when replacing link: {e}, it may have already been replaced")
                     continue
 
+                # Check to ensure the newly loaded element is valid
                 if wrapped_loaded_element.NeedsValidation:
                     t = pool.submit(wrapped_loaded_element.IsValid)
-                    # t = pool.add_task("CleanIfInvalid " + fullpath, wrapped_loaded_element.IsValid)
+                    # Bind the element to its own task. The validity loop below used to
+                    # read `wrapped_loaded_element` directly, which by then held whatever
+                    # this loop last assigned, so it appended that one element once per
+                    # task and would have cleaned it in place of the invalid one.
+                    t.element = wrapped_loaded_element  # type: ignore[attr-defined]
                     clean_tasks.append(t)
-
-                # Check to ensure the newly loaded element is valid
-                # Cleaned = wrapped_loaded_element.CleanIfInvalid()
+                else:
+                    # Elements that need no validation are loaded and staying, so they
+                    # belong in the result. Only the validity loop used to append, which
+                    # dropped these from the returned list entirely.
+                    loaded_elements.append(wrapped_loaded_element)
 
             for clean_task in concurrent.futures.as_completed(clean_tasks):
-                IsValid = clean_task.result()
+                element = clean_task.element  # type: ignore[attr-defined]
+                # IsValid returns (bool, reason). Testing the tuple itself was always
+                # truthy, so the clean branch never ran and invalid linked containers
+                # survived on this path -- while the single-link path through
+                # _replace_link has always cleaned them.
+                # CleanIfInvalid below recomputes the reason and logs it, so it is not
+                # needed here; subclasses override CleanIfInvalid, so call that rather
+                # than Clean directly.
+                is_valid, _ = clean_task.result()
 
-                if IsValid:
-                    loaded_elements.append(wrapped_loaded_element)
+                if is_valid:
+                    loaded_elements.append(element)
                 else:
-                    wrapped_loaded_element.CleanIfInvalid()
+                    cleaned, _ = element.CleanIfInvalid()
+                    if not cleaned:
+                        # Not removed after all, e.g. no-delete mode, so the caller
+                        # should still see it.
+                        loaded_elements.append(element)
 
         return loaded_elements
 
