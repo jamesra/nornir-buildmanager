@@ -3,6 +3,7 @@ Created on Jun 22, 2012
 
 @author: Jamesan
 """
+import collections
 import copy
 import math
 import logging
@@ -2949,6 +2950,36 @@ def _message_reports_nonfinite(text: str) -> bool:
     return _NONFINITE_TOKEN_RE.search(text) is not None
 
 
+def _submit_tile_compositions(pool, stov_transform, image_to_transform, *, max_in_flight: int):
+    """Compose each tile into volume space, yielding tasks as the window slides.
+
+    Every task pickles ``stov_transform`` -- a whole dense-grid slice-to-volume
+    transform -- as an argument. Submitting one task per tile up front therefore
+    kept one pickled copy per tile of the section alive at once, which for a dense
+    grid runs to hundreds of MiB on a large section and grows with tile count.
+    Bounding the window keeps that to ``max_in_flight`` copies regardless of
+    section size, at no cost to throughput while the pool stays fed.
+    """
+    max_in_flight = max(1, max_in_flight)
+    in_flight: collections.deque = collections.deque()
+
+    for imagename, mosaic_to_section_transform in image_to_transform:
+        task = pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms,
+                             stov_transform, mosaic_to_section_transform)
+        task.imagename = imagename  # type: ignore[attr-defined]
+        if hasattr(mosaic_to_section_transform, 'gridWidth'):
+            task.dimX = mosaic_to_section_transform.gridWidth  # type: ignore[attr-defined]
+        if hasattr(mosaic_to_section_transform, 'gridHeight'):
+            task.dimY = mosaic_to_section_transform.gridHeight  # type: ignore[attr-defined]
+
+        in_flight.append(task)
+        if len(in_flight) >= max_in_flight:
+            yield in_flight.popleft()
+
+    while in_flight:
+        yield in_flight.popleft()
+
+
 def _gather_volume_space_tiles(mosaic_transform, tasks, *, mosaic_path: str, Logger) -> None:
     """Replace each tile's transform with its composed volume-space result.
 
@@ -2960,8 +2991,10 @@ def _gather_volume_space_tiles(mosaic_transform, tasks, *, mosaic_path: str, Log
     :raises NornirUserException: if any tile failed, so the caller writes nothing.
     """
     failed_tiles: list[str] = []
+    attempted = 0
 
     for task in tasks:
+        attempted += 1
         try:
             mosaic_transform.ImageToTransform[task.imagename] = task.wait_return()
         except Exception as e:
@@ -2975,7 +3008,7 @@ def _gather_volume_space_tiles(mosaic_transform, tasks, *, mosaic_path: str, Log
 
     listed = "\n".join(f"  - {name}" for name in sorted(failed_tiles))
     raise NornirUserException(
-        f"{len(failed_tiles)} of {len(tasks)} tiles could not be composed into volume space for:\n"
+        f"{len(failed_tiles)} of {attempted} tiles could not be composed into volume space for:\n"
         f"  {mosaic_path}\n\n"
         "Saving the mosaic now would mis-register those tiles and mark the result valid, so it has "
         "not been written. Correct the slice-to-volume registration and re-run this pipeline stage.\n\n"
@@ -4220,27 +4253,22 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
         if not MosaicTransform.IsOriginAtZero():
             MosaicTransform.TranslateToZeroOrigin()
-        Tasks = []
-
         UsePool = True
         if UsePool:
             # This is a parallel operation, but the Python GIL is so slow using threads is slower.
             Pool = nornir_pools.GetLocalMachinePool()
 
-            for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
-                task = Pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms, StoVTransform,
-                                     MosaicToSectionTransform)
-                task.imagename = imagename  # type: ignore[attr-defined]
-                if hasattr(MosaicToSectionTransform, 'gridWidth'):
-                    task.dimX = MosaicToSectionTransform.gridWidth  # type: ignore[attr-defined]
-                if hasattr(MosaicToSectionTransform, 'gridHeight'):
-                    task.dimY = MosaicToSectionTransform.gridHeight  # type: ignore[attr-defined]
+            # Twice the worker count keeps every worker fed while the oldest task is
+            # being collected, without going back to one live copy per tile.
+            max_in_flight = max(1, (getattr(Pool, 'max_workers', None) or os.cpu_count() or 4) * 2)
 
-                Tasks.append(task)
-
-            _gather_volume_space_tiles(MosaicTransform, Tasks,
-                                       mosaic_path=transform_node.FullPath,
-                                       Logger=Logger)
+            _gather_volume_space_tiles(
+                MosaicTransform,
+                _submit_tile_compositions(Pool, StoVTransform,
+                                          list(MosaicTransform.ImageToTransform.items()),
+                                          max_in_flight=max_in_flight),
+                mosaic_path=transform_node.FullPath,
+                Logger=Logger)
         else:
             for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
                 MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)  # type: ignore[attr-defined]
