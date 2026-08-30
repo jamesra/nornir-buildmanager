@@ -124,6 +124,26 @@ def find_sections(extension: str,
                 print(f"No valid import found for section {section_number}")
 
 
+def _validate_contrast_cutoffs(cutoffs: tuple[float, float]) -> None:
+    """Reject cutoffs that are not 0-1 fractions.
+
+    Levelling computes ``AutoLevel(cutoffs[0], 1.0 - cutoffs[1])``, so a value
+    outside this range silently produces a nonsense percentile. Percentages are the
+    tempting mistake: (0.0, 100.0) asks for ``AutoLevel(0.0, -99.0)``, which returns
+    a max below its min and destroys the tile rather than failing.
+    """
+    min_cutoff, max_cutoff = float(cutoffs[0]), float(cutoffs[1])
+
+    if min_cutoff < 0.0 or min_cutoff > 1.0:
+        raise ValueError("Min must be between 0 and 1: %f" % min_cutoff)
+
+    if max_cutoff < 0.0 or max_cutoff > 1.0:
+        raise ValueError("Max must be between 0 and 1: %f" % max_cutoff)
+
+    if min_cutoff >= max_cutoff:
+        raise ValueError("Max must be greater than Min: %f is not less than %f" % (min_cutoff, max_cutoff))
+
+
 def Import(VolumeElement: VolumeNode,
            ImportPath: str,
            extension: str | None = None,
@@ -141,14 +161,7 @@ def Import(VolumeElement: VolumeNode,
     ContrastCutoffs = (MinCutoff, MaxCutoff)
     CameraBpp = kwargs.get('CameraBpp', None)
 
-    if MinCutoff < 0.0 or MinCutoff > 1.0:
-        raise ValueError("Min must be between 0 and 1: %f" % MinCutoff)
-
-    if MaxCutoff < 0.0 or MaxCutoff > 1.0:
-        raise ValueError("Max must be between 0 and 1: %f" % MaxCutoff)
-
-    if MinCutoff >= MaxCutoff:
-        raise ValueError("Max must be greater than Min: %f is not less than %f" % (MinCutoff, MaxCutoff))
+    _validate_contrast_cutoffs(ContrastCutoffs)
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(
@@ -237,7 +250,14 @@ class SerialEMIDocImport:
         Yields the owning container after each meta-data mutation so ``_SaveNodes``
         can write VolumeData.xml before long tile/histogram work (same pattern as
         MRC/DM4 importers — do not wait until the entire idoc finishes).
+
+        :param ContrastCutoffs: (min, max) as 0-1 *fractions*, not percentages.
+            Levelling uses ``AutoLevel(cutoffs[0], 1.0 - cutoffs[1])``, so (0.0, 1.0)
+            trims nothing.
+        :raises ValueError: if the cutoffs are not 0-1 fractions.
         """
+        _validate_contrast_cutoffs(ContrastCutoffs)
+
         if OutputImageExt is None:
             OutputImageExt = 'png'
 

@@ -117,8 +117,15 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             idocFilenameFullPath = os.path.join(MDocImportDirFullPath, idocFilename)
             cls.ConvertMDocToIDoc(mdoc, idocFilenameFullPath)
 
+            # ContrastCutoffs are 0-1 fractions, not percentages: shared.py levels
+            # with AutoLevel(cutoffs[0], 1.0 - cutoffs[1]). (0.0, 1.0) is the
+            # "trim nothing" pair this call has always meant. Passing (0.0, 100.0)
+            # asked for AutoLevel(0.0, -99.0), which returns an inverted range.
             yield from super(SerialEMMDocImport, cls).ToMosaic(
-                VolumeObj, idocFilenameFullPath, (0.0, 100.0), OutputImageExt, TargetBpp
+                VolumeObj, idocFilenameFullPath,
+                ContrastCutoffs=(0.0, 1.0),
+                OutputImageExt=OutputImageExt,
+                TargetBpp=TargetBpp,
             )
 
     @classmethod
