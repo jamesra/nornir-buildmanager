@@ -777,7 +777,19 @@ class XElementWrapper(ElementTree.Element):
         return
 
     def _ReplaceChildElementInPlace(self, old: ElementTree.Element, new: XElementWrapper):
+        """Swap a child for an equivalent one **without** marking this element dirty.
 
+        Deliberately does not set ``_ChildrenChanged``, unlike append/remove. Every
+        live caller substitutes a node for its own loaded or wrapped equivalent --
+        a ``*_Link`` stub for the container it points at, or a raw Element for its
+        wrapper -- which changes what is in memory but not what belongs on disk.
+
+        Setting the flag here would make resolving a link count as an edit, so any
+        query that walks into a linked container would rewrite the volume and bump
+        the directory modification times that validation depends on. Callers that
+        genuinely restructure the parent, such as :meth:`ReplaceChildWithLink`,
+        set the flag themselves.
+        """
         # print("Removing {0}".format(str(old)))
         i = self.indexofchild(old)
 
@@ -788,6 +800,12 @@ class XElementWrapper(ElementTree.Element):
         nornir_buildmanager.volumemanager.SetElementParent(new, self)
 
     def ReplaceChildWithLink(self, child):
+        """Substitute a link stub for a container child, marking this element dirty.
+
+        Unlike the resolution path this really does restructure the parent: the
+        container's content stops being part of this element's XML, so the change
+        has to be persisted.
+        """
         if isinstance(child, nornir_buildmanager.volumemanager.XContainerElementWrapper):
             if child not in self:
                 return
@@ -795,6 +813,7 @@ class XElementWrapper(ElementTree.Element):
             LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib)
             # SaveElement.append(LinkElement)
             self._ReplaceChildElementInPlace(child, LinkElement)
+            self._ChildrenChanged = True
 
     def _ReplaceChildIfUnwrapped(self, child):
         if isinstance(child, XElementWrapper):
