@@ -14,6 +14,7 @@ import numpy as np
 import dm4
 import dm4.dm4file
 import nornir_buildmanager.importers
+from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.importers import GetFileNameForTileNumber
 import nornir_buildmanager.templates
 from nornir_buildmanager.volumemanager import *
@@ -88,6 +89,47 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
 
 '''Convert a DM4 file to another image format.  Intended to be called from a multithreading pool'''
+
+
+def _raise_if_unsupported_section_options(section_number, FlipList, ContrastMap, *, dm4FileFullPath):
+    """Abort when a section asks for flipping or contrast overrides that DM4 cannot honour.
+
+    ``Import`` reads FlipList.txt and the histogram cutoffs file and forwards both to
+    ``ToMosaic``, matching the idoc importer's signature. ``ToMosaic`` never read
+    either, so a DM4 section listed in FlipList.txt imported unflipped and a contrast
+    override was dropped, both without a word.
+
+    Implementing them here is not a matter of wiring the arguments through. idoc
+    flips by flopping the image *and* writing the mosaic with the opposite coordinate
+    convention (``MosaicFile.Write(..., Flip=not Flip)``); DM4 instead composes
+    RigidTranslation positions from the montage grid and calls SaveToMosaicFile, so
+    the paired convention has no direct equivalent and cannot be chosen without DM4
+    data whose correctly-flipped output is known. Contrast overrides have no home at
+    all, since ConvertDM4ToPng writes the tile without levelling.
+
+    Failing is therefore the honest behaviour: a section that needs either option
+    stops the build instead of producing output that looks fine and is not. Sections
+    that ask for neither are unaffected.
+    """
+    unsupported = []
+
+    if FlipList and section_number in FlipList:
+        unsupported.append("listed in FlipList.txt, but DM4 import does not flip images")
+
+    if ContrastMap and section_number in ContrastMap:
+        unsupported.append("has a contrast override, but DM4 import does not apply levelling")
+
+    if not unsupported:
+        return
+
+    reasons = "\n".join(f"  - Section {section_number} {reason}" for reason in unsupported)
+    raise NornirUserException(
+        f"DM4 import cannot honour the options requested for this section:\n{reasons}\n\n"
+        f"File: {dm4FileFullPath}\n\n"
+        "These were previously ignored without warning, which produced unflipped or "
+        "unlevelled output that looked correct. Remove the section from FlipList.txt "
+        "or the contrast override file to import it as-is, or import it through the "
+        "idoc pipeline, which implements both.")
 
 
 def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
@@ -302,8 +344,12 @@ class DigitalMicrograph4Import(object):
         :param DesiredSectionList:
         :param debug:
         :param tuple tile_overlap: Tuple of percentages of overlap in (X,Y) for each tile, or None to read from DM4 file
-        :param list FlipList: List of section numbers which should have images flipped
-        :param dict ContrastMap: Dictionary mapping section number to (Min, Max, Gamma) tuples 
+        :param list FlipList: Section numbers listed in FlipList.txt. **Not implemented
+            for DM4.** Accepted so the caller signature matches the idoc importer;
+            a section that appears here aborts rather than importing unflipped.
+        :param dict ContrastMap: Section number to (Min, Max, Gamma) overrides. **Not
+            implemented for DM4**, which writes tiles without levelling; a section
+            with an override aborts rather than dropping it.
         '''
 
         logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
@@ -315,6 +361,9 @@ class DigitalMicrograph4Import(object):
         if DesiredSectionList is not None and len(DesiredSectionList) > 0:
             if section_number not in DesiredSectionList:
                 return
+
+        _raise_if_unsupported_section_options(section_number, FlipList, ContrastMap,
+                                              dm4FileFullPath=dm4FileFullPath)
 
         # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
