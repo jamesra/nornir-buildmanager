@@ -2635,6 +2635,24 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
     dropped_slices: list[str] = []
 
+    # Refine is dispatched serially on purpose; this is not a debug pin.
+    #
+    # Unlike ScaleStosGroup and LinearBlendStosGroup, whose pooled jobs return a
+    # result that the parent then applies (_apply_scale_stos_job and friends),
+    # _run_refine_or_manual_copy mutates the volume model itself: it creates the
+    # output node, removes nodes it rejects, and rebases paths on the node it
+    # returns. Passing a real pool would pickle `context` to a worker, land every
+    # one of those mutations on a copy, and hand back a detached node -- the
+    # parent's model would silently lose all of it. StosGroupPoolJob documents the
+    # same constraint as "context stays on the main process".
+    #
+    # Outer parallelism would not buy much regardless: one slice's refine is
+    # already parallel internally, since RefineStosFile -> RefineTransform and
+    # _prewarp_all_tiles_for_grid_refine each take a global pool.
+    #
+    # Parallelising this stage means first splitting the function into a pure
+    # compute half and a parent-side apply half, the way the other two stages are
+    # arranged.
     for job, result in stosgroup_workers.run_bounded_stos_jobs(
             None, pool_jobs, max_in_flight=1):
         context = job.context
