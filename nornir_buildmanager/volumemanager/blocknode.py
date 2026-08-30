@@ -116,7 +116,11 @@ class BlockNode(XNamedContainerElementWrapped):
     def NonStosSectionNumbers(self) -> frozenset[int]:
         """Section numbers that should not be control sections for slice-to-slice registration.
 
-        Reading does not create the child node; use the setter (or MarkSectionsAs*) to add one.
+        Reading neither creates the child node nor modifies it; use the setter
+        (or MarkSectionsAs*) to add one. The returned set is sorted regardless of
+        how the stored text is ordered, and the setter writes the canonical form,
+        so legacy unsorted metadata is normalised the next time it is written
+        rather than during a read.
         """
         StosExemptNode = self.find('NonStosSectionNumbers')
         if StosExemptNode is None:
@@ -129,18 +133,7 @@ class BlockNode(XNamedContainerElementWrapped):
             return frozenset([])
 
         # OK, parse the exempt string to a different list
-        NonStosSectionNumbers = frozenset(sorted([int(x) for x in ExemptString.split(',')]))
-
-        ##################
-        # Temporary fix for old meta-data that was not sorted.  It can be
-        # deleted after running an align on each legacy volume
-        ExpectedText = BlockNode.NonStosNumbersToString(NonStosSectionNumbers)
-        if ExpectedText != StosExemptNode.text:
-            StosExemptNode.text = ExpectedText
-            StosExemptNode._AttributesChanged = True
-        ################
-
-        return NonStosSectionNumbers
+        return frozenset(sorted([int(x) for x in ExemptString.split(',')]))
 
     @NonStosSectionNumbers.setter
     def NonStosSectionNumbers(self, value: frozenset[int] | set[int] | Iterable[int]):
