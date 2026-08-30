@@ -191,8 +191,14 @@ class InputTransformHandler:
 
     @classmethod
     def EnumerateTransformDependents(cls, parent_node, checksum: str, type_name: str, recursive: bool,
-                                     child_element_name: str | None = None):
-        """Return a list of all sibling transforms (Same parent element) which have our checksum and type as an input transform checksum and type"""
+                                     child_element_name: str = '*'):
+        """Yield the elements under parent_node naming our checksum and type as their input transform.
+
+        Defaults to every child rather than to transforms alone, because six node
+        types mix in InputTransformHandler and so can declare a dependency:
+        TransformNode, ImageNode, ImageSetBaseNode, TilesetNode, HistogramBase and
+        TransformDataNode. The attribute checks below do the real selecting.
+        """
 
         # WORKAROUND: The etree implementation has a serious shortcoming in that it cannot handle the 'and' operator in XPath queries.  This function is a workaround for a multiple criteria find query
         if parent_node is None:
@@ -200,7 +206,9 @@ class InputTransformHandler:
 
         for t in parent_node.findall(child_element_name):
             if recursive:
-                for c in cls.EnumerateTransformDependents(t, checksum, type_name, recursive):
+                # Forward child_element_name; dropping it searched with findall(None).
+                for c in cls.EnumerateTransformDependents(t, checksum, type_name, recursive,
+                                                          child_element_name):
                     yield c
 
             if 'InputTransformChecksum' not in t.attrib:
