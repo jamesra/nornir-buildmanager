@@ -832,8 +832,18 @@ class XElementWrapper(ElementTree.Element):
                 #    prettyoutput.Log("Need to load {0} links".format(num_matches))
                 self._replace_links(LinkMatches)
 
-                # if self.ElementHasChangesToSave:  #TODO: This does not belong here, but I need to save validation information updates.
-                #    self.Save()
+                # Persist whatever link resolution repaired, matching findall below.
+                # Resolving links is not itself a change: swapping a *_Link stub for
+                # the loaded element leaves every dirty flag clear, so a healthy
+                # volume writes nothing here. The flag is only set when resolution
+                # *removed* something -- a stub whose target file is gone, or a child
+                # cleaned as invalid -- and then the in-memory tree no longer matches
+                # disk. Leaving it unsaved kept the stale stub on disk and abandoned a
+                # dirty tree that nothing was responsible for flushing, so the next run
+                # retried the same failed load, and any later unrelated Save would
+                # write the removal at an arbitrary time instead.
+                if self.ElementHasChangesToSave:
+                    self.Save()
 
         matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
         for match in matchiterator:
@@ -876,6 +886,10 @@ class XElementWrapper(ElementTree.Element):
             #    prettyoutput.Log("Need to load {0} links".format(num_matches))
             self._replace_links(link_matches)
 
+            # See find() above: this looks like a read that writes, but a healthy
+            # volume never trips the flag. It only fires when link resolution removed
+            # a stub or cleaned an invalid child, and persisting that repair is the
+            # point.
             if self.ElementHasChangesToSave:
                 self.Save()
 
