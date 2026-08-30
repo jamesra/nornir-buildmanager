@@ -7,6 +7,7 @@ import copy
 import math
 import logging
 import random
+import re
 import shutil
 from dataclasses import dataclass
 import numpy as np
@@ -2905,10 +2906,22 @@ def _raise_if_stos_path_nonfinite(path: str, *, role: str) -> None:
         raise _stos_nonfinite_user_error(f"{role}: {path}", [path])
 
 
+# Matches nan/inf only as standalone numeric tokens. A bare substring test also
+# fired on "info", "information" and, worse in a pipeline measured in nanometres,
+# on "nanometer"; the trailing and leading classes also keep it from matching a
+# path component such as C:\data\inf\0001.stos.
+_NONFINITE_TOKEN_RE = re.compile(r'(?<![\w.\\/-])(?:nan|[-+]?inf(?:inity)?)(?![\w.\\/-])',
+                                 re.IGNORECASE)
+
+
+def _message_reports_nonfinite(text: str) -> bool:
+    """Whether an error message is reporting a NaN/Inf value rather than merely containing those letters."""
+    return _NONFINITE_TOKEN_RE.search(text) is not None
+
+
 def _reraise_stos_nonfinite(err: Exception, *, introduced_in: str, files: list[str]) -> None:
     """Re-raise a compose/save failure as a Pyre-facing user error when it is NaN/Inf."""
-    text = str(err).lower()
-    if 'nan' in text or 'inf' in text:
+    if _message_reports_nonfinite(str(err)):
         raise _stos_nonfinite_user_error(introduced_in, files) from err
 
 
