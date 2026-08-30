@@ -19,10 +19,21 @@ import matplotlib
 import nornir_buildmanager.volumemanager.volumemanager
 import nornir_buildmanager.pipelinemanager as pipelinemanager
 import nornir_imageregistration
+from nornir_imageregistration.headless import is_headless
 
-# Nornir build must use a backend that does not allocate windows in the GUI should be used.
-# Otherwise bugs will appear in multi-threaded environments
-if 'DEBUG' not in os.environ:
+# Nornir build must use a backend that does not allocate windows in the GUI.
+# Otherwise bugs will appear in multi-threaded environments.
+#
+# Importing this module used to switch the process to QtAgg unconditionally, undoing the
+# Agg that nornir_imageregistration selects for headless runs. Any later plt.show()
+# then blocked on a Qt event loop waiting for a window nobody could close. Under pytest
+# that wedged whole sessions: collection imports every test module, so one test that
+# imports nornir_buildmanager made the entire run GUI-backed, and a later plotting test
+# hung with no output. The same files passed individually because nothing had pulled the
+# GUI backend in.
+if is_headless():
+    matplotlib.use('Agg')
+elif 'DEBUG' not in os.environ:
     try:
         matplotlib.use('QtAgg')
     except ImportError:
