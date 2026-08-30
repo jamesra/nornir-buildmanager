@@ -45,16 +45,22 @@ class TestImportIDocProgress(unittest.TestCase):
 
         section_a = mock.Mock()
         section_a.number = 1
+        section_a.fullpath = "/data/0001"
         section_b = mock.Mock()
         section_b.number = 2
+        section_b.fullpath = "/data/0002"
         found = [
             (section_a, ["a1.idoc", "a2.idoc"]),
             (section_b, ["b1.idoc"]),
         ]
         volume = mock.Mock()
 
+        # Progress is counted in sections, so the candidate map is what sets the
+        # total. It must agree with what find_sections yields.
+        candidates = {1: [section_a], 2: [section_b]}
+
         with mock.patch.object(idoc_mod, "find_sections", return_value=iter(found)):
-            with mock.patch.object(idoc_mod.find, "find_section_candidates", return_value={}):
+            with mock.patch.object(idoc_mod.find, "find_section_candidates", return_value=candidates):
                 with mock.patch.object(idoc_mod.nornir_buildmanager.importers, "GetFlipList", return_value=[]):
                     with mock.patch.object(
                             idoc_mod.nornir_buildmanager.importers,
@@ -81,8 +87,14 @@ class TestImportIDocProgress(unittest.TestCase):
         self.assertEqual(len(results), 3)
         self.assertEqual(to_mosaic.call_count, 3)
         currents = [c.args[1] for c in report.call_args_list]
-        # Initial 0/N, then start+complete for each of 3 idocs → [0, 0,1, 1,2, 2,3]
-        self.assertEqual(currents, [0, 0, 1, 1, 2, 2, 3])
+        # Counted in sections rather than idocs: the idoc total is only knowable by
+        # scanning every section directory up front, which is exactly the stall that
+        # was removed. Initial 0/2, a start event per idoc carrying the sections
+        # finished so far, and a completion event per section.
+        #   init 0 | a1 0, a2 0, section a done 1 | b1 1, section b done 2
+        self.assertEqual(currents, [0, 0, 0, 1, 1, 2])
+        self.assertTrue(all(c.args[2] == 2 for c in report.call_args_list),
+                        "total should be the section count")
         self.assertTrue(all(c.args[0] == "import_idoc:sections" for c in report.call_args_list))
         # Start-of-idoc events include path/element for the dashboard card.
         start_kwargs = report.call_args_list[1].kwargs

@@ -193,20 +193,27 @@ def Import(VolumeElement: VolumeNode,
         for meta_data in section_number_dirlist:
             prettyoutput.Log(shared.FileMetaDataStr(meta_data))
 
-    found_sections = list(find_sections(extension, found_section_candidates))
-    total_idocs = sum(len(idocFileList) for _, idocFileList in found_sections)
-    completed_idocs = 0
+    # Progress counts sections rather than idocs. The idoc total is only knowable by
+    # scanning every section directory first, and waiting for that throws away what
+    # find_sections is built to do: yield each section the moment its own directory
+    # scan lands, so importing starts against the first section instead of the last.
+    # The section count is already in hand from the single top-level scan above.
+    #
+    # Captured before iterating: find_sections consumes found_section_candidates as
+    # it goes.
+    total_sections = len(found_section_candidates)
+    completed_sections = 0
     section_track_id = "import_idoc:sections"
     section_label = "ImportIDoc"
-    if total_idocs:
-        report_iterate(section_track_id, 0, total_idocs, section_label, depth=0)
+    if total_sections:
+        report_iterate(section_track_id, 0, total_sections, section_label, depth=0)
 
-    for (section_meta_data, idocFileList) in found_sections:
+    for (section_meta_data, idocFileList) in find_sections(extension, found_section_candidates):
         DataFound = True
         for idocFileFullPath in idocFileList:
-            if total_idocs:
+            if total_sections:
                 report_iterate(
-                    section_track_id, completed_idocs, total_idocs, section_label, depth=0,
+                    section_track_id, completed_sections, total_sections, section_label, depth=0,
                     section=section_meta_data.number,
                     element=os.path.basename(idocFileFullPath),
                     path=idocFileFullPath,
@@ -220,14 +227,15 @@ def Import(VolumeElement: VolumeNode,
                                                     FlipList=FlipList,
                                                     CameraBpp=CameraBpp,
                                                     ContrastMap=ContrastMap)
-            completed_idocs += 1
-            if total_idocs:
-                report_iterate(
-                    section_track_id, completed_idocs, total_idocs, section_label, depth=0,
-                    section=section_meta_data.number,
-                    element=os.path.basename(idocFileFullPath),
-                    path=idocFileFullPath,
-                )
+
+        completed_sections += 1
+        if total_sections:
+            report_iterate(
+                section_track_id, completed_sections, total_sections, section_label, depth=0,
+                section=section_meta_data.number,
+                element=os.path.basename(idocFileList[-1]) if idocFileList else None,
+                path=section_meta_data.fullpath,
+            )
 
     if not DataFound:
         raise ValueError("No data found in ImportPath %s" % ImportPath)
