@@ -11,6 +11,7 @@ import errno
 import struct
 import sys
 import tempfile
+from collections.abc import Sequence
 
 from PIL import Image
 import PIL.Image
@@ -102,6 +103,36 @@ def flip_ud_for_section(section_number: int, flip_list: list[int] | None) -> boo
     """
     del section_number, flip_list
     return DEFAULT_FLIP_UD
+
+
+def _wait_for_tile_tasks(tasks: Sequence, operation: str) -> None:
+    """Wait for the tile tasks this caller submitted, in submission order.
+
+    Waiting on our own tasks rather than calling ``pool.shutdown()`` is the point. These
+    callers use pools they did not create, and ``shutdown()`` both sets ``shutdown_event``
+    and drops the pool from the registry, so it is not a private teardown. Measured against
+    ``GetGlobalThreadPool()``, which has 26 submission sites across the three packages:
+
+      * a holder that cached the reference gets ``AssertionError`` from ``add_task`` --
+        bare, with no message, and compiled out entirely under ``-O``
+      * a caller that re-fetches gets a *different*, working pool, so the breakage is
+        invisible unless you happened to cache
+
+    ``tile.py`` already commented out its own ``pool.shutdown()`` calls in favour of
+    dropping the reference; this brings the MRC importer in line.
+
+    A failing tile is logged with its number and re-raised, matching
+    ``CalculateHistogram``. This is a deliberate behaviour change: ``shutdown()`` reached
+    ``wait_completion()``, which is ``tasks.join()`` and does not re-raise, so a tile that
+    failed to export was skipped silently and left a pyramid short of the tile count
+    recorded against it.
+    """
+    for task in tasks:
+        try:
+            task.wait()
+        except Exception as e:
+            prettyoutput.LogErr(f"Failed to {operation} tile #{task.name}\n{e}")
+            raise
 
 
 class MRCImport:
@@ -274,16 +305,16 @@ class MRCImport:
     @staticmethod
     def cache_tiles(mrcfile: MRCFile, output_dir: str, img_ext: str, min_max_gamma: shared.MinMaxGamma | None):
         pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)  # type: ignore[operator]
-        for iTile in range(0, mrcfile.num_tiles):  # type: ignore[arg-type]
-            pool.add_task(str(iTile),
-                          MRCImport.ExportImage,
-                          mrcfile,
-                          output_dir,
-                          img_ext,
-                          iTile,
-                          min_max_gamma)
+        tasks = [pool.add_task(str(iTile),
+                               MRCImport.ExportImage,
+                               mrcfile,
+                               output_dir,
+                               img_ext,
+                               iTile,
+                               min_max_gamma)
+                 for iTile in range(0, mrcfile.num_tiles)]  # type: ignore[arg-type]
 
-        pool.shutdown()
+        _wait_for_tile_tasks(tasks, 'cache')
 
     @staticmethod
     def CalculateHistogram(mrc_obj: str | MRCFile, bpp: float):
@@ -357,17 +388,17 @@ class MRCImport:
         #pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)
         #pool = nornir_pools.GetGlobalSerialPool()
 
-        for iTile in range(0, mrc_obj.num_tiles):  # type: ignore[arg-type]
-            pool.add_task(str(iTile),
-                          cls.ExportImage,
-                          mrc_obj,
-                          output_dir,
-                          img_ext,
-                          iTile,
-                          min_max_gamma,
-                          flip_ud)
+        tasks = [pool.add_task(str(iTile),
+                               cls.ExportImage,
+                               mrc_obj,
+                               output_dir,
+                               img_ext,
+                               iTile,
+                               min_max_gamma,
+                               flip_ud)
+                 for iTile in range(0, mrc_obj.num_tiles)]  # type: ignore[arg-type]
 
-        pool.shutdown()
+        _wait_for_tile_tasks(tasks, 'export')
 
     @staticmethod
     def ExportImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
