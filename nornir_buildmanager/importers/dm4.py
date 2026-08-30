@@ -27,7 +27,7 @@ import nornir_shared.prettyoutput as prettyoutput
 
 DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Units'))
 
-TileExtension = 'png'  # Pillow does not support 16-bit png files, so we use the npy extension
+TileExtension = 'png'  # Pillow writes 16-bit PNG as mode I;16, which round-trips the DM4 data losslessly
 
 mosaics_loaded = {}  # A cache of mosaics we've already loaded during import
 transforms_changed = {}  # A cache of transforms that need updated checksums
@@ -229,10 +229,21 @@ class DM4FileHandler(object):
         return np_array
 
     def ReadImageAsPIL(self):
+        """Read the tile as a 16-bit greyscale image.
+
+        Only 16 bpp is supported: PIL knows the raw mode ``I;16`` but not ``I;8`` or
+        ``I;32``, which fail in frombytes with an opaque "unrecognized image mode".
+        """
+        if self.image_bpp != 16:
+            raise NornirUserException(
+                f"DM4 import only handles 16 bit images; this file reports {self.image_bpp} bpp. "
+                "PIL has no raw mode for that depth, so the tile cannot be decoded.")
+
         image_shape = self.ReadImageShape()
+        # Kept as I;16 rather than converted to I. Both write the same uint16 PNG, but
+        # saving mode I as PNG is deprecated and removed in Pillow 13 (2026-10-15).
         im = PIL.Image.frombytes(data=self.dm4file.read_tag_data(self.ImageDataTag).tobytes(),  # type: ignore[attr-defined]
-                                 mode='I;%d' % self.image_bpp, size=(image_shape[1], image_shape[0]))
-        im = im.convert(mode='I')
+                                 mode='I;16', size=(image_shape[1], image_shape[0]))
 
         return im
 
