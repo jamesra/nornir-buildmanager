@@ -4451,9 +4451,10 @@ def FetchVolumeTransforms(stos_map_node: StosMapNode, ChannelsRegEx: str | None,
 def ReportVolumeBounds(stos_map_node: StosMapNode, ChannelsRegEx: str, TransformName: str, Logger, **kwargs):
     StosMosaicTransformNodes = FetchVolumeTransforms(stos_map_node, ChannelsRegEx, TransformName)
 
-    StosMosaicTransforms = [tnode.FullPath for tnode in StosMosaicTransformNodes]
-
-    mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
+    # Load takes transform nodes, not paths: it reads FullPath itself and needs the
+    # Section and Channel parents to key each section. Passing paths raised
+    # AttributeError: 'str' object has no attribute 'FullPath'.
+    mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransformNodes)
 
     return str(mosaicToVolume.VolumeBounds)
 

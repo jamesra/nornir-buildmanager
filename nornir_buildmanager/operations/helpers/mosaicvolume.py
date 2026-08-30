@@ -20,13 +20,27 @@ class MosaicVolume(volume.Volume):
         StosMosaicTransformNodes = nornir_buildmanager.operations.block.FetchVolumeTransforms(StosMapNode,
                                                                                               ChannelsRegEx=ChannelsRegEx,
                                                                                               TransformRegEx=TransformsRegEx)
-        StosMosaicTransforms = [tnode.FullPath for tnode in StosMosaicTransformNodes]
-        return MosaicVolume.Load(StosMosaicTransforms)
+        # Load takes transform nodes, not paths: it reads FullPath itself and needs the
+        # Section and Channel parents to key each section. Passing paths raised
+        # AttributeError: 'str' object has no attribute 'FullPath'.
+        return MosaicVolume.Load(StosMosaicTransformNodes)
 
     @classmethod
     def Load(cls, TransformNodes):
 
         vol = MosaicVolume()
+
+        TransformNodes = list(TransformNodes)
+        # Two callers independently passed [tnode.FullPath for tnode in ...] here. That
+        # only failed once the loop reached transform.FullPath, as an AttributeError on
+        # str that says nothing about the contract, so name it up front instead.
+        strings = [t for t in TransformNodes if isinstance(t, str)]
+        if strings:
+            raise TypeError(
+                f"MosaicVolume.Load takes transform nodes, not paths; got {len(strings)} "
+                f"str of {len(TransformNodes)} entries, starting with {strings[0]!r}. "
+                "Load reads FullPath itself and needs each node's Section and Channel "
+                "parents to key the section, which a path cannot supply.")
 
         pool = nornir_pools.GetThreadPool("MosaicVolumeReader", num_threads=2)
         tasks = []
