@@ -491,7 +491,18 @@ class DigitalMicrograph4Import(object):
         image_shape = dm4data.ReadImageShape()
 
         grid_position = (tile_number // XDim, tile_number % XDim)  # Position as (Y,X)
-        assert (grid_position[1] < YDim), 'Grid position is off the grid'
+
+        # Each index is checked against its own extent. The X index is
+        # tile_number % XDim, so it is below XDim by construction and only the row
+        # can actually run off the grid; comparing X against YDim instead both
+        # rejected valid tiles on any montage wider than it is tall and let every
+        # genuinely off-grid tile through.
+        if grid_position[0] >= YDim or grid_position[1] >= XDim:
+            raise NornirUserException(
+                f"Tile {tile_number} sits at grid position (Y={grid_position[0]}, X={grid_position[1]}), "
+                f"which is outside the {YDim} x {XDim} montage grid this DM4 file declares.\n\n"
+                "The file set has more tiles than the montage describes, so their positions cannot "
+                "be placed. Check that the DM4 files and the montage metadata come from the same capture.")
 
         mosaicObj = None
         if transformObj.FullPath in mosaics_loaded:
