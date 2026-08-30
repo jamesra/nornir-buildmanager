@@ -69,6 +69,18 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
 
     @property
     def TilePyramid(self) -> TilePyramidNode:
+        """The tile pyramid, **created and appended if missing**.
+
+        Reading this mutates: the append marks the filter dirty, so a later save
+        writes an empty pyramid node and its directory. That is deliberate and
+        load-bearing on output filters, which are built by reading this property
+        on a filter that does not have one yet.
+
+        Callers that must not mutate check :attr:`HasTilePyramid` first, which is
+        the convention throughout the pipeline. Use
+        :meth:`GetOrCreateTilePyramid` when the creation is the point and you
+        need to know whether it happened.
+        """
         # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
         # There should be only one Imageset, so use find
         pyramid = self.find('TilePyramid') # type: TilePyramidNode | None # type: ignore
@@ -92,23 +104,43 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
 
     @property
     def Tileset(self) -> TilesetNode | None:
-        """Get the tileset for the filter, create if missing"""
+        """The tileset for the filter, or None. Unlike TilePyramid and Imageset
+        this does **not** create one, so reading it never mutates the filter."""
         # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
         # There should be only one Imageset, so use find
         tileset = self.find('Tileset')  # type: TilesetNode | None # type: ignore
         return tileset
 
-    @property
-    def Imageset(self) -> ImageSetNode:
-        """Get the imageset for the filter, create if missing"""
-        # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
-        # There should be only one Imageset, so use find
+    def GetOrCreateImageset(self) -> tuple[bool, ImageSetNode]:
+        """The imageset, creating it if missing, reporting whether it was created.
+
+        The explicit counterpart to the :attr:`Imageset` property, mirroring
+        :meth:`GetOrCreateTilePyramid`. Prefer this where the creation is
+        intended, so the mutation is visible at the call site.
+        """
         imageset = self.find('ImageSet')  # type: ImageSetNode | None # type: ignore
         if imageset is None:
             imageset = ImageSetNode.Create()
             self.append(imageset)
+            return True, imageset
 
-        return imageset
+        return False, imageset
+
+    @property
+    def Imageset(self) -> ImageSetNode:
+        """The imageset, **created and appended if missing**.
+
+        Reading this mutates, exactly as :attr:`TilePyramid` does, and for the
+        same reason: output filters are populated by reading this property on a
+        filter that does not have one yet (see the unguarded
+        ``OutputFilterNode.Imageset.SetTransform`` in ``operations/tile.py``).
+
+        Check :attr:`HasImageset` first where a query must not mutate, or use
+        :meth:`GetOrCreateImageset` where creating is the intent.
+        """
+        # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
+        # There should be only one Imageset, so use find
+        return self.GetOrCreateImageset()[1]
 
     @property
     def MaskImageset(self) -> ImageSetNode | None:
