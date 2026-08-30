@@ -920,6 +920,11 @@ class XElementWrapper(ElementTree.Element):
         # from the parent node and then the matches will no longer be present in the
         # parent.
 
+        # Collect what resolution produces rather than re-running the same scan
+        # afterwards to pick the replacements back up. Each branch substitutes an
+        # element in place and preserves whether it still matches the xpath, so
+        # this list is what that second scan would have returned.
+        loaded_matches = []
         for m in matches:
             #             NotValid = m.CleanIfInvalid()
             #             if NotValid:
@@ -931,10 +936,14 @@ class XElementWrapper(ElementTree.Element):
                     continue
                 else:
                     m = m_replaced
-            else:
+            elif not isinstance(m, XElementWrapper):
+                # Inlines _ReplaceChildIfUnwrapped's own first test. Children are
+                # already wrapped on all but the first pass, so calling it here
+                # meant a Python call per child per query only to return it again.
                 m = self._ReplaceChildIfUnwrapped(m)
 
-        loaded_matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
+            loaded_matches.append(m)
+
         for m in loaded_matches:
             if len(RemainingXPath) > 0:
                 subContainerMatches = list(m.findall(RemainingXPath))
