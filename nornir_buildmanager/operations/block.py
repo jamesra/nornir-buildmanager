@@ -2478,8 +2478,23 @@ def _run_refine_or_manual_copy(
     try:
         RefineFunc(context.input_stos_path, context.output_stos_path, **refine_kwargs)
     except Exception as e:
-        prettyoutput.Log(f"Exception calling stos refine function {RefineFunc}:\n{e}\n\n")
-        raise
+        # Refine runs one slice at a time, so re-raising aborted the whole stage on
+        # the first bad slice and no sibling slice ever ran. The two checks below
+        # already treat a slice that refine failed to produce as one to drop and
+        # move past, so a raised exception is handled the same way.
+        Logger = logging.getLogger(__name__ + '.StosGrid')
+        Logger.error("Exception calling stos refine function %s for %s: %s",
+                     RefineFunc, context.input_stos_path, e, exc_info=True)
+        prettyoutput.LogErr(
+            f"Refine failed for {os.path.basename(context.input_stos_path)}, skipping this slice:\n{e}\n")
+        # Anything refine managed to write before raising is partial; do not keep it.
+        if os.path.exists(context.output_stos_path):
+            try:
+                os.remove(context.output_stos_path)
+            except OSError:
+                pass
+        context.output_section_mapping_node.remove(stos_node)
+        return None, False
 
     if not os.path.exists(context.output_stos_path):
         Logger = logging.getLogger(__name__ + '.StosGrid')
@@ -2617,11 +2632,15 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             context=context,
         ))
 
+    dropped_slices: list[str] = []
+
     for job, result in stosgroup_workers.run_bounded_stos_jobs(
             None, pool_jobs, max_in_flight=1):
         context = job.context
         stos_node, refined_by_func = result
         if stos_node is None:
+            # Refine failed, produced nothing, or produced an unloadable transform.
+            dropped_slices.append(os.path.basename(context.output_stos_path))
             yield context.output_section_mapping_node
             continue
 
@@ -2639,6 +2658,17 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
                     refine_progress, context, current=completed_refine_jobs)
 
         yield context.output_section_mapping_node
+
+    if dropped_slices:
+        # Individually skipping a slice keeps the stage running, but a run that
+        # dropped everything means refine is broken rather than the data.
+        summary = ", ".join(sorted(dropped_slices))
+        Logger.error("Refine produced no usable transform for %d of %d slices in %s: %s",
+                     len(dropped_slices), len(pool_jobs), OutputStosGroupName, summary)
+        prettyoutput.LogErr(
+            f"{len(dropped_slices)} of {len(pool_jobs)} slices produced no refined transform "
+            f"in {OutputStosGroupName}. Those pairs were left out of the group; "
+            f"review the log before relying on this stos group.")
 
 
 def __StosMapToRegistrationTree(stos_map_node: StosMapNode):
