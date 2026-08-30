@@ -5,6 +5,7 @@ Created on Apr 9, 2019
 """
 from __future__ import annotations
 
+import collections
 import enum
 import errno
 import struct
@@ -299,27 +300,49 @@ class MRCImport:
         if bpp >= 11:
             num_bins = 2048
 
-        tasks = []
-        for iTile, tile_header in enumerate(mrc_obj.tile_meta):
-            img = mrc_obj.get_tile_as_numpy_memmap(iTile)
-            t = pool.add_task(str(iTile),
-                              nornir_imageregistration.image_stats.HistogramOfArray,
-                              img,
-                              bpp=bpp,
-                              num_bins=num_bins)
-            t.iTile = iTile  # type: ignore[attr-defined]
-            tasks.append(t)
-
-        for t in tasks:
+        def consume(task):
+            """Fold one finished tile into the composite and release its buffer."""
+            nonlocal composite_histogram
             try:
-                image_histogram = t.wait_return()
-                if composite_histogram is None:
-                    composite_histogram = image_histogram
-                else:
-                    composite_histogram.AddHistogram(image_histogram)
+                image_histogram = task.wait_return()
             except Exception as e:
-                prettyoutput.LogErr(f"Failed to build histogram for tile #{t.iTile}\n{e}")
+                prettyoutput.LogErr(f"Failed to build histogram for tile #{task.iTile}\n{e}")
                 raise
+
+            if composite_histogram is None:
+                composite_histogram = image_histogram
+            else:
+                composite_histogram.AddHistogram(image_histogram)
+
+        def histogram_of_tile(iTile: int):
+            """Open the tile inside the worker so no queued task holds a buffer.
+
+            Passing the memmap as a task argument keeps it reachable for as long as
+            the pool keeps the task, which outlives the call. Opening it here ties
+            the buffer's lifetime to the worker, exactly as ExportImage does.
+            """
+            img = mrc_obj.get_tile_as_numpy_memmap(iTile)  # type: ignore[union-attr]
+            return nornir_imageregistration.image_stats.HistogramOfArray(
+                img, bpp=bpp, num_bins=num_bins)
+
+        # Bounded sliding window, drained in submission order so the composite is
+        # deterministic. Queueing every tile first meant one live tile buffer per
+        # tile in the file, so peak memory scaled with tile count rather than cores.
+        # Sized to the pool rather than the machine: queueing deeper than the pool
+        # can run buys nothing.
+        max_in_flight = max(1, getattr(pool, 'max_workers', None) or (os.cpu_count() or 1))
+        pending = collections.deque()
+
+        for iTile, tile_header in enumerate(mrc_obj.tile_meta):
+            t = pool.add_task(str(iTile), histogram_of_tile, iTile)
+            t.iTile = iTile  # type: ignore[attr-defined]
+            pending.append(t)
+
+            if len(pending) >= max_in_flight:
+                consume(pending.popleft())
+
+        while pending:
+            consume(pending.popleft())
 
         return composite_histogram
 
