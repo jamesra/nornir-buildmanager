@@ -2919,6 +2919,39 @@ def _message_reports_nonfinite(text: str) -> bool:
     return _NONFINITE_TOKEN_RE.search(text) is not None
 
 
+def _gather_volume_space_tiles(mosaic_transform, tasks, *, mosaic_path: str, Logger) -> None:
+    """Replace each tile's transform with its composed volume-space result.
+
+    A tile that fails to compose is removed rather than left in place. Its existing
+    entry is the mosaic-to-section transform, so keeping it would mix section-space
+    and volume-space tiles in a single mosaic that the caller then saves with a fresh
+    checksum -- mis-registered output that no later run would rebuild.
+
+    :raises NornirUserException: if any tile failed, so the caller writes nothing.
+    """
+    failed_tiles: list[str] = []
+
+    for task in tasks:
+        try:
+            mosaic_transform.ImageToTransform[task.imagename] = task.wait_return()
+        except Exception as e:
+            Logger.error("Failed to compose tile %s into volume space: %s" % (task.imagename, e),
+                         exc_info=True)
+            failed_tiles.append(task.imagename)
+            mosaic_transform.ImageToTransform.pop(task.imagename, None)
+
+    if len(failed_tiles) == 0:
+        return
+
+    listed = "\n".join(f"  - {name}" for name in sorted(failed_tiles))
+    raise NornirUserException(
+        f"{len(failed_tiles)} of {len(tasks)} tiles could not be composed into volume space for:\n"
+        f"  {mosaic_path}\n\n"
+        "Saving the mosaic now would mis-register those tiles and mark the result valid, so it has "
+        "not been written. Correct the slice-to-volume registration and re-run this pipeline stage.\n\n"
+        f"Tiles involved:\n{listed}")
+
+
 def _reraise_stos_nonfinite(err: Exception, *, introduced_in: str, files: list[str]) -> None:
     """Re-raise a compose/save failure as a Pyre-facing user error when it is NaN/Inf."""
     if _message_reports_nonfinite(str(err)):
@@ -4175,13 +4208,9 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
 
                 Tasks.append(task)
 
-            for task in Tasks:
-                try:
-                    MosaicToVolume = task.wait_return()
-                    MosaicTransform.ImageToTransform[task.imagename] = MosaicToVolume
-                except:
-                    Logger.warning("Exception transforming tile. Skipping %s" % task.imagename)
-                    pass
+            _gather_volume_space_tiles(MosaicTransform, Tasks,
+                                       mosaic_path=transform_node.FullPath,
+                                       Logger=Logger)
         else:
             for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
                 MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)  # type: ignore[attr-defined]
