@@ -426,6 +426,38 @@ def CorrectTiles(Parameters, CorrectionType: str, filter_node: FilterNode, Outpu
     return filter_node
 
 
+def _tile_task_max_in_flight(pool) -> int:
+    """Queue depth for per-tile work on *pool*, sized to the pool rather than the machine.
+
+    Queueing deeper than the pool can run buys nothing, so this follows the same shape as
+    the MRC histogram and tile-composition windows.
+    """
+    return max(1, getattr(pool, 'max_workers', None) or (os.cpu_count() or 1))
+
+
+def _submit_bounded(submit, items, *, max_in_flight: int):
+    """Submit one task per item, yielding each task once the window is full.
+
+    Globbing a level and queueing every tile up front makes both queue depth and the
+    retained task list scale with tile count, which on a NAS-sized level is tens of
+    thousands of entries before anything is collected. Sliding a bounded window caps
+    both at *max_in_flight* at no cost to throughput while the pool stays fed.
+
+    Tasks are yielded in submission order, so callers drain FIFO. Submission is driven by
+    consumption: the caller must exhaust the generator, or trailing tiles go unsubmitted.
+    """
+    max_in_flight = max(1, max_in_flight)
+    in_flight: collections.deque = collections.deque()
+
+    for item in items:
+        in_flight.append(submit(item))
+        if len(in_flight) >= max_in_flight:
+            yield in_flight.popleft()
+
+    while in_flight:
+        yield in_flight.popleft()
+
+
 def _CorrectTilesDeprecated(Parameters, filter_node=None, image_node=None, OutputFilterName=None, InvertSource=False,
                             ComposeOperator=None, **kwargs):
     """Create a corrected version of a filter by applying the operation/image to all tiles"""
@@ -479,22 +511,34 @@ def _CorrectTilesDeprecated(Parameters, filter_node=None, image_node=None, Outpu
 
     pool = nornir_pools.GetGlobalProcessPool()
 
-    for InputTileFullPath in InputTiles:
-        inputTile = os.path.basename(InputTileFullPath)
-        OutputTileFullPath = os.path.join(OutputLevelNode.FullPath, inputTile)
+    def tiles_needing_correction():
+        """Yield tiles whose output is missing, so the window only counts real work."""
+        for InputTileFullPath in InputTiles:
+            inputTile = os.path.basename(InputTileFullPath)
+            OutputTileFullPath = os.path.join(OutputLevelNode.FullPath, inputTile)
 
-        RemoveOutdatedFile(InputTileFullPath, OutputTileFullPath)
+            RemoveOutdatedFile(InputTileFullPath, OutputTileFullPath)
 
-        if os.path.exists(OutputTileFullPath):
-            continue
+            if os.path.exists(OutputTileFullPath):
+                continue
 
+            yield inputTile, OutputTileFullPath, InputTileFullPath
+
+    def submit_correction(tile):
+        inputTile, OutputTileFullPath, InputTileFullPath = tile
         Cmd = CmdTemplate % {'OperatorImage': ZeroedImageNode.FullPath,
                              'InputFile': InputTileFullPath,
                              'InvertOperator': InvertOperator,
                              'ComposeOperator': ComposeOperator,
                              'OutputFile': OutputTileFullPath}
         prettyoutput.Log(Cmd)
-        pool.add_process(inputTile, Cmd + " && exit", shell=True)
+        return pool.add_process(inputTile, Cmd + " && exit", shell=True)
+
+    # Same unbounded-queue shape as InvertFilter, but each task is a `convert` subprocess.
+    # (#149)
+    for t in _submit_bounded(submit_correction, tiles_needing_correction(),
+                             max_in_flight=_tile_task_max_in_flight(pool)):
+        t.wait()
 
     pool.wait_completion()
 
@@ -900,24 +944,22 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
 
     pool = nornir_pools.GetGlobalThreadPool()
 
-    tasks = []
-    tilesConverted = False
-    for InputTileFullPath in InputTiles:
+    def submit_invert(InputTileFullPath: str):
         Basename = os.path.basename(InputTileFullPath)
         OutputTileFullPath = os.path.join(OutputLevelFullPath, Basename)
-        t = pool.add_task("Invert {0}".format(InputTileFullPath), nornir_shared.images.InvertImage, InputTileFullPath,
-                          OutputTileFullPath)
-        tasks.append(t)
-        tilesConverted = True
+        return pool.add_task("Invert {0}".format(InputTileFullPath),
+                             nornir_shared.images.InvertImage, InputTileFullPath,
+                             OutputTileFullPath)
 
-    while len(tasks) > 0:
-        t = tasks.pop(0)
+    # A level's worth of tiles used to be queued before the first wait, holding one task
+    # per tile as well as that much pool queue depth. The window bounds both. (#149)
+    tilesConverted = len(InputTiles) > 0
+    for t in _submit_bounded(submit_invert, InputTiles,
+                             max_in_flight=_tile_task_max_in_flight(pool)):
         try:
             t.wait()
-            tilesConverted = True
         except OSError as e:
             prettyoutput.LogErr("Unable to invert {0}\n{1}".format(t.name, e))
-            pass
 
     if tilesConverted:
         for InputTileFullPath in InputTiles:
