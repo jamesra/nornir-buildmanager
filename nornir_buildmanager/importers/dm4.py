@@ -6,6 +6,7 @@ Created on Aug 7, 2015
 
 import collections
 import errno
+import unicodedata
 
 import PIL
 import PIL.Image
@@ -130,6 +131,55 @@ def _raise_if_unsupported_section_options(section_number, FlipList, ContrastMap,
         "unlevelled output that looked correct. Remove the section from FlipList.txt "
         "or the contrast override file to import it as-is, or import it through the "
         "idoc pipeline, which implements both.")
+
+
+_NM_PER_UNIT = {
+    'm': 1e9,
+    'mm': 1e6,
+    # NFKC folds MICRO SIGN (U+00B5) onto GREEK SMALL LETTER MU (U+03BC), so this one key
+    # covers both spellings of micrometre.
+    '\u03bcm': 1e3,
+    'um': 1e3,
+    'nm': 1.0,
+    'pm': 1e-3,
+    '\u00c5': 0.1,
+    'angstrom': 0.1,
+}
+
+
+def _nm_per_pixel(scale) -> float:
+    """Convert a DM4 ``DimensionScale`` to nanometres per pixel.
+
+    ``ChannelObj.SetScale`` takes nanometres. The previous conversion multiplied by 1000 for
+    ``'µm'`` or ``'um'`` and by 1 for everything else, so ``'nm'`` was right only because the
+    fallback happened to match it, and every other unit was wrong by orders of magnitude:
+    ``'m'`` by 1e-9, ``'mm'`` by 1e-6, ``'pm'`` by 1000, Angstrom by 10.
+
+    The subtlety that made this hard to see is that micro has two codepoints. The literal in
+    the old comparison was MICRO SIGN (U+00B5); a file writing GREEK SMALL LETTER MU (U+03BC)
+    produced a visually identical string that fell through to the fallback and came out 1000x
+    too small. NFKC normalisation folds the two together. See review #155.
+
+    Raises NornirUserException on an unrecognised unit rather than assuming nanometres. A
+    scale that is silently wrong by a factor of a million propagates into registration and
+    volume geometry, where it is far more expensive to notice than a failed import.
+    """
+    units = unicodedata.normalize('NFKC', str(scale.Units).strip())
+    factor = _NM_PER_UNIT.get(units)
+    if factor is None:
+        factor = _NM_PER_UNIT.get(units.lower())
+
+    if factor is None:
+        supported = ', '.join(sorted(_NM_PER_UNIT))
+        raise NornirUserException(
+            f"DM4 scale is expressed in {scale.Units!r}, which this importer cannot convert "
+            f"to nanometres.\n\n"
+            f"Recognised units: {supported}\n\n"
+            f"Previously an unrecognised unit was treated as nanometres, which silently "
+            f"wrote a scale wrong by orders of magnitude, so this now stops the import "
+            f"instead. Add the unit to _NM_PER_UNIT in the DM4 importer if it is valid.")
+
+    return float(scale.UnitsPerPixel) * factor
 
 
 def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
@@ -422,13 +472,16 @@ class DigitalMicrograph4Import(object):
             # Temporary fix for legacy DM4 imports without the scale embedded in the Nornir meta-data
             if ChannelObj.Scale is None:
                 (XDim, YDim) = dm4data.ReadXYUnitsPerPixel()
-                scalar = 1
-                if XDim.Units == 'µm':
-                    scalar = 1000.0
-                elif XDim.Units == 'um':
-                    scalar = 1000.0
+                x_nm = _nm_per_pixel(XDim)
+                y_nm = _nm_per_pixel(YDim)
 
-                ChannelObj.SetScale(XDim.UnitsPerPixel * scalar)
+                if x_nm == y_nm:
+                    ChannelObj.SetScale(x_nm)
+                else:
+                    # YDim was previously read and discarded, so an anisotropic pixel was
+                    # recorded as square using the X scale. Scale carries both axes.
+                    ChannelObj.SetScale(Scale(x_nm, y_nm))
+
                 yield SectionObj
 
             FilterName = 'Raw' + str(InputImageBpp)
