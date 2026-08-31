@@ -34,7 +34,6 @@ from __future__ import annotations
 
 import collections
 import concurrent.futures
-import datetime
 import errno
 import sys
 import shutil
@@ -289,7 +288,6 @@ class SerialEMIDocImport:
         # Report the current stage to the user
         prettyoutput.CurseString('Stage', "SerialEM to Mosaic " + str(idocFileFullPath))
 
-        SectionNumber = 0
         section_source_dir = os.path.dirname(idocFileFullPath)  # serialem_utils.GetDirectories(idocFileFullPath)
 
         BlockObj = BlockNode.Create('TEM')
@@ -297,24 +295,13 @@ class SerialEMIDocImport:
         if saveBlock:
             yield VolumeObj
 
-        # If the parent directory doesn't have the section number in the name, change it
+        # A directory whose name carries no section number raises here, from GetSectionInfo,
+        # naming the expected format. The `if ExistingSectionInfo.number < 0: i = 5` branch
+        # this replaces could never run: the number is captured by (?P<Number>\d+), digits and
+        # no sign, so it is never negative -- confirmed over 3000 generated names. Section 0
+        # is reachable, but only for a directory legitimately named for section 0. See #156.
         ExistingSectionInfo = shared.GetSectionInfo(section_source_dir)
-        if ExistingSectionInfo.number < 0:
-            i = 5
-        #            SectionNumber = SectionNumber + 1
-        #            newPathName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % SectionNumber + '_' + sectionDir
-        #            newPath = os.path.join(ParentDir, newPathName)
-        #            prettyoutput.Log('Moving: ' + InputPath + ' -> ' + newPath)
-        #            shutil.move(InputPath, newPath)
-        #
-        #            InputPath = newPath
-        #
-        #            #Run glob again because the dir changes
-        #            idocFiles = glob.glob(os.path.join(InputPath,'*.idoc'))
-        else:
-            SectionNumber = ExistingSectionInfo.number
-
-        # prettyoutput.CurseString('Section', str(SectionNumber))
+        SectionNumber = ExistingSectionInfo.number
 
         # Check for underscores.  If there is an underscore and the first part is the sectionNumber, then use everything after as the section name
         SectionName = ExistingSectionInfo.name if ExistingSectionInfo.name is not None else (
@@ -511,20 +498,14 @@ class SerialEMIDocImport:
                 tile_reporter.update(i, element=os.path.basename(f), path=f)
             tile_reporter.complete()
 
+        # A one-time migration used to live here: for volumes whose path contained the
+        # substring 'RC3', a stage.mosaic created before 2022-07-18 was deleted to force a
+        # reimport. It has been removed (review #156). Four years on, any affected mosaic has
+        # long since been regenerated, and the test was a plain substring so it also matched
+        # RC30, RC31, ARC3D and RC3-backup -- deleting the mosaic of unrelated volumes. If an
+        # old volume ever does need this, deleting its stage.mosaic by hand has the same
+        # effect, because the branch below rewrites a missing file.
         UpdateMosaicFile = False
-        try:
-            # Check if we need to reimport the stage.mosaic file
-            cutoff_time = datetime.datetime(year=2022, month=7,
-                                            day=18, tzinfo=datetime.UTC)  # The deployment date of the updated nornir version
-            mosaic_fd = os.stat(SupertilePath)
-            file_creation_time = datetime.datetime.fromtimestamp(mosaic_fd.st_ctime, datetime.UTC)
-
-            if cutoff_time > file_creation_time and 'RC3' in VolumeObj.FullPath:
-                os.remove(SupertilePath)
-                UpdateMosaicFile = True
-
-        except FileNotFoundError:
-            pass
 
         if os.path.exists(SupertilePath):
             MFile = mosaicfile.MosaicFile.Load(SupertilePath)
