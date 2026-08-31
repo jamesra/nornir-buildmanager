@@ -362,6 +362,20 @@ class DigitalMicrograph4Import(object):
 
     @classmethod
     def GetMetaFromFilename(cls, fileName):
+        """Read the section and tile numbers out of a DM4 filename.
+
+        Expects ``<name>_<tile>_<anything>_<section>``, e.g.
+        Glumi1_3VBSED_stack_00_slice_0476 -> section 476, tile 0.
+
+        Raises NornirUserException when either number is unreadable. Both used to fall back
+        to None behind a bare ``except:``, whose own comment said an exception was probably
+        what was wanted. Neither caller could use None: a None section reaches
+        ``'%04d' % None`` inside GetOrCreateSection and a None tile reaches
+        GetFileNameForTileNumber and ``tile_number // XDim``, so all three raised TypeError
+        further along, naming neither the file nor the expected layout. Import walks every
+        *.dm4 under the import path, so that took down the whole import for one stray
+        filename -- ``..._slice_0476 (copy).dm4`` is enough to do it (#154).
+        """
         fileName = os.path.basename(fileName)
 
         # Make sure extension is present in the filename
@@ -370,16 +384,36 @@ class DigitalMicrograph4Import(object):
         section_number = None
         tile_number = None
         parts = fileName.split("_")
+
+        # Narrow, so a KeyboardInterrupt or SystemExit arriving mid-parse is not mistaken
+        # for an unparseable name: int() raises ValueError and a short name IndexError.
         try:
             section_number = int(parts[-1])
-        except:
-            # We really can't recover from this, so maybe an exception should be thrown instead
+        except (ValueError, IndexError):
             section_number = None
 
         try:
             tile_number = int(parts[-3])
-        except:
+        except (ValueError, IndexError):
             tile_number = None
+
+        unreadable = []
+        if section_number is None:
+            unreadable.append(f"section number from the last '_' part ({parts[-1]!r})")
+        if tile_number is None:
+            found = repr(parts[-3]) if len(parts) >= 3 else f'only {len(parts)} part(s)'
+            unreadable.append(f"tile number from the third-from-last '_' part ({found})")
+
+        if unreadable:
+            raise NornirUserException(
+                f"Cannot read the {' or the '.join(unreadable)} of DM4 file "
+                f"'{fileName}{ext}'.\n\n"
+                f"DM4 filenames are expected to look like "
+                f"<name>_<tile>_<anything>_<section>, for example "
+                f"'Glumi1_3VBSED_stack_00_slice_0476.dm4' which is section 476, tile 0.\n\n"
+                f"Rename the file to match, or move it out of the import path. Previously "
+                f"this returned None and failed later with a TypeError that named neither "
+                f"the file nor the expected layout.")
 
         return section_number, tile_number
 
