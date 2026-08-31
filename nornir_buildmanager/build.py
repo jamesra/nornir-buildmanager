@@ -424,8 +424,14 @@ def InitLogging(buildArgs):
 def init_computational_library(args: argparse.Namespace):
     """Select CPU/GPU computation backend and export process environment.
 
-    Sets ``NORNIR_COMPUTATIONAL_LIBRARY`` and updates
-    ``nornir_imageregistration``'s active backend.
+    Records the backend the build asked for in
+    ``NORNIR_COMPUTATIONAL_LIBRARY_REQUESTED`` and updates
+    ``nornir_imageregistration``'s active backend, which sets
+    ``NORNIR_COMPUTATIONAL_LIBRARY`` to the backend actually in effect.
+
+    The two can diverge: requesting ``cupy`` on a host whose CuPy runtime probe
+    fails leaves requested=cupy / effective=numpy. Keeping both lets a build log
+    show that a GPU run silently fell back to the CPU.
     """
     if args.computational_library == 'detect':
         if nornir_imageregistration.HasCupy():
@@ -435,6 +441,7 @@ def init_computational_library(args: argparse.Namespace):
     else:
         args.computational_library = args.computational_library.lower()
 
+    os.environ['NORNIR_COMPUTATIONAL_LIBRARY_REQUESTED'] = args.computational_library
     os.environ['NORNIR_COMPUTATIONAL_LIBRARY'] = args.computational_library
     nornir_imageregistration.SetActiveComputationLib(
         nornir_imageregistration.ComputationLib.cupy if args.computational_library == 'cupy' else nornir_imageregistration.ComputationLib.numpy)
