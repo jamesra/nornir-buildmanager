@@ -1083,8 +1083,13 @@ class IDoc:
                     if len(parts) > 1:
                         values = parts[1].split()
 
-                        vTemp = values[0].strip()
-                        if vTemp[0].isdigit() or vTemp[0] == '-':
+                        # `values` is empty when the key has no value ("Magnification =" or
+                        # whitespace only). Indexing it raised IndexError out of IDoc.Load,
+                        # so one such line aborted the whole section import (#152). Skipping
+                        # leaves the attribute unset, which is already how a non-numeric
+                        # value is treated below.
+                        vTemp = values[0] if values else ''
+                        if vTemp and (vTemp[0].isdigit() or vTemp[0] == '-'):
 
                             # Find out how many attributes we have.
                             # Try to convert to ints, then to float
