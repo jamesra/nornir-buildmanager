@@ -963,18 +963,33 @@ class IDoc:
         self.tiles = [r[0] for r in filter(lambda t: t[1], results)]
 
     def GetImageBpp(self) -> int | None:
-        """:return: Bits per pixel if specified in the IDoc, otherwise None"""
+        """Bits per pixel according to the IDoc's DataMode line.
 
-        if hasattr(self, 'DataMode'):
-            if self.DataMode == 0:
-                return 8
-            elif self.DataMode == 1:
-                return 16
-            elif self.DataMode == 6:
-                return 16
-        else:
-            if self.Max is not None:
-                return math.ceil(math.log2(self.Max))
+        Returns None when the idoc does not declare a depth this maps. Callers are
+        expected to fall back to reading the depth out of the first image file, which
+        both SerialEMIDocImport.GetImageBpp and CalculateHistogram already do.
+
+        A dead ``else`` arm here used to guess the depth as ceil(log2(Max)). It was
+        unreachable, because __init__ assigns DataMode and so the ``hasattr`` guard it
+        sat behind was always true. It was removed rather than revived (#150, #151):
+        Max is the brightest *intensity*, not the storage depth, so the guess is only
+        right for a section that saturates. Measured on the RC2_4Square corpus it
+        agreed at 16 bpp solely because every section there hits 65535; a 16-bit
+        capture peaking at 4000 would have been reported as 12 bpp, and reviving the
+        arm would have let that guess pre-empt the authoritative file read.
+        """
+
+        # getattr rather than self.DataMode: instances also arrive via PickleLoad from a
+        # cache written by an older version, which may predate the attribute. The old
+        # hasattr guard tolerated that; a bare attribute access would newly raise.
+        data_mode = getattr(self, 'DataMode', None)
+
+        if data_mode == 0:
+            return 8
+        elif data_mode == 1:
+            return 16
+        elif data_mode == 6:
+            return 16
 
         return None
 
