@@ -201,6 +201,29 @@ def TryAddHistogram(containerObj: XElementWrapper,
     return added or data_added or image_added or autolevel_hint.AttributesChanged or histogram_node.ChildrenChanged
 
 
+def _notes_content_differs(source: str, dest: str) -> bool:
+    """Return True when *dest* is missing or its bytes differ from *source*.
+
+    The mtime comparison in ``RemoveOutdatedFile`` treats equal timestamps as "not
+    outdated", so a notes file rewritten within the filesystem's timestamp granularity is
+    not recopied -- while the ``<Notes>`` element *is* rebuilt, because it is read from the
+    source. The copy on disk and the metadata then disagree, silently.
+
+    Notes files are a few KB, so comparing content costs nothing next to the copy it guards
+    and does not depend on clock resolution. Not a substitute for the mtime check in general:
+    that check exists for the image pyramids, where reading both sides to compare them would
+    be far more expensive than the copy. See review #245.
+    """
+    try:
+        with open(dest, 'rb') as dest_handle:
+            dest_bytes = dest_handle.read()
+    except OSError:
+        return True
+
+    with open(source, 'rb') as source_handle:
+        return source_handle.read() != dest_bytes
+
+
 def _is_same_notes_path(source: str, dest: str) -> bool:
     """Return True when source and dest refer to the same filesystem path."""
     source_abs = os.path.normpath(os.path.abspath(source))
@@ -219,8 +242,8 @@ def TryAddNotes(containerObj,
                 new_section_info: FilenameMetadata | None = None) -> bool:
     """Copy notes ``*.txt`` files from InputPath and add or update ``<Notes>`` metadata.
 
-    Recopies a notes file when the destination is missing or older than the source.
-    Returns True when a file was copied or Notes text/encoding changed.
+    Recopies a notes file when the destination is missing, older than the source, or differs
+    from it in content. Returns True when a file was copied or Notes text/encoding changed.
     ``new_section_info`` is accepted for importer call-site compatibility.
     """
 
@@ -236,7 +259,10 @@ def TryAddNotes(containerObj,
             os.makedirs(containerObj.FullPath, exist_ok=True)
             copied = False
             if not _is_same_notes_path(filename, CopiedNotesFullPath):
-                if files.RemoveOutdatedFile(filename, CopiedNotesFullPath):
+                # Content, not just mtime: equal timestamps read as "not outdated", which
+                # left a stale copy on disk beside freshly rebuilt <Notes> metadata.
+                outdated = files.RemoveOutdatedFile(filename, CopiedNotesFullPath)
+                if outdated or _notes_content_differs(filename, CopiedNotesFullPath):
                     shutil.copyfile(filename, CopiedNotesFullPath)
                     copied = True
 
