@@ -3,6 +3,7 @@ Created on May 22, 2012
 
 @author: Jamesan
 """
+import collections
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, ALL_COMPLETED, FIRST_EXCEPTION, as_completed
 import glob
@@ -1665,6 +1666,11 @@ _TILE_ENCODE_WORKERS_ENV = "NORNIR_TILE_ENCODE_WORKERS"
 _TILE_COPY_WORKERS_ENV = "NORNIR_TILE_COPY_WORKERS"
 _TILE_COPY_WORKERS_DEFAULT = 3
 _TILE_TWO_STAGE_SAVE_ENV = "NORNIR_TILE_TWO_STAGE_SAVE"
+_TILESET_MAX_IN_FLIGHT_ENV = "NORNIR_TILESET_MAX_IN_FLIGHT"
+# Each in-flight task is a `magick montage | magick convert` pipeline, so this bounds
+# concurrent subprocesses rather than cheap work items. Four per processor keeps the pool
+# fed while a task blocks on network I/O without letting a wide section queue thousands.
+_TILESET_MAX_IN_FLIGHT_DEFAULT = (os.cpu_count() or 1) * 4
 
 
 def _positive_int_from_env(
@@ -1710,6 +1716,18 @@ def _tile_io_worker_count() -> int:
         _TILE_IO_WORKERS_ENV,
         _TILE_IO_WORKERS_DEFAULT,
         label="tile I/O workers",
+    )
+
+
+def _tileset_max_in_flight_tasks() -> int:
+    """Cap on queued-but-unawaited ImageMagick tileset tasks.
+
+    Override with ``NORNIR_TILESET_MAX_IN_FLIGHT``; defaults to four per logical processor.
+    """
+    return _positive_int_from_env(
+        _TILESET_MAX_IN_FLIGHT_ENV,
+        _TILESET_MAX_IN_FLIGHT_DEFAULT,
+        label="tileset in-flight tasks",
     )
 
 
@@ -2864,7 +2882,8 @@ def _SortedNumberListFromLevelsParameter(Levels=None):
 
 
 def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[int, int], TileDim: tuple[int, int],
-                      FilePrefix: str, FilePostfix: str, pool=None, **kwargs):
+                      FilePrefix: str, FilePostfix: str, pool=None,
+                      max_in_flight: int | None = None, **kwargs):
     """
     :param SourcePath:
     :param DestPath:
@@ -2873,6 +2892,8 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
     :param FilePrefix:
     :param FilePostfix:
     :param pool:
+    :param max_in_flight: Cap on queued-but-unawaited tasks; defaults to
+        ``_tileset_max_in_flight_tasks()``.
     """
 
     os.makedirs(DestPath, exist_ok=True)
@@ -2886,11 +2907,20 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
     if total_rows:
         report_iterate(assemble_track_id, 0, total_rows, assemble_label, depth=1)
 
+    # Bound queued-but-unawaited tasks. The gate used to run once per row and then wait on
+    # only that row's *first* task, which a row enqueues before anything is awaited, so a
+    # wide section could queue one `magick montage` subprocess per column before the first
+    # wait -- and that wait was near-free because the first task was usually already done.
+    # It was also hasattr-gated on `tasks`/`ActiveTasks`, so it did nothing at all for a
+    # LocalMachinePool, which exposes neither. Waiting on the oldest outstanding task
+    # whenever the window is full keeps the pool fed while capping concurrent subprocesses
+    # regardless of grid width or pool type. (#148)
+    if max_in_flight is None:
+        max_in_flight = _tileset_max_in_flight_tasks()
+    in_flight: collections.deque = collections.deque()
+
     # Merge all the tiles we can find into tiles of the same size
     for iY in range(0, DestGridDimensions[0]):
-        # We wait for the last task we queued for each row so we do not swamp the ProcessPool but are not waiting for the entire pool to empty
-        FirstTaskForRow = None
-
         for iX in range(0, DestGridDimensions[1]):
 
             X1 = iX * 2
@@ -2987,27 +3017,14 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
             # montageBugFixCmd_template = 
             # task = Pool.add_process(cmd, cmd + " && " + montageBugFixCmd + " && exit", shell=True)
             t = pool.add_process(cmd, cmd + " && exit", shell=True)
+            in_flight.append(t)
 
-            if FirstTaskForRow is None:
-                FirstTaskForRow = t
+            while len(in_flight) >= max_in_flight:
+                in_flight.popleft().wait()
 
         # TaskString = "Building tiles for downsample %g" % NextLevelNode.Downsample
         if total_rows:
             report_iterate(assemble_track_id, iY + 1, total_rows, assemble_label, depth=1)
-
-        # We can easily saturate the pool with hundreds of thousands of tasks.
-        # If the pool has a reasonable number of tasks then we should wait for
-        # a task from a row to complete before queueing more.
-        if hasattr(pool, 'tasks'):
-            if pool.tasks.qsize() > 256:  # type: ignore[union-attr]
-                if FirstTaskForRow is not None:
-                    FirstTaskForRow.wait()
-                    FirstTaskForRow = None
-        elif hasattr(pool, 'ActiveTasks'):
-            if pool.ActiveTasks > 512:  # type: ignore[union-attr]
-                if FirstTaskForRow is not None:
-                    FirstTaskForRow.wait()
-                    FirstTaskForRow = None
 
         prettyoutput.Log("\nBeginning Row %d of %d" % (iY + 1, DestGridDimensions[0]))
 
