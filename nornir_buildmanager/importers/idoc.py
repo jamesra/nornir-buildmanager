@@ -734,17 +734,23 @@ class NornirTileset:
         :param OutputTileDir:
         :param OutputImageExt:
         """
-        # SerialEM begins numbering file names from zero.  So we will too. 
-        ImageNumber = -1
-
+        # SerialEM begins numbering file names from zero.  So we will too.
+        #
+        # The number comes from the tile's position in the idoc, not its position among the
+        # tiles passed here. Those differ once RemoveMissingTiles has dropped an absent
+        # image: numbering the survivors from zero shifted every later tile down, so a
+        # target no longer named the source it came from, and the names changed meaning
+        # again if the missing image later reappeared (#153). Falls back to sequential for
+        # an IDoc restored from a pickle cache predating TileIndex.
         obj = NornirTileset(OutputImageExt)
 
-        for tile in tiles:
+        for fallback_number, tile in enumerate(tiles):
             [ImageRoot, ImageExt] = os.path.splitext(tile.Image)
 
             ImageExt = ImageExt.strip('.')
             ImageExt = ImageExt.lower()
-            ImageNumber += 1
+
+            ImageNumber = tile.TileIndex if tile.TileIndex is not None else fallback_number
 
             SourceImageFullPath = os.path.join(InputTileDir, tile.Image)
             # Existence is checked earlier in the importer now
@@ -859,6 +865,20 @@ class IDocTileData:
         return self.Image
 
     @property
+    def TileIndex(self) -> int | None:
+        """This tile's position in the idoc, as parsed, or None if it was not recorded.
+
+        Assigned when the tile is appended in IDoc.Load, so it survives
+        RemoveMissingTiles filtering the list. Target filenames are derived from it rather
+        than from a tile's position among the survivors, which shifted every subsequent
+        tile's identity whenever one image was absent from disk (#153).
+
+        None for an IDoc restored from a pickle cache written before this existed;
+        CreateTilesFromIDocTileData falls back to sequential numbering in that case.
+        """
+        return getattr(self, '_TileIndex', None)
+
+    @property
     def Defocus(self) -> float | None:
         return self._Defocus
 
@@ -960,7 +980,22 @@ class IDoc:
             results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles,
                                    chunksize=5)
 
-        self.tiles = [r[0] for r in filter(lambda t: t[1], results)]
+        results = list(results)
+        missing = [tile.Image for (tile, exists) in results if not exists]
+        self.tiles = [tile for (tile, exists) in results if exists]
+
+        # A partial drop used to pass in silence -- the importer only reported the case where
+        # nothing at all remained, so a section could import short by a few tiles with no
+        # indication. Naming them also distinguishes a genuinely absent image from an
+        # extension that differs only in case, which a case-sensitive filesystem reports as
+        # missing (#153).
+        if missing:
+            shown = ', '.join(missing[:10])
+            if len(missing) > 10:
+                shown += f', and {len(missing) - 10} more'
+            prettyoutput.LogErr(
+                f"{len(missing)} of {len(results)} tiles named by the idoc are not on disk "
+                f"in {path} and will be skipped: {shown}")
 
     def GetImageBpp(self) -> int | None:
         """Bits per pixel according to the IDoc's DataMode line.
@@ -1072,6 +1107,9 @@ class IDoc:
                     # corrected_tile_name = f'{tile_number:03d}{ext}'
                     ############################################################
                     tileObj = IDocTileData(imageFilename)
+                    # Underscore so AddIdocNode, which copies non-underscore tile attributes
+                    # into VolumeData.xml, does not record it as scope meta-data.
+                    tileObj._TileIndex = len(idocObj.tiles)
                     idocObj.tiles.append(tileObj)
                 # a T tag might contain scope and time information
                 elif attribute == 'T':
