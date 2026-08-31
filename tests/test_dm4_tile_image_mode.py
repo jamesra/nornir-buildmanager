@@ -24,6 +24,7 @@ so other depths died in frombytes with "unrecognized image mode"; they now say s
 
 from __future__ import annotations
 
+import array
 import sys
 import types
 import warnings
@@ -56,20 +57,15 @@ def _raw16():
     return (np.linspace(0, 60000, W * H).astype(np.uint16)).reshape(H, W)
 
 
-class _TagData:
-    def __init__(self, array):
-        self._array = array
-
-    def tobytes(self):
-        return self._array.tobytes()
-
-
 class _Dm4File:
     def __init__(self, array):
         self._array = array
 
     def read_tag_data(self, _tag):
-        return _TagData(self._array)
+        # A real array.array, which is what dm4.read_tag_data_array returns. The previous
+        # fake exposed only tobytes(), so it could not detect that the importer now reads
+        # through the buffer protocol to avoid a second full copy of the tile (#157).
+        return array.array('H', self._array.reshape(-1).tobytes())
 
 
 class _Handler:

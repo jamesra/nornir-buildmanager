@@ -223,10 +223,23 @@ class DM4FileHandler(object):
 
     def ReadImageAsNumpy(self):
         image_shape = self.ReadImageShape()
-        np_array = np.array(self.dm4file.read_tag_data(self.ImageDataTag), dtype=self.image_dtype)  # type: ignore[attr-defined]
-        np_array = np.reshape(np_array, image_shape)
+        data = self.dm4file.read_tag_data(self.ImageDataTag)  # type: ignore[attr-defined]
 
-        return np_array
+        # np.array() copies, so the tile was resident twice at once. Once the read itself
+        # stopped doubling (dm4 review #157), that copy became the peak: 2.00x the tile
+        # against 1.00x for a view. frombuffer keeps the array.array alive as .base, which
+        # is the same bytes rather than an extra allocation.
+        #
+        # Only when the widths agree: image_dtype comes from PixelDepth while the typecode
+        # comes from the DM4 DataType, and a signed or float array of the same depth would be
+        # silently reinterpreted. Copy in that case -- correctness over the saving.
+        dtype = np.dtype(self.image_dtype)
+        if data.itemsize == dtype.itemsize:
+            np_array = np.frombuffer(data, dtype=dtype)
+        else:
+            np_array = np.array(data, dtype=dtype)
+
+        return np.reshape(np_array, image_shape)
 
     def ReadImageAsPIL(self):
         """Read the tile as a 16-bit greyscale image.
@@ -240,10 +253,17 @@ class DM4FileHandler(object):
                 "PIL has no raw mode for that depth, so the tile cannot be decoded.")
 
         image_shape = self.ReadImageShape()
+        data = self.dm4file.read_tag_data(self.ImageDataTag)  # type: ignore[attr-defined]
+
         # Kept as I;16 rather than converted to I. Both write the same uint16 PNG, but
         # saving mode I as PNG is deprecated and removed in Pillow 13 (2026-10-15).
-        im = PIL.Image.frombytes(data=self.dm4file.read_tag_data(self.ImageDataTag).tobytes(),  # type: ignore[attr-defined]
-                                 mode='I;16', size=(image_shape[1], image_shape[0]))
+        #
+        # frombuffer over a memoryview rather than frombytes over .tobytes(): the latter
+        # allocated a second full copy of the tile, which became the peak once the read
+        # stopped doubling (dm4 review #157) -- 2.00x the tile against 1.00x here. Pillow
+        # keeps a reference to the buffer, so the array.array outlives this frame.
+        im = PIL.Image.frombuffer('I;16', (image_shape[1], image_shape[0]),
+                                  memoryview(data), 'raw', 'I;16', 0, 1)
 
         return im
 
