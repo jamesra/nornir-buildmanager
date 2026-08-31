@@ -945,7 +945,11 @@ class IDoc:
         self._CameraBpp = bpp
 
         if self._CameraBpp is not None:
-            maxPossible = 1 << self._CameraBpp
+            # (1 << bpp) - 1, not 1 << bpp: a 14-bit camera saturates at 16383, so the
+            # latter both admitted 16384 unclamped and clamped larger values onto it,
+            # leaving the reported max one above anything the camera can produce. Matches
+            # CalculateHistogram below and mrc.py's camera_max_val. See #150.
+            maxPossible = (1 << self._CameraBpp) - 1
             for t in self.tiles:
                 if t.Max is not None and t.Max > maxPossible:
                     t.Max = maxPossible
