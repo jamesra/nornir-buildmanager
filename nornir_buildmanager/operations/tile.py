@@ -2139,149 +2139,153 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
     bpp = filter_node.BitsPerPixel
 
     if LevelOne is None:
-        # Need to call ir-assemble
-        LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
-        [added, LevelOne] = tile_set_node.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
+        try:
+            # Need to call ir-assemble
+            LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
+            [added, LevelOne] = tile_set_node.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
 
-        ensure_directory(LevelOne.FullPath)
+            ensure_directory(LevelOne.FullPath)
 
-        # The output file name is used as a prefix for the tiles written
-        # OutputPath = os.path.join(LevelOne.FullPath, FilterNode.Name + '.png')
-        # OutputXML = os.path.join(LevelOne.FullPath, FilterNode.Name + '.xml')
+            # The output file name is used as a prefix for the tiles written
+            # OutputPath = os.path.join(LevelOne.FullPath, FilterNode.Name + '.png')
+            # OutputXML = os.path.join(LevelOne.FullPath, FilterNode.Name + '.xml')
 
-        # pool = nornir_pools.GetGlobalThreadPool()
-        # pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
+            # pool = nornir_pools.GetGlobalThreadPool()
+            # pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
 
-        mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
-        expected_scale = 1.0 / LevelOne.Downsample
+            mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
+            expected_scale = 1.0 / LevelOne.Downsample
 
-        mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic,
-                                                                                 image_folder=InputLevelNode.FullPath,
-                                                                                 image_to_source_space_scale=expected_scale)
+            mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic,
+                                                                                     image_folder=InputLevelNode.FullPath,
+                                                                                     image_to_source_space_scale=expected_scale)
 
-        scaled_fixed_bounding_box_shape = numpy.ceil(
-            mosaicTileset.TargetBoundingBox.shape / (1.0 / expected_scale)).astype(numpy.int64)
-        expected_grid_dims = nornir_imageregistration.TileGridShape(scaled_fixed_bounding_box_shape,
-                                                                    tile_size=tile_dims)
+            scaled_fixed_bounding_box_shape = numpy.ceil(
+                mosaicTileset.TargetBoundingBox.shape / (1.0 / expected_scale)).astype(numpy.int64)
+            expected_grid_dims = nornir_imageregistration.TileGridShape(scaled_fixed_bounding_box_shape,
+                                                                        tile_size=tile_dims)
 
-        prettyoutput.Log("Section {4}: Generating a {0}x{1} grid of {2}x{3} tiles".format(expected_grid_dims[1],
-                                                                                          expected_grid_dims[0],
-                                                                                          tile_dims[1], tile_dims[0],
-                                                                                          section_node.Number if section_node is not None else '?'))
+            prettyoutput.Log("Section {4}: Generating a {0}x{1} grid of {2}x{3} tiles".format(expected_grid_dims[1],
+                                                                                              expected_grid_dims[0],
+                                                                                              tile_dims[1], tile_dims[0],
+                                                                                              section_node.Number if section_node is not None else '?'))
 
-        temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
-        ensure_directory(temp_level_dir)
+            temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
+            ensure_directory(temp_level_dir)
 
-        if max_temp_image_area is None:
-            max_temp_image_area = EstimateMaxTempImageArea()
+            if max_temp_image_area is None:
+                max_temp_image_area = EstimateMaxTempImageArea()
+                prettyoutput.Log(
+                    "No memory limit specified, calculated {0}.".format(
+                        _format_pixel_area_log(max_temp_image_area)))
+
+            task_timer = nornir_shared.tasktimer.TaskTimer()
+            level001_task_name = f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}"
+            task_timer.Start(level001_task_name)
+            t_level_start = time.perf_counter()
+            output_io_wait_backpressure_s = 0.0
+            output_io_wait_drain_s = 0.0
+            tiles_saved = 0
+            last_tile_submit_time: float | None = None
+            t_drain: float | None = None
+            remaining_output_tasks = 0
+
+            _warn_deprecated_two_stage_save_opt_out(Logger)
+
+            encode_workers = _tile_encode_worker_count()
+            copy_workers = _tile_copy_worker_count()
+            max_active_tasks = encode_workers * 2
             prettyoutput.Log(
-                "No memory limit specified, calculated {0}.".format(
-                    _format_pixel_area_log(max_temp_image_area)))
+                f"Two-stage tile save: encode_workers={encode_workers}, "
+                f"copy_workers={copy_workers}, max_active_encode={max_active_tasks}, "
+                f"copy_queue_max={copy_workers * 2}")
+            Logger.info(
+                "Two-stage tile save: encode_workers=%d copy_workers=%d "
+                "max_active_encode=%d copy_queue_max=%d",
+                encode_workers,
+                copy_workers,
+                max_active_tasks,
+                copy_workers * 2,
+            )
+            two_stage_pipeline = _TwoStageTileSavePipeline(
+                encode_workers=encode_workers,
+                copy_workers=copy_workers,
+                bpp=bpp,
+                optimize=True,
+                collect_thread_timings=True,
+            )
 
-        task_timer = nornir_shared.tasktimer.TaskTimer()
-        level001_task_name = f"Assemble Optimized Tiles Level {InputLevelNode.Downsample}"
-        task_timer.Start(level001_task_name)
-        t_level_start = time.perf_counter()
-        output_io_wait_backpressure_s = 0.0
-        output_io_wait_drain_s = 0.0
-        tiles_saved = 0
-        last_tile_submit_time: float | None = None
-        t_drain: float | None = None
-        remaining_output_tasks = 0
+            def _submit_tile_save(
+                output_tile_fullpath: str,
+                temp_output_tile_fullpath: str,
+                tile_image: NDArray,
+            ) -> None:
+                nonlocal output_io_wait_backpressure_s, tiles_saved, last_tile_submit_time
+                tiles_saved += 1
+                last_tile_submit_time = time.perf_counter()
+                two_stage_pipeline.submit(
+                    output_tile_fullpath, temp_output_tile_fullpath, tile_image)
+                while two_stage_pipeline.active_encode_count >= max_active_tasks:
+                    t_wait = time.perf_counter()
+                    two_stage_pipeline.wait_one_encode()
+                    output_io_wait_backpressure_s += time.perf_counter() - t_wait
 
-        _warn_deprecated_two_stage_save_opt_out(Logger)
+            for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
+                    target_space_scale=1.0 / InputLevelNode.Downsample,
+                    tile_dims=tile_dims,
+                    max_temp_image_area=max_temp_image_area):
+                tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
+                    'prefix': tile_set_node.FilePrefix,
+                    'X': iCol,
+                    'Y': iRow,
+                    'postfix': tile_set_node.FilePostfix}
+                temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename)
+                output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
+                _submit_tile_save(
+                    output_tile_fullpath, temp_output_tile_fullpath, tile_image)
 
-        encode_workers = _tile_encode_worker_count()
-        copy_workers = _tile_copy_worker_count()
-        max_active_tasks = encode_workers * 2
-        prettyoutput.Log(
-            f"Two-stage tile save: encode_workers={encode_workers}, "
-            f"copy_workers={copy_workers}, max_active_encode={max_active_tasks}, "
-            f"copy_queue_max={copy_workers * 2}")
-        Logger.info(
-            "Two-stage tile save: encode_workers=%d copy_workers=%d "
-            "max_active_encode=%d copy_queue_max=%d",
-            encode_workers,
-            copy_workers,
-            max_active_tasks,
-            copy_workers * 2,
-        )
-        two_stage_pipeline = _TwoStageTileSavePipeline(
-            encode_workers=encode_workers,
-            copy_workers=copy_workers,
-            bpp=bpp,
-            optimize=True,
-            collect_thread_timings=True,
-        )
+            t_drain = time.perf_counter()
+            remaining_output_tasks = two_stage_pipeline.finish()
+            output_io_wait_drain_s = time.perf_counter() - t_drain
 
-        def _submit_tile_save(
-            output_tile_fullpath: str,
-            temp_output_tile_fullpath: str,
-            tile_image: NDArray,
-        ) -> None:
-            nonlocal output_io_wait_backpressure_s, tiles_saved, last_tile_submit_time
-            tiles_saved += 1
-            last_tile_submit_time = time.perf_counter()
-            two_stage_pipeline.submit(
-                output_tile_fullpath, temp_output_tile_fullpath, tile_image)
-            while two_stage_pipeline.active_encode_count >= max_active_tasks:
-                t_wait = time.perf_counter()
-                two_stage_pipeline.wait_one_encode()
-                output_io_wait_backpressure_s += time.perf_counter() - t_wait
+            task_timer.End(level001_task_name)
+            level001_wall_s = task_timer.ElapsedTimes.get(level001_task_name, time.perf_counter() - t_level_start)
+            last_strip_yield_to_drain_s: float | None = None
+            if last_tile_submit_time is not None and t_drain is not None:
+                last_strip_yield_to_drain_s = max(0.0, t_drain - last_tile_submit_time)
 
-        for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
-                target_space_scale=1.0 / InputLevelNode.Downsample,
-                tile_dims=tile_dims,
-                max_temp_image_area=max_temp_image_area):
-            tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-                'prefix': tile_set_node.FilePrefix,
-                'X': iCol,
-                'Y': iRow,
-                'postfix': tile_set_node.FilePostfix}
-            temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename)
-            output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-            _submit_tile_save(
-                output_tile_fullpath, temp_output_tile_fullpath, tile_image)
+            timeline = Level001SaveTimeline(
+                level001_wall_s=level001_wall_s,
+                output_io_wait_backpressure_s=output_io_wait_backpressure_s,
+                output_io_wait_drain_s=output_io_wait_drain_s,
+                save_encode_thread_s=two_stage_pipeline.sum_encode_thread_s,
+                save_copy_thread_s=two_stage_pipeline.sum_copy_thread_s,
+                tiles_saved=tiles_saved,
+                encode_workers=encode_workers,
+                copy_workers=copy_workers,
+                max_active_encode=max_active_tasks,
+                last_strip_yield_to_drain_s=last_strip_yield_to_drain_s,
+                tasks_at_drain=remaining_output_tasks,
+                two_stage=True,
+            )
+            _log_level001_save_timeline(Logger, timeline)
 
-        t_drain = time.perf_counter()
-        remaining_output_tasks = two_stage_pipeline.finish()
-        output_io_wait_drain_s = time.perf_counter() - t_drain
 
-        task_timer.End(level001_task_name)
-        level001_wall_s = task_timer.ElapsedTimes.get(level001_task_name, time.perf_counter() - t_level_start)
-        last_strip_yield_to_drain_s: float | None = None
-        if last_tile_submit_time is not None and t_drain is not None:
-            last_strip_yield_to_drain_s = max(0.0, t_drain - last_tile_submit_time)
+            prettyoutput.Log("Generation of tileset complete")
+            #         else:
+            #             Logger.info("Assemble tiles output already exists")
 
-        timeline = Level001SaveTimeline(
-            level001_wall_s=level001_wall_s,
-            output_io_wait_backpressure_s=output_io_wait_backpressure_s,
-            output_io_wait_drain_s=output_io_wait_drain_s,
-            save_encode_thread_s=two_stage_pipeline.sum_encode_thread_s,
-            save_copy_thread_s=two_stage_pipeline.sum_copy_thread_s,
-            tiles_saved=tiles_saved,
-            encode_workers=encode_workers,
-            copy_workers=copy_workers,
-            max_active_encode=max_active_tasks,
-            last_strip_yield_to_drain_s=last_strip_yield_to_drain_s,
-            tasks_at_drain=remaining_output_tasks,
-            two_stage=True,
-        )
-        _log_level001_save_timeline(Logger, timeline)
+            # if not os.path.exists(OutputXML):
+            # Something went wrong, do not save
+            #    return None
 
-        nornir_pools.ReleaseStagePools()
+            # Info = nornir_buildmanager.metadata.tilesetinfo.TilesetInfo.Load(OutputXML, Logger=Logger)
+            LevelOne.GridDimX = expected_grid_dims[1]
+            LevelOne.GridDimY = expected_grid_dims[0]
 
-        prettyoutput.Log("Generation of tileset complete")
-        #         else:
-        #             Logger.info("Assemble tiles output already exists")
-
-        # if not os.path.exists(OutputXML):
-        # Something went wrong, do not save
-        #    return None
-
-        # Info = nornir_buildmanager.metadata.tilesetinfo.TilesetInfo.Load(OutputXML, Logger=Logger)
-        LevelOne.GridDimX = expected_grid_dims[1]
-        LevelOne.GridDimY = expected_grid_dims[0]
+        finally:
+            # Stage pools must not leak when assemble raises (#142).
+            nornir_pools.ReleaseStagePools()
 
     return filter_node
 

@@ -4,6 +4,7 @@ Created on Jun 22, 2012
 @author: Jamesan
 """
 import collections
+import contextlib
 import copy
 import math
 import logging
@@ -74,6 +75,15 @@ def _get_stos_group_pool(pool_name: str, workers: int | None):
     if workers == 1:
         return None
     return nornir_pools.GetLocalMachinePool(pool_name, num_threads=workers)
+
+
+@contextlib.contextmanager
+def _ensure_stage_pools_released():
+    """Release stage pools even when the stage raises (#142)."""
+    try:
+        yield
+    finally:
+        nornir_pools.ReleaseStagePools()
 
 
 @dataclass
@@ -1372,9 +1382,8 @@ def AssembleStosOverlays(Parameters,
                 report_stos_work_progress(
                     overlay_track_id, completed_overlay_jobs, total_overlay_jobs, overlay_label, depth=0
                 )
-
-        nornir_pools.ReleaseStagePools()
     finally:
+        nornir_pools.ReleaseStagePools()
         files.rmtree(tempdir, ignore_errors=True)
 
         os.chdir(oldDir)
@@ -4003,28 +4012,27 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
     if total_jobs:
         _publish_scale_progress()
 
-    try:
-        for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
-                                                                     pending_jobs,
-                                                                     max_in_flight=max_in_flight):
-            context = job.context
-            try:
-                _apply_scale_stos_job(context, result)
-            except FileNotFoundError:
-                context.output_group_node.remove(context.output_stos_node)
-                continue
-            completed_jobs += 1
-            if total_jobs:
-                _publish_scale_progress()
-            (yield context.output_group_node)
-    except ValueError as e:
-        _reraise_stos_nonfinite(
-            e,
-            introduced_in=str(e),
-            files=[str(e)])
-        raise
-
-    nornir_pools.ReleaseStagePools()
+    with _ensure_stage_pools_released():
+        try:
+            for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
+                                                                         pending_jobs,
+                                                                         max_in_flight=max_in_flight):
+                context = job.context
+                try:
+                    _apply_scale_stos_job(context, result)
+                except FileNotFoundError:
+                    context.output_group_node.remove(context.output_stos_node)
+                    continue
+                completed_jobs += 1
+                if total_jobs:
+                    _publish_scale_progress()
+                (yield context.output_group_node)
+        except ValueError as e:
+            _reraise_stos_nonfinite(
+                e,
+                introduced_in=str(e),
+                files=[str(e)])
+            raise
 
 
 def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str,
@@ -4157,27 +4165,26 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
     if total_jobs:
         _publish_blend_progress()
 
-    for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
-                                                                 pending_jobs,
-                                                                 max_in_flight=max_in_flight):
-        context = job.context
-        try:
-            _apply_linear_blend_job(context,
-                                    result,
-                                    min_blend,
-                                    travel_limit,
-                                    reblend_iterations,
-                                    reblend_tolerance,
-                                    max_blend)
-        except FileNotFoundError:
-            context.output_group_node.remove(context.output_stos_node)
-            continue
-        completed_jobs += 1
-        if total_jobs:
-            _publish_blend_progress()
-        (yield context.output_group_node)
-
-    nornir_pools.ReleaseStagePools()
+    with _ensure_stage_pools_released():
+        for job, result in stosgroup_workers.run_bounded_stos_jobs(pool,
+                                                                     pending_jobs,
+                                                                     max_in_flight=max_in_flight):
+            context = job.context
+            try:
+                _apply_linear_blend_job(context,
+                                        result,
+                                        min_blend,
+                                        travel_limit,
+                                        reblend_iterations,
+                                        reblend_tolerance,
+                                        max_blend)
+            except FileNotFoundError:
+                context.output_group_node.remove(context.output_stos_node)
+                continue
+            completed_jobs += 1
+            if total_jobs:
+                _publish_blend_progress()
+            (yield context.output_group_node)
 
 
 def __RemoveStosFileIfOutdated(OutputStosNode, InputStosNode):
