@@ -1088,7 +1088,8 @@ class IDoc:
                 line = lines[iLine]
                 line = line.strip()
                 line = line.strip('[]')
-                parts = line.split('=')
+                # maxsplit=1 keeps '=' inside values (SerialEM notes, tilt-axis T lines) (#247).
+                parts = line.split('=', 1)
                 if len(parts) <= 1:
                     continue
 
