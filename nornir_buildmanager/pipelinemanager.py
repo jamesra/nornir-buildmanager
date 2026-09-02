@@ -638,8 +638,21 @@ class PipelineManager:
         output_path = os.path.join(self._VolumePath, "StageTimings.json")
         existing: list[dict] = []
         if os.path.exists(output_path):
-            with open(output_path, "r", encoding="utf-8") as input_file:
-                existing = json.load(input_file)
+            try:
+                with open(output_path, "r", encoding="utf-8") as input_file:
+                    loaded = json.load(input_file)
+                if isinstance(loaded, list):
+                    existing = loaded
+                else:
+                    PipelineManager.logger.warning(
+                        "StageTimings.json is not a list; starting a fresh timing log at %s",
+                        output_path)
+            except (OSError, UnicodeError, json.JSONDecodeError) as e:
+                # Called from Execute's finally; a truncated file from a killed run
+                # must not mask the original exception (#139).
+                PipelineManager.logger.warning(
+                    "Ignoring unreadable StageTimings.json at %s (%s); starting a fresh timing log",
+                    output_path, e)
 
         existing.append(record)
 

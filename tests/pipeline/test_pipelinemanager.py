@@ -105,6 +105,27 @@ class TestStageTimings(unittest.TestCase):
             self.assertEqual(records[0]['pipeline'], 'TestPipeline')
             self.assertEqual(records[0]['stages'][0]['stage'], 'stage.one')
 
+    def test_write_stage_timings_survives_truncated_json(self):
+        """Corrupt StageTimings.json must not raise out of _WriteStageTimings (#139)."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            manager = pm.PipelineManager(pipelinesRoot=etree.Element('Root'), pipelineData=etree.Element('Pipeline'))
+            manager._VolumePath = temp_dir
+            manager._PipelineName = 'TestPipeline'
+            manager._StageTimer = nornir_shared.tasktimer.TaskTimer()
+            manager._StageTimer.Start('stage.one')
+            manager._StageTimer.End('stage.one', print_elapsed=False)
+
+            output_path = os.path.join(temp_dir, 'StageTimings.json')
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write('[{"pipeline":')
+
+            manager._WriteStageTimings()
+
+            with open(output_path, 'r', encoding='utf-8') as input_file:
+                records = json.load(input_file)
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0]['pipeline'], 'TestPipeline')
+
     def test_stage_volume_label_for_mapping_node(self):
         """Mapping nodes lack FullPath; stage keys should use a descriptive label."""
         from nornir_buildmanager.volumemanager.mappingnode import MappingNode
