@@ -304,8 +304,9 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                         # prettyoutput.Log("Renaming " + outputFile + " to " + os.path.join(path, self.LastLoadedFile + ext))
 
                         # shutil.move(outputFile, os.path.join(path, self.LastLoadedFile + ext))
-                except:
-                    pass
+                except (AttributeError, TypeError, ValueError, IndexError) as e:
+                    prettyoutput.Log(
+                        f"Skipping malformed ir-stom output line {line!r}: {e}")
 
             if len(outputfiles) == 2 and self.stosfilename is not None:
 
@@ -314,23 +315,30 @@ class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
                 [temp, ext] = os.path.splitext(outputfiles[0])
 
                 # Rename the files so we can continue without waiting for convert
-                while True:
+                max_name_attempts = 64
+                tempfilenameOne = None
+                tempfilenameTwo = None
+                for _attempt in range(max_name_attempts):
                     r = random.randrange(2, 100000, 1)
-                    tempfilenameOne = os.path.join(path, str(r) + ext)
-                    tempfilenameTwo = os.path.join(path, str(r + 1) + ext)
-
-                    while os.path.exists(tempfilenameOne) or os.path.exists(tempfilenameTwo):
-                        r = random.randrange(2, 100000, 1)
-                        tempfilenameOne = os.path.join(path, str(r) + ext)
-                        tempfilenameTwo = os.path.join(path, str(r + 1) + ext)
-
-                    if (not os.path.exists(tempfilenameOne)) and (not os.path.exists(tempfilenameTwo)):
-                        prettyoutput.Log("Renaming " + outputfiles[0] + " to " + tempfilenameOne)
-                        shutil.move(outputfiles[0], tempfilenameOne)
-
-                        prettyoutput.Log("Renaming " + outputfiles[1] + " to " + tempfilenameTwo)
-                        shutil.move(outputfiles[1], tempfilenameTwo)
+                    candidate_one = os.path.join(path, str(r) + ext)
+                    candidate_two = os.path.join(path, str(r + 1) + ext)
+                    if os.path.exists(candidate_one) or os.path.exists(candidate_two):
+                        continue
+                    try:
+                        prettyoutput.Log("Renaming " + outputfiles[0] + " to " + candidate_one)
+                        shutil.move(outputfiles[0], candidate_one)
+                        prettyoutput.Log("Renaming " + outputfiles[1] + " to " + candidate_two)
+                        shutil.move(outputfiles[1], candidate_two)
+                        tempfilenameOne = candidate_one
+                        tempfilenameTwo = candidate_two
                         break
+                    except OSError as e:
+                        prettyoutput.Log(
+                            f"Temp rename collided for ir-stom preview ({e}); retrying")
+                else:
+                    raise RuntimeError(
+                        f"Could not allocate unique temp names for ir-stom preview "
+                        f"after {max_name_attempts} attempts in {path}")
 
                 if self.OverlayFilename is None:
                     OverlayFilename = 'overlay_' + OverlayFile.replace("temp", "", 1) + '.png'
