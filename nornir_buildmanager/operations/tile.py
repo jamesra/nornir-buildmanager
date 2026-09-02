@@ -319,6 +319,18 @@ def Evaluate(Parameters, filter_node: FilterNode, OutputImageName: str | None = 
     return None
 
 
+def _imagemagick_gray_fraction(min_intensity: float | None, bits_per_pixel: int | None) -> float:
+    """Map a pixel min to ImageMagick ``gray(fraction)`` in ``[0, 1]``.
+
+    Uses ``1 << bpp`` as the denominator so 8-bit keeps the historical ``/256``
+    scaling and 16-bit uses ``/65536``.
+    """
+    bpp = int(bits_per_pixel) if bits_per_pixel else 8
+    if bpp < 1:
+        bpp = 8
+    return float((min_intensity or 0.0) / float(1 << bpp))
+
+
 def _CreateMinCorrectionImage(image_node: ImageNode, OutputImageName: str, **kwargs) -> ImageNode:
     """Creates an image from the source image whose min pixel value is zero"""
 
@@ -337,13 +349,14 @@ def _CreateMinCorrectionImage(image_node: ImageNode, OutputImageName: str, **kwa
         return OutputImageNode
 
     [Min, Mean, Max, StdDev] = nornir_shared.images.GetImageStats(image_node.FullPath)
+    bits_per_pixel = getattr(ParentNode, 'BitsPerPixel', None)
 
     # Temp file with a uniform value set to the minimum pixel value of ImageNode
     OutputFileUniformFullPath = os.path.join(ParentNode.FullPath, 'UniformMinBackground_' + OutputFile)
     CreateBackgroundCmdTemplate = 'convert %(OperatorImage)s  +matte -background "gray(%(BackgroundIntensity)f)" -compose Dst -flatten %(OutputFile)s'
     CreateBackgroundCmd = CreateBackgroundCmdTemplate % {'OperatorImage': image_node.FullPath,
-                                                         'BackgroundIntensity': float((Min or 0) / 256.0),
-                                                         # TODO This only works for 8-bit
+                                                         'BackgroundIntensity': _imagemagick_gray_fraction(
+                                                             Min, bits_per_pixel),
                                                          'OutputFile': OutputFileUniformFullPath}
     prettyoutput.Log(CreateBackgroundCmd)
     subprocess.call(CreateBackgroundCmd + " && exit", shell=True)
@@ -794,12 +807,8 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
         (yield GenerateHistogramImage(HistogramElement, MinIntensityCutoff, MaxIntensityCutoff, Gamma=Gamma,
                                       Async=True))
 
-    # TODO: Verify parameters match... if(OutputFilterNode.Gamma != Gamma)
-    #     DictAttributes = {'BitsPerPixel' : 8,
-    #                         'MinIntensityCutoff' : str(MinIntensityCutoff),
-    #                         'MaxIntensityCutoff' : str(MaxIntensityCutoff),
-    #                         'Gamma' : str(Gamma),
-    #                         'HistogramChecksum' : str(HistogramElement.Checksum)}
+    # Contrast is written onto OutputFilterNode below via SetContrastValues;
+    # HistogramChecksum also gates rebuilds when the histogram changes.
 
     (filter_created, OutputFilterNode) = channel_node.GetOrCreateFilter(OutputFilterName)
     os.makedirs(OutputFilterNode.FullPath, exist_ok=True)
@@ -2121,8 +2130,6 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                 else:
                     tile_set_node.Clean("Tileset empty")
                     [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
-
-    # TODO: Validate that the tileset is populated in a more robust way
 
     tile_set_node.TileXDim = str(TileWidth)
     tile_set_node.TileYDim = str(TileHeight)

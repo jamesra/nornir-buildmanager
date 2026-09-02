@@ -3903,7 +3903,9 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
         Logger.warning("Channel %s.%s is missing, skipping grid refinement" % (section_number, channel_name))
         return None
 
-    # TODO: Skip transforms using filters which no longer exist.  Should live in a separate function.
+    # Missing filters are skipped via SearchCollection + next(..., None) below.
+    # Broader "skip transforms whose filters were deleted" belongs in a dedicated
+    # transform-audit helper, not inlined here.
     filter_matches = nornir_buildmanager.volumemanager.SearchCollection(channel_node.Filters,
                                                                         'Name', filter_pattern,
                                                                         CaseSensitive=True)  # type: ignore[assignment]  # type: Generator[FilterNode, None, None]
@@ -3949,9 +3951,10 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
 def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, OutputGroupName: str, UseMasks: bool,
                    workers: int | None = None,
                    **kwargs):
-    """Take a stos group node, scale the transforms, and save in new stosgroup
+    """Take a stos group node, scale the transforms, and save in new stosgroup.
 
-       TODO: This function used to create stos transforms between different filters to.  Port that to a separate function
+    Cross-filter STOS creation used to live here; keep that as a separate helper
+    if it returns, rather than re-expanding this scaler.
     """
     GroupParent = InputStosGroupNode.Parent
     InputDownsample = _require_finite_downsample(

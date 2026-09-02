@@ -138,7 +138,8 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 
         haveTempFile = False
         try:
-            # TODO: This check for invalid tiles may no longer be needed since we do not use ir-refine-translate anymore
+            # Still strip missing tiles before ArrangeTilesWithTranslate; a mosaic that
+            # names deleted images otherwise fails mid-arrange.
             tempMosaicFullPath = os.path.join(InputTransformNode.Parent.FullPath, "Temp" + InputTransformNode.Path)
             mfileObj = nornir_imageregistration.MosaicFile.Load(InputTransformNode.FullPath)
             if mfileObj is None:
