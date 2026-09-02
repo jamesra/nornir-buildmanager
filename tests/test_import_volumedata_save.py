@@ -61,6 +61,13 @@ class TestImportVolumeDataSave(unittest.TestCase):
             PipelineManager._SaveNodes(iter([None, None]))
             save.assert_not_called()
 
+    def test_save_nodes_skips_bool_stage_results(self) -> None:
+        """Stage docs allow True/False; those must not reach VolumeManager.Save (#135)."""
+        with mock.patch.object(VolumeManager, "Save") as save:
+            PipelineManager._SaveNodes(True)
+            PipelineManager._SaveNodes(False)
+            save.assert_not_called()
+
     def test_save_nodes_saves_element_not_children(self) -> None:
         """XElementWrapper is Iterable over children; Save must target the parent."""
         block = BlockNode.Create("TEM")

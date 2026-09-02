@@ -931,6 +931,12 @@ class PipelineManager:
         if NodesToSave is None:
             return
 
+        # Stage functions may return True/False to indicate work without naming a
+        # node to persist (#135). Bool must be rejected before the Element /
+        # Iterable branches — otherwise VolumeManager.Save raises ValueError.
+        if isinstance(NodesToSave, bool):
+            return
+
         # ElementTree.Element (and XElementWrapper) are Iterable over children.
         # Saving must target the returned node itself, not walk its children.
         if isinstance(NodesToSave, ElementTree.Element):
