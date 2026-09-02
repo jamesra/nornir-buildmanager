@@ -83,9 +83,20 @@ class VolumeManager:
 
     @classmethod
     def __SortNodes__(cls, element):
-        """Remove all elements that should be found on the file system but are not"""
-        element._children.sort(key=operator.attrgetter('SortKey'))
+        """Recursively order child elements by SortKey.
 
+        Uses the public Element sequence API (or ``XElementWrapper.sort`` when
+        present). Do not touch ``element._children`` — that attribute does not
+        exist on the C-accelerated ``xml.etree.ElementTree.Element``.
+        """
+        sort = getattr(element, 'sort', None)
+        if callable(sort):
+            sort()
+            return
+
+        children = list(element)
+        if len(children) > 1:
+            element[:] = sorted(children, key=operator.attrgetter('SortKey'))
         for e in element:
             cls.__SortNodes__(e)
 
