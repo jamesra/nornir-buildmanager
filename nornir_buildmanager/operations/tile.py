@@ -907,6 +907,15 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
     (yield channel_node)
 
 
+def _recount_existing_tiles(pyramid_node, output_tile_paths, exists=os.path.exists) -> None:
+    """Set ``NumberOfTiles`` to how many output paths currently exist.
+
+    A get-or-create invert re-run must replace the previous count, not accumulate
+    with ``+= 1`` (#145).
+    """
+    pyramid_node.NumberOfTiles = sum(1 for path in output_tile_paths if exists(path))
+
+
 def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName: str, **kwargs):
     """Create a new filter by inverting the input filter
        @ChannelNode"""
@@ -962,12 +971,11 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
             prettyoutput.LogErr("Unable to invert {0}\n{1}".format(t.name, e))
 
     if tilesConverted:
-        for InputTileFullPath in InputTiles:
-            Basename = os.path.basename(InputTileFullPath)
-            OutputTileFullPath = os.path.join(OutputLevelFullPath, Basename)
-            if os.path.exists(OutputTileFullPath):
-                OutputPyramidNode.NumberOfTiles += 1
-
+        output_paths = [
+            os.path.join(OutputLevelFullPath, os.path.basename(p))
+            for p in InputTiles
+        ]
+        _recount_existing_tiles(OutputPyramidNode, output_paths)
         yield InputFilterNode.Parent
 
     return
