@@ -2666,6 +2666,21 @@ def BuildImagePyramid(image_set_node: ImageSetNode,
     return None
 
 
+def _image_basenames_in_dir(directory: str, image_ext: str) -> frozenset[str]:
+    """Return tile basenames under *directory* matching ``*{image_ext}`` via scandir.
+
+    Avoids ``glob.glob`` full-path lists that peak at O(tiles) host memory per level.
+    """
+    if not image_ext or not os.path.isdir(directory):
+        return frozenset()
+    names: list[str] = []
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if entry.is_file(follow_symlinks=False) and entry.name.endswith(image_ext):
+                names.append(entry.name)
+    return frozenset(names)
+
+
 def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
     """ @PyramidNode
         Build the image pyramid for the specified path.  We expect the "001" level of the pyramid to be pre-populated"""
@@ -2723,33 +2738,29 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
         InputTileDir = os.path.join(InputPyramidFullPath, upLevelPathStr)
         OutputTileDir = os.path.join(InputPyramidFullPath, thisLevePathlStr)
 
-        InputGlobPattern = os.path.join(InputTileDir, "*" + PyramidNode.ImageFormatExt)
-        OutputGlobPattern = os.path.join(OutputTileDir, "*" + PyramidNode.ImageFormatExt)
-
+        # Basename sets only — avoid full glob path lists + duplicate frozensets per level.
+        SourceFilesTask = local_thread_pool.add_task(
+            f"Get Source Files {InputTileDir}",
+            _image_basenames_in_dir, InputTileDir, PyramidNode.ImageFormatExt)
+        DestFileBaseNames = _image_basenames_in_dir(OutputTileDir, PyramidNode.ImageFormatExt)
+        SourceFileBaseNames = SourceFilesTask.wait_return()
         taskList = []
 
-        # Simply a speedup so we aren't constantly hitting the server with exist requests for populated directories
-        SourceFilesTask = local_thread_pool.add_task(f"Get Source Files {InputGlobPattern}", glob.glob,
-                                                     InputGlobPattern)
-        DestFiles = glob.glob(OutputGlobPattern)
-        DestFileBaseNames = frozenset([os.path.basename(x) for x in DestFiles])
-        SourceFiles = SourceFilesTask.wait_return()
-
         # Create directories if we have source files and the directories are missing
-        if len(SourceFiles) > 0:
+        if len(SourceFileBaseNames) > 0:
             os.makedirs(OutputTileDir, exist_ok=True)
 
-        if (len(DestFiles) == PyramidNode.NumberOfTiles and
-                len(SourceFiles) == len(DestFiles)):
+        if (len(DestFileBaseNames) == PyramidNode.NumberOfTiles and
+                len(SourceFileBaseNames) == len(DestFileBaseNames)):
 
             # If the first pair of files are not out of data assume the 
             # rest are current and check the next pyramid level
-            outdated = OutdatedFile(SourceFiles[0], DestFiles[0])
+            sample_name = next(iter(SourceFileBaseNames))
+            outdated = OutdatedFile(
+                os.path.join(InputTileDir, sample_name),
+                os.path.join(OutputTileDir, sample_name))
             if outdated is not None and not outdated:
                 continue
-
-        # Use a frozenset to optimize the 'in' keyword use in the upcoming loop
-        SourceFileBaseNames = frozenset([os.path.basename(x) for x in SourceFiles])
 
         MissingDestFiles = SourceFileBaseNames - DestFileBaseNames
 
@@ -2835,8 +2846,8 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
             if pool is None:
                 # Pool = nornir_pools.GetThreadPool('BuildTilePyramids {0}'.format(OutputTileDir), multiprocessing.cpu_count() * 2)
                 num_threads = multiprocessing.cpu_count() * 2
-                if num_threads > len(SourceFiles):
-                    num_threads = len(SourceFiles) + 1
+                if num_threads > len(SourceFileBaseNames):
+                    num_threads = len(SourceFileBaseNames) + 1
                 # Pool = nornir_pools.GetMultithreadingPool("Shrink", num_threads=num_threads)
                 pool = nornir_pools.GetMultithreadingPool("Shrink", num_threads=num_threads)
 
