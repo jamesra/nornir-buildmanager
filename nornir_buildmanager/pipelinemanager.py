@@ -876,9 +876,9 @@ class PipelineManager:
 
         RootForSearch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
 
-        candidates = list(resolve_iterate_candidates(
+        candidates = resolve_iterate_candidates(
             RootForSearch, xpath, PipelineNode, ArgSet, VolumeElem,
-            PipelineManager.GetSearchRoot))
+            PipelineManager.GetSearchRoot)
 
         validate = True
         if 'Validate' in PipelineNode.attrib:
@@ -890,22 +890,23 @@ class PipelineManager:
 
         variable_name = PipelineNode.attrib.get('VariableName', 'Iterate')
         track_id = f"iterate:{variable_name}"
-        total = len(candidates)
+        # Do not materialize candidates for len(); MQTT omits None totals
+        # (publish_run_event) so streaming can start before the full set is known (#140).
         depth = self._iterate_depth
         self._iterate_depth += 1
 
         NumProcessed = 0
         save_parent = set()
+        progress_current = 0
         try:
             publish_run_event(
                 "iterate_progress",
                 current=0,
-                total=total,
+                total=None,
                 depth=depth,
                 track_id=track_id,
                 label=variable_name)
 
-            progress_current = 0
             for VolumeElemChild in candidates:
                 if validate and PipelineManager._ElementNeedsValidation(VolumeElemChild):
                     (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
@@ -921,7 +922,7 @@ class PipelineManager:
                 publish_run_event(
                     "iterate_progress",
                     current=progress_current,
-                    total=total,
+                    total=None,
                     depth=depth,
                     track_id=track_id,
                     label=variable_name,
@@ -931,7 +932,7 @@ class PipelineManager:
             publish_run_event(
                 "iterate_progress_complete",
                 track_id=track_id,
-                total=total)
+                total=progress_current)
 
         for parent in save_parent:
             PipelineManager._SaveNodes(parent)

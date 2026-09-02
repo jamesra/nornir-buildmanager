@@ -73,11 +73,12 @@ class TestProcessIterateMqtt(unittest.TestCase):
         resolve.assert_called_once()
         event_names = [c.args[0] for c in publish.call_args_list]
         self.assertEqual(event_names[0], "iterate_progress")
-        self.assertEqual(publish.call_args_list[0].kwargs["total"], 2)
+        self.assertIsNone(publish.call_args_list[0].kwargs["total"])
         self.assertEqual(publish.call_args_list[0].kwargs["current"], 0)
         self.assertEqual(publish.call_args_list[0].kwargs["depth"], 0)
         self.assertEqual(publish.call_args_list[0].kwargs["label"], "SectionNode")
         self.assertEqual(publish.call_args_list[1].kwargs["current"], 1)
+        self.assertIsNone(publish.call_args_list[1].kwargs["total"])
         self.assertEqual(publish.call_args_list[1].kwargs["label"], "SectionNode")
         self.assertEqual(publish.call_args_list[1].kwargs["section"], 1)
         self.assertEqual(publish.call_args_list[2].kwargs["current"], 2)
@@ -87,6 +88,47 @@ class TestProcessIterateMqtt(unittest.TestCase):
             publish.call_args_list[-1].kwargs["track_id"], "iterate:SectionNode")
         self.assertEqual(publish.call_args_list[-1].kwargs["total"], 2)
         self.assertEqual(manager._iterate_depth, 0)
+
+    def test_iterate_streams_generator_without_preloading(self) -> None:
+        """#140: first child runs before later candidates are yielded."""
+        manager = pm.PipelineManager(
+            pipelinesRoot=ElementTree.Element("Root"),
+            pipelineData=ElementTree.Element("Pipeline"),
+        )
+        iterate_node = ElementTree.Element(
+            "Iterate", VariableName="SectionNode", XPath="Block/Section")
+        yield_count = 0
+
+        def _gen():
+            nonlocal yield_count
+            for i in range(3):
+                yield_count += 1
+                yield SectionNode.Create(Number=i + 1)
+
+        seen_yields_at_first_child: list[int] = []
+
+        def _on_child(*_a, **_k):
+            seen_yields_at_first_child.append(yield_count)
+            return 1
+
+        with mock.patch.object(pm.PipelineManager, "_PipelineManager__extractXPathFromNode",
+                               return_value="Block/Section"):
+            with mock.patch.object(pm.PipelineManager, "GetSearchRoot", return_value=mock.Mock()):
+                with mock.patch(
+                        "nornir_buildmanager.pipelinemanager.resolve_iterate_candidates",
+                        return_value=_gen()):
+                    with mock.patch.object(pm.PipelineManager, "_ElementNeedsValidation",
+                                           return_value=False):
+                        with mock.patch.object(manager, "ExecuteChildPipelines",
+                                               side_effect=_on_child):
+                            with mock.patch(
+                                    "nornir_buildmanager.pipelinemanager.publish_run_event"):
+                                manager.ProcessIterateNode(
+                                    mock.Mock(), mock.Mock(), iterate_node)
+
+        self.assertEqual(seen_yields_at_first_child[0], 1)
+        self.assertEqual(seen_yields_at_first_child, [1, 2, 3])
+        self.assertEqual(yield_count, 3)
 
     def test_iterate_publishes_complete_on_child_exception(self) -> None:
         manager = pm.PipelineManager(
@@ -147,14 +189,15 @@ class TestProcessIterateMqtt(unittest.TestCase):
         self.assertEqual(opening.args[0], "iterate_progress")
         self.assertEqual(opening.kwargs["label"], "ChannelNode")
         self.assertEqual(opening.kwargs["current"], 0)
-        self.assertEqual(opening.kwargs["total"], 1)
+        self.assertIsNone(opening.kwargs["total"])
         self.assertNotIn("element", opening.kwargs)
 
         item = publish.call_args_list[1]
         self.assertEqual(item.kwargs["label"], "ChannelNode")
         self.assertEqual(item.kwargs["element"], "TEM")
         self.assertEqual(item.kwargs["current"], 1)
-        self.assertEqual(item.kwargs["total"], 1)
+        self.assertIsNone(item.kwargs["total"])
+        self.assertEqual(publish.call_args_list[-1].kwargs["total"], 1)
 
 
 class TestProcessPythonCallMqtt(unittest.TestCase):
