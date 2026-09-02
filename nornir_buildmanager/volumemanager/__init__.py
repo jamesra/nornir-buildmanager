@@ -1,3 +1,28 @@
+"""Volume XML tree wrappers and the dirty/save ownership contract (#173).
+
+Persistence model
+-----------------
+Each ``XContainerElementWrapper`` with ``SaveAsLinkedElement`` owns one
+``VolumeData.xml`` and its own ``_AttributesChanged`` / ``_ChildrenChanged``
+flags. Mutation APIs (``append`` / ``remove`` / ``UpdateOrAddChild*`` /
+attribute setters) set those flags; a successful ``Save`` clears them via
+``ResetElementChangeFlags``. Linked-child dirtiness does **not** bubble to the
+parent; non-linked children are consulted through ``ElementHasChangesToSave``
+because they serialize into the parent's XML.
+
+Create-on-read
+--------------
+``FilterNode.Imageset`` and ``FilterNode.TilePyramid`` **create and append** a
+child when missing (deliberate; output filters rely on it). Query-only callers
+must use ``HasImageset`` / ``HasTilePyramid`` (or ``Tileset``, which never
+creates). Prefer ``GetOrCreateImageset`` / ``GetOrCreateTilePyramid`` when
+creation is intentional. See ``tests/test_filternode_create_on_read.py``.
+
+Escape hatches that still bypass the dirty model (direct ``attrib[...]``
+writes, in-place child replacement, save-on-read paths) are tracked as
+separate chunk-07 findings, not as "undocumented".
+"""
+
 import nornir_buildmanager.volumemanager.transform_interface as transform_interface
 from nornir_buildmanager.volumemanager.transform_interface import *
 
