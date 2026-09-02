@@ -26,7 +26,7 @@ from functools import partial
 from dataclasses import dataclass
 
 from numpy.typing import NDArray
-from typing import Any, Sequence, cast
+from typing import Any, Iterable, Sequence, cast
 
 from PIL import Image as PILImage
 
@@ -3174,36 +3174,18 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             # Create a new function with executor pre-bound
             process_tile_with_executor = partial(process_tile, executor=tile_executor)
 
-            # Use a generator expression for tile coords
-            # for iY in range(DestGridDimensions[0])
-            #               for iX in range(DestGridDimensions[1]))
-
-            # # This code maps one column then waits for the previous column to complete.  This ensures we don't
-            # # try to use too much memory and we don't saturate the pool.'
-            # this_column_tasks = []
-            # for iY in range(DestGridDimensions[0]):
-            #     last_column_tasks = this_column_tasks
-            #     tile_coords = [(iY, iX) for iX in range(DestGridDimensions[1])]
-            #
-            #     # Map only needs to pass the coordinates now
-            #     this_column_tasks = executor.map(process_tile_with_executor, tile_coords)
-            #     for _ in last_column_tasks:
-            #         pass
-            #
-            # for _ in this_column_tasks:
-            #     pass
-
-            # This code maps one column then waits for the previous column to complete.  This ensures we don't
-            # try to use too much memory and we don't saturate the pool.'
-            this_column_tasks = []
+            # Pipeline one destination row while draining the previous so peak
+            # result buffering stays near two rows, not the whole level (#147).
+            # (Comment historically said "column"; the outer index is row Y.)
+            this_row_tasks: typing.Iterable = ()
             for iY in range(DestGridDimensions[0]):
-                last_column_tasks = this_column_tasks
+                last_row_tasks = this_row_tasks
                 tile_coords = [(iY, iX) for iX in range(DestGridDimensions[1])]
+                this_row_tasks = executor.map(process_tile_with_executor, tile_coords)
+                for _ in last_row_tasks:
+                    pass
 
-                # Map only needs to pass the coordinates now
-                this_column_tasks.extend(executor.map(process_tile_with_executor, tile_coords))
-
-            for _ in this_column_tasks:
+            for _ in this_row_tasks:
                 pass
 
     missing_parents = tileset_functions.find_missing_lineage_parent_tiles(
