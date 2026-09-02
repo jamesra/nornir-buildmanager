@@ -16,7 +16,7 @@ def __GetAttribOrDefault(Node, Attribute, Default):
             else:
                 try:
                     OutputValue = float(OutputValue)
-                except:
+                except (ValueError, TypeError):
                     # Leave it as a string if it does not convert
                     pass
 
@@ -52,7 +52,7 @@ def IsValueMatched(OutputNode, OutputAttribute, TargetValue, Precision=None):
         else:
             try:
                 TargetValue = float(TargetValue)
-            except:
+            except (ValueError, TypeError):
                 # Leave it as a string if it does not convert
                 pass
 
