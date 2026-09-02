@@ -165,9 +165,10 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 
             SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
 
-            OutputTransformNode.ResetChecksum()
-            OutputTransformNode.TranslateSettingsChecksum = checksum.DataChecksum(settings_data_node.FullPath)
-            OutputTransformNode.ManualMosaicOffsetsChecksum = checksum.DataChecksum(manual_offsets_data_node.FullPath)
+            # Staleness of settings/offsets is handled by RemoveOutdatedFile above.
+            # Do not write path-string DataChecksums as TranslateSettingsChecksum /
+            # ManualMosaicOffsetsChecksum — nothing reads them, and they never change
+            # when file contents change (#219).
             OutputTransformNode.ResetChecksum()
 
             print("%s -> %s" % (OutputTransformNode.FullPath,

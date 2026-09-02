@@ -260,6 +260,11 @@ class TestBuildTilesetLevelDefaultPool(unittest.TestCase):
         gtp.assert_not_called()
         self.assertGreaterEqual(process_pool.tasks_added, 1)
 
+    def test_docstring_marks_unused_fallback(self) -> None:
+        doc = tile_ops.BuildTilesetLevel.__doc__ or ''
+        self.assertIn('unused fallback', doc.lower())
+        self.assertIn('BuildTilesetLevelWithPillow', doc)
+
 
 if __name__ == '__main__':
     unittest.main()

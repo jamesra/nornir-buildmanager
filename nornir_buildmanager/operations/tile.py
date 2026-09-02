@@ -2956,14 +2956,20 @@ def _SortedNumberListFromLevelsParameter(Levels=None):
 def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[int, int], TileDim: tuple[int, int],
                       FilePrefix: str, FilePostfix: str, pool=None,
                       max_in_flight: int | None = None, **kwargs):
-    """
+    """ImageMagick tileset assembler — unused fallback, not on the live path (#254).
+
+    Production uses :func:`BuildTilesetLevelWithPillow`. This ImageMagick variant is
+    retained for performance comparisons and environments where Pillow is a poor fit;
+    nothing in the repo currently calls it. Prefer the Pillow entry point for new work.
+
     :param SourcePath:
     :param DestPath:
     :param TileDim: (Y, X) Size of cell (tile) in the grid
     :param DestGridDimensions:  (GridDimY,GridDimX) Number of tiles along each axis
     :param FilePrefix:
     :param FilePostfix:
-    :param pool:
+    :param pool: Process/local-machine pool for ``add_process``; defaults to
+        ``GetGlobalProcessPool()``.
     :param max_in_flight: Cap on queued-but-unawaited tasks; defaults to
         ``_tileset_max_in_flight_tasks()``.
     """
