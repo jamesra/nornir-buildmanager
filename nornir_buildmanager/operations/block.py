@@ -2066,6 +2066,17 @@ def __PredictStosImagePaths(filter_node: FilterNode, Downsample: int):
     return imageFullPath, maskFullPath
 
 
+def _require_finite_downsample(value: float | int | None, *, source: str) -> float:
+    """Return a finite downsample factor or raise for missing/NaN XML defaults."""
+    if value is None:
+        raise NornirUserException(f"{source} has no Downsample; cannot scale STOS transforms.")
+    downsample = float(value)
+    if math.isnan(downsample) or math.isinf(downsample):
+        raise NornirUserException(
+            f"{source} Downsample is {downsample!r}; expected a finite value.")
+    return downsample
+
+
 def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: str, OutputDownsample: int,
                        ControlFilter: FilterNode, MappedFilter: FilterNode,
                        UseMasks: bool | None):
@@ -2077,7 +2088,10 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
     """
 
     stos_group_node = InputTransformNode.FindParent('StosGroup')
-    InputDownsample = stos_group_node.Downsample  # type: ignore[union-attr]
+    group_label = getattr(stos_group_node, 'Name', 'StosGroup') if stos_group_node is not None else 'StosGroup'
+    InputDownsample = _require_finite_downsample(
+        None if stos_group_node is None else stos_group_node.Downsample,
+        source=f"StosGroup {group_label!r}")
 
     InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
     if not stosfile.stos_transform_maps_onto_control_image(InputStos):
@@ -2111,7 +2125,7 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
             and stosfile.paths_refer_to_same_file(InputStos.MappedImageFullPath, MappedImageFullPath)
             and stosfile.paths_refer_to_same_file(InputStos.ControlMaskFullPath, ControlMaskImageFullPath)
             and stosfile.paths_refer_to_same_file(InputStos.MappedMaskFullPath, MappedMaskImageFullPath)
-            and OutputDownsample == InputDownsample
+            and float(OutputDownsample) == InputDownsample
             and InputStos.HasMasks == UseMasks):
 
         ModifiedInputStos = InputStos.ChangeTransformPixelSpacing(oldspacing=InputDownsample,
@@ -3940,7 +3954,9 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
        TODO: This function used to create stos transforms between different filters to.  Port that to a separate function
     """
     GroupParent = InputStosGroupNode.Parent
-    InputDownsample = InputStosGroupNode.Downsample
+    InputDownsample = _require_finite_downsample(
+        InputStosGroupNode.Downsample,
+        source=f"StosGroup {InputStosGroupNode.Name!r}")
 
     OutputGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.Create(OutputGroupName,
                                                                                            OutputDownsample)
