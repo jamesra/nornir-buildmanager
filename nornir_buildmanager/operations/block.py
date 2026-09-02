@@ -1629,6 +1629,29 @@ def ScoreStosGroupQuality(Parameters,
     return group_node
 
 
+def _pick_best_mean_transform(task_list, Logger):
+    """Return the transform_node with the lowest ImageMagick mean among tasks.
+
+    Per-task failures are logged and skipped. ``KeyboardInterrupt`` / ``SystemExit``
+    propagate. Returns ``None`` when every candidate fails (#146).
+    """
+    winning_transform = None
+    best_mean = None
+    for t in task_list:
+        try:
+            mean_str = t.wait_return()
+            mean_val = float(mean_str)
+        except Exception as e:
+            Logger.error(
+                "Could not evaluate ImageMagick mean for mapping candidate %s: %s",
+                getattr(t, 'transform_node', t), e)
+            continue
+        if best_mean is None or best_mean > mean_val:
+            winning_transform = t.transform_node
+            best_mean = mean_val
+    return winning_transform
+
+
 def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.volumemanager.StosGroupNode,
                                 InputStosMapNode: nornir_buildmanager.volumemanager.StosMapNode,
                                 OutputStosMapName: str, Logger, **kwargs):
@@ -1753,20 +1776,7 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
                         except Exception as e:
                             Logger.error("Could not evalutate mapping " + str(mappedSection) + ' -> ' + str(controlSection))
 
-                BestMean = None
-
-                for t in TaskList:
-                    try:
-                        MeanStr = t.wait_return()
-                        MeanVal = float(MeanStr)
-                        if BestMean is None:
-                            WinningTransform = t.transform_node
-                            BestMean = MeanVal
-                        elif BestMean > float(MeanVal):
-                            WinningTransform = t.transform_node
-                            BestMean = MeanVal
-                    except:
-                        pass
+                WinningTransform = _pick_best_mean_transform(TaskList, Logger)
 
             if WinningTransform is None:
                 Logger.error("Winning transform is none, section #" + str(mappedSection))
