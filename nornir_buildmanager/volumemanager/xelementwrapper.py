@@ -649,14 +649,25 @@ class XElementWrapper(ElementTree.Element):
         return child
 
     def Contains(self, Element: XElementWrapper) -> bool:
+        """True if a direct child matches ``Element`` on tag and attributes.
+
+        ``CreationDate`` is ignored so a freshly built probe can match a child that
+        already carries an auto-stamped date. Compares ``Element``'s attributes to
+        each child (not the parent's), which is what duplicate detection needs.
+        """
         for c in self:
-            for k, v in c.attrib:
+            if getattr(c, 'tag', None) != Element.tag:
+                continue
+            attrs_ok = True
+            for k, v in Element.attrib.items():
                 if k == 'CreationDate':
                     continue
-                if k in self.attrib:
-                    if not v == self.attrib[k]:
-                        return False
-        return True
+                if k not in c.attrib or c.attrib[k] != v:
+                    attrs_ok = False
+                    break
+            if attrs_ok:
+                return True
+        return False
 
     def UpdateOrAddChildByAttrib(self, element: _XT, AttribNames=None) -> tuple[bool, _XT]:  # type: ignore[override]
         if AttribNames is None:
