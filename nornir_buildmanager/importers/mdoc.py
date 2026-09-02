@@ -1,11 +1,40 @@
 import glob
 import os
+import subprocess
 from collections.abc import Generator
 
 import nornir_buildmanager.importers.shared as shared
+from nornir_shared import prettyoutput
 from nornir_shared.files import OutdatedFile, rmtree
 from nornir_shared.images import *
 from . import idoc
+
+
+def _run_mrc2tif(st_path: str, output_dir: str) -> None:
+    """Invoke ``mrc2tif`` without a shell so paths with spaces stay intact."""
+    cmd = ['mrc2tif', st_path, output_dir]
+    prettyoutput.Log(' '.join(cmd))
+    subprocess.run(cmd, check=False)
+
+
+def _list_mrc2tif_outputs(directory: str) -> list[str]:
+    """List ``mrc2tif`` TIFF outputs; prefer ``.###.tif`` names; match case-insensitively."""
+    if not os.path.isdir(directory):
+        return []
+    dotted: list[str] = []
+    plain: list[str] = []
+    with os.scandir(directory) as entries:
+        for entry in entries:
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            lower = entry.name.lower()
+            if not (lower.endswith('.tif') or lower.endswith('.tiff')):
+                continue
+            if entry.name.startswith('.'):
+                dotted.append(entry.path)
+            else:
+                plain.append(entry.path)
+    return dotted if dotted else plain
 
 
 class SerialEMMDocImport(idoc.SerialEMIDocImport):
@@ -74,14 +103,10 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
             os.makedirs(tempDirNameFullPath, exist_ok=True)
 
             # [Image = 10000.tif]
-            cmd = "mrc2tif " + stNameFullPath + " " + tempDirNameFullPath
-            prettyoutput.Log(cmd)
-            subprocess.call(cmd + " && exit", shell=True)
+            _run_mrc2tif(stNameFullPath, tempDirNameFullPath)
 
             # mrc2tif may emit either .###.tif or ###.tif depending on version/options.
-            tiffFiles = glob.glob(os.path.join(tempDirNameFullPath, '.*.tif'))
-            if len(tiffFiles) == 0:
-                tiffFiles = glob.glob(os.path.join(tempDirNameFullPath, '*.tif'))
+            tiffFiles = _list_mrc2tif_outputs(tempDirNameFullPath)
 
             iNumber = 0
             # images from MRC2TIF appear to be named .###.tif, where ### is the ZLevel
