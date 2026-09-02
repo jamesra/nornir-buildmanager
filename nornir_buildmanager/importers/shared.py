@@ -236,6 +236,21 @@ def _is_same_notes_path(source: str, dest: str) -> bool:
         return False
 
 
+def _read_notes_text_with_encoding(filename: str) -> tuple[str, str]:
+    """Decode notes bytes; record the codec actually used (#246).
+
+    Prefer UTF-8 so the ``encoding`` attribute matches common modern files. Fall back to
+    cp1252 for microscope-era Latin-1/Windows notes that are not valid UTF-8. cp1252
+    accepts every byte sequence, so this always returns.
+    """
+    with open(filename, 'rb') as handle:
+        raw = handle.read()
+    try:
+        return raw.decode('utf-8'), 'utf-8'
+    except UnicodeDecodeError:
+        return raw.decode('cp1252'), 'cp1252'
+
+
 def TryAddNotes(containerObj,
                 InputPath: str,
                 logger: logging.Logger | None = None,
@@ -266,10 +281,7 @@ def TryAddNotes(containerObj,
                     shutil.copyfile(filename, CopiedNotesFullPath)
                     copied = True
 
-            with open(filename, 'r') as f:
-                notesTxt = f.read()
-
-            encoding = "utf-8"
+            notesTxt, encoding = _read_notes_text_with_encoding(filename)
             notesTxt = notesTxt.replace('\0', '')
 
             if len(notesTxt) > 0:
