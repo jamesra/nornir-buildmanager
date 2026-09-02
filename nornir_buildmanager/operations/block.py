@@ -2962,12 +2962,9 @@ def _set_slice_to_volume_stos_path(
         output_transform.ControlFilterName,
         output_transform.MappedChannelName,
         output_transform.MappedFilterName)
-    old_full = None
-    try:
-        if output_transform.Path:
-            old_full = output_transform.FullPath
-    except Exception:
-        old_full = None
+    # Resolve the on-disk path before renaming Path. Swallowing FullPath errors
+    # orphans the short-named .stos and its .unblended sidecar under the old name.
+    old_full = output_transform.FullPath if output_transform.Path else None
     output_transform.Name = f"{mapped_section}-{control_section}"
     output_transform.Path = filename
     new_full = output_transform.FullPath
