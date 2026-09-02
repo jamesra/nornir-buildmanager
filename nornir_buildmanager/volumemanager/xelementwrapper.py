@@ -405,7 +405,11 @@ class XElementWrapper(ElementTree.Element):
                 pass
 
     def Copy(self) -> "XElementWrapper":
-        """Creates a copy of the element"""
+        """Deep-copy this element and its descendant wrappers.
+
+        Children are copied recursively so the result is not attached to the
+        source tree and does not share child identity with it.
+        """
         t = type(self)
         cpy = t(tag=self.tag, attrib=self.attrib.copy())
 
@@ -415,9 +419,14 @@ class XElementWrapper(ElementTree.Element):
         if self.tail is not None:
             cpy.tail = self.tail
 
-        if len(self) > 0:
-            Warning(
-                "Copying an element with children, possibly undefined behavior")  # Child elements are not included in copies and I have not tested that at all
+        for child in list(self):
+            if isinstance(child, XElementWrapper):
+                cpy.append(child.Copy())
+            else:
+                # Rare raw Element: detach via serialize round-trip, then wrap.
+                detached = ElementTree.fromstring(
+                    ElementTree.tostring(child, encoding='unicode'))
+                cpy.append(XElementWrapper.wrap(detached))
 
         return cpy
 
