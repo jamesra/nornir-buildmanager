@@ -236,5 +236,30 @@ class TestTheOldGateIsGone(unittest.TestCase):
                 self.assertNotIn(marker, source)
 
 
+class TestBuildTilesetLevelDefaultPool(unittest.TestCase):
+    """#224: default must support add_process (not the global thread pool)."""
+
+    def test_none_pool_uses_global_process_pool(self) -> None:
+        process_pool = _Pool()
+        with patch.object(tile_ops.nornir_pools, 'GetGlobalProcessPool', return_value=process_pool) as gpp, \
+                patch.object(tile_ops.nornir_pools, 'GetGlobalThreadPool') as gtp, \
+                patch.object(tile_ops.os.path, 'exists', return_value=True), \
+                patch.object(tile_ops.os, 'makedirs'), \
+                patch.object(tile_ops.prettyoutput, 'Log'), \
+                patch.object(tile_ops, 'report_iterate'):
+            tile_ops.BuildTilesetLevel(
+                SourcePath='src',
+                DestPath='dest',
+                DestGridDimensions=(1, 1),
+                TileDim=(256, 256),
+                FilePrefix='',
+                FilePostfix='.png',
+                pool=None,
+                max_in_flight=4)
+        gpp.assert_called()
+        gtp.assert_not_called()
+        self.assertGreaterEqual(process_pool.tasks_added, 1)
+
+
 if __name__ == '__main__':
     unittest.main()

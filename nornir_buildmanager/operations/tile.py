@@ -2971,7 +2971,8 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
     os.makedirs(DestPath, exist_ok=True)
 
     if pool is None:
-        pool = nornir_pools.GetGlobalThreadPool()
+        # add_process requires a process/local-machine pool; ThreadPool refuses it (#224).
+        pool = nornir_pools.GetGlobalProcessPool()
 
     total_rows = int(DestGridDimensions[0])
     assemble_track_id = "assemble:rows"
