@@ -177,6 +177,27 @@ def _build_refine_image_check_snapshots(
     return tuple(checks)
 
 
+# LinearBlendStosGroup never uses composed rigid slice-to-slice chains; stamp and match False
+# so a chain-consistent SliceToVolume stamp cannot be silently reused (#144 / C08-B008).
+_LINEAR_BLEND_CHAIN_CONSISTENT = False
+
+
+def _linear_blend_params_matched(output_stos_node: TransformNode,
+                                 min_blend: float | None,
+                                 travel_limit: float | None,
+                                 reblend_iterations: int | None,
+                                 reblend_tolerance: float | None,
+                                 max_blend: float | None) -> bool:
+    """True when stored linear-blend params match this stage (always non-chain)."""
+    return output_stos_node.IsLinearBlendParamsMatched(
+        min_blend,
+        travel_limit,
+        reblend_iterations,
+        reblend_tolerance,
+        max_blend=max_blend,
+        chain_consistent_linear=_LINEAR_BLEND_CHAIN_CONSISTENT)
+
+
 def _apply_linear_blend_job(context: _LinearBlendJobContext,
                             result: stosgroup_workers.LinearBlendResult,
                             min_blend: float | None,
@@ -185,11 +206,13 @@ def _apply_linear_blend_job(context: _LinearBlendJobContext,
                             reblend_tolerance: float | None,
                             max_blend: float | None) -> None:
     """Update volume metadata after a linear-blend worker completes."""
-    context.output_stos_node.SetLinearBlendParams(min_blend,
-                                                  travel_limit,
-                                                  reblend_iterations,
-                                                  reblend_tolerance,
-                                                  max_blend=max_blend)
+    context.output_stos_node.SetLinearBlendParams(
+        min_blend,
+        travel_limit,
+        reblend_iterations,
+        reblend_tolerance,
+        max_blend=max_blend,
+        chain_consistent_linear=_LINEAR_BLEND_CHAIN_CONSISTENT)
     context.output_stos_node.ResetChecksum()
     context.output_stos_node.SetTransform(context.input_transform_node)
 
@@ -4098,11 +4121,12 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
 
         if not stosNode_added:
             if not (output_stos_node.IsInputTransformMatched(InputTransformNode)
-                    and output_stos_node.IsLinearBlendParamsMatched(min_blend,
-                                                                    travel_limit,
-                                                                    reblend_iterations,
-                                                                    reblend_tolerance,
-                                                                    max_blend=max_blend)):
+                    and _linear_blend_params_matched(output_stos_node,
+                                                     min_blend,
+                                                     travel_limit,
+                                                     reblend_iterations,
+                                                     reblend_tolerance,
+                                                     max_blend)):
                 if _no_delete_mod.is_no_delete():
                     if os.path.exists(output_stos_node.FullPath):
                         prettyoutput.Log(
