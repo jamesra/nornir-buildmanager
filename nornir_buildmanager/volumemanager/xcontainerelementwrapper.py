@@ -262,7 +262,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
                     prettyoutput.LogErr(
                         "Unexpected error loading linked XML file: {0}\n{1}".format(task_fullpath, str(e)))
-                    continue
+                    # Match the single-link path: unexpected errors must not leave an
+                    # unresolved *_Link stub while the caller believes loading succeeded (#137).
+                    raise
 
                 # (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
                 # SubContainer = XContainerElementWrapper.wrap(XMLElement)
