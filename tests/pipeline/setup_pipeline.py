@@ -793,20 +793,13 @@ class NornirBuildTestBase(testbase.TestBase):
         # Check that the overlays are not regenerated on a rebuild
         full_paths = FullPathsForNodes(image_nodes)
         existing_paths = [p for p in full_paths if os.path.exists(p)]
-        if not existing_paths:
-            if shutil.which('ir-stom') is None:
-                import warnings
-                warnings.warn(
-                    "ir-stom not found on PATH — overlay image validation skipped. "
-                    "Install the NCR toolset to enable full overlay validation.")
-            else:
-                self.fail(
-                    "No overlay images were created even though ir-stom is available. "
-                    f"Expected: {full_paths[0]}")
-        else:
-            image_last_modified = BuildPathToModifiedDateMap(existing_paths)
-            volumeNode = self.RunBuild(buildArgs)
-            self.VerifyFilesLastModifiedDateUnchanged(image_last_modified)
+        self.assertGreater(
+            len(existing_paths), 0,
+            "No overlay/diff/warped images were created by AssembleStosOverlays. "
+            f"Expected at least one of: {full_paths[:3]}")
+        image_last_modified = BuildPathToModifiedDateMap(existing_paths)
+        volumeNode = self.RunBuild(buildArgs)
+        self.VerifyFilesLastModifiedDateUnchanged(image_last_modified)
 
         return volumeNode
 

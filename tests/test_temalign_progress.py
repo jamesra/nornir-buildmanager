@@ -34,19 +34,14 @@ class TestAssembleStosOverlaysProgress(unittest.TestCase):
         stos_images.MappedImageNode = None
 
         with mock.patch.object(block_mod.os.path, "exists", return_value=True):
-            with mock.patch.object(block_mod.os, "getcwd", return_value="/tmp"):
-                with mock.patch.object(block_mod.os, "chdir"):
-                    with mock.patch.object(block_mod.os, "makedirs"):
-                        with mock.patch.object(block_mod.tempfile, "mkdtemp", return_value="/tmp/x"):
-                            with mock.patch.object(block_mod.files, "rmtree"):
-                                with mock.patch.object(block_mod, "StosImageNodes", return_value=stos_images):
-                                    with mock.patch.object(
-                                            block_mod, "GetOrCreateImageNodeHelper",
-                                            side_effect=lambda parent, path: (False, mock.Mock())):
-                                        with mock.patch.object(block_mod, "report_stos_work_progress") as report:
-                                            with mock.patch.object(block_mod.nornir_pools, "ReleaseStagePools"):
-                                                result = block_mod.AssembleStosOverlays(
-                                                    {}, stos_map, group, mock.Mock())
+            with mock.patch.object(block_mod, "StosImageNodes", return_value=stos_images):
+                with mock.patch.object(
+                        block_mod, "GetOrCreateImageNodeHelper",
+                        side_effect=lambda parent, path: (False, mock.Mock())):
+                    with mock.patch.object(block_mod, "report_stos_work_progress") as report:
+                        with mock.patch.object(block_mod.nornir_pools, "ReleaseStagePools"):
+                            result = block_mod.AssembleStosOverlays(
+                                {}, stos_map, group, mock.Mock())
 
         self.assertIsNone(result)
         currents = [c.args[1] for c in report.call_args_list]

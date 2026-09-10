@@ -8,13 +8,11 @@ import contextlib
 import copy
 import math
 import logging
-import random
 import re
 import shutil
 from dataclasses import dataclass
 import numpy as np
 import subprocess
-import tempfile
 import typing
 
 from nornir_buildmanager.exceptions import NornirUserException
@@ -40,7 +38,6 @@ from nornir_imageregistration.views import TransformWarpView
 import nornir_imageregistration.settings
 import nornir_pools
 from nornir_shared import files, misc, plot, prettyoutput
-from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, ProgressOutputInterceptor
 import nornir_shared
 from nornir_imageregistration.settings import AngleSearchRange
 from nornir_buildmanager.progress import report_iterate, report_iterate_complete
@@ -236,141 +233,6 @@ def _apply_scale_stos_job(context: _ScaleStosJobContext,
     context.output_stos_node.SetTransform(context.input_transform_node)
 
 
-
-class StomPreviewOutputInterceptor(ProgressOutputInterceptor):
-
-    def __init__(self, proc, processData=None, OverlayFilename: str | None = None, DiffFilename: str | None = None,
-                 WarpedFilename: str | None = None):
-        super(StomPreviewOutputInterceptor, self).__init__(proc, processData)
-
-        self.Output = list()  # List of output lines
-        self.LastLoadedFile = None  # Last file loaded by stom, used to rename the output
-        self.stosfilename = None
-
-        self.OverlayFilename = OverlayFilename
-        self.DiffFilename = DiffFilename
-        self.WarpedFilename = WarpedFilename
-        return
-
-    def Parse(self, line):
-        """Parse a line of output from stom so we can figure out how to correctly name the output files.
-           sample input:
-            Tool Percentage: 5.000000e-002
-            loading 0009_ShadingCorrected-dapi_blob_1.png
-            saving BruteResults/008.tif
-            Tool Percentage: 5.000000e-002
-            loading 0010_ShadingCorrected-dapi_blob_1.png
-            saving BruteResults/009.tif
-            Tool Percentage: 5.000000e-002"""
-
-        # Line is called with None when the process has terminated which means it is safe to rename the created files
-        if line is not None:
-            # Let base class handle a progress percentage message
-            ProgressOutputInterceptor.Parse(self, line)
-            prettyoutput.Log(line)
-            self.Output.append(line)
-        else:
-            outputfiles = list()
-            '''Create a cmd for image magick to merge the images'''
-
-            for line in self.Output:
-                '''Processes a single line of output from the provided process and updates status as needed'''
-                try:
-                    line = line.lower()
-                    if line.find("loading") >= 0:
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            [name, ext] = os.path.splitext(str(parts[1]))
-                            if self.stosfilename is None:
-                                self.stosfilename = name
-                            else:
-                                self.LastLoadedFile = name
-
-                    elif line.find("saving") >= 0:
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            outputFile = str(parts[1])
-                            # Figure out if the output file has a different path
-                            # path = os.path.dirname(outputFile)
-
-                            [name, ext] = os.path.splitext(outputFile)
-                            if ext is None:
-                                ext = '.tif'
-
-                            if len(ext) <= 0:
-                                ext = '.tif'
-
-                            outputfiles.append(outputFile)
-                        # prettyoutput.Log("Renaming " + outputFile + " to " + os.path.join(path, self.LastLoadedFile + ext))
-
-                        # shutil.move(outputFile, os.path.join(path, self.LastLoadedFile + ext))
-                except (AttributeError, TypeError, ValueError, IndexError) as e:
-                    prettyoutput.Log(
-                        f"Skipping malformed ir-stom output line {line!r}: {e}")
-
-            if len(outputfiles) == 2 and self.stosfilename is not None:
-
-                [OverlayFile, ext] = os.path.splitext(self.stosfilename)
-                path = os.path.dirname(outputfiles[0])
-                [temp, ext] = os.path.splitext(outputfiles[0])
-
-                # Rename the files so we can continue without waiting for convert
-                max_name_attempts = 64
-                tempfilenameOne = None
-                tempfilenameTwo = None
-                for _attempt in range(max_name_attempts):
-                    r = random.randrange(2, 100000, 1)
-                    candidate_one = os.path.join(path, str(r) + ext)
-                    candidate_two = os.path.join(path, str(r + 1) + ext)
-                    if os.path.exists(candidate_one) or os.path.exists(candidate_two):
-                        continue
-                    try:
-                        prettyoutput.Log("Renaming " + outputfiles[0] + " to " + candidate_one)
-                        shutil.move(outputfiles[0], candidate_one)
-                        prettyoutput.Log("Renaming " + outputfiles[1] + " to " + candidate_two)
-                        shutil.move(outputfiles[1], candidate_two)
-                        tempfilenameOne = candidate_one
-                        tempfilenameTwo = candidate_two
-                        break
-                    except OSError as e:
-                        prettyoutput.Log(
-                            f"Temp rename collided for ir-stom preview ({e}); retrying")
-                else:
-                    raise RuntimeError(
-                        f"Could not allocate unique temp names for ir-stom preview "
-                        f"after {max_name_attempts} attempts in {path}")
-
-                if self.OverlayFilename is None:
-                    OverlayFilename = 'overlay_' + OverlayFile.replace("temp", "", 1) + '.png'
-                else:
-                    OverlayFilename = self.OverlayFilename
-
-                Pool = nornir_pools.GetGlobalProcessPool()
-
-                cmd = 'magick convert -colorspace RGB ' + tempfilenameOne + ' ' + tempfilenameTwo + ' ' + tempfilenameOne + ' -combine -interlace PNG ' + OverlayFilename
-                prettyoutput.Log(cmd)
-                Pool.add_process(cmd, cmd + " && exit", shell=True)
-                # subprocess.Popen(cmd + " && exit", shell=True)
-
-                if self.DiffFilename is None:
-                    DiffFilename = 'diff_' + OverlayFile.replace("temp", "", 1) + '.png'
-                else:
-                    DiffFilename = self.DiffFilename
-
-                cmd = 'magick composite ' + tempfilenameOne + ' ' + tempfilenameTwo + ' -compose difference  -interlace PNG ' + DiffFilename
-                prettyoutput.Log(cmd)
-
-                Pool.add_process(cmd, cmd + " && exit", shell=True)
-
-                if self.WarpedFilename is not None:
-                    cmd = 'magick convert ' + tempfilenameTwo + " -interlace PNG " + self.WarpedFilename
-                    Pool.add_process(cmd, cmd + " && exit", shell=True)
-
-                # subprocess.call(cmd + " && exit", shell=True)
-            else:
-                prettyoutput.Log("Unexpected number of images output from ir-stom, expected 2: " + str(outputfiles))
-
-        return
 
 
 def SectionNumberKey(SectionNodeA) -> int:
@@ -1159,7 +1021,7 @@ def UpdateStosImagePaths(StosTransformPath: str, ControlImageFullPath: str, Mapp
     :return: True if the stos file was updated
     """
 
-    # ir-stom's -slice_dirs argument is broken for masks, so we have to patch the stos file before use
+    # Patch absolute/filter image paths into the .stos before assemble consumers load it.
     InputStos = stosfile.StosFile.Load(StosTransformPath)
 
     NeedsUpdate = (
@@ -1243,7 +1105,7 @@ def RebaseCopiedStosPaths(StosFilePath: str,
 
 def SectionToVolumeImage(Parameters, transform_node: TransformNode, Logger, CropUndefined: bool = True,
                          **kwargs) -> XElementWrapper | None:
-    """Executre ir-stom on a provided .stos file"""
+    """Assemble the mapped image into control space for a slice-to-volume transform."""
 
     GroupNode = transform_node.FindParent("StosGroup")
     SaveRequired = False
@@ -1294,14 +1156,14 @@ def AssembleStosOverlays(Parameters,
                          stos_map_node: nornir_buildmanager.volumemanager.StosMapNode,
                          group_node: nornir_buildmanager.volumemanager.StosGroupNode,
                          Logger, **kwargs) -> XElementWrapper | None:
-    """Executre ir-stom on a provided .stos file"""
+    """Write overlay, difference, and warped preview PNGs for each STOS mapping.
 
-    oldDir = os.getcwd()
-    # TransformXPathTemplate = "SectionMappings[@MappedSectionNumber='%(MappedSection)d']/Transform[@ControlSectionNumber='%(ControlSection)d']"
+    Uses ``assemble.WriteStosPreviewImages`` (mapped→control warp plus Pyre
+    ChannelDodge overlay and absolute-difference images). Does not call ir-stom
+    or ImageMagick.
+    """
 
     SectionMappingSaveRequired = False
-
-    tempdir = tempfile.mkdtemp() + os.path.sep
 
     overlay_jobs: list[tuple[typing.Any, typing.Any, typing.Any]] = []
     for mapping_node in stos_map_node.Mappings:
@@ -1336,10 +1198,6 @@ def AssembleStosOverlays(Parameters,
             OverlayOutputFileFullPath = os.path.join(group_node.FullPath, OverlayOutputFilename)
             DiffOutputFileFullPath = os.path.join(group_node.FullPath, DiffOutputFilename)
             WarpedOutputFileFullPath = os.path.join(group_node.FullPath, WarpedOutputFilename)
-
-            os.chdir(group_node.FullPath)
-
-            os.makedirs('Temp', exist_ok=True)
 
             # Create a node in the XML records
             (created_overlay, OverlayImageNode) = GetOrCreateImageNodeHelper(SectionMappingNode,
@@ -1388,7 +1246,7 @@ def AssembleStosOverlays(Parameters,
             if not (os.path.exists(OverlayImageNode.FullPath) and os.path.exists(
                     DiffImageNode.FullPath) and os.path.exists(WarpedImageNode.FullPath)):
 
-                # ir-stom's -slice_dirs argument is broken for masks, so we have to patch the stos file before use
+                # Keep .stos image paths aligned with filter ImageSet paths before assemble.
                 if stosImages.ControlImageMaskNode is None or stosImages.MappedImageMaskNode is None:
                     UpdateStosImagePaths(StosTransformNode.FullPath,
                                          stosImages.ControlImageNode.FullPath,
@@ -1400,14 +1258,17 @@ def AssembleStosOverlays(Parameters,
                                          stosImages.ControlImageMaskNode.FullPath,
                                          stosImages.MappedImageMaskNode.FullPath)
 
-                cmd = f'ir-stom -load {StosTransformNode.FullPath} -save {tempdir} ' + misc.ArgumentsFromDict(
-                    Parameters)
-
-                NewP = subprocess.Popen(cmd + " && exit", shell=True, stdout=subprocess.PIPE)
-                ProcessOutputInterceptor.Intercept(StomPreviewOutputInterceptor(NewP,
-                                                                                OverlayFilename=OverlayImageNode.FullPath,
-                                                                                DiffFilename=DiffImageNode.FullPath,
-                                                                                WarpedFilename=WarpedImageNode.FullPath))
+                assemble.WriteStosPreviewImages(
+                    StosTransformNode.FullPath,
+                    overlay_path=OverlayImageNode.FullPath,
+                    diff_path=DiffImageNode.FullPath,
+                    warped_path=WarpedImageNode.FullPath,
+                    fixedImage=stosImages.ControlImageNode.FullPath,
+                    warpedImage=stosImages.MappedImageNode.FullPath,
+                )
+                prettyoutput.Log(
+                    f"Wrote STOS previews for {StosTransformNode.Path}: "
+                    f"overlay/diff/warped under {group_node.FullPath}")
 
                 SectionMappingSaveRequired = True
 
@@ -1422,9 +1283,6 @@ def AssembleStosOverlays(Parameters,
                 )
     finally:
         nornir_pools.ReleaseStagePools()
-        files.rmtree(tempdir, ignore_errors=True)
-
-        os.chdir(oldDir)
 
     if SectionMappingSaveRequired:
         return group_node
