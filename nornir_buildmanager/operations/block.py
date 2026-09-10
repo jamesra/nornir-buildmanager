@@ -757,7 +757,14 @@ def brute_stos_needs_replacement(
         control_filter: nornir_buildmanager.volumemanager.FilterNode,
         mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
         use_masks: bool) -> bool:
-    """Return True when FilterToFilterBruteRegistration would regenerate the pair."""
+    """Return True when FilterToFilterBruteRegistration would regenerate the pair.
+
+    When ``Manual/<pair>.stos`` exists, the group-root product must be that Manual
+    file (copied, not re-bruteforced). Replacement is required when
+    ``InputTransformChecksum`` ≠ Manual checksum, or — if meta lacks ITC — when
+    the root file checksum ≠ Manual. That keeps Manual and root transforms
+    identical so the next downsample can scale the root into ``Automatic/``.
+    """
     stos_node = stos_group.GetStosTransformNode(control_filter, mapped_filter)
     if stos_node is None:
         return True
@@ -1848,8 +1855,22 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
 def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, InputTransformNode: TransformNode,
                                               OutputDownsample: int, ControlFilter: FilterNode,
                                               MappedFilter: FilterNode, UseMasks: bool):
-    """
-    :return: If a manual override stos file exists we return the manual file.  If it does not exist we scale the input transform to the desired size
+    """Build the scaled input ``.stos`` for refine under the *output* StosGroup.
+
+    Cascade (honors transform checksums end-to-end):
+
+    1. If ``OutputGroup/Manual/<pair>.stos`` exists, use that file as the refine
+       input path (and delete a stale ``Automatic/`` copy). Refine itself will
+       usually short-circuit to copying Manual onto the group root instead of
+       running — see :func:`stosgroup_workers.decide_stos_grid_refine_need`.
+    2. Otherwise scale ``InputTransformNode`` (previous group's *root* product,
+       which is itself Manual when that group had a Manual override) into
+       ``OutputGroup/Automatic/<pair>.stos`` when outdated vs the input file.
+
+    So Grid32 Manual → copied to Grid32 root → scaled into Grid16/Automatic →
+    refined (or Manual-copied) to Grid16 root. The checksum recorded on the
+    output node is the Manual/Automatic file checksum used as input, not a
+    stale prior Automatic checksum.
     """
     # Begin selecting the input transform for registration
     AutomaticInputDir = os.path.join(stos_group_node.FullPath, 'Automatic')
@@ -2538,6 +2559,12 @@ def _run_refine_or_manual_copy(
             context.use_masks,
             StosTransformNode=stos_node,
         )
+        # Record Manual's checksum as the input identity (same as StosBrute), so a
+        # later scan compares ITC to Manual rather than to a prior Automatic/Grid.
+        try:
+            context.input_stos_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+        except (OSError, FileNotFoundError, ValueError, TypeError):
+            pass
         return stos_node, False
 
     try:

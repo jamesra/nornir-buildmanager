@@ -124,6 +124,84 @@ def test_decide_manual_copy_when_output_missing(tmp_path: Path) -> None:
     assert result.decision == stosgroup_workers.RefineScanDecision.MANUAL_COPY
 
 
+def test_decide_manual_copy_when_output_checksum_differs(tmp_path: Path) -> None:
+    """Existing Automatic/Grid root that does not match Manual must be replaced.
+
+    Regression for pairs like RC2 Grid32 945-943: VolumeData InputTransformChecksum
+    already equaled Manual while the group-root file was still a refined Grid.
+    """
+    if not _FIXTURE_STOS.is_file():
+        pytest.skip('STOS fixture unavailable')
+    snapshot = _snapshot(
+        tmp_path=tmp_path,
+        output_exists=True,
+        valid_output=True,
+        manual=True,
+        stored_checksum='abc',
+        input_checksum='abc',
+    )
+    assert snapshot.manual_path is not None
+    payload = _FIXTURE_STOS.read_bytes()
+    Path(snapshot.manual_path).write_bytes(payload)
+    # Mutate a transform digit so LoadChecksum differs (trailing junk is ignored).
+    text = payload.decode('utf-8')
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if ' vp ' in line or line.startswith('Mesh') or line.startswith('Grid'):
+            lines[i] = line[:-1] + ('0' if not line.endswith('0') else '1')
+            break
+    Path(snapshot.output_stos_path).write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    manual_cs = stosfile.StosFile.LoadChecksum(snapshot.manual_path)
+    output_cs = stosfile.StosFile.LoadChecksum(snapshot.output_stos_path)
+    assert manual_cs != output_cs
+    # Meta claiming the upstream input matches must not skip past Manual≠output.
+    snapshot = stosgroup_workers.RefineScanSnapshot(
+        **{**snapshot.__dict__,
+           'stored_input_transform_checksum': manual_cs,
+           'input_checksum': manual_cs})
+    result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
+    assert result.decision == stosgroup_workers.RefineScanDecision.MANUAL_COPY
+    assert 'checksum' in result.reason.lower()
+
+
+def test_decide_skip_when_output_matches_manual(tmp_path: Path) -> None:
+    """Matching Manual and group-root transform checksums skip refine."""
+    if not _FIXTURE_STOS.is_file():
+        pytest.skip('STOS fixture unavailable')
+    snapshot = _snapshot(tmp_path=tmp_path, output_exists=True, valid_output=True, manual=True)
+    assert snapshot.manual_path is not None
+    payload = _FIXTURE_STOS.read_bytes()
+    Path(snapshot.manual_path).write_bytes(payload)
+    Path(snapshot.output_stos_path).write_bytes(payload)
+    manual_cs = stosfile.StosFile.LoadChecksum(snapshot.manual_path)
+    snapshot = stosgroup_workers.RefineScanSnapshot(
+        **{**snapshot.__dict__,
+           'stored_input_transform_checksum': manual_cs,
+           'input_checksum': manual_cs})
+    result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
+    assert result.decision == stosgroup_workers.RefineScanDecision.SKIP
+    assert 'manual' in result.reason.lower()
+
+
+def test_decide_manual_copy_when_itc_mismatches_manual(tmp_path: Path) -> None:
+    """Recopy when the root file matches Manual but InputTransformChecksum does not."""
+    if not _FIXTURE_STOS.is_file():
+        pytest.skip('STOS fixture unavailable')
+    snapshot = _snapshot(tmp_path=tmp_path, output_exists=True, valid_output=True, manual=True)
+    assert snapshot.manual_path is not None
+    payload = _FIXTURE_STOS.read_bytes()
+    Path(snapshot.manual_path).write_bytes(payload)
+    Path(snapshot.output_stos_path).write_bytes(payload)
+    manual_cs = stosfile.StosFile.LoadChecksum(snapshot.manual_path)
+    snapshot = stosgroup_workers.RefineScanSnapshot(
+        **{**snapshot.__dict__,
+           'stored_input_transform_checksum': 'not-the-manual-checksum',
+           'input_checksum': manual_cs})
+    result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
+    assert result.decision == stosgroup_workers.RefineScanDecision.MANUAL_COPY
+    assert 'InputTransformChecksum' in result.reason
+
+
 def test_decide_skip_when_fresh_and_matching(tmp_path: Path) -> None:
     """Matching checksum and older input skips refine."""
     if not _FIXTURE_STOS.is_file():

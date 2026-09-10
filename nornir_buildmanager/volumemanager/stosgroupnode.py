@@ -48,8 +48,12 @@ class StosGroupNode(XNamedContainerElementWrapped):
         os.makedirs(self.ManualInputDirectory, exist_ok=True)
 
     def PathToManualTransform(self, InputTransformFullPath: str) -> str | None:
-        """Check the manual directory for the existence of a user-supplied file we should use.
-           Returns the path to the file if it exists, otherwise None"""
+        """Return ``Manual/<basename>`` under this StosGroup if that override exists.
+
+        Manual under the group that *owns* the product replaces Automatic/refine
+        output for that pair (checksums must match after copy). Downstream groups
+        scale the group-root file into their ``Automatic/`` folder.
+        """
 
         transform_filename = os.path.basename(InputTransformFullPath)
         ManualInputStosFullPath = os.path.join(self.ManualInputDirectory, transform_filename)

@@ -262,15 +262,63 @@ def _output_matches_input_checksum(snapshot: RefineScanSnapshot) -> bool:
     return True
 
 
+def _manual_override_needs_copy(snapshot: RefineScanSnapshot) -> tuple[bool, str]:
+    """Return whether output-group Manual must be copied onto the group-root product.
+
+    Contract (same as StosBrute ``brute_stos_needs_replacement``):
+    A ``Manual/<pair>.stos`` under the *output* StosGroup is the product for that
+    pair. Refine must not run. Copy Manual to the group root when the root file is
+    missing, unloadable, or its transform checksum differs from Manual. Also recopy
+    when VolumeData ``InputTransformChecksum`` does not equal the Manual checksum
+    (meta can claim Manual while a prior Automatic/Grid file still sits on disk).
+
+    Downstream stages then scale that root file into the next group's ``Automatic/``.
+    """
+    assert snapshot.manual_path is not None
+    try:
+        manual_checksum = stosfile.StosFile.LoadChecksum(snapshot.manual_path)
+    except (OSError, FileNotFoundError, ValueError, TypeError) as exc:
+        return True, f'manual override unreadable ({exc})'
+
+    if not os.path.exists(snapshot.output_stos_path):
+        return True, 'manual override present and output missing'
+
+    try:
+        output_checksum = stosfile.StosFile.LoadChecksum(snapshot.output_stos_path)
+    except (OSError, FileNotFoundError, ValueError, TypeError):
+        return True, 'manual override present; existing output is not a valid STOS file'
+
+    if output_checksum != manual_checksum:
+        return True, 'manual override checksum differs from group-root output'
+
+    stored = snapshot.stored_input_transform_checksum
+    if stored is not None and stored != manual_checksum:
+        return True, 'InputTransformChecksum does not match manual override'
+
+    return False, 'output matches manual override'
+
+
 def decide_stos_grid_refine_need(snapshot: RefineScanSnapshot) -> RefineScanDecisionResult:
-    """Decide whether a STOS pair needs refine using path/checksum facts only."""
+    """Decide whether a STOS pair needs refine using path/checksum facts only.
+
+    Manual override (output-group ``Manual/``) always wins over refine: see
+    :func:`_manual_override_needs_copy`. Without Manual, rebuild when images,
+    ``InputTransformChecksum``, or input-file mtime say the product is stale.
+    """
     output_exists = os.path.exists(snapshot.output_stos_path)
 
-    if not output_exists:
-        if snapshot.manual_path is not None:
+    # Manual is the product. Never refine when it is present; only copy or skip.
+    if snapshot.manual_path is not None:
+        needs_copy, reason = _manual_override_needs_copy(snapshot)
+        if not needs_copy:
+            return RefineScanDecisionResult(RefineScanDecision.SKIP, reason)
+        if snapshot.locked:
             return RefineScanDecisionResult(
-                RefineScanDecision.MANUAL_COPY,
-                'manual override present and output missing')
+                RefineScanDecision.SKIP,
+                'output transform is locked')
+        return RefineScanDecisionResult(RefineScanDecision.MANUAL_COPY, reason)
+
+    if not output_exists:
         return RefineScanDecisionResult(
             RefineScanDecision.REFINE,
             'output transform file missing')
