@@ -13,6 +13,7 @@ import os
 import platform
 import re
 import sys
+import time
 import traceback
 from os import PathLike
 from typing import Any, Protocol, TypeVar
@@ -40,6 +41,28 @@ from nornir_buildmanager.volumemanager import (
 )
 
 T = TypeVar('T', covariant=True)
+
+# Nested Iterate→PythonCall stages that finish faster than this do not emit
+# dashboard/console "Stage … completed" status (skip-heavy Mapping walks).
+_NESTED_STAGE_STATUS_MIN_SEC = 1.0
+
+# Per-iterate node dumps (``Iterate: Mapping``, ``MappingNodeObj = …``). Off
+# unless ``-verbose`` or this env is set so ``-debug`` logs stay readable.
+_PIPELINE_PROGRESS_ENV = "NORNIR_LOG_PIPELINE_PROGRESS"
+
+
+def _env_flag_enabled(name: str) -> bool:
+    """True when *name* is a conventional truthy environment flag."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _should_log_pipeline_progress(argset: "ArgumentSet | None" = None) -> bool:
+    """True when per-iterate pipeline progress should be written to the log."""
+    if _env_flag_enabled(_PIPELINE_PROGRESS_ENV):
+        return True
+    if argset is None:
+        return False
+    return bool(argset.Arguments.get("verbose"))
 
 
 class SupportsRead(Protocol[T]):
@@ -663,8 +686,8 @@ class PipelineManager:
                               PipelineNode):
         """Run all of the child pipeline elements on the volume element"""
 
-        PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
-        # prettyoutput.Log(PipelineManager.ToElementString(PipelineNode))
+        if PipelineNode.tag != "Iterate" or _should_log_pipeline_progress(ArgSet):
+            PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
 
         PipelinesRun = 0
         try:
@@ -986,7 +1009,13 @@ class PipelineManager:
             PipelineManager.logger.error(errorStr + ElementTree.tostring(PipelineNode, encoding='utf-8'))
             raise PipelineError(VolumeElem=VolumeElem, PipelineNode=PipelineNode, message=errorStr)
         else:
-            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
+            stage_label = f"{PipelineModule}.{PipelineFunction}"
+            # Nested Iterate PythonCalls (e.g. StosGridRefine per Mapping) often
+            # skip in milliseconds; keep stage_start/end events for current_stage
+            # but do not flood dashboard/console Stage status lines for those.
+            nested_stage = self._iterate_depth > 0
+            if not nested_stage:
+                prettyoutput.CurseString('Stage', stage_label)
 
             # TODO: Update args from the element
 
@@ -1003,6 +1032,7 @@ class PipelineManager:
                 function=str(PipelineFunction),
                 **tele)
 
+            stage_started = time.perf_counter()
             try:
                 # PipelineManager.AddAttributes(dargs, PipelineNode)
 
@@ -1066,7 +1096,11 @@ class PipelineManager:
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
 
-            prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
+            elapsed = time.perf_counter() - stage_started
+            if not nested_stage:
+                prettyoutput.CurseString('Stage', stage_label + " completed")
+            elif elapsed >= _NESTED_STAGE_STATUS_MIN_SEC:
+                prettyoutput.CurseString('Stage', stage_label + " completed")
 
     #           PipelineManager.RemoveParameters(dargs, PipelineNode)
     #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
@@ -1082,11 +1116,9 @@ class PipelineManager:
 
             ArgSet.AddVariable(key, VolumeElem)
 
-            outStr = VolumeElem.ToElementString()
-            # if(self.Parameters['verbose']):
-            # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
-
-            PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
+            if _should_log_pipeline_progress(ArgSet):
+                outStr = VolumeElem.ToElementString()
+                PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
 
         elif PipelineNode.tag == "Select":
             raise PipelineError(PipelineNode=PipelineNode, message="VariableName attribute required on Select Element")

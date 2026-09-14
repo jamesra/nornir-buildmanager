@@ -8,6 +8,7 @@ import contextlib
 import copy
 import math
 import logging
+import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -41,6 +42,8 @@ from nornir_shared import files, misc, plot, prettyoutput
 import nornir_shared
 from nornir_imageregistration.settings import AngleSearchRange
 from nornir_buildmanager.progress import report_iterate, report_iterate_complete
+
+
 
 
 def _resolve_min_blend(min_blend: float | None,
@@ -3273,6 +3276,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                           progress_callback: typing.Callable[[], None] | None = None):
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
+
     min_blend = _resolve_min_blend(min_blend, linear_blend_factor)
 
     SectionToRootTransformMap = {}
@@ -3319,7 +3323,6 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 # prettyoutput.Log("Looking for {0}: FOUND".format(str(ControlToVolumeTransformKey)))
                 ControlToVolumeTransform = SectionToRootTransformMap[ControlToVolumeTransformKey]
             elif ControlToVolumeTransformKey[0] != ControlToVolumeTransformKey[1]:
-                # Do not bother printing an error if there is no intermediate transform to find
                 errStr = f"Could not find {ControlToVolumeTransformKey[0]} -> {ControlToVolumeTransformKey[1]} .stos transform"
                 prettyoutput.LogErr(errStr)
 
@@ -3350,9 +3353,10 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                 # Remove any residual transform file just in case
                 _remove_stos_output_files(OutputTransform.FullPath)
 
-            if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
-                Logger.info(" %s: Removed outdated transform %s" % (logStr, OutputTransform.Path))
-                _remove_stos_output_files(OutputTransform.FullPath)
+            input_matched = OutputTransform.IsInputTransformMatched(MappedToControlTransform)
+            if not input_matched:
+                Logger.info(" %s: Outdated transform %s" % (logStr, OutputTransform.Path))
+
 
             if not os.path.exists(MappedToControlTransform.FullPath):
                 errorStr = (
@@ -3416,12 +3420,15 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                     OutputTransform, mappedSectionNumber,
                     ControlToVolumeTransform.ControlSectionNumber)
 
+                needs_rebuild = not os.path.exists(OutputTransform.FullPath)
+                if not OutputTransform.IsInputTransformMatched(MappedToControlTransform):
+                    needs_rebuild = True
                 if hasattr(OutputTransform, "ControlToVolumeTransformChecksum"):
-                    if not OutputTransform.ControlToVolumeTransformChecksum == ControlToVolumeTransform.Checksum:
-                        Logger.info(" %s: ControlToVolumeTransformChecksum mismatch, removing" % logStr)
-                        _remove_stos_output_files(OutputTransform.FullPath)
-                elif os.path.exists(OutputTransform.FullPath):
-                    _remove_stos_output_files(OutputTransform.FullPath)
+                    if OutputTransform.ControlToVolumeTransformChecksum != ControlToVolumeTransform.Checksum:
+                        Logger.info(" %s: ControlToVolumeTransformChecksum mismatch" % logStr)
+                        needs_rebuild = True
+                else:
+                    needs_rebuild = True
 
                 if (os.path.exists(OutputTransform.FullPath)
                         and not OutputTransform.IsLinearBlendParamsMatched(min_blend,
@@ -3430,74 +3437,83 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                                                          reblend_tolerance,
                                                                          max_blend=max_blend,
                                                                          chain_consistent_linear=use_chain_linear)):
-                    Logger.info(" %s: Linear blend parameters changed, removing %s" % (logStr, OutputTransform.Path))
-                    _remove_stos_output_files(OutputTransform.FullPath)
+                    Logger.info(" %s: Linear blend parameters changed %s" % (logStr, OutputTransform.Path))
+                    needs_rebuild = True
 
                 control_to_volume_unblended_path = (
                     SectionToUnblendedPathMap.get(ControlToVolumeTransformKey, ControlToVolumeTransform.FullPath)
                     if SectionToUnblendedPathMap is not None
                     else ControlToVolumeTransform.FullPath)
 
-                if not os.path.exists(OutputTransform.FullPath):
-
-                    try:
-                        # Logger.info(" %s: Adding transforms" % (logStr))
-                        prettyoutput.Log("\tCalculating new .stos")
-                        _raise_if_stos_path_nonfinite(
-                            MappedToControlTransform.FullPath, role="mapped→control")
-                        _raise_if_stos_path_nonfinite(
-                            control_to_volume_unblended_path, role="control→volume")
-                        rigid_ac = None
-                        if use_chain_linear or use_linear_blend:
-                            _, rigid_ac = _rigid_chain_for_slice_to_volume_hop(
-                                MappedToControlTransform.FullPath,
-                                IntermediateControlSection,
-                                rootNode.SectionNumber,
-                                SectionToRigidTransformMap,
-                                ignore_rotation)
-                        unblended_stos, final_stos = _compose_slice_to_volume_pair(
-                            MappedToControlTransform.FullPath,
-                            control_to_volume_unblended_path,
-                            enrich_tolerance=EnrichTolerance,
-                            min_blend=min_blend,
-                            travel_limit=travel_limit,
-                            reblend_iterations=reblend_iterations or 1,
-                            reblend_tolerance=reblend_tolerance,
-                            max_blend=max_blend,
-                            rigid_ac=rigid_ac)
-                        final_stos.Save(OutputTransform.FullPath)
-                        if use_linear_blend:
-                            unblended_stos.Save(_unblended_sidecar_path(OutputTransform.FullPath))
-                        else:
-                            sidecar_path = _unblended_sidecar_path(OutputTransform.FullPath)
-                            if os.path.exists(sidecar_path):
-                                os.remove(sidecar_path)
-
-                        OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
-                        OutputTransform.SetLinearBlendParams(min_blend,
-                                                             travel_limit,
-                                                             reblend_iterations,
-                                                             reblend_tolerance,
-                                                             max_blend=max_blend,
-                                                             chain_consistent_linear=use_chain_linear)
-                        OutputTransform.ResetChecksum()
-                        OutputTransform.SetTransform(MappedToControlTransform)
-                        # OutputTransform.Checksum = stosfile.StosFile.LoadChecksum(OutputTransform.FullPath)
-
-                    except (ValueError, FileNotFoundError, OSError) as e:
-                        _reraise_stos_nonfinite(
-                            e,
-                            introduced_in=OutputTransform.FullPath,
-                            files=[
+                if needs_rebuild:
+                    compose_succeeded = False
+                    for compose_attempt in (1, 2):
+                        try:
+                            prettyoutput.Log("\tCalculating new .stos")
+                            _raise_if_stos_path_nonfinite(
+                                MappedToControlTransform.FullPath, role="mapped→control")
+                            _raise_if_stos_path_nonfinite(
+                                control_to_volume_unblended_path, role="control→volume")
+                            rigid_ac = None
+                            if use_chain_linear or use_linear_blend:
+                                _, rigid_ac = _rigid_chain_for_slice_to_volume_hop(
+                                    MappedToControlTransform.FullPath,
+                                    IntermediateControlSection,
+                                    rootNode.SectionNumber,
+                                    SectionToRigidTransformMap,
+                                    ignore_rotation)
+                            unblended_stos, final_stos = _compose_slice_to_volume_pair(
                                 MappedToControlTransform.FullPath,
                                 control_to_volume_unblended_path,
-                                OutputTransform.FullPath,
-                            ])
-                        # Invalid or missing input transform. Skip and continue with other mappings.
-                        prettyoutput.LogErr(str(e))
-                        Logger.error(str(e))
-                        OutputTransform.Clean()
-                        OutputTransform = None
+                                enrich_tolerance=EnrichTolerance,
+                                min_blend=min_blend,
+                                travel_limit=travel_limit,
+                                reblend_iterations=reblend_iterations or 1,
+                                reblend_tolerance=reblend_tolerance,
+                                max_blend=max_blend,
+                                rigid_ac=rigid_ac)
+                            tmp_output_path = OutputTransform.FullPath + '.tmp'
+                            final_stos.Save(tmp_output_path)
+                            os.replace(tmp_output_path, OutputTransform.FullPath)
+                            if use_linear_blend:
+                                unblended_stos.Save(_unblended_sidecar_path(OutputTransform.FullPath))
+                            else:
+                                sidecar_path = _unblended_sidecar_path(OutputTransform.FullPath)
+                                if os.path.exists(sidecar_path):
+                                    os.remove(sidecar_path)
+
+                            OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
+                            OutputTransform.SetLinearBlendParams(min_blend,
+                                                                 travel_limit,
+                                                                 reblend_iterations,
+                                                                 reblend_tolerance,
+                                                                 max_blend=max_blend,
+                                                                 chain_consistent_linear=use_chain_linear)
+                            OutputTransform.ResetChecksum()
+                            OutputTransform.SetTransform(MappedToControlTransform)
+                            compose_succeeded = True
+                            break
+                        except (ValueError, FileNotFoundError, OSError) as e:
+                            prettyoutput.LogErr(str(e))
+                            Logger.error(str(e))
+                            tmp_output_path = OutputTransform.FullPath + '.tmp'
+                            if os.path.exists(tmp_output_path):
+                                try:
+                                    os.remove(tmp_output_path)
+                                except OSError:
+                                    pass
+                            _remove_stos_output_files(OutputTransform.FullPath)
+                            if compose_attempt == 1:
+                                Logger.warning(
+                                    " %s: compose failed; deleted output and retrying once",
+                                    logStr)
+                                continue
+                            OutputTransform.Clean()
+                            raise NornirUserException(
+                                f"{logStr}: slice-to-volume compose failed after retry. {e}"
+                            ) from e
+
+                    if not compose_succeeded:
                         continue
 
                     if progress_callback is not None:

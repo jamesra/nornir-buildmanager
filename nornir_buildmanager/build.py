@@ -74,7 +74,8 @@ def _AddParserRootArguments(parser: argparse.ArgumentParser):
                         action='store_true',
                         required=False,
                         default=False,
-                        help='Provide additional output',
+                        help='Log per-iterate pipeline progress (Iterate/Mapping dumps). '
+                             'Same as NORNIR_LOG_PIPELINE_PROGRESS=1. Independent of -debug.',
                         dest='verbose')
 
     parser.add_argument('-computational_library',
@@ -401,8 +402,8 @@ def InitLogging(buildArgs):
     """Initialize persistent logging for the current command invocation.
 
     Logging writes through ``nornir_shared.misc.SetupLogging``. When a
-    ``volumepath`` is present and ``-debug`` is enabled, the log level is DEBUG;
-    otherwise WARN is used.
+    ``volumepath`` is present, file logs go under ``<volumepath>/logs``.
+    ``-debug`` sets the level to DEBUG; otherwise WARN is used.
     """
     #    nornir_shared.Misc.RunWithProfiler('Execute()', "C:/Temp/profile.pr")
 
@@ -412,11 +413,12 @@ def InitLogging(buildArgs):
 
     (args, extraargs) = parser.parse_known_args(buildArgs)
 
-    if 'volumepath' in args:
+    if 'volumepath' in args and args.volumepath:
+        log_dir = os.path.join(args.volumepath, 'logs')
         if _GetFromNamespace(args, 'debug', False):
-            SetupLogging(OutputPath=args.volumepath, Level=logging.DEBUG)
+            SetupLogging(OutputPath=log_dir, Level=logging.DEBUG)
         else:
-            SetupLogging(Level=logging.WARN)
+            SetupLogging(OutputPath=log_dir, Level=logging.WARN)
     else:
         SetupLogging(Level=logging.WARN)
 

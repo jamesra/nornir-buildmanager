@@ -164,6 +164,35 @@ class Test(unittest.TestCase):
         print((repr(kwargs)))
 
 
+class TestPipelineProgressLogging(unittest.TestCase):
+    """Per-iterate pipeline dumps stay off unless verbose or the env flag is set."""
+
+    def setUp(self) -> None:
+        self._old = os.environ.pop(pm._PIPELINE_PROGRESS_ENV, None)
+
+    def tearDown(self) -> None:
+        if self._old is None:
+            os.environ.pop(pm._PIPELINE_PROGRESS_ENV, None)
+        else:
+            os.environ[pm._PIPELINE_PROGRESS_ENV] = self._old
+
+    def test_off_by_default(self) -> None:
+        argset = pm.ArgumentSet()
+        argset.AddArguments({"verbose": False, "debug": True})
+        self.assertFalse(pm._should_log_pipeline_progress(argset))
+
+    def test_verbose_flag_enables(self) -> None:
+        argset = pm.ArgumentSet()
+        argset.AddArguments({"verbose": True})
+        self.assertTrue(pm._should_log_pipeline_progress(argset))
+
+    def test_env_flag_enables(self) -> None:
+        os.environ[pm._PIPELINE_PROGRESS_ENV] = "1"
+        argset = pm.ArgumentSet()
+        argset.AddArguments({"verbose": False})
+        self.assertTrue(pm._should_log_pipeline_progress(argset))
+
+
 if __name__ == "__main__":
     # import sys;sys.argv = ['', 'Test.testName']
     unittest.main()

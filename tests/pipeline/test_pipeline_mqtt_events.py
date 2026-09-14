@@ -201,7 +201,7 @@ class TestProcessIterateMqtt(unittest.TestCase):
 
 
 class TestProcessPythonCallMqtt(unittest.TestCase):
-    def test_stage_start_and_end_published(self) -> None:
+    def _make_python_call_fixture(self):
         manager = pm.PipelineManager(
             pipelinesRoot=ElementTree.Element("Root"),
             pipelineData=ElementTree.Element("Pipeline"),
@@ -218,7 +218,10 @@ class TestProcessPythonCallMqtt(unittest.TestCase):
         arg_set.AddParameters = mock.Mock()
         arg_set.ClearAttributes = mock.Mock()
         arg_set.ClearParameters = mock.Mock()
+        return manager, pipeline_node, volume, arg_set
 
+    def test_stage_start_and_end_published(self) -> None:
+        manager, pipeline_node, volume, arg_set = self._make_python_call_fixture()
         stage_func = mock.Mock(return_value=None)
 
         with mock.patch("nornir_shared.reflection.get_module_class", return_value=stage_func):
@@ -231,6 +234,59 @@ class TestProcessPythonCallMqtt(unittest.TestCase):
         self.assertEqual(names, ["stage_start", "stage_end"])
         self.assertEqual(publish.call_args_list[0].kwargs["function"], "AssembleTransform")
         self.assertEqual(publish.call_args_list[0].kwargs["section"], 7)
+
+    def test_top_level_stage_curse_start_and_completed(self) -> None:
+        manager, pipeline_node, volume, arg_set = self._make_python_call_fixture()
+        stage_func = mock.Mock(return_value=None)
+
+        with mock.patch("nornir_shared.reflection.get_module_class", return_value=stage_func):
+            with mock.patch.object(pm.PipelineManager, "_SaveNodes"):
+                with mock.patch("nornir_buildmanager.pipelinemanager.publish_run_event"):
+                    with mock.patch(
+                            "nornir_buildmanager.pipelinemanager.prettyoutput.CurseString") as curse:
+                        manager.ProcessPythonCall(arg_set, volume, pipeline_node)
+
+        texts = [c.args[1] for c in curse.call_args_list]
+        self.assertEqual(len(texts), 2)
+        self.assertTrue(texts[0].endswith("AssembleTransform"))
+        self.assertTrue(texts[1].endswith("AssembleTransform completed"))
+
+    def test_nested_fast_stage_suppresses_status_curse(self) -> None:
+        manager, pipeline_node, volume, arg_set = self._make_python_call_fixture()
+        manager._iterate_depth = 1
+        stage_func = mock.Mock(return_value=None)
+
+        with mock.patch("nornir_shared.reflection.get_module_class", return_value=stage_func):
+            with mock.patch.object(pm.PipelineManager, "_SaveNodes"):
+                with mock.patch("nornir_buildmanager.pipelinemanager.publish_run_event"):
+                    with mock.patch(
+                            "nornir_buildmanager.pipelinemanager.prettyoutput.CurseString") as curse:
+                        manager.ProcessPythonCall(arg_set, volume, pipeline_node)
+
+        curse.assert_not_called()
+
+    def test_nested_slow_stage_emits_completed_status(self) -> None:
+        manager, pipeline_node, volume, arg_set = self._make_python_call_fixture()
+        manager._iterate_depth = 1
+
+        def slow_stage(**_kwargs):
+            return None
+
+        stage_func = mock.Mock(side_effect=slow_stage)
+
+        with mock.patch("nornir_shared.reflection.get_module_class", return_value=stage_func):
+            with mock.patch.object(pm.PipelineManager, "_SaveNodes"):
+                with mock.patch("nornir_buildmanager.pipelinemanager.publish_run_event"):
+                    with mock.patch(
+                            "nornir_buildmanager.pipelinemanager.prettyoutput.CurseString") as curse:
+                        with mock.patch(
+                                "nornir_buildmanager.pipelinemanager.time.perf_counter",
+                                side_effect=[0.0, pm._NESTED_STAGE_STATUS_MIN_SEC + 0.1]):
+                            manager.ProcessPythonCall(arg_set, volume, pipeline_node)
+
+        texts = [c.args[1] for c in curse.call_args_list]
+        self.assertEqual(len(texts), 1)
+        self.assertTrue(texts[0].endswith("AssembleTransform completed"))
 
 
 if __name__ == "__main__":
