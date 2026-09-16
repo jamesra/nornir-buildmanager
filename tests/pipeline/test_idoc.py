@@ -614,16 +614,20 @@ class TestIDocBuild(IDocTest, StosRebuildHelper):
             raise
 
 
-#@unittest.skip("Remove this decorator to reproduce a failure captured by TestIDocBuild")
+@unittest.skip("Debug-only harness; enable while reproducing a TestIDocBuild failure")
 class IDocBuildTestBootstrapDebugging(setup_pipeline.ReproSetupTestBase, StosRebuildHelper):
     """Debugging harness for TestIDocBuild failures.
+
+    This class is skipped during normal test runs and must not be counted as a
+    product test failure. Enable it only while actively debugging a captured
+    ``TestIDocBuild`` failure.
 
     To use:
     1. Run TestIDocBuild until it fails.  The except block moves the test output to
        TESTOUTPUTPATH/Repros/IDocBuildTest automatically (preserving file mtimes).
        A copy is also saved to Repros/IDocBuildTest_BeforeForceStosRebuild before
        ForceStosRebuildFromBruteLevel for this harness.
-    2. Remove (or comment out) the @unittest.skip decorator above.
+    2. Temporarily comment out the @unittest.skip decorator above.
     3. Comment out every step in test_i_doc_build_repro that succeeded in the failing run,
        leaving only the step(s) that failed and those after it.
     4. Run this test to iterate quickly on the failure without repeating the long setup.
