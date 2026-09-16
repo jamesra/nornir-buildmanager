@@ -160,18 +160,17 @@ class XElementWrapper(ElementTree.Element):
         if self.AttributesChanged or self.ChildrenChanged:
             return True
 
-        ReturnValue = False
         for child in self:
             if child.tag.endswith('_Link'):
                 continue
 
             if isinstance(child, nornir_buildmanager.volumemanager.XContainerElementWrapper):
-                if child.SaveAsLinkedElement is False:
-                    ReturnValue = ReturnValue or child.ElementHasChangesToSave
-            else:
-                ReturnValue = ReturnValue or child.ElementHasChangesToSave  # type: ignore[union-attr]
+                if child.SaveAsLinkedElement is False and child.ElementHasChangesToSave:
+                    return True
+            elif child.ElementHasChangesToSave:  # type: ignore[union-attr]
+                return True
 
-        return ReturnValue
+        return False
 
     def ResetElementChangeFlags(self):
         """Clear dirty flags after this element's XML was successfully written.
