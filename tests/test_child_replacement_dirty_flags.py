@@ -37,8 +37,23 @@ import pytest
 from nornir_buildmanager.volumemanager import (BlockNode, VolumeManager,
                                                XContainerElementWrapper,
                                                XElementWrapper)
+from nornir_buildmanager.volumemanager.elementwrapping import SetElementParent
 
 BLOCK_NAMES = ['Block0', 'Block1']
+
+
+def test_set_element_parent_leaf_preserves_clean_flags():
+    parent = XElementWrapper('Parent')
+    leaf = XElementWrapper('Leaf')
+    parent.ResetElementChangeFlags()
+    leaf.ResetElementChangeFlags()
+
+    SetElementParent(leaf, parent)
+
+    assert leaf.Parent is parent
+    assert leaf.AttributesChanged is False
+    assert leaf.ChildrenChanged is False
+    assert parent.ElementHasChangesToSave is False
 
 
 def test_wrap_preserves_mixed_child_order_and_serialization():

@@ -14,6 +14,8 @@ def SetElementParent(Element: XElementWrapper, ParentElement: XElementWrapper | 
     :return:
     """
     Element.SetParentNoChangeFlag(ParentElement)
+    if len(Element) == 0:
+        return
 
     for i in range(len(Element) - 1, -1, -1):
         e = Element[i]
