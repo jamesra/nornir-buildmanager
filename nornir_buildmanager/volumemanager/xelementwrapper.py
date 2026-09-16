@@ -723,7 +723,7 @@ class XElementWrapper(ElementTree.Element):
         if child is None:
             if element is not None:
                 self.append(element)
-                assert (element in self)
+                assert self[-1] is element
                 child = element
                 NewNodeCreated = True
             else:
