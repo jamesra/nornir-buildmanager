@@ -544,15 +544,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
         prettyoutput.Log(msg)
         try:
             ElementTree.indent(SaveElement, space='  ')
-            OutputXML = ElementTree.tostring(SaveElement, encoding="utf-8")
         except Exception as e:
             prettyoutput.Log(f"Cannot encode output XML:\n{e}")
             raise
-
-        assert (len(OutputXML)), "Trying to save an entirely empty XML file... why?"
-
-        if len(OutputXML) == 0:
-            raise Exception(f"No meta data produced for XML element {SaveElement} writing to {xmlfilename}")
 
         container_dir = self.__ensure_container_directory()
 
@@ -561,6 +555,51 @@ class XContainerElementWrapper(XResourceElementWrapper):
         BackupXMLFullPath = os.path.join(container_dir, BackupXMLFilename)
         XMLFilename = os.path.join(container_dir, xmlfilename)
         TmpFilename = XMLFilename + ".tmp"
+
+        def write_temp_file() -> None:
+            try:
+                with open(TmpFilename, 'wb') as hFile:
+                    ElementTree.ElementTree(SaveElement).write(
+                        hFile,
+                        encoding='utf-8',
+                        xml_declaration=False,
+                        short_empty_elements=True,
+                    )
+            except Exception as e:
+                try:
+                    os.remove(TmpFilename)
+                except FileNotFoundError:
+                    pass
+                if isinstance(e, OSError):
+                    raise
+                prettyoutput.Log(f"Cannot encode output XML:\n{e}")
+                raise
+
+            if os.path.getsize(TmpFilename) == 0:
+                raise Exception(
+                    f"No meta data produced for XML element {SaveElement} writing to {xmlfilename}")
+
+        last_open_error: OSError | None = None
+        for attempt in range(5):
+            try:
+                write_temp_file()
+                break
+            except FileNotFoundError as e:
+                last_open_error = e
+                self.__ensure_container_directory()
+                time.sleep(0.05 * (attempt + 1))
+            except OSError as e:
+                if e.errno == errno.EMFILE:
+                    raise OSError(
+                        errno.EMFILE,
+                        "Too many open files; raise ulimit -n or reduce tile I/O concurrency",
+                        XMLFilename,
+                    ) from e
+                raise
+        else:
+            raise FileNotFoundError(
+                f"Unable to write {TmpFilename} after retries; last error: {last_open_error}"
+            ) from last_open_error
 
         # If the current VolumeData.xml has data, then create a backup copy
         # This should prevent us removing valid backups if the current VolumeData.xml
@@ -605,18 +644,15 @@ class XContainerElementWrapper(XResourceElementWrapper):
             pass
 
         # prettyoutput.Log("Saving %s" % XMLFilename)
-        # print OutputXML
-        last_open_error: OSError | None = None
         for attempt in range(5):
             try:
-                with open(TmpFilename, 'wb') as hFile:
-                    hFile.write(OutputXML)
                 os.replace(TmpFilename, XMLFilename)
                 return
             except FileNotFoundError as e:
                 # Parent dir vanished or not yet visible (Clean race / CIFS cache).
                 last_open_error = e
                 self.__ensure_container_directory()
+                write_temp_file()
                 time.sleep(0.05 * (attempt + 1))
             except OSError as e:
                 if e.errno == errno.EMFILE:

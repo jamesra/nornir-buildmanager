@@ -46,6 +46,41 @@ class TestImportVolumeDataSave(unittest.TestCase):
         root = ElementTree.parse(xml_path).getroot()
         return len(root.findall("Section_Link"))
 
+    def test_streamed_xml_matches_elementtree_bytes(self) -> None:
+        element = ElementTree.Element("Volume", attrib={"Name": "test"})
+        child = ElementTree.SubElement(
+            element,
+            "Section_Link",
+            attrib={"Path": "1 & 2", "Name": "μm"},
+        )
+        child.text = "left < right"
+
+        self.volume._XContainerElementWrapper__SaveXML("Stream.xml", element)
+
+        with open(os.path.join(self._temp_dir, "Stream.xml"), "rb") as handle:
+            saved = handle.read()
+        self.assertEqual(saved, ElementTree.tostring(element, encoding="utf-8"))
+
+    def test_streamed_xml_failure_preserves_existing_file(self) -> None:
+        xml_path = self._volume_xml_path()
+        original = b'<Volume Name="old"/>'
+        with open(xml_path, "wb") as handle:
+            handle.write(original)
+
+        with mock.patch.object(
+                ElementTree.ElementTree,
+                "write",
+                side_effect=ValueError("encoding failed")):
+            with self.assertRaisesRegex(ValueError, "encoding failed"):
+                self.volume._XContainerElementWrapper__SaveXML(
+                    "VolumeData.xml",
+                    ElementTree.Element("Volume", attrib={"Name": "new"}),
+                )
+
+        with open(xml_path, "rb") as handle:
+            self.assertEqual(handle.read(), original)
+        self.assertFalse(os.path.exists(xml_path + ".tmp"))
+
     def _append_section_and_return_save_root(self, volume_obj, section_number: int):
         """Mimic ToMosaic tree mutation and return policy (Volume then Block)."""
         block = BlockNode.Create("TEM")
