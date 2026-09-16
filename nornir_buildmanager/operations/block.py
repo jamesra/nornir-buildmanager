@@ -1295,7 +1295,7 @@ def AssembleStosOverlays(Parameters,
 
 def CalculateStosGroupWarpMeasurementImages(Parameters, stos_map_node: StosMapNode, group_node: StosGroupNode, Logger,
                                             **kwargs) -> XElementWrapper:
-    """'Execute ir-stom on a provided .stos file"""
+    """Generate warp images and histograms for a STOS group."""
 
     maxReportedAngle = kwargs.get('MaxReportedAngle', None)
     RenderToSourceSpace = kwargs.get('RenderToSourceSpace', True)
