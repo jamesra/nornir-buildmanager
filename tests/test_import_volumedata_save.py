@@ -114,6 +114,19 @@ class TestImportVolumeDataSave(unittest.TestCase):
             PipelineManager._SaveNodes(block)
             save.assert_called_once_with(block)
 
+    def test_nonrecursive_save_does_not_sort_linked_descendants(self) -> None:
+        block = BlockNode.Create("TEM")
+        _, block = self.volume.UpdateOrAddChild(block)
+        section = SectionNode.Create(1001, "1001", "1001")
+        _, section = block.UpdateOrAddChildByAttrib(section, "Number")
+        block.ChildrenChanged = True
+
+        with mock.patch.object(section, "sort", wraps=section.sort) as child_sort:
+            with mock.patch.object(block, "_XContainerElementWrapper__SaveXML"):
+                block._Save(recurse=False)
+
+        child_sort.assert_not_called()
+
     def test_append_dirties_parent_save_writes_and_clears_flags(self) -> None:
         """Mutation sets ChildrenChanged; Save writes VolumeData.xml; Reset clears flags."""
         block = BlockNode.Create("TEM")

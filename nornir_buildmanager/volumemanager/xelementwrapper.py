@@ -33,7 +33,7 @@ class XElementWrapper(ElementTree.Element):
 
     logger = logging.getLogger('XElementWrapper')
 
-    def sort(self):
+    def sort(self, recurse: bool = True):
         """Order child elements"""
 
         if len(self) <= 1:
@@ -51,9 +51,10 @@ class XElementWrapper(ElementTree.Element):
 
         self[:] = sorted_with_keys + sorted_linked + sorted_other
 
-        for c in self:
-            if isinstance(c, XElementWrapper):
-                c.sort()
+        if recurse:
+            for c in self:
+                if isinstance(c, XElementWrapper):
+                    c.sort()
 
     @property
     def CreationTime(self) -> datetime.datetime:

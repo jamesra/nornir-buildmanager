@@ -445,7 +445,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 tabLevel = 0
 
             if self.ChildrenChanged:
-                self.sort()
+                self.sort(recurse=False)
 
             if self.AttributesChanged:
                 ValidateAttributesAreStrings(self)
