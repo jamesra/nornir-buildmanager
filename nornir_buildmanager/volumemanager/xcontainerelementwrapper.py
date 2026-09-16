@@ -444,8 +444,38 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if tabLevel is None:
                 tabLevel = 0
 
+            children_snapshot = list(self)[::-1]
+            if not AnyChangesFound:
+                seen_link_keys: set[tuple[str, str]] = set()
+                can_skip_serialization = True
+                for child in children_snapshot:
+                    if child.tag.endswith('_Link'):
+                        link_key = (child.tag, child.attrib.get('Path', ''))
+                    elif isinstance(child, XContainerElementWrapper) and child.SaveAsLinkedElement:
+                        if child.AttributesChanged:
+                            can_skip_serialization = False
+                            break
+                        link_key = (f'{child.tag}_Link', child.attrib.get('Path', ''))
+                    else:
+                        continue
+                    if link_key in seen_link_keys:
+                        can_skip_serialization = False
+                        break
+                    seen_link_keys.add(link_key)
+
+                if can_skip_serialization:
+                    if recurse:
+                        for child in children_snapshot:
+                            if isinstance(child, XContainerElementWrapper):
+                                child._Save(tabLevel + 1)
+                    self.logger.debug(
+                        f'Skipping VolumeData.xml under {self.FullPath} '
+                        f'(no dirty flags on this container; nested linked containers may still have written)')
+                    return
+
             if self.ChildrenChanged:
                 self.sort(recurse=False)
+                children_snapshot = list(self)[::-1]
 
             if self.AttributesChanged:
                 ValidateAttributesAreStrings(self)
@@ -464,7 +494,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             # Snapshot children so removals during duplicate cleanup do not re-visit nodes.
             live_child_ids = {id(child) for child in self}
             queued_link_keys: set[tuple[str, str]] = set()
-            for child in list(self)[::-1]:
+            for child in children_snapshot:
                 if id(child) not in live_child_ids:
                     continue
                 if child.tag.endswith('_Link'):
