@@ -492,10 +492,10 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
             # Linked children become *_Link stubs; their VolumeData.xml lives in the child folder.
             # Snapshot children so removals during duplicate cleanup do not re-visit nodes.
-            live_child_ids = {id(child) for child in self}
+            live_child_ids: set[int] | None = None
             queued_link_keys: set[tuple[str, str]] = set()
             for child in children_snapshot:
-                if id(child) not in live_child_ids:
+                if live_child_ids is not None and id(child) not in live_child_ids:
                     continue
                 if child.tag.endswith('_Link'):
                     link_key = (child.tag, child.attrib.get('Path', ''))
@@ -506,7 +506,6 @@ class XContainerElementWrapper(XResourceElementWrapper):
                         SaveElement.append(child)
                     else:
                         AnyChangesFound = True
-                        live_child_ids.discard(id(child))
                 elif isinstance(child, XContainerElementWrapper):
                     # Link stubs mirror child attribs; keep parent XML in sync when they change.
                     AnyChangesFound = AnyChangesFound or child.AttributesChanged
