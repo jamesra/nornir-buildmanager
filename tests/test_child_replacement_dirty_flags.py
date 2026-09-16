@@ -30,13 +30,40 @@ import os
 import shutil
 import tempfile
 from typing import cast
+from xml.etree import ElementTree
 
 import pytest
 
 from nornir_buildmanager.volumemanager import (BlockNode, VolumeManager,
-                                               XContainerElementWrapper)
+                                               XContainerElementWrapper,
+                                               XElementWrapper)
 
 BLOCK_NAMES = ['Block0', 'Block1']
+
+
+def test_wrap_preserves_mixed_child_order_and_serialization():
+    attrib = {'CreationDate': '2026-01-01 00:00:00', 'Version': '1.0'}
+    raw = ElementTree.Element('Root', attrib)
+    item = ElementTree.SubElement(raw, 'Item', {**attrib, 'Name': 'raw'})
+    ElementTree.SubElement(item, 'Leaf', attrib)
+    link = ElementTree.SubElement(raw, 'Block_Link', {**attrib, 'Path': 'Block0'})
+    existing = XElementWrapper('Existing', attrib={**attrib, 'Name': 'wrapped'})
+    ElementTree.Element.append(raw, existing)
+    expected = ElementTree.tostring(raw)
+
+    wrapped = XElementWrapper.wrap(raw)
+
+    assert ElementTree.tostring(wrapped) == expected
+    assert [child.tag for child in wrapped] == ['Item', 'Block_Link', 'Existing']
+    assert isinstance(wrapped[0], XElementWrapper)
+    wrapped_item = cast(XElementWrapper, wrapped[0])
+    assert wrapped_item.Parent is wrapped
+    assert wrapped_item.AttributesChanged is False
+    assert isinstance(wrapped_item[0], XElementWrapper)
+    wrapped_leaf = cast(XElementWrapper, wrapped_item[0])
+    assert wrapped_leaf.Parent is wrapped_item
+    assert wrapped[1] is link
+    assert wrapped[2] is existing
 
 
 def _load(root: str, **kwargs) -> XContainerElementWrapper:

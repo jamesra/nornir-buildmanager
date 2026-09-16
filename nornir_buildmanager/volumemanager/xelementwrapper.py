@@ -469,11 +469,18 @@ class XElementWrapper(ElementTree.Element):
             assert ('Path' in newElement.attrib)
 
         # Also convert all non-link child elements
-        for c in newElement:
+        for i, c in enumerate(newElement):
             if c.tag.endswith('_Link'):
                 continue
 
-            c = newElement._ReplaceChildIfUnwrapped(c)
+            if isinstance(c, XElementWrapper):
+                continue
+
+            wrapped, wrapped_element = nornir_buildmanager.volumemanager.WrapElement(c)
+            if wrapped:
+                newElement[i] = wrapped_element
+                nornir_buildmanager.volumemanager.SetElementParent(wrapped_element, newElement)
+                wrapped_element._AttributesChanged = False
 
         return newElement
 
