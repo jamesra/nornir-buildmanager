@@ -17,6 +17,8 @@ from nornir_buildmanager.volumemanager import (
     SectionNode,
     VolumeManager,
 )
+from nornir_buildmanager.volumemanager.xcontainerelementwrapper import _save_link_element
+from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 
 
 class TestImportVolumeDataSave(unittest.TestCase):
@@ -45,6 +47,19 @@ class TestImportVolumeDataSave(unittest.TestCase):
             return 0
         root = ElementTree.parse(xml_path).getroot()
         return len(root.findall("Section_Link"))
+
+    def test_save_link_uses_raw_element_for_string_attributes(self) -> None:
+        link = _save_link_element(
+            "Section_Link",
+            {"Path": "1001", "Name": "section"},
+        )
+        self.assertIs(type(link), ElementTree.Element)
+        self.assertEqual(link.attrib, {"Path": "1001", "Name": "section"})
+
+    def test_save_link_keeps_wrapper_validation_for_nonstring_attributes(self) -> None:
+        link = _save_link_element("Section_Link", {"Path": 1001})
+        self.assertIsInstance(link, XElementWrapper)
+        self.assertEqual(link.attrib["Path"], "1001")
 
     def test_streamed_xml_matches_elementtree_bytes(self) -> None:
         element = ElementTree.Element("Volume", attrib={"Name": "test"})

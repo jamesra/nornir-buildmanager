@@ -16,6 +16,13 @@ from nornir_shared import prettyoutput as prettyoutput
 from nornir_shared.files import ensure_directory
 
 
+def _save_link_element(tag: str, attrib: dict) -> ElementTree.Element:
+    """Build a transient link without wrapper bookkeeping when attributes are valid."""
+    if all(isinstance(key, str) and isinstance(value, str) for key, value in attrib.items()):
+        return ElementTree.Element(tag, attrib=dict(attrib))
+    return XElementWrapper(tag, attrib=attrib)
+
+
 class XContainerElementWrapper(XResourceElementWrapper):
     """XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid"""
 
@@ -521,14 +528,14 @@ class XContainerElementWrapper(XResourceElementWrapper):
                         # Sanity check to prevent duplicate link bugs; clean the
                         # in-memory tree when Path collides (prefer loaded over stub).
                         if link_key not in queued_link_keys:
-                            LinkElement = XElementWrapper(linktag, attrib=child.attrib)
+                            LinkElement = _save_link_element(linktag, child.attrib)
                             SaveElement.append(LinkElement)
                             queued_link_keys.add(link_key)
                         else:
                             self.logger.error(
                                 f"Duplicate link element found when saving {self.FullPath}:\n{SaveElement}")
                             if self._cleanup_duplicate_linked_container(child, SaveElement):
-                                LinkElement = XElementWrapper(linktag, attrib=child.attrib)
+                                LinkElement = _save_link_element(linktag, child.attrib)
                                 SaveElement.append(LinkElement)
                             live_child_ids = {id(current) for current in self}
                             AnyChangesFound = True
