@@ -751,7 +751,7 @@ class XElementWrapper(ElementTree.Element):
         self._ChildrenChanged = True
         super(XElementWrapper, self).append(Child)
         Child.Parent = self
-        assert (Child in self)
+        assert self[-1] is Child
 
     def remove(self, Child):
         assert (not self == Child)
