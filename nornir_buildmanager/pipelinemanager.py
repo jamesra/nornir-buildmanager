@@ -611,7 +611,7 @@ class PipelineManager:
         if volume_tree is None:
             block_count = len(list(self.VolumeTree.findall('Block')))
             pipeline_name = self._PipelineName or ""
-            is_import_pipeline = pipeline_name.startswith("Import")
+            is_import_pipeline = pipeline_name.startswith("Import") or pipeline_name.startswith("Adopt")
             if (not volume_xml_existed or block_count == 0) and not is_import_pipeline:
                 err = (
                     f"Volume at {args.volumepath} has no usable data "

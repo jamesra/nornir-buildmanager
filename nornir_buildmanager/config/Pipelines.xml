@@ -104,6 +104,25 @@
                     Sections="#Sections"/>
     </Pipeline>
 
+    <Pipeline Name="AdoptVikingVolume"
+              Help="Adopt a Viking-layout RC1 clone into a modern VolumeData.xml tree."
+              Description="Moves and renames files from a Viking volume clone (RC1_Original) into TEM/NNNN/TEM with locked mosaics, stos, and filters. Image bytes are not rewritten. Do not point this at the live Rabbit volume."
+              Epilog="Example: nornir-build AdoptVikingVolume Y:\Volumes\RC1 Y:\Volumes\RC1_Original -Sections 1,2,47 -DryRun">
+        <Arguments>
+            <Argument flag="ImportDir"
+                      help="Viking-layout source volume (the RC1_Original clone). Must not be Rabbit or a folder still named RC1."/>
+            <Argument flag="-Sections" dest="Sections" type="IntegerList"
+                      help="Section numbers to adopt. If omitted all sections are adopted. Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
+                      required="False"/>
+            <Argument flag="-DryRun" action="store_true" dest="DryRun"
+                      help="Print planned moves without moving files or writing filter/transform nodes."
+                      required="False"/>
+        </Arguments>
+
+        <PythonCall Module="nornir_buildmanager.importers.vikingvolume"
+                    Function="Import" ImportPath="#ImportDir" Sections="#Sections" DryRun="#DryRun"/>
+    </Pipeline>
+
     <Pipeline Name="Prune"
               Help="Removes tiles without enough features for proper alignment." Description="Scores tiles for texture complexity and removes low-information tiles from a mosaic transform. Run before Mosaic to improve registration robustness." Epilog="Example: nornir-build Prune /data/volume -InputFilter Raw8 -DefaultThreshold 0.2 -Sections 1-10">
         <Arguments>
@@ -2296,6 +2315,147 @@
                             FilterNode="#FilterNodeObj" Downsample="#Downsample"/>
             </Iterate>
         </Iterate>
+    </Pipeline>
+
+    <Pipeline Name="ExportAnnotationCrops"
+              Help="Export annotation crops for SAM2 / SA-1B training from OData or a saved OData dump."
+              Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Does not modify VolumeData.xml."
+              Epilog="Example: nornir-build ExportAnnotationCrops /data/volume -OData http://host/odata -Output /data/sam2 -Channels TEM -Filters Leveled">
+        <Arguments>
+            <Argument flag="-OData" dest="OData"
+                      help="Connectome OData V4 service root. Exactly one of -OData or -Geometries is required."
+                      required="False"/>
+            <Argument flag="-Geometries" dest="Geometries"
+                      help="Saved OData Locations dump (JSONL, {value:[]}, or concatenated page documents). Exactly one of -OData or -Geometries is required."
+                      required="False"/>
+            <Argument flag="-ODataFilter" dest="ODataFilter"
+                      help="Override $filter only. Default selects closed polygons on Cell types including subtypes."
+                      required="False"/>
+            <Argument flag="-Output" dest="OutputPath"
+                      help="Directory for PNG crops, JSON, masks, overlays, and _work cache"
+                      required="True"/>
+            <Argument flag="-Channels" dest="Channels" default="TEM"
+                      help="Regular expression for the channel that owns the tileset"
+                      required="False"/>
+            <Argument flag="-Filters" dest="Filters" default="Leveled"
+                      help="Regular expression for the filter that owns the tileset"
+                      required="False"/>
+            <Argument flag="-Downsample" dest="Downsample" type="int" default="1"
+                      help="Finest tileset downsample allowed. Crops may coarsen per shared image."
+                      required="False"/>
+            <Argument flag="-Pad" dest="Pad" type="float" default="1"
+                      help="Mosaic pixels added to each bbox side. Default is 1."
+                      required="False"/>
+            <Argument flag="-MaxTexture" dest="MaxTexture" type="int"
+                      help="Max pixels per crop axis. Default is 1024."
+                      required="False"/>
+            <Argument flag="-MaxTiles" dest="MaxTiles" type="int"
+                      help="Override floor(MaxTexture / tile dim) for the snapped tile window"
+                      required="False"/>
+            <Argument flag="-MinProcessPixels" dest="MinProcessPixels" type="int" default="16"
+                      help="Do not coarsen a process thinner than this many pixels"
+                      required="False"/>
+            <Argument flag="-Workers" dest="Workers" type="int"
+                      help="In-band stitch process-pool size. Default is CPU count."
+                      required="False"/>
+            <Argument flag="-MaskWorkers" dest="MaskWorkers" type="int"
+                      help="Mask rasterize process-pool size. Default is CPU count."
+                      required="False"/>
+            <Argument flag="-StageTiles" dest="StageTiles"
+                      help="Local scratch directory; tiles are copied from NAS once per column band"
+                      required="False"/>
+            <Argument flag="-Sections" dest="Sections" type="IntegerList"
+                      help="Section numbers to process. Omitted means every Z that has geometries."
+                      required="False"/>
+            <Argument flag="-IncludeOffEdge" dest="IncludeOffEdge" action="store_true"
+                      help="Keep OffEdge locations. They are skipped by default."/>
+            <Argument flag="-Force" dest="Force" action="store_true"
+                      help="Rebuild every section even when watermarks match."/>
+            <Argument flag="-FailMissingTileset" dest="FailMissingTileset" action="store_true"
+                      help="Fail instead of skipping a section whose filter has no Tileset/level."/>
+            <Argument flag="-NoOverlay" dest="NoOverlay" action="store_true"
+                      help="Skip QA overlay PNGs (TEM + Viking HCL hue, TEM luma). SAM2 does not use them."/>
+        </Arguments>
+
+        <PythonCall Function="segmentationtraining.IngestGeometries"
+                    OutputPath="#OutputPath"
+                    OData="#OData"
+                    Geometries="#Geometries"
+                    ODataFilter="#ODataFilter"
+                    Sections="#Sections"
+                    IncludeOffEdge="#IncludeOffEdge"
+                    Force="#Force"/>
+
+        <Iterate VariableName="section_node" XPath="Block/Section">
+            <RequireSetMembership Attribute="Number" List="#Sections"/>
+
+            <Iterate VariableName="ChannelNode" XPath="Channel">
+                <RequireMatch Attribute="Name" RegEx="#Channels"/>
+
+                <Iterate VariableName="FilterNode" XPath="Filter">
+                    <RequireMatch Attribute="Name" RegEx="#Filters"/>
+
+                    <PythonCall Function="segmentationtraining.ExportSectionCrops"
+                                FilterNode="#FilterNode"
+                                section_node="#section_node"
+                                OutputPath="#OutputPath"
+                                Pad="#Pad"
+                                Downsample="#Downsample"
+                                MaxTexture="#MaxTexture"
+                                MaxTiles="#MaxTiles"
+                                MinProcessPixels="#MinProcessPixels"
+                                IncludeOffEdge="#IncludeOffEdge"
+                                Channels="#Channels"
+                                Filters="#Filters"
+                                Workers="#Workers"
+                                MaskWorkers="#MaskWorkers"
+                                StageTiles="#StageTiles"
+                                Force="#Force"
+                                FailMissingTileset="#FailMissingTileset"
+                                NoOverlay="#NoOverlay"/>
+                </Iterate>
+            </Iterate>
+        </Iterate>
+
+        <PythonCall Module="nornir_buildmanager.operations.segmentationtraining.sam2"
+                    Function="WriteGallery"
+                    OutputPath="#OutputPath"/>
+    </Pipeline>
+
+    <Pipeline Name="RepairAnnotationOverlays"
+              Help="Rebuild QA overlay PNGs from existing AnnotationCrops TEM images and masks."
+              Description="Composites TEM crop + 1-bit masks into overlays/ without restitching tiles or ingesting OData. Always rewrites overlay PNGs. Temporary helper after overlay-style changes."
+              Epilog="Example: nornir-build RepairAnnotationOverlays /data/volume -Output /data/volume/AnnotationCrops">
+        <Arguments>
+            <Argument flag="-Output" dest="OutputPath"
+                      help="Directory that already contains images/, masks/, and optional _work watermarks"
+                      required="True"/>
+            <Argument flag="-Sections" dest="Sections" type="IntegerList"
+                      help="Section numbers to repair. Omitted means every Z with a watermark, else every crop image."
+                      required="False"/>
+        </Arguments>
+
+        <PythonCall Function="segmentationtraining.RepairAnnotationOverlays"
+                    OutputPath="#OutputPath"
+                    Sections="#Sections"/>
+    </Pipeline>
+
+    <Pipeline Name="ScoreAnnotationCrops"
+              Help="Score AnnotationCrops masks with SAM2 on the build machine."
+              Description="Writes sam2* columns on annotation_crops.sqlite using a ground-truth bbox prompt. Requires the optional SAM2 stack (not the gallery image, not the default headless install). No-op with a log line when SAM2 is not installed. Does not spawn from the gallery HTTP process."
+              Epilog="Example: nornir-build ScoreAnnotationCrops /data/volume -Output /data/volume/AnnotationCrops -Checkpoint /models/sam2.pt">
+        <Arguments>
+            <Argument flag="-Output" dest="OutputPath"
+                      help="AnnotationCrops directory that already has annotation_crops.sqlite"
+                      required="True"/>
+            <Argument flag="-Checkpoint" dest="Checkpoint"
+                      help="SAM2 checkpoint path on the build machine"
+                      required="False"/>
+        </Arguments>
+
+        <PythonCall Function="segmentationtraining.ScoreAnnotationCrops"
+                    OutputPath="#OutputPath"
+                    Checkpoint="#Checkpoint"/>
     </Pipeline>
 
     <Pipeline Name="ExportMetadata" Help="Export all meta-data to a single file">
