@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections import Counter
 from dataclasses import dataclass
@@ -18,8 +19,11 @@ from nornir_buildmanager.operations.segmentationtraining.geometry import (
     TileRect,
     next_power_of_two,
 )
+
 from nornir_buildmanager.operations.segmentationtraining.poolutil import submit_bounded
 from nornir_buildmanager.templates import Current as Templates
+
+_logger = logging.getLogger(__name__)
 
 LoadTile = Callable[[int, int], NDArray | None]
 
@@ -116,7 +120,13 @@ def stitch_from_loader(
     canvas = np.zeros((height, width), dtype=np.uint8)
     for iy in range(job.snap.iy0, job.snap.iy1):
         for ix in range(job.snap.ix0, job.snap.ix1):
-            tile = loader(ix, iy)
+            try:
+                tile = loader(ix, iy)
+            except (IOError, OSError) as exc:
+                _logger.warning(
+                    "Skipping unreadable tile (%d,%d) in job %s: %s", ix, iy, job.image_key, exc
+                )
+                continue
             if tile is None:
                 continue
             tile = nornir_imageregistration.EnsureNumpyArray(tile)
@@ -154,14 +164,23 @@ def write_png(array: NDArray, path: str) -> None:
 
 
 def disk_tile_loader(level_dir: str, prefix: str, postfix: str) -> LoadTile:
-    """Load a tileset PNG from *level_dir*."""
+    """Load a tileset PNG from *level_dir*.
+
+    Returns None for missing tiles and also for tiles that are present but
+    unreadable (corrupt / truncated). A warning is emitted so the operator
+    can repair or remove the bad file.
+    """
 
     def load(ix: int, iy: int) -> NDArray | None:
         name = tile_filename(prefix, postfix, ix, iy)
         path = os.path.join(level_dir, name)
         if not os.path.isfile(path):
             return None
-        return nornir_imageregistration.LoadImage(path, backend="numpy")
+        try:
+            return nornir_imageregistration.LoadImage(path, backend="numpy")
+        except (IOError, OSError) as exc:
+            _logger.warning("Skipping unreadable tile %s: %s", path, exc)
+            return None
 
     return load
 
@@ -205,7 +224,13 @@ def _stitch_with_shared_tiles(
                 for ix in range(job.snap.ix0, job.snap.ix1):
                     needed.add((ix, iy))
         for ix, iy in needed:
-            array = loader(ix, iy)
+            try:
+                array = loader(ix, iy)
+            except (IOError, OSError) as exc:
+                _logger.warning(
+                    "Skipping unreadable tile (%d,%d) during shared prefetch: %s", ix, iy, exc
+                )
+                continue
             if array is None:
                 continue
             # Shared-memory publish is host-only; LoadImage may return CuPy.
@@ -337,6 +362,7 @@ def sweep_stitch_jobs(
                 iy=iy,
             )
         load_root = stage_dir if stage_dir else source_dir
+        
         loader = disk_tile_loader(load_root, prefix, postfix)
         written.extend(
             run_stitch_jobs(

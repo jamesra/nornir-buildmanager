@@ -336,33 +336,6 @@ def ExportSectionCrops(
     workers = int(Workers) if Workers else (os.cpu_count() or 1)
     mask_workers = int(MaskWorkers) if MaskWorkers else (os.cpu_count() or 1)
     overlay = bool(Overlay) and not bool(NoOverlay)
-    # #region agent log
-    try:
-        import json as _json
-        import time as _time
-        with open("/workspace/.cursor/debug-11e2ac.log", "a", encoding="utf-8") as _dbg:
-            _dbg.write(_json.dumps({
-                "sessionId": "11e2ac",
-                "runId": "post-fix",
-                "hypothesisId": "A",
-                "location": "pipeline.py:ExportSectionCrops",
-                "message": "resolved worker counts",
-                "data": {
-                    "z": z,
-                    "n_records": len(records),
-                    "workers": workers,
-                    "mask_workers": mask_workers,
-                    "cpu_count": os.cpu_count(),
-                    "workers_flag": Workers,
-                    "mask_workers_flag": MaskWorkers,
-                    "max_texture": max_texture,
-                },
-                "timestamp": int(_time.time() * 1000),
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
     with force_numpy_computation():
         export_section_crops(
             output_path=OutputPath,
