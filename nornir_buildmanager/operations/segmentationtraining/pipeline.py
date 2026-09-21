@@ -56,6 +56,7 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     StitchJob,
     crop_image_filename,
+    finer_dirs_for_downsample,
     probe_tile_pixel_size,
     resolve_crop_image,
     sweep_stitch_jobs,
@@ -542,6 +543,9 @@ def _export_section_crops(
             workers=workers,
             stage_dir=stage_dir,
             use_shared_memory=workers > 1,
+            finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
+            tile_x_dim=tile_x_dim,
+            tile_y_dim=tile_y_dim,
         )
 
     mask_by_member = {(item["image_key"], item["location_id"]): item for item in mask_results}

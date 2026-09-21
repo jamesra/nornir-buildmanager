@@ -32,30 +32,6 @@ def rasterize_mask_job(job: MaskJob) -> dict[str, Any]:
 
     Returns paths only (plus small RLE stats) so the parent never receives bitmaps.
     """
-    # #region agent log
-    try:
-        import json as _json
-        import time as _time
-        with open("/workspace/.cursor/debug-11e2ac.log", "a", encoding="utf-8") as _dbg:
-            _dbg.write(_json.dumps({
-                "sessionId": "11e2ac",
-                "runId": "post-fix",
-                "hypothesisId": "B,C,E",
-                "location": "masks.py:rasterize_mask_job",
-                "message": "rasterize start",
-                "data": {
-                    "location_id": job.location_id,
-                    "image_key": job.image_key,
-                    "width": job.width,
-                    "height": job.height,
-                    "n_pixels": job.width * job.height,
-                    "alloc_mb": round(job.width * job.height / (1024 * 1024), 1),
-                },
-                "timestamp": int(_time.time() * 1000),
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     mask = np.zeros((job.height, job.width), dtype=np.uint8)
     image = Image.fromarray(mask, mode="L")
     draw = ImageDraw.Draw(image)
@@ -95,25 +71,20 @@ def rasterize_mask_job(job: MaskJob) -> dict[str, Any]:
 
 def encode_coco_rle(mask: np.ndarray) -> dict[str, Any]:
     """Uncompressed COCO RLE (Fortran order) for SA-1B JSON."""
-    fortran = np.asfortranarray(mask.astype(np.uint8))
-    pixels = fortran.ravel(order="F")
-    height, width = mask.shape
-    counts: list[int] = []
-    if pixels.size == 0:
-        return {"counts": counts, "size": [height, width]}
-    current = int(pixels[0])
-    if current == 1:
-        counts.append(0)
-    run = 1
-    for value in pixels[1:]:
-        if int(value) == current:
-            run += 1
-        else:
-            counts.append(run)
-            current = int(value)
-            run = 1
-    counts.append(run)
-    return {"counts": counts, "size": [int(height), int(width)]}
+    height = int(mask.shape[0])
+    width = int(mask.shape[1])
+    if mask.size == 0:
+        return {"counts": [], "size": [height, width]}
+    pixels = np.asfortranarray(mask).astype(np.uint8, copy=False).ravel(order="F")
+    change = np.flatnonzero(pixels[1:] != pixels[:-1]) + 1
+    bounds = np.empty(change.size + 2, dtype=np.intp)
+    bounds[0] = 0
+    bounds[1:-1] = change
+    bounds[-1] = pixels.size
+    counts = np.diff(bounds).tolist()
+    if int(pixels[0]) == 1:
+        counts.insert(0, 0)
+    return {"counts": counts, "size": [height, width]}
 
 
 def run_mask_jobs(jobs: list[MaskJob], *, workers: int) -> list[dict[str, Any]]:

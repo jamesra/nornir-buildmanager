@@ -1,4 +1,4 @@
-"""Bounded process-pool helpers. Threads are not used for stitch or masks."""
+"""Bounded pool helpers for stitch encode (processes) and tile I/O (threads)."""
 
 from __future__ import annotations
 
@@ -48,37 +48,6 @@ def run_process_jobs(
     """Run *func* per job. workers<=1 stays in-process (tests / tiny sections)."""
     if not jobs:
         return []
-    # #region agent log
-    try:
-        import json as _json
-        import time as _time
-        _mem = {}
-        try:
-            with open("/proc/meminfo", encoding="utf-8") as _mf:
-                for _line in _mf:
-                    if _line.startswith(("MemAvailable:", "MemFree:", "SwapFree:")):
-                        _mem[_line.split(":")[0]] = _line.split(":")[1].strip()
-        except Exception:
-            pass
-        with open("/workspace/.cursor/debug-11e2ac.log", "a", encoding="utf-8") as _dbg:
-            _dbg.write(_json.dumps({
-                "sessionId": "11e2ac",
-                "runId": "post-fix",
-                "hypothesisId": "A,D",
-                "location": "poolutil.py:run_process_jobs",
-                "message": "starting process jobs",
-                "data": {
-                    "name_prefix": name_prefix,
-                    "workers": workers,
-                    "n_jobs": len(jobs),
-                    "inline": workers <= 1,
-                    "mem": _mem,
-                },
-                "timestamp": int(_time.time() * 1000),
-            }) + "\n")
-    except Exception:
-        pass
-    # #endregion
     if workers <= 1:
         return [func(job) for job in jobs]
     pool = nornir_pools.GetMultithreadingPool(

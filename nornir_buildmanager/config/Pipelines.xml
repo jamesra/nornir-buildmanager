@@ -2356,7 +2356,7 @@
                       help="Do not coarsen a process thinner than this many pixels"
                       required="False"/>
             <Argument flag="-Workers" dest="Workers" type="int"
-                      help="In-band stitch process-pool size. Default is CPU count."
+                      help="Stitch PNG encode process-pool size. Default is CPU count. Tile reads use a thread pool sized from CPU count; column bands size themselves from RAM."
                       required="False"/>
             <Argument flag="-MaskWorkers" dest="MaskWorkers" type="int"
                       help="Mask rasterize process-pool size. Default is CPU count."
