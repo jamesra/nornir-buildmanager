@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from nornir_buildmanager.operations.segmentationtraining.ingest import load_section_records
+from nornir_buildmanager.operations.segmentationtraining.progress import (
+    GALLERY_LABEL,
+    GALLERY_TRACK_ID,
+    IterateProgressReporter,
+)
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     crop_image_filename,
@@ -208,6 +213,31 @@ def upsert_catalog(
     return len(rows)
 
 
+def prune_catalog_section(
+    output_path: str | os.PathLike[str],
+    z: int,
+    keep_ids: set[int],
+) -> int:
+    """Delete catalog rows for section *z* whose location id is not in *keep_ids*."""
+    if not sqlite_path(output_path).is_file():
+        return 0
+    connection = connect(output_path)
+    try:
+        if keep_ids:
+            placeholders = ", ".join("?" for _ in keep_ids)
+            cursor = connection.execute(
+                f"DELETE FROM locations WHERE z = ? AND location_id NOT IN ({placeholders})",
+                [int(z), *sorted(keep_ids)],
+            )
+        else:
+            cursor = connection.execute("DELETE FROM locations WHERE z = ?", [int(z)])
+        connection.commit()
+        deleted = cursor.rowcount
+    finally:
+        connection.close()
+    return int(deleted)
+
+
 def rebuild_catalog(output_path: str | os.PathLike[str]) -> int:
     """Rebuild sqlite from images JSON, section JSONL, masks, and ignore.json.
 
@@ -220,16 +250,24 @@ def rebuild_catalog(output_path: str | os.PathLike[str]) -> int:
     preserved = load_sam2_by_id(output)
     records_by_id = _records_by_id(output)
     rows = _collect_location_rows(output, records_by_id, ignored_ids)
-    connection = connect(output)
+    reporter = IterateProgressReporter(
+        GALLERY_TRACK_ID, len(rows), label=GALLERY_LABEL, depth=0
+    )
+    reporter.start()
     try:
-        connection.execute("DELETE FROM locations")
-        for row in rows:
-            sam2 = preserved.get(int(row["location_id"]), {})
-            row.update(sam2)
-            _insert_row(connection, row)
-        connection.commit()
+        connection = connect(output)
+        try:
+            connection.execute("DELETE FROM locations")
+            for index, row in enumerate(rows, start=1):
+                sam2 = preserved.get(int(row["location_id"]), {})
+                row.update(sam2)
+                _insert_row(connection, row)
+                reporter.update(index)
+            connection.commit()
+        finally:
+            connection.close()
     finally:
-        connection.close()
+        reporter.complete()
     return len(rows)
 
 

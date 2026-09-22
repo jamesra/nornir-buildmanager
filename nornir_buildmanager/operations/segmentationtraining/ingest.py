@@ -15,6 +15,11 @@ from urllib.parse import quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.operations.segmentationtraining.progress import (
+    INGEST_LABEL,
+    INGEST_TRACK_ID,
+    IterateProgressReporter,
+)
 from nornir_buildmanager.operations.segmentationtraining.records import (
     DEFAULT_ODATA_FILTER,
     SCHEMA_VERSION,
@@ -54,6 +59,24 @@ def section_jsonl_path(output_path: str | os.PathLike[str], z: int) -> Path:
 def cache_meta_path(output_path: str | os.PathLike[str]) -> Path:
     """Sidecar describing the ingest snapshot."""
     return work_dir(output_path) / "cache.meta.json"
+
+
+def load_cache_meta_sections(output_path: str | os.PathLike[str]) -> list[int]:
+    """Section numbers recorded by the last ingest, in cache order."""
+    path = cache_meta_path(output_path)
+    if not path.is_file():
+        return []
+    try:
+        meta = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    sections: list[int] = []
+    for item in meta.get("sections") or []:
+        try:
+            sections.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return sections
 
 
 def ingest_to_section_files(
@@ -165,13 +188,22 @@ def iter_geometries_dump(
     text = path.read_text(encoding="utf-8")
     entities = list(_parse_odata_dump(text))
     section_set = set(sections) if sections else None
-    for entity in entities:
-        record = location_from_odata_entity(entity, include_off_edge=include_off_edge)
-        if record is None:
-            continue
-        if section_set is not None and record.z not in section_set:
-            continue
-        yield record
+    reporter = IterateProgressReporter(
+        INGEST_TRACK_ID, len(entities), label=INGEST_LABEL, depth=0
+    )
+    reporter.start()
+    try:
+        for index, entity in enumerate(entities, start=1):
+            record = location_from_odata_entity(
+                entity, include_off_edge=include_off_edge
+            )
+            if record is not None and (
+                section_set is None or record.z in section_set
+            ):
+                yield record
+            reporter.update(index)
+    finally:
+        reporter.complete()
 
 
 def _parse_odata_dump(text: str) -> Iterator[dict[str, Any]]:
@@ -224,16 +256,14 @@ def iter_odata_locations(
     """Two-phase OData ingest: IDs first, MosaicShape only for dirty Z."""
     getter = http_get or http_get_json
     section_set = set(sections) if sections else None
-    pass_a = list(
-        _iter_odata_pages(
-            _odata_locations_url(
-                base_url,
-                filter_text=filter_text,
-                select="ID,Z,LastModified,ParentID,OffEdge",
-                expand=None,
-            ),
-            getter,
-        )
+    pass_a = _fetch_odata_entities(
+        _odata_locations_url(
+            base_url,
+            filter_text=filter_text,
+            select="ID,Z,LastModified,ParentID,OffEdge",
+            expand=None,
+        ),
+        getter,
     )
     by_z: dict[int, list[dict[str, Any]]] = {}
     for entity in pass_a:
@@ -253,23 +283,36 @@ def iter_odata_locations(
         else:
             yield from load_section_records(output_path, z)
 
-    for chunk in _chunk_z_for_odata_filter(dirty, filter_text):
-        pass_b_filter = _combined_z_filter(filter_text, chunk)
-        for entity in _iter_odata_pages(
-            _odata_locations_url(
-                base_url,
-                filter_text=pass_b_filter,
-                select="ID,ParentID,TypeCode,Z,OffEdge,MosaicShape,LastModified,Radius",
-                expand="Parent($select=ID,TypeID,Label;$expand=Type($select=ID,Name,ParentID))",
-            ),
-            getter,
-        ):
-            record = location_from_odata_entity(entity, include_off_edge=include_off_edge)
-            if record is None:
-                continue
-            if section_set is not None and record.z not in section_set:
-                continue
-            yield record
+    dirty_total = sum(len(by_z[z]) for z in dirty)
+    reporter = IterateProgressReporter(
+        INGEST_TRACK_ID, dirty_total, label=INGEST_LABEL, depth=0
+    )
+    reporter.start()
+    seen = 0
+    try:
+        for chunk in _chunk_z_for_odata_filter(dirty, filter_text):
+            pass_b_filter = _combined_z_filter(filter_text, chunk)
+            for entity in _iter_odata_pages(
+                _odata_locations_url(
+                    base_url,
+                    filter_text=pass_b_filter,
+                    select="ID,ParentID,TypeCode,Z,OffEdge,MosaicShape,LastModified,Radius",
+                    expand="Parent($select=ID,TypeID,Label;$expand=Type($select=ID,Name,ParentID))",
+                ),
+                getter,
+            ):
+                seen += 1
+                reporter.update(seen)
+                record = location_from_odata_entity(
+                    entity, include_off_edge=include_off_edge
+                )
+                if record is None:
+                    continue
+                if section_set is not None and record.z not in section_set:
+                    continue
+                yield record
+    finally:
+        reporter.complete()
 
 
 def location_from_odata_entity(
@@ -438,39 +481,71 @@ def _odata_locations_url(
     if expand:
         query += f"&$expand={quote(expand, safe='();$,')}"
     url = f"{root}/Locations?{query}"
-    # #region agent log
-    try:
-        import json as _json
-        import time as _time
-        with open('/workspace/.cursor/debug-11e2ac.log', 'a', encoding='utf-8') as _dbg:
-            _dbg.write(_json.dumps({
-                'sessionId': '11e2ac',
-                'hypothesisId': 'A,D',
-                'location': 'ingest.py:_odata_locations_url',
-                'message': 'built Locations URL',
-                'data': {
-                    'url': url,
-                    'has_space': ' ' in url,
-                    'quoted_filter': quote(filter_text, safe='()/ '),
-                    'filter_text': filter_text[:160],
-                },
-                'timestamp': int(_time.time() * 1000),
-            }) + '\n')
-    except Exception:
-        pass
-    # #endregion
     return url
 
 
-def _iter_odata_pages(url: str, getter: HttpGet) -> Iterator[dict[str, Any]]:
+def _odata_count(document: dict[str, Any]) -> int | None:
+    """Return ``@odata.count`` when it is a positive integer."""
+    raw = document.get("@odata.count")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _iter_odata_documents(url: str, getter: HttpGet) -> Iterator[dict[str, Any]]:
     next_url: str | None = url
     while next_url:
         document = getter(next_url)
-        yield from _entities_from_odata_document(document)
-        link = document.get("@odata.nextLink")
+        yield document
+        link = document.get("@odata.nextLink") if isinstance(document, dict) else None
         if not link:
             break
         next_url = _absolute_next_link(next_url, str(link))
+
+
+def _fetch_odata_entities(url: str, getter: HttpGet) -> list[dict[str, Any]]:
+    """Download every OData page and publish ingest progress when a total is known."""
+    collected: list[dict[str, Any]] = []
+    reporter: IterateProgressReporter | None = None
+    try:
+        for document in _iter_odata_documents(url, getter):
+            page = _entities_from_odata_document(document)
+            if reporter is None:
+                total = _odata_count(document) if isinstance(document, dict) else None
+                has_next = bool(
+                    isinstance(document, dict) and document.get("@odata.nextLink")
+                )
+                if total is None and not has_next:
+                    total = len(page)
+                if total:
+                    created = IterateProgressReporter(
+                        INGEST_TRACK_ID, total, label=INGEST_LABEL, depth=0
+                    )
+                    created.start()
+                    reporter = created
+            collected.extend(page)
+            if reporter is not None:
+                reporter.update(len(collected))
+        if reporter is None and collected:
+            created = IterateProgressReporter(
+                INGEST_TRACK_ID, len(collected), label=INGEST_LABEL, depth=0
+            )
+            created.start()
+            created.update(len(collected))
+            reporter = created
+    finally:
+        if reporter is not None:
+            reporter.complete()
+    return collected
+
+
+def _iter_odata_pages(url: str, getter: HttpGet) -> Iterator[dict[str, Any]]:
+    for document in _iter_odata_documents(url, getter):
+        yield from _entities_from_odata_document(document)
 
 
 def _absolute_next_link(current: str, link: str) -> str:
@@ -481,51 +556,11 @@ def _absolute_next_link(current: str, link: str) -> str:
 
 def http_get_json(url: str) -> dict[str, Any]:
     """GET JSON from *url* with an OData Accept header."""
-    # #region agent log
-    try:
-        import json as _json
-        import time as _time
-        with open('/workspace/.cursor/debug-11e2ac.log', 'a', encoding='utf-8') as _dbg:
-            _dbg.write(_json.dumps({
-                'sessionId': '11e2ac',
-                'hypothesisId': 'A,B',
-                'location': 'ingest.py:http_get_json',
-                'message': 'http_get_json before urlopen',
-                'data': {
-                    'url': url,
-                    'has_space': ' ' in url,
-                    'selector_preview': url.split('?', 1)[-1][:180],
-                },
-                'timestamp': int(_time.time() * 1000),
-            }) + '\n')
-    except Exception:
-        pass
-    # #endregion
     request = Request(url, headers={"Accept": "application/json"})
     try:
         with urlopen(request) as response:
             payload = response.read().decode("utf-8")
     except (HTTPError, URLError, ValueError) as exc:
-        # #region agent log
-        try:
-            import json as _json
-            import time as _time
-            with open('/workspace/.cursor/debug-11e2ac.log', 'a', encoding='utf-8') as _dbg:
-                _dbg.write(_json.dumps({
-                    'sessionId': '11e2ac',
-                    'hypothesisId': 'A,B,C',
-                    'location': 'ingest.py:http_get_json',
-                    'message': 'http_get_json failed',
-                    'data': {
-                        'exc_type': type(exc).__name__,
-                        'exc': str(exc)[:300],
-                        'has_space': ' ' in url,
-                    },
-                    'timestamp': int(_time.time() * 1000),
-                }) + '\n')
-        except Exception:
-            pass
-        # #endregion
         if isinstance(exc, ValueError) and not isinstance(exc, (HTTPError, URLError)):
             raise
         detail = str(exc)

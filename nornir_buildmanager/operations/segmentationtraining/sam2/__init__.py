@@ -8,6 +8,10 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
     apply_ignore_moves,
     rebuild_catalog,
 )
+from nornir_buildmanager.operations.segmentationtraining.ingest import (
+    load_cache_meta_sections,
+)
+from nornir_buildmanager.operations.segmentationtraining.progress import SECTIONS_TRACK_ID
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     append_manifest,
     replace_manifest_rows,
@@ -16,6 +20,7 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     write_overlay,
     write_sa1b_json,
 )
+from nornir_buildmanager.progress import report_iterate_complete
 
 __all__ = [
     "WriteGallery",
@@ -36,4 +41,6 @@ def WriteGallery(OutputPath: str | None = None, **kwargs: Any) -> None:
     apply_ignore_moves(OutputPath)
     count = rebuild_catalog(OutputPath)
     prettyoutput.Log(f"WriteGallery: cataloged {count} location(s)")
+    sections = load_cache_meta_sections(OutputPath)
+    report_iterate_complete(SECTIONS_TRACK_ID, len(sections))
     return None

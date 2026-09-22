@@ -44,12 +44,18 @@ def run_process_jobs(
     *,
     workers: int,
     name_prefix: str,
+    on_complete: Callable[[int], None] | None = None,
 ) -> list[R]:
     """Run *func* per job. workers<=1 stays in-process (tests / tiny sections)."""
     if not jobs:
         return []
     if workers <= 1:
-        return [func(job) for job in jobs]
+        results: list[R] = []
+        for index, job in enumerate(jobs, start=1):
+            results.append(func(job))
+            if on_complete is not None:
+                on_complete(index)
+        return results
     pool = nornir_pools.GetMultithreadingPool(
         f"segtrain-{name_prefix}",
         num_threads=workers,
@@ -67,4 +73,6 @@ def run_process_jobs(
     for task in submit_bounded(submit, jobs, max_in_flight=workers):
         results.append(task.wait_return())
         outstanding -= 1
+        if on_complete is not None:
+            on_complete(len(results))
     return results

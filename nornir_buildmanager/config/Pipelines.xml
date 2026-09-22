@@ -2375,6 +2375,8 @@
                       help="Fail instead of skipping a section whose filter has no Tileset/level."/>
             <Argument flag="-NoOverlay" dest="NoOverlay" action="store_true"
                       help="Skip QA overlay PNGs (TEM + Viking HCL hue, TEM luma). SAM2 does not use them."/>
+            <Argument flag="-Cleanup" dest="Cleanup" action="store_true"
+                      help="Audit and repair corrupt AnnotationCrops products. Does not ingest OData or restitch."/>
         </Arguments>
 
         <PythonCall Function="segmentationtraining.IngestGeometries"
@@ -2384,7 +2386,8 @@
                     ODataFilter="#ODataFilter"
                     Sections="#Sections"
                     IncludeOffEdge="#IncludeOffEdge"
-                    Force="#Force"/>
+                    Force="#Force"
+                    Cleanup="#Cleanup"/>
 
         <Iterate VariableName="section_node" XPath="Block/Section">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
@@ -2412,10 +2415,16 @@
                                 StageTiles="#StageTiles"
                                 Force="#Force"
                                 FailMissingTileset="#FailMissingTileset"
-                                NoOverlay="#NoOverlay"/>
+                                NoOverlay="#NoOverlay"
+                                Cleanup="#Cleanup"/>
                 </Iterate>
             </Iterate>
         </Iterate>
+
+        <PythonCall Function="segmentationtraining.CleanupAnnotationCrops"
+                    OutputPath="#OutputPath"
+                    Sections="#Sections"
+                    Cleanup="#Cleanup"/>
 
         <PythonCall Module="nornir_buildmanager.operations.segmentationtraining.sam2"
                     Function="WriteGallery"

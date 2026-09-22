@@ -54,6 +54,7 @@ from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     force_numpy_computation,
     repair_overlays,
 )
+from nornir_buildmanager.operations.segmentationtraining.cleanup import CleanupAnnotationCrops
 from nornir_buildmanager.operations.segmentationtraining.planning import plan_section_crops
 from nornir_buildmanager.operations.segmentationtraining.poolutil import submit_bounded
 from nornir_buildmanager.operations.segmentationtraining.records import (
@@ -180,7 +181,9 @@ def test_pipelines_xml_registers_export_annotation_crops() -> None:
     functions = [node.get("Function") for node in pipeline.findall(".//PythonCall")]
     assert "segmentationtraining.IngestGeometries" in functions
     assert "segmentationtraining.ExportSectionCrops" in functions
+    assert "segmentationtraining.CleanupAnnotationCrops" in functions
     assert "WriteGallery" in functions
+    assert pipeline.find(".//Argument[@dest='Cleanup']") is not None
     gallery = [node for node in pipeline.findall(".//PythonCall") if node.get("Function") == "WriteGallery"]
     assert gallery[0].get("Module") == "nornir_buildmanager.operations.segmentationtraining.sam2"
     repair = tree.find(".//Pipeline[@Name='RepairAnnotationOverlays']")
@@ -203,6 +206,10 @@ def test_pipeline_entry_points_resolve() -> None:
         "nornir_buildmanager.operations",
         "segmentationtraining.RepairAnnotationOverlays",
     )
+    cleanup = get_module_class(
+        "nornir_buildmanager.operations",
+        "segmentationtraining.CleanupAnnotationCrops",
+    )
     gallery = get_module_class(
         "nornir_buildmanager.operations.segmentationtraining.sam2",
         "WriteGallery",
@@ -210,6 +217,7 @@ def test_pipeline_entry_points_resolve() -> None:
     assert ingest is IngestGeometries
     assert export is ExportSectionCrops
     assert repair is RepairAnnotationOverlays
+    assert cleanup is CleanupAnnotationCrops
     assert callable(gallery)
 
 

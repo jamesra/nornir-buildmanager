@@ -5,6 +5,7 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
     rebuild_catalog,
     upsert_catalog,
 )
+from nornir_buildmanager.operations.segmentationtraining.cleanup import CleanupAnnotationCrops
 from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     ExportSectionCrops,
     IngestGeometries,
@@ -16,6 +17,7 @@ from nornir_buildmanager.operations.segmentationtraining.pipeline import (
 from nornir_buildmanager.operations.segmentationtraining.score import ScoreAnnotationCrops
 
 __all__ = [
+    "CleanupAnnotationCrops",
     "ExportSectionCrops",
     "IngestGeometries",
     "RepairAnnotationOverlays",

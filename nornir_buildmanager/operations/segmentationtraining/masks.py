@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -87,11 +88,17 @@ def encode_coco_rle(mask: np.ndarray) -> dict[str, Any]:
     return {"counts": counts, "size": [height, width]}
 
 
-def run_mask_jobs(jobs: list[MaskJob], *, workers: int) -> list[dict[str, Any]]:
+def run_mask_jobs(
+    jobs: list[MaskJob],
+    *,
+    workers: int,
+    on_complete: Callable[[int], None] | None = None,
+) -> list[dict[str, Any]]:
     """Rasterize *jobs* in a process pool, or inline when workers <= 1."""
     return run_process_jobs(
         rasterize_mask_job,
         jobs,
         workers=workers,
         name_prefix="mask",
+        on_complete=on_complete,
     )

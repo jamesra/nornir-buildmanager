@@ -646,6 +646,7 @@ def sweep_stitch_jobs(
     tile_x_dim: int = 0,
     tile_y_dim: int = 0,
     io_workers: int | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> list[str]:
     """Stitch *jobs* in RAM-sized column bands with overlapped tile I/O.
 
@@ -656,6 +657,9 @@ def sweep_stitch_jobs(
     if not jobs:
         return []
     remaining = sorted(jobs, key=lambda job: (job.snap.ix0, job.snap.iy0, job.image_key))
+    total_jobs = len(jobs)
+    if on_progress is not None:
+        on_progress(0, total_jobs)
     threads = default_io_workers() if io_workers is None else max(1, int(io_workers))
     if column_band is None:
         column_band = default_column_band(
@@ -716,6 +720,8 @@ def sweep_stitch_jobs(
                     )
                 )
                 remaining = upcoming
+                if on_progress is not None:
+                    on_progress(total_jobs - len(remaining), total_jobs)
                 continue
             task_iter = _submit_shared_stitch(band, tiles, workers)
             started: list[Any] = []
@@ -733,6 +739,8 @@ def sweep_stitch_jobs(
             finally:
                 _unlink_handles(handles)
             remaining = upcoming
+            if on_progress is not None:
+                on_progress(total_jobs - len(remaining), total_jobs)
     finally:
         if next_shared is not None:
             _unlink_handles(next_shared[2])

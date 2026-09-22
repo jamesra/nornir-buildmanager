@@ -32,18 +32,34 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     max_last_modified,
     save_section_watermark,
     section_is_fresh,
+    section_meta_path,
 )
 from nornir_buildmanager.operations.segmentationtraining.geometry import pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.grouping import sanitize_volume_token
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ingest_to_section_files,
+    load_cache_meta_sections,
     load_section_records,
 )
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
+from nornir_buildmanager.operations.segmentationtraining.progress import (
+    MASKS_LABEL,
+    MASKS_TRACK_ID,
+    SECTIONS_LABEL,
+    SECTIONS_TRACK_ID,
+    STITCH_LABEL,
+    STITCH_TRACK_ID,
+)
+from nornir_buildmanager.progress import report_iterate
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     apply_ignore_moves,
+    prune_catalog_section,
     upsert_catalog,
+)
+from nornir_buildmanager.operations.segmentationtraining.cleanup import (
+    remove_image_key_products,
+    remove_member_files_not_in,
 )
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 from nornir_buildmanager.operations.segmentationtraining.sam2 import WriteGallery
@@ -85,12 +101,16 @@ def IngestGeometries(
     Sections: list[int] | None = None,
     IncludeOffEdge: bool = False,
     Force: bool = False,
+    Cleanup: bool = False,
     http_get: Callable[[str], dict[str, Any]] | None = None,
     **kwargs: Any,
 ) -> None:
     """Volume-level ingest. Writes `{Output}/_work/section_{z}.jsonl` only."""
+    del kwargs
     if not OutputPath:
         raise NornirUserException("ExportAnnotationCrops requires -Output")
+    if Cleanup:
+        return None
     ingest_to_section_files(
         output_path=OutputPath,
         odata=_empty_to_none(OData),
@@ -271,21 +291,108 @@ def ExportSectionCrops(
     FilePostfix: str | None = None,
     TilesetMtime: float | None = None,
     AvailableDownsamples: list[int] | None = None,
+    Cleanup: bool = False,
     **kwargs: Any,
 ) -> Any:
     """Per-section crop/mask/SA-1B write. Returns a Tileset node only if TileXDim/TileYDim were corrected."""
     if not OutputPath:
         raise NornirUserException("ExportAnnotationCrops requires -Output")
+    if Cleanup:
+        return None
     filter_node = FilterNode if FilterNode is not None else VolumeElement
     section = section_node
     if section is None and filter_node is not None and hasattr(filter_node, "FindParent"):
         section = filter_node.FindParent("Section")
     z = int(section.Number) if section is not None else int(kwargs.get("Z", 0))
+    sections = load_cache_meta_sections(OutputPath)
+    if z in sections:
+        report_iterate(
+            SECTIONS_TRACK_ID,
+            sections.index(z),
+            len(sections),
+            SECTIONS_LABEL,
+            depth=0,
+            section=z,
+        )
+    try:
+        return _export_section_crops_entry(
+            OutputPath=OutputPath,
+            VolumeNode=VolumeNode,
+            Pad=Pad,
+            Downsample=Downsample,
+            MaxTexture=MaxTexture,
+            MaxTiles=MaxTiles,
+            MinProcessPixels=MinProcessPixels,
+            IncludeOffEdge=IncludeOffEdge,
+            Channels=Channels,
+            Filters=Filters,
+            Workers=Workers,
+            MaskWorkers=MaskWorkers,
+            StageTiles=StageTiles,
+            Force=Force,
+            FailMissingTileset=FailMissingTileset,
+            NoOverlay=NoOverlay,
+            Overlay=Overlay,
+            TileXDim=TileXDim,
+            TileYDim=TileYDim,
+            LevelDirs=LevelDirs,
+            FilePrefix=FilePrefix,
+            FilePostfix=FilePostfix,
+            TilesetMtime=TilesetMtime,
+            AvailableDownsamples=AvailableDownsamples,
+            filter_node=filter_node,
+            section=section,
+            z=z,
+        )
+    finally:
+        if z in sections:
+            report_iterate(
+                SECTIONS_TRACK_ID,
+                sections.index(z) + 1,
+                len(sections),
+                SECTIONS_LABEL,
+                depth=0,
+                section=z,
+            )
+
+
+def _export_section_crops_entry(
+    *,
+    OutputPath: str,
+    VolumeNode: Any,
+    Pad: float,
+    Downsample: int,
+    MaxTexture: int | None,
+    MaxTiles: int | None,
+    MinProcessPixels: int,
+    IncludeOffEdge: bool,
+    Channels: str,
+    Filters: str,
+    Workers: int | None,
+    MaskWorkers: int | None,
+    StageTiles: str | None,
+    Force: bool,
+    FailMissingTileset: bool,
+    NoOverlay: bool,
+    Overlay: bool,
+    TileXDim: int | None,
+    TileYDim: int | None,
+    LevelDirs: dict[int, str] | None,
+    FilePrefix: str | None,
+    FilePostfix: str | None,
+    TilesetMtime: float | None,
+    AvailableDownsamples: list[int] | None,
+    filter_node: Any,
+    section: Any,
+    z: int,
+) -> Any:
+    """Body of ExportSectionCrops after the sections progress track is opened."""
     records = load_section_records(OutputPath, z)
     if not IncludeOffEdge:
         records = [record for record in records if not record.off_edge]
     if not records:
         prettyoutput.Log(f"ExportAnnotationCrops: no geometries for section {z}")
+        _purge_empty_section(Path(OutputPath), z)
         return None
 
     tileset_info = _resolve_tileset(
@@ -453,6 +560,8 @@ def _export_section_crops(
     current_keys = {plan.image_key for plan in plans}
     previous_keys = set(previous.image_keys or []) if previous else set()
     _remove_stale_image_products(output, previous_keys - current_keys)
+    for plan in plans:
+        remove_member_files_not_in(output, plan.image_key, set(plan.location_ids))
 
     mask_jobs: list[MaskJob] = []
     stitch_jobs: list[StitchJob] = []
@@ -520,33 +629,72 @@ def _export_section_crops(
 
     mask_results: list[dict[str, Any]] = []
     if mask_jobs:
-        mask_results = run_mask_jobs(mask_jobs, workers=mask_workers)
+        mask_reporter = prettyoutput.TaskProgressReporter(
+            MASKS_TRACK_ID,
+            len(mask_jobs),
+            name=MASKS_LABEL,
+            section=z,
+        )
+        mask_reporter.start()
+        try:
+            mask_results = run_mask_jobs(
+                mask_jobs,
+                workers=mask_workers,
+                on_complete=mask_reporter.update,
+            )
+        finally:
+            mask_reporter.complete()
     apply_ignore_moves(output)
 
     by_d: dict[int, list[StitchJob]] = {}
     for job in stitch_jobs:
         by_d.setdefault(job.downsample, []).append(job)
-    for downsample in sorted(by_d):
-        level_dir = level_dirs.get(downsample)
-        if not level_dir:
-            _logger.warning("No tileset level for downsample %s, skipping stitch", downsample)
-            continue
-        stage_dir = None
-        if stage_tiles:
-            stage_dir = os.path.join(stage_tiles, f"D{downsample}")
-            os.makedirs(stage_dir, exist_ok=True)
-        sweep_stitch_jobs(
-            by_d[downsample],
-            source_dir=level_dir,
-            prefix=file_prefix,
-            postfix=file_postfix,
-            workers=workers,
-            stage_dir=stage_dir,
-            use_shared_memory=workers > 1,
-            finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
-            tile_x_dim=tile_x_dim,
-            tile_y_dim=tile_y_dim,
+    stitch_reporter: prettyoutput.TaskProgressReporter | None = None
+    stitch_offset = 0
+    if stitch_jobs:
+        stitch_reporter = prettyoutput.TaskProgressReporter(
+            STITCH_TRACK_ID,
+            len(stitch_jobs),
+            name=STITCH_LABEL,
+            section=z,
         )
+        stitch_reporter.start()
+    try:
+        for downsample in sorted(by_d):
+            level_dir = level_dirs.get(downsample)
+            if not level_dir:
+                _logger.warning("No tileset level for downsample %s, skipping stitch", downsample)
+                stitch_offset += len(by_d[downsample])
+                if stitch_reporter is not None:
+                    stitch_reporter.update(stitch_offset)
+                continue
+            stage_dir = None
+            if stage_tiles:
+                stage_dir = os.path.join(stage_tiles, f"D{downsample}")
+                os.makedirs(stage_dir, exist_ok=True)
+            offset = stitch_offset
+
+            def on_stitch_progress(done: int, _total: int, _offset: int = offset) -> None:
+                if stitch_reporter is not None:
+                    stitch_reporter.update(_offset + done)
+
+            sweep_stitch_jobs(
+                by_d[downsample],
+                source_dir=level_dir,
+                prefix=file_prefix,
+                postfix=file_postfix,
+                workers=workers,
+                stage_dir=stage_dir,
+                use_shared_memory=workers > 1,
+                finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
+                tile_x_dim=tile_x_dim,
+                tile_y_dim=tile_y_dim,
+                on_progress=on_stitch_progress,
+            )
+            stitch_offset += len(by_d[downsample])
+    finally:
+        if stitch_reporter is not None:
+            stitch_reporter.complete()
 
     mask_by_member = {(item["image_key"], item["location_id"]): item for item in mask_results}
     image_marks: list[ImageWatermark] = []
@@ -618,7 +766,9 @@ def _export_section_crops(
             images=image_marks,
         ),
     )
-    upsert_catalog(output, id_set(records))
+    keep_ids = id_set(records)
+    upsert_catalog(output, keep_ids)
+    prune_catalog_section(output, z, keep_ids)
     return [plan.image_key for plan in plans]
 
 
@@ -766,24 +916,23 @@ def _manifest_row(plan: PlannedCrop, z: int, volume: str) -> dict[str, Any]:
     }
 
 
+def _purge_empty_section(output: Path, z: int) -> None:
+    """Remove crop products and catalog rows for a Z that no longer has locations."""
+    watermark = load_section_watermark(output, z)
+    keys: set[str] = set()
+    if watermark is not None:
+        keys.update(watermark.image_keys or [])
+        keys.update(item.key for item in (watermark.images or []))
+    _remove_stale_image_products(output, keys)
+    replace_manifest_rows(output, z, [])
+    section_meta_path(output, z).unlink(missing_ok=True)
+    prune_catalog_section(output, z, set())
+
+
 def _remove_stale_image_products(output: Path, stale_keys: set[str]) -> None:
     """Delete prior crop products whose keys are no longer emitted for this Z."""
     for key in stale_keys:
-        for path in (
-            output / "images" / crop_image_filename(key),
-            output / "images" / f"{key}.jpg",
-            output / "images" / f"{key}.json",
-            output / "overlays" / f"{key}.png",
-        ):
-            path.unlink(missing_ok=True)
-        masks = output / "masks"
-        if masks.is_dir():
-            for path in masks.glob(f"{key}_*.png"):
-                path.unlink(missing_ok=True)
-        rle_dir = output / "_work" / "rle"
-        if rle_dir.is_dir():
-            for path in rle_dir.glob(f"{key}_*.json"):
-                path.unlink(missing_ok=True)
+        remove_image_key_products(output, key)
 
 
 def _resolve_volume_name(*nodes: Any) -> str:
