@@ -221,14 +221,18 @@ class VikingVolumeAdoptTests(unittest.TestCase):
 
         agb = section.GetChannel('AGB')
         self.assertIsNotNone(agb)
-        self.assertIsNone(agb.GetFilter('VikingTEM'))
+        viking = agb.GetFilter('VikingTEM')
+        self.assertIsNotNone(viking)
+        self.assertTrue(viking.Locked)
+        self.assertTrue(viking.HasTileset)
+        self.assertTrue(os.path.isfile(os.path.join(viking.Tileset.FullPath, '001', '0001_AGB_X000_Y000.png')))
+        self.assertEqual(_md5(os.path.join(viking.Tileset.FullPath, '001', '0001_AGB_X000_Y000.png')),
+                         self.hashes['0001_AGB_X000_Y000.png'])
         agb_leveled = agb.GetFilter('Leveled')
         self.assertIsNotNone(agb_leveled)
         self.assertTrue(agb_leveled.Locked)
-        self.assertTrue(agb_leveled.HasTileset)
-        self.assertTrue(os.path.isfile(os.path.join(agb_leveled.Tileset.FullPath, '001', '0001_AGB_X000_Y000.png')))
-        self.assertEqual(_md5(os.path.join(agb_leveled.Tileset.FullPath, '001', '0001_AGB_X000_Y000.png')),
-                         self.hashes['0001_AGB_X000_Y000.png'])
+        self.assertFalse(agb_leveled.HasTileset)
+        self.assertEqual(_md5(agb_leveled.Imageset.GetImage(32).FullPath), self.hashes['0001_AGB_32.png'])
 
         stos_group = block.GetStosGroup('Grid16', 16)
         self.assertIsNotNone(stos_group)
@@ -319,6 +323,44 @@ class VikingVolumeAdoptTests(unittest.TestCase):
         self.assertTrue(os.path.isfile(dest_tile))
         self.assertEqual(_md5(dest_tile), digest)
         self.assertFalse(os.path.isdir(os.path.join(channel_path, 'VikingTEM')))
+
+    def test_relocate_immuno_tileset_off_leveled_onto_channel(self) -> None:
+        _run_import(self.dest, self.source)
+        agb_path = os.path.join(self.dest, 'TEM', '0001', 'AGB')
+        viking_tileset = os.path.join(agb_path, 'VikingTEM', 'Tileset')
+        leveled_tileset = os.path.join(agb_path, 'Leveled', 'Tileset')
+        tile = os.path.join(viking_tileset, '001', '0001_AGB_X000_Y000.png')
+        digest = _md5(tile)
+        os.makedirs(os.path.join(agb_path, 'Leveled'), exist_ok=True)
+        shutil.move(viking_tileset, leveled_tileset)
+
+        volume = VolumeManager.Load(self.dest, Create=False)
+        agb = volume.GetBlock('TEM').GetSection(1).GetChannel('AGB')
+        leveled = agb.GetFilter('Leveled')
+        vikingvolume._attach_tileset(leveled, None, False)
+        viking = agb.GetFilter('VikingTEM')
+        if viking is not None:
+            agb.remove(viking)
+        leftover_viking = os.path.join(agb_path, 'VikingTEM')
+        if os.path.isdir(leftover_viking):
+            shutil.rmtree(leftover_viking)
+        agb.Save()
+
+        self.assertTrue(os.path.isfile(os.path.join(leveled_tileset, '001', '0001_AGB_X000_Y000.png')))
+        self.assertFalse(os.path.isdir(viking_tileset))
+
+        volume = _run_import(self.dest, self.source)
+        agb = volume.GetBlock('TEM').GetSection(1).GetChannel('AGB')
+        viking = agb.GetFilter('VikingTEM')
+        self.assertIsNotNone(viking)
+        self.assertTrue(viking.HasTileset)
+        dest_tile = os.path.join(viking.Tileset.FullPath, '001', '0001_AGB_X000_Y000.png')
+        self.assertTrue(os.path.isfile(dest_tile))
+        self.assertEqual(_md5(dest_tile), digest)
+        leveled = agb.GetFilter('Leveled')
+        self.assertFalse(leveled.HasTileset)
+        self.assertIsNone(leveled.find('Tileset_Link'))
+        self.assertFalse(os.path.isdir(leveled_tileset))
 
     def test_incomplete_source_is_an_error(self) -> None:
         _write_vikingxml(os.path.join(self.source, 'volume.vikingxml'), 9)

@@ -35,6 +35,7 @@ from nornir_buildmanager.volumemanager import (
     TransformNode,
     VolumeNode,
     XContainerElementWrapper,
+    XElementWrapper,
 )
 from nornir_buildmanager.volumemanager.filternode import BuildFilterImageName
 from nornir_imageregistration.files.mosaicfile import MosaicFile
@@ -572,11 +573,7 @@ def _attach_tile_pyramid(filter_node: FilterNode, source_dir: str | None, dry_ru
 
 
 def _attach_tileset(filter_node: FilterNode, source_dir: str | None, dry_run: bool) -> None:
-    tileset = filter_node.Tileset
-    if tileset is None:
-        tileset = TilesetNode.Create()
-        filter_node.UpdateOrAddChildByAttrib(tileset, 'Path')
-    dest = tileset.FullPath
+    dest = os.path.join(filter_node.FullPath, TilesetNode.DefaultPath)
     if os.path.isdir(dest):
         prettyoutput.Log(f"SKIP tileset already present: {dest}")
     elif source_dir and os.path.isdir(source_dir):
@@ -588,6 +585,17 @@ def _attach_tileset(filter_node: FilterNode, source_dir: str | None, dry_run: bo
     if dry_run:
         return
 
+    existing_xml = os.path.join(dest, 'VolumeData.xml')
+    if os.path.isfile(existing_xml):
+        # Keep moved/already-written tileset XML. Rewriting it races SMB after shutil.move.
+        if not _filter_has_tileset_child(filter_node):
+            filter_node.append(XElementWrapper('Tileset_Link', attrib={'Path': TilesetNode.DefaultPath}))
+        return
+
+    tileset = filter_node.Tileset
+    if tileset is None:
+        tileset = TilesetNode.Create()
+        filter_node.UpdateOrAddChildByAttrib(tileset, 'Path')
     tileset.CoordFormat = templates.GridTileCoordFormat
     tileset.FilePostfix = '.png'
     first_xml: dict[str, str] | None = None
@@ -649,8 +657,32 @@ def _remove_empty_vikingtem(channel: ChannelNode, dry_run: bool) -> None:
             shutil.rmtree(viking_dir)
 
 
+def _filter_has_tileset_child(filter_node: FilterNode | None) -> bool:
+    """True when the filter has a Tileset node or an unloaded Tileset_Link stub."""
+    if filter_node is None:
+        return False
+    return filter_node.find('Tileset') is not None or filter_node.find('Tileset_Link') is not None
+
+
+def _remove_leveled_tileset_node(channel: ChannelNode, dry_run: bool) -> bool:
+    """Drop a Tileset child from Leveled without touching ImageSet assemble PNGs."""
+    leveled = channel.GetFilter(LEVELED_FILTER)
+    if leveled is None:
+        return False
+    removed = False
+    for tag in ('Tileset', 'Tileset_Link'):
+        child = leveled.find(tag)
+        while child is not None:
+            prettyoutput.Log(f"REMOVE {tag} from {leveled.FullPath}")
+            if not dry_run:
+                leveled.remove(child)
+            removed = True
+            child = None if dry_run else leveled.find(tag)
+    return removed
+
+
 def _relocate_tileset_to_leveled(channel: ChannelNode, source_dir: str | None, dry_run: bool) -> bool:
-    """Move a Viking tileset onto Leveled and attach Tileset metadata.
+    """Move a TEM Viking tileset onto Leveled and attach Tileset metadata.
 
     Returns True when dest XML should be saved.
     """
@@ -662,7 +694,7 @@ def _relocate_tileset_to_leveled(channel: ChannelNode, source_dir: str | None, d
 
     if os.path.isdir(leveled_path):
         leveled = channel.GetFilter(LEVELED_FILTER)
-        has_meta = leveled is not None and leveled.HasTileset
+        has_meta = _filter_has_tileset_child(leveled)
         if has_meta and not needs_remove:
             return False
         leveled = _get_or_create_filter(channel, LEVELED_FILTER, bits=8)
@@ -682,6 +714,58 @@ def _relocate_tileset_to_leveled(channel: ChannelNode, source_dir: str | None, d
     _lock_filter(leveled)
     _remove_empty_vikingtem(channel, dry_run)
     return True
+
+
+def _relocate_immuno_tileset_to_vikingtem(channel: ChannelNode, source_dir: str | None,
+                                          dry_run: bool) -> bool:
+    """Keep stain tilesets on the immuno channel's VikingTEM filter, not Leveled."""
+    viking_path = os.path.join(channel.FullPath, VikingTemFilter, TilesetNode.DefaultPath)
+    leveled_tileset = os.path.join(channel.FullPath, LEVELED_FILTER, TilesetNode.DefaultPath)
+    viking = channel.GetFilter(VikingTemFilter)
+    leveled = channel.GetFilter(LEVELED_FILTER)
+    already_ok = (
+        os.path.isdir(viking_path)
+        and _filter_has_tileset_child(viking)
+        and not os.path.isdir(leveled_tileset)
+        and not _filter_has_tileset_child(leveled)
+    )
+    if already_ok:
+        return False
+
+    source = None
+    if os.path.isdir(leveled_tileset) and not os.path.isdir(viking_path):
+        source = leveled_tileset
+    elif not os.path.isdir(viking_path):
+        source = _tileset_source_from_path(source_dir)
+
+    # Detach Leveled tileset metadata before moving files so Save does not follow a
+    # stale Tileset_Link to Leveled/Tileset/VolumeData.xml.
+    stripped = _remove_leveled_tileset_node(channel, dry_run)
+
+    if os.path.isdir(viking_path):
+        viking = _get_or_create_filter(channel, VikingTemFilter, bits=8)
+        _attach_tileset(viking, None, dry_run)
+        _lock_filter(viking)
+        if os.path.isdir(leveled_tileset):
+            prettyoutput.Log(f"REMOVE leftover immuno tileset {leveled_tileset}")
+            if not dry_run:
+                shutil.rmtree(leveled_tileset)
+        return True
+
+    if source is None:
+        return stripped
+
+    viking = _get_or_create_filter(channel, VikingTemFilter, bits=8)
+    _attach_tileset(viking, source, dry_run)
+    _lock_filter(viking)
+    return True
+
+
+def _relocate_channel_tileset(channel: ChannelNode, source_dir: str | None, dry_run: bool) -> bool:
+    """TEM tilesets go on Leveled; immuno stain tilesets stay on that channel's VikingTEM."""
+    if channel.Name == TEM_CHANNEL:
+        return _relocate_tileset_to_leveled(channel, source_dir, dry_run)
+    return _relocate_immuno_tileset_to_vikingtem(channel, source_dir, dry_run)
 
 
 def _imageset_image_name(section_number: int, channel_name: str, filter_name: str) -> str:
@@ -777,10 +861,14 @@ def _adopt_section(block: BlockNode, section: SectionInventory, meta: VolumeMeta
         section_node = block.GetSection(section.number)
         if section_node is None:
             section_node = _get_or_create_section(block, section.number)
-        changed = False
+        dirty_channels: list[ChannelNode] = []
         for channel in list(section_node.Channels):
-            changed = _relocate_tileset_to_leveled(channel, None, dry_run) or changed
-        return section_node if changed else None
+            if _relocate_channel_tileset(channel, None, dry_run):
+                dirty_channels.append(channel)
+        if not dry_run:
+            for channel in dirty_channels:
+                _save_xml(channel, recurse=True)
+        return None
 
     _report_missing_tiles(section)
 
@@ -857,7 +945,7 @@ def _adopt_section(block: BlockNode, section: SectionInventory, meta: VolumeMeta
             _lock_filter(leveled)
         _attach_existing_imagesets(immuno_channel, section.number)
         tileset_source = immuno_path if os.path.isdir(immuno_path) else None
-        _relocate_tileset_to_leveled(immuno_channel, tileset_source, dry_run)
+        _relocate_immuno_tileset_to_vikingtem(immuno_channel, tileset_source, dry_run)
         for filter_node in immuno_channel.Filters:
             _lock_filter(filter_node)
 

@@ -655,22 +655,34 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     raise
 
                 # Move the current file to the backup location, write the new data
-                try:
-                    os.replace(XMLFilename, BackupXMLFullPath)
-                except FileNotFoundError as e:
-                    prettyoutput.LogErr(
-                        f"Could not backup {XMLFilename} to {BackupXMLFullPath} ({e}); continuing without backup")
-                except PermissionError:
-                    prettyoutput.LogErr(f"Permission error backing up {XMLFilename} before write")
-                    raise
-                except OSError as e:
-                    if e.errno == errno.EMFILE:
-                        prettyoutput.LogErr(
-                            f"Too many open files backing up {XMLFilename}; continuing without backup. "
-                            "Raise ulimit -n or reduce tile I/O concurrency.")
-                    else:
+                backup_ok = False
+                backup_blocked = False
+                for backup_attempt in range(8):
+                    try:
+                        os.replace(XMLFilename, BackupXMLFullPath)
+                        backup_ok = True
+                        break
+                    except FileNotFoundError as e:
                         prettyoutput.LogErr(
                             f"Could not backup {XMLFilename} to {BackupXMLFullPath} ({e}); continuing without backup")
+                        break
+                    except PermissionError:
+                        backup_blocked = True
+                        prettyoutput.Log(
+                            f"XML backup retry {backup_attempt + 1}/8, file in use: {XMLFilename}")
+                        time.sleep(min(8.0, 0.5 * (2 ** backup_attempt)))
+                    except OSError as e:
+                        if e.errno == errno.EMFILE:
+                            prettyoutput.LogErr(
+                                f"Too many open files backing up {XMLFilename}; continuing without backup. "
+                                "Raise ulimit -n or reduce tile I/O concurrency.")
+                        else:
+                            prettyoutput.LogErr(
+                                f"Could not backup {XMLFilename} to {BackupXMLFullPath} ({e}); continuing without backup")
+                        break
+                if not backup_ok and backup_blocked:
+                    prettyoutput.LogErr(
+                        f"Permission error backing up {XMLFilename} before write; continuing without backup")
 
             else:
                 # This is a rare issue where I'd write a file but have zero bytes on disk.
@@ -680,7 +692,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             pass
 
         # prettyoutput.Log("Saving %s" % XMLFilename)
-        for attempt in range(5):
+        for attempt in range(8):
             try:
                 os.replace(TmpFilename, XMLFilename)
                 return
@@ -690,6 +702,13 @@ class XContainerElementWrapper(XResourceElementWrapper):
                 self.__ensure_container_directory()
                 write_temp_file()
                 time.sleep(0.05 * (attempt + 1))
+            except PermissionError as e:
+                # SMB/CIFS often holds a directory handle after a large folder move
+                # (WinError 32). Back off and retry the replace.
+                last_open_error = e
+                prettyoutput.Log(
+                    f"XML replace retry {attempt + 1}/8, file in use: {XMLFilename}")
+                time.sleep(min(8.0, 0.5 * (2 ** attempt)))
             except OSError as e:
                 if e.errno == errno.EMFILE:
                     raise OSError(
@@ -699,6 +718,6 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     ) from e
                 raise
 
-        raise FileNotFoundError(
-            f"Unable to write {XMLFilename} after retries; last error: {last_open_error}"
-        ) from last_open_error
+        if last_open_error is not None:
+            raise last_open_error
+        raise FileNotFoundError(f"Unable to write {XMLFilename} after retries")
