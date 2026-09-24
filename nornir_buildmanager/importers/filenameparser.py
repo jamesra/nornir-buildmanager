@@ -5,7 +5,6 @@ Created on Apr 15, 2013
 '''
 
 import os
-import types
 
 
 # import logging
@@ -13,9 +12,10 @@ class FilenameInfo(object):
 
     def __init__(self, **kwargs):
         if not kwargs is None:
-            self.__dict__.update(kwargs);
+            self.__dict__.update(kwargs)
 
-class mapping():
+
+class mapping:
 
     def __init__(self, attribname, typefunc, **kwargs):
         self.attribute = attribname
@@ -54,51 +54,51 @@ def __MappingFormatString(mappingList):
 
     return outstr
 
-def __NumRequriedArgsForMapping(mappingList):
 
+def __NumRequriedArgsForMapping(mappingList):
     NumRequiredArgs = 0
     for m in mappingList:
         if not hasattr(m, 'default'):
-            NumRequiredArgs = NumRequiredArgs + 1
+            NumRequiredArgs += 1
 
     return NumRequiredArgs
 
+
 def ParseFilename(filePath, mappinglist):
+    #   Logger = logging.getLogger("Parse filename");
 
- #   Logger = logging.getLogger("Parse filename");
-
-    fileBase = os.path.basename(filePath);
+    fileBase = os.path.basename(filePath)
 
     # Make sure there are no spaces in the filename
 
-    (fileName, ext) = os.path.splitext(fileBase);
+    (fileName, ext) = os.path.splitext(fileBase)
 
-    parts = fileName.split("_");
-
-    Output = FilenameInfo();
+    parts = fileName.split("_")
+    Output = FilenameInfo()
 
     if len(parts) < __NumRequriedArgsForMapping(mappinglist):
         print(__MappingUsageString(mappinglist))
-        raise Exception("Insufficient arguments in filename " + fileName);
+        raise Exception("Insufficient arguments in filename " + fileName)
     elif len(parts) > len(mappinglist) + 1:
         print(__MappingUsageString(mappinglist))
-        raise Exception("Too many underscores in filename " + fileName);
+        raise Exception("Too many underscores in filename " + fileName)
 
     for mappingObj in mappinglist:
         try:
             value = parts[0]
             mapfunc = mappingObj.typefunc
-            convValueList = list(map(mapfunc, [value]));
+            convValueList = list(map(mapfunc, [value]))
 
-            ConvValue = convValueList[0];
+            ConvValue = convValueList[0]
 
-            setattr(Output, mappingObj.attribute, ConvValue);
+            setattr(Output, mappingObj.attribute, ConvValue)
 
             del parts[0]
         except:
             if not hasattr(mappingObj, 'default'):
                 print(__MappingUsageString(mappinglist))
-                raise Exception("Cannot parse parameter \"" + mappingObj.attribute + "\" from PMG filename:\n" + fileName)
+                raise Exception(
+                    "Cannot parse parameter \"" + mappingObj.attribute + "\" from PMG filename:\n" + fileName)
             else:
                 defaultVal = mappingObj.default
                 if callable(mappingObj.default):

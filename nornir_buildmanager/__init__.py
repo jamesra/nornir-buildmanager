@@ -1,18 +1,24 @@
-'''
+"""
 
 .. automodule:: nornir_buildmanager.build
 .. automodule:: nornir_buildmanager.operations
 
-'''
+"""
+__all__ = ['pipelinemanager', 'templates', 'operations', 'metadata', 'volumemanager']
 
-from .exceptions import *
-import os
+import nornir_buildmanager.metadata as metadata
 
+from nornir_buildmanager.exceptions import NornirUserException, NornirMissingDependencyException, \
+    NornirRethrownException
+from nornir_buildmanager.pipeline_exceptions import *
+
+import nornir_buildmanager.build as build
 import nornir_buildmanager.importers as importers
-import nornir_buildmanager.operations as operations 
-
-import nornir_buildmanager.VolumeManagerETree as VolumeManager
-from . import validation
 from nornir_buildmanager.metadata import tilesetinfo
-
-__all__ = ['pipelinemanager', 'VolumeManagerETree', 'templates', 'operations', 'metadata']
+import nornir_buildmanager.operations as operations
+from nornir_buildmanager.search import IsMatch
+import nornir_buildmanager.search as search
+import nornir_buildmanager.templates as templates
+import nornir_buildmanager.validation as validation
+import nornir_buildmanager.volumemanager as volumemanager
+import nornir_buildmanager.pipelinemanager as pipelinemanager

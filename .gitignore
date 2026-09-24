@@ -29,14 +29,46 @@ nosetests.xml
 # Translations
 *.mo
 
-# Mr Developer
+
+#############
+## Python
+#############
+
+*.py[co]
+
+# Packages
+dist/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+__pycache__
+
+# Installer logs
+
+# Unit test / coverage reports
+
+#Translations
+
+#Mr Developer
 .mr.developer.cfg
+/Logs/
+/__pycache__/
 .project
 .pydevproject
-/Logs/
 /test_volumemanager/
 /StosBrute16/
 /.externalToolBuilders/
 /StosBrute8/
 /StosBrute32/
-/__pycache__/
+
+##########
+# PyCharm
+##########
+
+.idea
+/.pytest_cache/
+
+# Hypothesis example database (local test cache)
+.hypothesis/

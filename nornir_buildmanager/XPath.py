@@ -4,8 +4,11 @@ Created on Jun 7, 2012
 @author: Jamesan
 '''
 
+from __future__ import annotations
+
 import re
 import sys
+from typing import Any
 
 import nornir_shared.prettyoutput as prettyoutput
 
@@ -13,36 +16,42 @@ import nornir_shared.prettyoutput as prettyoutput
 class XSubPath(object):
     '''Represents a level of an XPath string, returned by XPathIterator'''
 
-    def __init__(self):
-#        IsAttribute = False;
-#        Name = None;
-#        Operator = None;
-#        Value = None;
-#        Path = None;
-#        RawPath = None;
-        return
+    RawPath: str | None
+    IsAttribute: bool
+    Value: str | float | None
+    Name: str | None
+    Operator: str | None
+    Path: str | None
+
+    def __init__(self) -> None:
+        self.RawPath = None
+        self.IsAttribute = False
+        self.Value = None
+        self.Name = None
+        self.Operator = None
+        self.Path = None
 
     def __str__(self):
-        s = "";
+        s = ""
         for item in list(self.__dict__.items()):
             if item[0].startswith('_'):
-                continue;
+                continue
 
-            s = s + (str(item[0]) + " : " + str(item[1]) + '\n');
+            s += str(item[0]) + " : " + str(item[1]) + '\n'
 
-        return s;
+        return s
 
 
-def XPathIterator(XPath):
-        '''A Very limited iterator which takes xpath strings as input and iterates over each subpath.
+def XPathIterator(XPath: str):
+    '''A Very limited iterator which takes xpath strings as input and iterates over each subpath.
            Returns an object with the following properties:
            
            The following XPath syntax elements are supported: / .. . [] @ = '''
 
-        # Get the name of the child node we are looking for
-        PathParts = XPath.split('/');
+    # Get the name of the child node we are looking for
+    PathParts = XPath.split('/')
 
-        pat = re.compile(r"""
+    pat = re.compile(r"""
                         
                             (?P<Path>[^\[/\]]+)
                             (\[
@@ -52,47 +61,46 @@ def XPathIterator(XPath):
                                 (?P<Value>[^\]]+))?                                
                              \])?
                         
-                        """, re.VERBOSE);
+                        """, re.VERBOSE)
 
-        # prettyoutput.Log(XPath);
+    # prettyoutput.Log(XPath);
 
-        for subpath in PathParts:
-            StartFromRoot = len(subpath) == 0;
-            if(StartFromRoot):
-                continue;
+    for subpath in PathParts:
+        StartFromRoot = len(subpath) == 0
+        if StartFromRoot:
+            continue
 
-            # prettyoutput.Log("\n" + subpath);
-            matches = pat.match(subpath);
-            if matches is None:
-                prettyoutput.LogErr("Error in xpath subpath: " + subpath);
-                sys.exit();
+        # prettyoutput.Log("\n" + subpath);
+        matches = pat.match(subpath)
+        if matches is None:
+            prettyoutput.LogErr("Error in xpath subpath: " + subpath)
+            sys.exit()
 
-            # Figure out if Value is a string (Starts with quotes)
-            Obj = XSubPath();
-            Obj.RawPath = subpath;
-            for item in list(matches.groupdict().items()):
-                Obj.__dict__[item[0]] = item[1];
+        # Figure out if Value is a string (Starts with quotes)
+        obj = XSubPath()
+        obj.RawPath = subpath
+        for item in list(matches.groupdict().items()):
+            obj.__dict__[item[0]] = item[1]
 
-            Obj.IsAttribute = not matches.group('IsAttribute') is None;
+        obj.IsAttribute = not matches.group('IsAttribute') is None
 
-            if(Obj.Value is not None):
-                if Obj.Value[0] == "'" and Obj.Value[-1] == "'" and len(Obj.Value) >= 3:
-                    Obj.Value = Obj.Value[1:-2];
-                elif Obj.Value[0] == '"' and Obj.Value[-1] == '"'  and len(Obj.Value) >= 3:
-                    Obj.Value = Obj.Value[1:-2];
-                else:
-                    try:
-                        Obj.Value = float(Obj.Value);
-                    except:
-                        pass;
+        if obj.Value is not None and isinstance(obj.Value, str):
+            if obj.Value[0] == "'" and obj.Value[-1] == "'" and len(obj.Value) >= 3:
+                obj.Value = obj.Value[1:-1]
+            elif obj.Value[0] == '"' and obj.Value[-1] == '"' and len(obj.Value) >= 3:
+                obj.Value = obj.Value[1:-1]
+            else:
+                try:
+                    obj.Value = float(obj.Value)
+                except:
+                    pass
 
-            yield Obj;
+        yield obj
 
 
 if __name__ == '__main__':
-    x1 = '/Volumes/Section/Channel[@Name=\'TEM\']/Filter/Tag[@Name=\'RAW\']/..';
+    x1 = '/Volumes/Section/Channel[@Name=\'TEM\']/Filter/Tag[@Name=\'RAW\']/..'
 
-    iterator = XPathIterator(x1);
+    iterator = XPathIterator(x1)
     for p in iterator:
-        prettyoutput.Log(str(p));
-
+        prettyoutput.Log(str(p))

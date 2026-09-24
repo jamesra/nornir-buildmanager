@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import os
+import warnings
+
+from nornir_imageregistration.files import mosaicfile, stosfile
+from . import xfileelementwrapper
+
+
+class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
+
+    @classmethod
+    def GetFilename(cls, Name: str, Type: str, Ext: str | None = None):
+        """
+        Returns the filename for a given mosaic
+        :param str Name: Name of the mosaic
+        :param str Type: Type/Settings information for the mosaic
+        :param str Ext: Extension to use, defaults to .mosaic
+        :rtype: str
+        """
+        if Ext is None:
+            Ext = '.mosaic'
+        path = Name + Type + Ext
+        return path
+
+    def _CalcChecksum(self):
+        (file, ext) = os.path.splitext(self.Path)
+        ext = ext.lower()
+
+        if not os.path.exists(self.FullPath):
+            return None
+
+        if ext == '.stos':
+            return stosfile.StosFile.LoadChecksum(self.FullPath)
+        elif ext == '.mosaic':
+            return mosaicfile.MosaicFile.LoadChecksum(self.FullPath)
+        else:
+            raise Exception("Cannot compute checksum for unknown transform type")
+
+    def ResetChecksum(self):
+        """Recalculate the checksum for the element"""
+        if 'Checksum' in self.attrib:
+            del self.attrib['Checksum']
+
+        self._StoreChecksum(self._CalcChecksum())
+
+    def _StoreChecksum(self, checksum: str | None) -> str:
+        """Cache a computed checksum in the XML, skipping an unavailable one.
+
+        A missing file yields None, and storing that in attrib breaks XML
+        serialization and the string validation done on the way back in, so the
+        attribute is left absent instead.
+        """
+        if checksum is None:
+            if 'Checksum' in self.attrib:
+                del self.attrib['Checksum']
+                self._AttributesChanged = True
+            return ""
+
+        self.attrib['Checksum'] = str(checksum)
+        self._AttributesChanged = True
+        return str(checksum)
+
+    @property
+    def Checksum(self) -> str:
+        """Checksum of the file resource when the node was last updated"""
+        checksum = self.attrib.get('Checksum', None)
+        if checksum is None:
+            # Matches XFileElementWrapper.Checksum and ImageNode.Checksum: the
+            # computed value is cached, and caching it is an attribute change
+            # that has to survive the next save.
+            return self._StoreChecksum(self._CalcChecksum())
+
+        return checksum
+
+    @Checksum.setter
+    def Checksum(self, val):
+        """Checksum of the file resource when the node was last updated"""
+        self.attrib['Checksum'] = val
+        self._AttributesChanged = True
+        warnings.warn(
+            "Checksums for mosaic elements will not be directly settable soon.  Use ResetChecksum instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    def IsValid(self) -> tuple[bool, str]:
+        valid, reason = super(MosaicBaseNode, self).IsValid()
+
+        if valid and self.FileSystemModifiedSinceLastValidation:
+            knownChecksum = self.attrib.get('Checksum', None)
+            if knownChecksum is not None:
+                try:
+                    fileChecksum = self._CalcChecksum()
+    
+                    if not knownChecksum == fileChecksum:
+                        return False, "File checksum does not match meta-data"
+
+                    self.UpdateValidationTime() # Record the last time we checked the file
+                except FileNotFoundError:
+                    return False, f"File not found {self.FullPath}"
+
+        return valid, reason
+
+    @classmethod
+    def Create(cls, tag, Name, Type, Path=None, attrib=None, **extra):
+
+        if Path is None:
+            Path = MosaicBaseNode.GetFilename(Name, Type)
+
+        obj = MosaicBaseNode(tag=tag, Path=Path, Name=Name, Type=Type, attrib=attrib or {}, **extra)
+
+        return obj
+
+    @property
+    def Type(self) -> str:
+        return self.attrib.get('Type', '')
+
+    @Type.setter
+    def Type(self, value: str):
+        if value is None:
+            if 'Type' in self.attrib:
+                del self.attrib['Type']
+        else:
+            self.attrib['Type'] = value

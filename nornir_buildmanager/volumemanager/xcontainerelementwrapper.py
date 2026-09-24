@@ -1,0 +1,723 @@
+from __future__ import annotations
+
+import concurrent.futures
+import errno
+import os
+import sys
+import time
+from xml.etree import ElementTree as ElementTree
+
+from nornir_buildmanager.volumemanager.exceptions import DuplicateElementError, MissingElementError
+from nornir_buildmanager.volumemanager.validation import ValidateAttributesAreStrings
+from nornir_buildmanager.volumemanager.elementwrapping import WrapElement, SetElementParent
+from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
+from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceElementWrapper
+from nornir_shared import prettyoutput as prettyoutput
+from nornir_shared.files import ensure_directory
+
+
+def _save_link_element(tag: str, attrib: dict) -> ElementTree.Element:
+    """Build a transient link without wrapper bookkeeping when attributes are valid."""
+    if all(isinstance(key, str) and isinstance(value, str) for key, value in attrib.items()):
+        return ElementTree.Element(tag, attrib=dict(attrib))
+    return XElementWrapper(tag, attrib=attrib)
+
+
+class XContainerElementWrapper(XResourceElementWrapper):
+    """XML meta-data for a container whose sub-elements are contained within a directory on the file system.  The directories container will always be the same, such as TilePyramid"""
+
+    @property
+    def SaveAsLinkedElement(self) -> bool:
+        """True when this container owns its own VolumeData.xml under FullPath.
+
+        Linked containers (default True) are referenced from the parent as a
+        ``*_Link`` stub and persist independently: each owns its dirty flags
+        (``AttributesChanged`` / ``ChildrenChanged``). Nested linked dirtiness
+        does not bubble to the parent. When False, meta-data remains embedded in
+        the parent's XML so parent save consults nested non-linked dirty flags.
+        """
+        return True
+
+    @property
+    def SortKey(self) -> str:
+        """The default key used for sorting elements"""
+
+        tag = self.tag
+        if tag.endswith("_Link"):
+            tag = tag[:-len("_Link")]
+            tag += "Node"
+
+            current_module = sys.modules[__name__]
+            if hasattr(current_module, tag):
+                tagClass = getattr(current_module, tag)
+                # nornir_shared.Reflection.get_class(tag)
+
+                if tagClass is not None:
+                    if hasattr(tagClass, "ClassSortKey"):
+                        return tagClass.ClassSortKey(self)
+
+        return self.tag
+
+    @property
+    def Path(self) -> str:
+        return self.attrib.get('Path', '')
+
+    @Path.setter
+    def Path(self, val: str):
+
+        super(XContainerElementWrapper, self.__class__).Path.fset(self, val)  # type: ignore[attr-defined]
+
+        try:
+            ensure_directory(self.FullPath)
+        except (OSError, ValueError) as e:
+            if not os.path.isdir(self.FullPath):
+                raise ValueError(
+                    "{0}.Path property was set to an existing file or non-directory file system object {1}".format(
+                        self.__class__, self.FullPath)) from e
+
+        return
+
+    def IsValid(self) -> tuple[bool, str]:
+        ResourcePath = self.FullPath
+
+        if self.Parent is not None:  # Don't check for validity if our node has not been added to the tree yet
+            try:
+                files_found = False
+                with os.scandir(ResourcePath) as pathscan:
+                    for item in pathscan:
+                        if item.name[0] == '.':  # Avoid the .desktop_ini files of the world
+                            continue
+
+                        if item.is_file() or item.is_dir():
+                            files_found = True
+                            break
+
+                if not files_found:
+                    return False, f'Directory is empty: {ResourcePath}'
+
+            except FileNotFoundError:
+                return False, f'{ResourcePath} does not exist'
+
+        elif not os.path.isdir(ResourcePath):
+            return False, 'Directory does not exist'
+
+        return super(XContainerElementWrapper, self).IsValid()
+
+    def RepairMissingLinkElements(self, recurse: bool = True):
+        """
+        Searches all subdirectories under the element.  Any VolumeData.xml files
+        found are loaded and a link is created for the top level element.  Written
+        to repair the case where a VolumeData.xml is deleted and we want to recover
+        at least some of the data.
+        """
+
+        if self.SaveAsLinkedElement is False:
+            return  # This element is not saved as a linked element
+
+        with os.scandir(self.FullPath) as pathscan:
+            for path in filter(lambda p: p.is_dir() and p.name[0] != '.', pathscan):
+
+                # possible_meta_data_path = os.path.join(path, 'VolumeData.XML')
+
+                # prettyoutput.Log("Found potential linked element: {0}".format(item.path))
+
+                dirname = path.path
+
+                # expected_path = path.name
+
+                # Check to be sure that this is a new node
+                try:
+                    existingChild = self.find(f"*[@Path='{path.name}']")
+                except DuplicateElementError as e:
+                    continue
+
+                if existingChild is not None:
+                    continue
+
+                # Load the VolumeData.xml, take the root element name and create a link in our element
+                try:
+                    loadedElement = self._load_wrap_setparent_link_element(dirname)
+                    if loadedElement is not None:
+                        self.append(loadedElement)
+                        # prettyoutput.Log("\tAdded: {0}".format(loadedElement))
+                        self.ChildrenChanged = True
+                        prettyoutput.Log(f"Found missing linked container {dirname}")
+                except FileNotFoundError:
+                    prettyoutput.Log("Could not open {0}".format(dirname))
+                    continue
+
+            if recurse:
+                for child in self:
+                    if hasattr(child, "RepairMissingLinkElements"):
+                        child.RepairMissingLinkElements(recurse)  # type: ignore[union-attr]
+
+    @staticmethod
+    def _load_link_element(fullpath: str):
+        """Loads an XML file from the file system and returns the root element"""
+        filename = os.path.join(fullpath, "VolumeData.xml")
+        xml_tree = ElementTree.parse(filename)
+        return xml_tree.getroot()
+
+    @staticmethod
+    def _load_wrap_link_element(fullpath: str):
+        """Loads an xml file containing a subset of our meta-data referred to by a LINK element.  Wraps the loaded XML in the correct meta-data class"""
+
+        XMLElement = XContainerElementWrapper._load_link_element(fullpath)
+        (wrapped, NewElement) = WrapElement(XMLElement)
+        # SubContainer = XContainerElementWrapper.wrap(XMLElement)
+
+        return wrapped, NewElement
+
+    def _load_wrap_setparent_link_element(self, fullpath: str):
+        """Loads an xml file containing a subset of our meta-data referred to by a LINK element.  Wraps the loaded XML in the correct meta-data class"""
+
+        XMLElement = XContainerElementWrapper._load_link_element(fullpath)
+        (wrapped, NewElement) = WrapElement(XMLElement)
+        # SubContainer = XContainerElementWrapper.wrap(XMLElement)
+
+        if wrapped:
+            SetElementParent(NewElement, self)
+
+        return NewElement
+
+    def _replace_link(self, link_node, fullpath: str | None = None) -> XElementWrapper | None:
+        """Load the linked node.  Remove link node and replace with loaded node.  Checks that the loaded node is valid"""
+
+        if fullpath is None:
+            fullpath = self.FullPath
+
+        SubContainerPath = os.path.join(fullpath, link_node.attrib["Path"])
+
+        try:
+            loaded_element = self._load_wrap_setparent_link_element(SubContainerPath)
+        except IOError as e:
+            self.remove(link_node)
+            # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            prettyoutput.LogErr(
+                "Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            return None
+        except ElementTree.ParseError as e:
+            # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            self.remove(link_node)
+            return None
+        except Exception as e:
+            # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+            prettyoutput.LogErr("Unexpected error loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            raise e
+
+        self._ReplaceChildElementInPlace(old=link_node, new=loaded_element)
+
+        # Check to ensure the newly loaded element is valid
+        if loaded_element.NeedsValidation:
+            cleaned, reason = loaded_element.CleanIfInvalid()
+            if cleaned:
+                return None
+
+        return loaded_element
+
+    def _replace_links(self, link_nodes: list[ElementTree.Element], fullpath: str | None = None):
+        """Load the linked nodes.  Remove link node and replace with loaded node.  Checks that the loaded node is valid"""
+
+        # Ensure we are actually working on a list
+        if len(link_nodes) == 0:
+            return []
+        elif len(link_nodes) == 1:
+            return [self._replace_link(link_nodes[0], fullpath=fullpath)]
+
+        if fullpath is None:
+            fullpath = self.FullPath
+
+        SubContainerPaths = [os.path.join(fullpath, link_node.attrib["Path"]) for link_node in link_nodes]
+
+        loaded_elements = []
+
+        # Use a different threadpool so that if callars are already on a thread we don't create deadlocks where they are waiting for load tasks to be returned from the Queue
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            # pool = nornir_pools.GetThreadPool('ReplaceLinks')
+
+            tasks = []
+            for i, sub_container_path in enumerate(SubContainerPaths):
+                t = pool.submit(XContainerElementWrapper._load_wrap_link_element, sub_container_path)
+                t.link_node = link_nodes[i]  # type: ignore[attr-defined]
+                # Carry the path so the error handlers below can name the file that
+                # actually failed. Looping over `fullpath` rebound the parameter, so
+                # every message reported the last path in the list instead.
+                t.fullpath = sub_container_path  # type: ignore[attr-defined]
+                tasks.append(t)
+
+            clean_tasks = []
+
+            for task in concurrent.futures.as_completed(tasks):
+                task_fullpath = task.fullpath  # type: ignore[attr-defined]
+                try:
+                    link_node = task.link_node  # type: ignore[attr-defined]
+                    (wrapped, wrapped_loaded_element) = task.result()
+                except IOError as e:
+                    self.remove(link_node)
+                    # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    prettyoutput.LogErr(
+                        "Removing link node after IOError loading linked XML file: {0}\n{1}".format(task_fullpath,
+                                                                                                   str(e)))
+                    continue
+                except ElementTree.ParseError as e:
+                    # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    prettyoutput.LogErr("Parse error loading linked XML file: {0}\n{1}".format(task_fullpath, str(e)))
+                    self.remove(link_node)
+                    continue
+                except Exception as e:
+                    # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
+                    prettyoutput.LogErr(
+                        "Unexpected error loading linked XML file: {0}\n{1}".format(task_fullpath, str(e)))
+                    # Match the single-link path: unexpected errors must not leave an
+                    # unresolved *_Link stub while the caller believes loading succeeded (#137).
+                    raise
+
+                # (wrapped, wrapped_loaded_element) = VolumeManager.WrapElement(loaded_element)
+                # SubContainer = XContainerElementWrapper.wrap(XMLElement)
+
+                try:
+                    if wrapped:
+                        SetElementParent(wrapped_loaded_element, self)
+
+                    self._ReplaceChildElementInPlace(old=link_node, new=wrapped_loaded_element)
+                except MissingElementError as e:
+                    # TODO: Check if the replaced element we expect exists in the tree
+                    prettyoutput.LogErr(f"Missing element when replacing link: {e}, it may have already been replaced")
+                    continue
+
+                # Check to ensure the newly loaded element is valid
+                if wrapped_loaded_element.NeedsValidation:
+                    t = pool.submit(wrapped_loaded_element.IsValid)
+                    # Bind the element to its own task. The validity loop below used to
+                    # read `wrapped_loaded_element` directly, which by then held whatever
+                    # this loop last assigned, so it appended that one element once per
+                    # task and would have cleaned it in place of the invalid one.
+                    t.element = wrapped_loaded_element  # type: ignore[attr-defined]
+                    clean_tasks.append(t)
+                else:
+                    # Elements that need no validation are loaded and staying, so they
+                    # belong in the result. Only the validity loop used to append, which
+                    # dropped these from the returned list entirely.
+                    loaded_elements.append(wrapped_loaded_element)
+
+            for clean_task in concurrent.futures.as_completed(clean_tasks):
+                element = clean_task.element  # type: ignore[attr-defined]
+                # IsValid returns (bool, reason). Testing the tuple itself was always
+                # truthy, so the clean branch never ran and invalid linked containers
+                # survived on this path -- while the single-link path through
+                # _replace_link has always cleaned them.
+                # CleanIfInvalid below recomputes the reason and logs it, so it is not
+                # needed here; subclasses override CleanIfInvalid, so call that rather
+                # than Clean directly.
+                is_valid, _ = clean_task.result()
+
+                if is_valid:
+                    loaded_elements.append(element)
+                else:
+                    cleaned, _ = element.CleanIfInvalid()
+                    if not cleaned:
+                        # Not removed after all, e.g. no-delete mode, so the caller
+                        # should still see it.
+                        loaded_elements.append(element)
+
+        return loaded_elements
+
+    def __init__(self, tag, attrib=None, **extra):
+
+        if attrib is None:
+            attrib = {}
+
+        super(XContainerElementWrapper, self).__init__(tag=tag, attrib=attrib, **extra)
+
+        # if Path is None:
+        assert ('Path' in self.attrib)
+
+        # else:
+        # self.attrib['Path'] = Path
+
+    @staticmethod
+    def RaiseOnDuplicateLink(child: XElementWrapper, SaveElement: ElementTree.Element):
+        link_tag = f'{child.tag}_Link'
+        path = child.attrib.get('Path', '')
+        find_str = f"{link_tag}[@Path='{path}']"
+        existingNode = SaveElement.find(find_str)
+        if existingNode is not None:
+            raise DuplicateElementError(child,
+                                        f"Found duplicate element when saving {ElementTree.tostring(SaveElement, encoding='utf-8')}\nDuplicate: {ElementTree.tostring(existingNode, encoding='utf-8')}")
+
+    @staticmethod
+    def _link_path_xpath(link_tag: str, path: str) -> str:
+        return f"{link_tag}[@Path='{path}']"
+
+    def _cleanup_duplicate_linked_container(
+            self,
+            child: XContainerElementWrapper,
+            SaveElement: ElementTree.Element) -> bool:
+        """Drop same-Path duplicates from the in-memory tree when a link collides.
+
+        Prefers a loaded container over a bare ``*_Link`` stub. Otherwise keeps
+        the link already present in *SaveElement* and removes *child*.
+
+        :return: True if the caller should append a link for *child*.
+        """
+        path = child.attrib.get('Path', '')
+        link_tag = f'{child.tag}_Link'
+
+        stubs = [
+            sibling for sibling in list(self)
+            if sibling is not child
+            and sibling.tag == link_tag
+            and sibling.attrib.get('Path', '') == path
+        ]
+
+        if stubs:
+            for stub in stubs:
+                self.logger.warning(
+                    f"Removing duplicate link stub {stub.tag}[@Path='{path}'] under {self.FullPath}; "
+                    f"keeping loaded {child.tag}")
+                # Stubs are appended to SaveElement by reference; drop them there too.
+                if stub in list(SaveElement):
+                    SaveElement.remove(stub)
+                if stub in self:
+                    self.remove(stub)
+            if SaveElement.find(self._link_path_xpath(link_tag, path)) is not None:
+                # Another full container already contributed a link; drop this child.
+                self.logger.warning(
+                    f"Removing duplicate loaded {child.tag}[@Path='{path}'] under {self.FullPath}")
+                if child in self:
+                    self.remove(child)
+                return False
+            return True
+
+        self.logger.warning(
+            f"Removing duplicate loaded {child.tag}[@Path='{path}'] under {self.FullPath}; "
+            f"keeping existing link already queued for save")
+        if child in self:
+            self.remove(child)
+        return False
+
+    def _cleanup_duplicate_link_stub(
+            self,
+            stub: ElementTree.Element,
+            SaveElement: ElementTree.Element) -> bool:
+        """Drop a ``*_Link`` stub when SaveElement already has that Path.
+
+        Prefers whatever is already queued (often from a loaded container).
+
+        :return: True if the caller should append *stub* to *SaveElement*.
+        """
+        path = stub.attrib.get('Path', '')
+        link_tag = stub.tag
+        existing = SaveElement.find(self._link_path_xpath(link_tag, path))
+        if existing is None:
+            return True
+
+        self.logger.warning(
+            f"Removing duplicate link stub {link_tag}[@Path='{path}'] under {self.FullPath}; "
+            f"keeping existing link already queued for save")
+        if stub in self:
+            self.remove(stub)
+        return False
+
+    def Save(self, tabLevel: int | None = None, recurse: bool = True):
+        """
+        Public version of Save, if this element is not flagged SaveAsLinkedElement
+        then we need to save the parent to ensure our data is retained
+        """
+
+        if self.SaveAsLinkedElement:
+            return self._Save(tabLevel=tabLevel, recurse=recurse)
+
+        elif self.Parent is not None:
+            return self.Parent.Save(tabLevel=tabLevel, recurse=recurse)
+
+        raise NotImplementedError("Cannot save a container node that is not linked without a parent node to save it under")
+
+    def _Save(self, tabLevel: int | None = None, recurse: bool = True):
+        """
+        Called by another Save function.  This function is either called by a
+        parent element or by ourselves if SaveAsLinkedElement is True.
+
+        If recurse = False we only save this element, no child elements are saved
+        """
+        try:
+            # Lock when child meta-data is not in the child directory (e.g. concurrent
+            # pyramid level validation may save the same parent concurrently).
+            self._save_lock.acquire(blocking=True)
+
+            AnyChangesFound = self.ElementHasChangesToSave
+
+            if tabLevel is None:
+                tabLevel = 0
+
+            children_snapshot = list(self)[::-1]
+            if not AnyChangesFound:
+                seen_link_keys: set[tuple[str, str]] = set()
+                can_skip_serialization = True
+                for child in children_snapshot:
+                    if child.tag.endswith('_Link'):
+                        link_key = (child.tag, child.attrib.get('Path', ''))
+                    elif isinstance(child, XContainerElementWrapper) and child.SaveAsLinkedElement:
+                        if child.AttributesChanged:
+                            can_skip_serialization = False
+                            break
+                        link_key = (f'{child.tag}_Link', child.attrib.get('Path', ''))
+                    else:
+                        continue
+                    if link_key in seen_link_keys:
+                        can_skip_serialization = False
+                        break
+                    seen_link_keys.add(link_key)
+
+                if can_skip_serialization:
+                    if recurse:
+                        for child in children_snapshot:
+                            if isinstance(child, XContainerElementWrapper):
+                                child._Save(tabLevel + 1)
+                    self.logger.debug(
+                        f'Skipping VolumeData.xml under {self.FullPath} '
+                        f'(no dirty flags on this container; nested linked containers may still have written)')
+                    return
+
+            if self.ChildrenChanged:
+                self.sort(recurse=False)
+                children_snapshot = list(self)[::-1]
+
+            if self.AttributesChanged:
+                ValidateAttributesAreStrings(self)
+
+            xmlfilename = 'VolumeData.xml'
+
+            # Shallow copy for serialization so we do not mutate the live tree mid-pipeline.
+            SaveElement = ElementTree.Element(self.tag, attrib=self.attrib)
+            if self.text is not None:
+                SaveElement.text = self.text
+
+            if self.tail is not None:
+                SaveElement.tail = self.tail
+
+            # Linked children become *_Link stubs; their VolumeData.xml lives in the child folder.
+            # Snapshot children so removals during duplicate cleanup do not re-visit nodes.
+            live_child_ids: set[int] | None = None
+            queued_link_keys: set[tuple[str, str]] = set()
+            for child in children_snapshot:
+                if live_child_ids is not None and id(child) not in live_child_ids:
+                    continue
+                if child.tag.endswith('_Link'):
+                    link_key = (child.tag, child.attrib.get('Path', ''))
+                    if link_key not in queued_link_keys:
+                        SaveElement.append(child)
+                        queued_link_keys.add(link_key)
+                    elif self._cleanup_duplicate_link_stub(child, SaveElement):
+                        SaveElement.append(child)
+                    else:
+                        AnyChangesFound = True
+                elif isinstance(child, XContainerElementWrapper):
+                    # Link stubs mirror child attribs; keep parent XML in sync when they change.
+                    AnyChangesFound = AnyChangesFound or child.AttributesChanged
+
+                    # Save the child first so it can validate attributes before we attempt to copy them to a link element
+                    if recurse:
+                        child._Save(tabLevel + 1)
+
+                    if child.SaveAsLinkedElement:
+                        linktag = f'{child.tag}_Link'
+                        link_key = (linktag, child.attrib.get('Path', ''))
+
+                        # Sanity check to prevent duplicate link bugs; clean the
+                        # in-memory tree when Path collides (prefer loaded over stub).
+                        if link_key not in queued_link_keys:
+                            LinkElement = _save_link_element(linktag, child.attrib)
+                            SaveElement.append(LinkElement)
+                            queued_link_keys.add(link_key)
+                        else:
+                            self.logger.error(
+                                f"Duplicate link element found when saving {self.FullPath}:\n{SaveElement}")
+                            if self._cleanup_duplicate_linked_container(child, SaveElement):
+                                LinkElement = _save_link_element(linktag, child.attrib)
+                                SaveElement.append(LinkElement)
+                            live_child_ids = {id(current) for current in self}
+                            AnyChangesFound = True
+
+                    else:
+                        SaveElement.append(child)
+                else:
+                    if isinstance(child, XElementWrapper):
+                        # Unwrapped ElementTree nodes are treated as immutable for dirty flags.
+                        AnyChangesFound = AnyChangesFound or child.AttributesChanged or child.ChildrenChanged
+
+                        if child.AttributesChanged:
+                            ValidateAttributesAreStrings(child)
+
+                        if child.ChildrenChanged:
+                            child.sort()
+
+                    SaveElement.append(child)
+
+            if AnyChangesFound and self.SaveAsLinkedElement:
+                self.__SaveXML(xmlfilename, SaveElement)
+                self.ResetElementChangeFlags()
+            elif not AnyChangesFound and self.SaveAsLinkedElement:
+                # Clean linked containers are a routine no-op; keep out of info/prettyoutput spam.
+                self.logger.debug(
+                    f'Skipping {xmlfilename} under {self.FullPath} '
+                    f'(no dirty flags on this container; nested linked containers may still have written)')
+        finally:
+            self._save_lock.release()
+
+    def __ensure_container_directory(self) -> str:
+        """Create ``self.FullPath`` if needed; return it.
+
+        Uses CIFS/NFS-tolerant creation (see :func:`nornir_shared.files.ensure_directory`).
+        """
+        return ensure_directory(self.FullPath)
+
+    def __SaveXML(self, xmlfilename: str, SaveElement: ElementTree.Element):
+        """Intended to be called on a thread from the save function"""
+        msg = f'Writing {xmlfilename} under {self.FullPath}'
+        self.logger.info(msg)
+        prettyoutput.Log(msg)
+        try:
+            ElementTree.indent(SaveElement, space='  ')
+        except Exception as e:
+            prettyoutput.Log(f"Cannot encode output XML:\n{e}")
+            raise
+
+        container_dir = self.__ensure_container_directory()
+
+        # prettyoutput.Log("Saving %s" % xmlfilename)
+        BackupXMLFilename = f"{os.path.basename(xmlfilename)}.backup.xml"
+        BackupXMLFullPath = os.path.join(container_dir, BackupXMLFilename)
+        XMLFilename = os.path.join(container_dir, xmlfilename)
+        TmpFilename = XMLFilename + ".tmp"
+
+        def write_temp_file() -> None:
+            try:
+                with open(TmpFilename, 'wb') as hFile:
+                    ElementTree.ElementTree(SaveElement).write(
+                        hFile,
+                        encoding='utf-8',
+                        xml_declaration=False,
+                        short_empty_elements=True,
+                    )
+            except Exception as e:
+                try:
+                    os.remove(TmpFilename)
+                except FileNotFoundError:
+                    pass
+                if isinstance(e, OSError):
+                    raise
+                prettyoutput.Log(f"Cannot encode output XML:\n{e}")
+                raise
+
+            if os.path.getsize(TmpFilename) == 0:
+                raise Exception(
+                    f"No meta data produced for XML element {SaveElement} writing to {xmlfilename}")
+
+        last_open_error: OSError | None = None
+        for attempt in range(5):
+            try:
+                write_temp_file()
+                break
+            except FileNotFoundError as e:
+                last_open_error = e
+                self.__ensure_container_directory()
+                time.sleep(0.05 * (attempt + 1))
+            except OSError as e:
+                if e.errno == errno.EMFILE:
+                    raise OSError(
+                        errno.EMFILE,
+                        "Too many open files; raise ulimit -n or reduce tile I/O concurrency",
+                        XMLFilename,
+                    ) from e
+                raise
+        else:
+            raise FileNotFoundError(
+                f"Unable to write {TmpFilename} after retries; last error: {last_open_error}"
+            ) from last_open_error
+
+        # If the current VolumeData.xml has data, then create a backup copy
+        # This should prevent us removing valid backups if the current VolumeData.xml
+        # has zero bytes
+        try:
+            statinfo = os.stat(XMLFilename)
+            if statinfo.st_size > 0:
+
+                try:
+                    # Attempt to create a backup of the meta-data file before we replace it, just in case
+                    os.remove(BackupXMLFullPath)
+                except FileNotFoundError:
+                    # It is OK if a backup file does not exist
+                    pass
+                except PermissionError:
+                    prettyoutput.LogErr(f"Permission error removing backup of {XMLFilename} before write")
+                    raise
+
+                # Move the current file to the backup location, write the new data
+                backup_ok = False
+                backup_blocked = False
+                for backup_attempt in range(8):
+                    try:
+                        os.replace(XMLFilename, BackupXMLFullPath)
+                        backup_ok = True
+                        break
+                    except FileNotFoundError as e:
+                        prettyoutput.LogErr(
+                            f"Could not backup {XMLFilename} to {BackupXMLFullPath} ({e}); continuing without backup")
+                        break
+                    except PermissionError:
+                        backup_blocked = True
+                        prettyoutput.Log(
+                            f"XML backup retry {backup_attempt + 1}/8, file in use: {XMLFilename}")
+                        time.sleep(min(8.0, 0.5 * (2 ** backup_attempt)))
+                    except OSError as e:
+                        if e.errno == errno.EMFILE:
+                            prettyoutput.LogErr(
+                                f"Too many open files backing up {XMLFilename}; continuing without backup. "
+                                "Raise ulimit -n or reduce tile I/O concurrency.")
+                        else:
+                            prettyoutput.LogErr(
+                                f"Could not backup {XMLFilename} to {BackupXMLFullPath} ({e}); continuing without backup")
+                        break
+                if not backup_ok and backup_blocked:
+                    prettyoutput.LogErr(
+                        f"Permission error backing up {XMLFilename} before write; continuing without backup")
+
+            else:
+                # This is a rare issue where I'd write a file but have zero bytes on disk.
+                # If this error occurs check into replacing the zero byte file with the backup if it exists
+                prettyoutput.LogErr(f"{XMLFilename} had zero size, did not backup on write")
+        except FileNotFoundError:
+            pass
+
+        # prettyoutput.Log("Saving %s" % XMLFilename)
+        for attempt in range(8):
+            try:
+                os.replace(TmpFilename, XMLFilename)
+                return
+            except FileNotFoundError as e:
+                # Parent dir vanished or not yet visible (Clean race / CIFS cache).
+                last_open_error = e
+                self.__ensure_container_directory()
+                write_temp_file()
+                time.sleep(0.05 * (attempt + 1))
+            except PermissionError as e:
+                # SMB/CIFS often holds a directory handle after a large folder move
+                # (WinError 32). Back off and retry the replace.
+                last_open_error = e
+                prettyoutput.Log(
+                    f"XML replace retry {attempt + 1}/8, file in use: {XMLFilename}")
+                time.sleep(min(8.0, 0.5 * (2 ** attempt)))
+            except OSError as e:
+                if e.errno == errno.EMFILE:
+                    raise OSError(
+                        errno.EMFILE,
+                        "Too many open files; raise ulimit -n or reduce tile I/O concurrency",
+                        XMLFilename,
+                    ) from e
+                raise
+
+        if last_open_error is not None:
+            raise last_open_error
+        raise FileNotFoundError(f"Unable to write {XMLFilename} after retries")

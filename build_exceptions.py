@@ -5,10 +5,13 @@ Created on Jan 9, 2019
 '''
 
 import os
+from xml.etree import ElementTree
 
-class Build(Exception):
+from nornir_buildmanager.pipeline_exceptions import PipelineError
+
+
+class Build(PipelineError):
     '''An expected node did not exist'''
-
 
     def __init__(self, VolumeElem=None, PipelineNode=None, message=None, **kwargs):
         super(PipelineError, self).__init__(**kwargs)
@@ -19,11 +22,11 @@ class Build(Exception):
 
     @property
     def __ErrorHeader(self):
-        return os.linesep + "*"*80 + os.linesep
+        return os.linesep + "*" * 80 + os.linesep
 
     @property
     def __ErrorFooter(self):
-        return os.linesep + "*"*80 + os.linesep
+        return os.linesep + "*" * 80 + os.linesep
 
     def __CoreErrorList(self):
         '''return a list of error strings'''
@@ -31,7 +34,7 @@ class Build(Exception):
         if not self.PipelineNode is None:
             s.append("Pipeline Element: " + ElementTree.tostring(self.PipelineNode, encoding='utf-8') + '\n')
         if not self.VolumeElem is None:
-            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n');
+            s.append("Volume Element: " + ElementTree.tostring(self.VolumeElem, encoding='utf-8') + '\n')
         return s
 
     def ErrorList(self):

@@ -2,13 +2,12 @@
 
 import glob
 import os
+import xml.etree.ElementTree as ElementTree
 
 import nornir_imageregistration.core
 import nornir_shared.files
 import nornir_shared.images
-
 import nornir_shared.prettyoutput as PrettyOutput
-import xml.etree.ElementTree as ElementTree
 
 HTMLImageTemplate = '<img src="%(src)s" alt="%(AltText)s" width="%(ImageWidth)s" height="%(ImageHeight)s" />'
 
@@ -17,12 +16,12 @@ def FindServerFromAboutXML(path, sourceXML=None):
     if sourceXML is None:
         sourceXML = "About.xml"
 
-    if(path is None or  len(path) == 0):
+    if path is None or len(path) == 0:
         return None
 
     [Parent, tail] = os.path.split(path)
 
-    if(tail is None or len(tail) == 0):
+    if tail is None or len(tail) == 0:
         return None
 
     AboutXMLPath = os.path.join(path, sourceXML)
@@ -43,8 +42,8 @@ def FindServerFromAboutXML(path, sourceXML=None):
     if len(path) == 0:
         return "/"
 
-    if(path[-1] != '/'):
-        path = path + '/'
+    if path[-1] != '/':
+        path += '/'
     path = path + tail
 
     path = path.replace('\\', '/')
@@ -56,21 +55,21 @@ def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
        If RowOrderList is not none it contains a list of row keys determining the ordering of rows.
        The path parameter string is removed from the src= paths to produce relative paths'''
 
-    assert(isinstance(ColumnsForRow, dict))
+    assert (isinstance(ColumnsForRow, dict))
 
-    if(RowOrderList is None):
+    if RowOrderList is None:
         RowOrderList = list(ColumnsForRow.keys())
         RowOrderList = RowOrderList.sort()
 
-    assert(isinstance(RowOrderList, list))
+    assert (isinstance(RowOrderList, list))
 
     try:
-        ImageWidth = int(kwargs.get('ImageWidth', None))
+        ImageWidth = int(kwargs.get('ImageWidth', None))  # type: ignore[arg-type]
     except:
         ImageWidth = None
 
     try:
-        ImageHeight = int(kwargs.get('ImageHeight', None))
+        ImageHeight = int(kwargs.get('ImageHeight', None))  # type: ignore[arg-type]
     except:
         ImageHeight = None
 
@@ -86,7 +85,7 @@ def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
 
     for row in RowOrderList:
         listImages = ColumnsForRow[row]
-        HTMLTableDir = HTMLTableDirTemplate % {'RowHeader' : row}
+        HTMLTableDir = HTMLTableDirTemplate % {'RowHeader': row}
         HTMLString = HTMLString + '\n\t' + HTMLTableRowBegin
         HTMLString = HTMLString + '\n\t\t' + HTMLTableDir
         for imageFullPath in listImages:
@@ -104,12 +103,13 @@ def HTMLTableForImageList(Path, ColumnsForRow, RowOrderList=None, **kwargs):
 
             imageFilename = os.path.basename(imageFullPath)
             imageRelativePath = imageFullPath.replace(Path, '')
-            if(imageRelativePath[0] == os.sep or
-               imageRelativePath[0] == os.altsep):
+            if (imageRelativePath[0] == os.sep or
+                    imageRelativePath[0] == os.altsep):
                 imageRelativePath = imageRelativePath[1:]
 
-            HTMLImage = HTMLImageTemplate % {'src' : imageRelativePath, 'AltText' : imageFilename, 'ImageWidth' : Width, 'ImageHeight' : Height}
-            HTMLTableImage = HTMLTableImageTemplate % {'image' : HTMLImage}
+            HTMLImage = HTMLImageTemplate % {'src': imageRelativePath, 'AltText': imageFilename, 'ImageWidth': Width,
+                                             'ImageHeight': Height}
+            HTMLTableImage = HTMLTableImageTemplate % {'image': HTMLImage}
             HTMLString = HTMLString + '\n\t\t' + HTMLTableImage
 
         HTMLString = HTMLString + '\n\t' + HTMLTableEndRow
@@ -126,7 +126,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
     if requiredFiles is None:
         requiredFiles = []
 
-    if(path is None):
+    if path is None:
         VolumeNode = kwargs.get('VolumeNode', None)
         if VolumeNode is None:
             PrettyOutput.LogErr("Path attribute not found for VolumeFinder")
@@ -138,7 +138,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
     if not isinstance(requiredFiles, list):
         RequiredFileStrs = str(requiredFiles).strip().split(',')
         requiredFiles = list()
-        for fileStr in  RequiredFileStrs:
+        for fileStr in RequiredFileStrs:
             requiredFiles.append(fileStr)
 
     ServerHostname = FindServerFromAboutXML(path)
@@ -168,22 +168,22 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
             RegExpPatterns.append(filename)
             requiredFiles.pop(i)
         else:
-            i = i + 1
+            i += 1
 
     for directory in dirs:
         # Take the path from the list and find files.
         dirImageList = dirDict.get(directory, [])
 
         for pattern in RegExpPatterns:
-            filesMatchingPattern = glob.glob(os.path.join(directory, pattern))
+            filesMatchingPattern = glob.glob(os.path.join(str(directory), pattern))
 
             for filename in filesMatchingPattern:
-                filenameFullPath = os.path.join(directory, filename)
+                filenameFullPath = os.path.join(str(directory), filename)
                 dirImageList.append(filenameFullPath)  # Should check if it exists maybe
 
         for filename in requiredFiles:
-            filenameFullPath = os.path.join(directory, filename)
-            if(os.path.exists(filenameFullPath)):
+            filenameFullPath = os.path.join(str(directory), filename)
+            if os.path.exists(filenameFullPath):
                 dirImageList.append(filenameFullPath)  # Should check if it exists maybe
 
         dirDict[directory] = dirImageList
@@ -196,9 +196,9 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
 
     HTMLTable = HTMLTableForImageList(path, dirDict, RowNames, **kwargs)
     HTMLString = HTMLString + HTMLTable + '\n'
-    HTMLString = HTMLString + HTMLFooter
+    HTMLString += HTMLFooter
 
-    if(len(RowNames) == 0):
+    if len(RowNames) == 0:
         PrettyOutput.Log("Report generator could not find matching files " + str(requiredFiles))
         return ""
 
@@ -214,7 +214,7 @@ def VolumeFinder(path=None, OutputFile=None, VolumeNode=None, requiredFiles=None
 def EmailIndex(path=None, subject=None, **kwargs):
     import nornir_shared.emaillib
 
-    if(path is None):
+    if path is None:
         VolumeNode = kwargs.get('ReportingElement', None)
         if VolumeNode is None:
             PrettyOutput.LogErr("Path attribute not found for VolumeFinder")
@@ -255,7 +255,9 @@ def EmailIndex(path=None, subject=None, **kwargs):
 
     kwargs['message'] = message
 
-    nornir_shared.emaillib.SendMail(**kwargs)
+    #nornir_shared.emaillib.SendMail(**kwargs)
+
+
 #            if     then write HTML
 #                if there are more options in the list
 #                then write HTML for this image
@@ -267,7 +269,6 @@ def EmailIndex(path=None, subject=None, **kwargs):
 
 
 if __name__ == '__main__':
-
     # path = 'D:\\Data\\rc2_micro_pipeline\\'
     path = 'C:\\Public\\'
     # webPageStr = VolumeFinder(path=path, requiredFiles=['thumbnail_g_51.png','thumbnail_LeveledShadingCorrectedg_51.png','thumbnail_shadingcorrectedg_51.png'])
@@ -275,7 +276,7 @@ if __name__ == '__main__':
 
     webPageFullPath = os.path.join(path, 'Index.html')
     f = open(webPageFullPath, 'w')
-    f.write(webPageStr)
+    f.write(webPageStr or '')
     f.close()
 
     print("All Done!")

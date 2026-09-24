@@ -1,34 +1,81 @@
-'''
+"""
 Created on Apr 2, 2012
 
-'''
+"""
 
-import collections
 import collections.abc
 import copy
+from datetime import datetime, timezone
+from inspect import isgenerator
+import json
 import logging
 import os
+import platform
 import re
 import sys
+import time
 import traceback
-import platform
+from os import PathLike
+from typing import Any, Protocol, TypeVar
 from xml.etree import ElementTree
-from nornir_buildmanager import VolumeManagerETree
-
-from .pipeline_exceptions import *
 
 import nornir_pools
 import nornir_shared.misc
-import nornir_shared.reflection
-from inspect import isgenerator
-
-from . import argparsexml
 import nornir_shared.prettyoutput as prettyoutput
+import nornir_buildmanager.no_delete as _no_delete_mod
+import nornir_shared.reflection
+from nornir_shared.mqtt_telemetry import publish_run_event
+from nornir_shared.tasktimer import TaskTimer
+from . import argparsexml
+from .pipeline_exceptions import *
+from nornir_buildmanager.exceptions import (
+    NornirMissingDependencyException,
+    NornirRethrownException,
+)
+from nornir_buildmanager.pipelinemanager_iterate_filters import resolve_iterate_candidates
+from nornir_buildmanager.volumemanager import (
+    XElementWrapper,
+    XResourceElementWrapper,
+    XContainerElementWrapper,
+    VolumeManager,
+)
+
+T = TypeVar('T', covariant=True)
+
+# Nested Iterate→PythonCall stages that finish faster than this do not emit
+# dashboard/console "Stage … completed" status (skip-heavy Mapping walks).
+_NESTED_STAGE_STATUS_MIN_SEC = 1.0
+
+# Per-iterate node dumps (``Iterate: Mapping``, ``MappingNodeObj = …``). Off
+# unless ``-verbose`` or this env is set so ``-debug`` logs stay readable.
+_PIPELINE_PROGRESS_ENV = "NORNIR_LOG_PIPELINE_PROGRESS"
+
+
+def _env_flag_enabled(name: str) -> bool:
+    """True when *name* is a conventional truthy environment flag."""
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _should_log_pipeline_progress(argset: "ArgumentSet | None" = None) -> bool:
+    """True when per-iterate pipeline progress should be written to the log."""
+    if _env_flag_enabled(_PIPELINE_PROGRESS_ENV):
+        return True
+    if argset is None:
+        return False
+    return bool(argset.Arguments.get("verbose"))
+
+
+class SupportsRead(Protocol[T]):
+    def read(self, size: int = -1) -> bytes: ...
+
+
+def read_data(obj: SupportsRead) -> bytes:
+    return obj.read()
 
 
 # import xml.etree
-class ArgumentSet():
-    '''Collection of arguments from each source'''
+class ArgumentSet:
+    """Collection of arguments from each source"""
 
     @property
     def Arguments(self):
@@ -46,15 +93,15 @@ class ArgumentSet():
     def Variables(self):
         return self._Variables
 
-    def __init__(self, PipelineName=None):
+    def __init__(self, PipelineName: str | None = None):
         self._Arguments = {}
         self._Attribs = {}
         self._Parameters = {}
         self._Variables = {}
         self.PipelineName = PipelineName
 
-    def SubstituteStringVariables(self, xpath):
-        '''Replace all instances of # in a string with the variable names'''
+    def SubstituteStringVariables(self, xpath: str) -> str:
+        """Replace all instances of # in a string with the variable names"""
 
         iStart = xpath.find("#")
         while iStart >= 0:
@@ -73,11 +120,11 @@ class ArgumentSet():
 
         raise KeyError(str(key) + " not found")
 
-    def ReplaceVariable(self, xpath, iStart):
-        '''Replace # variable names in an xpath with variable string values'''
+    def ReplaceVariable(self, xpath: str, iStart: int):
+        """Replace # variable names in an xpath with variable string values"""
 
         # Find the next # if it exists
-        iStart = iStart + 1  # Skip the # symbol
+        iStart += 1  # Skip the # symbol
         iEndVar = xpath[iStart + 1:].find('#')
         if iEndVar < 0:
             # OK, just check to the end of the string
@@ -92,44 +139,44 @@ class ArgumentSet():
                 value = self.TryGetValueForKey(keyCheck)
                 xpath = xpath[:iStart - 1] + str(value) + xpath[iEndVar:]
                 return xpath
-            except KeyError as e:
+            except KeyError:
                 pass
 
-            iEndVar = iEndVar - 1
+            iEndVar -= 1
 
-        logger = logging.getLogger(__name__ + ".ReplaceVariable")
-        logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
+        # logger = logging.getLogger(__name__ + ".ReplaceVariable")
+        # logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         prettyoutput.LogErr("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         sys.exit()
 
-    def TryGetSubstituteObject(self, val):
-        '''Place an object directly into a dictionary. 
+    def TryGetSubstituteObject(self, val: str):
+        """Place an object directly into a dictionary.
         :param str val: The key to lookup
-        :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned.'''
+        :return: Tuple (bool, value) Returns true on success with the value or None for failure.  Not if the value is found and the value is None then (true, None) is returned."""
         if val is None:
-            return (False, None)
+            return False, None
 
         if len(val) == 0:
-            return (False, None)
+            return False, None
 
         if val[0] == '#':
             if val[1:].find('#') >= 0:
                 # If there are two '#' signs in the string it is a string not an object
-                return (False, None)
+                return False, None
 
             # Find the existing entry in the dargs
             key = val[1:]
 
             try:
                 # If no object found then return None
-                return (True, self.TryGetValueForKey(key))
+                return True, self.TryGetValueForKey(key)
             except KeyError as e:
-                return (False, None)
+                return False, None
 
-        return (False, None)
+        return False, None
 
     def AddArguments(self, args):
-        '''Add arguments from the command line'''
+        """Add arguments from the command line"""
 
         if isinstance(args, dict):
             self._Arguments.update(args)
@@ -145,15 +192,16 @@ class ArgumentSet():
 
         return kwargs
 
-    def AddAttributes(self, Node):
-        '''Add attributes from an element node to the dargs dictionary.
+    def AddAttributes(self, Node: ElementTree.Element):
+        """Add attributes from an element node to the dargs dictionary.
            Parameter values preceeded by a '#' are keys to existing
-           entries in the dictionary whose values are copied to the 
-           entry for the attribute'''
+           entries in the dictionary whose values are copied to the
+           entry for the attribute"""
 
         for key in Node.attrib:
             if key in self.Attribs:
-                raise PipelineError(PipelineNode=Node, message="%s attribute already present in arguments.  Remove duplicate use from pipelines.xml" % key)
+                raise PipelineError(PipelineNode=Node,
+                                    message="%s attribute already present in arguments.  Remove duplicate use from pipelines.xml" % key)
             val = Node.attrib[key]
 
             if len(val) == 0:
@@ -171,20 +219,20 @@ class ArgumentSet():
             try:
                 self.Attribs[key] = int(val)
                 continue
-            except:
+            except ValueError:
                 pass
 
             try:
                 self.Attribs[key] = float(val)
                 continue
-            except:
+            except ValueError:
                 pass
 
-    def RemoveAttributes(self, Node):
-        '''Remove attributes present in the node from the attrib dictionary'''
+    def RemoveAttributes(self, Node: ElementTree.Element):
+        """Remove attributes present in the node from the attrib dictionary"""
 
         for key in Node.attrib:
-            if key in self.Attribs: 
+            if key in self.Attribs:
                 val = Node.attrib[key]
                 # If we assign a variable to an attribute with the same name to ourselves do not overwrite
                 if val[0] == '#':
@@ -196,14 +244,14 @@ class ArgumentSet():
     def ClearAttributes(self):
         self.Attribs.clear()
 
-    def AddParameters(self, Node, dargsKeyname=None):
-        '''Add entries from a dictionary node to the dargs dictionary.
+    def AddParameters(self, Node: ElementTree.Element, dargsKeyname=None):
+        """Add entries from a dictionary node to the dargs dictionary.
            Parameter values preceeded by a '#' are keys to existing
-           entries in the dictionary whose values are copied to the 
-           entry for the attribute. 
-           If dargsKeyname is none all parameters are added directly 
+           entries in the dictionary whose values are copied to the
+           entry for the attribute.
+           If dargsKeyname is none all parameters are added directly
            to dargs dictionary.  Otherwise they are added as a dictionary
-           under a key=dargsKeyname'''
+           under a key=dargsKeyname"""
 
         ParamNodes = Node.findall('Parameters')
         NewParameters = {}
@@ -229,13 +277,13 @@ class ArgumentSet():
                     try:
                         NewParameters[name] = int(val)
                         continue
-                    except:
+                    except ValueError:
                         pass
 
                     try:
                         NewParameters[name] = float(val)
                         continue
-                    except:
+                    except ValueError:
                         pass
 
         if dargsKeyname is None:
@@ -243,8 +291,12 @@ class ArgumentSet():
         else:
             self.Parameters[dargsKeyname] = NewParameters
 
-    def RemoveParameters(self, Node):
-        '''Remove entries from a dargs dictionary.'''
+    def RemoveParameters(self, Node: ElementTree.Element):
+        """
+        :param Node:
+        :return:
+        Remove entries from a dargs dictionary.
+        """
 
         # print "Remove Parameters"
 
@@ -254,7 +306,7 @@ class ArgumentSet():
             for entryNode in PN:
                 if entryNode.tag == 'Entry':
                     name = entryNode.attrib['Name']
-                    if not 'Value' in entryNode.attrib:
+                    if 'Value' not in entryNode.attrib:
                         continue
 
                     val = entryNode.attrib['Value']
@@ -276,123 +328,165 @@ class ArgumentSet():
         del self.Variables[key]
 
 
+class PipelineManager:
+    """Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification"""
 
-class ExtensionData:
-    def __init__(self):
-        self.ext = None
-        self.classObj = None
-        self.ImportFunction = None
-        self.defaultArgs = dict()
-        pass
-
-
-class PipelineManager(object):
     logger = logging.getLogger('PipelineManager')
+    _description: str | None = None
+    _help: str | None = None
+    _epilog: str | None = None
 
-    
-
-    '''Responsible for the execution of a pipeline specified in an XML file following the buildscript.xsd specification'''
-    def __init__(self, pipelinesRoot, pipelineData):
+    def __init__(self, pipelinesRoot: ElementTree.ElementTree, pipelineData):
+        self.VolumeTree = None
         self.PipelineData = pipelineData
         self.defaultArgs = dict()
         self.PipelineRoot = pipelinesRoot
+        self._StageTimer: TaskTimer | None = None
+        self._PipelineName: str | None = None
+        self._VolumePath: str | None = None
+        self._iterate_depth: int = 0
 
-        if 'Description' in pipelineData.attrib:
-            self._description = pipelineData.attrib['Description']
-
-        if 'Epilog' in pipelineData.attrib:
-            self._epilog = pipelineData.attrib['Epilog']
-
+        self._description = pipelineData.attrib['Description'] if 'Description' in pipelineData.attrib else None
+        self._help = pipelineData.attrib['Help'] if 'Help' in pipelineData.attrib else None
+        self._epilog = pipelineData.attrib['Epilog'] if 'Epilog' in pipelineData.attrib else None
 
     @property
-    def Description(self):
+    def Description(self) -> str | None:
         if hasattr(self, '_description'):
             return self._description
 
         return None
 
     @property
-    def Epilog(self):
+    def Help(self) -> str | None:
+        if hasattr(self, '_help'):
+            return self._help
+
+        return None
+
+    @property
+    def Epilog(self) -> str | None:
         if hasattr(self, '_epilog'):
             return self._epilog
 
         return None
 
     @classmethod
-    def ToElementString(self, element):
+    def ToElementString(cls, element: ElementTree.Element) -> str:
         if element.tag == 'Iterate':
-            outStr = "Iterate: " + element.attrib['XPath']
-            return outStr
-        
-        strList = ElementTree.tostringlist(element)
+            return "Iterate: " + element.attrib['XPath']
 
         outStr = ""
+        strList = [s.decode('Utf-8') for s in ElementTree.tostringlist(element)]
         for s in strList:
-            outStr = outStr + " " + s.decode('Utf-8')
+            outStr = outStr + " " + s
             if s == '>':
                 break
 
         return outStr
 
+    @staticmethod
+    def _StageVolumeLabel(volume_elem: XElementWrapper) -> str:
+        """Return a filesystem path or descriptive label for stage timing keys."""
+        if isinstance(volume_elem, XResourceElementWrapper):
+            return volume_elem.FullPath
+        return str(volume_elem)
+
+    @staticmethod
+    def _ElementTelemetryFields(
+            element: XElementWrapper,
+            pipeline_node: ElementTree.Element | None = None) -> dict[str, Any]:
+        """Return MQTT event fields describing *element* for dashboard progress.
+
+        ``pipeline_node`` is accepted for call-site symmetry but does not override
+        the descriptive label derived from the volume element type.
+        """
+        del pipeline_node  # Label comes from the element, not VariableName.
+        fields: dict[str, Any] = {}
+        cls_name = type(element).__name__
+        name = getattr(element, "Name", None)
+        number = getattr(element, "Number", None)
+
+        if cls_name == "SectionNode" and number is not None:
+            fields["section"] = number
+            padded = name if name is not None else f"{int(number):04d}"
+            fields["label"] = f"section_node - {padded}"
+        elif cls_name == "ChannelNode":
+            if name is not None:
+                fields["element"] = name
+            fields["label"] = f"ChannelNode - {name}"
+        elif cls_name == "FilterNode":
+            if name is not None:
+                fields["element"] = name
+            fields["label"] = f"filter node - {name}"
+        elif cls_name == "MappingNode":
+            mapping_label = str(element)
+            fields["element"] = mapping_label
+            control = getattr(element, "Control", None)
+            if control is not None:
+                fields["section"] = control
+            fields["label"] = f"MappingNode - {mapping_label}"
+        else:
+            if name is not None:
+                fields["element"] = name
+            if number is not None:
+                fields["section"] = number
+            fields["label"] = f"{cls_name} - {name if name is not None else element}"
+
+        return fields
+
     @classmethod
-    def PrintPipelineEnumeration(cls, PipelineXML):
+    def PrintPipelineEnumeration(cls, PipelineXML: str | ElementTree.ElementTree):
         PipelineXML = cls.LoadPipelineXML(PipelineXML)
 
         cls.logger.info("Enumerating available pipelines")
         prettyoutput.Log("Enumerating available pipelines")
-        for pipeline in PipelineXML.getroot():
+        for pipeline in PipelineXML.getroot() or []:  # type: ignore[union-attr]
             cls.logger.info('  ' + pipeline.attrib.get('Name', ""))
             prettyoutput.Log('  ' + pipeline.attrib.get('Name', ""))
             prettyoutput.Log('    ' + pipeline.attrib.get('Description', "") + '\n')
 
     @classmethod
-    def _CheckPipelineXMLExists(cls, PipelineXmlFile):
-        if not os.path.exists(PipelineXmlFile):
-            PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXmlFile)
-            prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXmlFile)
-            sys.exit()
-            return False
-
-        return True
-
-    @classmethod
-    def LoadPipelineXML(cls, PipelineXML):
-        #Python 3 switched to unicode always so the encoding should not be necessary for non-english character sets
+    def LoadPipelineXML(cls, PipelineXML: str | ElementTree.ElementTree | bytes | PathLike[str] | PathLike[bytes] |
+                                          SupportsRead[bytes] | SupportsRead[str]) -> ElementTree.ElementTree:
+        # Python 3 switched to unicode always so the encoding should not be necessary for non-english character sets
         if int(platform.python_version_tuple()[0]) < 3:
             if isinstance(PipelineXML, str):
                 PipelineXML = PipelineXML.encode(sys.getdefaultencoding())
 
-        if isinstance(PipelineXML, str):
-            if cls._CheckPipelineXMLExists(PipelineXML):
-                return ElementTree.parse(PipelineXML)
-
-        elif isinstance(PipelineXML, ElementTree.ElementTree):
-                return PipelineXML
+        if isinstance(PipelineXML, ElementTree.ElementTree):
+            return PipelineXML
+        elif isinstance(PipelineXML, ElementTree.Element):
+            return ElementTree.ElementTree(PipelineXML)
+        elif isinstance(PipelineXML, str):
+            try:
+                return ElementTree.parse(PipelineXML)  # type: ignore[return-value]
+            except FileNotFoundError:
+                PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXML)
+                prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXML)
+                sys.exit()
+        elif isinstance(PipelineXML, bytes):
+            str_xml = PipelineXML.decode('utf-8')
+            return ElementTree.ElementTree(ElementTree.fromstring(str_xml))  # type: ignore[return-value]
 
         raise Exception("Invalid argument: " + str(PipelineXML))
 
     @classmethod
-    def ListPipelines(cls, PipelineXML):
+    def ListPipelines(cls, pipeline_tree: ElementTree.ElementTree | ElementTree.Element) -> list[str]:
 
-        PipelineXML = cls.LoadPipelineXML(PipelineXML)
+        assert (isinstance(pipeline_tree, ElementTree.ElementTree) or isinstance(pipeline_tree, ElementTree.Element))
 
-        assert(isinstance(PipelineXML, ElementTree.ElementTree))
-
-        PipelineNodes = PipelineXML.findall("Pipeline")
+        PipelineNodes = pipeline_tree.findall("Pipeline")
 
         PipelineNames = [p.attrib['Name'] for p in PipelineNodes]
         return sorted(PipelineNames)
 
     @classmethod
-    def __PrintPipelineArguments(cls, PipelineNode):
-        pass
-
-    @classmethod
-    def Load(cls, PipelineXml, PipelineName=None):
+    def Load(cls, PipelineXml: str | ElementTree.ElementTree, PipelineName: str | None = None):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
 
-        SelectedPipeline = None
+        # SelectedPipeline = None
         XMLDoc = cls.LoadPipelineXML(PipelineXml)
 
         if PipelineName is None:
@@ -402,40 +496,38 @@ class PipelineManager(object):
             return None
         else:
             SelectedPipeline = XMLDoc.find("Pipeline[@Name='" + PipelineName + "']")
-            if(SelectedPipeline is None):
+            if SelectedPipeline is None:
                 PipelineManager.logger.critical("No pipeline found named " + PipelineName)
                 prettyoutput.LogErr("No pipeline found named " + PipelineName)
                 cls.PrintPipelineEnumeration(XMLDoc)
                 return None
 
-        return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)
-
+        return PipelineManager(pipelinesRoot=XMLDoc.getroot(), pipelineData=SelectedPipeline)  # type: ignore[arg-type]
 
     @classmethod
-    def RunPipeline(cls, PipelineXmlFile, PipelineName, args):
+    def RunPipeline(cls, PipelineXmlFile: str | ElementTree.ElementTree, PipelineName: str, args,
+                    volume_tree=None):
 
         # PipelineData = Pipelines.CreateFromDOM(XMLDoc)
         Pipeline = cls.Load(PipelineXmlFile, PipelineName)
 
-        Pipeline.Execute(args)
+        return Pipeline.Execute(args, volume_tree=volume_tree)  # type: ignore[union-attr]
 
-
-    def GetArgParser(self, parser=None, IncludeGlobals=True):
-        '''Create the complete argument parser for the pipeline
+    def GetArgParser(self, parser=None, IncludeGlobals: bool = True):
+        """Create the complete argument parser for the pipeline
+        :param parser:
         :param bool IncludeGlobals: Arguments common to all pipelines are included if this flag is set to True.  True by default.  False is used to create documentation
-        '''
+        """
 
         if IncludeGlobals:
-            parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineRoot.findall('Arguments/Argument'), parser)
+            parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineRoot.findall('Arguments/Argument'),
+                                                                  parser)
 
         parser = argparsexml.CreateOrExtendParserForArguments(self.PipelineData.findall('Arguments/Argument'), parser)
 
         PipelineManager._AddParserDescription(self.PipelineData, parser)
 
         return parser
-
-
-
 
     @classmethod
     def _AddParserDescription(cls, PipelineNode, parser):
@@ -449,10 +541,9 @@ class PipelineManager(object):
 
         if 'Help' in PipelineNode.attrib:
             parser.help = PipelineNode.attrib['Help']
-            
+
         if 'Description' in PipelineNode.attrib:
             parser.description = PipelineNode.attrib['Description']
-            
 
         if 'Epilog' in PipelineNode.attrib:
             parser.epilog = PipelineNode.attrib['Epilog']
@@ -464,22 +555,23 @@ class PipelineManager(object):
         return xpath
 
     @classmethod
-    def GetSearchRoot(cls, VolumeElem, PipelineNode, ArgSet):
+    def GetSearchRoot(cls, VolumeElem: XElementWrapper, PipelineNode, ArgSet):
         RootIterNodeName = PipelineNode.get('Root', None)
         RootForSearch = VolumeElem
-        if(not RootIterNodeName is None):
-            if not RootIterNodeName in ArgSet.Variables:
-                raise PipelineSearchRootNotFound(argname=RootIterNodeName, PipelineNode=PipelineNode, VolumeElem=VolumeElem)
+        if RootIterNodeName is not None:
+            if RootIterNodeName not in ArgSet.Variables:
+                raise PipelineSearchRootNotFound(argname=RootIterNodeName, PipelineNode=PipelineNode,
+                                                 VolumeElem=VolumeElem)
 
             RootForSearch = ArgSet.Variables[RootIterNodeName]
         return RootForSearch
 
     IndentLevel = 0
 
-    def Execute(self, args):
-        '''This executes the loaded pipeline on the specified volume of data.
-           parser is an instance of the argparser class which should be 
-           extended with any pipeline specific arguments args are the parameters from the command line'''
+    def Execute(self, args, volume_tree=None):
+        """This executes the loaded pipeline on the specified volume of data.
+           parser is an instance of the argparser class which should be
+           extended with any pipeline specific arguments args are the parameters from the command line"""
 
         # DOM = self.PipelineData.toDOM()
         # PipelineElement = DOM.firstChild
@@ -496,24 +588,106 @@ class PipelineManager(object):
         ArgSet.AddParameters(PipelineElement)
 
         # Load the Volume.XML file in the output directory
-        self.VolumeTree = VolumeManagerETree.VolumeManager.Load(args.volumepath, Create=True)
+        volume_xml_existed = True
+        if volume_tree is not None:
+            self.VolumeTree = volume_tree
+        else:
+            volume_data_xml = os.path.join(args.volumepath, "VolumeData.xml")
+            legacy_volume_xml = os.path.join(args.volumepath, "Volume.xml")
+            volume_xml_existed = os.path.exists(volume_data_xml) or os.path.exists(legacy_volume_xml)
+            self.VolumeTree = VolumeManager.Load(args.volumepath, Create=True)
 
-        if(self.VolumeTree is None):
+        if self.VolumeTree is None:
             PipelineManager.logger.critical("Could not load or create volume.xml " + args.outputpath)
             prettyoutput.LogErr("Could not load or create volume.xml " + args.outputpath)
             sys.exit()
 
+        self._StageTimer = TaskTimer()
+        self._PipelineName = getattr(args, 'PipelineName', None) or self.PipelineData.get('Name', 'unknown')
+        self._VolumePath = args.volumepath
+
+        # Fail fast when Create=True invented an empty volume for a non-import pipeline.
+        # Alignment/assemble stages select Block/Section and otherwise skip silently.
+        if volume_tree is None:
+            block_count = len(list(self.VolumeTree.findall('Block')))
+            pipeline_name = self._PipelineName or ""
+            is_import_pipeline = pipeline_name.startswith("Import") or pipeline_name.startswith("Adopt")
+            if (not volume_xml_existed or block_count == 0) and not is_import_pipeline:
+                err = (
+                    f"Volume at {args.volumepath} has no usable data "
+                    f"(VolumeData.xml existed={volume_xml_existed}, Block count={block_count}). "
+                    f"Pipeline '{pipeline_name}' cannot run — every Block/Section select will skip. "
+                    f"Set launch input nornirVolumesRoot to a host path that contains a real "
+                    f"TEM volume with VolumeData.xml after Import/Prune/Mosaic, then set nornirVolumeName."
+                )
+                PipelineManager.logger.critical(err)
+                prettyoutput.LogErr(err)
+                if getattr(args, 'debug', False):
+                    raise RuntimeError(err)
+                sys.exit(2)
+
         # dargs = copy.deepcopy(defaultDargs)
 
-        self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
-        
-        nornir_pools.WaitOnAllPools()
+        no_delete = getattr(args, 'no_delete', False)
+        _no_delete_mod.set_no_delete(bool(no_delete))
+        try:
+            self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
+        finally:
+            _no_delete_mod.set_no_delete(False)
+            self._WriteStageTimings()
+            nornir_pools.ReleaseStagePools()
 
-    def ExecuteChildPipelines(self, ArgSet, VolumeElem, PipelineNode):
-        '''Run all of the child pipeline elements on the volume element'''
+        return self.VolumeTree
 
-        PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
-        # prettyoutput.Log(PipelineManager.ToElementString(PipelineNode))
+    def _WriteStageTimings(self) -> None:
+        """Append per-stage timing records for this pipeline execute to StageTimings.json."""
+        if self._StageTimer is None or self._VolumePath is None:
+            return
+
+        stages = [
+            {"stage": stage_name, "seconds": elapsed}
+            for stage_name, elapsed in self._StageTimer.ElapsedTimes.items()
+        ]
+        if not stages:
+            return
+
+        record = {
+            "pipeline": self._PipelineName or "unknown",
+            "utc_timestamp": datetime.now(timezone.utc).isoformat(),
+            "stages": stages,
+            "total_seconds": sum(stage["seconds"] for stage in stages),
+        }
+
+        output_path = os.path.join(self._VolumePath, "StageTimings.json")
+        existing: list[dict] = []
+        if os.path.exists(output_path):
+            try:
+                with open(output_path, "r", encoding="utf-8") as input_file:
+                    loaded = json.load(input_file)
+                if isinstance(loaded, list):
+                    existing = loaded
+                else:
+                    PipelineManager.logger.warning(
+                        "StageTimings.json is not a list; starting a fresh timing log at %s",
+                        output_path)
+            except (OSError, UnicodeError, json.JSONDecodeError) as e:
+                # Called from Execute's finally; a truncated file from a killed run
+                # must not mask the original exception (#139).
+                PipelineManager.logger.warning(
+                    "Ignoring unreadable StageTimings.json at %s (%s); starting a fresh timing log",
+                    output_path, e)
+
+        existing.append(record)
+
+        with open(output_path, "w", encoding="utf-8") as output_file:
+            json.dump(existing, output_file, indent=2)
+
+    def ExecuteChildPipelines(self, ArgSet, VolumeElem: XElementWrapper,
+                              PipelineNode):
+        """Run all of the child pipeline elements on the volume element"""
+
+        if PipelineNode.tag != "Iterate" or _should_log_pipeline_progress(ArgSet):
+            PipelineManager.logger.info(PipelineManager.ToElementString(PipelineNode))
 
         PipelinesRun = 0
         try:
@@ -524,6 +698,12 @@ class PipelineManager(object):
                     prettyoutput.IncreaseIndent()
                     self.ProcessStageElement(VolumeElem, ChildNode, ArgSet)
                     PipelinesRun += 1
+
+                except NornirMissingDependencyException as e:
+                    # This means builds cannot succeed.  We should clearly warn the user and stop so the cause of failure is clear
+                    PipelineManager.logger.error(e.message)
+                    prettyoutput.LogErr(e.message)
+                    raise NornirRethrownException() from e
                 except PipelineSelectFailed as e:
                     if ArgSet.Arguments["debug"]:
                         PipelineManager.logger.info(str(e))
@@ -534,15 +714,19 @@ class PipelineManager(object):
                     PipelineManager.logger.info("Search statement did not match.  Skipping to next iteration\n")
                     break
                 except PipelineListIntersectionFailed as e:
-                    PipelineManager.logger.info("Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + e.message)
+                    PipelineManager.logger.info(
+                        "Node attribute was not in the list of desired values.  Skipping to next iteration.\n" + str(e.message))  # type: ignore[operator]
                     break
                 except PipelineRegExSearchFailed as e:
-                    PipelineManager.logger.info("Regular expression did not match.  Skipping to next iteration.\n" + str(e.attribValue))
+                    PipelineManager.logger.info(
+                        f"Regular expression did not match. regex {e.regex} != {e.attribValue}. Skipping to next iteration.\n" + str(
+                            e.attribValue))
                     break
                 except PipelineError as e:
-                    PipelineManager.logger.error(str(e))
-                    PipelineManager.logger.error("Unexpected error, exiting pipeline")
-                    sys.exit()
+                    errStr = "Unexpected error, exiting pipeline\n" + str(e.message)
+                    PipelineManager.logger.error(errStr)
+                    prettyoutput.LogErr(errStr)
+                    raise NornirRethrownException() from e
                 finally:
                     prettyoutput.DecreaseIndent()
 
@@ -552,27 +736,30 @@ class PipelineManager(object):
         # To prevent later calls from being able to access variables from earlier steps be sure to remove the variable from the dargs
         return PipelinesRun
 
-    def ProcessStageElement(self, VolumeElem, PipelineNode, ArgSet=None):
+    def ProcessStageElement(self, VolumeElem: XElementWrapper, PipelineNode,
+                            ArgSet=None):
 
-        outStr = PipelineManager.ToElementString(PipelineNode)
-        #prettyoutput.CurseString('Section', outStr)
+        # outStr = PipelineManager.ToElementString(PipelineNode)
+        # prettyoutput.CurseString('Section', outStr)
 
-        
         # prettyoutput.Log("Processing Stage Element: " + outStr)
 
         # Copy dargs so we do not modify what the parent passed us
         # dargs = copy.copy(dargs)
 
-        if(PipelineNode.tag == 'Select'):
+        if isinstance(VolumeElem, XResourceElementWrapper):
+            prettyoutput.CurseString("Meta", VolumeElem.FullPath)
+
+        if PipelineNode.tag == 'Select':
             self.ProcessSelectNode(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'Iterate'):
+        elif PipelineNode.tag == 'Iterate':
             self.ProcessIterateNode(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'RequireSetMembership'):
+        elif PipelineNode.tag == 'RequireSetMembership':
             self.RequireSetMembership(ArgSet, VolumeElem, PipelineNode)
 
-        elif(PipelineNode.tag == 'RequireMatch'):
+        elif PipelineNode.tag == 'RequireMatch':
             self.ProcessRequireMatchNode(ArgSet, VolumeElem, PipelineNode)
 
         elif PipelineNode.tag == 'PythonCall':
@@ -584,12 +771,10 @@ class PipelineManager(object):
         else:
             raise Exception("Unexpected element name in Pipeline.XML: " + PipelineNode.tag)
 
-        
-
-
-    def RequireSetMembership(self, ArgSet, VolumeElem, PipelineNode):
-        '''If the attribute value is not present in the provided list the element is skipped.
-           If the provided list is none we do not skip.'''
+    @staticmethod
+    def RequireSetMembership(ArgSet, VolumeElem: XElementWrapper, PipelineNode):
+        """If the attribute value is not present in the provided list the element is skipped.
+           If the provided list is none we do not skip."""
 
         RootForMatch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
 
@@ -616,15 +801,16 @@ class PipelineManager(object):
                                            PipelineNode=PipelineNode,
                                            argname=AttribName)
 
-        if not Attrib in listOfValid:
-            raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, listOfValid=listOfValid, attribValue=Attrib)
+        if Attrib not in listOfValid:
+            raise PipelineListIntersectionFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode,
+                                                 listOfValid=listOfValid, attribValue=Attrib)
 
         return
 
-
-    def ProcessRequireMatchNode(self, ArgSet, VolumeElem, PipelineNode):
-        '''If the regular expression does not match the attribute an exception is raised.
-           This skips the current iteration of an enclosing <iterate> element'''
+    @staticmethod
+    def ProcessRequireMatchNode(ArgSet, VolumeElem: XElementWrapper, PipelineNode):
+        """If the regular expression does not match the attribute an exception is raised.
+           This skips the current iteration of an enclosing <iterate> element"""
 
         RootForMatch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
         AttribName = PipelineNode.attrib.get("Attribute", "Name")
@@ -649,11 +835,20 @@ class PipelineManager(object):
 
         match = re.match(RegExStr, Attrib)
         if match is None:
-            raise PipelineRegExSearchFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, regex=RegExStr, attribValue=Attrib)
+            raise PipelineRegExSearchFailed(VolumeElem=VolumeElem, PipelineNode=PipelineNode, regex=RegExStr,
+                                            attribValue=Attrib)
 
         return
 
-    def ProcessSelectNode(self, ArgSet, VolumeElem, PipelineNode):
+    @staticmethod
+    def _ElementNeedsValidation(element: XElementWrapper) -> bool:
+        """Return whether an element supports and requests validation."""
+        try:
+            return bool(element.NeedsValidation)
+        except (NotImplementedError, AttributeError):
+            return False
+
+    def ProcessSelectNode(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, ArgSet)
 
@@ -663,80 +858,164 @@ class PipelineManager(object):
         while SelectedVolumeElem is None:
 
             SelectedVolumeElem = RootForSearch.find(xpath)
-            if(SelectedVolumeElem is None):
+            if SelectedVolumeElem is None:
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
-            #Containers will be tested at load time.  The load linked element code checks containers
-            if not isinstance(SelectedVolumeElem, VolumeManagerETree.XContainerElementWrapper):
-                (IsValid, Reason) = SelectedVolumeElem.IsValid()
-                if not IsValid:
-                    # Check if the node is locked, otherwise clean it and look for another node
-                    if 'Locked' in SelectedVolumeElem.attrib:
-                        if SelectedVolumeElem.Locked:
-                            break
-                        
-                    SelectedVolumeElem.Clean(Reason)
-                    PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
-                    SelectedVolumeElem = None
+            # Containers will be tested at load time.  The load linked element code checks containers
+            if not isinstance(SelectedVolumeElem,
+                              XContainerElementWrapper):
+                if PipelineManager._ElementNeedsValidation(SelectedVolumeElem):
+                    (IsValid, Reason) = SelectedVolumeElem.IsValid()
+                    if not IsValid:
+                        # Check if the node is locked, otherwise clean it and look for another node
+                        if 'Locked' in SelectedVolumeElem.attrib:
+                            if SelectedVolumeElem.Locked:
+                                PipelineManager.logger.info(
+                                    "Did not clean locked element {0}\n".format(SelectedVolumeElem.FullPath))
+                                break
 
-        if not SelectedVolumeElem is None:
+                        if _no_delete_mod.is_no_delete():
+                            # Under no-delete, keep the invalid node bound so the
+                            # pipeline can still run against it.  Nulling and
+                            # re-searching would loop forever because Clean() is
+                            # suppressed and the invalid element stays in the tree.
+                            PipelineManager.logger.info(
+                                "NO-DELETE: Would clean invalid element %s (%s); keeping for pipeline.",
+                                getattr(SelectedVolumeElem, 'FullPath', str(SelectedVolumeElem)),
+                                Reason,
+                            )
+                            break
+
+                        SelectedVolumeElem.Clean(Reason)
+                        PipelineManager._SaveNodes(SelectedVolumeElem.Parent)
+                        SelectedVolumeElem = None
+
+        if SelectedVolumeElem is not None:
             self.AddPipelineNodeVariable(PipelineNode, SelectedVolumeElem, ArgSet)
 
-    def ProcessIterateNode(self, ArgSet, VolumeElem, PipelineNode):
+    def ProcessIterateNode(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
 
         xpath = PipelineManager.__extractXPathFromNode(PipelineNode, ArgSet)
 
         RootForSearch = PipelineManager.GetSearchRoot(VolumeElem, PipelineNode, ArgSet)
 
-        # TODO: Update args from the element
-        VolumeElemIter = RootForSearch.findall(xpath)
+        candidates = resolve_iterate_candidates(
+            RootForSearch, xpath, PipelineNode, ArgSet, VolumeElem,
+            PipelineManager.GetSearchRoot)
+
+        validate = True
+        if 'Validate' in PipelineNode.attrib:
+            validate_value = PipelineNode.attrib.get('Validate', 'True').lower()
+            validate = validate_value == 'true' or validate_value == '1' or validate_value == 'y' or validate_value == 'yes'
 
         # Make sure downstream activities do not corrupt the dictionary for the caller
         CopiedArgSet = copy.copy(ArgSet)
 
+        variable_name = PipelineNode.attrib.get('VariableName', 'Iterate')
+        track_id = f"iterate:{variable_name}"
+        # Do not materialize candidates for len(); MQTT omits None totals
+        # (publish_run_event) so streaming can start before the full set is known (#140).
+        depth = self._iterate_depth
+        self._iterate_depth += 1
+
         NumProcessed = 0
-        for VolumeElemChild in VolumeElemIter:
-            if VolumeElemChild.CleanIfInvalid():
-                PipelineManager._SaveNodes(VolumeElemChild.Parent)
-                continue
+        save_parent = set()
+        progress_current = 0
+        try:
+            publish_run_event(
+                "iterate_progress",
+                current=0,
+                total=None,
+                depth=depth,
+                track_id=track_id,
+                label=variable_name)
 
-            NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
+            for VolumeElemChild in candidates:
+                if validate and PipelineManager._ElementNeedsValidation(VolumeElemChild):
+                    (cleaned, reason) = VolumeElemChild.CleanIfInvalid()
+                    if cleaned:
+                        prettyoutput.Log(f"Cleaned invalid element during search: {VolumeElemChild}\nReason: {reason}")
+                        save_parent.add(VolumeElemChild.Parent)
+                        continue
 
-        if(NumProcessed == 0):
+                NumProcessed += self.ExecuteChildPipelines(CopiedArgSet, VolumeElemChild, PipelineNode)
+                progress_current += 1
+                tele = PipelineManager._ElementTelemetryFields(VolumeElemChild, PipelineNode)
+                tele.pop("label", None)
+                publish_run_event(
+                    "iterate_progress",
+                    current=progress_current,
+                    total=None,
+                    depth=depth,
+                    track_id=track_id,
+                    label=variable_name,
+                    **tele)
+        finally:
+            self._iterate_depth -= 1
+            publish_run_event(
+                "iterate_progress_complete",
+                track_id=track_id,
+                total=progress_current)
+
+        for parent in save_parent:
+            PipelineManager._SaveNodes(parent)
+
+        if NumProcessed == 0:
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
     @classmethod
     def _SaveNodes(cls, NodesToSave):
-        if not NodesToSave is None:
-            if isinstance(NodesToSave, collections.abc.Iterable) or isgenerator(NodesToSave):
-                for node in NodesToSave:
-                    if node is None:
-                        continue 
-                    
-                    VolumeManagerETree.VolumeManager.Save(node)
-            else:
-                VolumeManagerETree.VolumeManager.Save(NodesToSave)
+        if NodesToSave is None:
+            return
 
-    def ProcessPythonCall(self, ArgSet, VolumeElem, PipelineNode):
+        # Stage functions may return True/False to indicate work without naming a
+        # node to persist (#135). Bool must be rejected before the Element /
+        # Iterable branches — otherwise VolumeManager.Save raises ValueError.
+        if isinstance(NodesToSave, bool):
+            return
+
+        # ElementTree.Element (and XElementWrapper) are Iterable over children.
+        # Saving must target the returned node itself, not walk its children.
+        if isinstance(NodesToSave, ElementTree.Element):
+            VolumeManager.Save(NodesToSave)
+            return
+
+        if isinstance(NodesToSave, collections.abc.Iterable) or isgenerator(NodesToSave):
+            for node in NodesToSave:
+                if node is None:
+                    continue
+
+                VolumeManager.Save(node)
+            return
+
+        VolumeManager.Save(NodesToSave)
+
+    def ProcessPythonCall(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.
-        PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
+        # PipelineModule = 'nornir_buildmanager.operations'  # This should match the default in the xsd file, but pyxb doesn't seem to emit the default valuef
         PipelineModule = PipelineNode.get("Module", "nornir_buildmanager.operations")
 
         PipelineFunction = PipelineNode.get('Function', PipelineNode.tag)
 
         stageFunc = nornir_shared.reflection.get_module_class(str(PipelineModule), str(PipelineFunction))
 
-        if(ArgSet.Arguments['verbose']):
+        if ArgSet.Arguments['verbose']:
             prettyoutput.Log("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
 
-        #PipelineManager.logger.info("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
+        # PipelineManager.logger.info("CALL " + str(PipelineModule) + "." + str(PipelineFunction))
 
         if stageFunc is None:
             errorStr = "Stage implementation not found: " + str(PipelineModule) + "." + str(PipelineFunction)
             PipelineManager.logger.error(errorStr + ElementTree.tostring(PipelineNode, encoding='utf-8'))
             raise PipelineError(VolumeElem=VolumeElem, PipelineNode=PipelineNode, message=errorStr)
         else:
-            # prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction)
+            stage_label = f"{PipelineModule}.{PipelineFunction}"
+            # Nested Iterate PythonCalls (e.g. StosGridRefine per Mapping) often
+            # skip in milliseconds; keep stage_start/end events for current_stage
+            # but do not flood dashboard/console Stage status lines for those.
+            nested_stage = self._iterate_depth > 0
+            if not nested_stage:
+                prettyoutput.CurseString('Stage', stage_label)
 
             # TODO: Update args from the element
 
@@ -745,6 +1024,15 @@ class PipelineManager(object):
             ArgSet.AddAttributes(PipelineNode)
             ArgSet.AddParameters(PipelineNode)
 
+            stage_key = f"{PipelineModule}.{PipelineFunction} @ {PipelineManager._StageVolumeLabel(VolumeElem)}"
+            tele = PipelineManager._ElementTelemetryFields(VolumeElem, PipelineNode)
+            publish_run_event(
+                "stage_start",
+                module=str(PipelineModule),
+                function=str(PipelineFunction),
+                **tele)
+
+            stage_started = time.perf_counter()
             try:
                 # PipelineManager.AddAttributes(dargs, PipelineNode)
 
@@ -762,64 +1050,82 @@ class PipelineManager(object):
                 if 'Parameters' not in kwargs:
                     kwargs['Parameters'] = {}
 
-                NodesToSave = None
+                if self._StageTimer is not None:
+                    self._StageTimer.Start(stage_key)
+
+                # NodesToSave = None
 
                 if not ArgSet.Arguments["debug"]:
                     try:
                         NodesToSave = stageFunc(**kwargs)
-                    except:
+                    except Exception as e:
                         errorStr = '\n' + '-' * 60 + '\n'
                         errorStr = errorStr + str(PipelineModule) + '.' + str(PipelineFunction) + " Exception\n"
                         errorStr = errorStr + '-' * 60 + '\n'
-                        errorStr = errorStr + traceback.format_exc()
+                        errorStr += traceback.format_exc()
                         errorStr = errorStr + '-' * 60 + '\n'
                         PipelineManager.logger.error(errorStr)
-                        # prettyoutput.LogErr(errorStr)
+                        publish_run_event(
+                            "stage_failed",
+                            module=str(PipelineModule),
+                            function=str(PipelineFunction),
+                            **tele)
+                        raise PipelineError(VolumeElem=VolumeElem,
+                                            PipelineNode=PipelineNode,
+                                            message=errorStr) from e
 
-                        self.VolumeTree = VolumeManagerETree.VolumeManager.Load(self.VolumeTree.attrib["Path"], UseCache=False)
-                        return
-                         
-                        
+
                 else:
                     # In debug mode we do not want to catch any exceptions
                     # stage functions can return None,True, or False to indicate they did work.
                     # if they return false we do not need to run the expensive save operation
                     print(str(PipelineModule) + '.' + str(PipelineFunction))
-                    
+
                     NodesToSave = stageFunc(**kwargs)
 
                 PipelineManager._SaveNodes(NodesToSave)
+                publish_run_event(
+                    "stage_end",
+                    module=str(PipelineModule),
+                    function=str(PipelineFunction),
+                    **tele)
 
             finally:
+                if self._StageTimer is not None:
+                    self._StageTimer.End(stage_key, print_elapsed=False)
                 ArgSet.ClearAttributes()
                 ArgSet.ClearParameters()
-                
-            #prettyoutput.CurseString('Stage', PipelineModule + "." + PipelineFunction + " completed")
 
-#           PipelineManager.RemoveParameters(dargs, PipelineNode)
-#           PipelineManager.RemoveAttributes(dargs, PipelineNode)
+            elapsed = time.perf_counter() - stage_started
+            if not nested_stage:
+                prettyoutput.CurseString('Stage', stage_label + " completed")
+            elif elapsed >= _NESTED_STAGE_STATUS_MIN_SEC:
+                prettyoutput.CurseString('Stage', stage_label + " completed")
 
-    def AddPipelineNodeVariable(self, PipelineNode, VolumeElem, ArgSet):
-        '''Adds a variable to our dictionary passed to functions'''
+    #           PipelineManager.RemoveParameters(dargs, PipelineNode)
+    #           PipelineManager.RemoveAttributes(dargs, PipelineNode)
+
+    @staticmethod
+    def AddPipelineNodeVariable(PipelineNode, VolumeElem: XElementWrapper, ArgSet):
+        """Adds a variable to our dictionary passed to functions"""
         if 'VariableName' in PipelineNode.attrib:
             key = PipelineNode.attrib['VariableName']
 
             # if key in ArgSet.Variables:
-                # raise PipelineError(PipelineNode=PipelineNode, VolumeElem=VolumeElem, message=str(key) + " is a duplicate variable name")
+            # raise PipelineError(PipelineNode=PipelineNode, VolumeElem=VolumeElem, message=str(key) + " is a duplicate variable name")
 
             ArgSet.AddVariable(key, VolumeElem)
 
-            outStr = VolumeElem.ToElementString()
-            # if(self.Parameters['verbose']):
-                # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
-
-            PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
+            if _should_log_pipeline_progress(ArgSet):
+                outStr = VolumeElem.ToElementString()
+                PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
 
         elif PipelineNode.tag == "Select":
             raise PipelineError(PipelineNode=PipelineNode, message="VariableName attribute required on Select Element")
 
-    def RemovePipelineNodeVariable(self, ArgSet, PipelineNode):
-        '''Adds a variable to our dictionary passed to functions'''
+    @staticmethod
+    def RemovePipelineNodeVariable(ArgSet, PipelineNode):
+        """Adds a variable to our dictionary passed to functions"""
         if 'VariableName' in PipelineNode.attrib:
             del ArgSet.Variables[PipelineNode.attrib['VariableName']]
 
@@ -831,13 +1137,12 @@ def _GetVariableName(PipelineNode):
 
         # outStr = VolumeElem.ToElementString()
         # if(self.Parameters['verbose']):
-            # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
+        # prettyoutput.Log(PipelineNode.attrib['VariableName'] + " = " + outStr)
         # PipelineManager.logger.info(PipelineNode.attrib['VariableName'] + " = " + outStr)
     elif PipelineNode.tag == "Select":
         raise PipelineError(PipelineNode=PipelineNode, message="Variable name attribute required on Select Element")
 
 
 if __name__ == "__main__":
-
-    XmlFilename = r'D:\Buildscript\Pipelines.xml'
+    XmlFilename = 'D:\\Buildscript\\Pipelines.xml'
     PipelineManager.Load(XmlFilename)

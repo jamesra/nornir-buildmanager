@@ -1,43 +1,80 @@
-import sys
-import os
-import shutil
 import glob
-from . import serialemlog
-from nornir_buildmanager.VolumeManagerETree import DataNode
+import os
+import pickle
+import shutil
+import sys
+
+import nornir_buildmanager.importers
+import nornir_buildmanager.importers.serialemlog
+from nornir_shared import files
 import nornir_shared.prettyoutput as prettyoutput
 
 
+def get_import_cache_path(source_path: str) -> str:
+    """Return the path to use for import cache files.
+
+    When NORNIR_IMPORT_CACHE_PATH is set, mirrors source_path under that root
+    (relative to TESTINPUTPATH when available, otherwise relative to the
+    filesystem root). When the env var is absent, returns source_path unchanged
+    so existing behaviour is preserved.
+    """
+    cache_root = os.environ.get('NORNIR_IMPORT_CACHE_PATH')
+    if not cache_root:
+        return source_path
+
+    input_root = os.environ.get('TESTINPUTPATH')
+    if input_root:
+        try:
+            rel = os.path.relpath(source_path, input_root)
+            if not rel.startswith('..'):
+                return os.path.join(cache_root, rel)
+        except ValueError:
+            pass  # different drives on Windows
+
+    # Fallback: mirror from filesystem root (strip drive letter / leading sep)
+    _, path_no_drive = os.path.splitdrive(os.path.abspath(source_path))
+    return os.path.join(cache_root, path_no_drive.lstrip(os.sep))
+
+
 def try_remove_spaces_from_dirname(sectionDir):
-    ''':return: Renamed directory if there were spaced in the filename, otherwise none'''
+    """:return: Renamed directory if there were spaces in the filename, otherwise none"""
     sectionDirNoSpaces = sectionDir.replace(' ', '_')
     ParentDir = os.path.dirname(sectionDir)
-    if(sectionDirNoSpaces != sectionDir):
+    if sectionDirNoSpaces != sectionDir:
         sectionDirNoSpacesFullPath = os.path.join(ParentDir, sectionDirNoSpaces)
-        shutil.move(sectionDir, sectionDirNoSpacesFullPath)
-
+        try:
+            shutil.move(sectionDir, sectionDirNoSpacesFullPath)
+        except OSError as e:
+            prettyoutput.Log(
+                f"Warning: could not rename '{sectionDir}' to remove spaces "
+                f"(read-only source?): {e}")
+            return None
         sectionDir = sectionDirNoSpaces
-        return sectionDir 
-    
+        return sectionDir
+
     return None
 
+
 def _Update_path_on_rename(file_fullpath, new_section_dir):
-    '''Return the correct paths if we move the directory a section lives in'''
-    
+    """Return the correct paths if we move the directory a section lives in"""
+
     idocFilename = os.path.basename(file_fullpath)
     (ParentDir, sectionDir) = GetDirectories(file_fullpath)
-    
+
     sectionDir = os.path.join(ParentDir, new_section_dir)
     file_fullpath = os.path.join(sectionDir, idocFilename)
-    
+
     return file_fullpath
 
+
 def GetDirectories(idocFileFullPath):
-    '''
-    :return: (ParentDir, SectionDir) The directory holding the section directory and the section directory in a tuple 
-    '''
+    """
+    :return: (ParentDir, SectionDir) The directory holding the section directory and the section directory in a tuple
+    """
     sectionDir = os.path.dirname(idocFileFullPath)
     ParentDir = os.path.dirname(sectionDir)
-    return (ParentDir, sectionDir)
+    return ParentDir, sectionDir
+
 
 def GetPathWithoutSpaces(idocFileFullPath):
     sectionDir = os.path.dirname(idocFileFullPath)
@@ -49,44 +86,143 @@ def GetPathWithoutSpaces(idocFileFullPath):
 
 
 def TryAddLogs(containerObj, InputPath, logger):
-    '''Copy log files to output directories, and store select meta-data in the containerObj if it exists'''
+    """Copy log files to output directories, and store select meta-data in the containerObj if it exists"""
     LogsFiles = glob.glob(os.path.join(InputPath, '*.log'))
     LogsAdded = False
     if len(LogsFiles) == 0:
-        print("NO LOG FILE FOUND FOR CAPTURE: " % InputPath)   
+        print(f"NO LOG FILE FOUND FOR CAPTURE: {InputPath}")
     elif len(LogsFiles) > 0:
         for filename in LogsFiles:
-
             NotesFilename = os.path.basename(filename)
             CopiedLogsFullPath = os.path.join(containerObj.FullPath, NotesFilename)
-            if not os.path.exists(CopiedLogsFullPath):
+            removed = files.RemoveOutdatedFile(filename, CopiedLogsFullPath)
+            if removed or removed is None or not os.path.exists(CopiedLogsFullPath):
                 os.makedirs(containerObj.FullPath, exist_ok=True)
-                
+
                 shutil.copyfile(filename, CopiedLogsFullPath)
                 LogsAdded = True
+            else:
+                print(f"Log file found and current, not recopied: {InputPath}")
+                # Still parse remaining / current logs for meta-data below.
+                pass
 
             # OK, try to parse the logs
             try:
-                LogData = serialemlog.SerialEMLog.Load(filename)
+                LogData = nornir_buildmanager.importers.serialemlog.SerialEMLog.Load(filename)
                 if LogData is None:
                     continue
-                
+
                 if LogData.NumTiles == 0:
                     continue
 
                 # Create a Notes node to save the logs into
-                LogNodeObj = DataNode.Create(Path=NotesFilename, attrib={'Name':'Log'})
-                
+                LogNodeObj = nornir_buildmanager.volumemanager.DataNode.Create(Path=NotesFilename,
+                                                                               attrib={'Name': 'Log'})
+
                 containerObj.RemoveOldChildrenByAttrib('Data', 'Name', 'Log')
                 [added, LogNodeObj] = containerObj.UpdateOrAddChildByAttrib(LogNodeObj, 'Name')
                 LogsAdded = LogsAdded or added
-                LogNodeObj.AverageTileTime = '%g' % LogData.AverageTileTime
-                LogNodeObj.AverageTileDrift = '%g' % LogData.AverageTileDrift
-                LogNodeObj.CaptureTime = '%g' % (LogData.MontageEnd - LogData.MontageStart)
 
-            except:
+                if LogData.AverageTileTime is not None:
+                    LogNodeObj.AverageTileTime = '%g' % LogData.AverageTileTime
+
+                if LogData.AverageSettleTime is not None:
+                    LogNodeObj.AverageSettleTime = '%g' % LogData.AverageSettleTime
+
+                if LogData.AverageAcquisitionTime is not None:
+                    LogNodeObj.AverageAcquisitionTime = '%g' % LogData.AverageAcquisitionTime
+
+                if LogData.FastestTileTime is not None:
+                    LogNodeObj.FastestTileTime = '%g' % LogData.FastestTileTime
+
+                if LogData.FastestSettleTime is not None:
+                    LogNodeObj.FastestSettleTime = '%g' % LogData.FastestSettleTime
+
+                if LogData.FastestAcquisitionTime is not None:
+                    LogNodeObj.FastestAcquisitionTime = '%g' % LogData.FastestAcquisitionTime
+
+                if LogData.AverageTileDrift is not None:
+                    LogNodeObj.AverageTileDrift = '%g' % LogData.AverageTileDrift
+
+                if LogData.MaxTileDrift is not None:
+                    LogNodeObj.MaxTileDrift = '%g' % LogData.MaxTileDrift
+
+                if LogData.MinTileDrift is not None:
+                    LogNodeObj.MinTileDrift = '%g' % LogData.MinTileDrift
+
+                LogNodeObj.FilamentStabilizationTime = '%g' % LogData.FilamentStabilizationTime
+                LogNodeObj.LowMagCookTime = '%g' % LogData.LowMagCookTime
+                LogNodeObj.HighMagCookTime = '%g' % LogData.HighMagCookTime
+                LogNodeObj.TileAcquisitionTime = '%g' % LogData.TotalTileAcquisitionTime
+                LogNodeObj.CaptureTime = '%g' % LogData.TotalTime
+                LogNodeObj.SetupTime = '%g' % LogData.CaptureSetupTime
+
+                LogNodeObj.HighMagCookDone = '%i' % LogData.HighMagCookDone
+                LogNodeObj.LowMagCookDone = '%i' % LogData.LowMagCookDone
+                LogNodeObj.StableFilamentChecked = '%i' % LogData.StableFilamentChecked
+                LogNodeObj.ISCalibrationDone = '%i' % LogData.ISCalibrationDone
+
+            except Exception:
                 (etype, evalue, etraceback) = sys.exc_info()
                 prettyoutput.Log("Attempt to include logs from " + filename + " failed.\n" + str(evalue))
                 prettyoutput.Log(str(etraceback))
 
     return LogsAdded
+
+
+def PickleLoad(logfullPath, version_func):
+    """
+    :param logfullPath:
+    :param version_func:
+    """
+
+    obj = None
+    picklePath = get_import_cache_path(logfullPath) + ".pickle"
+
+    removed = files.RemoveOutdatedFile(logfullPath, picklePath)
+    if removed is True:
+        return None
+
+    try:
+        with open(picklePath, 'rb') as filehandle:
+            obj = pickle.load(filehandle)
+
+            version_func(obj)  # Should raise OldVersionException if the file is stale
+            # if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+            #    raise OldVersionException("Version mismatch in pickled file: " + picklePath)
+    except nornir_buildmanager.importers.OldVersionException as e:
+        try:
+            prettyoutput.Log("Removing stale .pickle file: " + str(e))
+            os.remove(picklePath)
+        except Exception:
+            pass
+
+        obj = None
+    except FileNotFoundError as e:
+        return None
+    except Exception as e:
+        try:
+            prettyoutput.Log("Unexpected exception loading .pickle file: " + picklePath)
+            prettyoutput.Log(str(e))
+            os.remove(picklePath)
+        except Exception:
+            pass
+
+        obj = None
+
+    return obj
+
+
+def PickleSave(obj, logfullPath):
+    picklePath = get_import_cache_path(logfullPath) + ".pickle"
+
+    try:
+        os.makedirs(os.path.dirname(picklePath), exist_ok=True)
+        with open(picklePath, 'wb') as filehandle:
+            pickle.dump(obj, filehandle)
+    except Exception as e:
+        prettyoutput.Log(str.format("Could not cache {0}: {1}", picklePath, str(e)))
+        try:
+            os.remove(picklePath)
+        except Exception:
+            pass

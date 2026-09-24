@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+from collections.abc import Generator, Iterable
+from typing import Sequence
+
+import nornir_buildmanager
+import nornir_buildmanager.volumemanager
+from nornir_buildmanager.volumemanager import SectionNode, StosGroupNode, StosMapNode, XElementWrapper, \
+    XNamedContainerElementWrapped
+
+
+class BlockNode(XNamedContainerElementWrapped):
+
+    @property
+    def Sections(self) -> Generator[SectionNode]:
+        return self.findall('Section')  # type: ignore[return-value]
+
+    @property
+    def StosGroups(self) -> Generator[StosGroupNode]:
+        return self.findall('StosGroup')  # type: ignore[return-value]
+
+    @property
+    def StosMaps(self) -> Generator[StosMapNode]:
+        return self.findall('StosMap')  # type: ignore[return-value]
+
+    def GetSection(self, Number: int) -> SectionNode:
+        return self.GetChildByAttrib('Section', 'Number', Number)  # type: ignore[return-value]  # type: SectionNode
+
+    def IterSectionsByNumber(self, numbers: Iterable[int]) -> Generator[SectionNode, None, None]:
+        """Yield existing section nodes for each requested number without enumerating all sections."""
+        for number in numbers:
+            section_node = self.GetSection(number)
+            if section_node is not None:
+                yield section_node
+
+    def GetOrCreateSection(self, Number: int) -> tuple[bool, SectionNode]:
+        """
+        :param Number: Section Number
+        :return: (bool, SectionNode) True if a node was created.  The section node element.
+        """
+        section_obj = self.GetSection(Number)
+
+        if section_obj is None:
+            SectionName = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
+            SectionPath = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % Number
+
+            section_obj = SectionNode.Create(Number,
+                                             SectionName,
+                                             SectionPath)
+            return self.UpdateOrAddChildByAttrib(section_obj, 'Number')
+        else:
+            return False, section_obj
+
+    def GetStosGroup(self, group_name: str, downsample: float) -> StosGroupNode | None:
+        stos_group: StosGroupNode
+        for stos_group in self.findall("StosGroup[@Name='%s']" % group_name):  # type: ignore[assignment]
+            if stos_group.Downsample == downsample:
+                return stos_group
+
+        return None
+
+    def GetOrCreateStosGroup(self, group_name: str, downsample: float) -> tuple[bool, StosGroupNode]:
+        """:Return: Tuple of (created, stos_group)"""
+
+        existing_stos_group = self.GetStosGroup(group_name, downsample)
+        if existing_stos_group is not None:
+            return False, existing_stos_group
+
+        OutputStosGroupNode = StosGroupNode.Create(group_name, Downsample=int(downsample))
+        self.append(OutputStosGroupNode)
+
+        return True, OutputStosGroupNode
+
+    def GetStosMap(self, map_name: str) -> StosMapNode:
+        return self.GetChildByAttrib('StosMap', 'Name', map_name)  # type: ignore[return-value]  # type: StosMapNode
+
+    def GetOrCreateStosMap(self, map_name) -> StosMapNode:
+        stos_map_node = self.GetStosMap(map_name)
+        if stos_map_node is None:
+            stos_map_node = StosMapNode.Create(map_name)
+            self.append(stos_map_node)
+            return stos_map_node
+        else:
+            return stos_map_node
+
+    def RemoveStosMap(self, map_name: str) -> bool:
+        """:return: True if a map was found and removed"""
+        stos_map_node = self.GetStosMap(map_name)
+        if stos_map_node is not None:
+            self.remove(stos_map_node)
+            return True
+
+        return False
+
+    def RemoveStosGroup(self, group_name: str, downsample: float) -> bool:
+        """:return: True if a StosGroup was found and removed"""
+        existing_stos_group = self.GetStosGroup(group_name, downsample)
+        if existing_stos_group is not None:
+            self.remove(existing_stos_group)
+            return True
+
+        return False
+
+    def MarkSectionsAsDamaged(self, section_number_list: Iterable[int]):
+        """Add the sections in the list to the NonStosSectionNumbers"""
+        section_number_set = frozenset(section_number_list)
+        self.NonStosSectionNumbers = section_number_set.union(self.NonStosSectionNumbers)
+
+    def MarkSectionsAsUndamaged(self, section_number_list: Iterable[int]):
+        section_number_set = frozenset(section_number_list)
+
+        existing_set = self.NonStosSectionNumbers
+        self.NonStosSectionNumbers = existing_set.difference(section_number_set)
+
+    @property
+    def NonStosSectionNumbers(self) -> frozenset[int]:
+        """Section numbers that should not be control sections for slice-to-slice registration.
+
+        Reading neither creates the child node nor modifies it; use the setter
+        (or MarkSectionsAs*) to add one. The returned set is sorted regardless of
+        how the stored text is ordered, and the setter writes the canonical form,
+        so legacy unsorted metadata is normalised the next time it is written
+        rather than during a read.
+        """
+        StosExemptNode = self.find('NonStosSectionNumbers')
+        if StosExemptNode is None:
+            return frozenset([])
+
+        # Fetch the list of the exempt nodes from the element text
+        ExemptString = StosExemptNode.text
+
+        if ExemptString is None or len(ExemptString) == 0:
+            return frozenset([])
+
+        # OK, parse the exempt string to a different list
+        return frozenset(sorted([int(x) for x in ExemptString.split(',')]))
+
+    @NonStosSectionNumbers.setter
+    def NonStosSectionNumbers(self, value: frozenset[int] | set[int] | Iterable[int]):
+        """A list of integers indicating which section numbers should not be control sections for slice to slice registration"""
+        StosExemptNode = XElementWrapper(tag='NonStosSectionNumbers')
+        (added, StosExemptNode) = self.UpdateOrAddChild(StosExemptNode)
+
+        ExpectedText = BlockNode.NonStosNumbersToString(value)  # type: ignore[arg-type]
+        if StosExemptNode.text != ExpectedText:
+            StosExemptNode.text = ExpectedText
+            StosExemptNode._AttributesChanged = True
+
+    @staticmethod
+    def NonStosNumbersToString(value: str | int | list[int] | set[int] | frozenset[int]) -> str:
+        """Converts a string, integer, list, set, or frozen set to a comma
+        delimited string"""
+        if isinstance(value, str):
+            return value
+        elif isinstance(value, int):
+            return str(value)
+        elif isinstance(value, list):
+            value.sort()
+            return ','.join(list(map(str, value)))
+        elif isinstance(value, set) or isinstance(value, frozenset):
+            listValue = list(value)
+            listValue.sort()
+            return ','.join(list(map(str, listValue)))
+
+        raise NotImplementedError()
+
+    @property
+    def NeedsValidation(self) -> bool:
+        return True
+
+    @classmethod
+    def Create(cls, Name, Path=None, **extra) -> BlockNode:
+        return super(BlockNode, cls).Create(tag='Block', Name=Name, Path=Path, **extra)  # type: ignore[return-value]

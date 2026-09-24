@@ -4,32 +4,32 @@
            xmlns="http://connectomes.utah.edu/DataTypes/"
 >
 
-  <xs:attribute name="BitsPerPixel"   type="xs:integer">
-    <xs:annotation>
-      <xs:appinfo>ir-tools buildscripts</xs:appinfo>
-      <xs:documentation xml:lang="en">
-        Number of bits of useable data in the input images
-      </xs:documentation>
-    </xs:annotation>
-  </xs:attribute>
+    <xs:attribute name="BitsPerPixel" type="xs:integer">
+        <xs:annotation>
+            <xs:appinfo>ir-tools buildscripts</xs:appinfo>
+            <xs:documentation xml:lang="en">
+                Number of bits of useable data in the input images
+            </xs:documentation>
+        </xs:annotation>
+    </xs:attribute>
 
-  <xs:complexType name="Entry">
-    <xs:annotation>
-      <xs:documentation xml:lang="en">
-        Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
-      </xs:documentation>
-    </xs:annotation>
-    <xs:sequence>
-      <xs:element name="Name" type="xs:string"/>
-      <xs:element name="Value" type="xs:string"/>
-    </xs:sequence>
-  </xs:complexType>
-
-  <xs:element name="Dictionary">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element name="Entry" type="Entry"/>
-      </xs:sequence>
+    <xs:complexType name="Entry">
+        <xs:annotation>
+            <xs:documentation xml:lang="en">
+                Key value pair to be created in dictionary, often used as kwargs arguments to python functions.
+            </xs:documentation>
+        </xs:annotation>
+        <xs:sequence>
+            <xs:element name="Name" type="xs:string"/>
+            <xs:element name="Value" type="xs:string"/>
+        </xs:sequence>
     </xs:complexType>
-  </xs:element>
+
+    <xs:element name="Dictionary">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="Entry" type="Entry"/>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
 </xs:schema>

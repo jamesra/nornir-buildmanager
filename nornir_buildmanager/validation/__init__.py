@@ -1,7 +1,3 @@
+__all__ = ['image', 'transforms', 'stos_image_check']
 
-__all__ = ['image', 'transforms']
-
-from . import image
-from . import transforms
-
-
+from . import image, transforms, stos_image_check

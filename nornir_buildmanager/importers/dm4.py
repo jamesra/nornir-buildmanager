@@ -5,193 +5,341 @@ Created on Aug 7, 2015
 '''
 
 import collections
-import glob
-import logging
-import os
-import tempfile
+import errno
+import unicodedata
 
 import PIL
-import dm4reader
-from nornir_buildmanager.VolumeManagerETree import *
-import nornir_buildmanager.importers 
+import PIL.Image
+import numpy as np
+
+import dm4
+import dm4.dm4file
+import nornir_buildmanager.importers
+from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.importers import GetFileNameForTileNumber
 import nornir_buildmanager.templates
+from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
-import nornir_imageregistration.core 
+import nornir_imageregistration.core
 import nornir_imageregistration.transforms.factory
 import nornir_pools
-from nornir_shared.files import RemoveOutdatedFile
-
-import nornir_shared.files as files
-import nornir_shared.plot as plot
+import nornir_shared
 import nornir_shared.prettyoutput as prettyoutput
-import numpy as np
-from . import GetFileNameForTileNumber
 
 DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Units'))
 
-TileExtension = 'png'  # Pillow does not support 16-bit png files, so we use the npy extension
+TileExtension = 'png'  # Pillow writes 16-bit PNG as mode I;16, which round-trips the DM4 data losslessly
 
-mosaics_loaded = {} # A cache of mosaics we've already loaded during import
-transforms_changed = {} # A cache of transforms that need updated checksums
+mosaics_loaded = {}  # A cache of mosaics we've already loaded during import
+transforms_changed = {}  # A cache of transforms that need updated checksums
 
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
-    
+
     if extension is None:
         extension = 'dm4'
-        
+
     if not os.path.exists(ImportPath):
         raise Exception("Import directory not found: " + ImportPath)
         return
-    
+
+    DesiredSectionList = kwargs.get('Sections', None)
+
     tile_overlap = kwargs.get('tile_overlap', None)
     if tile_overlap is not None:
-        #Convert the percentage parameter to a 0-1.0 float, and reverse the X,Y ordering to match the rest of Nornir
+        # Convert the percentage parameter to a 0-1.0 float, and reverse the X,Y ordering to match the rest of Nornir
         tile_overlap = np.asarray((tile_overlap[1], tile_overlap[0]), np.float32) / 100.0
-        
+
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
     ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
     if len(ContrastMap) == 0:
-        nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
+        try:
+            nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
+        except OSError as e:
+            if e.errno == errno.EROFS:
+                prettyoutput.Log(
+                    f"Warning: Unable to create default histogram cutoff file on read-only filesystem: {histogramFilename}"
+                )
+            else:
+                raise
 
-    DirList = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[], ExcludedDownsampleLevels=[])
-    for path in DirList:
+    matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles=f'*.{extension}',
+                                                                 ExcludeNames=[], ExcludedDownsampleLevels=[])
+    for m in matches:  # type: ignore[union-attr]
+        (path, foundfiles) = m
+        foundfiles = [os.path.join(path, f) for f in (foundfiles or [])]
         prettyoutput.CurseString("DM4Import", "Importing *.dm4 from {0}".format(path))
-        for idocFullPath in glob.glob(os.path.join(path, '*.dm4')):
-            yield from DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath, FlipList=FlipList, ContrastMap=ContrastMap, tile_overlap=tile_overlap)
-    
-    nornir_pools.WaitOnAllPools()
-    
+        for idocFullPath in foundfiles:
+            yield from DigitalMicrograph4Import.ToMosaic(VolumeElement, idocFullPath, VolumeElement.FullPath,
+                                                         FlipList=FlipList, ContrastMap=ContrastMap,
+                                                         tile_overlap=tile_overlap,
+                                                         DesiredSectionList=DesiredSectionList)
+
+    nornir_pools.ReleaseStagePools()
+
     for transform_fullpath in mosaics_loaded:
         mosaicObj = mosaics_loaded[transform_fullpath]
         mosaicObj.SaveToMosaicFile(transform_fullpath)
-        
+
     for transform_fullpath in transforms_changed:
         transformObj = transforms_changed[transform_fullpath]
         transformObj.ResetChecksum()
         yield transformObj.Parent
 
-    
+
 '''Convert a DM4 file to another image format.  Intended to be called from a multithreading pool'''
+
+
+def _raise_if_unsupported_section_options(section_number, FlipList, ContrastMap, *, dm4FileFullPath):
+    """Abort when a section asks for flipping or contrast overrides that DM4 cannot honour.
+
+    ``Import`` reads FlipList.txt and the histogram cutoffs file and forwards both to
+    ``ToMosaic``, matching the idoc importer's signature. ``ToMosaic`` never read
+    either, so a DM4 section listed in FlipList.txt imported unflipped and a contrast
+    override was dropped, both without a word.
+
+    Implementing them here is not a matter of wiring the arguments through. idoc
+    flips by flopping the image *and* writing the mosaic with the opposite coordinate
+    convention (``MosaicFile.Write(..., Flip=not Flip)``); DM4 instead composes
+    RigidTranslation positions from the montage grid and calls SaveToMosaicFile, so
+    the paired convention has no direct equivalent and cannot be chosen without DM4
+    data whose correctly-flipped output is known. Contrast overrides have no home at
+    all, since ConvertDM4ToPng writes the tile without levelling.
+
+    Failing is therefore the honest behaviour: a section that needs either option
+    stops the build instead of producing output that looks fine and is not. Sections
+    that ask for neither are unaffected.
+    """
+    unsupported = []
+
+    if FlipList and section_number in FlipList:
+        unsupported.append("listed in FlipList.txt, but DM4 import does not flip images")
+
+    if ContrastMap and section_number in ContrastMap:
+        unsupported.append("has a contrast override, but DM4 import does not apply levelling")
+
+    if not unsupported:
+        return
+
+    reasons = "\n".join(f"  - Section {section_number} {reason}" for reason in unsupported)
+    raise NornirUserException(
+        f"DM4 import cannot honour the options requested for this section:\n{reasons}\n\n"
+        f"File: {dm4FileFullPath}\n\n"
+        "These were previously ignored without warning, which produced unflipped or "
+        "unlevelled output that looked correct. Remove the section from FlipList.txt "
+        "or the contrast override file to import it as-is, or import it through the "
+        "idoc pipeline, which implements both.")
+
+
+_NM_PER_UNIT = {
+    'm': 1e9,
+    'mm': 1e6,
+    # NFKC folds MICRO SIGN (U+00B5) onto GREEK SMALL LETTER MU (U+03BC), so this one key
+    # covers both spellings of micrometre.
+    '\u03bcm': 1e3,
+    'um': 1e3,
+    'nm': 1.0,
+    'pm': 1e-3,
+    '\u00c5': 0.1,
+    'angstrom': 0.1,
+}
+
+
+def _nm_per_pixel(scale) -> float:
+    """Convert a DM4 ``DimensionScale`` to nanometres per pixel.
+
+    ``ChannelObj.SetScale`` takes nanometres. The previous conversion multiplied by 1000 for
+    ``'µm'`` or ``'um'`` and by 1 for everything else, so ``'nm'`` was right only because the
+    fallback happened to match it, and every other unit was wrong by orders of magnitude:
+    ``'m'`` by 1e-9, ``'mm'`` by 1e-6, ``'pm'`` by 1000, Angstrom by 10.
+
+    The subtlety that made this hard to see is that micro has two codepoints. The literal in
+    the old comparison was MICRO SIGN (U+00B5); a file writing GREEK SMALL LETTER MU (U+03BC)
+    produced a visually identical string that fell through to the fallback and came out 1000x
+    too small. NFKC normalisation folds the two together. See review #155.
+
+    Raises NornirUserException on an unrecognised unit rather than assuming nanometres. A
+    scale that is silently wrong by a factor of a million propagates into registration and
+    volume geometry, where it is far more expensive to notice than a failed import.
+    """
+    units = unicodedata.normalize('NFKC', str(scale.Units).strip())
+    factor = _NM_PER_UNIT.get(units)
+    if factor is None:
+        factor = _NM_PER_UNIT.get(units.lower())
+
+    if factor is None:
+        supported = ', '.join(sorted(_NM_PER_UNIT))
+        raise NornirUserException(
+            f"DM4 scale is expressed in {scale.Units!r}, which this importer cannot convert "
+            f"to nanometres.\n\n"
+            f"Recognised units: {supported}\n\n"
+            f"Previously an unrecognised unit was treated as nanometres, which silently "
+            f"wrote a scale wrong by orders of magnitude, so this now stops the import "
+            f"instead. Add the unit to _NM_PER_UNIT in the DM4 importer if it is valid.")
+
+    return float(scale.UnitsPerPixel) * factor
 
 
 def ConvertDM4ToPng(dm4FileFullPath, output_fullpath):
     # (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
-    dm4data = DM4FileHandler(dm4FileFullPath)
-                   
-    #tempdir = tempfile.mkdtemp(prefix="DM4")
-     
-    #tempfilename = os.path.basename(output_fullpath + '.tif')  # cls.GetFileNameForTileNumber(tile_number, ext='tif') #Pillow does not support 16-bit PNG.  We save to TIF and convert
-    #temp_output_fullpath = os.path.join(tempdir, tempfilename)
-    
-    #image_data = dm4data.ReadImage()
-    #InputImageBpp = dm4data.image_bpp
-    #im = PIL.Image.fromarray(image_data, 'I;%d' % InputImageBpp)
-    #im = im.convert(mode='I')
-    #im.save(output_fullpath)
-    
-    im = dm4data.ReadImageAsPIL()
-    im.save(output_fullpath)
-    
-    #cmd = "magick convert %s %s" % (temp_output_fullpath, output_fullpath)
-    
-    #pools = nornir_pools.GetGlobalLocalMachinePool()
-    #pools.add_process(output_fullpath, cmd)
-    #pools.wait_completion()
-    
-    #os.remove(temp_output_fullpath)
-    #os.removedirs(tempdir)
-    
+    with DM4FileHandler(dm4FileFullPath) as dm4data:
+        im = dm4data.ReadImageAsPIL()
+        im.save(output_fullpath)
 
-class DM4FileHandler():
+
+class DM4FileHandler(object):
     '''Handler for the DM4 file format used by the scope at the Neitz lab'''
-    
-    @property 
+
+    @property
     def dm4file(self):
         return self._dm4file
-    
-    @property 
+
+    @property
     def tags(self):
         return self._tags
-    
+
+    def __init__(self, dm4fullpath):
+        # DM4File.open is a context manager; enter it and keep the handle until close().
+        self._dm4_cm = dm4.dm4file.DM4File.open(dm4fullpath)  # type: ignore[attr-defined]
+        self._dm4file = self._dm4_cm.__enter__()
+        self._tags = self._dm4file.read_directory()
+
+        # This is probably not entirely correct.  I suspect the DM4 file could have multiple images in the ImageSourceList.
+        # This implementation just reads the first, which covers the use cases I am aware of right now
+        imageSourceIndexTag = self.tags.named_subdirs['ImageSourceList'].unnamed_subdirs[0].named_tags['ImageRef']
+        self._imageSourceIndex = int(self.dm4file.read_tag_data(imageSourceIndexTag))
+
+    def close(self) -> None:
+        """Release the underlying DM4 file handle."""
+        if getattr(self, '_dm4_cm', None) is not None:
+            self._dm4_cm.__exit__(None, None, None)
+            self._dm4_cm = None
+            self._dm4file = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
+
     @property
     def DimensionScaleTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_subdirs['Calibrations'].named_subdirs['Dimension']
-    
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
+            'ImageData'].named_subdirs['Calibrations'].named_subdirs['Dimension']
+
     @property
     def ImageDimensionsTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_subdirs['Dimensions']
-    
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
+            'ImageData'].named_subdirs['Dimensions']
+
     @property
     def ImageDataTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_tags['Data']
-    
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
+            'ImageData'].named_tags['Data']
+
     @property
     def ImageBppTag(self):
-        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_tags['PixelDepth']
-    
-    def __init__(self, dm4fullpath):
-        self._dm4file = dm4reader.DM4File.open(dm4fullpath)
-        self._tags = self._dm4file.read_directory()
-        
+        return self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
+            'ImageData'].named_tags['PixelDepth']
+
     def _ReadDimensionScaleTag(self, DM4DimensionTag, index):
         '''Read the scale for a particular index'''
         UnitsPerPixelTag = DM4DimensionTag.unnamed_subdirs[index].named_tags['Scale']
         ScaleUnitsTag = DM4DimensionTag.unnamed_subdirs[index].named_tags['Units']
-        return DimensionScale(self.dm4file.read_tag_data(UnitsPerPixelTag), self.dm4file.read_tag_data(ScaleUnitsTag))
-    
-    def ReadXYUnitsPerPixel(self, tags):
+        ScaleUnitsRawArray = self.dm4file.read_tag_data(ScaleUnitsTag)  # type: ignore[attr-defined]
+        ScaleUnits = "".join(
+            map(chr, ScaleUnitsRawArray))  # Convert byte array into a string containing unit of measure as a string
+
+        return DimensionScale(self.dm4file.read_tag_data(UnitsPerPixelTag), ScaleUnits)  # type: ignore[attr-defined]
+
+    def ReadXYUnitsPerPixel(self):
         DM4DimensionTag = self.DimensionScaleTag
-        
+
         XDimensionScale = self._ReadDimensionScaleTag(DM4DimensionTag, 0)
         YDimensionScale = self._ReadDimensionScaleTag(DM4DimensionTag, 1)
-        
-        return (XDimensionScale, YDimensionScale)
+
+        return XDimensionScale, YDimensionScale
 
     def ReadImageShape(self):
-        ''':return: Image shape as array, [YDim,XDim] as uint64''' 
+        ''':return: Image shape as array, [YDim,XDim] as uint64'''
         DM4ImageDimensionsTag = self.ImageDimensionsTag
-        XDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[0])
-        YDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[1])
-        
+        XDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[0])  # type: ignore[attr-defined]
+        YDim = self.dm4file.read_tag_data(DM4ImageDimensionsTag.unnamed_tags[1])  # type: ignore[attr-defined]
+
         return np.asarray((YDim, XDim), dtype=np.uint64)
-    
+
     def ReadImageAsNumpy(self):
-        image_shape = self.ReadImageShape()     
-        np_array = np.array(self.dm4file.read_tag_data(self.ImageDataTag), dtype=self.image_dtype)
-        np_array = np.reshape(np_array, image_shape)
-        
-        return np_array
-    
+        image_shape = self.ReadImageShape()
+        data = self.dm4file.read_tag_data(self.ImageDataTag)  # type: ignore[attr-defined]
+
+        # np.array() copies, so the tile was resident twice at once. Once the read itself
+        # stopped doubling (dm4 review #157), that copy became the peak: 2.00x the tile
+        # against 1.00x for a view. frombuffer keeps the array.array alive as .base, which
+        # is the same bytes rather than an extra allocation.
+        #
+        # Only when the widths agree: image_dtype comes from PixelDepth while the typecode
+        # comes from the DM4 DataType, and a signed or float array of the same depth would be
+        # silently reinterpreted. Copy in that case -- correctness over the saving.
+        dtype = np.dtype(self.image_dtype)
+        if data.itemsize == dtype.itemsize:
+            np_array = np.frombuffer(data, dtype=dtype)
+        else:
+            np_array = np.array(data, dtype=dtype)
+
+        return np.reshape(np_array, image_shape)
+
     def ReadImageAsPIL(self):
-        image_shape = self.ReadImageShape()     
-        im = PIL.Image.frombytes(data=self.dm4file.read_tag_data(self.ImageDataTag).tobytes(), mode='I;%d' % self.image_bpp, size=(image_shape[1], image_shape[0]))
-        im = im.convert(mode='I')
-    
+        """Read the tile as a 16-bit greyscale image.
+
+        Only 16 bpp is supported: PIL knows the raw mode ``I;16`` but not ``I;8`` or
+        ``I;32``, which fail in frombytes with an opaque "unrecognized image mode".
+        """
+        if self.image_bpp != 16:
+            raise NornirUserException(
+                f"DM4 import only handles 16 bit images; this file reports {self.image_bpp} bpp. "
+                "PIL has no raw mode for that depth, so the tile cannot be decoded.")
+
+        image_shape = self.ReadImageShape()
+        data = self.dm4file.read_tag_data(self.ImageDataTag)  # type: ignore[attr-defined]
+
+        # Kept as I;16 rather than converted to I. Both write the same uint16 PNG, but
+        # saving mode I as PNG is deprecated and removed in Pillow 13 (2026-10-15).
+        #
+        # frombuffer over a memoryview rather than frombytes over .tobytes(): the latter
+        # allocated a second full copy of the tile, which became the peak once the read
+        # stopped doubling (dm4 review #157) -- 2.00x the tile against 1.00x here. Pillow
+        # keeps a reference to the buffer, so the array.array outlives this frame.
+        im = PIL.Image.frombuffer('I;16', (image_shape[1], image_shape[0]),
+                                  memoryview(data), 'raw', 'I;16', 0, 1)
+
         return im
 
     def ReadMontageGridSize(self):
-        ''':return: Image grid dimensions as array, [YDim,XDim] as uint64''' 
-        XDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of X Steps']
-        YDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of Y Steps']
-    
-        XDim = self.dm4file.read_tag_data(XDim_tag)
-        YDim = self.dm4file.read_tag_data(YDim_tag)
-        
+        ''':return: Image grid dimensions as array, [YDim,XDim] as uint64'''
+        XDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
+            'ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of X Steps']
+        YDim_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
+            'ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Number of Y Steps']
+
+        XDim = self.dm4file.read_tag_data(XDim_tag)  # type: ignore[attr-defined]
+        YDim = self.dm4file.read_tag_data(YDim_tag)  # type: ignore[attr-defined]
+
         return np.asarray((YDim, XDim), dtype=np.uint64)
-    
+
     def ReadMontageOverlap(self):
-        ''':return: Overlap scalar array, [Y,X] from 0 to 1.0''' 
-        Overlap_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Overlap between images (%)']
-        overlap = self.dm4file.read_tag_data(Overlap_tag) / 100.0
-        return np.asarray((overlap, overlap), dtype=np.float32)  
-    
+        ''':return: Overlap scalar array, [Y,X] from 0 to 1.0'''
+        Overlap_tag = self.tags.named_subdirs['ImageList'].unnamed_subdirs[self._imageSourceIndex].named_subdirs[
+            'ImageTags'].named_subdirs['Montage'].named_subdirs['Acquisition'].named_tags['Overlap between images (%)']
+        overlap = self.dm4file.read_tag_data(Overlap_tag) / 100.0  # type: ignore[attr-defined]
+        return np.asarray((overlap, overlap), dtype=np.float32)
+
     @property
     def image_bpp(self):
-        return int(self.dm4file.read_tag_data(self.ImageBppTag) * 8)
-    
+        return int(self.dm4file.read_tag_data(self.ImageBppTag) * 8)  # type: ignore[attr-defined]
+
     @property
     def image_dtype(self):
         bpp = self.image_bpp
@@ -199,21 +347,35 @@ class DM4FileHandler():
             return np.uint8
         elif 16 >= bpp:
             return np.uint16
-        elif 32 >= bpp: 
+        elif 32 >= bpp:
             return np.uint32
         elif 64 >= bpp:
             return np.uint64
-        else:  
+        else:
             raise ValueError("Unexpectedly large bits-per-pixel value")
-        
+
 
 class DigitalMicrograph4Import(object):
     '''
     classdocs
     '''
-    
+
     @classmethod
     def GetMetaFromFilename(cls, fileName):
+        """Read the section and tile numbers out of a DM4 filename.
+
+        Expects ``<name>_<tile>_<anything>_<section>``, e.g.
+        Glumi1_3VBSED_stack_00_slice_0476 -> section 476, tile 0.
+
+        Raises NornirUserException when either number is unreadable. Both used to fall back
+        to None behind a bare ``except:``, whose own comment said an exception was probably
+        what was wanted. Neither caller could use None: a None section reaches
+        ``'%04d' % None`` inside GetOrCreateSection and a None tile reaches
+        GetFileNameForTileNumber and ``tile_number // XDim``, so all three raised TypeError
+        further along, naming neither the file nor the expected layout. Import walks every
+        *.dm4 under the import path, so that took down the whole import for one stray
+        filename -- ``..._slice_0476 (copy).dm4`` is enough to do it (#154).
+        """
         fileName = os.path.basename(fileName)
 
         # Make sure extension is present in the filename
@@ -222,170 +384,244 @@ class DigitalMicrograph4Import(object):
         section_number = None
         tile_number = None
         parts = fileName.split("_")
+
+        # Narrow, so a KeyboardInterrupt or SystemExit arriving mid-parse is not mistaken
+        # for an unparseable name: int() raises ValueError and a short name IndexError.
         try:
             section_number = int(parts[-1])
-        except:
-            # We really can't recover from this, so maybe an exception should be thrown instead
+        except (ValueError, IndexError):
             section_number = None
-            
+
         try:
             tile_number = int(parts[-3])
-        except:
-            tile_number = None 
+        except (ValueError, IndexError):
+            tile_number = None
 
-        return (section_number, tile_number)
-    
+        unreadable = []
+        if section_number is None:
+            unreadable.append(f"section number from the last '_' part ({parts[-1]!r})")
+        if tile_number is None:
+            found = repr(parts[-3]) if len(parts) >= 3 else f'only {len(parts)} part(s)'
+            unreadable.append(f"tile number from the third-from-last '_' part ({found})")
+
+        if unreadable:
+            raise NornirUserException(
+                f"Cannot read the {' or the '.join(unreadable)} of DM4 file "
+                f"'{fileName}{ext}'.\n\n"
+                f"DM4 filenames are expected to look like "
+                f"<name>_<tile>_<anything>_<section>, for example "
+                f"'Glumi1_3VBSED_stack_00_slice_0476.dm4' which is section 476, tile 0.\n\n"
+                f"Rename the file to match, or move it out of the import path. Previously "
+                f"this returned None and failed later with a TypeError that named neither "
+                f"the file nor the expected layout.")
+
+        return section_number, tile_number
+
     def __init__(self, params):
         '''
         Constructor
         '''
-        
-    def Dm4DataTag(self, tags):
-        data_tag = tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_tags['Data'] 
+
+    @staticmethod
+    def Dm4DataTag(tags):
+        data_tag = tags.named_subdirs['ImageList'].unnamed_subdirs[1].named_subdirs['ImageData'].named_tags['Data']
         return data_tag
-    
-    @classmethod
-    def GetHistogramDataFullPath(cls, dm4fullpath):
+
+    @staticmethod
+    def GetHistogramDataFullPath(dm4fullpath):
         dirname = os.path.dirname(dm4fullpath)
         filename = os.path.basename(dm4fullpath)
         (root, ext) = os.path.splitext(filename)
         return os.path.join(dirname, root + '_histogram.xml')
-    
-    @classmethod
-    def GetHistogramImageFullPath(cls, dm4fullpath):
+
+    @staticmethod
+    def GetHistogramImageFullPath(dm4fullpath):
         dirname = os.path.dirname(dm4fullpath)
         filename = os.path.basename(dm4fullpath)
         (root, ext) = os.path.splitext(filename)
         return os.path.join(dirname, root + '_histogram.png')
-            
+
     @classmethod
-    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None, tile_overlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, debug=None):
+    def ToMosaic(cls, VolumeObj, dm4FileFullPath, OutputPath=None, Extension=None, OutputImageExt=None,
+                 tile_overlap=None, TargetBpp=None, FlipList=None, ContrastMap=None, DesiredSectionList=None,
+                 debug=None):
         '''
         This function will convert an idoc file in the given path to a .mosaic file.
         It will also rename image files to the requested extension and subdirectory.
         TargetBpp is calculated based on the number of bits required to encode the values
         between the median min and max values
+        :param VolumeObj:
+        :param dm4FileFullPath:
+        :param OutputPath:
+        :param Extension:
+        :param OutputImageExt:
+        :param TargetBpp:
+        :param DesiredSectionList:
+        :param debug:
         :param tuple tile_overlap: Tuple of percentages of overlap in (X,Y) for each tile, or None to read from DM4 file
-        :param list FlipList: List of section numbers which should have images flipped
-        :param dict ContrastMap: Dictionary mapping section number to (Min, Max, Gamma) tuples 
+        :param list FlipList: Section numbers listed in FlipList.txt. **Not implemented
+            for DM4.** Accepted so the caller signature matches the idoc importer;
+            a section that appears here aborts rather than importing unflipped.
+        :param dict ContrastMap: Section number to (Min, Max, Gamma) overrides. **Not
+            implemented for DM4**, which writes tiles without levelling; a section
+            with an override aborts rather than dropping it.
         '''
-         
+
         logger = logging.getLogger(__name__ + '.' + str(cls.__name__) + "ToMosaic")
-     #   prettyoutput.CurseString('Stage', "Digital Micrograph to Mosaic " + str(dm4FileFullPath))
-        
+        #   prettyoutput.CurseString('Stage', "Digital Micrograph to Mosaic " + str(dm4FileFullPath))
+
         (section_number, tile_number) = DigitalMicrograph4Import.GetMetaFromFilename(dm4FileFullPath)
-        
+
+        # If the user specified a subset of sections to import, check that this section is on the list
+        if DesiredSectionList is not None and len(DesiredSectionList) > 0:
+            if section_number not in DesiredSectionList:
+                return
+
+        _raise_if_unsupported_section_options(section_number, FlipList, ContrastMap,
+                                              dm4FileFullPath=dm4FileFullPath)
+
         # Open the DM4 file
         dm4data = DM4FileHandler(dm4FileFullPath)
-        InputImageBpp = dm4data.image_bpp
-        
-        if tile_overlap is not None:
-            tile_overlap = np.asarray(tile_overlap, dtype=np.float32)
-        else:
-            tile_overlap = dm4data.ReadMontageOverlap()
-        
-        BlockObj = BlockNode.Create('SEM')
-        [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
-        if saveBlock:
-            yield VolumeObj
-        
-        [saveSection, SectionObj] = BlockObj.GetOrCreateSection(section_number)
-        if saveSection:
-            yield BlockObj
-            
-        [saveChannel, ChannelObj] = SectionObj.GetOrCreateChannel('SEM')
-        if saveChannel:
-            yield SectionObj
-            
-        FilterName = 'Raw' + str(InputImageBpp)
-        if(InputImageBpp is None):
-            FilterName = 'Raw'
-            
-        [saveFilter, FilterObj] = ChannelObj.GetOrCreateFilter(FilterName)
-        if saveFilter:
-            yield ChannelObj
-            
-        [savePyramid, TilePyramidObj] = FilterObj.GetOrCreateTilePyramid() 
-        if savePyramid:
-            yield FilterObj
-            
-        [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
-        if saveTransformObj:            
-            yield ChannelObj
-            
-        cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
-            
-        # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
-        # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
-        
-        TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
-        if TilePyramidObj is not None:
-            yield TilePyramidObj
-        
-    @classmethod
-    def GetOrCreateStageTransform(cls, channelObj):
+        try:
+            InputImageBpp = dm4data.image_bpp
+
+            if tile_overlap is not None:
+                tile_overlap = np.asarray(tile_overlap, dtype=np.float32)
+            else:
+                tile_overlap = dm4data.ReadMontageOverlap()
+
+            BlockObj = BlockNode.Create('SEM')
+            [saveBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
+            if saveBlock:
+                yield VolumeObj
+
+            [saveSection, SectionObj] = BlockObj.GetOrCreateSection(section_number)
+            if saveSection:
+                yield BlockObj
+
+            [saveChannel, ChannelObj] = SectionObj.GetOrCreateChannel('SEM')
+            if saveChannel:
+                yield SectionObj
+
+            # Temporary fix for legacy DM4 imports without the scale embedded in the Nornir meta-data
+            if ChannelObj.Scale is None:
+                (XDim, YDim) = dm4data.ReadXYUnitsPerPixel()
+                x_nm = _nm_per_pixel(XDim)
+                y_nm = _nm_per_pixel(YDim)
+
+                if x_nm == y_nm:
+                    ChannelObj.SetScale(x_nm)
+                else:
+                    # YDim was previously read and discarded, so an anisotropic pixel was
+                    # recorded as square using the X scale. Scale carries both axes.
+                    ChannelObj.SetScale(Scale(x_nm, y_nm))
+
+                yield SectionObj
+
+            FilterName = 'Raw' + str(InputImageBpp)
+            if InputImageBpp is None:
+                FilterName = 'Raw'
+
+            [saveFilter, FilterObj] = ChannelObj.GetOrCreateFilter(FilterName)
+            if saveFilter:
+                yield ChannelObj
+
+            [savePyramid, TilePyramidObj] = FilterObj.GetOrCreateTilePyramid()
+            if savePyramid:
+                yield FilterObj
+
+            [saveTransformObj, transformObj] = cls.GetOrCreateStageTransform(ChannelObj)
+            if saveTransformObj:
+                yield ChannelObj
+
+            cls.AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap)
+
+            # histogramdatafullpath = cls.CreateImageHistogram(dm4data, dm4FileFullPath)
+            # cls.PlotHistogram(histogramdatafullpath, section_number,0,1)
+
+            TilePyramidObj = cls.AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number)
+            if TilePyramidObj is not None:
+                yield TilePyramidObj
+        finally:
+            dm4data.close()
+
+    @staticmethod
+    def GetOrCreateStageTransform(channelObj):
         transformObj = channelObj.GetTransform('stage')
         if transformObj is None:
             return channelObj.UpdateOrAddChildByAttrib(TransformNode.Create(Name='Stage',
-                                                                             Path='Stage.mosaic',
-                                                                             Type='Stage'),
-                                                                             'Path')
+                                                                            Path='Stage.mosaic',
+                                                                            Type='Stage'),
+                                                       'Path')
         else:
-            return (False, transformObj)
-        
-    @classmethod
-    def AddImageToTilePyramidMetaData(cls, TilePyramidObj):
+            return False, transformObj
+
+    @staticmethod
+    def AddImageToTilePyramidMetaData(TilePyramidObj):
         TilePyramidObj.ImageFormatExt = '.' + TileExtension
         TilePyramidObj.NumberOfTiles += 1
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
-        
+
         os.makedirs(LevelObj.FullPath, exist_ok=True)
-                 
+
         return TilePyramidObj
-        
-    @classmethod
-    def ImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
+
+    @staticmethod
+    def ImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number):
         '''Adds a DM4 file to the tile pyramid directory without updating the meta-data'''
         LevelObj = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
         filename = GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath, filename)
-                
+
         os.makedirs(LevelObj.FullPath, exist_ok=True)
-            
+
         if os.path.exists(output_fullpath):
             return
-            
+
         pools = nornir_pools.GetGlobalLocalMachinePool()
-        pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
-        
-    @classmethod
-    def AddAndImportImageToTilePyramid(cls, TilePyramidObj, dm4FileFullPath, tile_number):
+        pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng,
+                       dm4FileFullPath, output_fullpath)
+
+    @staticmethod
+    def AddAndImportImageToTilePyramid(TilePyramidObj, dm4FileFullPath, tile_number):
         [created, LevelObj] = TilePyramidObj.GetOrCreateLevel(1, GenerateData=False)
         filename = GetFileNameForTileNumber(tile_number, ext=TileExtension)  # Pillow does not support 16-bit PNG
         output_fullpath = os.path.join(LevelObj.FullPath, filename)
-        
+
         os.makedirs(LevelObj.FullPath, exist_ok=True)
-        
+
         if nornir_shared.images.IsValidImage(output_fullpath):
             return None
-        
+
         TilePyramidObj.NumberOfTiles += 1
         TilePyramidObj.ImageFormatExt = '.' + TileExtension
-                    
+
         pools = nornir_pools.GetGlobalLocalMachinePool()
-        pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng, dm4FileFullPath, output_fullpath)
+        pools.add_task(os.path.basename(dm4FileFullPath) + " -> " + os.path.basename(output_fullpath), ConvertDM4ToPng,
+                       dm4FileFullPath, output_fullpath)
         return TilePyramidObj
-    
-    @classmethod
-    def AddTileToMosaic(cls, transformObj, dm4data, tile_number, tile_overlap=None):
-        tile_filename = GetFileNameForTileNumber(tile_number, ext=TileExtension) 
+
+    @staticmethod
+    def AddTileToMosaic(transformObj, dm4data, tile_number, tile_overlap=None):
+        tile_filename = GetFileNameForTileNumber(tile_number, ext=TileExtension)
         (YDim, XDim) = dm4data.ReadMontageGridSize()
-        
+
         image_shape = dm4data.ReadImageShape()
-        
-        grid_position = (tile_number // XDim, tile_number % XDim) #Position as (Y,X)
-        assert(grid_position[1] < YDim)  # Make sure the grid position is not off the grid
-        
+
+        grid_position = (tile_number // XDim, tile_number % XDim)  # Position as (Y,X)
+
+        # Each index is checked against its own extent. The X index is
+        # tile_number % XDim, so it is below XDim by construction and only the row
+        # can actually run off the grid; comparing X against YDim instead both
+        # rejected valid tiles on any montage wider than it is tall and let every
+        # genuinely off-grid tile through.
+        if grid_position[0] >= YDim or grid_position[1] >= XDim:
+            raise NornirUserException(
+                f"Tile {tile_number} sits at grid position (Y={grid_position[0]}, X={grid_position[1]}), "
+                f"which is outside the {YDim} x {XDim} montage grid this DM4 file declares.\n\n"
+                "The file set has more tiles than the montage describes, so their positions cannot "
+                "be placed. Check that the DM4 files and the montage metadata come from the same capture.")
+
         mosaicObj = None
         if transformObj.FullPath in mosaics_loaded:
             mosaicObj = mosaics_loaded[transformObj.FullPath]
@@ -395,27 +631,27 @@ class DigitalMicrograph4Import(object):
         else:
             mosaicObj = nornir_imageregistration.Mosaic()
             mosaics_loaded[transformObj.FullPath] = mosaicObj
-            
+
         if tile_overlap is None:
             tile_overlap = dm4data.ReadMontageOverlap()
-        
+
         PerGridOffset = image_shape * (1.0 - tile_overlap)
-        
+
         Position = grid_position * PerGridOffset
-         
-        tile_transform = nornir_imageregistration.transforms.RigidNoRotation(Position)
-        
+
+        tile_transform = nornir_imageregistration.transforms.RigidTranslation(Position)
+
         if tile_filename in mosaicObj.ImageToTransform:
-            transform_changed = mosaicObj.ImageToTransform[tile_filename] == tile_transform
-        else:  
+            transform_changed = mosaicObj.ImageToTransform[tile_filename] != tile_transform
+        else:
             transform_changed = True
-        
+
         if transform_changed:
             mosaicObj.ImageToTransform[tile_filename] = tile_transform
             if not transformObj.FullPath in transforms_changed:
                 transforms_changed[transformObj.FullPath] = transformObj
-            #mosaicObj.SaveToMosaicFile(transformObj.FullPath)
-            
+            # mosaicObj.SaveToMosaicFile(transformObj.FullPath)
+
         return transform_changed
 #         
 #     @classmethod
@@ -435,4 +671,3 @@ class DigitalMicrograph4Import(object):
 #             #pool = nornir_pools.GetGlobalMultithreadingPool()
 #             #pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
 #             plot.Histogram(histogramFullPath, HistogramImageFullPath, Title="Section %d Raw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
-        

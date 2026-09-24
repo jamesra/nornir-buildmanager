@@ -1,0 +1,1054 @@
+from __future__ import annotations
+
+import datetime
+import logging
+import operator
+import threading
+from typing import Any, Generator, TypeVar
+from xml.etree import ElementTree as ElementTree
+from xml.etree.ElementTree import Element
+
+import nornir_buildmanager
+import nornir_buildmanager.no_delete as _no_delete_mod
+from nornir_buildmanager.volumemanager.exceptions import MissingElementError
+from nornir_shared import prettyoutput as prettyoutput
+
+_XT = TypeVar('_XT', bound='XElementWrapper')
+
+# Used for debugging with conditional break's, each node gets a temporary unique ID
+nid = 0
+
+
+class XElementWrapper(ElementTree.Element):
+    # Dirty flags for VolumeData.xml (and embedded meta-data) persistence.
+    # Contract: mutation APIs on THIS element set the flags; successful Save clears
+    # them via ResetElementChangeFlags. Save must never invent dirty. Linked-container
+    # dirtiness does not bubble to the parent (each linked container owns its own
+    # VolumeData.xml and flags). See AttributesChanged / ChildrenChanged /
+    # ElementHasChangesToSave / ResetElementChangeFlags.
+    _AttributesChanged: bool  # Set by attrib mutation on this element; cleared after save
+    _ChildrenChanged: bool  # Set by append/remove/UpdateOrAddChild* on this element; cleared after save
+    _Parent: XElementWrapper | None  # Parent node in the XML tree
+    _save_lock: threading.RLock  # Lock to prevent multiple threads from writing attributes of the node at the same time
+
+    logger = logging.getLogger('XElementWrapper')
+
+    def sort(self, recurse: bool = True):
+        """Order child elements"""
+
+        if len(self) <= 1:
+            return
+
+        children = list(self)
+        with_keys = [child for child in children if hasattr(child, 'SortKey')]
+        without_keys = [child for child in children if not hasattr(child, 'SortKey')]
+        linked = [child for child in without_keys if child.tag.endswith('_Link')]
+        other = [child for child in without_keys if not child.tag.endswith('_Link')]
+
+        sorted_with_keys = sorted(with_keys, key=operator.attrgetter('SortKey'), reverse=True)
+        sorted_linked = sorted(linked, key=lambda child: child.attrib.get('Path', ''), reverse=True)
+        sorted_other = sorted(other, key=str, reverse=True)
+
+        self[:] = sorted_with_keys + sorted_linked + sorted_other
+
+        if recurse:
+            for c in self:
+                if isinstance(c, XElementWrapper):
+                    c.sort()
+
+    @property
+    def CreationTime(self) -> datetime.datetime:
+        datestr = self.get('CreationDate', datetime.datetime.max)
+        creation_time = datetime.datetime.fromisoformat(str(datestr))
+        if creation_time.tzinfo is None:
+            creation_time = creation_time.replace(tzinfo=datetime.timezone.utc)
+        return creation_time
+
+    @property
+    def SortKey(self):
+        """The default key used for sorting elements"""
+        return self.tag
+
+    def __str__(self):
+        strList = ElementTree.tostringlist(self)
+        outStr = ""
+        for s in strList:
+            outStr = outStr + " " + s.decode('utf-8')
+            if s == '>':
+                break
+
+        return outStr
+
+    def _GetAttribFromParent(self, attribName: str):
+        p = self._Parent
+        while p is not None:
+            if attribName in p.attrib:
+                return p.attrib[attribName]
+
+            if hasattr(p, '_Parent'):
+                p = p._Parent
+            else:
+                return None
+
+    @property
+    def Checksum(self) -> str:
+        return self.get('Checksum', "")
+
+    @Checksum.setter
+    def Checksum(self, value: str):
+        if not isinstance(value, str):
+            XElementWrapper.logger.warning(
+                'Setting non string value on XElement.Checksum, automatically corrected: ' + str(value))
+        self.attrib['Checksum'] = value
+        return
+
+    @property
+    def Version(self) -> float:
+        return float(self.attrib.get('Version', 1.0))
+
+    @Version.setter
+    def Version(self, value):
+        self.attrib['Version'] = str(value)
+
+    @property
+    def AttributesChanged(self) -> bool:
+        """True if this element's XML attributes need to be written to disk.
+
+        Set at mutation time by attribute assignment paths (``__setattr__`` /
+        property setters that update ``attrib``), not by Save. Cleared only by
+        :meth:`ResetElementChangeFlags` after a successful save of the XML that
+        owns this element. Prefer letting mutation APIs set this; assign True
+        manually only for rare explicit dirties when attrib was changed outside
+        those paths.
+        """
+        return self._AttributesChanged
+
+    @AttributesChanged.setter
+    def AttributesChanged(self, value: bool):
+        """Set or clear the attribute-dirty flag (normally set by mutation APIs)."""
+        self._AttributesChanged = value
+
+    #         if Value:
+    #             self.MarkNonContainerParentChanged()
+
+    @property
+    def ChildrenChanged(self) -> bool:
+        """True if this element's direct child list needs to be written to disk.
+
+        Set at mutation time by ``append``, ``remove``, and
+        ``UpdateOrAddChild*`` on this element (not by nested linked containers
+        mutating themselves). Cleared only by :meth:`ResetElementChangeFlags`
+        after a successful save. Linked children own their own VolumeData.xml
+        and flags; their dirtiness does not set this parent flag.
+        """
+        return self._ChildrenChanged
+
+    @ChildrenChanged.setter
+    def ChildrenChanged(self, value: bool):
+        """Set or clear the children-dirty flag (normally set by append/remove)."""
+        self._ChildrenChanged = value
+
+    @property
+    def ElementHasChangesToSave(self) -> bool:
+        """Whether this element's XML file needs a rewrite, based on dirty flags.
+
+        Reads flags already set at mutation time. Does **not** invent dirtiness
+        or walk linked containers (``SaveAsLinkedElement``) that save themselves.
+        May consult **non-linked** nested children only, because those nodes are
+        serialized into this element's XML (no separate VolumeData.xml).
+        """
+        if self.AttributesChanged or self.ChildrenChanged:
+            return True
+
+        for child in self:
+            if child.tag.endswith('_Link'):
+                continue
+
+            if isinstance(child, nornir_buildmanager.volumemanager.XContainerElementWrapper):
+                if child.SaveAsLinkedElement is False and child.ElementHasChangesToSave:
+                    return True
+            elif child.ElementHasChangesToSave:  # type: ignore[union-attr]
+                return True
+
+        return False
+
+    def ResetElementChangeFlags(self):
+        """Clear dirty flags after this element's XML was successfully written.
+
+        Clears this element and non-linked nested children that share the same
+        file. Does not clear linked containers (they reset when they save).
+        Call only after a successful write—not to mean \"I decided nothing changed.\"
+        """
+        self._AttributesChanged = False
+        self._ChildrenChanged = False
+
+        for child in self:
+            if child.tag.endswith('_Link'):
+                continue
+
+            if isinstance(child, nornir_buildmanager.volumemanager.XContainerElementWrapper):
+                if child.SaveAsLinkedElement is False:
+                    child.ResetElementChangeFlags()
+            else:
+                child.ResetElementChangeFlags()  # type: ignore[union-attr]
+
+        return
+
+    #         if Value:
+    #             self.MarkNonContainerParentChanged()
+    #
+    #     @property
+    #     def MarkNonContainerParentChanged(self):
+    #         '''
+    #         Sets the parent's ChildrenChanged flag to True if the parent is not a ContainerElement or does not have the SaveAsLinkedElement attribute set to True
+    #         '''
+    #
+    #         parent = self.Parent
+    #         if parent is None:
+    #             return
+    #
+    #         if not isinstance(parent, nornir_buildmanager.volumemanager.XContainerElementWrapper):
+    #             parent._ChildrenChanged = True
+    #             parent.MarkNonContainerParentChanged()
+    #             return
+    #
+    #         if parent.SaveAsLinkedElement == False:
+    #             parent._ChildrenChanged = True
+    #             parent.MarkNonContainerParentChanged()
+    #
+
+    @property
+    def Root(self) -> XElementWrapper:
+        """The root of the element tree"""
+        node = self
+        while node.Parent is not None:
+            node = node.Parent
+
+        return node
+
+    @property
+    def Parent(self) -> XElementWrapper | None:
+        return self._Parent  # type: ignore[return-value]
+
+    def SetParentNoChangeFlag(self, value):
+        """
+        This is not a setter to avoid triggering the Attribute Changed flag with the
+        __setattr__ override for this class
+        """
+        self.__dict__['_Parent'] = value
+        self.OnParentChanged()
+
+    @Parent.setter
+    def Parent(self, value: XElementWrapper | None):
+        """
+        Setting the parent with this method will set the Attribute Changed flag
+        """
+        self.__dict__['_Parent'] = value
+        self.OnParentChanged()
+
+    def OnParentChanged(self):
+        """Actions that should occur when our parent changes"""
+        if '__fullpath' in self.__dict__:
+            del self.__dict__['__fullpath']
+
+    def indexofchild(self, obj) -> int:
+        """Return the index of a child element"""
+        for i, x in enumerate(self):
+            if x == obj:
+                return i
+
+        raise MissingElementError(obj, "Element:\t{0}\n is not a child of:\n\t{1}".format(str(obj), str(self)))
+
+    @classmethod
+    def __GetCreationTimeString__(cls) -> str:
+        now = datetime.datetime.now(datetime.UTC)
+        now = now.replace(microsecond=0)
+        return str(now)
+
+    def __init__(self, tag: str, attrib=None, **extra):
+
+        global nid
+        self.__dict__['id'] = nid
+        nid += 1
+
+        self._AttributesChanged = False
+        self._ChildrenChanged = False
+        self._save_lock = threading.RLock()
+
+        if attrib is None:
+            attrib = {}
+        else:
+            StringAttrib = {}
+            for k in list(attrib.keys()):
+                if not isinstance(attrib[k], str):
+                    XElementWrapper.logger.info(
+                        'Setting non string value on <' + str(tag) + '>, automatically corrected: ' + k + ' -> ' + str(
+                            attrib[k]))
+                    StringAttrib[k] = str(attrib[k])
+                else:
+                    StringAttrib[k] = attrib[k]
+
+            attrib = StringAttrib
+
+        super(XElementWrapper, self).__init__(tag, attrib=attrib, **extra)
+
+        self._Parent = None
+
+        if not self.tag.endswith("_Link"):
+            if 'CreationDate' not in self.attrib:
+                self.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__()
+
+            if 'Version' not in self.attrib:
+                self.Version = nornir_buildmanager.volumemanager.GetLatestVersionForNodeType(tag)
+
+    @classmethod
+    def RemoveDuplicateElements(cls, tagName: str):
+        """For nodes that should not be duplicated this function removes all but the last created element"""
+        pass
+
+    def IsParent(self, node) -> bool:
+        """Returns true if the node is a parent"""
+        if self.Parent is None:
+            return False
+
+        if self.Parent == node:
+            return True
+        else:
+            return self.Parent.IsParent(node)
+
+    @property
+    def NeedsValidation(self) -> bool:
+        raise NotImplementedError("NeedsValidation should be implemented in derived class {0}".format(str(self)))
+
+    def IsValidLazy(self) -> tuple[bool, str]:
+        """
+        First checks if the XElement requires validation before invoking IsValid
+        """
+
+        if self.NeedsValidation:
+            return self.IsValid()
+        else:
+            return True, "NeedsValidation flag not set"
+
+    def IsValid(self) -> tuple[bool, str]:
+        """This function should be overridden by derived classes.  It returns true if the file system or other external
+           resources match the state recorded within the element.
+
+           IsValid should always do the full work of validation and then update
+           any meta-data, such as ValidationTime, to indicate the validation was
+           done.  NeedsValidation should be used to determine if an element needs
+           an IsValid call or if a check of the XElement state was sufficient to
+           believe it is in a valid state.  IsValidLazy will only call IsValid
+           on elements whose NeedsValidation call is True.
+
+           Returns Tuple of state and a string with a reason"""
+
+        if 'Version' not in self.attrib:
+            if nornir_buildmanager.volumemanager.GetLatestVersionForNodeType(self.tag) > 1.0:
+                return False, "Node version outdated"
+
+        if not nornir_buildmanager.volumemanager.IsNodeVersionCompatible(self.tag, self.Version):
+            return False, "Node version outdated"
+
+        return True, ""
+
+    def CleanIfInvalid(self) -> tuple[bool, str]:
+        """Remove the contents of this node if it is out of date.
+
+        Under no-delete mode the node is never actually removed; returns
+        (False, reason) so callers treat the element as still present.
+
+        :returns: (cleaned, reason) where cleaned is True when the node was
+                  (or would have been) removed.
+        """
+        valid = self.IsValid()
+
+        if isinstance(valid, bool):
+            valid = (valid, "")
+
+        if not valid[0]:
+            if _no_delete_mod.is_no_delete():
+                prettyoutput.Log(
+                    f' --- NO-DELETE: Would clean {self.ToElementString()} ({valid[1]}); keeping.')
+                return False, valid[1]
+            self.Clean(valid[1])
+
+        return valid[0] is False, valid[1]  # The return value convention is reversed from IsValid.
+
+    def Clean(self, reason: str | None = None):
+        """Remove node from element tree and remove any external resources such as files.
+
+        Under no-delete mode, logs the intent and returns without removing
+        anything from the tree or the filesystem.
+        """
+        if _no_delete_mod.is_no_delete():
+            prettyoutput.Log(
+                f' --- NO-DELETE: Would clean {self.ToElementString()}'
+                + (f' ({reason})' if reason else '') + '; keeping.')
+            return
+
+        prettyoutput.Log(f' --- Cleaning {self.ToElementString()}. ')
+        if reason is not None:
+            prettyoutput.Log("  --- " + reason)
+
+        # Make sure we clean child elements if needed
+        children = list(self)
+        for child in children:
+            if isinstance(child, XElementWrapper):
+                child.Clean(reason="Parent was removed")
+
+        if self.Parent is not None:
+            try:
+                self.Parent.remove(self)
+            except (ValueError, AttributeError):
+                # Element may not be attached to the parent yet.
+                pass
+
+    def Copy(self) -> "XElementWrapper":
+        """Deep-copy this element and its descendant wrappers.
+
+        Children are copied recursively so the result is not attached to the
+        source tree and does not share child identity with it.
+        """
+        t = type(self)
+        cpy = t(tag=self.tag, attrib=self.attrib.copy())
+
+        if self.text is not None:
+            cpy.text = self.text
+
+        if self.tail is not None:
+            cpy.tail = self.tail
+
+        for child in list(self):
+            if isinstance(child, XElementWrapper):
+                cpy.append(child.Copy())
+            else:
+                # Rare raw Element: detach via serialize round-trip, then wrap.
+                detached = ElementTree.fromstring(
+                    ElementTree.tostring(child, encoding='unicode'))
+                cpy.append(XElementWrapper.wrap(detached))
+
+        return cpy
+
+    @classmethod
+    def __CreateFromElement(cls, dictElement: ElementTree.Element):
+        """Create an instance of this class using an ElementTree.Element.
+           Override to customize the creation of derived classes"""
+
+        newElement = cls(tag=dictElement.tag, attrib=dictElement.attrib)
+
+        if dictElement.text is not None:
+            newElement.text = dictElement.text
+
+        if dictElement.tail is not None:
+            newElement.tail = dictElement.tail
+
+        for i in range(0, len(dictElement)):
+            newElement.insert(i, dictElement[i])
+
+        return newElement
+
+    @classmethod
+    def wrap(cls, dictElement: XElementWrapper | ElementTree.Element) -> XElementWrapper:
+        """Change the class of an ElementTree.Element(PropertyElementName) to add our wrapper functions"""
+        if isinstance(dictElement, cls):  # Check if it is already wrapped
+            return dictElement
+
+        newElement = cls.__CreateFromElement(dictElement)
+        # dictElement.__class__ = cls
+        assert (newElement is not None)
+        assert (isinstance(newElement, cls))
+
+        if 'CreationDate' not in newElement.attrib:
+            cls.logger.info("Populating missing CreationDate attribute " + newElement.ToElementString())
+            newElement.attrib['CreationDate'] = XElementWrapper.__GetCreationTimeString__()
+
+        if isinstance(newElement, nornir_buildmanager.volumemanager.XContainerElementWrapper):
+            if 'Path' not in newElement.attrib:
+                prettyoutput.Log(newElement.ToElementString() + " no path attribute but being set as container")
+            assert ('Path' in newElement.attrib)
+
+        # Also convert all non-link child elements
+        for i, c in enumerate(newElement):
+            if c.tag.endswith('_Link'):
+                continue
+
+            if isinstance(c, XElementWrapper):
+                continue
+
+            wrapped, wrapped_element = nornir_buildmanager.volumemanager.WrapElement(c)
+            if wrapped:
+                newElement[i] = wrapped_element
+                nornir_buildmanager.volumemanager.SetElementParent(wrapped_element, newElement)
+                wrapped_element._AttributesChanged = False
+
+        return newElement
+
+    def ToElementString(self) -> str:
+        strList = ElementTree.tostringlist(self)
+        outStr = ""
+        for s in strList:
+            outStr = outStr + " " + s.decode('utf-8')
+            if s == '>':
+                break
+
+        return outStr
+
+    def __getattr__(self, name: str) -> Any:
+
+        """Called when an attribute lookup has not found the attribute in the usual places (i.e. it is not an instance attribute nor is it found in the class tree for self). name is the attribute name. This method should return the (computed) attribute value or raise an AttributeError exception.
+
+        Note that if the attribute is found through the normal mechanism, __getattr__() is not called. (This
+        is an intentional asymmetry between __getattr__() and __setattr__().) This is done both for
+        efficiency reasons and because otherwise __getattr__() would have no way to access other attributes
+        of the instance. Note that at least for instance variables, you can fake total control by not
+        inserting any values in the instance attribute dictionary (but instead inserting them in another
+        object). See the __getattribute__() method below for a way to actually get total control in
+        new-style classes."""
+
+        if name in self.__dict__:
+            return self.__dict__[name]
+
+        superClass = super(XElementWrapper, self)
+        if superClass is not None:
+            try:
+                if hasattr(superClass, '__getattr__'):
+                    return superClass.__getattr__(name)  # type: ignore[union-attr]
+            except AttributeError:
+                pass
+
+        if name in self.attrib:
+            return self.attrib[name]
+
+        raise AttributeError(name)
+
+    def __setattr__(self, name: str, value: Any):
+        """Called when an attribute assignment is attempted. This is called instead of the
+           normal mechanism (i.e. store the value in the instance dictionary). name is the
+           attribute name, value is the value to be assigned to it."""
+
+        if hasattr(self.__class__, name):
+            attribute = getattr(self.__class__, name)
+            if isinstance(attribute, property):
+                if attribute.fset is not None:
+                    try:
+                        self._save_lock.acquire(blocking=True)
+                        # Mark the _AttributesChanged flag if the value has been updated
+                        if attribute.fget is not None:
+                            self._AttributesChanged = self._AttributesChanged or attribute.fget(self) != value
+                        else:
+                            self._AttributesChanged = True
+                        attribute.fset(self, value)
+                    finally:
+                        self._save_lock.release()
+                    return
+                else:
+                    assert (attribute.fset is not None)  # Why are we trying to set a property without a setter?
+            else:
+                super(XElementWrapper, self).__setattr__(name, value)
+                return
+
+        if name in self.__dict__:
+            self.__dict__[name] = value
+        elif name[0] == '_':
+            self.__dict__[name] = value
+        elif self.attrib is not None:
+            try:
+                self._save_lock.acquire(blocking=True)
+                originalValue = None
+                if name in self.attrib:
+                    originalValue = self.attrib[name]
+
+                if value is None:
+                    raise ValueError(f"Setting None on XML Element attribute: {name}")
+                elif not isinstance(value, str):
+                    XElementWrapper.logger.info('Setting non string value on <' + str(
+                        self.tag) + '>, automatically corrected: ' + name + ' -> ' + str(value))
+
+                    strVal = '%g' % value if isinstance(value, float) else str(value)
+                    self.attrib[name] = strVal
+                    self._AttributesChanged = self._AttributesChanged or (strVal != originalValue)
+                else:
+                    self.attrib[name] = value
+                    self._AttributesChanged = self._AttributesChanged or (value != originalValue)
+            finally:
+                self._save_lock.release()
+
+    def __delattr__(self, name: str):
+
+        """Like __setattr__() but for attribute deletion instead of assignment. This should only be implemented if del obj.name is meaningful for the object."""
+
+        if name in self.__dict__:
+            self.__dict__.pop(name)
+        elif name in self.attrib:
+            try:
+                self._save_lock.acquire(blocking=True)
+                self._AttributesChanged = True
+                self.attrib.pop(name)
+            finally:
+                self._save_lock.release()
+
+    def CompareAttributes(self, dictAttrib: dict):
+        """Compare the passed dictionary with the attributes on the node, return entries which do not match"""
+        mismatched = list()
+
+        for entry, val in list(dictAttrib.items()):
+            if hasattr(self, entry):
+                if getattr(self, entry) != val:
+                    mismatched.append(entry)
+            else:
+                mismatched.append(entry[0])
+
+        return mismatched
+
+    def RemoveOldChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue):
+        """If multiple children match the criteria, we remove all but the child with the latest creation date"""
+        Children = self.GetChildrenByAttrib(ElementName, AttribName, AttribValue)
+        if Children is None:
+            return
+
+        Children = list(Children)
+        if len(Children) < 2:
+            return
+
+        OldestChild = Children[0]
+        for iChild in range(1, len(Children)):
+            Child = Children[iChild]
+            if not hasattr(Child, 'CreationDate'):
+                self.remove(Child)
+            else:
+                if not hasattr(OldestChild, 'CreationDate'):
+                    self.remove(OldestChild)
+                    OldestChild = Child
+                else:
+                    if OldestChild.CreationDate < Child.CreationDate:
+                        self.remove(OldestChild)
+                        OldestChild = Child
+                    else:
+                        self.remove(Child)
+
+    def GetChildrenByAttrib(self, ElementName: str, AttribName: str, AttribValue: float | str) -> Generator[
+        XElementWrapper]:
+        if isinstance(AttribValue, float):
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName,
+                                                                               'AttribName': AttribName,
+                                                                               'AttribValue': AttribValue}
+        else:
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
+                                                                               'AttribName': AttribName,
+                                                                               'AttribValue': AttribValue}
+        return self.findall(XPathStr)
+
+    def GetChildByAttrib(self, ElementName: str, AttribName: str, AttribValue: float | str) -> XElementWrapper | None:
+
+        if isinstance(AttribValue, float):
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)g']" % {'ElementName': ElementName,
+                                                                               'AttribName': AttribName,
+                                                                               'AttribValue': AttribValue}
+        else:
+            XPathStr = "%(ElementName)s[@%(AttribName)s='%(AttribValue)s']" % {'ElementName': ElementName,
+                                                                               'AttribName': AttribName,
+                                                                               'AttribValue': AttribValue}
+
+        assert (len(XPathStr) > 0)
+        child = self.find(XPathStr)
+        # if(len(Children) > 1):
+        #    prettyoutput.LogErr("Multiple nodes found fitting criteria: " + XPathStr)
+        #    return Children
+
+        # if len(Children) == 0:
+        #    return None
+
+        if child is None:
+            return None
+
+        return child
+
+    def Contains(self, Element: XElementWrapper) -> bool:
+        """True if a direct child matches ``Element`` on tag and attributes.
+
+        ``CreationDate`` is ignored so a freshly built probe can match a child that
+        already carries an auto-stamped date. Compares ``Element``'s attributes to
+        each child (not the parent's), which is what duplicate detection needs.
+        """
+        for c in self:
+            if getattr(c, 'tag', None) != Element.tag:
+                continue
+            attrs_ok = True
+            for k, v in Element.attrib.items():
+                if k == 'CreationDate':
+                    continue
+                if k not in c.attrib or c.attrib[k] != v:
+                    attrs_ok = False
+                    break
+            if attrs_ok:
+                return True
+        return False
+
+    def UpdateOrAddChildByAttrib(self, element: _XT, AttribNames=None) -> tuple[bool, _XT]:  # type: ignore[override]
+        if AttribNames is None:
+            AttribNames = ['Name']
+        elif isinstance(AttribNames, str):
+            AttribNames = [AttribNames]
+        elif not isinstance(AttribNames, list):
+            raise Exception("Unexpected attribute names for UpdateOrAddChildByAttrib")
+
+        attribXPathTemplate = "@%(AttribName)s='%(AttribValue)s'"
+        attribXPaths = []
+
+        for AttribName in AttribNames:
+            val = element.attrib[AttribName]
+            attribXPaths.append(attribXPathTemplate % {'AttribName': AttribName,
+                                                       'AttribValue': val})
+
+        XPathStr = "%(ElementName)s[%(QueryString)s]" % {'ElementName': element.tag,
+                                                         'QueryString': ' and '.join(attribXPaths)}
+        return self.UpdateOrAddChild(element, XPathStr)  # type: ignore[return-value]
+
+    def UpdateOrAddChild(self, element: XElementWrapper, XPath: str | None = None) -> tuple[bool, XElementWrapper]:
+        """Adds an element using the specified XPath.  If the XPath is unspecified the element name is used
+           Returns a tuple with (True/False, Element).
+           True indicates the element did not exist and was added.
+           False indicates the element existed and the existing value is returned.
+           """
+
+        if XPath is None:
+            XPath = element.tag
+
+        NewNodeCreated = False
+
+        '''Eliminates duplicates if they are found'''
+        #        if self.Contains(Element):
+        #            return
+        # MatchingChildren = list(self.findall(XPath))
+        # if(len(MatchingChildren) > 1):
+        # for i in range(1,len(MatchingChiElement.Parent = selfdren)):
+        # self.remove(MatchingChildren[i])
+
+        '''Returns the existing element if it exists, adds ChildElement with specified attributes if it does not exist.'''
+        child = self.find(XPath)
+        if child is None:
+            if element is not None:
+                self.append(element)
+                assert self[-1] is element
+                child = element
+                NewNodeCreated = True
+            else:
+                # No data provided to create the child element
+                return False, None
+
+        # Make sure the parent is set correctly
+        (wrapped, child) = nornir_buildmanager.volumemanager.WrapElement(child)
+
+        if wrapped:
+            nornir_buildmanager.volumemanager.SetElementParent(child, self)
+        # Child.Parent = self
+
+        if NewNodeCreated:
+            assert (self.ChildrenChanged is True), "ChildrenChanged must be true if we report adding a child element"
+
+        return NewNodeCreated, child
+
+    def AddChild(self, new_child_element):
+        DeprecationWarning("Use append instead of AddChild on XElementWrapper based objects")
+        return self.append(new_child_element)
+
+    def append(self, Child):
+        assert (not self == Child)
+        self._ChildrenChanged = True
+        super(XElementWrapper, self).append(Child)
+        Child.Parent = self
+        assert self[-1] is Child
+
+    def remove(self, Child):
+        assert (not self == Child)
+        self._ChildrenChanged = True
+        super(XElementWrapper, self).remove(Child)
+        assert (Child not in self)
+
+    def FindParent(self, ParentTag: str) -> XElementWrapper | None:
+        """Find parent with specified tag"""
+        assert (ParentTag is not None)
+        p = self.Parent
+        while p is not None:
+            if p.tag == ParentTag:
+                return p
+            p = p.Parent
+        return None
+
+    def FindFromParent(self, xpath: str) -> XElementWrapper | None:
+        """Run find on xpath on each parent, return first hit"""
+        #        assert (not ParentTag is None)
+        p = self.Parent
+        while p is not None:
+            result = p.find(xpath)
+            if result is not None:
+                return result
+
+            p = p.Parent
+
+        return None
+
+    def FindAllFromParent(self, xpath: str) -> Generator[XElementWrapper] | None:
+        """Run findall on xpath on each parent, return results only first nearest parent with resuls"""
+        #        assert (not ParentTag is None)
+        p = self.Parent
+        while p is not None:
+            results = p.findall(xpath)
+            if next(results, None) is not None:
+                yield from p.findall(xpath)  # Cannot restart a generator, so have to start it again and return
+                return
+
+            p = p.Parent
+
+        return
+
+    def _ReplaceChildElementInPlace(self, old: ElementTree.Element, new: XElementWrapper):
+        """Swap a child for an equivalent one **without** marking this element dirty.
+
+        Deliberately does not set ``_ChildrenChanged``, unlike append/remove. Every
+        live caller substitutes a node for its own loaded or wrapped equivalent --
+        a ``*_Link`` stub for the container it points at, or a raw Element for its
+        wrapper -- which changes what is in memory but not what belongs on disk.
+
+        Setting the flag here would make resolving a link count as an edit, so any
+        query that walks into a linked container would rewrite the volume and bump
+        the directory modification times that validation depends on. Callers that
+        genuinely restructure the parent, such as :meth:`ReplaceChildWithLink`,
+        set the flag themselves.
+        """
+        # print("Removing {0}".format(str(old)))
+        i = self.indexofchild(old)
+
+        self[i] = new
+        # self.remove(old)
+        # self.insert(i, new)
+
+        nornir_buildmanager.volumemanager.SetElementParent(new, self)
+
+    def ReplaceChildWithLink(self, child):
+        """Substitute a link stub for a container child, marking this element dirty.
+
+        Unlike the resolution path this really does restructure the parent: the
+        container's content stops being part of this element's XML, so the change
+        has to be persisted.
+        """
+        if isinstance(child, nornir_buildmanager.volumemanager.XContainerElementWrapper):
+            if child not in self:
+                return
+
+            LinkElement = XElementWrapper(child.tag + '_Link', attrib=child.attrib)
+            # SaveElement.append(LinkElement)
+            self._ReplaceChildElementInPlace(child, LinkElement)
+            self._ChildrenChanged = True
+
+    def _ReplaceChildIfUnwrapped(self, child):
+        if isinstance(child, XElementWrapper):
+            return child
+
+        assert (child in self), "ReplaceChildIfUnwrapped: {0} not a child of {1} as expected".format(str(child),
+                                                                                                     str(self))
+
+        (wrapped, wrappedElement) = nornir_buildmanager.volumemanager.WrapElement(child)
+
+        if wrapped:
+            self._ReplaceChildElementInPlace(child, wrappedElement)
+            wrappedElement._AttributesChanged = False  # Setting the parent will set this flag, but if we loaded it there was no change
+
+        return wrappedElement
+
+    # replacement for find function that loads subdirectory xml files
+    def find(self, path: str, namespaces=None) -> XElementWrapper | None:
+
+        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(
+            path)
+
+        if isinstance(self,
+                      nornir_buildmanager.volumemanager.XContainerElementWrapper):  # Only containers have linked elements
+            LinkMatches = super(XElementWrapper, self).findall(LinkedElementsXPath)
+            if LinkMatches is None:
+                return None
+
+            if UsedWildcard:
+                LinkMatches = list(filter(lambda e: e.tag.endswith('_Link'), LinkMatches))
+
+            num_matches = len(LinkMatches)
+            if num_matches > 0:
+                # if num_matches > 1:
+                #    prettyoutput.Log("Need to load {0} links".format(num_matches))
+                self._replace_links(LinkMatches)
+
+                # Persist whatever link resolution repaired, matching findall below.
+                # Resolving links is not itself a change: swapping a *_Link stub for
+                # the loaded element leaves every dirty flag clear, so a healthy
+                # volume writes nothing here. The flag is only set when resolution
+                # *removed* something -- a stub whose target file is gone, or a child
+                # cleaned as invalid -- and then the in-memory tree no longer matches
+                # disk. Leaving it unsaved kept the stale stub on disk and abandoned a
+                # dirty tree that nothing was responsible for flushing, so the next run
+                # retried the same failed load, and any later unrelated Save would
+                # write the removal at an arbitrary time instead.
+                if self.ElementHasChangesToSave:
+                    self.Save()
+
+        matchiterator = super(XElementWrapper, self).iterfind(UnlinkedElementsXPath)
+        for match in matchiterator:
+            # Run in a loop because find returns the first match, if the first match is invalid look for another
+            #             NotValid = match.CleanIfInvalid()
+            #             if NotValid:
+            #                 continue
+
+            match = self._ReplaceChildIfUnwrapped(match)
+            #
+            if len(RemainingXPath) > 0:
+                foundChild = match.find(RemainingXPath)
+
+                # Continue searching links if we don't find a result on the loaded elements
+                if foundChild is not None:
+                    assert (isinstance(foundChild, XElementWrapper))
+                    return foundChild
+            else:
+                return match
+
+        return None
+
+    def findall(self, path: str, namespaces=None) -> Generator[XElementWrapper]:
+        match = path
+        (UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, UsedWildcard) = self.__ElementLinkNameFromXPath(
+            match)
+
+        # TODO: Need to modify to only search one level at a time
+        # OK, check for linked elements that also meet the criteria
+
+        link_matches = list(super(XElementWrapper, self).findall(LinkedElementsXPath))
+        if link_matches is None:
+            return  # matches
+
+        if UsedWildcard:
+            link_matches = list(filter(lambda e: e.tag.endswith('_Link'), link_matches))
+
+        if link_matches:
+            # if num_matches > 1:
+            #    prettyoutput.Log("Need to load {0} links".format(num_matches))
+            self._replace_links(link_matches)
+
+            # See find() above: this looks like a read that writes, but a healthy
+            # volume never trips the flag. It only fires when link resolution removed
+            # a stub or cleaned an invalid child, and persisting that repair is the
+            # point.
+            if self.ElementHasChangesToSave:
+                self.Save()
+
+        # return matches
+        matches = super(XElementWrapper, self).findall(UnlinkedElementsXPath)
+
+        # Since this is a generator function, we need to load all children that are links before we
+        # return the first node.  If we do not the caller may load other links
+        # from the parent node and then the matches will no longer be present in the
+        # parent.
+
+        # Collect what resolution produces rather than re-running the same scan
+        # afterwards to pick the replacements back up. Each branch substitutes an
+        # element in place and preserves whether it still matches the xpath, so
+        # this list is what that second scan would have returned.
+        loaded_matches = []
+        for m in matches:
+            #             NotValid = m.CleanIfInvalid()
+            #             if NotValid:
+            #                 continue
+            if '_Link' in m.tag:
+                # TODO: Can this code path ever execute?  Seems like we pre-load the links above
+                m_replaced = self._replace_link(m)
+                if m_replaced is None:
+                    continue
+                else:
+                    m = m_replaced
+            elif not isinstance(m, XElementWrapper):
+                # Inlines _ReplaceChildIfUnwrapped's own first test. Children are
+                # already wrapped on all but the first pass, so calling it here
+                # meant a Python call per child per query only to return it again.
+                m = self._ReplaceChildIfUnwrapped(m)
+
+            loaded_matches.append(m)
+
+        for m in loaded_matches:
+            if len(RemainingXPath) > 0:
+                subContainerMatches = list(m.findall(RemainingXPath))
+                if subContainerMatches is not None:
+                    for sm in subContainerMatches:
+                        assert (isinstance(sm, XElementWrapper))  # T
+                        # if not isinstance(sm, XElementWrapper):
+                        # m.remove(sm)
+                        # sm = VolumeManager.WrapElement(sm)
+                        # m.insert(sm)
+
+                        (yield sm)
+            else:
+                (yield m)  # type: ignore[misc]
+
+    @classmethod
+    def __ElementLinkNameFromXPath(cls, xpath: str) -> tuple[str, str, str, bool]:
+        """
+        :Return: The name to search for the linked and unlinked version of the search term.
+                 If only attributes are specified the Link search term will return all
+                 elements. (UnlinkedElementPath, LinkedElementPath, RemainingPath, HasWildcard)
+                 If the xpath has a wildcard (HasWildcard) a function searching with LinkedElementPath
+                 must manually check each child element tag to see if it ends in _Link.
+        """
+
+        if '\\' in xpath:
+            Logger = logging.getLogger(__name__ + '.' + '__ElementLinkNameFromXPath')
+            Logger.warning("Backslash found in xpath query, is this intentional or should it be a forward slash?")
+            Logger.warning("XPath: " + xpath)
+
+        parts = xpath.split('/')
+        UnlinkedElementsXPath = parts[0]
+        SubContainerParts = UnlinkedElementsXPath.split('[')
+        SubContainerName = SubContainerParts[0]
+
+        HaveSubContainerName = not (SubContainerName is None or len(SubContainerName) == 0)
+        SubContainerIsWildcard = SubContainerName == '*'
+
+        if not HaveSubContainerName:
+            SubContainerName = '*'
+            LinkedElementsXPath = SubContainerName + UnlinkedElementsXPath
+            SubContainerIsWildcard = True
+        else:
+            if not SubContainerIsWildcard:
+                LinkedSubContainerName = SubContainerName + '_Link'
+                LinkedElementsXPath = UnlinkedElementsXPath.replace(SubContainerName, LinkedSubContainerName, 1)
+            else:
+                # ElementTree does not let use say '*_link' when searching tag names.  So we have to return
+                # all tags and filter out _links later.
+                LinkedElementsXPath = UnlinkedElementsXPath
+
+        RemainingXPath = xpath[len(UnlinkedElementsXPath) + 1:]
+        return UnlinkedElementsXPath, LinkedElementsXPath, RemainingXPath, SubContainerIsWildcard
+
+    def LoadAllLinkedNodes(self):
+        """Recursively load all the linked nodes on this element"""
+
+        child_nodes = list(self)
+        linked_nodes = list(filter(lambda x: x.tag.endswith('_Link'), child_nodes))
+
+        if len(linked_nodes) > 0:
+            assert hasattr(self,
+                           '_replace_links'), 'Nodes with linked children must implement _replace_links to load those links'
+
+        if hasattr(self, '_replace_links'):
+            self._replace_links(linked_nodes)
+
+        # Check all of our child nodes for links
+        for n in self:
+            n.LoadAllLinkedNodes()  # type: ignore[union-attr]
+
+        #         for n in child_nodes:
+        #             if n.tag.endswith('_Link'):
+        #                 n_replaced = self._replace_link(n)
+        #                 if n_replaced is None:
+        #                     continue
+        #                 n = n_replaced
+        #
+        #                 n.LoadAllLinkedNodes()
+
+        return

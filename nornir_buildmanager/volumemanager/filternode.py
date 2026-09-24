@@ -1,0 +1,253 @@
+from __future__ import annotations
+
+import nornir_buildmanager
+import nornir_buildmanager.volumemanager
+from nornir_buildmanager.volumemanager import ContrastHandler, HistogramNode, ImageNode, ImageSetNode, Scale, \
+    TilePyramidNode, TilesetNode, XNamedContainerElementWrapped
+
+
+class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
+    DefaultMaskName = "Mask"
+
+    def DefaultImageName(self, extension: str) -> str:
+        """Default name for an image in this filters imageset"""
+        InputChannelNode = self.FindParent('Channel')
+        assert InputChannelNode is not None
+        section_node = InputChannelNode.FindParent('Section')
+        assert section_node is not None
+        return BuildFilterImageName(section_node.Number, InputChannelNode.Name, self.Name, extension)
+
+    @property
+    def Scale(self) -> Scale | None:
+        """Returns the scale if it is specified in a parent Channel Node"""
+        channelNode = self.FindParent('Channel') # type: ChannelNode # type: ignore
+        if channelNode is None:
+            return None
+
+        return channelNode.Scale
+
+    @property
+    def Histogram(self):
+        """Get the image set for the filter, create if missing"""
+
+        # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
+        # There should be only one Imageset, so use find
+        histogram = self.find('Histogram')
+        if histogram is None:
+            raise NotImplementedError("Creation of missing histogram node is deprecated")
+            # histogram = HistogramNode.Create(InputTransformNode=None)
+            # self.append(histogram)
+
+        return histogram
+
+    @property
+    def BitsPerPixel(self) -> int | None:
+        val = self.attrib.get('BitsPerPixel', None)
+        if val is not None:
+            val = int(val)
+
+        return val
+
+    @BitsPerPixel.setter
+    def BitsPerPixel(self, val):
+        if val is None:
+            if 'BitsPerPixel' in self.attrib:
+                del self.attrib['BitsPerPixel']
+        else:
+            self.attrib['BitsPerPixel'] = '%d' % val
+
+    def GetOrCreateTilePyramid(self) -> tuple[bool, TilePyramidNode]:
+        # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
+        # There should be only one Imageset, so use find
+        pyramid = self.find('TilePyramid') # type: TilePyramidNode # type: ignore
+        if pyramid is None:
+            pyramid = TilePyramidNode.Create(NumberOfTiles=0)
+            self.append(pyramid)
+            return True, pyramid
+        else:
+            return False, pyramid
+
+    @property
+    def TilePyramid(self) -> TilePyramidNode:
+        """The tile pyramid, **created and appended if missing**.
+
+        Reading this mutates: the append marks the filter dirty, so a later save
+        writes an empty pyramid node and its directory. That is deliberate and
+        load-bearing on output filters, which are built by reading this property
+        on a filter that does not have one yet.
+
+        Callers that must not mutate check :attr:`HasTilePyramid` first, which is
+        the convention throughout the pipeline. Use
+        :meth:`GetOrCreateTilePyramid` when the creation is the point and you
+        need to know whether it happened.
+        """
+        # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)
+        # There should be only one Imageset, so use find
+        pyramid = self.find('TilePyramid') # type: TilePyramidNode | None # type: ignore
+        if pyramid is None:
+            pyramid = TilePyramidNode.Create(NumberOfTiles=0)
+            self.append(pyramid)
+
+        return pyramid
+
+    @property
+    def HasTilePyramid(self) -> bool:
+        return self.find('TilePyramid') is not None
+
+    @property
+    def HasImageset(self) -> bool:
+        return self.find('ImageSet') is not None
+
+    @property
+    def HasTileset(self) -> bool:
+        return self.find('Tileset') is not None
+
+    @property
+    def Tileset(self) -> TilesetNode | None:
+        """The tileset for the filter, or None. Unlike TilePyramid and Imageset
+        this does **not** create one, so reading it never mutates the filter."""
+        # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
+        # There should be only one Imageset, so use find
+        tileset = self.find('Tileset')  # type: TilesetNode | None # type: ignore
+        return tileset
+
+    def GetOrCreateImageset(self) -> tuple[bool, ImageSetNode]:
+        """The imageset, creating it if missing, reporting whether it was created.
+
+        The explicit counterpart to the :attr:`Imageset` property, mirroring
+        :meth:`GetOrCreateTilePyramid`. Prefer this where the creation is
+        intended, so the mutation is visible at the call site.
+        """
+        imageset = self.find('ImageSet')  # type: ImageSetNode | None # type: ignore
+        if imageset is None:
+            imageset = ImageSetNode.Create()
+            self.append(imageset)
+            return True, imageset
+
+        return False, imageset
+
+    @property
+    def Imageset(self) -> ImageSetNode:
+        """The imageset, **created and appended if missing**.
+
+        Reading this mutates, exactly as :attr:`TilePyramid` does, and for the
+        same reason: output filters are populated by reading this property on a
+        filter that does not have one yet (see the unguarded
+        ``OutputFilterNode.Imageset.SetTransform`` in ``operations/tile.py``).
+
+        Check :attr:`HasImageset` first where a query must not mutate, or use
+        :meth:`GetOrCreateImageset` where creating is the intent.
+        """
+        # imageset = self.GetChildByAttrib('ImageSet', 'Name', ImageSetNode.Name)
+        # There should be only one Imageset, so use find
+        return self.GetOrCreateImageset()[1]
+
+    @property
+    def MaskImageset(self) -> ImageSetNode | None:
+        """Get the imageset for the default mask"""
+
+        maskFilter = self.GetMaskFilter()
+        if maskFilter is None:
+            return None
+
+        return maskFilter.Imageset
+
+    @property
+    def MaskName(self) -> str | None:
+        """The default mask to use for this filter"""
+        m = self.attrib.get("MaskName", None)
+        if m is not None:
+            if len(m) == 0:
+                m = None
+
+        return m
+
+    @MaskName.setter
+    def MaskName(self, val):
+        if val is None:
+            if 'MaskName' in self.attrib:
+                del self.attrib['MaskName']
+        else:
+            self.attrib['MaskName'] = val
+
+    def GetOrCreateMaskName(self) -> str:
+        """Returns the maskname for the filter, if it does not exist use the default mask name"""
+        if self.MaskName is None:
+            self.MaskName = FilterNode.DefaultMaskName
+
+        return self.MaskName
+
+    @property
+    def HasMask(self) -> bool:
+        """
+        :return: True if the mask filter exists
+        """
+        return not self.GetMaskFilter() is None
+
+    def GetMaskFilter(self, MaskName: str | None = None) -> FilterNode | None:
+        if MaskName is None:
+            MaskName = self.MaskName
+
+        if MaskName is None:
+            return None
+
+        assert (isinstance(MaskName, str))
+
+        return self.Parent.GetFilter(MaskName)  # type: ignore[union-attr]
+
+    def GetOrCreateMaskFilter(self, MaskName: str | None = None) -> tuple[bool, FilterNode]:
+        if MaskName is None:
+            MaskName = self.GetOrCreateMaskName()
+
+        assert (isinstance(MaskName, str))
+
+        return self.Parent.GetOrCreateFilter(MaskName)  # type: ignore[union-attr]
+
+    def GetImage(self, Downsample) -> ImageNode | None:
+        if not self.HasImageset:
+            return None
+
+        return self.Imageset.GetImage(Downsample)
+
+    def GetOrCreateImage(self, Downsample) -> ImageNode:
+        """As described, raises a nornir_buildmanager.NornirUserException if the image cannot be generated"""
+        imageset = self.Imageset
+        return imageset.GetOrCreateImage(Downsample)
+
+    def GetMaskImage(self, Downsample) -> ImageNode | None:
+        maskFilter = self.GetMaskFilter()
+        if maskFilter is None:
+            return None
+
+        return maskFilter.GetImage(Downsample)
+
+    def GetOrCreateMaskImage(self, Downsample) -> ImageNode:
+        """As described, raises a nornir_buildmanager.NornirUserException if the image cannot be generated"""
+        (added_mask_filter, maskFilter) = self.GetOrCreateMaskFilter()
+        return maskFilter.GetOrCreateImage(Downsample)
+
+    def GetHistogram(self) -> HistogramNode:
+        return self.find('Histogram')  # type: ignore[return-value]
+
+    @property
+    def NeedsValidation(self) -> bool:
+        return True
+
+    @classmethod
+    def Create(cls, Name: str, Path: str | None = None, **extra) -> FilterNode:
+        return super(FilterNode, cls).Create(tag='Filter', Name=Name, Path=Path, **extra)  # type: ignore[return-value]
+
+    def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
+        print("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (
+            self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff,
+            Gamma))
+
+
+#       XElementWrapper.logger.warning("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (
+#            self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff,
+#            Gamma))
+
+
+def BuildFilterImageName(SectionNumber: int, ChannelName: str, FilterName: str, Extension=None) -> str:
+    return nornir_buildmanager.templates.Current.SectionTemplate % SectionNumber + \
+        f"_{ChannelName}_{FilterName}{Extension}"

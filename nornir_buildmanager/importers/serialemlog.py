@@ -6,12 +6,16 @@ Created on Apr 11, 2019
 Parses SerialEM log files and plots drift and settle times
 '''
 
-import sys
-import pickle
-import os
 import datetime
+import os
+import pickle
+import sys
+
+import nornir_buildmanager
+from nornir_buildmanager.importers import serialem_utils
 import nornir_shared.files as files
 import nornir_shared.plot as plot
+import nornir_shared.prettyoutput as prettyoutput
 
 
 class LogTileData(object):
@@ -19,22 +23,32 @@ class LogTileData(object):
 
     @property
     def totalTime(self):
-        '''Total time required to capture the file, based on interval between DoNextPiece calls in the log'''
-        if self.endTime is None:
+        '''Total time required to capture the file including autofocus'''
+        if self.endAcquisitionTime is None:
             return None
 
-        return self.endTime - self.startTime
+        return self.endAcquisitionTime - self.startAcquisitionTime
+
+    @property
+    def acquisitionTime(self):
+        '''Total time required to capture the file not including autofocus, based on interval between DoNextPiece calls in the log.
+           a.k.a, The time it takes to record a tile after it is in focus and drift tolerance is met
+        '''
+        if self.endAcquisitionTime is None:
+            return None
+
+        return self.totalTime - self.settleTime  # type: ignore[operator]
 
     @property
     def dwellTime(self):
-        '''Total time required to acquire the tile after the stage stopped moving'''
+        '''Total time from the stage stopping to the tile being acquired'''
         if self.stageStopTime is None:
             return None
 
-        if self.endTime is None:
+        if self.endAcquisitionTime is None:
             return None
 
-        return self.endTime - self.stageStopTime
+        return self.endAcquisitionTime - self.stageStopTime
 
     @property
     def settleTime(self):
@@ -42,17 +56,17 @@ class LogTileData(object):
         if len(self.driftStamps) == 0:
             return None
 
-        if self.endTime is None:
+        if self.endAcquisitionTime is None:
             return None
 
-        return self.endTime - self.driftStamps[-1]
+        return self.driftStamps[-1][0]
 
     @property
     def drift(self):
 
         if len(self.driftStamps) > 0:
-            (_, drift) = self.driftStamps[-1]
-            return drift
+            stamp = self.driftStamps[-1]
+            return stamp[1]
 
         return None
 
@@ -60,8 +74,8 @@ class LogTileData(object):
         text = ""
         if not self.number is None:
             text = str(self.number) + ": "
-        if not self.totalTime is None:
-            text = text + "%.1f" % self.totalTime
+        if not self.acquisitionTime is None:
+            text = text + "%.1f" % self.acquisitionTime
         if len(self.driftStamps) > 0:
             text = text + " %.2f " % self.drift
             if not self.driftUnits is None:
@@ -69,53 +83,87 @@ class LogTileData(object):
 
         return text
 
-    def __init__(self, startTime):
-        self.startTime = startTime  # Time when DoNextPiece was logged to begin this tile
-        self.endTime = None  # Time when DoNextPiece was logged to start the next tile
+    def __init__(self, startDoNextPieceStageMove):
+        self.startAcquisitionTime = startDoNextPieceStageMove  # Time when DoNextPiece Starting Capture was logged to begin this tile
+        self.endAcquisitionTime: float | None = None  # Time when DoNextPiece Starting stage move was logged to start the next tile
 
-        self.stageStopTime = None  # Time when the stage stopped moving
+        self.stageStopTime: float | None = None  # Time when the stage stopped moving
 
-        self.driftStamps = []  # Contains tuples of time after stage move completion and measured drift
-        self.number = None  # The tile number in the capture
+        self.driftStamps = []  # Contains tuples of time after stage move completion, measured drift, and measured defocus
+        self.number: int | float | None = None  # The tile number in the capture
         self.driftUnits = None  # nm/sec
-        self.coordinates = None
+        self.defocusUnits = None  # microns
+        self.coordinates: tuple[int, int] | None = None
 
 
 class SerialEMLog(object):
 
-    @classmethod
-    def __ObjVersion(cls):
+    @staticmethod
+    def __ObjVersion():
         '''Used for knowing when to ignore a pickled file'''
 
         # Version 2 fixes missing tile drift times for the first tile in a hemisphere
-        return 4
+        return 7
 
     @property
     def TotalTime(self):
-        total = self.MontageEnd - self.MontageStart
-        return total
+        '''Total time to capture, including cooking, filaments warmup, acquisition, etc...'''
+        return self.TotalTileAcquisitionTime + self.LowMagCookTime + self.HighMagCookTime + self.FilamentStabilizationTime
 
     @property
     def AverageTileTime(self):
+        '''
+        Average total time spent capturing each tile
+        '''
         if len(self.tileData) == 0:
             return None
-        
+
         if self._avg_tile_time is None:
             TotalTimes = [t.totalTime for t in self.tileData.values()]
             total = sum(TotalTimes)
-            self._avg_tile_time = total / len(self.tileData)  
-            
+            self._avg_tile_time = total / len(self.tileData)
+
         return self._avg_tile_time
+
+    @property
+    def AverageSettleTime(self):
+        '''
+        The average time it takes for a tile to be in-focus and below drift tolerance after a stage move
+        '''
+        if len(self.tileData) == 0:
+            return None
+
+        if self._avg_tile_settle_time is None:
+            TotalTimes = [t.settleTime for t in self.tileData.values()]
+            total = sum(TotalTimes)
+            self._avg_tile_settle_time = total / len(self.tileData)
+
+        return self._avg_tile_settle_time
+
+    @property
+    def AverageAcquisitionTime(self):
+        '''
+        The average time it takes to record a tile after it is in focus and drift tolerance is met
+        '''
+        if len(self.tileData) == 0:
+            return None
+
+        if self._avg_tile_acquisitionTime_time is None:
+            TotalTimes = [t.acquisitionTime for t in self.tileData.values()]
+            total = sum(TotalTimes)
+            self._avg_tile_acquisitionTime_time = total / len(self.tileData)
+
+        return self._avg_tile_acquisitionTime_time
 
     @property
     def AverageTileDrift(self):
         if len(self.tileData) == 0:
             return None
-        
+
         if self._avg_tile_drift is None:
             drift_time = [t.drift for t in self.tileData.values() if t is not None]
             self._avg_tile_drift = sum(drift_time) / len(drift_time)
-    
+
         return self._avg_tile_drift
 
     @property
@@ -131,6 +179,34 @@ class SerialEMLog(object):
                         self._fastestTime = min(self._fastestTime, t.totalTime)
 
         return self._fastestTime
+
+    @property
+    def FastestSettleTime(self):
+        '''Fastest time to be in focus and under drift limit after stage move'''
+
+        if self._fastest_settle_time is None:
+            for t in list(self.tileData.values()):
+                if not (t.dwellTime is None or t.drift is None):
+                    if self._fastest_settle_time is None:
+                        self._fastest_settle_time = t.settleTime
+                    else:
+                        self._fastest_settle_time = min(self._fastest_settle_time, t.settleTime)
+
+        return self._fastest_settle_time
+
+    @property
+    def FastestAcquisitionTime(self):
+        '''Fastest time to capture a tile after it is in focus and under drift limit'''
+
+        if self._fastest_acquisition_time is None:
+            for t in list(self.tileData.values()):
+                if not (t.dwellTime is None or t.drift is None):
+                    if self._fastest_acquisition_time is None:
+                        self._fastest_acquisition_time = t.acquisitionTime
+                    else:
+                        self._fastest_acquisition_time = min(self._fastest_acquisition_time, t.acquisitionTime)
+
+        return self._fastest_acquisition_time
 
     @property
     def MaxTileDrift(self):
@@ -155,16 +231,97 @@ class SerialEMLog(object):
         return self._mindrift
 
     @property
-    def NumTiles(self): 
-        if self._num_tiles is None: 
+    def NumTiles(self):
+        if self._num_tiles is None:
             IsTile = [not (t.dwellTime is None or t.drift is None) for t in self.tileData.values()]
             self._num_tiles = sum(IsTile)
-        
+
         return self._num_tiles
 
     @property
-    def Startup(self):
-        return self._startup
+    def FilamentStabilizationTime(self):
+        '''
+        :return: # of seconds to stabilize the filament or None if stabilization
+        did not occur
+        '''
+        return self._FilamentStabilizationTime
+
+    @property
+    def LowMagCookTime(self):
+        '''
+        :return: # of seconds to stabilize the filament or None if stabilization
+        did not occur
+        '''
+        return self._LowMagCookTime
+
+    @property
+    def HighMagCookTime(self):
+        '''
+        :return: # of seconds to stabilize the filament or None if stabilization
+        did not occur
+        '''
+        return self._HighMagCookTime
+
+    @property
+    def CaptureSetupTime(self):
+        '''
+        The time from startup to montage start, minus all other known macro activities such as cooking and filament warmup.
+        '''
+
+        return (self.MontageStart - self.StartupTimeStamp) - (  # type: ignore[operator]
+                    self.LowMagCookTime + self.HighMagCookTime + self.FilamentStabilizationTime)
+
+    @property
+    def TotalTileAcquisitionTime(self):
+        '''Total time it took to acquire tiles after all preparation steps such as cooking'''
+        return self.MontageEnd - self.MontageStart  # type: ignore[operator]
+
+    @property
+    def ISCalibrationDone(self):
+        return self._IS_change_percentage is not None
+
+    @property
+    def IS_mean_correlation(self):
+        return self._IS_mean_cc
+
+    @property
+    def IS_min_correlation(self):
+        return self._IS_min_cc
+
+    @property
+    def HighMagCookDone(self):
+        return self._HighMagCookTime > 0
+
+    @property
+    def LowMagCookDone(self):
+        return self._LowMagCookTime > 0
+
+    @property
+    def StableFilamentChecked(self):
+        return self._FilamentStabilizationTime > 0
+
+    @property
+    def StartupDateTime(self):
+        '''The datetime string from the "Started  6/11/2020  11:05:54" entry in the log, if it exists'''
+        if self._startup is None:
+            return None
+
+        if isinstance(self._startup, datetime.datetime):
+            return self._startup
+
+        return datetime.datetime.strptime(self._startup, '%m/%d/%Y %H:%M:%S')
+
+    @property
+    def FinishDateTime(self):
+        '''Datetime when the capture was finished, extrapolated from StartupDateTime and other measured durations.'''
+        return self.StartupDateTime + datetime.timedelta(seconds=self.CaptureSetupTime + self.TotalTime)  # type: ignore[operator]
+
+    @property
+    def StartupTimeStamp(self):
+        '''The timestamp in seconds for the "1.938: Microscope Startup succeeded" entry.  Defaults to 0'''
+        if self._startup_timestamp is not None:
+            return self._startup_timestamp
+        return 0
 
     @property
     def Version(self):
@@ -172,21 +329,46 @@ class SerialEMLog(object):
 
     def __init__(self):
         self.tileData = {}  # The time required to capture each tile
-        self._startup = None  # SerialEM program Startup time, if known
+        self._startup = None  # SerialEM program Startup time string, if known
+        self._startup_timestamp = 0  # SerialEM 'microscope startup' timestamp, if known
         self._version = None  # SerialEM version, if known
         self.PropertiesVersion = None  # Timestamp of properties file, if known
         self.MontageStart = None  # timestamp when acquire began
         self.MontageEnd = None  # timestamp when acquire ended
-        
+
         # Cached calculations
         self._avg_tile_time = None
+        self._avg_tile_settle_time = None
         self._avg_tile_drift = None
+        self._avg_tile_acquisitionTime_time = None
         self._num_tiles = None
         self._fastestTime = None
+        self._fastest_acquisition_time = None
+        self._fastest_settle_time = None
         self._maxdrift = None
         self._mindrift = None
 
-        self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()
+        self._IS_change_percentage = None
+        self._IS_mean_cc = None
+        self._IS_min_cc = None
+
+        self._LowMagCookTime = 0
+        self._HighMagCookTime = 0
+        self._FilamentStabilizationTime = 0
+
+        self._stable_filament_checked: bool = False
+        self._HighMagCookDone: bool = False
+        self._LowMagCookDone: bool = False
+
+        self.__SerialEMLogVersion = SerialEMLog._SerialEMLog__ObjVersion()  # type: ignore[attr-defined]
+
+    @classmethod
+    def VersionCheck(cls, loaded):
+        if loaded.__SerialEMLogVersion != cls._SerialEMLog__ObjVersion():  # type: ignore[attr-defined]
+            raise nornir_buildmanager.importers.OldVersionException("Loaded version %d expected version %d" % (
+            loaded.__SerialEMLogVersion, SerialEMLog._SerialEMLog__ObjVersion()))  # type: ignore[attr-defined]
+
+        return
 
     @classmethod
     def __PickleLoad(cls, logfullPath):
@@ -198,10 +380,10 @@ class SerialEMLog(object):
 
         if os.path.exists(picklePath):
             try:
-                with open(picklePath, 'r') as filehandle:
+                with open(picklePath, 'rb') as filehandle:
                     obj = pickle.load(filehandle)
 
-                    if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():
+                    if obj.__SerialEMLogVersion != SerialEMLog._SerialEMLog__ObjVersion():  # type: ignore[attr-defined]
                         raise Exception("Version mismatch in pickled file: " + picklePath)
             except Exception:
                 try:
@@ -214,17 +396,76 @@ class SerialEMLog(object):
         return obj
 
     def __PickleSave(self, logfullPath):
- 
+
         picklePath = logfullPath + ".pickle"
 
         try:
-            with open(picklePath, 'w') as filehandle:
+            with open(picklePath, 'wb') as filehandle:
                 pickle.dump(self, filehandle)
         except:
             try:
                 os.remove(picklePath)
             except:
                 pass
+
+    @staticmethod
+    def ReadLine(hLog) -> tuple[str | None, float | None, str | None]:
+        '''
+        Fetch the next line with information from the log
+        '''
+
+        line = hLog.readline(512)
+        if line is None or len(line) == 0:
+            return None, None, None  # No more lines in file
+
+        entry = None
+        timestamp = None
+
+        while entry is None:
+
+            (timestamp, entry) = SerialEMLog.TryParseLine(line)
+
+            if entry is None:
+                line = hLog.readline(512)
+                if line is None or len(line) == 0:
+                    return None, None, None  # No more lines in file
+
+                continue
+
+            if line[0].isdigit():
+                try:
+                    (timestamp, entry) = line.split(':', 1)
+                    timestamp = float(timestamp)
+                except ValueError:
+                    pass
+
+            entry = entry.strip()
+
+            return line, timestamp, entry
+
+        return None, None, None  # Unreachable but satisfies return type
+
+    @staticmethod
+    def TryParseLine(line):
+
+        line = line.strip()
+
+        if len(line) == 0:
+            return None, None
+
+        entry = line
+        timestamp = None
+
+        if line[0].isdigit():
+            try:
+                (timestamp, entry) = line.split(':', 1)
+                timestamp = float(timestamp)
+            except ValueError:
+                pass
+
+        entry = entry.strip()
+
+        return timestamp, entry
 
     @classmethod
     def Load(cls, logfullPath, usecache=True):
@@ -253,7 +494,7 @@ class SerialEMLog(object):
         # Parsing these logs takes quite a while sometimes
 
         if usecache:
-            obj = cls.__PickleLoad(logfullPath)
+            obj = serialem_utils.PickleLoad(logfullPath, SerialEMLog.VersionCheck)
 
             if not obj is None:
                 return obj
@@ -261,34 +502,45 @@ class SerialEMLog(object):
         Data = SerialEMLog()
         NextTile = None  # The tile we are currently moving the stage, focusing on, and setting up an aquisition for.
         AcquiredTile = None  # The tile which we have an image for, but has not been read from the CCD and saved to disk yet
+        nextLine = None  # The next line in the file, if we need to get it
+        line = ""  # Set a not None value
+        entry = None  # The data portion of the log entry
+        timestamp = None  # The timestamp of the log entry
+        MontageStart = None
+
+        LegacyFilamentWarmupStartTime = None
+
+        LastAutofocusStart = None
+        LastValidTimestamp = None  # Used in case the log ends abruptly to populate MontageEnd value
+
+        LastElapsedTimeReport = None  # The value of the previous "1715.55 seconds elapsed time" row
+
+        Data._startup = datetime.datetime.fromtimestamp(os.stat(logfullPath).st_ctime)
 
         with open(logfullPath, 'r') as hLog:
+            while True:
+                if nextLine is None:
+                    (line, timestamp, entry) = SerialEMLog.ReadLine(hLog)
 
-            line = hLog.readline(512)
+                else:
+                    (timestamp, entry) = SerialEMLog.TryParseLine(
+                        nextLine)  # Move the line we had to load into the current line
+                    line = nextLine
+                    nextLine = None
 
-#            lastDriftMeasure = None
-            LastAutofocusStart = None
-            LastValidTimestamp = None  # Used in case the log ends abruptly to populate MontageEnd value
-            while len(line) > 0:
-                line = line.strip()
+                # print(line)
 
-                # print line
+                if line is None:  # No more lines in the file
+                    break
 
-                # See if the entry starts with a timestamp
-                entry = line
-                timestamp = None
-
-                if len(line) == 0:
-                    line = hLog.readline(512)
+                if entry is None:  # Line had no parseable entry
                     continue
 
-                if line[0].isdigit():
-                    try:
-                        (timestamp, entry) = line.split(':', 1)
-                        timestamp = float(timestamp)
-                    except ValueError:
-                        pass
-                entry = entry.strip()
+                # Rarely a log will not have a startup message because it was reset after serialEM was started
+                # In these cases use the earliest timestamp in the file
+                if not timestamp is None:
+                    if Data._startup_timestamp is None:
+                        Data._startup_timestamp = timestamp
 
                 if entry.startswith('DoNextPiece'):
 
@@ -297,9 +549,11 @@ class SerialEMLog(object):
                     if entry.find('capture') >= 0:
                         # We acquired the tile, prepare the next capture
                         if not NextTile is None:
-                            NextTile.endTime = timestamp
+                            if NextTile.endAcquisitionTime is None:
+                                NextTile.endAcquisitionTime = timestamp
                             #
-                            assert (AcquiredTile is None)  # We are overwriting an unwritten tile if this assertion fails
+                            assert (
+                                        AcquiredTile is None)  # We are overwriting an unwritten tile if this assertion fails
                             AcquiredTile = NextTile
                             NextTile = None
 
@@ -307,6 +561,8 @@ class SerialEMLog(object):
 
                 elif entry.startswith('Autofocus Start'):
                     LastAutofocusStart = timestamp
+                elif entry.endswith('seconds elapsed time'):  # "1715.55 seconds elapsed time" row
+                    LastElapsedTimeReport = float(entry.split()[0])
                 elif entry.startswith('Measured defocus'):
                     if not NextTile is None:
 
@@ -314,33 +570,37 @@ class SerialEMLog(object):
                         if NextTile.stageStopTime is None:
                             NextTile.stageStopTime = LastAutofocusStart
 
-                        iDrift = entry.find('drift')
-                        if iDrift > -1:
-                            DriftStr = entry[iDrift:]  # example: drift = 1.57 nm/sec
-                            iEqual = DriftStr.find('=')
-                            if iEqual > -1:
-                                ValueStr = DriftStr[iEqual + 1:]  # example 1.57 nm/sec
-                                ValueStr = ValueStr.strip()
-                                (Value, Units) = ValueStr.split()
-                                Units = Units.strip()
-                                Value = Value.strip()
-                                floatValue = float(Value)
-                                driftTimestamp = LastAutofocusStart - NextTile.stageStopTime
-                                NextTile.driftStamps.append((driftTimestamp, floatValue))
-                                NextTile.driftUnits = Units
+                        defocusValueUnits = cls.ParseValueAndUnits(entry, 'defocus')
+                        if defocusValueUnits is not None:
+                            NextTile.driftUnits = defocusValueUnits[1]
+                        else:
+                            defocusValueUnits = (None, None)
+
+                        (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
+                        driftTimestamp = None
+                        if nextTimestamp is None:
+                            driftTimestamp = LastAutofocusStart - NextTile.stageStopTime  # type: ignore[operator]
+                        else:
+                            driftTimestamp = nextTimestamp - NextTile.stageStopTime  # type: ignore[operator]
+
+                        driftValueUnits = cls.ParseValueAndUnits(entry, 'drift')
+                        if driftValueUnits is not None:
+                            NextTile.driftStamps.append((driftTimestamp, driftValueUnits[0], defocusValueUnits[0]))
+                            NextTile.driftUnits = driftValueUnits[1]
+
                 elif entry.startswith('SaveImage Saving'):
-                    assert(not AcquiredTile is None)  # We should have already recorded a capture event and populated AcquiredTile before seeing this line in the log
-                    iEqual = line.find('=')
-                    if iEqual > -1:
-                        ValueStr = line[iEqual + 1:]  # example 1.57 nm/sec
-                        ValueStr = ValueStr.strip()
-                        FileNumber = int(ValueStr)
+                    assert (
+                        not AcquiredTile is None)  # We should have already recorded a capture event and populated AcquiredTile before seeing this line in the log
+                    FileNumber = cls.ParseValue(entry, 'Z')
+                    if FileNumber is not None:
                         AcquiredTile.number = FileNumber
+                        if AcquiredTile.endAcquisitionTime is None:
+                            AcquiredTile.endAcquisitionTime = timestamp
 
                         # Determine the position in the grid
-                        iAt = line.find('at')
+                        iAt = entry.find('at')
                         if iAt >= 0:
-                            CoordString = line[iAt + 2:]
+                            CoordString = entry[iAt + 2:]
                             iComma = CoordString.find(',')
                             if iComma > 0:
                                 CoordString = CoordString[:iComma]
@@ -354,12 +614,46 @@ class SerialEMLog(object):
 
                 elif entry.endswith('finished stage move'):
                     # Save the last tile
-                    NextTile.stageStopTime = timestamp
+                    if NextTile is not None:
+                        NextTile.stageStopTime = timestamp
 
                 elif entry.startswith('Last update properties file'):
                     (entry, time) = line.split(':', 1)
                     time = time.strip()
                     Data.PropertiesVersion = time
+                elif entry.startswith('Checking for stable filament'):
+                    if Data.StartupDateTime is not None and Data.StartupDateTime >= datetime.datetime.strptime('04/03/2020', '%m/%d/%Y'):
+                        continue
+                    else:  # The old, less correct, cooking macro that did not reset the timespan measurement from high mag cooking
+                        LegacyFilamentWarmupStartTime = LastElapsedTimeReport
+
+                elif entry.find('Filament is stable!') >= 0:
+
+                    (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
+                    try:
+                        elapsed_str = nextEntry.split()[0]  # type: ignore[union-attr]
+                        elapsed = float(elapsed_str)
+
+                        if LegacyFilamentWarmupStartTime is not None:
+                            Data._FilamentStabilizationTime = elapsed - LegacyFilamentWarmupStartTime
+                        else:
+                            Data._FilamentStabilizationTime = elapsed
+                    except:
+                        prettyoutput.LogErr(
+                            "Could not parse filament stabilization time:\n\t{0}\n\t{1}".format(line, nextLine))
+
+
+
+                elif entry.find('Cooking done!') >= 0:
+                    (nextLine, nextTimestamp, nextEntry) = SerialEMLog.ReadLine(hLog)
+                    try:
+                        elapsed_str = nextEntry.split()[0]  # type: ignore[union-attr]
+                        elapsed = float(elapsed_str)
+                        Data._HighMagCookTime = elapsed
+                    except:
+                        prettyoutput.LogErr("Could not parse high mag cook time:\n\t{0}\n\t{1}".format(line, nextLine))
+                elif entry.find('BEGIN BURN WOBBLE') >= 0:
+                    (Data._LowMagCookTime, nextLine) = Data.ParseLowMagCook(hLog)
                 elif entry.startswith('SerialEM Version'):
                     Data._version = entry[len('SerialEM Version') + 1:].strip()
                 elif entry.startswith('Montage Start'):
@@ -368,26 +662,144 @@ class SerialEMLog(object):
                     Data.MontageEnd = timestamp
                 elif entry.startswith('Started'):
                     Data._startup = entry[len('Started') + 1:].strip()
+                elif entry.startswith('Microscope Startup'):
+                    Data._startup_timestamp = timestamp
+                elif entry.startswith(
+                        'This is a change of'):  # This is a change of 0.08% from the old directly measured matrix
+                    subentry = entry[len('This is a change of') + 1:]
+                    Data._IS_change_percentage = float(subentry.split('%')[0])
+                elif entry.startswith(
+                        'The mean cross-correlation coefficient was'):  # The mean cross-correlation coefficient was 0.763 and the minimum was 0.716
+                    subentry = entry[len('The mean cross-correlation coefficient was') + 1:]
+                    parts = subentry.split()
+                    Data._IS_mean_cc = float(parts[0])
+                    Data._IS_mean_cc = float(parts[5])
+                elif entry.startswith('Captured image equally bright as earlier image.  Filament is stable!'):
+                    Data._stable_filament_checked = True
+                elif entry.startswith('Montage Precook Start'):
+                    Data._HighMagCookDone = True
+                elif entry.startswith('BEGIN BURN WOBBLE'):
+                    Data._LowMagCookDone = True
 
-                line = hLog.readline(512)
-
-                if(not timestamp is None):
+                if not timestamp is None:
                     LastValidTimestamp = timestamp
 
             # If we did not find a MontageEnd value use the last valid timestamp
             if Data.MontageEnd is None and not LastValidTimestamp is None:
                 Data.MontageEnd = LastValidTimestamp
 
-        Data.__PickleSave(logfullPath)
+        serialem_utils.PickleSave(Data, logfullPath)
         return Data
 
+    def ParseLowMagCook(self, hLog):
+        '''
+        Helper function to determine the amount of time spent in the low mag
+        cooking macro "Burn Wobble"
+        :return: The low mag cook time, None if there were no entries.  The line parsed from the file so we can parse it again with the main parser
+        '''
+        # Example log:
+        #    BEGIN BURN WOBBLE
+        #    Stage is NOT busy
+        #    Stage is NOT busy
+        #    7.17 seconds elapsed time
+        #    Stage is NOT busy
+        #    Stage is NOT busy
+        #    13.08 seconds elapsed time
+        #    ...
+        #    450.05 seconds elapsed time
 
-def __argToSerialEMLog(arg):
+        LastElapsedTime = None
+
+        while True:
+            (line, timestamp, entry) = SerialEMLog.ReadLine(hLog)
+            if line is None:
+                break
+
+            if entry is None:
+                break
+
+            # No BurnWobble log messages have a timestamp, so if we find one we are done
+            if timestamp is not None:
+                break
+
+            if entry.find("seconds elapsed time") >= 0:
+                try:
+                    elapsed_str = entry.split()[0]
+                    LastElapsedTime = float(elapsed_str)
+                except:
+                    prettyoutput.LogErr("Could not parse low mag cook elapsed time:\n\t{0}".format(line))
+                continue
+
+            # All low mag cook entries either have
+            if entry.find("Stage") < 0:
+                break
+
+        return LastElapsedTime, line
+
+    @staticmethod
+    def ParseValueAndUnits(entry, propertyname):
+        '''For log entries with the form 'propertyname = #### units' returns 
+           the value and units'''
+
+        iProperty = entry.find(propertyname)
+
+        if iProperty > -1:
+            entry_parts = entry[iProperty:].split()
+            # PropertyStr = ' '.entry_parts[0:3].join()  # example: drift = 1.57 nm/sec
+
+            if entry_parts[1] == '=':
+                ValueStr = entry_parts[2]  # example 1.57 nm/sec
+                ValueStr = ValueStr.strip()
+                UnitsStr = entry_parts[3]
+                UnitsStr = UnitsStr.strip()
+                # (Value, Units) = ValueStr.split()
+                # Units = Units.strip()
+                # Value = Value.strip()
+                floatValue = float(ValueStr)
+
+                return floatValue, UnitsStr
+
+        return None
+
+    @staticmethod
+    def ParseValue(entry, propertyname):
+        '''For log entries with the form 'propertyname = ####' returns 
+           the value as a number if possible, or as a string'''
+
+        iProperty = entry.find(propertyname)
+
+        if iProperty > -1:
+            entry_parts = entry[iProperty:].split()
+            # PropertyStr = ' '.entry_parts[0:3].join()  # example: drift = 1.57 nm/sec
+
+            if entry_parts[1] == '=':
+                ValueStr = entry_parts[2]  # example 1.57 nm/sec
+                ValueStr = ValueStr.strip()
+                Value = ValueStr
+                try:
+
+                    # (Value, Units) = ValueStr.split()
+                    # Units = Units.strip()
+                    # Value = Value.strip()
+                    Value = int(ValueStr)
+                except ValueError:
+                    try:
+                        Value = float(ValueStr)
+                    except ValueError:
+                        pass
+                    pass
+
+                return Value
+
+        return None
+
+
+def ArgToSerialEMLog(arg, usecache=True):
     Data = None
     if arg is None:
-        Data = SerialEMLog.Load(sys.argv[1])
+        Data = SerialEMLog.Load(sys.argv[1], usecache)
     elif isinstance(arg, str):
-        Data = SerialEMLog.Load(arg)
+        Data = SerialEMLog.Load(arg, usecache)
     elif isinstance(arg, SerialEMLog):
         Data = arg
     else:
@@ -399,10 +811,11 @@ def __argToSerialEMLog(arg):
 def PlotDriftSettleTime(DataSource, OutputImageFile):
     '''Create a poly line plot showing how each tiles drift rate changed over time'''
 
-    Data = __argToSerialEMLog(DataSource)
+    Data = ArgToSerialEMLog(DataSource)
 
     lines = []
     maxdrift = 0
+    max_time = 0
     NumTiles = int(0)
     for t in list(Data.tileData.values()):
         if not (t.dwellTime is None or t.drift is None):
@@ -414,17 +827,22 @@ def PlotDriftSettleTime(DataSource, OutputImageFile):
                 drift.append(s[1])
 
             maxdrift = max(maxdrift, t.driftStamps[-1][1])
+            max_time = max(max_time, t.driftStamps[-1][0])
             lines.append((time, drift))
-            NumTiles = NumTiles + 1
+            NumTiles += 1
 
-    plot.PolyLine(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=OutputImageFile)
+    plot.PolyLine(lines,
+                  Title="Stage settle time, max drift %g" % maxdrift,
+                  XAxisLabel='Dwell time (sec)',
+                  YAxisLabel="Drift (nm/sec)",
+                  xlim=(0, max_time + (max_time * 0.05)),
+                  OutputFilename=OutputImageFile)
 
     return
 
 
-def PlotDriftGrid(DataSource, OutputImageFile):
-
-    Data = __argToSerialEMLog(DataSource)
+def PlotDwellTimeGrid(DataSource, OutputImageFile):
+    Data = ArgToSerialEMLog(DataSource)
 
     lines = []
     maxdrift = -1
@@ -445,23 +863,23 @@ def PlotDriftGrid(DataSource, OutputImageFile):
 
             colorVal = 'black'
             numPoints = len(t.driftStamps)
-            if  numPoints < len(colors):
+            if numPoints < len(colors):
                 colorVal = colors[numPoints]
 
             c.append(colorVal)
 
-            DriftGrid.append((t.coordinates[0], t.coordinates[1], pow(t.dwellTime, 2)))
+            DriftGrid.append((t.coordinates[0], t.coordinates[1], t.dwellTime))  # pow(t.dwellTime, 1.5)))
             maxdrift = max(maxdrift, t.driftStamps[-1][1])
             if fastestTime is None:
-                fastestTime = t.totalTime
+                fastestTime = t.acquisitionTime
             else:
-                fastestTime = min(fastestTime, t.totalTime)
+                fastestTime = min(fastestTime, t.acquisitionTime)
 
             lines.append((time, drift))
-            NumTiles = NumTiles + 1
+            NumTiles += 1
 
-#    print "Fastest Capture: %g" % fastestTime
-#
+    #    print "Fastest Capture: %g" % fastestTime
+    #
 
     # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
 
@@ -473,10 +891,77 @@ def PlotDriftGrid(DataSource, OutputImageFile):
         y.append(d[1])
         s.append(d[2])
 
+    title = "Dwell time at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
+
+    plot.Scatter(x, y, s, c=c, marker='s', Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
+
+    return
+
+
+def PlotDriftGrid(DataSource, OutputImageFile):
+    Data = ArgToSerialEMLog(DataSource)
+
+    lines = []
+    maxdrift = -1
+    NumTiles = int(0)
+    fastestTime = float('inf')
+    colors = ['black', 'blue', 'green', 'yellow', 'orange', 'red', 'purple']
+
+    DriftGrid = []
+    c = []
+    for t in list(Data.tileData.values()):
+        if not (t.dwellTime is None or t.drift is None):
+            time = []
+            drift = []
+
+            for s in t.driftStamps:
+                time.append(s[0])
+                drift.append(s[1])
+
+            colorVal = 'black'
+            numPoints = len(t.driftStamps)
+            if numPoints < len(colors):
+                colorVal = colors[numPoints]
+
+            c.append(colorVal)
+            # c.append((0.0,1.0,0.0))
+
+            DriftGrid.append(
+                (t.coordinates[0], t.coordinates[1], t.driftStamps[-1][1]))  # max(drift))) #pow(t.dwellTime, 1.5)))
+            maxdrift = max(maxdrift, t.driftStamps[-1][1])
+            if fastestTime is None:
+                fastestTime = t.acquisitionTime
+            else:
+                fastestTime = min(fastestTime, t.acquisitionTime)
+
+            lines.append((time, drift))
+            NumTiles += 1
+
+    #    print "Fastest Capture: %g" % fastestTime
+    #
+
+    # PlotHistogram.PolyLinePlot(lines, Title="Stage settle time, max drift %g" % maxdrift, XAxisLabel='Dwell time (sec)', YAxisLabel="Drift (nm/sec)", OutputFilename=None)
+
+    import math
+
+    x = []
+    y = []
+    s = []
+    c = []
+    sqrtMaxDrift = math.sqrt(maxdrift)
+    for d in DriftGrid:
+        fraction = math.sqrt(d[2]) / sqrtMaxDrift  # / maxdrift
+
+        x.append(d[0])
+        y.append(d[1])
+        s.append(fraction * sqrtMaxDrift * 3)
+
+        # c.append( (fraction, fraction, fraction) )
+        c.append('gray')
+
     title = "Drift recorded at each capture position in mosaic\nradius = dwell time ^ 2, color = # of tries"
 
-    plot.Scatter(x, y, s, c=c, Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
-
+    plot.Scatter(x, y, s, c=c, marker='s', Title=title, XAxisLabel='X', YAxisLabel='Y', OutputFilename=OutputImageFile)
     return
 
 
@@ -488,19 +973,50 @@ if __name__ == "__main__":
     (outfile, ext) = os.path.splitext(basename)
     outdir = os.path.dirname(datapath)
 
-    Data = __argToSerialEMLog(datapath)
+    Data = ArgToSerialEMLog(datapath, usecache=False)
 
-    dtime = datetime.timedelta(seconds=(Data.MontageEnd - Data.MontageStart))
+    dtime = datetime.timedelta(seconds=round(Data.MontageEnd - Data.MontageStart, 1))
 
-    print("%d tiles" % len(Data.tileData))
+    total_time = datetime.timedelta(seconds=round((
+                                                              Data.MontageEnd - Data.MontageStart) + Data.LowMagCookTime + Data.HighMagCookTime + Data.FilamentStabilizationTime,
+                                                  1))
+
+    print("Parsed %d tiles" % len(Data.tileData))
+
+    if Data.LowMagCookDone:
+        low_mag_time = datetime.timedelta(seconds=round(Data.LowMagCookTime))
+        print("Low mag cook: %s" % str(low_mag_time))
+    else:
+        print("No Low mag cook macro")
+
+    if Data.HighMagCookDone:
+        high_mag_time = datetime.timedelta(seconds=round(Data.HighMagCookTime))
+        print("High mag cook: %s" % str(high_mag_time))
+    else:
+        print("No High mag cook")
+
+    if Data.FilamentStabilizationTime > 0:
+        filament_time = datetime.timedelta(seconds=round(Data.FilamentStabilizationTime))
+        print("Filament stabilization: %s" % str(filament_time))
+    else:
+        print("No Filament stabilization")
+
+    setup_time = datetime.timedelta(seconds=round(Data.CaptureSetupTime))
+    print("Setup Time: %s" % str(setup_time))
 
     print("Average drift: %g nm/sec" % Data.AverageTileDrift)
     print("Min drift: %g nm/sec" % Data.MinTileDrift)
     print("Max drift: %g nm/sec" % Data.MaxTileDrift)
-    print("Average tile time: %g sec" % Data.AverageTileTime)
-    print("Fastest tile time: %g sec" % Data.FastestTileTime)
-    print("Total time: %s" % str(dtime))
+    print("Fastest tile acquisition time: %g sec" % round(Data.FastestTileTime, 2))
+    print("Average tile settle: %g sec" % round(Data.AverageSettleTime, 2))
+    print("Average tile acquisition: %g sec" % round(Data.AverageAcquisitionTime, 2))
+    print("Average total time/tile: %g sec" % round(Data.AverageTileTime, 2))
+
+    # print("Average drift: %g nm/sec" % Data.AverageTileDrift)
+    print("Total Tile Acquisition time: %s" % str(dtime))
+    print("Total time: %s" % str(total_time))
     print("Total tiles: %d" % Data.NumTiles)
 
     PlotDriftGrid(datapath, os.path.join(outdir, outfile + "_driftgrid.svg"))
+    PlotDwellTimeGrid(datapath, os.path.join(outdir, outfile + "_dwellgrid.svg"))
     PlotDriftSettleTime(datapath, os.path.join(outdir, outfile + "_settletime.svg"))

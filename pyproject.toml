@@ -8,34 +8,42 @@ include = ["nornir_buildmanager*"]
 
 [project]
 name = "nornir_buildmanager"
-version = "1.4.1"
+version = "1.6.7"
 authors = [
-  { name="James Anderson", email="James.R.Anderson@utah.edu" },
+    { name = "James Anderson", email = "James.R.Anderson@utah.edu" },
 ]
 description = "Scripts for the construction of 3D volumes from 2D image sets."
 readme = "README.md"
-license = {file = "LICENSE"}
-requires-python = ">=3.7"
+license = { file = "LICENSE" }
+requires-python = ">=3.13"
 dependencies = [
-	"numpy",
-	"scipy",
-	"matplotlib",
-	"psutil",
-	"nornir_pools @ git+https://github.com/jamesra/nornir-pools#egg=nornir_pools-1.4.1",
-	"nornir_shared @ git+https://github.com/jamesra/nornir-shared#egg=nornir_shared-1.4.1",
-	"nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration#egg=nornir_imageregistration-1.4.1"
+    "numpy >= 1.26",
+    "scipy >= 1.11",
+    "matplotlib >= 3.8",
+    "validators >= 0.23",
+    "nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@master",
+    "nornir_shared @ git+https://github.com/jamesra/nornir-shared.git@dev",
+    "nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@dev",
+    "python-dotenv >= 1.0.1"
 ]
 classifiers = [
-    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "Topic :: Scientific/Engineering",
 ]
 
 [project.scripts]
 nornir-build = "nornir_buildmanager.build:Execute"
+nornir-migrate-volume = "nornir_buildmanager.metadata.migrate:main"
+
+[project.optional-dependencies]
+gpu = ["cupy >= 13.0"]
+psutil = [
+    "psutil >= 7.0.0"
+]
 
 [tool.setuptools]
-package-data = {"nornir_buildmanager" = ["config/*.xml"]}
+package-data = { "nornir_buildmanager" = ["config/*.xml"] }
 
 [project.urls]
 Homepage = "https://github.com/jamesra/nornir-buildmanager"

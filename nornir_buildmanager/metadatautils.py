@@ -5,59 +5,68 @@ Created on Apr 15, 2013
 '''
 
 import os
+from typing import Generator
 
-import nornir_buildmanager.VolumeManagerETree as VolumeManagerETree
+import nornir_buildmanager.volumemanager
 import nornir_shared.misc as misc
 
 
-def GetOrCreateImageNodeHelper(ParentNode, OutputImageName,  InputTransformNode=None):
+def GetOrCreateImageNodeHelper(ParentNode, OutputImageName, InputTransformNode=None):
     # Create a node in the XML records
     Created = False
     OverlayImageNode = ParentNode.GetChildByAttrib('Image', 'Path', os.path.basename(OutputImageName))
     if not OverlayImageNode is None:
-        cleaned = OverlayImageNode.CleanIfInvalid()
-        if cleaned:
-            OverlayImageNode = None
-            
-        if not InputTransformNode is None:
-            if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+        if OverlayImageNode.NeedsValidation:
+            cleaned, reason = OverlayImageNode.CleanIfInvalid()
+            if cleaned:
                 OverlayImageNode = None
 
+            if not InputTransformNode is None:
+                if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+                    OverlayImageNode = None
+
     if OverlayImageNode is None:
-        OverlayImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(OutputImageName))
+        OverlayImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(os.path.basename(OutputImageName))
         OverlayImageNode.SetTransform(InputTransformNode)
         ParentNode.append(OverlayImageNode)
         Created = True
 
-    return (Created, OverlayImageNode)
+    return Created, OverlayImageNode
 
 
-def GetOrCreateHistogramNodeHelper(ParentNode, DataPath, ImagePath, InputTransformNode=None):
-    # Create a node in the XML records
-    Created = False
+def GetOrCreateHistogramNodeHelper(ParentNode,
+                                   DataPath: str,
+                                   ImagePath: str,
+                                   InputTransformNode=None,
+                                   Type: str | None = None):
+    """Create a Histogram node with child elements for the data and image"""
+    created = False
     histogramNode = ParentNode.find('Histogram')
-    if not histogramNode is None:
-        cleaned = histogramNode.CleanIfInvalid()
-        if cleaned:
-            histogramNode = None
-            
-        if not InputTransformNode is None:
-            if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+    if histogramNode is not None:
+        if histogramNode.NeedsValidation:
+            cleaned, reason = histogramNode.CleanIfInvalid()
+            if cleaned:
                 histogramNode = None
 
+            if InputTransformNode is not None:
+                if InputTransformNode.CleanIfInputTransformMismatched(InputTransformNode):
+                    histogramNode = None
+
     if histogramNode is None:
-        histogramNode = VolumeManagerETree.HistogramNode.Create(InputTransformNode, None)
-        DataNode = VolumeManagerETree.DataNode.Create(os.path.basename(DataPath))
+        histogramNode = nornir_buildmanager.volumemanager.HistogramNode.Create(InputTransformNode, Type=Type)
+        DataNode = nornir_buildmanager.volumemanager.DataNode.Create(os.path.basename(DataPath))
         histogramNode.append(DataNode)
-        
-        ImageNode = VolumeManagerETree.ImageNode.Create(os.path.basename(ImagePath))
-        histogramNode.append(ImageNode)
-        
+
+        if ImagePath is not None:
+            ImageNode = nornir_buildmanager.volumemanager.ImageNode.Create(os.path.basename(ImagePath))
+            histogramNode.append(ImageNode)
+
         histogramNode.SetTransform(InputTransformNode)
         ParentNode.append(histogramNode)
-        Created = True
+        created = True
 
-    return (Created, histogramNode)
+    return created, histogramNode
+
 
 def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, CreateFunc=None, ReplaceFunc=None):
     '''
@@ -69,8 +78,8 @@ def GetOrCreateNodeHelper(ParentNode, tag, Path, InputTransformNode=None, Create
     :param function CreateFunc: Function to call if a new node is created and needs to be initialized
     :param function ReplaceFunc: Function to call if an existing node is found that does not pass the test
     '''
-    raise NotImplemented()
-    
+    raise NotImplementedError()
+
 
 def CreateLevelNodes(ParentNode, DownsampleLevels):
     DownsampleLevels = misc.SortedListFromDelimited(DownsampleLevels)
@@ -79,7 +88,7 @@ def CreateLevelNodes(ParentNode, DownsampleLevels):
     for level in DownsampleLevels:
         LevelNode = ParentNode.GetChildByAttrib('Level', 'Downsample', level)
         if LevelNode is None:
-            LevelNode = VolumeManagerETree.LevelNode.Create(level)
+            LevelNode = nornir_buildmanager.volumemanager.LevelNode.Create(level)
             [added, LevelNode] = ParentNode.UpdateOrAddChildByAttrib(LevelNode, 'Downsample')
             LevelsCreated.append(LevelNode)
 
@@ -97,8 +106,8 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
         Type = attribs['Type']
         del attribs['Type']
 
-    ImageSetNode = VolumeManagerETree.ImageSetNode.Create(Type, attrib=attribs);
-    [NewImageSetNode, ImageSetNode] = ParentNode.UpdateOrAddChildByAttrib(ImageSetNode, 'Path');
+    ImageSetNode = nornir_buildmanager.volumemanager.ImageSetNode.Create(Type, attrib=attribs)
+    [NewImageSetNode, ImageSetNode] = ParentNode.UpdateOrAddChildByAttrib(ImageSetNode, 'Path')
 
     os.makedirs(ImageSetNode.FullPath, exist_ok=True)
 
@@ -108,25 +117,27 @@ def CreateImageSetForImage(ParentNode, ImageFullPath, Downsample=1, **attribs):
 
     imagePath = os.path.basename(ImageFullPath)
 
-    imagenode = VolumeManagerETree.ImageNode.Create(imagePath)
+    imagenode = nornir_buildmanager.volumemanager.ImageNode.Create(imagePath)
     [nodecreated, imagenode] = LevelNode.UpdateOrAddChildByAttrib(imagenode, 'Path')
 
     return ImageSetNode
 
 
-def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample):
+def FindSectionImageSet(BlockNode, SectionNumber, ImageSetName, Downsample) -> Generator[
+    nornir_buildmanager.volumemanager.ImageSetNode, None, None]:
     '''Find the first image matching the criteria'''
     InputImageSetXPathTemplate = "Section[@Number='%(SectionNumber)s']/Channel/Filter/ImageSet[@Name='%(ImageSetName)s']"
     InputImageXPathTemplate = "Level[@Downsample='%(Downsample)d']/Image"
 
-    ImageSets = list(BlockNode.findall(InputImageSetXPathTemplate % {'SectionNumber' : SectionNumber,
-                                                                       'ImageSetName' : ImageSetName}))
+    ImageSets = BlockNode.findall(InputImageSetXPathTemplate % {'SectionNumber': SectionNumber,
+                                                                'ImageSetName': ImageSetName})
     for ImageSet in ImageSets:
-        ImageXPath = InputImageXPathTemplate % {'Downsample' : Downsample}
+        ImageXPath = InputImageXPathTemplate % {'Downsample': Downsample}
         ImageNode = ImageSet.find(ImageXPath)
-        return ImageSet
+        yield ImageSet
+        return
 
-    return None
+    return
 
 
 def MaskImageNodeForImageSet(ImageSetNode, Downsample):
@@ -137,7 +148,7 @@ def MaskImageNodeForImageSet(ImageSetNode, Downsample):
 
         if not MappedMaskSetNode is None:
             MaskImageXPathTemplate = "Level[@Downsample='%(Downsample)d']/Image"
-            MaskImageXPath = MaskImageXPathTemplate % {'Downsample' : Downsample}
+            MaskImageXPath = MaskImageXPathTemplate % {'Downsample': Downsample}
             return MappedMaskSetNode.find(MaskImageXPath)
 
     return None

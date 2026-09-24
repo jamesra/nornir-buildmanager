@@ -1,0 +1,63 @@
+from __future__ import annotations
+
+import os
+
+from nornir_buildmanager.volumemanager import DataNode, ImageNode, InputTransformHandler, XElementWrapper
+
+
+class HistogramBase(InputTransformHandler, XElementWrapper):
+
+    @property
+    def DataNode(self) -> DataNode:
+        return self.find('Data')  # type: ignore[return-value]
+
+    @property
+    def ImageNode(self) -> ImageNode:
+        return self.find('Image')  # type: ignore[return-value]
+
+    @property
+    def DataFullPath(self) -> str:
+        if self.DataNode is None:
+            return ""
+
+        return self.DataNode.FullPath
+
+    @property
+    def ImageFullPath(self) -> str:
+        if self.ImageNode is None:
+            return ""
+
+        return self.ImageNode.FullPath
+
+    @property
+    def Checksum(self) -> str:
+        if self.DataNode is None:
+            return ""
+        else:
+            return self.DataNode.Checksum or ""
+
+    @property
+    def NeedsValidation(self) -> bool:
+
+        if self.InputTransformNeedsValidation()[0]:
+            return True
+
+        if self.DataNode is None:
+            return True
+
+        return self.DataNode.NeedsValidation
+
+    def IsValid(self) -> tuple[bool, str]:
+        """Remove this node if our output does not exist"""
+        if self.DataNode is None:
+            return False, "No data node found"
+        else:
+            if not os.path.exists(self.DataNode.FullPath):
+                return False, "No file to match data node"
+
+        '''Check for the transform node and ensure the checksums match'''
+        valid, reason = super(HistogramBase, self).IsValid()
+        if valid:
+            return self.InputTransformIsValid()
+        else:
+            return valid, reason
