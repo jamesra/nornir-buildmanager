@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import math
 import os
@@ -32,7 +33,7 @@ SAM2_COLUMNS = (
 
 _CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS locations (
-    location_id INTEGER PRIMARY KEY,
+    location_id INTEGER NOT NULL,
     z INTEGER NOT NULL,
     structure_id INTEGER,
     structure_label TEXT,
@@ -48,7 +49,8 @@ CREATE TABLE IF NOT EXISTS locations (
     sam2Stability REAL,
     sam2GtIou REAL,
     sam2Checkpoint TEXT,
-    sam2ScoredAt TEXT
+    sam2ScoredAt TEXT,
+    PRIMARY KEY (location_id, image_key)
 )
 """
 
@@ -74,12 +76,37 @@ def connect(output_path: str | os.PathLike[str]) -> sqlite3.Connection:
 
 
 def _ensure_locations_schema(connection: sqlite3.Connection) -> None:
-    """Create locations and rename jpeg_relpath on catalogs from JPEG-era exports."""
+    """Create locations, rename JPEG-era columns, and key rows by image as well as location."""
     connection.execute(_CREATE_SQL)
     columns = {row[1] for row in connection.execute("PRAGMA table_info(locations)")}
     if "jpeg_relpath" in columns and "image_relpath" not in columns:
         connection.execute("ALTER TABLE locations RENAME COLUMN jpeg_relpath TO image_relpath")
         connection.commit()
+    if _primary_key_columns(connection) != ["location_id", "image_key"]:
+        _migrate_location_primary_key(connection)
+
+
+def _primary_key_columns(connection: sqlite3.Connection) -> list[str]:
+    """Primary-key column names in key order."""
+    rows = list(connection.execute("PRAGMA table_info(locations)"))
+    keyed = sorted((int(row[5]), str(row[1])) for row in rows if int(row[5]) > 0)
+    return [name for _order, name in keyed]
+
+
+def _migrate_location_primary_key(connection: sqlite3.Connection) -> None:
+    """Rebuild locations so one location can have a row per training image."""
+    connection.execute("ALTER TABLE locations RENAME TO locations_old")
+    connection.execute(_CREATE_SQL)
+    old_cols = {str(row[1]) for row in connection.execute("PRAGMA table_info(locations_old)")}
+    new_cols = [str(row[1]) for row in connection.execute("PRAGMA table_info(locations)")]
+    shared = [name for name in new_cols if name in old_cols]
+    if shared:
+        quoted = ", ".join(shared)
+        connection.execute(
+            f"INSERT INTO locations ({quoted}) SELECT {quoted} FROM locations_old"
+        )
+    connection.execute("DROP TABLE locations_old")
+    connection.commit()
 
 
 def load_ignore_ids(output_path: str | os.PathLike[str]) -> set[int]:
@@ -124,20 +151,21 @@ def apply_ignore_moves(output_path: str | os.PathLike[str]) -> int:
     ignored_dir = output / "ignored"
     moved = 0
     for location_id in load_ignore_ids(output):
-        source = _find_mask(output / "masks", location_id)
-        if source is None:
+        sources = _find_masks(output / "masks", location_id)
+        if not sources:
             continue
         ignored_dir.mkdir(parents=True, exist_ok=True)
-        destination = ignored_dir / source.name
-        if destination.is_file():
-            destination.unlink()
-        source.replace(destination)
-        moved += 1
+        for source in sources:
+            destination = ignored_dir / source.name
+            if destination.is_file():
+                destination.unlink()
+            source.replace(destination)
+            moved += 1
     return moved
 
 
 def ignore_location(output_path: str | os.PathLike[str], location_id: int) -> bool:
-    """Add *location_id* to ignore.json and move its mask. Returns True if listed."""
+    """Add *location_id* to ignore.json and move every mask for it. Returns True if listed."""
     ids = load_ignore_ids(output_path)
     ids.add(int(location_id))
     save_ignore_ids(output_path, ids)
@@ -147,59 +175,72 @@ def ignore_location(output_path: str | os.PathLike[str], location_id: int) -> bo
 
 
 def restore_location(output_path: str | os.PathLike[str], location_id: int) -> bool:
-    """Remove *location_id* from ignore.json and move the mask back to `masks/`."""
+    """Remove *location_id* from ignore.json and move every mask back to `masks/`."""
     location_id = int(location_id)
     ids = load_ignore_ids(output_path)
     ids.discard(location_id)
     save_ignore_ids(output_path, ids)
-    source = _find_mask(Path(output_path) / "ignored", location_id)
-    if source is not None:
+    sources = _find_masks(Path(output_path) / "ignored", location_id)
+    if sources:
         masks = Path(output_path) / "masks"
         masks.mkdir(parents=True, exist_ok=True)
-        destination = masks / source.name
-        if destination.is_file():
-            destination.unlink()
-        source.replace(destination)
+        for source in sources:
+            destination = masks / source.name
+            if destination.is_file():
+                destination.unlink()
+            source.replace(destination)
     _set_ignored_flag(output_path, location_id, ignored=False)
     return True
 
 
-def load_sam2_by_id(output_path: str | os.PathLike[str]) -> dict[int, dict[str, Any]]:
-    """Return existing SAM2 score columns keyed by location id."""
+def load_sam2_by_id(output_path: str | os.PathLike[str]) -> dict[tuple[int, str], dict[str, Any]]:
+    """Return existing SAM2 score columns keyed by location id and image key."""
     path = sqlite_path(output_path)
     if not path.is_file():
         return {}
     connection = connect(output_path)
     try:
         rows = connection.execute(
-            "SELECT location_id, " + ", ".join(SAM2_COLUMNS) + " FROM locations"
+            "SELECT location_id, image_key, " + ", ".join(SAM2_COLUMNS) + " FROM locations"
         ).fetchall()
     except sqlite3.OperationalError:
         return {}
     finally:
         connection.close()
-    preserved: dict[int, dict[str, Any]] = {}
+    preserved: dict[tuple[int, str], dict[str, Any]] = {}
     for row in rows:
         payload = {name: row[name] for name in SAM2_COLUMNS}
         if any(value is not None for value in payload.values()):
-            preserved[int(row["location_id"])] = payload
+            preserved[(int(row["location_id"]), str(row["image_key"]))] = payload
     return preserved
 
 
 def upsert_catalog(
     output_path: str | os.PathLike[str],
     location_ids: Iterable[int] | None = None,
+    *,
+    z: int | None = None,
+    image_keys: Iterable[str] | None = None,
 ) -> int:
     """Insert or update catalog rows without wiping SAM2 score columns.
 
-    When *location_ids* is set, only those ids are written. Existing
-    ``sam2*`` values stay on conflict; new rows get NULL scores.
+    When *location_ids* is set, only those ids are written. When *z* and/or
+    *image_keys* are set, only matching SA-1B JSON / mask files are read so a
+    long volume export does not reopen every crop on every section.
+    Existing ``sam2*`` values stay on conflict; new rows get NULL scores.
     """
     output = Path(output_path)
     apply_ignore_moves(output)
     ignored_ids = load_ignore_ids(output)
-    records_by_id = _records_by_id(output)
-    rows = _collect_location_rows(output, records_by_id, ignored_ids)
+    records_by_id = _records_by_id(output, z=z)
+    keys = None if image_keys is None else {str(key) for key in image_keys}
+    rows = _collect_location_rows(
+        output,
+        records_by_id,
+        ignored_ids,
+        z=z,
+        image_keys=keys,
+    )
     if location_ids is not None:
         wanted = {int(item) for item in location_ids}
         rows = [row for row in rows if int(row["location_id"]) in wanted]
@@ -259,7 +300,7 @@ def rebuild_catalog(output_path: str | os.PathLike[str]) -> int:
         try:
             connection.execute("DELETE FROM locations")
             for index, row in enumerate(rows, start=1):
-                sam2 = preserved.get(int(row["location_id"]), {})
+                sam2 = preserved.get((int(row["location_id"]), str(row["image_key"])), {})
                 row.update(sam2)
                 _insert_row(connection, row)
                 reporter.update(index)
@@ -275,16 +316,23 @@ def upsert_sam2_scores(
     output_path: str | os.PathLike[str],
     location_id: int,
     scores: dict[str, Any],
+    image_key: str | None = None,
 ) -> None:
-    """Update SAM2 score columns for one location. No-op if the row is missing."""
+    """Update SAM2 score columns for one location, or one image when *image_key* is set."""
     connection = connect(output_path)
     try:
         assignments = ", ".join(f"{name} = ?" for name in SAM2_COLUMNS)
         values = [scores.get(name) for name in SAM2_COLUMNS]
-        connection.execute(
-            f"UPDATE locations SET {assignments} WHERE location_id = ?",
-            [*values, int(location_id)],
-        )
+        if image_key is None:
+            connection.execute(
+                f"UPDATE locations SET {assignments} WHERE location_id = ?",
+                [*values, int(location_id)],
+            )
+        else:
+            connection.execute(
+                f"UPDATE locations SET {assignments} WHERE location_id = ? AND image_key = ?",
+                [*values, int(location_id), image_key],
+            )
         connection.commit()
     finally:
         connection.close()
@@ -297,7 +345,9 @@ def list_catalog_rows(output_path: str | os.PathLike[str]) -> list[dict[str, Any
         return []
     connection = connect(output_path)
     try:
-        rows = connection.execute("SELECT * FROM locations ORDER BY z, location_id").fetchall()
+        rows = connection.execute(
+            "SELECT * FROM locations ORDER BY z, location_id, image_key"
+        ).fetchall()
         return [dict(row) for row in rows]
     finally:
         connection.close()
@@ -338,7 +388,7 @@ def _upsert_row(connection: sqlite3.Connection, row: dict[str, Any]) -> None:
     )
     connection.execute(
         f"INSERT INTO locations ({', '.join(columns)}) VALUES ({placeholders}) "
-        f"ON CONFLICT(location_id) DO UPDATE SET {updates}",
+        f"ON CONFLICT(location_id, image_key) DO UPDATE SET {updates}",
         [row.get(name) for name in columns],
     )
 
@@ -363,21 +413,34 @@ def _set_ignored_flag(
         connection.close()
 
 
-def _find_mask(folder: Path, location_id: int) -> Path | None:
+def _find_masks(folder: Path, location_id: int) -> list[Path]:
+    """Every mask file for *location_id*, including each split-window fragment."""
     if not folder.is_dir():
-        return None
+        return []
     suffix = f"_{int(location_id)}.png"
-    matches = sorted(folder.glob(f"*{suffix}"))
+    return sorted(path for path in folder.glob(f"*{suffix}") if path.is_file())
+
+
+def _find_mask(folder: Path, location_id: int) -> Path | None:
+    matches = _find_masks(folder, location_id)
     if not matches:
         return None
     return matches[0]
 
 
-def _records_by_id(output: Path) -> dict[int, LocationRecord]:
+def _records_by_id(
+    output: Path,
+    *,
+    z: int | None = None,
+) -> dict[int, LocationRecord]:
     work = output / "_work"
     if not work.is_dir():
         return {}
     by_id: dict[int, LocationRecord] = {}
+    if z is not None:
+        for record in load_section_records(output, int(z)):
+            by_id[record.id] = record
+        return by_id
     for path in work.glob("section_*.jsonl"):
         token = path.name[len("section_") : -len(".jsonl")]
         if not token.isdigit():
@@ -387,19 +450,68 @@ def _records_by_id(output: Path) -> dict[int, LocationRecord]:
     return by_id
 
 
+def _image_key_matches_z(image_key: str, z: int) -> bool:
+    """True when *image_key* looks like ``{volume}_{z}_D...``."""
+    return f"_{int(z)}_D" in image_key
+
+
+def _iter_image_json_paths(
+    images: Path,
+    *,
+    z: int | None,
+    image_keys: set[str] | None,
+) -> list[Path]:
+    """JSON sidecars to read for a catalog pass. Prefer an explicit key list."""
+    if image_keys is not None:
+        paths = [images / f"{key}.json" for key in sorted(image_keys)]
+        return [path for path in paths if path.is_file()]
+    found: list[Path] = []
+    with os.scandir(images) as entries:
+        for entry in entries:
+            if not entry.is_file() or not entry.name.endswith(".json"):
+                continue
+            if z is not None and not _image_key_matches_z(entry.name[:-5], z):
+                continue
+            found.append(Path(entry.path))
+    found.sort()
+    return found
+
+
+def _read_json_object(path: Path) -> dict[str, Any] | None:
+    """Load one JSON object; skip corrupt or non-dict files.
+
+    Propagates ``EMFILE`` / ``ENFILE`` so callers see FD exhaustion instead of
+    silently omitting crops from the catalog.
+    """
+    try:
+        with path.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except OSError as exc:
+        if exc.errno in (errno.EMFILE, errno.ENFILE):
+            raise
+        return None
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
 def _collect_location_rows(
     output: Path,
     records_by_id: dict[int, LocationRecord],
     ignored_ids: set[int],
+    *,
+    z: int | None = None,
+    image_keys: set[str] | None = None,
 ) -> list[dict[str, Any]]:
-    rows: dict[int, dict[str, Any]] = {}
+    rows: dict[tuple[int, str], dict[str, Any]] = {}
     images = output / "images"
     if images.is_dir():
-        for json_path in sorted(images.glob("*.json")):
+        for json_path in _iter_image_json_paths(images, z=z, image_keys=image_keys):
             image_key = json_path.stem
-            try:
-                payload = json.loads(json_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
+            payload = _read_json_object(json_path)
+            if payload is None:
                 continue
             annotations = payload.get("annotations") or []
             for item in annotations:
@@ -407,7 +519,7 @@ def _collect_location_rows(
                 record = records_by_id.get(location_id)
                 area = item.get("area")
                 stored_radius = record.radius if record is not None else None
-                rows[location_id] = _row(
+                rows[(location_id, image_key)] = _row(
                     output,
                     location_id=location_id,
                     z=_row_z(record, image_key, item),
@@ -421,23 +533,33 @@ def _collect_location_rows(
     for folder, ignored_flag in ((output / "masks", False), (output / "ignored", True)):
         if not folder.is_dir():
             continue
-        for path in folder.glob("*.png"):
-            location_id = _location_id_from_mask_name(path)
-            if location_id is None or location_id in rows:
-                continue
-            image_key = path.stem[: -len(f"_{location_id}")]
-            record = records_by_id.get(location_id)
-            rows[location_id] = _row(
-                output,
-                location_id=location_id,
-                z=_row_z(record, image_key, {}),
-                record=record,
-                annotation={},
-                image_key=image_key,
-                area=None,
-                stored_radius=record.radius if record is not None else None,
-                ignored_ids=ignored_ids if not ignored_flag else ignored_ids | {location_id},
-            )
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if not entry.is_file() or not entry.name.endswith(".png"):
+                    continue
+                path = Path(entry.path)
+                location_id = _location_id_from_mask_name(path)
+                if location_id is None:
+                    continue
+                image_key = path.stem[: -len(f"_{location_id}")]
+                if image_keys is not None and image_key not in image_keys:
+                    continue
+                if z is not None and not _image_key_matches_z(image_key, z):
+                    continue
+                if (location_id, image_key) in rows:
+                    continue
+                record = records_by_id.get(location_id)
+                rows[(location_id, image_key)] = _row(
+                    output,
+                    location_id=location_id,
+                    z=_row_z(record, image_key, {}),
+                    record=record,
+                    annotation={},
+                    image_key=image_key,
+                    area=None,
+                    stored_radius=record.radius if record is not None else None,
+                    ignored_ids=ignored_ids if not ignored_flag else ignored_ids | {location_id},
+                )
     return list(rows.values())
 
 
@@ -492,9 +614,9 @@ def _mask_relpath(output: Path, image_key: str, location_id: int, *, ignored: bo
     relative = f"{folder}/{name}"
     if (output / relative).is_file():
         return relative
-    found = _find_mask(output / folder, location_id)
-    if found is not None:
-        return str(found.relative_to(output)).replace("\\", "/")
+    found = _find_masks(output / folder, location_id)
+    if len(found) == 1:
+        return str(found[0].relative_to(output)).replace("\\", "/")
     return relative
 
 

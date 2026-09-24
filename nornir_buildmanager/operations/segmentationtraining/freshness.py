@@ -11,6 +11,31 @@ from typing import Any, Iterable
 
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 
+EXPORTER_TILED = "tiled"
+EXPORTER_LEGACY = "legacy"
+GEOMETRY_TILED = "fixed-d-halfstep-v1"
+GEOMETRY_LEGACY = "coarsen-to-fit-v1"
+
+_GEOMETRY_BY_EXPORTER = {
+    EXPORTER_TILED: GEOMETRY_TILED,
+    EXPORTER_LEGACY: GEOMETRY_LEGACY,
+}
+
+
+def geometry_version_for(exporter: str) -> str:
+    """Watermark version for an ExportAnnotationCrops -Exporter value.
+
+    ``tiled`` keeps the existing half-step version so current section watermarks
+    still match. ``legacy`` is a different version so those sections rebuild.
+    """
+    key = (exporter or EXPORTER_TILED).strip().lower()
+    try:
+        return _GEOMETRY_BY_EXPORTER[key]
+    except KeyError:
+        raise ValueError(
+            f"Exporter must be {EXPORTER_TILED} or {EXPORTER_LEGACY}, got {exporter!r}"
+        ) from None
+
 
 @dataclass(frozen=True)
 class ExportParams:
@@ -24,7 +49,7 @@ class ExportParams:
     channel: str
     filter_name: str
     volume: str
-    geometry_version: str = "viking-catmull-v1"
+    geometry_version: str = GEOMETRY_TILED
     tile_x_dim: int = 0
     tile_y_dim: int = 0
     crop_format: str = "png"
@@ -46,6 +71,10 @@ class ImageWatermark:
     iy1: int
     member_ids: list[int]
     max_last_modified: str
+    origin_x: int = 0
+    origin_y: int = 0
+    width: int = 0
+    height: int = 0
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -55,6 +84,10 @@ class ImageWatermark:
             "ix1": self.ix1,
             "iy0": self.iy0,
             "iy1": self.iy1,
+            "originX": self.origin_x,
+            "originY": self.origin_y,
+            "width": self.width,
+            "height": self.height,
             "memberIds": self.member_ids,
             "maxLastModified": self.max_last_modified,
         }
@@ -70,15 +103,38 @@ class ImageWatermark:
             iy1=int(payload.get("iy1", 0)),
             member_ids=[int(i) for i in payload.get("memberIds", [])],
             max_last_modified=str(payload.get("maxLastModified", "")),
+            origin_x=int(payload.get("originX", 0)),
+            origin_y=int(payload.get("originY", 0)),
+            width=int(payload.get("width", 0)),
+            height=int(payload.get("height", 0)),
         )
 
     def same_tiles(self, other: ImageWatermark) -> bool:
-        return (
+        """True when both marks describe the same pixel crop, not only the same tiles."""
+        tiles_match = (
             self.downsample == other.downsample
             and self.ix0 == other.ix0
             and self.ix1 == other.ix1
             and self.iy0 == other.iy0
             and self.iy1 == other.iy1
+        )
+        if not tiles_match:
+            return False
+        # Legacy watermarks omit pixel extent; tile indices alone defined the crop.
+        if self.width == 0 or self.height == 0 or other.width == 0 or other.height == 0:
+            return True
+        return (
+            self.origin_x == other.origin_x
+            and self.origin_y == other.origin_y
+            and self.width == other.width
+            and self.height == other.height
+        )
+
+    def same_members(self, other: ImageWatermark) -> bool:
+        """True when membership and LastModified (DB-triggered on shape change) match."""
+        return (
+            set(self.member_ids) == set(other.member_ids)
+            and self.max_last_modified == other.max_last_modified
         )
 
 
@@ -158,9 +214,14 @@ def section_is_fresh(
     params: ExportParams,
     tileset_mtime: float | None,
     force: bool,
+    refresh_odata: bool = False,
 ) -> bool:
-    """True when ExportSectionCrops may skip this Z entirely."""
-    if force or watermark is None:
+    """True when ExportSectionCrops may skip this Z entirely.
+
+    ``refresh_odata`` always re-enters so per-crop LastModified checks can
+    decide skip vs mask-only without doing a full restitch.
+    """
+    if force or refresh_odata or watermark is None:
         return False
     if set(watermark.ids) != id_set(records):
         return False
@@ -201,8 +262,17 @@ def image_rebuild_mode(
     tileset_mtime: float | None,
     previous_tileset_mtime: float | None,
     force: bool,
+    refresh_odata: bool = False,
 ) -> str:
-    """Return ``skip``, ``mask_only``, or ``full`` for one shared crop."""
+    """Return ``skip``, ``mask_only``, or ``full`` for one shared crop.
+
+    ``section_is_fresh`` returns False for ``refresh_odata``, so this function
+    is always invoked per-crop during a refresh. When ``same_members`` is True
+    (same ids + unchanged LastModified, which the DB triggers on MosaicShape
+    edits), the crop is skipped entirely. When LastModified changed the masks
+    are regenerated without restitching the PNG.
+    """
+    del refresh_odata  # handled at section level; per-crop uses LastModified
     if force or previous is None:
         return "full"
     if params_hash != (previous_params_hash or ""):
@@ -213,10 +283,8 @@ def image_rebuild_mode(
         return "full"
     if not image_path.is_file():
         return "full"
-    members_match = (
-        set(previous.member_ids) == set(current.member_ids)
-        and previous.max_last_modified == current.max_last_modified
-    )
-    if members_match and json_path.is_file() and image_output_fresh(image_path, tileset_mtime):
+    if previous.same_members(current) and json_path.is_file() and image_output_fresh(
+        image_path, tileset_mtime
+    ):
         return "skip"
     return "mask_only"

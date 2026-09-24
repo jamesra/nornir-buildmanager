@@ -23,9 +23,12 @@ from PIL import Image
 
 from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
+    EXPORTER_LEGACY,
+    EXPORTER_TILED,
     ExportParams,
     ImageWatermark,
     SectionWatermark,
+    geometry_version_for,
     id_set,
     image_rebuild_mode,
     load_section_watermark,
@@ -50,6 +53,8 @@ from nornir_buildmanager.operations.segmentationtraining.progress import (
     SECTIONS_TRACK_ID,
     STITCH_LABEL,
     STITCH_TRACK_ID,
+    STRIPS_LABEL,
+    STRIPS_TRACK_ID,
 )
 from nornir_buildmanager.progress import report_iterate
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
@@ -71,10 +76,15 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     StitchJob,
+    count_column_bands,
     crop_image_filename,
+    default_column_band,
+    downsample_stage_dir,
     finer_dirs_for_downsample,
     probe_tile_pixel_size,
     resolve_crop_image,
+    resolve_section_stage_root,
+    schedule_remove_stage_tree,
     sweep_stitch_jobs,
 )
 
@@ -101,6 +111,7 @@ def IngestGeometries(
     Sections: list[int] | None = None,
     IncludeOffEdge: bool = False,
     Force: bool = False,
+    RefreshOData: bool = False,
     Cleanup: bool = False,
     http_get: Callable[[str], dict[str, Any]] | None = None,
     **kwargs: Any,
@@ -119,7 +130,7 @@ def IngestGeometries(
         sections=_as_int_list(Sections),
         include_off_edge=bool(IncludeOffEdge),
         http_get=http_get,
-        force=bool(Force),
+        force=bool(Force or RefreshOData),
     )
     return None
 
@@ -271,6 +282,7 @@ def ExportSectionCrops(
     VolumeNode: Any = None,
     Pad: float = 1.0,
     Downsample: int = 1,
+    Exporter: str = EXPORTER_TILED,
     MaxTexture: int | None = None,
     MaxTiles: int | None = None,
     MinProcessPixels: int = 16,
@@ -292,6 +304,7 @@ def ExportSectionCrops(
     TilesetMtime: float | None = None,
     AvailableDownsamples: list[int] | None = None,
     Cleanup: bool = False,
+    RefreshOData: bool = False,
     **kwargs: Any,
 ) -> Any:
     """Per-section crop/mask/SA-1B write. Returns a Tileset node only if TileXDim/TileYDim were corrected."""
@@ -320,6 +333,7 @@ def ExportSectionCrops(
             VolumeNode=VolumeNode,
             Pad=Pad,
             Downsample=Downsample,
+            Exporter=Exporter,
             MaxTexture=MaxTexture,
             MaxTiles=MaxTiles,
             MinProcessPixels=MinProcessPixels,
@@ -330,6 +344,7 @@ def ExportSectionCrops(
             MaskWorkers=MaskWorkers,
             StageTiles=StageTiles,
             Force=Force,
+            RefreshOData=RefreshOData,
             FailMissingTileset=FailMissingTileset,
             NoOverlay=NoOverlay,
             Overlay=Overlay,
@@ -362,6 +377,7 @@ def _export_section_crops_entry(
     VolumeNode: Any,
     Pad: float,
     Downsample: int,
+    Exporter: str,
     MaxTexture: int | None,
     MaxTiles: int | None,
     MinProcessPixels: int,
@@ -372,6 +388,7 @@ def _export_section_crops_entry(
     MaskWorkers: int | None,
     StageTiles: str | None,
     Force: bool,
+    RefreshOData: bool,
     FailMissingTileset: bool,
     NoOverlay: bool,
     Overlay: bool,
@@ -418,6 +435,11 @@ def _export_section_crops_entry(
         MaxTiles, max_texture, tileset_info["tile_x_dim"], tileset_info["tile_y_dim"]
     )
     volume = _resolve_volume_name(VolumeNode, filter_node, section)
+    exporter = (Exporter or EXPORTER_TILED).strip().lower()
+    try:
+        geometry_version = geometry_version_for(exporter)
+    except ValueError as exc:
+        raise NornirUserException(str(exc)) from exc
     params = ExportParams(
         pad=float(Pad),
         downsample=int(Downsample),
@@ -427,6 +449,7 @@ def _export_section_crops_entry(
         channel=str(Channels),
         filter_name=str(Filters),
         volume=volume,
+        geometry_version=geometry_version,
         tile_x_dim=int(tileset_info["tile_x_dim"]),
         tile_y_dim=int(tileset_info["tile_y_dim"]),
     )
@@ -437,36 +460,51 @@ def _export_section_crops_entry(
         params=params,
         tileset_mtime=tileset_info["mtime"],
         force=bool(Force),
+        refresh_odata=bool(RefreshOData),
     ):
-        prettyoutput.Log(f"ExportAnnotationCrops: section {z} is fresh, skipping")
+        prettyoutput.Log(
+            f"ExportAnnotationCrops: section {z} is fresh, skipping "
+            f"({len(records)} annotation(s))"
+        )
         return save_node
 
     workers = int(Workers) if Workers else (os.cpu_count() or 1)
     mask_workers = int(MaskWorkers) if MaskWorkers else (os.cpu_count() or 1)
     overlay = bool(Overlay) and not bool(NoOverlay)
-    with force_numpy_computation():
-        export_section_crops(
-            output_path=OutputPath,
-            z=z,
-            records=records,
-            tile_x_dim=tileset_info["tile_x_dim"],
-            tile_y_dim=tileset_info["tile_y_dim"],
-            available=tileset_info["available"],
-            level_dirs=tileset_info["level_dirs"],
-            file_prefix=tileset_info["prefix"],
-            file_postfix=tileset_info["postfix"],
-            params=params,
-            tileset_mtime=tileset_info["mtime"],
-            max_tiles_x=max_tiles_x,
-            max_tiles_y=max_tiles_y,
-            workers=workers,
-            mask_workers=mask_workers,
-            stage_tiles=_empty_to_none(StageTiles),
-            overlay=overlay,
-            force=bool(Force),
-            previous=watermark,
-        )
-        nornir_pools.ReleaseStagePools()
+    stage_tiles = resolve_section_stage_root(
+        _empty_to_none(StageTiles),
+        volume=volume,
+        z=z,
+    )
+    try:
+        with force_numpy_computation():
+            export_section_crops(
+                output_path=OutputPath,
+                z=z,
+                records=records,
+                tile_x_dim=tileset_info["tile_x_dim"],
+                tile_y_dim=tileset_info["tile_y_dim"],
+                available=tileset_info["available"],
+                level_dirs=tileset_info["level_dirs"],
+                file_prefix=tileset_info["prefix"],
+                file_postfix=tileset_info["postfix"],
+                params=params,
+                exporter=exporter,
+                tileset_mtime=tileset_info["mtime"],
+                max_tiles_x=max_tiles_x,
+                max_tiles_y=max_tiles_y,
+                workers=workers,
+                mask_workers=mask_workers,
+                stage_tiles=stage_tiles,
+                overlay=overlay,
+                force=bool(Force),
+                refresh_odata=bool(RefreshOData),
+                previous=watermark,
+            )
+            nornir_pools.ReleaseStagePools()
+    finally:
+        # Different sections use distinct z{n} roots; do not block the next section.
+        schedule_remove_stage_tree(stage_tiles)
     return save_node
 
 
@@ -482,6 +520,7 @@ def export_section_crops(
     file_prefix: str,
     file_postfix: str,
     params: ExportParams,
+    exporter: str = EXPORTER_TILED,
     tileset_mtime: float | None,
     max_tiles_x: int,
     max_tiles_y: int,
@@ -490,6 +529,7 @@ def export_section_crops(
     stage_tiles: str | None,
     overlay: bool,
     force: bool,
+    refresh_odata: bool = False,
     previous: SectionWatermark | None = None,
 ) -> list[str]:
     """Plan, stitch, rasterize, and write SA-1B products for one section."""
@@ -505,6 +545,7 @@ def export_section_crops(
             file_prefix=file_prefix,
             file_postfix=file_postfix,
             params=params,
+            exporter=exporter,
             tileset_mtime=tileset_mtime,
             max_tiles_x=max_tiles_x,
             max_tiles_y=max_tiles_y,
@@ -513,6 +554,7 @@ def export_section_crops(
             stage_tiles=stage_tiles,
             overlay=overlay,
             force=force,
+            refresh_odata=refresh_odata,
             previous=previous,
         )
 
@@ -529,6 +571,7 @@ def _export_section_crops(
     file_prefix: str,
     file_postfix: str,
     params: ExportParams,
+    exporter: str = EXPORTER_TILED,
     tileset_mtime: float | None,
     max_tiles_x: int,
     max_tiles_y: int,
@@ -537,13 +580,14 @@ def _export_section_crops(
     stage_tiles: str | None,
     overlay: bool,
     force: bool,
+    refresh_odata: bool = False,
     previous: SectionWatermark | None = None,
 ) -> list[str]:
     output = Path(output_path)
     plans, polygons_by_id = plan_section_crops(
         records,
         pad=params.pad,
-        finest=params.downsample,
+        downsample=params.downsample,
         available=available,
         max_texture=params.max_texture,
         min_process_pixels=params.min_process_pixels,
@@ -552,6 +596,7 @@ def _export_section_crops(
         max_tiles_x=max_tiles_x,
         max_tiles_y=max_tiles_y,
         volume=params.volume,
+        exporter=exporter,
     )
     by_id = {record.id: record for record in records}
     previous_images = {item.key: item for item in (previous.images or [])} if previous else {}
@@ -582,16 +627,15 @@ def _export_section_crops(
             tileset_mtime=tileset_mtime,
             previous_tileset_mtime=previous_mtime,
             force=force,
+            refresh_odata=refresh_odata,
         )
         if mode == "skip":
             join_specs.append((plan, mode))
             manifest_rows.append(_manifest_row(plan, z, params.volume))
             continue
-        width, height = plan.snap.pixel_size(tile_x_dim, tile_y_dim)
-        origin_x, origin_y = plan.snap.mosaic_origin(
-            float(tile_x_dim * plan.downsample),
-            float(tile_y_dim * plan.downsample),
-        )
+        width, height = plan.output_size()
+        origin_x, origin_y = plan.mosaic_origin()
+        crop_x, crop_y = plan.window.crop_offset(tile_x_dim, tile_y_dim)
         for location_id in plan.location_ids:
             rings = pixel_rings_in_crop(
                 polygons_by_id[location_id],
@@ -615,17 +659,28 @@ def _export_section_crops(
                 )
             )
         if mode == "full":
-            stitch_jobs.append(
-                StitchJob(
-                    image_key=plan.image_key,
-                    snap=plan.snap,
-                    downsample=plan.downsample,
-                    tile_x_dim=tile_x_dim,
-                    tile_y_dim=tile_y_dim,
-                    image_path=str(image_path),
+            if not force and image_path.is_file():
+                # PNG already on disk; skip restitch unless -Force was passed.
+                # Masks still run below since we may have no prior watermark.
+                mode = "mask_only"
+            else:
+                stitch_jobs.append(
+                    StitchJob(
+                        image_key=plan.image_key,
+                        snap=plan.snap,
+                        downsample=plan.downsample,
+                        tile_x_dim=tile_x_dim,
+                        tile_y_dim=tile_y_dim,
+                        image_path=str(image_path),
+                        crop_x=crop_x,
+                        crop_y=crop_y,
+                        crop_width=width,
+                        crop_height=height,
+                    )
                 )
-            )
         join_specs.append((plan, mode))
+
+    _log_section_rebuild_plan(z, join_specs)
 
     mask_results: list[dict[str, Any]] = []
     if mask_jobs:
@@ -662,36 +717,68 @@ def _export_section_crops(
     try:
         for downsample in sorted(by_d):
             level_dir = level_dirs.get(downsample)
+            jobs = by_d[downsample]
             if not level_dir:
                 _logger.warning("No tileset level for downsample %s, skipping stitch", downsample)
-                stitch_offset += len(by_d[downsample])
+                stitch_offset += len(jobs)
                 if stitch_reporter is not None:
                     stitch_reporter.update(stitch_offset)
                 continue
             stage_dir = None
             if stage_tiles:
-                stage_dir = os.path.join(stage_tiles, f"D{downsample}")
+                stage_dir = downsample_stage_dir(stage_tiles, downsample)
                 os.makedirs(stage_dir, exist_ok=True)
             offset = stitch_offset
+            band_width = default_column_band(
+                workers,
+                jobs,
+                tile_x_dim=tile_x_dim,
+                tile_y_dim=tile_y_dim,
+            )
+            strip_total = count_column_bands(jobs, band_width)
+            strip_reporter: prettyoutput.TaskProgressReporter | None = None
+            if strip_total > 0:
+                strip_reporter = prettyoutput.TaskProgressReporter(
+                    STRIPS_TRACK_ID,
+                    strip_total,
+                    name=STRIPS_LABEL,
+                    section=z,
+                )
+                strip_reporter.start()
 
             def on_stitch_progress(done: int, _total: int, _offset: int = offset) -> None:
                 if stitch_reporter is not None:
                     stitch_reporter.update(_offset + done)
 
-            sweep_stitch_jobs(
-                by_d[downsample],
-                source_dir=level_dir,
-                prefix=file_prefix,
-                postfix=file_postfix,
-                workers=workers,
-                stage_dir=stage_dir,
-                use_shared_memory=workers > 1,
-                finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
-                tile_x_dim=tile_x_dim,
-                tile_y_dim=tile_y_dim,
-                on_progress=on_stitch_progress,
-            )
-            stitch_offset += len(by_d[downsample])
+            def on_band(
+                done: int,
+                _total: int,
+                element: str,
+                _reporter: prettyoutput.TaskProgressReporter | None = strip_reporter,
+            ) -> None:
+                if _reporter is not None:
+                    _reporter.update(done, element=element)
+
+            try:
+                sweep_stitch_jobs(
+                    jobs,
+                    source_dir=level_dir,
+                    prefix=file_prefix,
+                    postfix=file_postfix,
+                    workers=workers,
+                    stage_dir=stage_dir,
+                    use_shared_memory=workers > 1,
+                    finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
+                    tile_x_dim=tile_x_dim,
+                    tile_y_dim=tile_y_dim,
+                    column_band=band_width,
+                    on_progress=on_stitch_progress,
+                    on_band=on_band if strip_reporter is not None else None,
+                )
+            finally:
+                if strip_reporter is not None:
+                    strip_reporter.complete()
+            stitch_offset += len(jobs)
     finally:
         if stitch_reporter is not None:
             stitch_reporter.complete()
@@ -704,7 +791,7 @@ def _export_section_crops(
             if overlay:
                 _write_plan_overlay(output, plan, tile_x_dim, tile_y_dim)
             continue
-        width, height = plan.snap.pixel_size(tile_x_dim, tile_y_dim)
+        width, height = plan.output_size()
         annotations: list[dict[str, Any]] = []
         mask_paths: list[str] = []
         for location_id in plan.location_ids:
@@ -767,9 +854,10 @@ def _export_section_crops(
         ),
     )
     keep_ids = id_set(records)
-    upsert_catalog(output, keep_ids)
+    image_keys = [plan.image_key for plan in plans]
+    upsert_catalog(output, keep_ids, z=z, image_keys=image_keys)
     prune_catalog_section(output, z, keep_ids)
-    return [plan.image_key for plan in plans]
+    return image_keys
 
 
 def resolve_max_texture(flag: int | None) -> int:
@@ -888,7 +976,8 @@ def _level_mtime(level: Any) -> float | None:
 
 def _write_plan_overlay(output: Path, plan: PlannedCrop, tile_x_dim: int, tile_y_dim: int) -> None:
     """Rebuild a QA overlay from the existing TEM crop and 1-bit masks."""
-    width, height = plan.snap.pixel_size(tile_x_dim, tile_y_dim)
+    del tile_x_dim, tile_y_dim
+    width, height = plan.output_size()
     tem = resolve_crop_image(output / "images", plan.image_key)
     mask_paths = [
         str(output / "masks" / f"{plan.image_key}_{location_id}.png")
@@ -954,8 +1043,38 @@ def _resolve_volume_name(*nodes: Any) -> str:
     return "volume"
 
 
+def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, str]]) -> None:
+    """Log how many annotations and crops are skipped vs regenerated for one Z."""
+    left_alone: set[int] = set()
+    regenerate: set[int] = set()
+    crops_skip = 0
+    crops_mask_only = 0
+    crops_full = 0
+    for plan, mode in join_specs:
+        members = set(plan.location_ids)
+        if mode == "skip":
+            crops_skip += 1
+            left_alone |= members
+        elif mode == "mask_only":
+            crops_mask_only += 1
+            regenerate |= members
+        else:
+            crops_full += 1
+            regenerate |= members
+    # A location on both a skipped crop and a regen crop still needs work.
+    left_alone -= regenerate
+    prettyoutput.Log(
+        f"ExportAnnotationCrops: section {z} — "
+        f"{len(left_alone)} annotation(s) left alone, "
+        f"{len(regenerate)} need regeneration "
+        f"({crops_mask_only} crop(s) mask-only, {crops_full} crop(s) full stitch); "
+        f"crops skip={crops_skip} mask_only={crops_mask_only} full={crops_full}"
+    )
+
+
 def _image_watermark(plan: PlannedCrop, by_id: dict[int, LocationRecord]) -> ImageWatermark:
     members = [by_id[i] for i in plan.location_ids if i in by_id]
+    window = plan.window
     return ImageWatermark(
         key=plan.image_key,
         downsample=plan.downsample,
@@ -965,6 +1084,10 @@ def _image_watermark(plan: PlannedCrop, by_id: dict[int, LocationRecord]) -> Ima
         iy1=plan.snap.iy1,
         member_ids=list(plan.location_ids),
         max_last_modified=max_last_modified(members).isoformat() if members else "",
+        origin_x=window.origin_x,
+        origin_y=window.origin_y,
+        width=window.width,
+        height=window.height,
     )
 
 

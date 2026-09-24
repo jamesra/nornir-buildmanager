@@ -11,12 +11,14 @@ INGEST_TRACK_ID = "export_annotation:ingest"
 SECTIONS_TRACK_ID = "export_annotation:sections"
 MASKS_TRACK_ID = "export_annotation:masks"
 STITCH_TRACK_ID = "export_annotation:stitch"
+STRIPS_TRACK_ID = "export_annotation:strips"
 GALLERY_TRACK_ID = "export_annotation:gallery"
 
 INGEST_LABEL = "ExportAnnotationCrops ingest"
 SECTIONS_LABEL = "ExportAnnotationCrops sections"
-MASKS_LABEL = "ExportAnnotationCrops masks"
+MASKS_LABEL = "ExportAnnotationCrops annotations"
 STITCH_LABEL = "ExportAnnotationCrops stitch"
+STRIPS_LABEL = "ExportAnnotationCrops strips"
 GALLERY_LABEL = "ExportAnnotationCrops gallery"
 
 

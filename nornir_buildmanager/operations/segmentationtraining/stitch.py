@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import gc
 import os
 import shutil
+import threading
 from collections import Counter
 from collections.abc import Iterable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -21,6 +24,7 @@ from nornir_buildmanager.operations.segmentationtraining.geometry import (
     TileRect,
     next_power_of_two,
 )
+from nornir_buildmanager.operations.segmentationtraining.grouping import sanitize_volume_token
 
 from nornir_buildmanager.operations.segmentationtraining.poolutil import submit_bounded
 from nornir_buildmanager.templates import Current as Templates
@@ -31,6 +35,13 @@ LoadTile = Callable[[int, int], NDArray | None]
 
 CROP_IMAGE_EXT = ".png"
 LEGACY_CROP_IMAGE_EXT = ".jpg"
+
+# Container-local scratch (Linux overlay /tmp), not a Windows or CIFS mount.
+DEFAULT_STAGE_TILES_ROOT = "/tmp/nornir-stage-tiles"
+
+_stage_cleanup_lock = threading.Lock()
+_stage_cleanup_pool: ThreadPoolExecutor | None = None
+_stage_cleanup_pending: list[Future[Any]] = []
 
 
 def crop_image_filename(image_key: str) -> str:
@@ -50,9 +61,121 @@ def resolve_crop_image(images_dir: str | Path, image_key: str) -> Path:
     return png
 
 
+def resolve_section_stage_root(
+    stage_tiles: str | None,
+    *,
+    volume: str,
+    z: int,
+) -> str:
+    """Scratch directory for one section's staged tileset PNGs.
+
+    *stage_tiles* overrides the root (default ``/tmp/nornir-stage-tiles``). The
+    returned path is ``{root}/{volume}/z{z}`` so concurrent volumes and sections
+    do not share tile filenames.
+    """
+    root = (stage_tiles or "").strip() or DEFAULT_STAGE_TILES_ROOT
+    token = sanitize_volume_token(volume)
+    return os.path.join(root, token, f"z{int(z)}")
+
+
+def downsample_stage_dir(section_root: str, downsample: int) -> str:
+    """Per-downsample folder under a section stage root."""
+    return os.path.join(section_root, f"D{int(downsample)}")
+
+
+def _stage_cleanup_executor() -> ThreadPoolExecutor:
+    global _stage_cleanup_pool
+    with _stage_cleanup_lock:
+        if _stage_cleanup_pool is None:
+            _stage_cleanup_pool = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="segtrain-stage-rm"
+            )
+        return _stage_cleanup_pool
+
+
+def _track_stage_cleanup(future: Future[Any]) -> Future[Any]:
+    with _stage_cleanup_lock:
+        _stage_cleanup_pending.append(future)
+    return future
+
+
+def wait_stage_cleanup() -> None:
+    """Block until queued stage-file deletions finish. Used by tests and section ends."""
+    with _stage_cleanup_lock:
+        pending = list(_stage_cleanup_pending)
+        _stage_cleanup_pending.clear()
+    for future in pending:
+        future.result()
+
+
+def _remove_staged_tile_files(
+    stage_dir: str,
+    coords: Iterable[tuple[int, int]],
+    *,
+    prefix: str,
+    postfix: str,
+) -> int:
+    """Delete staged tile files for *coords*. Returns how many files were removed."""
+    removed = 0
+    for ix, iy in coords:
+        path = os.path.join(stage_dir, tile_filename(prefix, postfix, ix, iy))
+        try:
+            os.remove(path)
+            removed += 1
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            _logger.warning("Failed to remove staged tile %s: %s", path, exc)
+    return removed
+
+
+def schedule_remove_staged_tiles(
+    stage_dir: str | None,
+    coords: Iterable[tuple[int, int]],
+    *,
+    prefix: str,
+    postfix: str,
+) -> Future[Any] | None:
+    """Delete staged tiles on a background thread when they are no longer needed."""
+    if not stage_dir:
+        return None
+    unique = list(dict.fromkeys(coords))
+    if not unique:
+        return None
+    return _track_stage_cleanup(
+        _stage_cleanup_executor().submit(
+            _remove_staged_tile_files,
+            stage_dir,
+            unique,
+            prefix=prefix,
+            postfix=postfix,
+        )
+    )
+
+
+def _remove_tree(path: str) -> None:
+    if not path or not os.path.isdir(path):
+        return
+    try:
+        shutil.rmtree(path)
+    except OSError as exc:
+        _logger.warning("Failed to remove stage tree %s: %s", path, exc)
+
+
+def schedule_remove_stage_tree(path: str | None) -> Future[Any] | None:
+    """Remove a stage directory tree on a background thread."""
+    if not path:
+        return None
+    return _track_stage_cleanup(_stage_cleanup_executor().submit(_remove_tree, path))
+
+
 @dataclass(frozen=True)
 class StitchJob:
-    """One output image covering a snapped tile rect."""
+    """One output image covering a snapped tile rect.
+
+    ``crop_*`` selects a pixel rectangle inside that span. Zero crop size keeps
+    the full span, which is the aligned one-tile case.
+    """
 
     image_key: str
     snap: TileRect
@@ -60,6 +183,10 @@ class StitchJob:
     tile_x_dim: int
     tile_y_dim: int
     image_path: str
+    crop_x: int = 0
+    crop_y: int = 0
+    crop_width: int = 0
+    crop_height: int = 0
 
 
 def tile_filename(prefix: str, postfix: str, ix: int, iy: int) -> str:
@@ -176,7 +303,21 @@ def stitch_from_loader(
             if rh <= 0 or rw <= 0:
                 continue
             canvas[py:py + rh, px:px + rw] = tile[:rh, :rw]
-    return canvas
+    return _crop_canvas(job, canvas, width, height)
+
+
+def _crop_canvas(job: StitchJob, canvas: NDArray, width: int, height: int) -> NDArray:
+    """Slice a half-step window out of the stitched tile span."""
+    if job.crop_width <= 0 or job.crop_height <= 0:
+        return canvas
+    x1 = job.crop_x + job.crop_width
+    y1 = job.crop_y + job.crop_height
+    if job.crop_x < 0 or job.crop_y < 0 or x1 > width or y1 > height:
+        raise ValueError(
+            f"Crop {job.crop_x},{job.crop_y} {job.crop_width}x{job.crop_height} "
+            f"is outside stitched canvas {width}x{height} for {job.image_key}"
+        )
+    return np.ascontiguousarray(canvas[job.crop_y:y1, job.crop_x:x1])
 
 
 def write_png(array: NDArray, path: str) -> None:
@@ -440,6 +581,8 @@ def _publish_shared_tiles(
 def _unlink_handles(handles: list[Any]) -> None:
     for meta in handles:
         nornir_imageregistration.unlink_shared_memory(meta)
+    # Worker attaches close via weakref; nudge GC so FDs do not linger across bands.
+    gc.collect()
 
 
 def prefetch_shared_tiles(
@@ -573,17 +716,32 @@ def _stitch_with_shared_tiles(
 
 
 def stitch_job_from_shared(job: StitchJob, tiles: dict[tuple[int, int], Any]) -> str:
-    """Worker: attach read-only shared tiles and write PNG."""
+    """Worker: attach read-only shared tiles once per coordinate and write PNG.
+
+    Caching attaches matters: each :func:`ImageParamToNumpyImageArray` call opens
+    a new shared-memory file descriptor. Re-attaching every tile paste exhausts
+    the process FD limit on long sections.
+    """
+    attached: dict[tuple[int, int], NDArray] = {}
 
     def loader(ix: int, iy: int) -> NDArray | None:
-        meta = tiles.get((ix, iy))
+        coord = (ix, iy)
+        cached = attached.get(coord)
+        if cached is not None:
+            return cached
+        meta = tiles.get(coord)
         if meta is None:
             return None
-        return nornir_imageregistration.ImageParamToNumpyImageArray(meta)
+        array = nornir_imageregistration.ImageParamToNumpyImageArray(meta)
+        attached[coord] = array
+        return array
 
-    array = stitch_from_loader(job, loader)
-    write_png(array, job.image_path)
-    return job.image_path
+    try:
+        array = stitch_from_loader(job, loader)
+        write_png(array, job.image_path)
+        return job.image_path
+    finally:
+        attached.clear()
 
 
 def jobs_in_column_band(jobs: list[StitchJob], ix_min: int, ix_max: int) -> list[StitchJob]:
@@ -595,6 +753,30 @@ def remaining_min_ix(jobs: list[StitchJob]) -> int | None:
     if not jobs:
         return None
     return min(job.snap.ix0 for job in jobs)
+
+
+def count_column_bands(jobs: list[StitchJob], column_band: int) -> int:
+    """How many column strips :func:`sweep_stitch_jobs` will walk for *jobs*."""
+    column_band = max(1, int(column_band))
+    remaining = sorted(jobs, key=lambda job: (job.snap.ix0, job.snap.iy0, job.image_key))
+    bands = 0
+    while remaining:
+        ix_min = remaining[0].snap.ix0
+        band = jobs_in_column_band(remaining, ix_min, ix_min + column_band)
+        if not band:
+            break
+        done = {job.image_key for job in band}
+        remaining = [job for job in remaining if job.image_key not in done]
+        bands += 1
+    return bands
+
+
+def band_x_label(band: list[StitchJob], ix_min: int, column_band: int) -> str:
+    """Short label for the dashboard element, e.g. ``X124-128``."""
+    if not band:
+        return f"X{ix_min}-{ix_min + column_band}"
+    ix_max = max(job.snap.ix1 for job in band)
+    return f"X{ix_min}-{ix_max}"
 
 
 def tiles_for_jobs(jobs: list[StitchJob]) -> set[tuple[int, int]]:
@@ -647,12 +829,17 @@ def sweep_stitch_jobs(
     tile_y_dim: int = 0,
     io_workers: int | None = None,
     on_progress: Callable[[int, int], None] | None = None,
+    on_band: Callable[[int, int, str], None] | None = None,
 ) -> list[str]:
     """Stitch *jobs* in RAM-sized column bands with overlapped tile I/O.
 
     Tile reads and optional staging copies run on a thread pool. PNG encode
     runs on a process pool. While the current band encodes, the next band's
     tiles are staged and decoded. Process pools stay warm across bands.
+
+    *on_band* is ``(bands_completed, bands_total, element_label)``. It is called
+    when a strip starts (completed count still at the previous value) and again
+    when that strip finishes.
     """
     if not jobs:
         return []
@@ -669,6 +856,7 @@ def sweep_stitch_jobs(
             tile_y_dim=tile_y_dim,
         )
     column_band = max(1, int(column_band))
+    total_bands = count_column_bands(remaining, column_band) if on_band is not None else 0
     load_root = stage_dir if stage_dir else source_dir
     loader = disk_tile_loader(
         load_root,
@@ -682,6 +870,7 @@ def sweep_stitch_jobs(
     parallel = workers > 1 and use_shared_memory
     written: list[str] = []
     next_shared: tuple[list[StitchJob], dict[tuple[int, int], Any], list[Any]] | None = None
+    bands_completed = 0
 
     def prepare_band(band_jobs: list[StitchJob]) -> tuple[dict[tuple[int, int], Any], list[Any]]:
         stage_tiles_threaded(
@@ -699,14 +888,20 @@ def sweep_stitch_jobs(
     try:
         while remaining:
             ix_min = remaining[0].snap.ix0
-            band = jobs_in_column_band(remaining, ix_min, ix_min + column_band)
-            if not band:
-                break
             if next_shared is not None:
                 band, tiles, handles = next_shared
                 next_shared = None
             else:
+                band = jobs_in_column_band(remaining, ix_min, ix_min + column_band)
+                if not band:
+                    break
                 tiles, handles = prepare_band(band)
+            if not band:
+                break
+            ix_min = min(job.snap.ix0 for job in band)
+            label = band_x_label(band, ix_min, column_band)
+            if on_band is not None:
+                on_band(bands_completed, total_bands, label)
             done = {job.image_key for job in band}
             upcoming = [job for job in remaining if job.image_key not in done]
             if not parallel:
@@ -720,6 +915,10 @@ def sweep_stitch_jobs(
                     )
                 )
                 remaining = upcoming
+                _schedule_band_stage_cleanup(stage_dir, band, remaining, prefix, postfix)
+                bands_completed += 1
+                if on_band is not None:
+                    on_band(bands_completed, total_bands, label)
                 if on_progress is not None:
                     on_progress(total_jobs - len(remaining), total_jobs)
                 continue
@@ -739,9 +938,30 @@ def sweep_stitch_jobs(
             finally:
                 _unlink_handles(handles)
             remaining = upcoming
+            _schedule_band_stage_cleanup(stage_dir, band, remaining, prefix, postfix)
+            bands_completed += 1
+            if on_band is not None:
+                on_band(bands_completed, total_bands, label)
             if on_progress is not None:
                 on_progress(total_jobs - len(remaining), total_jobs)
     finally:
         if next_shared is not None:
             _unlink_handles(next_shared[2])
+        if stage_dir:
+            schedule_remove_stage_tree(stage_dir)
     return written
+
+
+def _schedule_band_stage_cleanup(
+    stage_dir: str | None,
+    finished: list[StitchJob],
+    remaining: list[StitchJob],
+    prefix: str,
+    postfix: str,
+) -> None:
+    """Drop staged tiles that no remaining job still references."""
+    if not stage_dir:
+        return
+    keep = tiles_for_jobs(remaining)
+    obsolete = tiles_for_jobs(finished) - keep
+    schedule_remove_staged_tiles(stage_dir, obsolete, prefix=prefix, postfix=postfix)

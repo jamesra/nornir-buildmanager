@@ -44,6 +44,36 @@ class TestEarlyRunMeta(unittest.TestCase):
             pipeline="Prune (1/3)", volumepath="/data",
             compute=mock.ANY)
 
+    def test_publish_early_run_meta_includes_annotation_crops_output(self) -> None:
+        args = mock.Mock(
+            PipelineName="ExportAnnotationCrops",
+            command="ExportAnnotationCrops",
+            volumepath="/storage4/RPC2",
+            OutputPath="/storage4/RPC2/AnnotationCrops_v1",
+        )
+        with mock.patch("nornir_buildmanager.build.prettyoutput.publish_early_run_meta") as publish:
+            build._publish_early_run_meta_from_args(args)
+        publish.assert_called_once_with(
+            pipeline="ExportAnnotationCrops",
+            volumepath="/storage4/RPC2 → /storage4/RPC2/AnnotationCrops_v1",
+            compute=mock.ANY,
+        )
+
+    def test_publish_early_run_meta_ignores_output_for_other_pipelines(self) -> None:
+        args = mock.Mock(
+            PipelineName="Assemble",
+            command="Assemble",
+            volumepath="/storage4/RPC2",
+            OutputPath="/tmp/should-not-appear",
+        )
+        with mock.patch("nornir_buildmanager.build.prettyoutput.publish_early_run_meta") as publish:
+            build._publish_early_run_meta_from_args(args)
+        publish.assert_called_once_with(
+            pipeline="Assemble",
+            volumepath="/storage4/RPC2",
+            compute=mock.ANY,
+        )
+
     def test_publish_chain_segment_meta_omits_start_ts(self) -> None:
         args = mock.Mock(PipelineName="Histogram", command="Histogram", volumepath="/data")
         with mock.patch("nornir_buildmanager.build.prettyoutput.publish_run_meta") as publish:

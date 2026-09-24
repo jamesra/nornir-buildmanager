@@ -2341,7 +2341,10 @@
                       help="Regular expression for the filter that owns the tileset"
                       required="False"/>
             <Argument flag="-Downsample" dest="Downsample" type="int" default="1"
-                      help="Finest tileset downsample allowed. Crops may coarsen per shared image."
+                      help="Tileset downsample to train at. With -Exporter tiled, masks that do not fit in one MaxTexture crop are split instead of coarsened."
+                      required="False"/>
+            <Argument flag="-Exporter" dest="Exporter" default="tiled"
+                      help="Crop placement. tiled (default) keeps -Downsample and splits on the half-step lattice. legacy coarsens D until the mask fits one crop and never splits."
                       required="False"/>
             <Argument flag="-Pad" dest="Pad" type="float" default="1"
                       help="Mosaic pixels added to each bbox side. Default is 1."
@@ -2353,7 +2356,7 @@
                       help="Override floor(MaxTexture / tile dim) for the snapped tile window"
                       required="False"/>
             <Argument flag="-MinProcessPixels" dest="MinProcessPixels" type="int" default="16"
-                      help="Do not coarsen a process thinner than this many pixels"
+                      help="Retained for compatibility. Does not change the training downsample."
                       required="False"/>
             <Argument flag="-Workers" dest="Workers" type="int"
                       help="Stitch PNG encode process-pool size. Default is CPU count. Tile reads use a thread pool sized from CPU count; column bands size themselves from RAM."
@@ -2362,7 +2365,7 @@
                       help="Mask rasterize process-pool size. Default is CPU count."
                       required="False"/>
             <Argument flag="-StageTiles" dest="StageTiles"
-                      help="Local scratch directory; tiles are copied from NAS once per column band"
+                      help="Scratch root for NAS tile copies. Default is /tmp/nornir-stage-tiles/{volume}/z{section}. Override with a local Linux path (not a Windows/CIFS mount). Cleared after each section."
                       required="False"/>
             <Argument flag="-Sections" dest="Sections" type="IntegerList"
                       help="Section numbers to process. Omitted means every Z that has geometries."
@@ -2370,7 +2373,9 @@
             <Argument flag="-IncludeOffEdge" dest="IncludeOffEdge" action="store_true"
                       help="Keep OffEdge locations. They are skipped by default."/>
             <Argument flag="-Force" dest="Force" action="store_true"
-                      help="Rebuild every section even when watermarks match."/>
+                      help="Full rebuild: refetch OData MosaicShape and restitch every crop even when watermarks match."/>
+            <Argument flag="-RefreshOData" dest="RefreshOData" action="store_true"
+                      help="Refetch OData MosaicShape into Output/_work, then update masks and JSON (and restitch only where crop windows changed). Unchanged crops are skipped."/>
             <Argument flag="-FailMissingTileset" dest="FailMissingTileset" action="store_true"
                       help="Fail instead of skipping a section whose filter has no Tileset/level."/>
             <Argument flag="-NoOverlay" dest="NoOverlay" action="store_true"
@@ -2387,6 +2392,7 @@
                     Sections="#Sections"
                     IncludeOffEdge="#IncludeOffEdge"
                     Force="#Force"
+                    RefreshOData="#RefreshOData"
                     Cleanup="#Cleanup"/>
 
         <Iterate VariableName="section_node" XPath="Block/Section">
@@ -2404,6 +2410,7 @@
                                 OutputPath="#OutputPath"
                                 Pad="#Pad"
                                 Downsample="#Downsample"
+                                Exporter="#Exporter"
                                 MaxTexture="#MaxTexture"
                                 MaxTiles="#MaxTiles"
                                 MinProcessPixels="#MinProcessPixels"
@@ -2414,6 +2421,7 @@
                                 MaskWorkers="#MaskWorkers"
                                 StageTiles="#StageTiles"
                                 Force="#Force"
+                                RefreshOData="#RefreshOData"
                                 FailMissingTileset="#FailMissingTileset"
                                 NoOverlay="#NoOverlay"
                                 Cleanup="#Cleanup"/>

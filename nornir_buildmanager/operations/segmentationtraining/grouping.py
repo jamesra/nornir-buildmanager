@@ -1,11 +1,11 @@
-"""Collapse same-D snaps onto reusable MaxTexture windows without extra coarsening."""
+"""Group masks that independently selected the same training window."""
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
 
-from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
+from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow, TileRect
 
 _VOLUME_TOKEN = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -23,14 +23,55 @@ class CropGroup:
     snap: TileRect
     location_ids: list[int] = field(default_factory=list)
     downsample: int = 1
+    window: CropWindow | None = None
 
     def image_key_for(self, z: int, volume: str) -> str:
-        """Stable shared-image id; *z* is the section number, not a location id."""
+        """Stable shared-image id; *z* is the section number, not a location id.
+
+        Pixel extents are used when a window is set, so a half-step crop does not
+        collide with the tileset span that covers the same tiles.
+        """
         token = sanitize_volume_token(volume)
+        if self.window is None:
+            return (
+                f"{token}_{z}_D{self.downsample}_X{self.snap.ix0}-{self.snap.ix1}"
+                f"_Y{self.snap.iy0}-{self.snap.iy1}"
+            )
+        end_x = self.window.origin_x + self.window.width
+        end_y = self.window.origin_y + self.window.height
         return (
-            f"{token}_{z}_D{self.downsample}_X{self.snap.ix0}-{self.snap.ix1}"
-            f"_Y{self.snap.iy0}-{self.snap.iy1}"
+            f"{token}_{z}_D{self.downsample}_X{self.window.origin_x}-{end_x}"
+            f"_Y{self.window.origin_y}-{end_y}"
         )
+
+
+def group_windows(
+    items: list[tuple[int, CropWindow]],
+    *,
+    downsample: int,
+    tile_x_dim: int,
+    tile_y_dim: int,
+) -> list[CropGroup]:
+    """Group location ids that selected the same window.
+
+    A mask is not moved onto a neighbor window. Two masks share an image only
+    when they independently choose the same origin and size.
+    """
+    assigned: dict[CropWindow, list[int]] = {}
+    for location_id, window in items:
+        assigned.setdefault(window, []).append(location_id)
+    groups: list[CropGroup] = []
+    order = sorted(assigned, key=lambda item: (item.origin_x, item.origin_y, item.width, item.height))
+    for window in order:
+        groups.append(
+            CropGroup(
+                snap=window.covering_tiles(tile_x_dim, tile_y_dim),
+                location_ids=sorted(assigned[window]),
+                downsample=downsample,
+                window=window,
+            )
+        )
+    return groups
 
 
 def group_snaps(

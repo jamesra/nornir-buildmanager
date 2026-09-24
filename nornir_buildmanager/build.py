@@ -321,6 +321,29 @@ def _chain_pipeline_display_name(name: str, index: int, total: int) -> str:
     return name
 
 
+# Pipelines whose -Output directory is the primary product root; include it in
+# the dashboard header so parallel ExportAnnotationCrops runs are distinguishable.
+_OUTPUT_IN_HEADER_PIPELINES = frozenset({
+    "ExportAnnotationCrops",
+    "RepairAnnotationOverlays",
+    "ScoreAnnotationCrops",
+})
+
+
+def _dashboard_volumepath(args: argparse.Namespace, pipeline: str | None = None) -> str | None:
+    """Volume path for MQTT/dashboard header, with -Output when it is the crop root."""
+    volumepath = getattr(args, "volumepath", None)
+    if not volumepath:
+        return None
+    name = pipeline if pipeline is not None else _pipeline_name_from_args(args)
+    # Chain display names look like "ExportAnnotationCrops (2/3)".
+    base = name.split(" (", 1)[0] if name else ""
+    output = getattr(args, "OutputPath", None)
+    if base in _OUTPUT_IN_HEADER_PIPELINES and isinstance(output, str) and output:
+        return f"{volumepath} → {output}"
+    return volumepath
+
+
 def _publish_early_run_meta_from_args(args: argparse.Namespace,
                                       pipeline: str | None = None) -> None:
     """Publish retained dashboard meta as soon as CLI args are known.
@@ -328,14 +351,16 @@ def _publish_early_run_meta_from_args(args: argparse.Namespace,
     Uses ``PipelineName`` when present (pipeline commands); otherwise ``command``
     (utilities such as RecoverLinks). Skips when volumepath is missing.
     Optional *pipeline* overrides the displayed name (e.g. ``Prune (1/6)``).
+    For AnnotationCrops pipelines, ``volumepath`` includes ``-Output`` so the
+    dashboard header distinguishes parallel export targets.
     """
-    volumepath = getattr(args, 'volumepath', None)
-    if not volumepath:
-        return
-
     if pipeline is None:
         pipeline = _pipeline_name_from_args(args)
     if not pipeline:
+        return
+
+    volumepath = _dashboard_volumepath(args, pipeline)
+    if not volumepath:
         return
 
     prettyoutput.publish_early_run_meta(
@@ -348,16 +373,17 @@ def _publish_early_run_meta_from_args(args: argparse.Namespace,
 def _publish_chain_segment_meta(args: argparse.Namespace, *,
                                 index: int, total: int) -> None:
     """Publish running meta for a later ``--then`` segment without resetting ``start_ts``."""
-    volumepath = getattr(args, 'volumepath', None)
-    if not volumepath:
-        return
-
     name = _pipeline_name_from_args(args)
     if not name:
         return
 
+    display = _chain_pipeline_display_name(name, index, total)
+    volumepath = _dashboard_volumepath(args, display)
+    if not volumepath:
+        return
+
     prettyoutput.publish_run_meta(
-        pipeline=_chain_pipeline_display_name(name, index, total),
+        pipeline=display,
         volumepath=volumepath,
         status="running",
         compute=os.environ.get('NORNIR_COMPUTATIONAL_LIBRARY'),

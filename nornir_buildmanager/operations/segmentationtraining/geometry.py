@@ -1,4 +1,4 @@
-"""Pad, tile-snap, closed-form downsample, and long-process windows."""
+"""Pad, tile snap, and half-step training windows at a fixed downsample."""
 
 from __future__ import annotations
 
@@ -54,6 +54,43 @@ class TileRect:
             and other.ix1 <= self.ix1
             and other.iy0 >= self.iy0
             and other.iy1 <= self.iy1
+        )
+
+
+@dataclass(frozen=True)
+class CropWindow:
+    """Training crop in pixels at one downsample. Origin is on the half-crop lattice."""
+
+    origin_x: int
+    origin_y: int
+    width: int
+    height: int
+
+    def mosaic_origin(self, downsample: float) -> tuple[float, float]:
+        """Mosaic coordinate of the crop's top-left pixel."""
+        scale = float(downsample)
+        return self.origin_x * scale, self.origin_y * scale
+
+    def covering_tiles(self, tile_x_dim: int, tile_y_dim: int) -> TileRect:
+        """Tileset tiles that cover this crop, including a partial tile at a half step."""
+        if tile_x_dim <= 0 or tile_y_dim <= 0:
+            raise ValueError("tile dimensions must be positive")
+        ix0 = math.floor(self.origin_x / tile_x_dim)
+        iy0 = math.floor(self.origin_y / tile_y_dim)
+        ix1 = math.ceil((self.origin_x + self.width) / tile_x_dim)
+        iy1 = math.ceil((self.origin_y + self.height) / tile_y_dim)
+        if ix1 <= ix0:
+            ix1 = ix0 + 1
+        if iy1 <= iy0:
+            iy1 = iy0 + 1
+        return TileRect(ix0, ix1, iy0, iy1)
+
+    def crop_offset(self, tile_x_dim: int, tile_y_dim: int) -> tuple[int, int]:
+        """Pixel offset of this crop inside :meth:`covering_tiles`."""
+        tiles = self.covering_tiles(tile_x_dim, tile_y_dim)
+        return (
+            self.origin_x - tiles.ix0 * tile_x_dim,
+            self.origin_y - tiles.iy0 * tile_y_dim,
         )
 
 
@@ -176,7 +213,7 @@ def downsample_and_align_snap(
     tile_x_dim: int,
     tile_y_dim: int,
 ) -> SnapPlan | None:
-    """Finest D whose tight whole-tile snap of the full bbox fits MaxTexture.
+    """Legacy coarsen-to-fit snap. ``plan_section_crops`` splits at a fixed D instead.
 
     The output window is always ``span`` × ``span`` tiles starting at the
     annotation's min tileset column/row (512-px tiles → 2×2). If the tight snap
@@ -461,6 +498,243 @@ def _ring_touches_image(ring: tuple[tuple[int, int], ...], width: int, height: i
     xs = [p[0] for p in ring]
     ys = [p[1] for p in ring]
     return not (max(xs) < 0 or min(xs) >= width or max(ys) < 0 or min(ys) >= height)
+
+
+def _ring_abs_area_centroid(
+    ring: tuple[tuple[float, float], ...] | tuple[tuple[int, int], ...],
+) -> tuple[float, float, float]:
+    """Return absolute shoelace area and centroid. Empty rings return zeros."""
+    if len(ring) < 3:
+        return 0.0, 0.0, 0.0
+    cross = 0.0
+    cx = 0.0
+    cy = 0.0
+    count = len(ring)
+    for index in range(count):
+        x, y = ring[index]
+        nx, ny = ring[(index + 1) % count]
+        partial = x * ny - nx * y
+        cross += partial
+        cx += (x + nx) * partial
+        cy += (y + ny) * partial
+    signed = cross / 2.0
+    if abs(signed) <= 1e-12:
+        return 0.0, 0.0, 0.0
+    return abs(signed), cx / (6.0 * signed), cy / (6.0 * signed)
+
+
+def _polygons_area_centroid(polygons: list[PolygonRings]) -> tuple[float, float, float]:
+    """Area-weighted centroid of exteriors minus holes, in the rings' coordinate space."""
+    total_area = 0.0
+    sum_x = 0.0
+    sum_y = 0.0
+    for rings in polygons:
+        if not rings:
+            continue
+        area, cx, cy = _ring_abs_area_centroid(rings[0])
+        total_area += area
+        sum_x += cx * area
+        sum_y += cy * area
+        for hole in rings[1:]:
+            hole_area, hx, hy = _ring_abs_area_centroid(hole)
+            total_area -= hole_area
+            sum_x -= hx * hole_area
+            sum_y -= hy * hole_area
+    return total_area, sum_x, sum_y
+
+
+def _phase_offsets(crop: int) -> list[int]:
+    """Non-overlapping partition offsets: 0 and half the crop when that is a real shift."""
+    step = crop // 2
+    if step <= 0 or step >= crop:
+        return [0]
+    return [0, step]
+
+
+def _lattice_step(crop: int) -> int:
+    """Half-crop step, or the crop itself when it is a single pixel."""
+    step = crop // 2
+    if step <= 0:
+        return crop
+    return step
+
+
+def _containing_origins(edge_min: float, edge_max: float, crop: int, step: int) -> list[int]:
+    """Lattice origins whose ``crop``-long window contains ``[edge_min, edge_max]``."""
+    if step <= 0 or edge_max - edge_min > crop + 1e-9:
+        return []
+    k_max = math.floor(edge_min / step + 1e-9)
+    k_min = math.ceil((edge_max - crop) / step - 1e-9)
+    if k_min > k_max:
+        return []
+    return [k * step for k in range(k_min, k_max + 1)]
+
+
+def _intersecting_origins(edge_min: float, edge_max: float, crop: int, phase: int) -> list[int]:
+    """Origins ``phase + k * crop`` whose window meets ``[edge_min, edge_max]``."""
+    if crop <= 0:
+        return []
+    k_min = math.floor((edge_min - crop - phase) / crop) - 1
+    k_max = math.ceil((edge_max - phase) / crop) + 1
+    origins: list[int] = []
+    for k in range(k_min, k_max + 1):
+        origin = phase + k * crop
+        if origin < edge_max and origin + crop > edge_min:
+            origins.append(origin)
+    return origins
+
+
+def _mask_centroid_px(
+    polygons: list[PolygonRings],
+    downsample: float,
+    fallback: tuple[float, float, float, float],
+) -> tuple[float, float]:
+    """Mask centroid in downsample pixels. Falls back to the padded bbox center."""
+    area, sum_x, sum_y = _polygons_area_centroid(polygons)
+    scale = float(downsample) if downsample else 1.0
+    if area > 1e-6:
+        return sum_x / area / scale, sum_y / area / scale
+    return (fallback[0] + fallback[2]) / (2.0 * scale), (fallback[1] + fallback[3]) / (2.0 * scale)
+
+
+def _window_mask_area(
+    polygons: list[PolygonRings],
+    window: CropWindow,
+    downsample: int,
+) -> float:
+    """Clipped mask area inside *window*, using the same clip as training masks."""
+    origin_x, origin_y = window.mosaic_origin(downsample)
+    clipped = pixel_rings_in_crop(
+        polygons,
+        origin_x=origin_x,
+        origin_y=origin_y,
+        downsample=float(downsample),
+        width=window.width,
+        height=window.height,
+    )
+    total = 0.0
+    for rings in clipped:
+        if not rings:
+            continue
+        area, _cx, _cy = _ring_abs_area_centroid(rings[0])
+        total += area
+        for hole in rings[1:]:
+            hole_area, _hx, _hy = _ring_abs_area_centroid(hole)
+            total -= hole_area
+    return max(0.0, total)
+
+
+def place_mask_windows(
+    polygons: list[PolygonRings],
+    padded: tuple[float, float, float, float],
+    *,
+    downsample: int,
+    crop_width: int,
+    crop_height: int,
+) -> list[CropWindow]:
+    """Windows for one mask at a fixed downsample.
+
+    When the padded bbox fits in a half-step window, return the single window
+    whose center is closest to the mask centroid. Otherwise try the four
+    non-overlapping phases and keep the phase whose smallest positive mask
+    area is largest. Ties prefer fewer windows, then the smaller phase origin.
+    """
+    if crop_width < 1 or crop_height < 1:
+        raise ValueError("crop size must be positive")
+    scale = max(int(downsample), 1)
+    min_x, min_y, max_x, max_y = padded
+    px0 = min_x / scale
+    py0 = min_y / scale
+    px1 = max_x / scale
+    py1 = max_y / scale
+    step_x = _lattice_step(crop_width)
+    step_y = _lattice_step(crop_height)
+    contained = _contained_windows(px0, py0, px1, py1, crop_width, crop_height, step_x, step_y)
+    if contained:
+        centroid = _mask_centroid_px(polygons, scale, padded)
+        return [_nearest_center_window(contained, centroid)]
+    return _maximin_phase_windows(
+        polygons,
+        px0,
+        py0,
+        px1,
+        py1,
+        downsample=scale,
+        crop_width=crop_width,
+        crop_height=crop_height,
+    )
+
+
+def _contained_windows(
+    px0: float,
+    py0: float,
+    px1: float,
+    py1: float,
+    crop_width: int,
+    crop_height: int,
+    step_x: int,
+    step_y: int,
+) -> list[CropWindow]:
+    origins_x = _containing_origins(px0, px1, crop_width, step_x)
+    origins_y = _containing_origins(py0, py1, crop_height, step_y)
+    return [
+        CropWindow(origin_x, origin_y, crop_width, crop_height)
+        for origin_x in origins_x
+        for origin_y in origins_y
+    ]
+
+
+def _nearest_center_window(
+    windows: list[CropWindow],
+    centroid: tuple[float, float],
+) -> CropWindow:
+    """Window whose center is closest to *centroid*. Ties break toward the smaller origin."""
+    cx, cy = centroid
+
+    def rank(window: CropWindow) -> tuple[float, int, int]:
+        dx = cx - (window.origin_x + window.width / 2.0)
+        dy = cy - (window.origin_y + window.height / 2.0)
+        return (dx * dx + dy * dy, window.origin_x, window.origin_y)
+
+    return min(windows, key=rank)
+
+
+def _maximin_phase_windows(
+    polygons: list[PolygonRings],
+    px0: float,
+    py0: float,
+    px1: float,
+    py1: float,
+    *,
+    downsample: int,
+    crop_width: int,
+    crop_height: int,
+) -> list[CropWindow]:
+    """Phase whose smallest positive clipped mask area is as large as possible."""
+    best: tuple[tuple[float, int, int, int], list[CropWindow]] | None = None
+    for phase_x in _phase_offsets(crop_width):
+        origins_x = _intersecting_origins(px0, px1, crop_width, phase_x)
+        for phase_y in _phase_offsets(crop_height):
+            origins_y = _intersecting_origins(py0, py1, crop_height, phase_y)
+            windows: list[CropWindow] = []
+            areas: list[float] = []
+            for origin_x in origins_x:
+                for origin_y in origins_y:
+                    window = CropWindow(origin_x, origin_y, crop_width, crop_height)
+                    area = _window_mask_area(polygons, window, downsample)
+                    if area <= 0.0:
+                        continue
+                    windows.append(window)
+                    areas.append(area)
+            if not windows:
+                continue
+            windows.sort(key=lambda item: (item.origin_x, item.origin_y))
+            rank = (-min(areas), len(windows), phase_x, phase_y)
+            if best is None or rank < best[0]:
+                best = (rank, windows)
+    if best is None:
+        return []
+    return best[1]
 
 
 def parse_and_snap(
