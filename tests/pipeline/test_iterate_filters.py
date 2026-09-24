@@ -237,5 +237,20 @@ class ResolveIterateCandidatesTests(unittest.TestCase):
         self.assertEqual([candidate.attrib['Number'] for candidate in optimized], ['691'])
 
 
+class SortIterateCandidatesTests(unittest.TestCase):
+    """Section iterate order is ascending number, independent of XML order."""
+
+    def test_high_z_first_xml_sorts_ascending(self) -> None:
+        elements = [
+            XElementWrapper(tag='Section', attrib={'Number': str(number)})
+            for number in (1297, 1296, 324, 1000)
+        ]
+        ordered = iterate_filters.sort_iterate_candidates(elements, 'Number')
+        self.assertEqual(
+            [element.attrib['Number'] for element in ordered],
+            ['324', '1000', '1296', '1297'],
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

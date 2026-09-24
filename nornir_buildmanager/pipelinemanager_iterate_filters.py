@@ -465,6 +465,25 @@ def _try_long_list_section_candidates(
     return _findall_filtered(root_for_search, section_xpath, filters)
 
 
+def sort_iterate_candidates(
+        candidates: Iterable[XElementWrapper],
+        attribute: str) -> list[XElementWrapper]:
+    """Return *candidates* ordered by *attribute*, numeric when the value is an int.
+
+    ExportAnnotationCrops uses this so a block stored high-Z first (RPC2) is
+    visited in ascending section number, matching a block stored low-Z first.
+    """
+
+    def sort_key(element: XElementWrapper) -> tuple[int, int | str]:
+        raw = element.attrib.get(attribute, "")
+        try:
+            return (0, int(raw))
+        except (TypeError, ValueError):
+            return (1, str(raw))
+
+    return sorted(candidates, key=sort_key)
+
+
 def resolve_iterate_candidates(
         root_for_search: XElementWrapper,
         xpath: str,

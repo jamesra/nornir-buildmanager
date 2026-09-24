@@ -64,6 +64,8 @@ from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     export_section_crops,
     force_numpy_computation,
     repair_overlays,
+    reset_section_visit_order,
+    section_visit_index,
 )
 from nornir_buildmanager.operations.segmentationtraining.cleanup import CleanupAnnotationCrops
 from nornir_buildmanager.operations.segmentationtraining.planning import plan_section_crops
@@ -388,6 +390,118 @@ def test_refresh_odata_reruns_masks_when_last_modified_changed(tmp_path: Path) -
     # Full export with refresh: unchanged record leaves crop PNG untouched.
     export_section_crops(**base, records=[first], previous=previous, refresh_odata=True)  # type: ignore[arg-type]
     assert crop.stat().st_mtime == crop_mtime
+
+
+def test_section_visit_index_counts_up_for_either_z_direction() -> None:
+    """Progress follows visit order, whether the volume walks high Z or low Z first."""
+    high_first = "/vol/high"
+    low_first = "/vol/low"
+    reset_section_visit_order(high_first)
+    reset_section_visit_order(low_first)
+    assert [section_visit_index(high_first, z) for z in (1136, 941, 206, 205)] == [0, 1, 2, 3]
+    assert [section_visit_index(low_first, z) for z in (324, 325, 326)] == [0, 1, 2]
+    assert section_visit_index(high_first, 1136) == 0
+    reset_section_visit_order(high_first)
+    reset_section_visit_order(low_first)
+
+
+def test_refresh_odata_skip_leaves_existing_overlay(tmp_path: Path) -> None:
+    """Skip mode stats overlay vs crop/masks only; rewrites when a mask is newer."""
+    from nornir_buildmanager.operations.segmentationtraining.freshness import (
+        load_section_watermark,
+    )
+
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True)
+    Image.fromarray(np.full((8, 8), 40, dtype=np.uint8), mode="L").save(
+        level / tile_filename("", ".png", 0, 0)
+    )
+    first = _record(8, 2, _box_wkt(1, 1, 4, 4), last_modified="2020-01-01T00:00:00+00:00")
+    out = tmp_path / "export"
+    params = _params(pad=0.0, max_texture=8)
+    base = dict(
+        output_path=out,
+        z=2,
+        tile_x_dim=8,
+        tile_y_dim=8,
+        available=[1],
+        level_dirs={1: str(level)},
+        file_prefix="",
+        file_postfix=".png",
+        params=params,
+        tileset_mtime=3.0,
+        max_tiles_x=8,
+        max_tiles_y=8,
+        workers=1,
+        mask_workers=1,
+        stage_tiles=None,
+        overlay=True,
+        force=False,
+    )
+    export_section_crops(**base, records=[first])  # type: ignore[arg-type]
+    previous = load_section_watermark(out, 2)
+    assert previous is not None
+    overlay = next((out / "overlays").glob("*.png"))
+    overlay_mtime = overlay.stat().st_mtime
+
+    export_section_crops(  # type: ignore[arg-type]
+        **base, records=[first], previous=previous, refresh_odata=True
+    )
+    assert overlay.stat().st_mtime == overlay_mtime
+
+    from nornir_buildmanager.operations.segmentationtraining.product_index import (
+        get_product_index,
+    )
+
+    mask = next((out / "masks").glob("*.png"))
+    newer = overlay_mtime + 5.0
+    os.utime(mask, (newer, newer))
+    get_product_index(out).note("masks", mask.name)
+    export_section_crops(  # type: ignore[arg-type]
+        **base, records=[first], previous=previous, refresh_odata=True
+    )
+    assert overlay.stat().st_mtime > overlay_mtime
+
+    overlay.unlink()
+    get_product_index(out).forget("overlays", overlay.name)
+    export_section_crops(  # type: ignore[arg-type]
+        **base, records=[first], previous=previous, refresh_odata=True
+    )
+    assert overlay.is_file()
+
+
+def test_product_index_prefix_and_write_through(tmp_path: Path) -> None:
+    """Index lookups and prefix filters stay in memory after one scan."""
+    from nornir_buildmanager.operations.segmentationtraining.product_index import (
+        drop_product_index,
+        get_product_index,
+    )
+
+    images = tmp_path / "images"
+    masks = tmp_path / "masks"
+    images.mkdir()
+    masks.mkdir()
+    crop = images / "RC1_1_D1_X0-1_Y0-1.png"
+    kept = masks / "RC1_1_D1_X0-1_Y0-1_9.png"
+    other = masks / "other_3.png"
+    crop.write_bytes(b"png")
+    kept.write_bytes(b"m")
+    other.write_bytes(b"o")
+    drop_product_index(tmp_path)
+    index = get_product_index(tmp_path)
+    assert index.exists("images", crop.name)
+    assert index.mtime("masks", kept.name) == kept.stat().st_mtime
+    prefixed = index.names_with_prefix("masks", "RC1_1_D1_X0-1_Y0-1_")
+    assert prefixed == [kept.name]
+    added = masks / "RC1_1_D1_X0-1_Y0-1_10.png"
+    added.write_bytes(b"n")
+    index.note_path(added)
+    assert index.exists("masks", added.name)
+    added.unlink()
+    index.forget("masks", added.name)
+    assert not index.exists("masks", added.name)
+    assert get_product_index(tmp_path) is index
+    drop_product_index(tmp_path)
 
 
 def test_ingest_geometries_jsonl_and_value_array(tmp_path: Path) -> None:

@@ -2395,7 +2395,7 @@
                     RefreshOData="#RefreshOData"
                     Cleanup="#Cleanup"/>
 
-        <Iterate VariableName="section_node" XPath="Block/Section">
+        <Iterate VariableName="section_node" XPath="Block/Section" SortAttribute="Number">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
 
             <Iterate VariableName="ChannelNode" XPath="Channel">

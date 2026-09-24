@@ -16,6 +16,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     save_section_watermark,
     section_meta_path,
 )
+from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
 from nornir_buildmanager.operations.segmentationtraining.stitch import resolve_crop_image
 
 _MEMBER_GLOBS = (
@@ -37,25 +38,41 @@ class CleanupSummary:
     deleted_watermarks: int = 0
 
 
-def remove_image_key_products(output: Path, key: str) -> int:
+def remove_image_key_products(
+    output: Path,
+    key: str,
+    *,
+    products: CropProductIndex | None = None,
+) -> int:
     """Delete crop, JSON, overlay, masks, ignored masks, and RLE for one image key."""
     removed = 0
-    for path in (
-        output / "images" / f"{key}.png",
-        output / "images" / f"{key}.jpg",
-        output / "images" / f"{key}.json",
-        output / "overlays" / f"{key}.png",
+    for folder, name in (
+        ("images", f"{key}.png"),
+        ("images", f"{key}.jpg"),
+        ("images", f"{key}.json"),
+        ("overlays", f"{key}.png"),
     ):
-        if path.is_file():
-            path.unlink()
-            removed += 1
-    removed += _unlink_member_files(output, key, keep_ids=None)
+        path = output.joinpath(*folder.split("/")) / name
+        present = products.exists(folder, name) if products is not None else path.is_file()
+        if not present:
+            continue
+        path.unlink(missing_ok=True)
+        if products is not None:
+            products.forget(folder, name)
+        removed += 1
+    removed += _unlink_member_files(output, key, keep_ids=None, products=products)
     return removed
 
 
-def remove_member_files_not_in(output: Path, key: str, keep_ids: set[int]) -> int:
+def remove_member_files_not_in(
+    output: Path,
+    key: str,
+    keep_ids: set[int],
+    *,
+    products: CropProductIndex | None = None,
+) -> int:
     """Delete mask, ignored, and RLE files for *key* whose location id is not kept."""
-    return _unlink_member_files(output, key, keep_ids=keep_ids)
+    return _unlink_member_files(output, key, keep_ids=keep_ids, products=products)
 
 
 def cleanup_annotation_crops(
@@ -245,20 +262,36 @@ def _candidate_keys(output: Path, wanted: set[int] | None) -> list[str]:
     return [key for key in ordered if _image_key_matches_sections(key, wanted)]
 
 
-def _unlink_member_files(output: Path, key: str, keep_ids: set[int] | None) -> int:
+def _unlink_member_files(
+    output: Path,
+    key: str,
+    keep_ids: set[int] | None,
+    *,
+    products: CropProductIndex | None = None,
+) -> int:
     removed = 0
     for folder, pattern in _MEMBER_GLOBS:
         root = output.joinpath(*folder.split("/"))
-        if not root.is_dir():
-            continue
         suffix = ".png" if pattern.endswith(".png") else ".json"
-        for path in root.glob(f"{key}_*{suffix}"):
-            member_key, location_id = _split_member_stem(path.stem)
+        if products is not None:
+            names = [
+                name
+                for name in products.names_with_prefix(folder, f"{key}_")
+                if name.endswith(suffix)
+            ]
+        elif root.is_dir():
+            names = [path.name for path in root.glob(f"{key}_*{suffix}")]
+        else:
+            names = []
+        for name in names:
+            member_key, location_id = _split_member_stem(Path(name).stem)
             if member_key != key or location_id is None:
                 continue
             if keep_ids is not None and location_id in keep_ids:
                 continue
-            path.unlink(missing_ok=True)
+            (root / name).unlink(missing_ok=True)
+            if products is not None:
+                products.forget(folder, name)
             removed += 1
     return removed
 

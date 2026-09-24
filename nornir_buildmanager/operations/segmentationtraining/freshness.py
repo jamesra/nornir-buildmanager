@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 
 EXPORTER_TILED = "tiled"
@@ -242,8 +243,21 @@ def _mtime_equal(left: float | None, right: float | None) -> bool:
     return abs(float(left) - float(right)) <= 1e-6
 
 
-def image_output_fresh(path: Path, watermark_mtime: float | None) -> bool:
+def image_output_fresh(
+    path: Path,
+    watermark_mtime: float | None,
+    *,
+    products: CropProductIndex | None = None,
+    folder: str = "images",
+) -> bool:
     """True when an imageKey file exists and is at least as new as the watermark."""
+    if products is not None:
+        stamped = products.mtime(folder, path.name)
+        if stamped is None:
+            return False
+        if watermark_mtime is None:
+            return True
+        return stamped + 1e-6 >= watermark_mtime
     if not path.is_file():
         return False
     if watermark_mtime is None:
@@ -263,6 +277,7 @@ def image_rebuild_mode(
     previous_tileset_mtime: float | None,
     force: bool,
     refresh_odata: bool = False,
+    products: CropProductIndex | None = None,
 ) -> str:
     """Return ``skip``, ``mask_only``, or ``full`` for one shared crop.
 
@@ -281,10 +296,20 @@ def image_rebuild_mode(
         return "full"
     if not previous.same_tiles(current):
         return "full"
-    if not image_path.is_file():
+    image_present = (
+        products.exists("images", image_path.name)
+        if products is not None
+        else image_path.is_file()
+    )
+    json_present = (
+        products.exists("images", json_path.name)
+        if products is not None
+        else json_path.is_file()
+    )
+    if not image_present:
         return "full"
-    if previous.same_members(current) and json_path.is_file() and image_output_fresh(
-        image_path, tileset_mtime
+    if previous.same_members(current) and json_present and image_output_fresh(
+        image_path, tileset_mtime, products=products
     ):
         return "skip"
     return "mask_only"

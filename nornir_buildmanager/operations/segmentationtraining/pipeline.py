@@ -46,6 +46,10 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
 )
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
+from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    CropProductIndex,
+    get_product_index,
+)
 from nornir_buildmanager.operations.segmentationtraining.progress import (
     MASKS_LABEL,
     MASKS_TRACK_ID,
@@ -122,6 +126,7 @@ def IngestGeometries(
         raise NornirUserException("ExportAnnotationCrops requires -Output")
     if Cleanup:
         return None
+    reset_section_visit_order(OutputPath)
     ingest_to_section_files(
         output_path=OutputPath,
         odata=_empty_to_none(OData),
@@ -321,7 +326,7 @@ def ExportSectionCrops(
     if z in sections:
         report_iterate(
             SECTIONS_TRACK_ID,
-            sections.index(z),
+            section_visit_index(OutputPath, z),
             len(sections),
             SECTIONS_LABEL,
             depth=0,
@@ -363,12 +368,34 @@ def ExportSectionCrops(
         if z in sections:
             report_iterate(
                 SECTIONS_TRACK_ID,
-                sections.index(z) + 1,
+                section_visit_index(OutputPath, z) + 1,
                 len(sections),
                 SECTIONS_LABEL,
                 depth=0,
                 section=z,
             )
+
+
+_section_visit_order: dict[str, list[int]] = {}
+
+
+def reset_section_visit_order(output_path: str) -> None:
+    """Clear the section progress cursor for one output tree."""
+    _section_visit_order.pop(str(output_path), None)
+
+
+def section_visit_index(output_path: str, z: int) -> int:
+    """Zero-based index that increases in the order sections are entered.
+
+    Volume XML may visit high Z first (RPC2) or low Z first (RPC1). The bar
+    follows that visit order instead of the ascending ingest list.
+    """
+    order = _section_visit_order.setdefault(str(output_path), [])
+    try:
+        return order.index(z)
+    except ValueError:
+        order.append(z)
+        return len(order) - 1
 
 
 def _export_section_crops_entry(
@@ -584,6 +611,7 @@ def _export_section_crops(
     previous: SectionWatermark | None = None,
 ) -> list[str]:
     output = Path(output_path)
+    products = get_product_index(output)
     plans, polygons_by_id = plan_section_crops(
         records,
         pad=params.pad,
@@ -604,9 +632,11 @@ def _export_section_crops(
     previous_mtime = previous.tileset_mtime if previous else None
     current_keys = {plan.image_key for plan in plans}
     previous_keys = set(previous.image_keys or []) if previous else set()
-    _remove_stale_image_products(output, previous_keys - current_keys)
+    _remove_stale_image_products(output, previous_keys - current_keys, products=products)
     for plan in plans:
-        remove_member_files_not_in(output, plan.image_key, set(plan.location_ids))
+        remove_member_files_not_in(
+            output, plan.image_key, set(plan.location_ids), products=products
+        )
 
     mask_jobs: list[MaskJob] = []
     stitch_jobs: list[StitchJob] = []
@@ -628,6 +658,7 @@ def _export_section_crops(
             previous_tileset_mtime=previous_mtime,
             force=force,
             refresh_odata=refresh_odata,
+            products=products,
         )
         if mode == "skip":
             join_specs.append((plan, mode))
@@ -659,7 +690,7 @@ def _export_section_crops(
                 )
             )
         if mode == "full":
-            if not force and image_path.is_file():
+            if not force and products.exists("images", image_path.name):
                 # PNG already on disk; skip restitch unless -Force was passed.
                 # Masks still run below since we may have no prior watermark.
                 mode = "mask_only"
@@ -699,7 +730,12 @@ def _export_section_crops(
             )
         finally:
             mask_reporter.complete()
-    apply_ignore_moves(output)
+        for job in mask_jobs:
+            products.note_path(job.mask_path)
+            products.note_path(job.rle_path)
+    if apply_ignore_moves(output):
+        products.rescan("masks")
+        products.rescan("ignored")
 
     by_d: dict[int, list[StitchJob]] = {}
     for job in stitch_jobs:
@@ -778,6 +814,11 @@ def _export_section_crops(
             finally:
                 if strip_reporter is not None:
                     strip_reporter.complete()
+            for job in jobs:
+                products.note_path(job.image_path)
+                leftover = Path(job.image_path).with_suffix(".jpg")
+                if leftover.name != Path(job.image_path).name:
+                    products.forget("images", leftover.name)
             stitch_offset += len(jobs)
     finally:
         if stitch_reporter is not None:
@@ -788,18 +829,26 @@ def _export_section_crops(
     for plan, mode in join_specs:
         image_marks.append(_image_watermark(plan, by_id))
         if mode == "skip":
-            if overlay:
-                _write_plan_overlay(output, plan, tile_x_dim, tile_y_dim)
+            # Crop/mask membership and OData LastModified already matched. Only
+            # ``stat`` overlay vs on-disk TEM/masks — never load pixels or restitch.
+            if overlay and not _overlay_is_fresh(output, plan, products):
+                _write_plan_overlay(output, plan, tile_x_dim, tile_y_dim, products)
             continue
         width, height = plan.output_size()
         annotations: list[dict[str, Any]] = []
         mask_paths: list[str] = []
         for location_id in plan.location_ids:
-            rle_path = output / "_work" / "rle" / f"{plan.image_key}_{location_id}.json"
-            mask_path = output / "masks" / f"{plan.image_key}_{location_id}.png"
-            if not rle_path.is_file():
+            rle_name = f"{plan.image_key}_{location_id}.json"
+            mask_name = f"{plan.image_key}_{location_id}.png"
+            rle_path = output / "_work" / "rle" / rle_name
+            mask_path = output / "masks" / mask_name
+            if not products.exists("_work/rle", rle_name):
                 continue
-            rle = json.loads(rle_path.read_text(encoding="utf-8"))
+            try:
+                rle = json.loads(rle_path.read_text(encoding="utf-8"))
+            except OSError:
+                products.refresh_one("_work/rle", rle_name)
+                continue
             record = by_id[location_id]
             window_index, window_count = plan.window_of.get(location_id, (0, 1))
             stats = mask_by_member.get((plan.image_key, location_id), {})
@@ -817,11 +866,12 @@ def _export_section_crops(
                     window_count=window_count,
                 )
             )
-            if mask_path.is_file():
+            if products.exists("masks", mask_name):
                 mask_paths.append(str(mask_path))
         image_name = crop_image_filename(plan.image_key)
+        json_path = output / "images" / f"{plan.image_key}.json"
         write_sa1b_json(
-            output / "images" / f"{plan.image_key}.json",
+            json_path,
             file_name=image_name,
             width=width,
             height=height,
@@ -829,14 +879,17 @@ def _export_section_crops(
             downsample=plan.downsample,
             volume=params.volume,
         )
+        products.note_path(json_path)
         if overlay:
+            overlay_path = output / "overlays" / f"{plan.image_key}.png"
             write_overlay(
-                output / "overlays" / f"{plan.image_key}.png",
+                overlay_path,
                 width=width,
                 height=height,
                 mask_paths=mask_paths,
                 tem_path=output / "images" / image_name,
             )
+            products.note_path(overlay_path)
         manifest_rows.append(_manifest_row(plan, z, params.volume))
 
     replace_manifest_rows(output, z, manifest_rows)
@@ -974,23 +1027,61 @@ def _level_mtime(level: Any) -> float | None:
     return None
 
 
-def _write_plan_overlay(output: Path, plan: PlannedCrop, tile_x_dim: int, tile_y_dim: int) -> None:
-    """Rebuild a QA overlay from the existing TEM crop and 1-bit masks."""
+def _overlay_is_fresh(output: Path, plan: PlannedCrop, products: CropProductIndex) -> bool:
+    """True when the QA overlay exists and is at least as new as TEM crop and masks.
+
+    Uses indexed mtimes only. OData LastModified is already handled by
+    ``image_rebuild_mode`` before skip.
+    """
+    del output
+    overlay_mtime = products.mtime("overlays", f"{plan.image_key}.png")
+    if overlay_mtime is None:
+        return False
+    tem_name = f"{plan.image_key}.png"
+    if not products.exists("images", tem_name):
+        tem_name = f"{plan.image_key}.jpg"
+    tem_mtime = products.mtime("images", tem_name)
+    if tem_mtime is not None and tem_mtime > overlay_mtime + 1e-6:
+        return False
+    for location_id in plan.location_ids:
+        mask_mtime = products.mtime("masks", f"{plan.image_key}_{location_id}.png")
+        if mask_mtime is not None and mask_mtime > overlay_mtime + 1e-6:
+            return False
+    return True
+
+
+def _write_plan_overlay(
+    output: Path,
+    plan: PlannedCrop,
+    tile_x_dim: int,
+    tile_y_dim: int,
+    products: CropProductIndex,
+) -> None:
+    """Rebuild a QA overlay from the on-disk TEM crop and 1-bit masks.
+
+    Does not restitch mosaic tiles. Callers should use :func:`_overlay_is_fresh`
+    first when only timestamps may have changed.
+    """
     del tile_x_dim, tile_y_dim
     width, height = plan.output_size()
-    tem = resolve_crop_image(output / "images", plan.image_key)
+    tem_name = f"{plan.image_key}.png"
+    if not products.exists("images", tem_name) and products.exists("images", f"{plan.image_key}.jpg"):
+        tem_name = f"{plan.image_key}.jpg"
+    tem = output / "images" / tem_name
     mask_paths = [
         str(output / "masks" / f"{plan.image_key}_{location_id}.png")
         for location_id in plan.location_ids
-        if (output / "masks" / f"{plan.image_key}_{location_id}.png").is_file()
+        if products.exists("masks", f"{plan.image_key}_{location_id}.png")
     ]
+    overlay_path = output / "overlays" / f"{plan.image_key}.png"
     write_overlay(
-        output / "overlays" / f"{plan.image_key}.png",
+        overlay_path,
         width=width,
         height=height,
         mask_paths=mask_paths,
         tem_path=tem,
     )
+    products.note_path(overlay_path)
 
 
 def _manifest_row(plan: PlannedCrop, z: int, volume: str) -> dict[str, Any]:
@@ -1018,10 +1109,15 @@ def _purge_empty_section(output: Path, z: int) -> None:
     prune_catalog_section(output, z, set())
 
 
-def _remove_stale_image_products(output: Path, stale_keys: set[str]) -> None:
+def _remove_stale_image_products(
+    output: Path,
+    stale_keys: set[str],
+    *,
+    products: CropProductIndex | None = None,
+) -> None:
     """Delete prior crop products whose keys are no longer emitted for this Z."""
     for key in stale_keys:
-        remove_image_key_products(output, key)
+        remove_image_key_products(output, key, products=products)
 
 
 def _resolve_volume_name(*nodes: Any) -> str:

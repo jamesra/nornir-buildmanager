@@ -32,7 +32,10 @@ from nornir_buildmanager.exceptions import (
     NornirMissingDependencyException,
     NornirRethrownException,
 )
-from nornir_buildmanager.pipelinemanager_iterate_filters import resolve_iterate_candidates
+from nornir_buildmanager.pipelinemanager_iterate_filters import (
+    resolve_iterate_candidates,
+    sort_iterate_candidates,
+)
 from nornir_buildmanager.volumemanager import (
     XElementWrapper,
     XResourceElementWrapper,
@@ -902,6 +905,9 @@ class PipelineManager:
         candidates = resolve_iterate_candidates(
             RootForSearch, xpath, PipelineNode, ArgSet, VolumeElem,
             PipelineManager.GetSearchRoot)
+        sort_attribute = PipelineNode.attrib.get("SortAttribute")
+        if sort_attribute:
+            candidates = sort_iterate_candidates(candidates, sort_attribute)
 
         validate = True
         if 'Validate' in PipelineNode.attrib:
