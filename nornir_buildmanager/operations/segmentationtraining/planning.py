@@ -6,7 +6,12 @@ import logging
 from dataclasses import dataclass, field
 
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
-from nornir_buildmanager.operations.segmentationtraining.freshness import EXPORTER_LEGACY, EXPORTER_TILED
+from nornir_buildmanager.operations.segmentationtraining.freshness import (
+    EXPORTER_LEGACY,
+    EXPORTER_TILED,
+    ExportParams,
+    ResolvedTileset,
+)
 from nornir_buildmanager.operations.segmentationtraining.geometry import (
     CropWindow,
     TileRect,
@@ -75,17 +80,9 @@ def overlap_tiles_for(max_tiles: int) -> int:
 def plan_section_crops(
     records: list[LocationRecord],
     *,
-    pad: float,
-    downsample: int,
-    available: list[int],
-    max_texture: int,
-    min_process_pixels: int,
-    tile_x_dim: int,
-    tile_y_dim: int,
-    max_tiles_x: int,
-    max_tiles_y: int,
+    params: ExportParams,
+    tileset: ResolvedTileset,
     mosaic_bounds: tuple[float, float, float, float] | None = None,
-    volume: str = "volume",
     exporter: str = EXPORTER_TILED,
 ) -> tuple[list[PlannedCrop], dict[int, list[PolygonRings]]]:
     """Build shared-image groups for one Z.
@@ -93,7 +90,14 @@ def plan_section_crops(
     ``tiled`` stays at *downsample* and splits a mask that does not fit one crop.
     ``legacy`` coarsens D until the mask fits one crop and never splits.
     """
-    del max_tiles_x, max_tiles_y
+    pad = params.pad
+    downsample = params.downsample
+    available = tileset.available
+    max_texture = params.max_texture
+    min_process_pixels = params.min_process_pixels
+    tile_x_dim = tileset.tile_x_dim
+    tile_y_dim = tileset.tile_y_dim
+    volume = params.volume
     level = max(int(downsample), 1)
     polygons_by_id: dict[int, list[PolygonRings]] = {}
     prepared: list[tuple[LocationRecord, float, float, float, float]] = []

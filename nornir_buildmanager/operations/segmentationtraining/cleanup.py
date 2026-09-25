@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,13 +17,16 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     save_section_watermark,
     section_meta_path,
 )
-from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
+from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    CropProductIndex,
+    get_product_index,
+)
 from nornir_buildmanager.operations.segmentationtraining.stitch import resolve_crop_image
 
-_MEMBER_GLOBS = (
-    ("masks", "*.png"),
-    ("ignored", "*.png"),
-    ("_work/rle", "*.json"),
+_MEMBER_FOLDERS = (
+    ("masks", ".png"),
+    ("ignored", ".png"),
+    ("_work/rle", ".json"),
 )
 
 
@@ -75,6 +79,32 @@ def remove_member_files_not_in(
     return _unlink_member_files(output, key, keep_ids=keep_ids, products=products)
 
 
+def delete_location_member_files(
+    output: Path,
+    location_id: int,
+    *,
+    z: int | None = None,
+    products: CropProductIndex | None = None,
+) -> list[str]:
+    """Delete mask, ignored, and RLE files for one location id. Returns image keys touched."""
+    keys: list[str] = []
+    suffix_id = int(location_id)
+    index = products if products is not None else get_product_index(output)
+    for folder, suffix in _MEMBER_FOLDERS:
+        needle = f"_{suffix_id}{suffix}"
+        matches = [name for name in index.iter_names(folder) if name.endswith(needle)]
+        directory = output.joinpath(*folder.split("/"))
+        for name in matches:
+            key = name[: -len(needle)]
+            if z is not None and f"_{int(z)}_D" not in key:
+                continue
+            (directory / name).unlink(missing_ok=True)
+            index.forget(folder, name)
+            if key not in keys:
+                keys.append(key)
+    return keys
+
+
 def cleanup_annotation_crops(
     output_path: str | Path,
     *,
@@ -116,6 +146,7 @@ def CleanupAnnotationCrops(
 
 
 def _repair_key(output: Path, key: str, summary: CleanupSummary) -> None:
+    """Delete or rewrite one image key when the crop, JSON, masks, or overlay disagree."""
     image_path = resolve_crop_image(output / "images", key)
     json_path = output / "images" / f"{key}.json"
     image_ok = image_path.is_file()
@@ -179,6 +210,7 @@ def _repair_key(output: Path, key: str, summary: CleanupSummary) -> None:
 
 
 def _align_image_meta(image_path: Path, image_meta: dict[str, Any], key: str) -> bool:
+    """Set ``file_name`` and size on the JSON image block from the crop file. Returns whether it changed."""
     try:
         with Image.open(image_path) as handle:
             width, height = handle.size
@@ -202,6 +234,7 @@ def _align_image_meta(image_path: Path, image_meta: dict[str, Any], key: str) ->
 
 
 def _repair_watermarks(output: Path, wanted: set[int] | None, summary: CleanupSummary) -> None:
+    """Drop watermark keys whose crop files are gone."""
     work = output / "_work"
     if not work.is_dir():
         return
@@ -238,22 +271,18 @@ def _repair_watermarks(output: Path, wanted: set[int] | None, summary: CleanupSu
 
 
 def _candidate_keys(output: Path, wanted: set[int] | None) -> list[str]:
+    """Image keys in the product index, optionally limited to *wanted* sections."""
+    products = get_product_index(output)
     keys: set[str] = set()
-    images = output / "images"
-    if images.is_dir():
-        for pattern in ("*.png", "*.jpg", "*.json"):
-            for path in images.glob(pattern):
-                keys.add(path.stem)
-    overlays = output / "overlays"
-    if overlays.is_dir():
-        for path in overlays.glob("*.png"):
-            keys.add(path.stem)
-    for folder, pattern in _MEMBER_GLOBS:
-        root = output.joinpath(*folder.split("/"))
-        if not root.is_dir():
-            continue
-        for path in root.glob(pattern):
-            key, _location_id = _split_member_stem(path.stem)
+    for name in products.iter_names("images"):
+        if name.endswith((".png", ".jpg", ".json")):
+            keys.add(Path(name).stem)
+    for name in products.iter_names("overlays"):
+        if name.endswith(".png"):
+            keys.add(Path(name).stem)
+    for folder, _suffix in _MEMBER_FOLDERS:
+        for name in products.iter_names(folder):
+            key, _location_id = _split_member_stem(Path(name).stem)
             if key:
                 keys.add(key)
     ordered = sorted(keys)
@@ -269,34 +298,41 @@ def _unlink_member_files(
     *,
     products: CropProductIndex | None = None,
 ) -> int:
+    """Delete member files for one image key. *keep_ids* are left in place."""
     removed = 0
-    for folder, pattern in _MEMBER_GLOBS:
+    index = products if products is not None else get_product_index(output)
+    for folder, suffix in _MEMBER_FOLDERS:
         root = output.joinpath(*folder.split("/"))
-        suffix = ".png" if pattern.endswith(".png") else ".json"
-        if products is not None:
-            names = [
-                name
-                for name in products.names_with_prefix(folder, f"{key}_")
-                if name.endswith(suffix)
-            ]
-        elif root.is_dir():
-            names = [path.name for path in root.glob(f"{key}_*{suffix}")]
-        else:
-            names = []
-        for name in names:
+        for name in _iter_member_names(index, key, suffix, folder):
             member_key, location_id = _split_member_stem(Path(name).stem)
             if member_key != key or location_id is None:
                 continue
             if keep_ids is not None and location_id in keep_ids:
                 continue
             (root / name).unlink(missing_ok=True)
-            if products is not None:
-                products.forget(folder, name)
+            index.forget(folder, name)
             removed += 1
     return removed
 
 
+def _iter_member_names(
+    products: CropProductIndex,
+    key: str,
+    suffix: str,
+    folder: str,
+) -> Iterator[str]:
+    """Yield member basenames for one image key.
+
+    ``names_with_prefix`` snapshots the match so the caller can forget names
+    while walking the result.
+    """
+    for name in products.names_with_prefix(folder, f"{key}_"):
+        if name.endswith(suffix):
+            yield name
+
+
 def _split_member_stem(stem: str) -> tuple[str, int | None]:
+    """Split ``{image_key}_{location_id}`` into the key and id."""
     if "_" not in stem:
         return stem, None
     key, token = stem.rsplit("_", 1)
@@ -306,6 +342,7 @@ def _split_member_stem(stem: str) -> tuple[str, int | None]:
 
 
 def _mask_exists(output: Path, key: str, location_id: int) -> bool:
+    """True when a mask or an ignored mask exists for this location on the crop."""
     name = f"{key}_{location_id}.png"
     return (output / "masks" / name).is_file() or (output / "ignored" / name).is_file()
 
@@ -323,6 +360,7 @@ def _image_key_matches_sections(key: str, sections: set[int]) -> bool:
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    """Load a crop JSON object, or raise when it cannot be read."""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:

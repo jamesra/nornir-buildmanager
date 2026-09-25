@@ -73,15 +73,16 @@ class TestProcessIterateMqtt(unittest.TestCase):
         resolve.assert_called_once()
         event_names = [c.args[0] for c in publish.call_args_list]
         self.assertEqual(event_names[0], "iterate_progress")
-        self.assertIsNone(publish.call_args_list[0].kwargs["total"])
+        self.assertEqual(publish.call_args_list[0].kwargs["total"], 2)
         self.assertEqual(publish.call_args_list[0].kwargs["current"], 0)
         self.assertEqual(publish.call_args_list[0].kwargs["depth"], 0)
         self.assertEqual(publish.call_args_list[0].kwargs["label"], "SectionNode")
         self.assertEqual(publish.call_args_list[1].kwargs["current"], 1)
-        self.assertIsNone(publish.call_args_list[1].kwargs["total"])
+        self.assertEqual(publish.call_args_list[1].kwargs["total"], 2)
         self.assertEqual(publish.call_args_list[1].kwargs["label"], "SectionNode")
         self.assertEqual(publish.call_args_list[1].kwargs["section"], 1)
         self.assertEqual(publish.call_args_list[2].kwargs["current"], 2)
+        self.assertEqual(publish.call_args_list[2].kwargs["total"], 2)
         self.assertEqual(publish.call_args_list[2].kwargs["label"], "SectionNode")
         self.assertEqual(event_names[-1], "iterate_progress_complete")
         self.assertEqual(
@@ -96,14 +97,14 @@ class TestProcessIterateMqtt(unittest.TestCase):
             pipelineData=ElementTree.Element("Pipeline"),
         )
         iterate_node = ElementTree.Element(
-            "Iterate", VariableName="SectionNode", XPath="Block/Section")
+            "Iterate", VariableName="ChannelNode", XPath="Channel")
         yield_count = 0
 
         def _gen():
             nonlocal yield_count
             for i in range(3):
                 yield_count += 1
-                yield SectionNode.Create(Number=i + 1)
+                yield ChannelNode.Create(f"C{i + 1}")
 
         seen_yields_at_first_child: list[int] = []
 

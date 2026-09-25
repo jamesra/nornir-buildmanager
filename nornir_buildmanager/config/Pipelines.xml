@@ -2329,7 +2329,10 @@
                       help="Saved OData Locations dump (JSONL, {value:[]}, or concatenated page documents). Exactly one of -OData or -Geometries is required."
                       required="False"/>
             <Argument flag="-ODataFilter" dest="ODataFilter"
-                      help="Override $filter only. Default selects closed polygons on Cell types including subtypes."
+                      help="Override $filter only. When set, -StructureTypeId is ignored. Default selects closed polygons on Cell types including subtypes."
+                      required="False"/>
+            <Argument flag="-StructureTypeId" dest="StructureTypeId" type="IntegerList"
+                      help="Exact Parent/TypeID values for closed polygons. One id or a list, same syntax as -Sections (1,3,5-7). No subtype expansion. Omitted keeps the Cell-plus-subtypes default. Overridden by -ODataFilter."
                       required="False"/>
             <Argument flag="-Output" dest="OutputPath"
                       help="Directory for PNG crops, JSON, masks, overlays, and _work cache"
@@ -2382,6 +2385,8 @@
                       help="Skip QA overlay PNGs (TEM + Viking HCL hue, TEM luma). SAM2 does not use them."/>
             <Argument flag="-Cleanup" dest="Cleanup" action="store_true"
                       help="Audit and repair corrupt AnnotationCrops products. Does not ingest OData or restitch."/>
+            <Argument flag="-Update" dest="Update" action="store_true"
+                      help="ID-set delta: delete masks for locations that no longer match, mask or stitch newly added locations, and remask survivors whose LastModified changed inside their existing crop. Other survivor masks and TEM crops are left alone. Incompatible with -Force."/>
         </Arguments>
 
         <PythonCall Function="segmentationtraining.IngestGeometries"
@@ -2389,6 +2394,7 @@
                     OData="#OData"
                     Geometries="#Geometries"
                     ODataFilter="#ODataFilter"
+                    StructureTypeId="#StructureTypeId"
                     Sections="#Sections"
                     IncludeOffEdge="#IncludeOffEdge"
                     Force="#Force"
@@ -2422,6 +2428,7 @@
                                 StageTiles="#StageTiles"
                                 Force="#Force"
                                 RefreshOData="#RefreshOData"
+                                Update="#Update"
                                 FailMissingTileset="#FailMissingTileset"
                                 NoOverlay="#NoOverlay"
                                 Cleanup="#Cleanup"/>

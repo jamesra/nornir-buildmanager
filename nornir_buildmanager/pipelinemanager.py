@@ -919,8 +919,12 @@ class PipelineManager:
 
         variable_name = PipelineNode.attrib.get('VariableName', 'Iterate')
         track_id = f"iterate:{variable_name}"
-        # Do not materialize candidates for len(); MQTT omits None totals
-        # (publish_run_event) so streaming can start before the full set is known (#140).
+        # Section iterates are already in the volume XML. Count them so the
+        # dashboard can draw a bar. Other iterates stay streamed (#140).
+        progress_total: int | None = None
+        if variable_name.replace("_", "").lower() == "sectionnode":
+            candidates = list(candidates)
+            progress_total = len(candidates)
         depth = self._iterate_depth
         self._iterate_depth += 1
 
@@ -931,7 +935,7 @@ class PipelineManager:
             publish_run_event(
                 "iterate_progress",
                 current=0,
-                total=None,
+                total=progress_total,
                 depth=depth,
                 track_id=track_id,
                 label=variable_name)
@@ -951,7 +955,7 @@ class PipelineManager:
                 publish_run_event(
                     "iterate_progress",
                     current=progress_current,
-                    total=None,
+                    total=progress_total,
                     depth=depth,
                     track_id=track_id,
                     label=variable_name,
@@ -961,7 +965,7 @@ class PipelineManager:
             publish_run_event(
                 "iterate_progress_complete",
                 track_id=track_id,
-                total=progress_current)
+                total=progress_total if progress_total is not None else progress_current)
 
         for parent in save_parent:
             PipelineManager._SaveNodes(parent)

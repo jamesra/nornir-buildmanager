@@ -26,9 +26,12 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
 )
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     EXPORTER_LEGACY,
+    EXPORTER_TILED,
     GEOMETRY_LEGACY,
     GEOMETRY_TILED,
     ExportParams,
+    ResolvedTileset,
+    SectionCropRun,
     SectionWatermark,
     geometry_version_for,
     save_section_watermark,
@@ -74,7 +77,10 @@ from nornir_buildmanager.operations.segmentationtraining.records import (
     DEFAULT_ODATA_FILTER,
     LocationRecord,
     LocationType,
+    odata_filter_for_structure_type_ids,
+    resolve_odata_filter,
 )
+from nornir_buildmanager.operations.segmentationtraining.update import update_section_crops
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     _OVERLAY_COLOR_ALPHA,
     _OVERLAY_COLORS,
@@ -192,6 +198,46 @@ def _params(**overrides) -> ExportParams:
     return ExportParams(**payload)
 
 
+def _tileset_for(
+    level: Path,
+    *,
+    tile: int = 8,
+    mtime: float | None = 3.0,
+    available: list[int] | None = None,
+) -> ResolvedTileset:
+    return ResolvedTileset(
+        tile_x_dim=tile,
+        tile_y_dim=tile,
+        available=[1] if available is None else available,
+        level_dirs={1: str(level)},
+        prefix="",
+        postfix=".png",
+        mtime=mtime,
+    )
+
+
+def _section_run(
+    level: Path,
+    params: ExportParams,
+    *,
+    tile: int = 8,
+    mtime: float = 3.0,
+    overlay: bool = False,
+    max_tiles: int = 8,
+) -> SectionCropRun:
+    return SectionCropRun(
+        params=params,
+        tileset=_tileset_for(level, tile=tile, mtime=mtime),
+        exporter=EXPORTER_TILED,
+        max_tiles_x=max_tiles,
+        max_tiles_y=max_tiles,
+        workers=1,
+        mask_workers=1,
+        stage_tiles=None,
+        overlay=overlay,
+    )
+
+
 def test_pipelines_xml_registers_export_annotation_crops() -> None:
     tree = ElementTree.parse(_PIPELINES)
     pipeline = tree.find(".//Pipeline[@Name='ExportAnnotationCrops']")
@@ -203,6 +249,12 @@ def test_pipelines_xml_registers_export_annotation_crops() -> None:
     assert "WriteGallery" in functions
     assert pipeline.find(".//Argument[@dest='Cleanup']") is not None
     assert pipeline.find(".//Argument[@dest='RefreshOData']") is not None
+    assert pipeline.find(".//Argument[@dest='StructureTypeId']") is not None
+    assert pipeline.find(".//Argument[@dest='Update']") is not None
+    ingest_call = pipeline.find(".//PythonCall[@Function='segmentationtraining.IngestGeometries']")
+    export_call = pipeline.find(".//PythonCall[@Function='segmentationtraining.ExportSectionCrops']")
+    assert ingest_call.get("StructureTypeId") == "#StructureTypeId"
+    assert export_call.get("Update") == "#Update"
     assert pipeline.find(".//Argument[@dest='Exporter']").get("default") == "tiled"
     gallery = [node for node in pipeline.findall(".//PythonCall") if node.get("Function") == "WriteGallery"]
     assert gallery[0].get("Module") == "nornir_buildmanager.operations.segmentationtraining.sam2"
@@ -272,6 +324,66 @@ def test_force_numpy_computation_restores_prior_on_error(monkeypatch: pytest.Mon
     assert calls == [ComputationLib.numpy, ComputationLib.cupy]
 
 
+def test_structure_type_id_filter_is_exact_and_yields_to_odata_filter() -> None:
+    one = odata_filter_for_structure_type_ids([1])
+    assert one == "(TypeCode eq 4 or TypeCode eq 6) and (Parent/TypeID eq 1)"
+    assert "ParentID" not in one.split("TypeCode")[-1]
+    both = odata_filter_for_structure_type_ids([1, 42])
+    assert "Parent/TypeID eq 1" in both and "Parent/TypeID eq 42" in both
+    assert resolve_odata_filter(None, None) == DEFAULT_ODATA_FILTER
+    assert resolve_odata_filter(None, [1]) == one
+    assert resolve_odata_filter("TypeCode eq 4", [1]) == "TypeCode eq 4"
+    with pytest.raises(ValueError):
+        odata_filter_for_structure_type_ids([])
+    with pytest.raises(ValueError):
+        odata_filter_for_structure_type_ids([0])
+
+
+def test_structure_type_id_is_sent_on_odata_ingest(tmp_path: Path) -> None:
+    entity = _entity(9, 4, _box_wkt(0, 0, 4, 4))
+    getter = _getter([entity])
+    ingest_to_section_files(
+        output_path=tmp_path / "out",
+        odata="http://example/odata",
+        geometries=None,
+        structure_type_ids=[1],
+        http_get=getter,  # type: ignore[arg-type]
+    )
+    decoded = unquote(getter.calls[0])  # type: ignore[attr-defined]
+    assert "Parent/TypeID eq 1" in decoded
+    assert "Parent/Type/ParentID" not in decoded
+
+
+def test_structure_type_id_accepts_a_list(tmp_path: Path) -> None:
+    entity = _entity(9, 4, _box_wkt(0, 0, 4, 4))
+    getter = _getter([entity])
+    IngestGeometries(
+        OutputPath=str(tmp_path / "out"),
+        OData="http://example/odata",
+        StructureTypeId="1, 42,5-6",
+        http_get=getter,  # type: ignore[arg-type]
+    )
+    decoded = unquote(getter.calls[0])  # type: ignore[attr-defined]
+    for type_id in (1, 42, 5, 6):
+        assert f"Parent/TypeID eq {type_id}" in decoded
+
+
+def test_odata_filter_overrides_structure_type_id(tmp_path: Path) -> None:
+    entity = _entity(9, 4, _box_wkt(0, 0, 4, 4))
+    getter = _getter([entity])
+    ingest_to_section_files(
+        output_path=tmp_path / "out",
+        odata="http://example/odata",
+        geometries=None,
+        odata_filter="TypeCode eq 4",
+        structure_type_ids=[1],
+        http_get=getter,  # type: ignore[arg-type]
+    )
+    decoded = unquote(getter.calls[0])  # type: ignore[attr-defined]
+    assert "TypeCode eq 4" in decoded
+    assert "Parent/TypeID eq 1" not in decoded
+
+
 def test_ingest_requires_exactly_one_source(tmp_path: Path) -> None:
     with pytest.raises(NornirUserException):
         ingest_to_section_files(output_path=tmp_path, odata=None, geometries=None)
@@ -318,26 +430,8 @@ def test_refresh_odata_reruns_masks_when_last_modified_changed(tmp_path: Path) -
     first = _record(8, 2, _box_wkt(1, 1, 4, 4), last_modified="2020-01-01T00:00:00+00:00")
     out = tmp_path / "export"
     params = _params(pad=0.0, max_texture=8)
-    base = dict(
-        output_path=out,
-        z=2,
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=params,
-        tileset_mtime=3.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
-        force=False,
-    )
-    export_section_crops(**base, records=[first])  # type: ignore[arg-type]
+    run = _section_run(level, params, mtime=3.0)
+    export_section_crops(output_path=out, z=2, records=[first], run=run, force=False)
     crop = next((out / "images").glob("*.png"))
     crop_mtime = crop.stat().st_mtime
     previous = load_section_watermark(out, 2)
@@ -367,8 +461,8 @@ def test_refresh_odata_reruns_masks_when_last_modified_changed(tmp_path: Path) -
     from nornir_buildmanager.operations.segmentationtraining.pipeline import _image_watermark
     plans, _ = plan_section_crops(
         [updated],
-        pad=0.0, downsample=1, available=[1], max_texture=8, min_process_pixels=16,
-        tile_x_dim=8, tile_y_dim=8, max_tiles_x=8, max_tiles_y=8, volume="volume",
+        params=_params(pad=0.0, max_texture=8, min_process_pixels=16, volume="volume", tile_x_dim=8, tile_y_dim=8),
+        tileset=_tileset_for(level, mtime=None),
     )
     updated_mark = _image_watermark(plans[0], {updated.id: updated})
     assert (
@@ -388,7 +482,9 @@ def test_refresh_odata_reruns_masks_when_last_modified_changed(tmp_path: Path) -
     )
 
     # Full export with refresh: unchanged record leaves crop PNG untouched.
-    export_section_crops(**base, records=[first], previous=previous, refresh_odata=True)  # type: ignore[arg-type]
+    export_section_crops(
+        output_path=out, z=2, records=[first], run=run, force=False, previous=previous, refresh_odata=True
+    )
     assert crop.stat().st_mtime == crop_mtime
 
 
@@ -419,33 +515,15 @@ def test_refresh_odata_skip_leaves_existing_overlay(tmp_path: Path) -> None:
     first = _record(8, 2, _box_wkt(1, 1, 4, 4), last_modified="2020-01-01T00:00:00+00:00")
     out = tmp_path / "export"
     params = _params(pad=0.0, max_texture=8)
-    base = dict(
-        output_path=out,
-        z=2,
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=params,
-        tileset_mtime=3.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=True,
-        force=False,
-    )
-    export_section_crops(**base, records=[first])  # type: ignore[arg-type]
+    run = _section_run(level, params, mtime=3.0, overlay=True)
+    export_section_crops(output_path=out, z=2, records=[first], run=run, force=False)
     previous = load_section_watermark(out, 2)
     assert previous is not None
     overlay = next((out / "overlays").glob("*.png"))
     overlay_mtime = overlay.stat().st_mtime
 
-    export_section_crops(  # type: ignore[arg-type]
-        **base, records=[first], previous=previous, refresh_odata=True
+    export_section_crops(
+        output_path=out, z=2, records=[first], run=run, force=False, previous=previous, refresh_odata=True
     )
     assert overlay.stat().st_mtime == overlay_mtime
 
@@ -457,15 +535,15 @@ def test_refresh_odata_skip_leaves_existing_overlay(tmp_path: Path) -> None:
     newer = overlay_mtime + 5.0
     os.utime(mask, (newer, newer))
     get_product_index(out).note("masks", mask.name)
-    export_section_crops(  # type: ignore[arg-type]
-        **base, records=[first], previous=previous, refresh_odata=True
+    export_section_crops(
+        output_path=out, z=2, records=[first], run=run, force=False, previous=previous, refresh_odata=True
     )
     assert overlay.stat().st_mtime > overlay_mtime
 
     overlay.unlink()
     get_product_index(out).forget("overlays", overlay.name)
-    export_section_crops(  # type: ignore[arg-type]
-        **base, records=[first], previous=previous, refresh_odata=True
+    export_section_crops(
+        output_path=out, z=2, records=[first], run=run, force=False, previous=previous, refresh_odata=True
     )
     assert overlay.is_file()
 
@@ -493,6 +571,8 @@ def test_product_index_prefix_and_write_through(tmp_path: Path) -> None:
     assert index.mtime("masks", kept.name) == kept.stat().st_mtime
     prefixed = index.names_with_prefix("masks", "RC1_1_D1_X0-1_Y0-1_")
     assert prefixed == [kept.name]
+    assert set(index.iter_names("masks")) == {kept.name, other.name}
+    assert list(index.iter_names("missing")) == []
     added = masks / "RC1_1_D1_X0-1_Y0-1_10.png"
     added.write_bytes(b"n")
     index.note_path(added)
@@ -501,6 +581,152 @@ def test_product_index_prefix_and_write_through(tmp_path: Path) -> None:
     index.forget("masks", added.name)
     assert not index.exists("masks", added.name)
     assert get_product_index(tmp_path) is index
+    drop_product_index(tmp_path)
+
+
+def test_second_lookup_skips_product_folder_listings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """After the index is built, catalog and cleanup lookups do not list those folders again."""
+    from nornir_buildmanager.operations.segmentationtraining.catalog import _collect_location_rows
+    from nornir_buildmanager.operations.segmentationtraining.cleanup import _candidate_keys
+    from nornir_buildmanager.operations.segmentationtraining.pipeline import (
+        _iter_crop_images,
+        _mask_paths_for_key,
+    )
+    from nornir_buildmanager.operations.segmentationtraining.product_index import (
+        drop_product_index,
+        get_product_index,
+    )
+
+    key = "Vol_1_D1_X0-1_Y0-1"
+    other = "Vol_2_D1_X0-1_Y0-1"
+    images = tmp_path / "images"
+    masks = tmp_path / "masks"
+    ignored = tmp_path / "ignored"
+    images.mkdir()
+    masks.mkdir()
+    ignored.mkdir()
+    (images / f"{key}.json").write_text(
+        json.dumps({"annotations": [{"id": 5, "area": 10}]}),
+        encoding="utf-8",
+    )
+    (images / f"{key}.png").write_bytes(b"png")
+    (images / f"{key}.jpg").write_bytes(b"jpg")
+    (masks / f"{key}_5.png").write_bytes(b"m")
+    (ignored / f"{other}_9.png").write_bytes(b"i")
+    drop_product_index(tmp_path)
+    get_product_index(tmp_path)
+
+    listed = {"images", "masks", "ignored"}
+    original_scandir = os.scandir
+    original_glob = Path.glob
+
+    def guarded_scandir(path, *args, **kwargs):
+        if Path(path).name in listed:
+            raise AssertionError(f"unexpected scandir {path}")
+        return original_scandir(path, *args, **kwargs)
+
+    def guarded_glob(self: Path, pattern: str):
+        if self.name in listed:
+            raise AssertionError(f"unexpected glob {self} {pattern}")
+        return original_glob(self, pattern)
+
+    monkeypatch.setattr(os, "scandir", guarded_scandir)
+    monkeypatch.setattr(Path, "glob", guarded_glob)
+
+    keyed = list(_collect_location_rows(tmp_path, {}, set(), z=1, image_keys={key}))
+    assert {(row["location_id"], row["image_key"]) for row in keyed} == {(5, key)}
+    walked = list(_collect_location_rows(tmp_path, {}, set(), z=None, image_keys=None))
+    assert {(row["location_id"], row["image_key"]) for row in walked} == {(5, key), (9, other)}
+    assert _candidate_keys(tmp_path, None) == [key, other]
+    assert [path.name for path in _iter_crop_images(tmp_path)] == [f"{key}.png"]
+    assert _mask_paths_for_key(tmp_path, key, None) == [str(masks / f"{key}_5.png")]
+    assert _mask_paths_for_key(tmp_path, key, [5]) == [str(masks / f"{key}_5.png")]
+
+
+def test_ignore_move_updates_product_index_without_rescan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Moving a mask into ignored/ is visible in the index without another folder scan."""
+    from nornir_buildmanager.operations.segmentationtraining.catalog import (
+        apply_ignore_moves,
+        restore_location,
+        save_ignore_ids,
+    )
+    from nornir_buildmanager.operations.segmentationtraining.product_index import (
+        drop_product_index,
+        get_product_index,
+    )
+
+    name = "Vol_1_D1_X0-1_Y0-1_5.png"
+    masks = tmp_path / "masks"
+    masks.mkdir()
+    (masks / name).write_bytes(b"m")
+    drop_product_index(tmp_path)
+    index = get_product_index(tmp_path)
+    assert index.exists("masks", name)
+
+    listed = {"images", "masks", "ignored"}
+    original_scandir = os.scandir
+    original_glob = Path.glob
+
+    def guarded_scandir(path, *args, **kwargs):
+        if Path(path).name in listed:
+            raise AssertionError(f"unexpected scandir {path}")
+        return original_scandir(path, *args, **kwargs)
+
+    def guarded_glob(self: Path, pattern: str):
+        if self.name in listed:
+            raise AssertionError(f"unexpected glob {self} {pattern}")
+        return original_glob(self, pattern)
+
+    monkeypatch.setattr(os, "scandir", guarded_scandir)
+    monkeypatch.setattr(Path, "glob", guarded_glob)
+
+    save_ignore_ids(tmp_path, [5])
+    assert apply_ignore_moves(tmp_path) == 1
+    assert not index.exists("masks", name)
+    assert index.exists("ignored", name)
+    assert (tmp_path / "ignored" / name).is_file()
+    assert not (masks / name).exists()
+
+    assert restore_location(tmp_path, 5)
+    assert index.exists("masks", name)
+    assert not index.exists("ignored", name)
+    assert (masks / name).is_file()
+
+
+def test_purge_empty_section_deletes_members_without_per_key_glob(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Empty-section purge must use the folder index, not one directory listing per image key."""
+    from nornir_buildmanager.operations.segmentationtraining.pipeline import _purge_empty_section
+    from nornir_buildmanager.operations.segmentationtraining.product_index import drop_product_index
+
+    key = "RC2_211_D1_X0-1_Y0-1"
+    other = "RC2_212_D1_X0-1_Y0-1"
+    masks = tmp_path / "masks"
+    masks.mkdir()
+    stale = masks / f"{key}_14.png"
+    kept = masks / f"{other}_9.png"
+    stale.write_bytes(b"stale")
+    kept.write_bytes(b"kept")
+    save_section_watermark(
+        tmp_path,
+        211,
+        SectionWatermark(
+            ids=[14],
+            max_last_modified="2020-01-01T00:00:00+00:00",
+            tileset_mtime=1.0,
+            params_hash="hash",
+            image_keys=[key],
+        ),
+    )
+    drop_product_index(tmp_path)
+
+    def fail_glob(self: Path, pattern: str) -> list[Path]:
+        raise AssertionError(f"unexpected directory glob {self} {pattern}")
+
+    monkeypatch.setattr(Path, "glob", fail_glob)
+    _purge_empty_section(tmp_path, 211)
+    assert not stale.exists()
+    assert kept.is_file()
+    assert not (tmp_path / "_work" / "section_211.meta.json").exists()
     drop_product_index(tmp_path)
 
 
@@ -709,19 +935,35 @@ def test_choose_downsample_small_compact_and_long() -> None:
 
 
 def _plan_kwargs(**overrides: object) -> dict:
-    payload: dict = dict(
-        pad=0.0,
-        downsample=1,
-        available=[1, 2, 4, 8],
-        max_texture=1024,
-        min_process_pixels=16,
-        tile_x_dim=1024,
-        tile_y_dim=1024,
-        max_tiles_x=1,
-        max_tiles_y=1,
+    tile_x = int(overrides.pop("tile_x_dim", 1024))  # type: ignore[arg-type]
+    tile_y = int(overrides.pop("tile_y_dim", 1024))  # type: ignore[arg-type]
+    available = list(overrides.pop("available", [1, 2, 4, 8]))  # type: ignore[arg-type]
+    params = ExportParams(
+        pad=float(overrides.pop("pad", 0.0)),  # type: ignore[arg-type]
+        downsample=int(overrides.pop("downsample", 1)),  # type: ignore[arg-type]
+        max_texture=int(overrides.pop("max_texture", 1024)),  # type: ignore[arg-type]
+        min_process_pixels=int(overrides.pop("min_process_pixels", 16)),  # type: ignore[arg-type]
+        include_off_edge=False,
+        channel="TEM",
+        filter_name="Leveled",
+        volume=str(overrides.pop("volume", "volume")),
+        tile_x_dim=tile_x,
+        tile_y_dim=tile_y,
     )
-    payload.update(overrides)
-    return payload
+    overrides.pop("max_tiles_x", None)
+    overrides.pop("max_tiles_y", None)
+    if overrides:
+        raise TypeError(f"unexpected plan overrides: {sorted(overrides)}")
+    tileset = ResolvedTileset(
+        tile_x_dim=tile_x,
+        tile_y_dim=tile_y,
+        available=available,
+        level_dirs={},
+        prefix="",
+        postfix=".png",
+        mtime=None,
+    )
+    return {"params": params, "tileset": tileset}
 
 
 def test_long_mask_stays_at_requested_downsample_and_splits() -> None:
@@ -751,6 +993,63 @@ def test_long_mask_stays_at_requested_downsample_and_splits() -> None:
         assert min(xs) >= 0
         overlap = min(1124, plan.window.origin_x + plan.window.width) - max(0, plan.window.origin_x)
         assert overlap >= 512
+
+
+def test_split_mask_overview_lists_clickable_parts(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import ImageWatermark
+    from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
+
+    output = tmp_path / "crops"
+    left = ImageWatermark(
+        key="Vol_1_D1_X0-8_Y0-8", downsample=1, ix0=0, ix1=1, iy0=0, iy1=1,
+        member_ids=[3], max_last_modified="", origin_x=0, origin_y=0, width=8, height=8,
+    )
+    right = ImageWatermark(
+        key="Vol_1_D1_X8-16_Y0-8", downsample=1, ix0=1, ix1=2, iy0=0, iy1=1,
+        member_ids=[3], max_last_modified="", origin_x=8, origin_y=0, width=8, height=8,
+    )
+    for mark, fill in ((left, 255), (right, 255)):
+        folder = output / "masks"
+        folder.mkdir(parents=True, exist_ok=True)
+        Image.new("L", (8, 8), fill).save(folder / f"{mark.key}_3.png")
+    assert write_split_mask_overviews(output, [left, right], {3}, max_edge=8) == 1
+    payload = json.loads((output / "overlays" / "parts" / "3.json").read_text(encoding="utf-8"))
+    assert (payload["width"], payload["height"]) == (16, 8)
+    assert (payload["gridColumns"], payload["gridRows"]) == (2, 1)
+    assert [(part["imageKey"], part["x"], part["gridX"]) for part in payload["parts"]] == [
+        (left.key, 0, 0),
+        (right.key, 8, 1),
+    ]
+    with Image.open(output / "overlays" / "parts" / "3.png") as overview:
+        assert overview.size == (16, 8)
+    assert write_split_mask_overviews(output, [left], {3}, max_edge=8) == 0
+    assert not (output / "overlays" / "parts" / "3.json").exists()
+
+
+def test_split_overview_keeps_a_1x3_tile_stack(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import ImageWatermark
+    from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
+
+    output = tmp_path / "crops"
+    marks = []
+    for row in range(3):
+        mark = ImageWatermark(
+            key=f"Vol_1_D1_X0-1024_Y{row * 1024}-{(row + 1) * 1024}",
+            downsample=1, ix0=0, ix1=1, iy0=row, iy1=row + 1,
+            member_ids=[9], max_last_modified="",
+            origin_x=0, origin_y=row * 1024, width=1024, height=1024,
+        )
+        marks.append(mark)
+        folder = output / "masks"
+        folder.mkdir(parents=True, exist_ok=True)
+        Image.new("L", (1024, 1024), 255).save(folder / f"{mark.key}_9.png")
+    assert write_split_mask_overviews(output, marks, {9}, max_edge=1024) == 1
+    payload = json.loads((output / "overlays" / "parts" / "9.json").read_text(encoding="utf-8"))
+    assert (payload["width"], payload["height"]) == (1024, 3072)
+    assert (payload["gridColumns"], payload["gridRows"]) == (1, 3)
+    assert [part["gridY"] for part in payload["parts"]] == [0, 1, 2]
+    with Image.open(output / "overlays" / "parts" / "9.png") as overview:
+        assert overview.size == (1024, 3072)
 
 
 def test_contained_mask_uses_nearest_center_once() -> None:
@@ -888,20 +1187,7 @@ def test_empty_label_still_exported(tmp_path: Path) -> None:
         output_path=out,
         z=7,
         records=[record],
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=params,
-        tileset_mtime=1.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=True,
+        run=_section_run(level, params, mtime=1.0, overlay=True),
         force=False,
     )
     assert keys
@@ -1009,33 +1295,14 @@ def test_fresh_section_export_skips_restitch(tmp_path: Path) -> None:
     record = _record(4, 1, _box_wkt(1, 1, 6, 6), label="soma")
     out = tmp_path / "export"
     params = _params(pad=0.0, max_texture=8)
-    kwargs = dict(
-        output_path=out,
-        z=1,
-        records=[record],
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=params,
-        tileset_mtime=5.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
-        force=False,
-    )
-    export_section_crops(**kwargs)  # type: ignore[arg-type]
+    run = _section_run(level, params, mtime=5.0)
+    export_section_crops(output_path=out, z=1, records=[record], run=run, force=False)
     crop = next((out / "images").glob("*.png"))
     mtime = crop.stat().st_mtime
     from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
 
     previous = load_section_watermark(out, 1)
-    export_section_crops(**kwargs, previous=previous)  # type: ignore[arg-type]
+    export_section_crops(output_path=out, z=1, records=[record], run=run, force=False, previous=previous)
     assert crop.stat().st_mtime == mtime
 
 
@@ -1050,34 +1317,15 @@ def test_section_rebuild_plan_logs_left_alone_vs_regenerate(
     record = _record(4, 1, _box_wkt(1, 1, 6, 6), label="soma")
     out = tmp_path / "export"
     params = _params(pad=0.0, max_texture=8)
-    kwargs = dict(
-        output_path=out,
-        z=1,
-        records=[record],
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=params,
-        tileset_mtime=5.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
-        force=False,
-    )
-    export_section_crops(**kwargs)  # type: ignore[arg-type]
+    run = _section_run(level, params, mtime=5.0)
+    export_section_crops(output_path=out, z=1, records=[record], run=run, force=False)
     from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
     from nornir_buildmanager.operations.segmentationtraining import pipeline as pipeline_mod
 
     previous = load_section_watermark(out, 1)
     messages: list[str] = []
     monkeypatch.setattr(pipeline_mod.prettyoutput, "Log", messages.append)
-    export_section_crops(**kwargs, previous=previous)  # type: ignore[arg-type]
+    export_section_crops(output_path=out, z=1, records=[record], run=run, force=False, previous=previous)
     rebuild = [msg for msg in messages if "left alone" in msg]
     assert len(rebuild) == 1
     assert "1 annotation(s) left alone" in rebuild[0]
@@ -1094,36 +1342,185 @@ def test_mask_only_when_geometry_changes_but_tiles_do_not(tmp_path: Path) -> Non
     first = _record(8, 2, _box_wkt(1, 1, 4, 4), last_modified="2020-01-01T00:00:00+00:00")
     out = tmp_path / "export"
     params = _params(pad=0.0, max_texture=8)
-    base = dict(
-        output_path=out,
-        z=2,
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=params,
-        tileset_mtime=3.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
-        force=False,
-    )
-    export_section_crops(**base, records=[first])  # type: ignore[arg-type]
+    run = _section_run(level, params, mtime=3.0)
+    export_section_crops(output_path=out, z=2, records=[first], run=run, force=False)
     crop = next((out / "images").glob("*.png"))
     crop_mtime = crop.stat().st_mtime
     from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
 
     previous = load_section_watermark(out, 2)
     edited = _record(8, 2, _box_wkt(1, 1, 5, 5), last_modified="2022-01-01T00:00:00+00:00")
-    export_section_crops(**base, records=[edited], previous=previous)  # type: ignore[arg-type]
+    export_section_crops(output_path=out, z=2, records=[edited], run=run, force=False, previous=previous)
     assert crop.stat().st_mtime == crop_mtime
     payload = json.loads(next((out / "images").glob("*.json")).read_text(encoding="utf-8"))
     assert payload["annotations"][0]["last_modified"].startswith("2022-01-01")
+
+
+def _export_base(tmp_path: Path, out: Path) -> SectionCropRun:
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True, exist_ok=True)
+    for ix in (0, 5):
+        Image.fromarray(np.full((8, 8), 40, dtype=np.uint8), mode="L").save(
+            level / tile_filename("", ".png", ix, 0)
+        )
+    return _section_run(
+        level,
+        _params(pad=0.0, max_texture=8, volume="TestVolume"),
+        mtime=3.0,
+    )
+
+
+def test_update_prunes_removed_masks_and_leaves_survivors(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
+
+    out = tmp_path / "export"
+    base = _export_base(tmp_path, out)
+    kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    dropped = _record(9, 2, _box_wkt(1, 1, 3, 3))
+    export_section_crops(output_path=out, z=2, run=base, records=[kept, dropped], force=False)  # type: ignore[arg-type]
+    previous = load_section_watermark(out, 2)
+    crop = next((out / "images").glob("*.png"))
+    kept_mask = next(path for path in (out / "masks").glob("*.png") if path.name.endswith("_8.png"))
+    dropped_mask = next(path for path in (out / "masks").glob("*.png") if path.name.endswith("_9.png"))
+    crop_mtime = crop.stat().st_mtime
+    kept_mtime = kept_mask.stat().st_mtime
+    update_section_crops(
+        output_path=out,
+        z=2,
+        run=base,
+        records=[kept],
+        previous=previous,
+    )
+    assert not dropped_mask.exists()
+    assert kept_mask.stat().st_mtime == kept_mtime
+    assert crop.stat().st_mtime == crop_mtime
+    payload = json.loads((out / "images" / f"{crop.stem}.json").read_text(encoding="utf-8"))
+    assert [item["id"] for item in payload["annotations"]] == [8]
+    manifest = (out / "manifest.jsonl").read_text(encoding="utf-8")
+    assert "9" not in manifest or '"locationIds":[8]' in manifest.replace(" ", "")
+
+
+def test_update_prune_unlinks_computed_paths_without_mask_glob(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
+
+    out = tmp_path / "export"
+    base = _export_base(tmp_path, out)
+    kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    dropped_a = _record(9, 2, _box_wkt(1, 1, 3, 3))
+    dropped_b = _record(10, 2, _box_wkt(1, 1, 2, 2))
+    export_section_crops(output_path=out, z=2, run=base, records=[kept, dropped_a, dropped_b], force=False)  # type: ignore[arg-type]
+    previous = load_section_watermark(out, 2)
+    masks = [path for path in (out / "masks").glob("*.png") if path.name.endswith(("_9.png", "_10.png"))]
+    assert len(masks) == 2
+    mask_globs: list[str] = []
+    real_glob = Path.glob
+
+    def _tracking_glob(self: Path, pattern: str):
+        if self.name == "masks":
+            mask_globs.append(pattern)
+        return real_glob(self, pattern)
+
+    monkeypatch.setattr(Path, "glob", _tracking_glob)
+    update_section_crops(
+        output_path=out,
+        z=2,
+        run=base,
+        records=[kept],
+        previous=previous,
+    )
+    assert mask_globs == []
+    assert all(not path.exists() for path in masks)
+    assert any(path.name.endswith("_8.png") for path in real_glob(out / "masks", "*.png"))
+
+
+def test_update_remasks_only_a_changed_survivor(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
+
+    out = tmp_path / "export"
+    base = _export_base(tmp_path, out)
+    kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    other = _record(9, 2, _box_wkt(1, 1, 4, 4))
+    export_section_crops(output_path=out, z=2, run=base, records=[kept, other], force=False)  # type: ignore[arg-type]
+    previous = load_section_watermark(out, 2)
+    crop = next((out / "images").glob("*.png"))
+    changed_mask = next(path for path in (out / "masks").glob("*.png") if path.name.endswith("_8.png"))
+    other_mask = next(path for path in (out / "masks").glob("*.png") if path.name.endswith("_9.png"))
+    crop_mtime = crop.stat().st_mtime
+    other_bytes = other_mask.read_bytes()
+    edited = _record(8, 2, _box_wkt(1, 1, 6, 6), last_modified="2022-01-01T00:00:00+00:00")
+    update_section_crops(
+        output_path=out,
+        z=2,
+        run=base,
+        records=[edited, other],
+        previous=previous,
+    )
+    assert crop.stat().st_mtime == crop_mtime
+    assert other_mask.read_bytes() == other_bytes
+    assert changed_mask.read_bytes() != other_bytes
+    payload = json.loads((out / "images" / f"{crop.stem}.json").read_text(encoding="utf-8"))
+    by_id = {item["id"]: item for item in payload["annotations"]}
+    assert by_id[8]["last_modified"].startswith("2022-01-01")
+    assert by_id[9]["last_modified"].startswith("2020-01-01")
+
+
+def test_update_adds_mask_on_existing_crop_without_restitch(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
+
+    out = tmp_path / "export"
+    base = _export_base(tmp_path, out)
+    kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    extra = _record(11, 2, _box_wkt(1, 1, 4, 4))
+    export_section_crops(output_path=out, z=2, run=base, records=[kept], force=False)  # type: ignore[arg-type]
+    previous = load_section_watermark(out, 2)
+    crop = next((out / "images").glob("*.png"))
+    crop_mtime = crop.stat().st_mtime
+    update_section_crops(
+        output_path=out,
+        z=2,
+        run=base,
+        records=[kept, extra],
+        previous=previous,
+    )
+    assert crop.stat().st_mtime == crop_mtime
+    assert (out / "masks").glob(f"{crop.stem}_11.png") or any(
+        path.name.endswith("_11.png") for path in (out / "masks").glob("*.png")
+    )
+    payload = json.loads((out / "images" / f"{crop.stem}.json").read_text(encoding="utf-8"))
+    assert {item["id"] for item in payload["annotations"]} == {8, 11}
+
+
+def test_update_stitches_only_a_new_crop(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
+
+    out = tmp_path / "export"
+    base = _export_base(tmp_path, out)
+    kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    far = _record(12, 2, _box_wkt(40, 1, 44, 4))
+    export_section_crops(output_path=out, z=2, run=base, records=[kept], force=False)  # type: ignore[arg-type]
+    previous = load_section_watermark(out, 2)
+    existing = {path.name for path in (out / "images").glob("*.png")}
+    existing_mtime = {path.name: path.stat().st_mtime for path in (out / "images").glob("*.png")}
+    update_section_crops(
+        output_path=out,
+        z=2,
+        run=base,
+        records=[kept, far],
+        previous=previous,
+    )
+    current = {path.name: path.stat().st_mtime for path in (out / "images").glob("*.png")}
+    assert existing <= set(current)
+    for name, mtime in existing_mtime.items():
+        assert current[name] == mtime
+    assert len(current) > len(existing)
+    assert any(path.name.endswith("_12.png") for path in (out / "masks").glob("*.png"))
+
+
+def test_update_rejects_force() -> None:
+    with pytest.raises(NornirUserException, match="-Update"):
+        ExportSectionCrops(OutputPath="/tmp/unused", Update=True, Force=True, Z=1)
 
 
 def test_sanitize_volume_token() -> None:
@@ -1158,34 +1555,21 @@ def test_volume_prefix_change_removes_old_files(tmp_path: Path) -> None:
     )
     record = _record(4, 1, _box_wkt(1, 1, 6, 6), label="soma")
     out = tmp_path / "export"
-    base = dict(
-        output_path=out,
-        z=1,
-        records=[record],
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        tileset_mtime=5.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
-        force=False,
-    )
-    export_section_crops(**base, params=_params(pad=0.0, max_texture=8, volume="RC2"))  # type: ignore[arg-type]
+    from dataclasses import replace
+
+    run = _section_run(level, _params(pad=0.0, max_texture=8, volume="RC2"), mtime=5.0)
+    export_section_crops(output_path=out, z=1, records=[record], run=run, force=False)
     old = next((out / "images").glob("*.png"))
     assert old.name.startswith("RC2_")
     from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
 
     previous = load_section_watermark(out, 1)
-    export_section_crops(  # type: ignore[arg-type]
-        **base,
-        params=_params(pad=0.0, max_texture=8, volume="RPC1"),
+    export_section_crops(
+        output_path=out,
+        z=1,
+        records=[record],
+        run=replace(run, params=_params(pad=0.0, max_texture=8, volume="RPC1")),
+        force=False,
         previous=previous,
     )
     assert not old.is_file()
@@ -1256,11 +1640,11 @@ def test_resolve_tileset_corrects_wrong_tile_dims(tmp_path: Path) -> None:
         filter_name="Leveled",
     )
     assert info is not None
-    assert info["tile_x_dim"] == 1024
-    assert info["tile_y_dim"] == 1024
+    assert info.tile_x_dim == 1024
+    assert info.tile_y_dim == 1024
     assert tileset.TileXDim == 1024
     assert tileset.TileYDim == 1024
-    assert info["save_node"] is tileset
+    assert info.save_node is tileset
 
 
 def test_resolve_section_stage_root_defaults_and_override() -> None:

@@ -15,6 +15,8 @@ DEFAULT_ODATA_FILTER = (
     "(Parent/TypeID eq 1 or Parent/Type/ParentID eq 1)"
 )
 
+CLOSED_POLYGON_TYPE_FILTER = "(TypeCode eq 4 or TypeCode eq 6)"
+
 
 class LocationType(IntEnum):
     """Viking ``Locations.TypeCode``. WKT is control points; only 6 is curve-fit."""
@@ -114,6 +116,31 @@ def _optional_float(value: Any) -> float | None:
     if value is None or value == "":
         return None
     return float(value)
+
+
+def odata_filter_for_structure_type_ids(ids: list[int]) -> str:
+    """Closed polygons whose parent TypeID is one of *ids*. No subtype expansion."""
+    if not ids:
+        raise ValueError("StructureTypeId requires at least one id")
+    clauses: list[str] = []
+    for raw in ids:
+        type_id = int(raw)
+        if type_id <= 0:
+            raise ValueError(f"StructureTypeId must be positive, got {type_id}")
+        clauses.append(f"Parent/TypeID eq {type_id}")
+    return f"{CLOSED_POLYGON_TYPE_FILTER} and ({' or '.join(clauses)})"
+
+
+def resolve_odata_filter(
+    odata_filter: str | None,
+    structure_type_ids: list[int] | None,
+) -> str:
+    """Prefer an explicit $filter, else exact StructureTypeId, else the Cell default."""
+    if odata_filter:
+        return odata_filter
+    if structure_type_ids:
+        return odata_filter_for_structure_type_ids(structure_type_ids)
+    return DEFAULT_ODATA_FILTER
 
 
 def parse_datetime(value: Any) -> datetime:

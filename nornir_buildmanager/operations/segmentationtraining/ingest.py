@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -21,10 +21,10 @@ from nornir_buildmanager.operations.segmentationtraining.progress import (
     IterateProgressReporter,
 )
 from nornir_buildmanager.operations.segmentationtraining.records import (
-    DEFAULT_ODATA_FILTER,
     SCHEMA_VERSION,
     LocationRecord,
     parse_datetime,
+    resolve_odata_filter,
 )
 from nornir_buildmanager.operations.segmentationtraining.wkt import (
     is_skippable_location,
@@ -85,6 +85,7 @@ def ingest_to_section_files(
     odata: str | None,
     geometries: str | os.PathLike[str] | None,
     odata_filter: str | None = None,
+    structure_type_ids: list[int] | None = None,
     sections: list[int] | None = None,
     include_off_edge: bool = False,
     http_get: HttpGet | None = None,
@@ -95,27 +96,26 @@ def ingest_to_section_files(
         raise NornirUserException(
             "ExportAnnotationCrops requires exactly one of -OData or -Geometries"
         )
-    filter_text = odata_filter or DEFAULT_ODATA_FILTER
+    try:
+        filter_text = resolve_odata_filter(odata_filter, structure_type_ids)
+    except ValueError as exc:
+        raise NornirUserException(str(exc)) from exc
     if odata:
-        records = list(
-            iter_odata_locations(
-                odata,
-                filter_text=filter_text,
-                include_off_edge=include_off_edge,
-                sections=sections,
-                http_get=http_get,
-                output_path=output_path,
-                force=force,
-            )
+        records: Iterable[LocationRecord] = iter_odata_locations(
+            odata,
+            filter_text=filter_text,
+            include_off_edge=include_off_edge,
+            sections=sections,
+            http_get=http_get,
+            output_path=output_path,
+            force=force,
         )
         source = {"kind": "odata", "url": odata, "filter": filter_text}
     else:
-        records = list(
-            iter_geometries_dump(
-                Path(geometries),  # type: ignore[arg-type]
-                include_off_edge=include_off_edge,
-                sections=sections,
-            )
+        records = iter_geometries_dump(
+            Path(geometries),  # type: ignore[arg-type]
+            include_off_edge=include_off_edge,
+            sections=sections,
         )
         source = {"kind": "geometries", "path": str(geometries), "filter": filter_text}
 
@@ -139,7 +139,7 @@ def ingest_to_section_files(
 
 def write_section_jsonl(
     output_path: str | os.PathLike[str],
-    records: list[LocationRecord],
+    records: Iterable[LocationRecord],
     *,
     prune_missing: bool = True,
 ) -> dict[int, list[LocationRecord]]:
@@ -207,6 +207,7 @@ def iter_geometries_dump(
 
 
 def _parse_odata_dump(text: str) -> Iterator[dict[str, Any]]:
+    """Yield entities from concatenated JSON documents, or from JSONL if that fails."""
     stripped = text.strip()
     if not stripped:
         return
@@ -232,6 +233,7 @@ def _parse_odata_dump(text: str) -> Iterator[dict[str, Any]]:
 
 
 def _entities_from_odata_document(doc: Any) -> list[dict[str, Any]]:
+    """Entities from an OData ``value`` array, a bare list, or one object with ``ID``."""
     if isinstance(doc, list):
         return [item for item in doc if isinstance(item, dict)]
     if isinstance(doc, dict) and "value" in doc:
@@ -419,6 +421,7 @@ def _odata_z_filter(values: list[int]) -> str:
 
 
 def _combined_z_filter(base_filter: str, values: list[int]) -> str:
+    """AND a Z-membership predicate onto the caller's ``$filter``."""
     z_filter = _odata_z_filter(values)
     if not z_filter:
         return base_filter
@@ -470,6 +473,7 @@ def _odata_locations_url(
     select: str,
     expand: str | None,
 ) -> str:
+    """Locations query with paging, count, and a stable ``Z,ID`` order."""
     root = base_url.rstrip("/")
     query = (
         f"$filter={quote(filter_text, safe='()/')}"
@@ -497,6 +501,7 @@ def _odata_count(document: dict[str, Any]) -> int | None:
 
 
 def _iter_odata_documents(url: str, getter: HttpGet) -> Iterator[dict[str, Any]]:
+    """Follow ``@odata.nextLink`` until a page omits it."""
     next_url: str | None = url
     while next_url:
         document = getter(next_url)
@@ -544,11 +549,13 @@ def _fetch_odata_entities(url: str, getter: HttpGet) -> list[dict[str, Any]]:
 
 
 def _iter_odata_pages(url: str, getter: HttpGet) -> Iterator[dict[str, Any]]:
+    """Yield entities from every page of an OData query."""
     for document in _iter_odata_documents(url, getter):
         yield from _entities_from_odata_document(document)
 
 
 def _absolute_next_link(current: str, link: str) -> str:
+    """Use an absolute nextLink as-is; resolve a relative one against the current page."""
     if urlparse(link).scheme:
         return link
     return urljoin(current, link)

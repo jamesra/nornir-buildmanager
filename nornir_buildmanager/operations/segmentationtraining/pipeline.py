@@ -19,6 +19,7 @@ from nornir_imageregistration.computational_lib import (
     SetActiveComputationLib,
 )
 from nornir_shared import prettyoutput
+from nornir_shared.argparse_helpers import IntegerList
 from PIL import Image
 
 from nornir_buildmanager.exceptions import NornirUserException
@@ -27,6 +28,8 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     EXPORTER_TILED,
     ExportParams,
     ImageWatermark,
+    ResolvedTileset,
+    SectionCropRun,
     SectionWatermark,
     geometry_version_for,
     id_set,
@@ -45,6 +48,7 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     load_section_records,
 )
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
+from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     CropProductIndex,
@@ -71,6 +75,7 @@ from nornir_buildmanager.operations.segmentationtraining.cleanup import (
     remove_member_files_not_in,
 )
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
+from nornir_buildmanager.operations.segmentationtraining.update import update_section_crops
 from nornir_buildmanager.operations.segmentationtraining.sam2 import WriteGallery
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     replace_manifest_rows,
@@ -112,6 +117,7 @@ def IngestGeometries(
     OData: str | None = None,
     Geometries: str | None = None,
     ODataFilter: str | None = None,
+    StructureTypeId: list[int] | None = None,
     Sections: list[int] | None = None,
     IncludeOffEdge: bool = False,
     Force: bool = False,
@@ -132,6 +138,7 @@ def IngestGeometries(
         odata=_empty_to_none(OData),
         geometries=_empty_to_none(Geometries),
         odata_filter=_empty_to_none(ODataFilter),
+        structure_type_ids=_as_int_list(StructureTypeId),
         sections=_as_int_list(Sections),
         include_off_edge=bool(IncludeOffEdge),
         http_get=http_get,
@@ -162,12 +169,13 @@ def repair_overlays(
     sections: list[int] | None = None,
 ) -> int:
     """Rewrite overlays from existing TEM crops and 1-bit masks. Returns the number written."""
-    output = Path(output_path)
-    written = 0
-    for key, member_ids in _overlay_repair_keys(output, sections):
-        if _repair_one_overlay(output, key, member_ids):
-            written += 1
-    return written
+    with force_numpy_computation():
+        output = Path(output_path)
+        written = 0
+        for key, member_ids in _overlay_repair_keys(output, sections):
+            if _repair_one_overlay(output, key, member_ids):
+                written += 1
+        return written
 
 
 def _overlay_repair_keys(
@@ -185,17 +193,14 @@ def _overlay_repair_keys(
         if watermark is None:
             continue
         members_by_key = {item.key: item.member_ids for item in (watermark.images or [])}
-        for key in watermark.image_keys or list(members_by_key):
+        for key in watermark.image_keys or members_by_key:
             if key in seen:
                 continue
             seen.add(key)
             jobs.append((key, members_by_key.get(key)))
     if jobs:
         return jobs
-    images = output / "images"
-    if not images.is_dir():
-        return []
-    for image in _iter_crop_images(images):
+    for image in _iter_crop_images(output):
         key = image.stem
         if wanted is not None and not _image_key_matches_sections(key, wanted):
             continue
@@ -203,17 +208,23 @@ def _overlay_repair_keys(
     return jobs
 
 
-def _iter_crop_images(images: Path) -> list[Path]:
+def _iter_crop_images(output: Path) -> Iterator[Path]:
     """PNG crops first; leftover JPEGs only when PNG is missing for that stem."""
-    found: dict[str, Path] = {}
-    for path in sorted(images.glob("*.png")):
-        found[path.stem] = path
-    for path in sorted(images.glob("*.jpg")):
-        found.setdefault(path.stem, path)
-    return list(found.values())
+    products = get_product_index(output)
+    images = output / "images"
+    chosen: dict[str, str] = {}
+    for name in products.iter_names("images"):
+        if name.endswith(".png"):
+            chosen[Path(name).stem] = name
+    for name in products.iter_names("images"):
+        if name.endswith(".jpg"):
+            chosen.setdefault(Path(name).stem, name)
+    for name in chosen.values():
+        yield images / name
 
 
 def _section_meta_numbers(output: Path) -> list[int]:
+    """Section numbers that already have a watermark under ``_work``."""
     work = output / "_work"
     if not work.is_dir():
         return []
@@ -238,6 +249,7 @@ def _repair_one_overlay(
     key: str,
     member_ids: list[int] | None,
 ) -> bool:
+    """Rewrite one QA overlay from the crop image and its masks."""
     tem = resolve_crop_image(output / "images", key)
     overlay = output / "overlays" / f"{key}.png"
     if not tem.is_file():
@@ -260,23 +272,22 @@ def _mask_paths_for_key(
     key: str,
     member_ids: list[int] | None,
 ) -> list[str]:
+    """Mask paths for one crop. Known member ids avoid scanning the folder map."""
+    products = get_product_index(output)
     masks = output / "masks"
     if member_ids:
         return [
             str(masks / f"{key}_{location_id}.png")
             for location_id in member_ids
-            if (masks / f"{key}_{location_id}.png").is_file()
+            if products.exists("masks", f"{key}_{location_id}.png")
         ]
-    if not masks.is_dir():
-        return []
-    prefix = f"{key}_"
-    found: list[tuple[int, Path]] = []
-    for path in masks.glob(f"{prefix}*.png"):
-        suffix = path.stem[len(prefix) :]
-        if suffix.isdigit():
-            found.append((int(suffix), path))
+    found = [
+        (location_id, name)
+        for location_id, name in products.members("masks", key)
+        if name.endswith(".png")
+    ]
     found.sort(key=lambda item: item[0])
-    return [str(path) for _, path in found]
+    return [str(masks / name) for _, name in found]
 
 
 def ExportSectionCrops(
@@ -310,6 +321,7 @@ def ExportSectionCrops(
     AvailableDownsamples: list[int] | None = None,
     Cleanup: bool = False,
     RefreshOData: bool = False,
+    Update: bool = False,
     **kwargs: Any,
 ) -> Any:
     """Per-section crop/mask/SA-1B write. Returns a Tileset node only if TileXDim/TileYDim were corrected."""
@@ -317,6 +329,8 @@ def ExportSectionCrops(
         raise NornirUserException("ExportAnnotationCrops requires -Output")
     if Cleanup:
         return None
+    if bool(Update) and bool(Force):
+        raise NornirUserException("ExportAnnotationCrops -Update cannot be combined with -Force")
     filter_node = FilterNode if FilterNode is not None else VolumeElement
     section = section_node
     if section is None and filter_node is not None and hasattr(filter_node, "FindParent"):
@@ -350,6 +364,7 @@ def ExportSectionCrops(
             StageTiles=StageTiles,
             Force=Force,
             RefreshOData=RefreshOData,
+            Update=Update,
             FailMissingTileset=FailMissingTileset,
             NoOverlay=NoOverlay,
             Overlay=Overlay,
@@ -416,6 +431,7 @@ def _export_section_crops_entry(
     StageTiles: str | None,
     Force: bool,
     RefreshOData: bool,
+    Update: bool,
     FailMissingTileset: bool,
     NoOverlay: bool,
     Overlay: bool,
@@ -439,7 +455,7 @@ def _export_section_crops_entry(
         _purge_empty_section(Path(OutputPath), z)
         return None
 
-    tileset_info = _resolve_tileset(
+    tileset = _resolve_tileset(
         filter_node,
         downsample=int(Downsample),
         fail_missing=bool(FailMissingTileset),
@@ -453,13 +469,13 @@ def _export_section_crops_entry(
         channel_name=str(Channels),
         filter_name=str(Filters),
     )
-    if tileset_info is None:
+    if tileset is None:
         return None
-    save_node = tileset_info.get("save_node")
+    save_node = tileset.save_node
 
     max_texture = resolve_max_texture(MaxTexture)
     max_tiles_x, max_tiles_y = _max_tiles(
-        MaxTiles, max_texture, tileset_info["tile_x_dim"], tileset_info["tile_y_dim"]
+        MaxTiles, max_texture, tileset.tile_x_dim, tileset.tile_y_dim
     )
     volume = _resolve_volume_name(VolumeNode, filter_node, section)
     exporter = (Exporter or EXPORTER_TILED).strip().lower()
@@ -477,15 +493,44 @@ def _export_section_crops_entry(
         filter_name=str(Filters),
         volume=volume,
         geometry_version=geometry_version,
-        tile_x_dim=int(tileset_info["tile_x_dim"]),
-        tile_y_dim=int(tileset_info["tile_y_dim"]),
+        tile_x_dim=int(tileset.tile_x_dim),
+        tile_y_dim=int(tileset.tile_y_dim),
+    )
+    run = SectionCropRun(
+        params=params,
+        tileset=tileset,
+        exporter=exporter,
+        max_tiles_x=max_tiles_x,
+        max_tiles_y=max_tiles_y,
+        workers=int(Workers) if Workers else (os.cpu_count() or 1),
+        mask_workers=int(MaskWorkers) if MaskWorkers else (os.cpu_count() or 1),
+        stage_tiles=resolve_section_stage_root(
+            _empty_to_none(StageTiles),
+            volume=volume,
+            z=z,
+        ),
+        overlay=bool(Overlay) and not bool(NoOverlay),
     )
     watermark = load_section_watermark(OutputPath, z)
+    if Update:
+        try:
+            with force_numpy_computation():
+                update_section_crops(
+                    output_path=OutputPath,
+                    z=z,
+                    records=records,
+                    previous=watermark,
+                    run=run,
+                )
+                nornir_pools.ReleaseStagePools()
+        finally:
+            schedule_remove_stage_tree(run.stage_tiles)
+        return save_node
     if section_is_fresh(
         records,
         watermark=watermark,
         params=params,
-        tileset_mtime=tileset_info["mtime"],
+        tileset_mtime=tileset.mtime,
         force=bool(Force),
         refresh_odata=bool(RefreshOData),
     ):
@@ -495,35 +540,13 @@ def _export_section_crops_entry(
         )
         return save_node
 
-    workers = int(Workers) if Workers else (os.cpu_count() or 1)
-    mask_workers = int(MaskWorkers) if MaskWorkers else (os.cpu_count() or 1)
-    overlay = bool(Overlay) and not bool(NoOverlay)
-    stage_tiles = resolve_section_stage_root(
-        _empty_to_none(StageTiles),
-        volume=volume,
-        z=z,
-    )
     try:
         with force_numpy_computation():
             export_section_crops(
                 output_path=OutputPath,
                 z=z,
                 records=records,
-                tile_x_dim=tileset_info["tile_x_dim"],
-                tile_y_dim=tileset_info["tile_y_dim"],
-                available=tileset_info["available"],
-                level_dirs=tileset_info["level_dirs"],
-                file_prefix=tileset_info["prefix"],
-                file_postfix=tileset_info["postfix"],
-                params=params,
-                exporter=exporter,
-                tileset_mtime=tileset_info["mtime"],
-                max_tiles_x=max_tiles_x,
-                max_tiles_y=max_tiles_y,
-                workers=workers,
-                mask_workers=mask_workers,
-                stage_tiles=stage_tiles,
-                overlay=overlay,
+                run=run,
                 force=bool(Force),
                 refresh_odata=bool(RefreshOData),
                 previous=watermark,
@@ -531,7 +554,7 @@ def _export_section_crops_entry(
             nornir_pools.ReleaseStagePools()
     finally:
         # Different sections use distinct z{n} roots; do not block the next section.
-        schedule_remove_stage_tree(stage_tiles)
+        schedule_remove_stage_tree(run.stage_tiles)
     return save_node
 
 
@@ -540,377 +563,323 @@ def export_section_crops(
     output_path: str | os.PathLike[str],
     z: int,
     records: list[LocationRecord],
-    tile_x_dim: int,
-    tile_y_dim: int,
-    available: list[int],
-    level_dirs: dict[int, str],
-    file_prefix: str,
-    file_postfix: str,
-    params: ExportParams,
-    exporter: str = EXPORTER_TILED,
-    tileset_mtime: float | None,
-    max_tiles_x: int,
-    max_tiles_y: int,
-    workers: int,
-    mask_workers: int,
-    stage_tiles: str | None,
-    overlay: bool,
+    run: SectionCropRun,
     force: bool,
     refresh_odata: bool = False,
     previous: SectionWatermark | None = None,
 ) -> list[str]:
     """Plan, stitch, rasterize, and write SA-1B products for one section."""
+    params = run.params
+    tileset = run.tileset
+    tile_x_dim = tileset.tile_x_dim
+    tile_y_dim = tileset.tile_y_dim
+    level_dirs = tileset.level_dirs
+    file_prefix = tileset.prefix
+    file_postfix = tileset.postfix
+    tileset_mtime = tileset.mtime
+    exporter = run.exporter
+    workers = run.workers
+    mask_workers = run.mask_workers
+    stage_tiles = run.stage_tiles
+    overlay = run.overlay
     with force_numpy_computation():
-        return _export_section_crops(
-            output_path=output_path,
-            z=z,
-            records=records,
-            tile_x_dim=tile_x_dim,
-            tile_y_dim=tile_y_dim,
-            available=available,
-            level_dirs=level_dirs,
-            file_prefix=file_prefix,
-            file_postfix=file_postfix,
+        output = Path(output_path)
+        products = get_product_index(output)
+        plans, polygons_by_id = plan_section_crops(
+            records,
             params=params,
+            tileset=tileset,
             exporter=exporter,
-            tileset_mtime=tileset_mtime,
-            max_tiles_x=max_tiles_x,
-            max_tiles_y=max_tiles_y,
-            workers=workers,
-            mask_workers=mask_workers,
-            stage_tiles=stage_tiles,
-            overlay=overlay,
-            force=force,
-            refresh_odata=refresh_odata,
-            previous=previous,
         )
-
-
-def _export_section_crops(
-    *,
-    output_path: str | os.PathLike[str],
-    z: int,
-    records: list[LocationRecord],
-    tile_x_dim: int,
-    tile_y_dim: int,
-    available: list[int],
-    level_dirs: dict[int, str],
-    file_prefix: str,
-    file_postfix: str,
-    params: ExportParams,
-    exporter: str = EXPORTER_TILED,
-    tileset_mtime: float | None,
-    max_tiles_x: int,
-    max_tiles_y: int,
-    workers: int,
-    mask_workers: int,
-    stage_tiles: str | None,
-    overlay: bool,
-    force: bool,
-    refresh_odata: bool = False,
-    previous: SectionWatermark | None = None,
-) -> list[str]:
-    output = Path(output_path)
-    products = get_product_index(output)
-    plans, polygons_by_id = plan_section_crops(
-        records,
-        pad=params.pad,
-        downsample=params.downsample,
-        available=available,
-        max_texture=params.max_texture,
-        min_process_pixels=params.min_process_pixels,
-        tile_x_dim=tile_x_dim,
-        tile_y_dim=tile_y_dim,
-        max_tiles_x=max_tiles_x,
-        max_tiles_y=max_tiles_y,
-        volume=params.volume,
-        exporter=exporter,
-    )
-    by_id = {record.id: record for record in records}
-    previous_images = {item.key: item for item in (previous.images or [])} if previous else {}
-    previous_hash = previous.params_hash if previous else None
-    previous_mtime = previous.tileset_mtime if previous else None
-    current_keys = {plan.image_key for plan in plans}
-    previous_keys = set(previous.image_keys or []) if previous else set()
-    _remove_stale_image_products(output, previous_keys - current_keys, products=products)
-    for plan in plans:
-        remove_member_files_not_in(
-            output, plan.image_key, set(plan.location_ids), products=products
-        )
-
-    mask_jobs: list[MaskJob] = []
-    stitch_jobs: list[StitchJob] = []
-    join_specs: list[tuple[PlannedCrop, str]] = []
-    manifest_rows: list[dict[str, Any]] = []
-
-    for plan in plans:
-        image_path = output / "images" / crop_image_filename(plan.image_key)
-        json_path = output / "images" / f"{plan.image_key}.json"
-        current_mark = _image_watermark(plan, by_id)
-        mode = image_rebuild_mode(
-            current_mark,
-            previous_images.get(plan.image_key),
-            image_path=image_path,
-            json_path=json_path,
-            params_hash=params.hash(),
-            previous_params_hash=previous_hash,
-            tileset_mtime=tileset_mtime,
-            previous_tileset_mtime=previous_mtime,
-            force=force,
-            refresh_odata=refresh_odata,
-            products=products,
-        )
-        if mode == "skip":
-            join_specs.append((plan, mode))
-            manifest_rows.append(_manifest_row(plan, z, params.volume))
-            continue
-        width, height = plan.output_size()
-        origin_x, origin_y = plan.mosaic_origin()
-        crop_x, crop_y = plan.window.crop_offset(tile_x_dim, tile_y_dim)
-        for location_id in plan.location_ids:
-            rings = pixel_rings_in_crop(
-                polygons_by_id[location_id],
-                origin_x=origin_x,
-                origin_y=origin_y,
-                downsample=float(plan.downsample),
-                width=width,
-                height=height,
+        by_id = {record.id: record for record in records}
+        previous_images = {item.key: item for item in (previous.images or [])} if previous else {}
+        previous_hash = previous.params_hash if previous else None
+        previous_mtime = previous.tileset_mtime if previous else None
+        current_keys = {plan.image_key for plan in plans}
+        previous_keys = set(previous.image_keys or []) if previous else set()
+        _remove_stale_image_products(output, previous_keys - current_keys, products=products)
+        for plan in plans:
+            remove_member_files_not_in(
+                output, plan.image_key, set(plan.location_ids), products=products
             )
-            if not rings:
+
+        mask_jobs: list[MaskJob] = []
+        stitch_jobs: list[StitchJob] = []
+        join_specs: list[tuple[PlannedCrop, str]] = []
+        manifest_rows: list[dict[str, Any]] = []
+
+        for plan in plans:
+            image_path = output / "images" / crop_image_filename(plan.image_key)
+            json_path = output / "images" / f"{plan.image_key}.json"
+            current_mark = _image_watermark(plan, by_id)
+            mode = image_rebuild_mode(
+                current_mark,
+                previous_images.get(plan.image_key),
+                image_path=image_path,
+                json_path=json_path,
+                params_hash=params.hash(),
+                previous_params_hash=previous_hash,
+                tileset_mtime=tileset_mtime,
+                previous_tileset_mtime=previous_mtime,
+                force=force,
+                refresh_odata=refresh_odata,
+                products=products,
+            )
+            if mode == "skip":
+                join_specs.append((plan, mode))
+                manifest_rows.append(_manifest_row(plan, z, params.volume))
                 continue
-            mask_jobs.append(
-                MaskJob(
-                    location_id=location_id,
-                    image_key=plan.image_key,
+            width, height = plan.output_size()
+            origin_x, origin_y = plan.mosaic_origin()
+            crop_x, crop_y = plan.window.crop_offset(tile_x_dim, tile_y_dim)
+            for location_id in plan.location_ids:
+                rings = pixel_rings_in_crop(
+                    polygons_by_id[location_id],
+                    origin_x=origin_x,
+                    origin_y=origin_y,
+                    downsample=float(plan.downsample),
                     width=width,
                     height=height,
-                    rings=tuple(rings),
-                    mask_path=str(output / "masks" / f"{plan.image_key}_{location_id}.png"),
-                    rle_path=str(output / "_work" / "rle" / f"{plan.image_key}_{location_id}.json"),
                 )
-            )
-        if mode == "full":
-            if not force and products.exists("images", image_path.name):
-                # PNG already on disk; skip restitch unless -Force was passed.
-                # Masks still run below since we may have no prior watermark.
-                mode = "mask_only"
-            else:
-                stitch_jobs.append(
-                    StitchJob(
+                if not rings:
+                    continue
+                mask_jobs.append(
+                    MaskJob(
+                        location_id=location_id,
                         image_key=plan.image_key,
-                        snap=plan.snap,
-                        downsample=plan.downsample,
-                        tile_x_dim=tile_x_dim,
-                        tile_y_dim=tile_y_dim,
-                        image_path=str(image_path),
-                        crop_x=crop_x,
-                        crop_y=crop_y,
-                        crop_width=width,
-                        crop_height=height,
+                        width=width,
+                        height=height,
+                        rings=tuple(rings),
+                        mask_path=str(output / "masks" / f"{plan.image_key}_{location_id}.png"),
+                        rle_path=str(output / "_work" / "rle" / f"{plan.image_key}_{location_id}.json"),
                     )
                 )
-        join_specs.append((plan, mode))
+            if mode == "full":
+                if not force and products.exists("images", image_path.name):
+                    # PNG already on disk; skip restitch unless -Force was passed.
+                    # Masks still run below since we may have no prior watermark.
+                    mode = "mask_only"
+                else:
+                    stitch_jobs.append(
+                        StitchJob(
+                            image_key=plan.image_key,
+                            snap=plan.snap,
+                            downsample=plan.downsample,
+                            tile_x_dim=tile_x_dim,
+                            tile_y_dim=tile_y_dim,
+                            image_path=str(image_path),
+                            crop_x=crop_x,
+                            crop_y=crop_y,
+                            crop_width=width,
+                            crop_height=height,
+                        )
+                    )
+            join_specs.append((plan, mode))
 
-    _log_section_rebuild_plan(z, join_specs)
+        _log_section_rebuild_plan(z, join_specs)
 
-    mask_results: list[dict[str, Any]] = []
-    if mask_jobs:
-        mask_reporter = prettyoutput.TaskProgressReporter(
-            MASKS_TRACK_ID,
-            len(mask_jobs),
-            name=MASKS_LABEL,
-            section=z,
-        )
-        mask_reporter.start()
-        try:
-            mask_results = run_mask_jobs(
-                mask_jobs,
-                workers=mask_workers,
-                on_complete=mask_reporter.update,
+        mask_results: list[dict[str, Any]] = []
+        if mask_jobs:
+            mask_reporter = prettyoutput.TaskProgressReporter(
+                MASKS_TRACK_ID,
+                len(mask_jobs),
+                name=MASKS_LABEL,
+                section=z,
             )
-        finally:
-            mask_reporter.complete()
-        for job in mask_jobs:
-            products.note_path(job.mask_path)
-            products.note_path(job.rle_path)
-    if apply_ignore_moves(output):
-        products.rescan("masks")
-        products.rescan("ignored")
-
-    by_d: dict[int, list[StitchJob]] = {}
-    for job in stitch_jobs:
-        by_d.setdefault(job.downsample, []).append(job)
-    stitch_reporter: prettyoutput.TaskProgressReporter | None = None
-    stitch_offset = 0
-    if stitch_jobs:
-        stitch_reporter = prettyoutput.TaskProgressReporter(
-            STITCH_TRACK_ID,
-            len(stitch_jobs),
-            name=STITCH_LABEL,
-            section=z,
-        )
-        stitch_reporter.start()
-    try:
-        for downsample in sorted(by_d):
-            level_dir = level_dirs.get(downsample)
-            jobs = by_d[downsample]
-            if not level_dir:
-                _logger.warning("No tileset level for downsample %s, skipping stitch", downsample)
-                stitch_offset += len(jobs)
-                if stitch_reporter is not None:
-                    stitch_reporter.update(stitch_offset)
-                continue
-            stage_dir = None
-            if stage_tiles:
-                stage_dir = downsample_stage_dir(stage_tiles, downsample)
-                os.makedirs(stage_dir, exist_ok=True)
-            offset = stitch_offset
-            band_width = default_column_band(
-                workers,
-                jobs,
-                tile_x_dim=tile_x_dim,
-                tile_y_dim=tile_y_dim,
-            )
-            strip_total = count_column_bands(jobs, band_width)
-            strip_reporter: prettyoutput.TaskProgressReporter | None = None
-            if strip_total > 0:
-                strip_reporter = prettyoutput.TaskProgressReporter(
-                    STRIPS_TRACK_ID,
-                    strip_total,
-                    name=STRIPS_LABEL,
-                    section=z,
-                )
-                strip_reporter.start()
-
-            def on_stitch_progress(done: int, _total: int, _offset: int = offset) -> None:
-                if stitch_reporter is not None:
-                    stitch_reporter.update(_offset + done)
-
-            def on_band(
-                done: int,
-                _total: int,
-                element: str,
-                _reporter: prettyoutput.TaskProgressReporter | None = strip_reporter,
-            ) -> None:
-                if _reporter is not None:
-                    _reporter.update(done, element=element)
-
+            mask_reporter.start()
             try:
-                sweep_stitch_jobs(
-                    jobs,
-                    source_dir=level_dir,
-                    prefix=file_prefix,
-                    postfix=file_postfix,
-                    workers=workers,
-                    stage_dir=stage_dir,
-                    use_shared_memory=workers > 1,
-                    finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
-                    tile_x_dim=tile_x_dim,
-                    tile_y_dim=tile_y_dim,
-                    column_band=band_width,
-                    on_progress=on_stitch_progress,
-                    on_band=on_band if strip_reporter is not None else None,
+                mask_results = run_mask_jobs(
+                    mask_jobs,
+                    workers=mask_workers,
+                    on_complete=mask_reporter.update,
                 )
             finally:
-                if strip_reporter is not None:
-                    strip_reporter.complete()
-            for job in jobs:
-                products.note_path(job.image_path)
-                leftover = Path(job.image_path).with_suffix(".jpg")
-                if leftover.name != Path(job.image_path).name:
-                    products.forget("images", leftover.name)
-            stitch_offset += len(jobs)
-    finally:
-        if stitch_reporter is not None:
-            stitch_reporter.complete()
+                mask_reporter.complete()
+            for job in mask_jobs:
+                products.note_path(job.mask_path)
+                products.note_path(job.rle_path)
+        apply_ignore_moves(output)
 
-    mask_by_member = {(item["image_key"], item["location_id"]): item for item in mask_results}
-    image_marks: list[ImageWatermark] = []
-    for plan, mode in join_specs:
-        image_marks.append(_image_watermark(plan, by_id))
-        if mode == "skip":
-            # Crop/mask membership and OData LastModified already matched. Only
-            # ``stat`` overlay vs on-disk TEM/masks — never load pixels or restitch.
-            if overlay and not _overlay_is_fresh(output, plan, products):
-                _write_plan_overlay(output, plan, tile_x_dim, tile_y_dim, products)
-            continue
-        width, height = plan.output_size()
-        annotations: list[dict[str, Any]] = []
-        mask_paths: list[str] = []
-        for location_id in plan.location_ids:
-            rle_name = f"{plan.image_key}_{location_id}.json"
-            mask_name = f"{plan.image_key}_{location_id}.png"
-            rle_path = output / "_work" / "rle" / rle_name
-            mask_path = output / "masks" / mask_name
-            if not products.exists("_work/rle", rle_name):
-                continue
-            try:
-                rle = json.loads(rle_path.read_text(encoding="utf-8"))
-            except OSError:
-                products.refresh_one("_work/rle", rle_name)
-                continue
-            record = by_id[location_id]
-            window_index, window_count = plan.window_of.get(location_id, (0, 1))
-            stats = mask_by_member.get((plan.image_key, location_id), {})
-            bbox = stats.get("bbox") or _bbox_area_from_rle(rle)[0]
-            area = stats.get("area")
-            if area is None:
-                _, area = _bbox_area_from_rle(rle)
-            annotations.append(
-                sa1b_annotation(
-                    record,
-                    rle=rle,
-                    bbox=bbox,
-                    area=area,
-                    window_index=window_index,
-                    window_count=window_count,
-                )
+        by_d: dict[int, list[StitchJob]] = {}
+        for job in stitch_jobs:
+            by_d.setdefault(job.downsample, []).append(job)
+        stitch_reporter: prettyoutput.TaskProgressReporter | None = None
+        stitch_offset = 0
+        if stitch_jobs:
+            stitch_reporter = prettyoutput.TaskProgressReporter(
+                STITCH_TRACK_ID,
+                len(stitch_jobs),
+                name=STITCH_LABEL,
+                section=z,
             )
-            if products.exists("masks", mask_name):
-                mask_paths.append(str(mask_path))
-        image_name = crop_image_filename(plan.image_key)
-        json_path = output / "images" / f"{plan.image_key}.json"
-        write_sa1b_json(
-            json_path,
-            file_name=image_name,
-            width=width,
-            height=height,
-            annotations=annotations,
-            downsample=plan.downsample,
-            volume=params.volume,
-        )
-        products.note_path(json_path)
-        if overlay:
-            overlay_path = output / "overlays" / f"{plan.image_key}.png"
-            write_overlay(
-                overlay_path,
+            stitch_reporter.start()
+        try:
+            for downsample in sorted(by_d):
+                level_dir = level_dirs.get(downsample)
+                jobs = by_d[downsample]
+                if not level_dir:
+                    _logger.warning("No tileset level for downsample %s, skipping stitch", downsample)
+                    stitch_offset += len(jobs)
+                    if stitch_reporter is not None:
+                        stitch_reporter.update(stitch_offset)
+                    continue
+                stage_dir = None
+                if stage_tiles:
+                    stage_dir = downsample_stage_dir(stage_tiles, downsample)
+                    os.makedirs(stage_dir, exist_ok=True)
+                offset = stitch_offset
+                band_width = default_column_band(
+                    workers,
+                    jobs,
+                    tile_x_dim=tile_x_dim,
+                    tile_y_dim=tile_y_dim,
+                )
+                strip_total = count_column_bands(jobs, band_width)
+                strip_reporter: prettyoutput.TaskProgressReporter | None = None
+                if strip_total > 0:
+                    strip_reporter = prettyoutput.TaskProgressReporter(
+                        STRIPS_TRACK_ID,
+                        strip_total,
+                        name=STRIPS_LABEL,
+                        section=z,
+                    )
+                    strip_reporter.start()
+
+                def on_stitch_progress(done: int, _total: int, _offset: int = offset) -> None:
+                    """Advance the section stitch bar. The offset is bound here so the next downsample does not move it."""
+                    if stitch_reporter is not None:
+                        stitch_reporter.update(_offset + done)
+
+                def on_band(
+                    done: int,
+                    _total: int,
+                    element: str,
+                    _reporter: prettyoutput.TaskProgressReporter | None = strip_reporter,
+                ) -> None:
+                    """Advance the column-strip bar. The reporter is bound here for this downsample only."""
+                    if _reporter is not None:
+                        _reporter.update(done, element=element)
+
+                try:
+                    sweep_stitch_jobs(
+                        jobs,
+                        source_dir=level_dir,
+                        prefix=file_prefix,
+                        postfix=file_postfix,
+                        workers=workers,
+                        stage_dir=stage_dir,
+                        use_shared_memory=workers > 1,
+                        finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
+                        tile_x_dim=tile_x_dim,
+                        tile_y_dim=tile_y_dim,
+                        column_band=band_width,
+                        on_progress=on_stitch_progress,
+                        on_band=on_band if strip_reporter is not None else None,
+                    )
+                finally:
+                    if strip_reporter is not None:
+                        strip_reporter.complete()
+                for job in jobs:
+                    products.note_path(job.image_path)
+                    leftover = Path(job.image_path).with_suffix(".jpg")
+                    if leftover.name != Path(job.image_path).name:
+                        products.forget("images", leftover.name)
+                stitch_offset += len(jobs)
+        finally:
+            if stitch_reporter is not None:
+                stitch_reporter.complete()
+
+        mask_by_member = {(item["image_key"], item["location_id"]): item for item in mask_results}
+        image_marks: list[ImageWatermark] = []
+        for plan, mode in join_specs:
+            image_marks.append(_image_watermark(plan, by_id))
+            if mode == "skip":
+                # Crop/mask membership and OData LastModified already matched. Only
+                # ``stat`` overlay vs on-disk TEM/masks — never load pixels or restitch.
+                if overlay and not _overlay_is_fresh(output, plan, products):
+                    _write_plan_overlay(output, plan, tile_x_dim, tile_y_dim, products)
+                continue
+            width, height = plan.output_size()
+            annotations: list[dict[str, Any]] = []
+            mask_paths: list[str] = []
+            for location_id in plan.location_ids:
+                rle_name = f"{plan.image_key}_{location_id}.json"
+                mask_name = f"{plan.image_key}_{location_id}.png"
+                rle_path = output / "_work" / "rle" / rle_name
+                mask_path = output / "masks" / mask_name
+                if not products.exists("_work/rle", rle_name):
+                    continue
+                try:
+                    rle = json.loads(rle_path.read_text(encoding="utf-8"))
+                except OSError:
+                    products.refresh_one("_work/rle", rle_name)
+                    continue
+                record = by_id[location_id]
+                window_index, window_count = plan.window_of.get(location_id, (0, 1))
+                stats = mask_by_member.get((plan.image_key, location_id), {})
+                bbox = stats.get("bbox") or _bbox_area_from_rle(rle)[0]
+                area = stats.get("area")
+                if area is None:
+                    _, area = _bbox_area_from_rle(rle)
+                annotations.append(
+                    sa1b_annotation(
+                        record,
+                        rle=rle,
+                        bbox=bbox,
+                        area=int(area),
+                        window_index=window_index,
+                        window_count=window_count,
+                        origin_x=plan.window.origin_x,
+                        origin_y=plan.window.origin_y,
+                    )
+                )
+                if products.exists("masks", mask_name):
+                    mask_paths.append(str(mask_path))
+            image_name = crop_image_filename(plan.image_key)
+            json_path = output / "images" / f"{plan.image_key}.json"
+            write_sa1b_json(
+                json_path,
+                file_name=image_name,
                 width=width,
                 height=height,
-                mask_paths=mask_paths,
-                tem_path=output / "images" / image_name,
+                annotations=annotations,
+                downsample=plan.downsample,
+                volume=params.volume,
             )
-            products.note_path(overlay_path)
-        manifest_rows.append(_manifest_row(plan, z, params.volume))
+            products.note_path(json_path)
+            if overlay:
+                overlay_path = output / "overlays" / f"{plan.image_key}.png"
+                write_overlay(
+                    overlay_path,
+                    width=width,
+                    height=height,
+                    mask_paths=mask_paths,
+                    tem_path=output / "images" / image_name,
+                )
+                products.note_path(overlay_path)
+            manifest_rows.append(_manifest_row(plan, z, params.volume))
 
-    replace_manifest_rows(output, z, manifest_rows)
-    save_section_watermark(
-        output,
-        z,
-        SectionWatermark(
-            ids=sorted(id_set(records)),
-            max_last_modified=max_last_modified(records).isoformat(),
-            tileset_mtime=tileset_mtime,
-            params_hash=params.hash(),
-            downsample=params.downsample,
-            image_keys=[plan.image_key for plan in plans],
-            images=image_marks,
-        ),
-    )
-    keep_ids = id_set(records)
-    image_keys = [plan.image_key for plan in plans]
-    upsert_catalog(output, keep_ids, z=z, image_keys=image_keys)
-    prune_catalog_section(output, z, keep_ids)
-    return image_keys
+        replace_manifest_rows(output, z, manifest_rows)
+        save_section_watermark(
+            output,
+            z,
+            SectionWatermark(
+                ids=sorted(id_set(records)),
+                max_last_modified=max_last_modified(records).isoformat(),
+                tileset_mtime=tileset_mtime,
+                params_hash=params.hash(),
+                downsample=params.downsample,
+                image_keys=[plan.image_key for plan in plans],
+                images=image_marks,
+            ),
+        )
+        keep_ids = id_set(records)
+        image_keys = [plan.image_key for plan in plans]
+        write_split_mask_overviews(output, image_marks, keep_ids, max_edge=params.max_texture)
+        upsert_catalog(output, keep_ids, z=z, image_keys=image_keys)
+        prune_catalog_section(output, z, keep_ids)
+        return image_keys
+
 
 
 def resolve_max_texture(flag: int | None) -> int:
@@ -926,6 +895,7 @@ def _max_tiles(
     tile_x_dim: int,
     tile_y_dim: int,
 ) -> tuple[int, int]:
+    """Tiles per crop axis from ``-MaxTiles``, else ``MaxTexture`` divided by tile size."""
     if override:
         value = max(1, int(override))
         return value, value
@@ -948,18 +918,22 @@ def _resolve_tileset(
     available: list[int] | None,
     channel_name: str,
     filter_name: str,
-) -> dict[str, Any] | None:
+) -> ResolvedTileset | None:
+    """Tile size and level directories from the filter, or from explicit overrides.
+
+    A sampled PNG wins over ``TileXDim`` / ``TileYDim`` when they disagree, and
+    the tileset node is updated so later stages see the real size.
+    """
     if level_dirs is not None and tile_x_dim and tile_y_dim:
-        return {
-            "tile_x_dim": int(tile_x_dim),
-            "tile_y_dim": int(tile_y_dim),
-            "available": available or sorted(level_dirs),
-            "level_dirs": {int(k): str(v) for k, v in level_dirs.items()},
-            "prefix": file_prefix or "",
-            "postfix": file_postfix or ".png",
-            "mtime": tileset_mtime,
-            "save_node": None,
-        }
+        return ResolvedTileset(
+            tile_x_dim=int(tile_x_dim),
+            tile_y_dim=int(tile_y_dim),
+            available=available or sorted(level_dirs),
+            level_dirs={int(k): str(v) for k, v in level_dirs.items()},
+            prefix=file_prefix or "",
+            postfix=file_postfix or ".png",
+            mtime=tileset_mtime,
+        )
     if filter_node is None or not hasattr(filter_node, "Tileset"):
         message = "ExportAnnotationCrops needs a Filter with a Tileset"
         if fail_missing:
@@ -983,38 +957,40 @@ def _resolve_tileset(
         stamp = _level_mtime(level)
         if stamp is not None:
             mtimes.append(stamp)
-    info = {
-        "tile_x_dim": int(tile_x_dim or tileset.TileXDim or 0),
-        "tile_y_dim": int(tile_y_dim or tileset.TileYDim or 0),
-        "available": available or available_levels,
-        "level_dirs": dirs,
-        "prefix": file_prefix if file_prefix is not None else (tileset.FilePrefix or ""),
-        "postfix": file_postfix if file_postfix is not None else (tileset.FilePostfix or ".png"),
-        "mtime": tileset_mtime if tileset_mtime is not None else (max(mtimes) if mtimes else None),
-        "save_node": None,
-    }
-    declared_x = int(info["tile_x_dim"])
-    declared_y = int(info["tile_y_dim"])
+    declared_x = int(tile_x_dim or tileset.TileXDim or 0)
+    declared_y = int(tile_y_dim or tileset.TileYDim or 0)
+    prefix = file_prefix if file_prefix is not None else (tileset.FilePrefix or "")
+    postfix = file_postfix if file_postfix is not None else (tileset.FilePostfix or ".png")
+    resolved_mtime = tileset_mtime if tileset_mtime is not None else (max(mtimes) if mtimes else None)
     finest = min(dirs) if dirs else int(downsample)
     sample_dir = dirs.get(finest)
-    actual = probe_tile_pixel_size(sample_dir, postfix=str(info["postfix"])) if sample_dir else None
-    if actual is None:
-        return info
-    actual_x, actual_y = actual
-    info["tile_x_dim"] = actual_x
-    info["tile_y_dim"] = actual_y
-    if actual_x != declared_x or actual_y != declared_y:
-        prettyoutput.Log(
-            f"ExportAnnotationCrops: tileset PNG is {actual_x}x{actual_y} but "
-            f"TileXDim/TileYDim is {declared_x}x{declared_y}; updating VolumeData"
-        )
-        tileset.TileXDim = actual_x
-        tileset.TileYDim = actual_y
-        info["save_node"] = tileset
-    return info
+    actual = probe_tile_pixel_size(sample_dir, postfix=str(postfix)) if sample_dir else None
+    resolved_x, resolved_y = declared_x, declared_y
+    save_node = None
+    if actual is not None:
+        resolved_x, resolved_y = actual
+        if resolved_x != declared_x or resolved_y != declared_y:
+            prettyoutput.Log(
+                f"ExportAnnotationCrops: tileset PNG is {resolved_x}x{resolved_y} but "
+                f"TileXDim/TileYDim is {declared_x}x{declared_y}; updating VolumeData"
+            )
+            tileset.TileXDim = resolved_x
+            tileset.TileYDim = resolved_y
+            save_node = tileset
+    return ResolvedTileset(
+        tile_x_dim=resolved_x,
+        tile_y_dim=resolved_y,
+        available=available or available_levels,
+        level_dirs=dirs,
+        prefix=prefix,
+        postfix=postfix,
+        mtime=resolved_mtime,
+        save_node=save_node,
+    )
 
 
 def _level_mtime(level: Any) -> float | None:
+    """Level timestamp from ``ValidationTime``, else the level directory mtime."""
     validation = getattr(level, "ValidationTime", None)
     if isinstance(validation, datetime) and validation != datetime.min:
         try:
@@ -1085,6 +1061,7 @@ def _write_plan_overlay(
 
 
 def _manifest_row(plan: PlannedCrop, z: int, volume: str) -> dict[str, Any]:
+    """One ``manifest.jsonl`` row for a planned crop."""
     return {
         "z": z,
         "volume": volume,
@@ -1103,7 +1080,9 @@ def _purge_empty_section(output: Path, z: int) -> None:
     if watermark is not None:
         keys.update(watermark.image_keys or [])
         keys.update(item.key for item in (watermark.images or []))
-    _remove_stale_image_products(output, keys)
+    # One folder scan for the whole tree. Per-key globs re-list masks/ on CIFS.
+    products = get_product_index(output)
+    _remove_stale_image_products(output, keys, products=products)
     replace_manifest_rows(output, z, [])
     section_meta_path(output, z).unlink(missing_ok=True)
     prune_catalog_section(output, z, set())
@@ -1169,6 +1148,7 @@ def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, str]])
 
 
 def _image_watermark(plan: PlannedCrop, by_id: dict[int, LocationRecord]) -> ImageWatermark:
+    """Watermark for one planned crop from its member location records."""
     members = [by_id[i] for i in plan.location_ids if i in by_id]
     window = plan.window
     return ImageWatermark(
@@ -1188,6 +1168,7 @@ def _image_watermark(plan: PlannedCrop, by_id: dict[int, LocationRecord]) -> Ima
 
 
 def _bbox_area_from_rle(rle: dict[str, Any]) -> tuple[list[int], int]:
+    """Foreground bounding box and area from a column-major COCO RLE."""
     counts = [int(c) for c in rle.get("counts") or []]
     size = rle.get("size") or [0, 0]
     height, width = int(size[0]), int(size[1])
@@ -1212,6 +1193,7 @@ def _bbox_area_from_rle(rle: dict[str, Any]) -> tuple[list[int], int]:
 
 
 def _empty_to_none(value: Any) -> Any:
+    """Treat ``None`` and blank strings as missing."""
     if value is None:
         return None
     if isinstance(value, str) and not value.strip():
@@ -1220,8 +1202,18 @@ def _empty_to_none(value: Any) -> Any:
 
 
 def _as_int_list(value: Any) -> list[int] | None:
+    """Normalize a scalar, list, or ``-Sections``-style ``1,3,5-7`` string."""
     if value is None or value == "":
         return None
+    if isinstance(value, str):
+        parsed = IntegerList(value)
+        return parsed or None
     if isinstance(value, list):
-        return [int(item) for item in value]
+        flattened: list[int] = []
+        for item in value:
+            if isinstance(item, str) and ("," in item or "-" in item.strip()):
+                flattened.extend(IntegerList(item))
+            else:
+                flattened.append(int(item))
+        return flattened or None
     return [int(value)]

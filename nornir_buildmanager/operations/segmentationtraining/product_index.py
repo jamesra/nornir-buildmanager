@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import threading
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -33,6 +34,7 @@ class CropProductIndex:
     _members: dict[str, dict[str, dict[int, str]]]
 
     def __init__(self, output: str | Path) -> None:
+        """Scan every product folder once and keep the maps for this process."""
         self.output = Path(output).resolve()
         self._by_folder = {folder: {} for folder in PRODUCT_FOLDERS}
         self._members = {folder: {} for folder in _MEMBER_FOLDERS}
@@ -45,6 +47,14 @@ class CropProductIndex:
     def mtime(self, folder: str, name: str) -> float | None:
         """Indexed mtime, or None when the name is absent."""
         return self._by_folder.get(folder, {}).get(name)
+
+    def iter_names(self, folder: str) -> Iterator[str]:
+        """Yield indexed basenames in *folder* without copying the cache.
+
+        Do not note or forget names in *folder* while iterating. Callers that
+        delete matches need a snapshot first.
+        """
+        yield from self._by_folder.get(folder, {})
 
     def names_with_prefix(self, folder: str, prefix: str) -> list[str]:
         """Indexed basenames in *folder* that start with *prefix*."""
@@ -105,11 +115,12 @@ class CropProductIndex:
         return stamped
 
     def rescan(self, folder: str) -> None:
-        """Replace one folder's index after ignore moves, not on every section."""
+        """Replace one folder's cached names from a fresh directory scan."""
         self._by_folder[folder] = _scan_folder(self._folder_path(folder))
         self._rebuild_members(folder)
 
     def _build(self) -> None:
+        """Fill folder maps from one parallel scan."""
         with ThreadPoolExecutor(max_workers=len(PRODUCT_FOLDERS)) as pool:
             futures = {
                 pool.submit(_scan_folder, self._folder_path(folder)): folder
@@ -124,6 +135,7 @@ class CropProductIndex:
         return self.output.joinpath(*folder.split("/"))
 
     def _split_path(self, path: Path) -> tuple[str | None, str]:
+        """Product folder and basename for a path under this output tree."""
         try:
             relative = path.resolve().relative_to(self.output)
         except ValueError:
@@ -133,6 +145,7 @@ class CropProductIndex:
         return relative.parent.as_posix(), relative.name
 
     def _rebuild_members(self, folder: str) -> None:
+        """Rebuild the location-id map for one member folder from its names."""
         if folder not in _MEMBER_FOLDERS:
             return
         table: dict[str, dict[int, str]] = {}
@@ -144,6 +157,7 @@ class CropProductIndex:
         self._members[folder] = table
 
     def _register_member(self, folder: str, name: str) -> None:
+        """Index one member filename under its image key and location id."""
         if folder not in _MEMBER_FOLDERS:
             return
         key, location_id = _split_member_stem(Path(name).stem)
@@ -152,6 +166,7 @@ class CropProductIndex:
         self._members.setdefault(folder, {}).setdefault(key, {})[location_id] = name
 
     def _unregister_member(self, folder: str, name: str) -> None:
+        """Drop one member filename from the location-id map."""
         if folder not in _MEMBER_FOLDERS:
             return
         key, location_id = _split_member_stem(Path(name).stem)
@@ -197,6 +212,7 @@ def _scan_folder(folder: Path) -> dict[str, float]:
 
 
 def _split_member_stem(stem: str) -> tuple[str, int | None]:
+    """Split ``{image_key}_{location_id}`` into the key and id."""
     if "_" not in stem:
         return stem, None
     key, token = stem.rsplit("_", 1)

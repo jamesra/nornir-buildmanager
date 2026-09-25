@@ -61,6 +61,40 @@ class ExportParams:
 
 
 @dataclass(frozen=True)
+class ResolvedTileset:
+    """Tile size and level directories after a sampled PNG wins over the XML size.
+
+    ``tile_x_dim`` and ``tile_y_dim`` are copied onto ``ExportParams`` so the
+    freshness hash changes when the tile size changes. ``save_node`` is the
+    volume tileset to persist when that size was corrected.
+    """
+
+    tile_x_dim: int
+    tile_y_dim: int
+    available: list[int]
+    level_dirs: dict[int, str]
+    prefix: str
+    postfix: str
+    mtime: float | None
+    save_node: Any = None
+
+
+@dataclass(frozen=True)
+class SectionCropRun:
+    """Resolved tileset and runtime settings for one section. Not part of the freshness hash."""
+
+    params: ExportParams
+    tileset: ResolvedTileset
+    exporter: str
+    max_tiles_x: int
+    max_tiles_y: int
+    workers: int
+    mask_workers: int
+    stage_tiles: str | None
+    overlay: bool
+
+
+@dataclass(frozen=True)
 class ImageWatermark:
     """Facts for one shared crop used for resume and mask-only."""
 

@@ -44,6 +44,8 @@ def sa1b_annotation(
     area: int,
     window_index: int | None = None,
     window_count: int | None = None,
+    origin_x: int | None = None,
+    origin_y: int | None = None,
 ) -> dict[str, Any]:
     """One COCO-style annotation. SAM2 ignores category fields."""
     item: dict[str, Any] = {
@@ -60,6 +62,9 @@ def sa1b_annotation(
     if window_index is not None:
         item["windowIndex"] = window_index
         item["windowCount"] = window_count
+    if origin_x is not None and origin_y is not None:
+        item["originX"] = int(origin_x)
+        item["originY"] = int(origin_y)
     return item
 
 
