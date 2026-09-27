@@ -21,6 +21,7 @@ def write_sa1b_json(
     annotations: list[dict[str, Any]],
     downsample: int | None = None,
     volume: str | None = None,
+    odata: str | None = None,
 ) -> None:
     """Write one SA-1B ground-truth JSON next to a trainer crop."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -29,11 +30,41 @@ def write_sa1b_json(
         image["downsample"] = downsample
     if volume:
         image["volume"] = volume
+    if odata:
+        text = str(odata).strip()
+        if text:
+            image["odata"] = text
     payload = {
         "image": image,
         "annotations": annotations,
     }
     Path(path).write_text(json.dumps(payload), encoding="utf-8")
+
+
+def ensure_sa1b_odata(path: str | Path, odata: str | None) -> bool:
+    """Set ``image.odata`` on an existing crop JSON. Returns True when rewritten."""
+    if not odata:
+        return False
+    url = str(odata).strip()
+    if not url:
+        return False
+    json_path = Path(path)
+    if not json_path.is_file():
+        return False
+    try:
+        payload = json.loads(json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    image = payload.get("image")
+    if not isinstance(image, dict):
+        return False
+    if image.get("odata") == url:
+        return False
+    image["odata"] = url
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    return True
 
 
 def sa1b_annotation(

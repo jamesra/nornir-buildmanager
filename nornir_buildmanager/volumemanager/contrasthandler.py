@@ -67,9 +67,14 @@ class ContrastHandler(object):
             self.Gamma = node.Gamma
 
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma: float):
-        ContrastHandler.logger.warning("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" %
-                                       (self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma,
-                                        MinIntensityCutoff, MaxIntensityCutoff, Gamma))
+        shown = tuple(
+            "-" if value is None else "%g" % value
+            for value in (
+                self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma,
+                MinIntensityCutoff, MaxIntensityCutoff, Gamma,
+            )
+        )
+        ContrastHandler.logger.warning("\tCurrent values (%s,%s,%s), target (%s,%s,%s)" % shown)
 
     def IsContrastMismatched(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma: float):
 

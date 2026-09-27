@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import stat
 import tempfile
 import unittest
 import xml.etree.ElementTree as ElementTree
@@ -233,6 +234,8 @@ class VikingVolumeAdoptTests(unittest.TestCase):
         self.assertTrue(agb_leveled.Locked)
         self.assertFalse(agb_leveled.HasTileset)
         self.assertEqual(_md5(agb_leveled.Imageset.GetImage(32).FullPath), self.hashes['0001_AGB_32.png'])
+        self.assertFalse(os.stat(mosaic_png).st_mode & stat.S_IWRITE)
+        self.assertFalse(os.stat(agb_leveled.Imageset.GetImage(32).FullPath).st_mode & stat.S_IWRITE)
 
         stos_group = block.GetStosGroup('Grid16', 16)
         self.assertIsNotNone(stos_group)
@@ -361,6 +364,24 @@ class VikingVolumeAdoptTests(unittest.TestCase):
         self.assertFalse(leveled.HasTileset)
         self.assertIsNone(leveled.find('Tileset_Link'))
         self.assertFalse(os.path.isdir(leveled_tileset))
+
+    def test_rerun_restores_missing_imageset_png_and_marks_readonly(self) -> None:
+        _run_import(self.dest, self.source)
+        dest_png = os.path.join(
+            self.dest, 'TEM', '0001', 'TEM', 'Leveled', 'Images', '008', '0001_TEM_Leveled.png')
+        with open(dest_png, 'rb') as handle:
+            payload = handle.read()
+        os.chmod(dest_png, stat.S_IWRITE | stat.S_IREAD)
+        os.remove(dest_png)
+        replacement = os.path.join(self.source, '0001_mosaic_8.png')
+        with open(replacement, 'wb') as handle:
+            handle.write(payload)
+
+        _run_import(self.dest, self.source)
+        self.assertTrue(os.path.isfile(dest_png))
+        self.assertEqual(_md5(dest_png), hashlib.md5(payload).hexdigest())
+        self.assertFalse(os.stat(dest_png).st_mode & stat.S_IWRITE)
+        self.assertFalse(os.path.isfile(replacement))
 
     def test_incomplete_source_is_an_error(self) -> None:
         _write_vikingxml(os.path.join(self.source, 'volume.vikingxml'), 9)

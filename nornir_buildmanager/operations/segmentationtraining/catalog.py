@@ -12,7 +12,12 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Iterable
 
-from nornir_buildmanager.operations.segmentationtraining.ingest import load_section_records
+from nornir_shared import prettyoutput
+
+from nornir_buildmanager.operations.segmentationtraining.ingest import (
+    load_export_source,
+    load_section_records,
+)
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     CropProductIndex,
     get_product_index,
@@ -106,6 +111,18 @@ def _ensure_locations_schema(connection: sqlite3.Connection) -> None:
         "CREATE TABLE IF NOT EXISTS crop_geometry ("
         "id INTEGER PRIMARY KEY CHECK (id = 1), crop_size INTEGER NOT NULL)"
     )
+    connection.execute(
+        "CREATE TABLE IF NOT EXISTS source ("
+        "id INTEGER PRIMARY KEY CHECK (id = 1), "
+        "odata TEXT, "
+        "kind TEXT, "
+        "filter TEXT, "
+        "path TEXT, "
+        "ingested_at TEXT)"
+    )
+    source_columns = {row[1] for row in connection.execute("PRAGMA table_info(source)")}
+    if "exporter" not in source_columns:
+        connection.execute("ALTER TABLE source ADD COLUMN exporter TEXT")
     connection.commit()
 
 
@@ -194,12 +211,51 @@ def apply_ignore_moves(output_path: str | os.PathLike[str]) -> int:
 
 def ignore_location(output_path: str | os.PathLike[str], location_id: int) -> bool:
     """Add *location_id* to ignore.json and move every mask for it. Returns True if listed."""
-    ids = load_ignore_ids(output_path)
-    ids.add(int(location_id))
-    save_ignore_ids(output_path, ids)
-    apply_ignore_moves(output_path)
-    _set_ignored_flag(output_path, int(location_id), ignored=True)
+    ignore_locations(output_path, [int(location_id)])
     return True
+
+
+def ignore_locations(output_path: str | os.PathLike[str], location_ids: Iterable[int]) -> int:
+    """Add *location_ids* to ignore.json and move their masks once.
+
+    Returns how many ids were not already listed.
+    """
+    incoming = {int(item) for item in location_ids}
+    if not incoming:
+        return 0
+    current = load_ignore_ids(output_path)
+    added = incoming - current
+    if added:
+        save_ignore_ids(output_path, current | incoming)
+    apply_ignore_moves(output_path)
+    _set_ignored_flags(output_path, incoming)
+    return len(added)
+
+
+def ignore_blank_crops(
+    output_path: str | os.PathLike[str],
+    z: int,
+    blank: Iterable[tuple[str, float]],
+    members_by_key: dict[str, Iterable[int]],
+) -> int:
+    """Ignore every location on crops whose stitched image is mostly saturated.
+
+    One ``ignore.json`` write and one mask move cover the whole batch.
+    Returns how many location ids were newly listed.
+    """
+    ids: list[int] = []
+    seen: set[int] = set()
+    for key, fraction in blank:
+        members = [int(item) for item in members_by_key.get(key, ())]
+        prettyoutput.Log(
+            f"ExportAnnotationCrops: section {z} image {key} is "
+            f"{fraction:.0%} saturated; ignoring locations {members}"
+        )
+        for member in members:
+            if member not in seen:
+                seen.add(member)
+                ids.append(member)
+    return ignore_locations(output_path, ids)
 
 
 def restore_location(output_path: str | os.PathLike[str], location_id: int) -> bool:
@@ -284,6 +340,7 @@ def upsert_catalog(
         connection.commit()
     finally:
         connection.close()
+    sync_source_catalog(output)
     return len(rows)
 
 
@@ -342,6 +399,7 @@ def rebuild_catalog(output_path: str | os.PathLike[str]) -> int:
             connection.close()
     finally:
         reporter.complete()
+    sync_source_catalog(output)
     return len(rows)
 
 
@@ -427,6 +485,25 @@ def _upsert_row(connection: sqlite3.Connection, row: dict[str, Any]) -> None:
         f"ON CONFLICT(location_id, image_key) DO UPDATE SET {updates}",
         [row.get(name) for name in columns],
     )
+
+
+def _set_ignored_flags(
+    output_path: str | os.PathLike[str],
+    location_ids: Iterable[int],
+) -> None:
+    """Set ``ignored`` on every catalog row for *location_ids* in one connection."""
+    ids = sorted({int(item) for item in location_ids})
+    if not ids or not sqlite_path(output_path).is_file():
+        return
+    connection = connect(output_path)
+    try:
+        connection.executemany(
+            "UPDATE locations SET ignored = 1 WHERE location_id = ?",
+            [(location_id,) for location_id in ids],
+        )
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def _set_ignored_flag(
@@ -698,6 +775,57 @@ def read_crop_size(output_path: str | os.PathLike[str]) -> int | None:
     if row is None:
         return None
     return int(row[0])
+
+
+def sync_source_catalog(output_path: str | os.PathLike[str]) -> None:
+    """Copy `source.json` (or cache.meta) into the sqlite `source` row."""
+    source = load_export_source(output_path)
+    if not source:
+        return
+    connection = connect(output_path)
+    try:
+        connection.execute(
+            "INSERT INTO source (id, odata, kind, filter, path, ingested_at, exporter) "
+            "VALUES (1, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(id) DO UPDATE SET "
+            "odata = excluded.odata, "
+            "kind = excluded.kind, "
+            "filter = excluded.filter, "
+            "path = excluded.path, "
+            "ingested_at = excluded.ingested_at, "
+            "exporter = excluded.exporter",
+            [
+                source.get("odata"),
+                source.get("kind"),
+                source.get("filter"),
+                source.get("path"),
+                source.get("ingestedAt"),
+                source.get("exporter"),
+            ],
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def read_source_odata(output_path: str | os.PathLike[str]) -> str | None:
+    """OData service root stored on the catalog, or None."""
+    if not sqlite_path(output_path).is_file():
+        return None
+    connection = connect(output_path)
+    try:
+        row = connection.execute("SELECT odata FROM source WHERE id = 1").fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        connection.close()
+    if row is None:
+        return None
+    value = row["odata"]
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _image_relpath(output: Path, image_key: str) -> str:

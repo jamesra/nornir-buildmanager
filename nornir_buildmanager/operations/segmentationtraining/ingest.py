@@ -61,22 +61,200 @@ def cache_meta_path(output_path: str | os.PathLike[str]) -> Path:
     return work_dir(output_path) / "cache.meta.json"
 
 
-def load_cache_meta_sections(output_path: str | os.PathLike[str]) -> list[int]:
-    """Section numbers recorded by the last ingest, in cache order."""
+def export_source_path(output_path: str | os.PathLike[str]) -> Path:
+    """Durable provenance file next to crops, not under `_work`."""
+    return Path(output_path) / "source.json"
+
+
+def load_cache_meta(output_path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Return the ingest cache sidecar, or `{}` when it is missing or invalid."""
     path = cache_meta_path(output_path)
     if not path.is_file():
-        return []
+        return {}
     try:
-        meta = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return []
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def load_cache_meta_sections(output_path: str | os.PathLike[str]) -> list[int]:
+    """Section numbers recorded by the last ingest, in cache order."""
     sections: list[int] = []
-    for item in meta.get("sections") or []:
+    for item in load_cache_meta(output_path).get("sections") or []:
         try:
             sections.append(int(item))
         except (TypeError, ValueError):
             continue
     return sections
+
+
+_SOURCE_EXPORTERS = frozenset({"tiled", "legacy"})
+_SOURCE_SECRET_KEYS = frozenset({
+    "connection",
+    "connectionstring",
+    "connection_string",
+    "server",
+    "password",
+    "user",
+    "uid",
+    "pwd",
+    "credentials",
+})
+
+
+def _exporter_name(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    key = value.strip().lower()
+    if key in _SOURCE_EXPORTERS:
+        return key
+    return None
+
+
+def _source_from_meta(meta: dict[str, Any]) -> dict[str, Any]:
+    """Public source.json fields. A SQL export keeps kind only, never a connection."""
+    source = meta.get("source") if isinstance(meta.get("source"), dict) else {}
+    kind = source.get("kind")
+    payload: dict[str, Any] = {
+        "kind": kind,
+        "filter": meta.get("filter") or source.get("filter"),
+        "includeOffEdge": bool(meta.get("includeOffEdge")),
+        "ingestedAt": meta.get("ingestedAt"),
+    }
+    exporter = _exporter_name(meta.get("exporter") or source.get("exporter"))
+    if exporter:
+        payload["exporter"] = exporter
+    if kind == "sql":
+        return payload
+    url = source.get("url")
+    if isinstance(url, str) and url.strip():
+        payload["odata"] = url.strip()
+    dump_path = source.get("path")
+    if dump_path:
+        payload["path"] = str(dump_path)
+    return payload
+
+
+def _write_source_document(output_path: str | os.PathLike[str], payload: dict[str, Any]) -> None:
+    """Write source.json after dropping connection secrets."""
+    cleaned = {
+        key: value
+        for key, value in payload.items()
+        if str(key).lower() not in _SOURCE_SECRET_KEYS
+    }
+    export_source_path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    export_source_path(output_path).write_text(
+        json.dumps(cleaned, indent=2), encoding="utf-8"
+    )
+
+
+def write_export_source(
+    output_path: str | os.PathLike[str],
+    meta: dict[str, Any],
+) -> None:
+    """Write `{Output}/source.json` from an ingest meta document.
+
+    ``odata`` stores the service root. ``geometries`` stores the dump path and
+    does not invent a URL. ``sql`` stores ``kind`` only: no connection string,
+    server, or credentials. An OData URL already saved on a SQL export is kept.
+    """
+    payload = _source_from_meta(meta)
+    path = export_source_path(output_path)
+    existing: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            loaded = None
+        if isinstance(loaded, dict):
+            existing = loaded
+    if "exporter" not in payload:
+        prior_exporter = _exporter_name(existing.get("exporter"))
+        if prior_exporter:
+            payload["exporter"] = prior_exporter
+    if payload.get("kind") == "sql" and "odata" not in payload:
+        prior_url = existing.get("odata")
+        if isinstance(prior_url, str) and prior_url.strip():
+            payload["odata"] = prior_url.strip()
+    _write_source_document(output_path, payload)
+
+
+def record_export_exporter(output_path: str | os.PathLike[str], exporter: str) -> None:
+    """Remember the -Exporter value this volume actually used."""
+    key = _exporter_name(exporter)
+    if key is None:
+        raise ValueError("exporter must be tiled or legacy")
+    current = load_export_source(output_path)
+    current["exporter"] = key
+    _write_source_document(output_path, current)
+
+
+def load_export_source(output_path: str | os.PathLike[str]) -> dict[str, Any]:
+    """Load `source.json`, or reconstruct it from `_work/cache.meta.json`."""
+    path = export_source_path(output_path)
+    if path.is_file():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = None
+        if isinstance(payload, dict) and payload:
+            return payload
+    meta = load_cache_meta(output_path)
+    source = meta.get("source") if isinstance(meta.get("source"), dict) else {}
+    if not meta and not source:
+        return {}
+    reconstructed: dict[str, Any] = {
+        "kind": source.get("kind"),
+        "filter": meta.get("filter") or source.get("filter"),
+        "includeOffEdge": bool(meta.get("includeOffEdge")),
+        "ingestedAt": meta.get("ingestedAt"),
+    }
+    url = source.get("url")
+    if isinstance(url, str) and url.strip() and source.get("kind") != "sql":
+        reconstructed["odata"] = url.strip()
+    dump_path = source.get("path")
+    if dump_path and source.get("kind") != "sql":
+        reconstructed["path"] = str(dump_path)
+    exporter = _exporter_name(meta.get("exporter") or source.get("exporter"))
+    if exporter:
+        reconstructed["exporter"] = exporter
+    return {key: value for key, value in reconstructed.items() if value is not None}
+
+
+def odata_url_from_output(output_path: str | os.PathLike[str]) -> str | None:
+    """OData service root recorded for this export, or None."""
+    url = load_export_source(output_path).get("odata")
+    if isinstance(url, str):
+        text = url.strip()
+        if text:
+            return text
+    return None
+
+
+def odata_url_for_export(
+    output_path: str | os.PathLike[str],
+    image_meta: dict[str, Any] | None = None,
+) -> str | None:
+    """Prefer the volume `source.json` URL, else one already on a crop JSON."""
+    url = odata_url_from_output(output_path)
+    if url:
+        return url
+    if image_meta is None:
+        return None
+    raw = image_meta.get("odata")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def ensure_export_source(output_path: str | os.PathLike[str]) -> None:
+    """Create `source.json` from cache.meta when the durable file is missing."""
+    if export_source_path(output_path).is_file():
+        return
+    meta = load_cache_meta(output_path)
+    if meta:
+        write_export_source(output_path, meta)
 
 
 def ingest_to_section_files(
@@ -100,6 +278,7 @@ def ingest_to_section_files(
         filter_text = resolve_odata_filter(odata_filter, structure_type_ids)
     except ValueError as exc:
         raise NornirUserException(str(exc)) from exc
+    prior_odata = odata_url_from_output(output_path)
     if odata:
         records: Iterable[LocationRecord] = iter_odata_locations(
             odata,
@@ -118,6 +297,8 @@ def ingest_to_section_files(
             sections=sections,
         )
         source = {"kind": "geometries", "path": str(geometries), "filter": filter_text}
+        if prior_odata:
+            source["url"] = prior_odata
 
     written = write_section_jsonl(
         output_path,
@@ -134,6 +315,7 @@ def ingest_to_section_files(
         "counts": {str(z): len(rows) for z, rows in written.items()},
     }
     cache_meta_path(output_path).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    write_export_source(output_path, meta)
     return meta
 
 

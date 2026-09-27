@@ -31,6 +31,21 @@ def is_no_delete() -> bool:
     return _no_delete
 
 
+def element_requests_no_delete(element: object) -> bool:
+    """True when a pipeline element sets ``NoDelete`` to a truthy value.
+
+    Export-only pipelines set this so ``Clean()`` cannot remove volume inputs
+    even when the CLI ``-no-delete`` flag was omitted.
+    """
+    getter = getattr(element, "get", None)
+    if not callable(getter):
+        return False
+    raw = getter("NoDelete")
+    if raw is None:
+        return False
+    return str(raw).strip().lower() in {"1", "true", "yes", "y"}
+
+
 def maybe_remove_path(path: str, reason: str = "") -> bool:
     """Remove *path* from the filesystem, or log and skip when no-delete is active.
 

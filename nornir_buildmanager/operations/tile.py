@@ -992,7 +992,11 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
 
 def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, transform_node: TransformNode,
                     **kwargs):
-    """Construct the intensity histogram for a filter"""
+    """Construct the intensity histogram for a filter.
+
+    When no input tile can be read, publish an MQTT error and return so the
+    pipeline continues with the next element.
+    """
     NodeToSave = None
 
     [added_level, level_node] = filter_node.TilePyramid.GetOrCreateLevel(Downsample)
@@ -1058,7 +1062,13 @@ def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, 
         for k in list(mosaic.ImageToTransformString.keys()):
             fulltilepaths.append(os.path.join(FullTilePath, k))
 
-        histogramObj = nornir_imageregistration.Histogram(fulltilepaths, Bpp=Bpp, numBins=NumBins)
+        try:
+            histogramObj = nornir_imageregistration.Histogram(fulltilepaths, Bpp=Bpp, numBins=NumBins)
+        except ValueError as e:
+            prettyoutput.LogErr(
+                f"HistogramFilter: {e} (filter {filter_node.Name}, downsample {Downsample})")
+            return
+
         histogramObj.Save(data_node.FullPath)
 
         # Create a data node for the histogram

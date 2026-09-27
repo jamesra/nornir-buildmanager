@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,12 +16,15 @@ from hypothesis import example, given, settings, strategies as st
 from PIL import Image
 
 from nornir_imageregistration.computational_lib import ComputationLib
+from nornir_imageregistration.type_info import Shape
 from nornir_shared.reflection import get_module_class
 
 from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     ignore_location,
     list_catalog_rows,
+    load_ignore_ids,
+    read_source_odata,
     rebuild_catalog,
     upsert_catalog,
 )
@@ -53,9 +57,13 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     _chunk_z_for_odata_filter,
     _combined_z_filter,
     _odata_z_filter,
+    ensure_export_source,
     estimate_odata_filter_nodes,
     ingest_to_section_files,
     load_section_records,
+    odata_url_from_output,
+    record_export_exporter,
+    write_export_source,
 )
 from nornir_buildmanager.operations.segmentationtraining.masks import encode_coco_rle
 from nornir_buildmanager.operations.segmentationtraining.pipeline import (
@@ -70,7 +78,10 @@ from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     reset_section_visit_order,
     section_visit_index,
 )
-from nornir_buildmanager.operations.segmentationtraining.cleanup import CleanupAnnotationCrops
+from nornir_buildmanager.operations.segmentationtraining.cleanup import (
+    CleanupAnnotationCrops,
+    cleanup_annotation_crops,
+)
 from nornir_buildmanager.operations.segmentationtraining.planning import plan_section_crops
 from nornir_buildmanager.operations.segmentationtraining.poolutil import submit_bounded
 from nornir_buildmanager.operations.segmentationtraining.records import (
@@ -80,22 +91,30 @@ from nornir_buildmanager.operations.segmentationtraining.records import (
     odata_filter_for_structure_type_ids,
     resolve_odata_filter,
 )
-from nornir_buildmanager.operations.segmentationtraining.update import update_section_crops
+from nornir_buildmanager.operations.segmentationtraining.update import (
+    refresh_existing_location_masks,
+    update_section_crops,
+)
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     _OVERLAY_COLOR_ALPHA,
     _OVERLAY_COLORS,
+    ensure_sa1b_odata,
     hcl_to_rgb,
     max_chroma_at_luma,
     perceptual_luma,
     rgb_to_hcl,
     write_overlay,
+    write_sa1b_json,
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
+    BLANK_CROP_FRACTION,
     DEFAULT_STAGE_TILES_ROOT,
     StitchJob,
+    crop_is_blank,
     downsample_stage_dir,
     probe_tile_pixel_size,
     resolve_section_stage_root,
+    saturated_fraction,
     stitch_from_loader,
     sweep_stitch_jobs,
     tile_filename,
@@ -195,6 +214,9 @@ def _params(**overrides) -> ExportParams:
         volume="TestVolume",
     )
     payload.update(overrides)
+    tile_x = int(payload.pop("tile_x_dim", 0))
+    tile_y = int(payload.pop("tile_y_dim", 0))
+    payload["tile_shape"] = Shape.from_xy(x=tile_x, y=tile_y)
     return ExportParams(**payload)
 
 
@@ -206,8 +228,7 @@ def _tileset_for(
     available: list[int] | None = None,
 ) -> ResolvedTileset:
     return ResolvedTileset(
-        tile_x_dim=tile,
-        tile_y_dim=tile,
+        tile_shape=Shape.from_xy(x=tile, y=tile),
         available=[1] if available is None else available,
         level_dirs={1: str(level)},
         prefix="",
@@ -242,6 +263,10 @@ def test_pipelines_xml_registers_export_annotation_crops() -> None:
     tree = ElementTree.parse(_PIPELINES)
     pipeline = tree.find(".//Pipeline[@Name='ExportAnnotationCrops']")
     assert pipeline is not None
+    assert pipeline.get("NoDelete") == "True"
+    iterates = pipeline.findall(".//Iterate")
+    assert iterates
+    assert all(node.get("Validate") == "False" for node in iterates)
     functions = [node.get("Function") for node in pipeline.findall(".//PythonCall")]
     assert "segmentationtraining.IngestGeometries" in functions
     assert "segmentationtraining.ExportSectionCrops" in functions
@@ -251,10 +276,13 @@ def test_pipelines_xml_registers_export_annotation_crops() -> None:
     assert pipeline.find(".//Argument[@dest='RefreshOData']") is not None
     assert pipeline.find(".//Argument[@dest='StructureTypeId']") is not None
     assert pipeline.find(".//Argument[@dest='Update']") is not None
+    assert pipeline.find(".//Argument[@dest='Repair']") is not None
     ingest_call = pipeline.find(".//PythonCall[@Function='segmentationtraining.IngestGeometries']")
     export_call = pipeline.find(".//PythonCall[@Function='segmentationtraining.ExportSectionCrops']")
     assert ingest_call.get("StructureTypeId") == "#StructureTypeId"
     assert export_call.get("Update") == "#Update"
+    assert ingest_call.get("Repair") == "#Repair"
+    assert export_call.get("Repair") == "#Repair"
     assert pipeline.find(".//Argument[@dest='Exporter']").get("default") == "tiled"
     gallery = [node for node in pipeline.findall(".//PythonCall") if node.get("Function") == "WriteGallery"]
     assert gallery[0].get("Module") == "nornir_buildmanager.operations.segmentationtraining.sam2"
@@ -393,6 +421,193 @@ def test_ingest_requires_exactly_one_source(tmp_path: Path) -> None:
             odata="http://example/odata",
             geometries=tmp_path / "dump.json",
         )
+
+
+def test_ingest_writes_source_json_with_odata_url(tmp_path: Path) -> None:
+    entity = _entity(9, 4, _box_wkt(0, 0, 4, 4))
+    out = tmp_path / "out"
+    ingest_to_section_files(
+        output_path=out,
+        odata="http://example/odata",
+        geometries=None,
+        http_get=_getter([entity]),  # type: ignore[arg-type]
+    )
+    source = json.loads((out / "source.json").read_text(encoding="utf-8"))
+    assert source["kind"] == "odata"
+    assert source["odata"] == "http://example/odata"
+    assert source["filter"] == DEFAULT_ODATA_FILTER
+
+
+def test_sql_source_json_omits_the_connection(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    write_export_source(
+        out,
+        {
+            "source": {
+                "kind": "sql",
+                "connection": "Server=db;Password=secret",
+                "url": "Server=db;Password=secret",
+                "path": r"Server=db;Password=secret",
+            },
+            "filter": "closed",
+            "ingestedAt": "2020-01-01T00:00:00+00:00",
+        },
+    )
+    text = (out / "source.json").read_text(encoding="utf-8")
+    source = json.loads(text)
+    assert source["kind"] == "sql"
+    assert "odata" not in source
+    assert "path" not in source
+    assert "connection" not in source
+    assert "Password" not in text
+    assert "secret" not in text
+
+
+def test_sql_source_keeps_an_odata_url_saved_later(tmp_path: Path) -> None:
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "source.json").write_text(
+        json.dumps({"kind": "sql", "odata": "https://websvc.example/RC1/OData"}),
+        encoding="utf-8",
+    )
+    write_export_source(out, {"source": {"kind": "sql", "connection": "Server=db"}})
+    source = json.loads((out / "source.json").read_text(encoding="utf-8"))
+    assert source["kind"] == "sql"
+    assert source["odata"] == "https://websvc.example/RC1/OData"
+    assert "connection" not in source
+
+
+def test_odata_url_falls_back_to_cache_meta(tmp_path: Path) -> None:
+    entity = _entity(9, 4, _box_wkt(0, 0, 4, 4))
+    out = tmp_path / "out"
+    ingest_to_section_files(
+        output_path=out,
+        odata="http://example/odata",
+        geometries=None,
+        http_get=_getter([entity]),  # type: ignore[arg-type]
+    )
+    (out / "source.json").unlink()
+    assert odata_url_from_output(out) == "http://example/odata"
+    ensure_export_source(out)
+    restored = json.loads((out / "source.json").read_text(encoding="utf-8"))
+    assert restored["odata"] == "http://example/odata"
+
+
+def test_geometries_ingest_preserves_prior_odata_url(tmp_path: Path) -> None:
+    entity = _entity(9, 4, _box_wkt(0, 0, 4, 4))
+    out = tmp_path / "out"
+    ingest_to_section_files(
+        output_path=out,
+        odata="http://example/odata",
+        geometries=None,
+        http_get=_getter([entity]),  # type: ignore[arg-type]
+    )
+    dump = tmp_path / "dump.jsonl"
+    dump.write_text(json.dumps(entity) + "\n", encoding="utf-8")
+    ingest_to_section_files(output_path=out, odata=None, geometries=dump)
+    source = json.loads((out / "source.json").read_text(encoding="utf-8"))
+    assert source["kind"] == "geometries"
+    assert source["odata"] == "http://example/odata"
+    assert source["path"] == str(dump)
+
+
+def test_export_records_odata_url_in_sa1b_and_catalog(tmp_path: Path) -> None:
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True)
+    tile_path = level / tile_filename("", ".png", 0, 0)
+    Image.fromarray(np.full((8, 8), 128, dtype=np.uint8), mode="L").save(tile_path)
+    record = _record(11, 7, _box_wkt(1, 1, 6, 6), label=None, type_name=None)
+    out = tmp_path / "export"
+    out.mkdir()
+    (out / "source.json").write_text(
+        json.dumps({
+            "kind": "odata",
+            "odata": "http://connectomes.utah.edu/RC1/OData",
+            "filter": DEFAULT_ODATA_FILTER,
+        }),
+        encoding="utf-8",
+    )
+    keys = export_section_crops(
+        output_path=out,
+        z=7,
+        records=[record],
+        run=_section_run(level, _params(pad=0.0, max_texture=8), mtime=1.0, overlay=True),
+        force=False,
+    )
+    assert keys
+    payload = json.loads((out / "images" / f"{keys[0]}.json").read_text(encoding="utf-8"))
+    assert payload["image"]["odata"] == "http://connectomes.utah.edu/RC1/OData"
+    assert read_source_odata(out) == "http://connectomes.utah.edu/RC1/OData"
+    recorded = json.loads((out / "source.json").read_text(encoding="utf-8"))
+    assert recorded["exporter"] == "tiled"
+
+
+def test_fresh_skip_stamps_odata_on_existing_json(tmp_path: Path) -> None:
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True)
+    Image.fromarray(np.full((8, 8), 90, dtype=np.uint8), mode="L").save(
+        level / tile_filename("", ".png", 0, 0)
+    )
+    record = _record(4, 1, _box_wkt(1, 1, 6, 6), label="soma")
+    out = tmp_path / "export"
+    params = _params(pad=0.0, max_texture=8)
+    run = _section_run(level, params, mtime=5.0)
+    keys = export_section_crops(output_path=out, z=1, records=[record], run=run, force=False)
+    json_path = out / "images" / f"{keys[0]}.json"
+    crop = out / "images" / f"{keys[0]}.png"
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert "odata" not in payload["image"]
+    crop_mtime = crop.stat().st_mtime
+    (out / "source.json").write_text(
+        json.dumps({"kind": "odata", "odata": "http://example/odata"}),
+        encoding="utf-8",
+    )
+    from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
+
+    previous = load_section_watermark(out, 1)
+    export_section_crops(
+        output_path=out, z=1, records=[record], run=run, force=False, previous=previous
+    )
+    assert crop.stat().st_mtime == crop_mtime
+    stamped = json.loads(json_path.read_text(encoding="utf-8"))
+    assert stamped["image"]["odata"] == "http://example/odata"
+
+
+def test_cleanup_backfills_odata_on_crop_json(tmp_path: Path) -> None:
+    crop, _mask, _overlay = _annotation_crop_tree(tmp_path)
+    key = crop.stem
+    (tmp_path / "images" / f"{key}.json").write_text(
+        json.dumps({
+            "image": {"file_name": crop.name, "width": 8, "height": 8},
+            "annotations": [{"id": 99, "area": 16}],
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "source.json").write_text(
+        json.dumps({"kind": "odata", "odata": "http://example/odata"}),
+        encoding="utf-8",
+    )
+    summary = cleanup_annotation_crops(tmp_path)
+    assert summary.rewritten_json == 1
+    updated = json.loads((tmp_path / "images" / f"{key}.json").read_text(encoding="utf-8"))
+    assert updated["image"]["odata"] == "http://example/odata"
+
+
+def test_write_sa1b_json_records_odata_and_is_idempotent(tmp_path: Path) -> None:
+    path = tmp_path / "crop.json"
+    write_sa1b_json(
+        path,
+        file_name="crop.png",
+        width=8,
+        height=8,
+        annotations=[],
+        odata="http://example/odata",
+    )
+    assert json.loads(path.read_text(encoding="utf-8"))["image"]["odata"] == "http://example/odata"
+    assert ensure_sa1b_odata(path, "http://example/odata") is False
+    assert ensure_sa1b_odata(path, "http://other/odata") is True
+    assert json.loads(path.read_text(encoding="utf-8"))["image"]["odata"] == "http://other/odata"
 
 
 def test_refresh_odata_forces_ingest_pass_b(tmp_path: Path) -> None:
@@ -947,16 +1162,14 @@ def _plan_kwargs(**overrides: object) -> dict:
         channel="TEM",
         filter_name="Leveled",
         volume=str(overrides.pop("volume", "volume")),
-        tile_x_dim=tile_x,
-        tile_y_dim=tile_y,
+        tile_shape=Shape.from_xy(x=tile_x, y=tile_y),
     )
     overrides.pop("max_tiles_x", None)
     overrides.pop("max_tiles_y", None)
     if overrides:
         raise TypeError(f"unexpected plan overrides: {sorted(overrides)}")
     tileset = ResolvedTileset(
-        tile_x_dim=tile_x,
-        tile_y_dim=tile_y,
+        tile_shape=Shape.from_xy(x=tile_x, y=tile_y),
         available=available,
         level_dirs={},
         prefix="",
@@ -1376,12 +1589,12 @@ def test_update_prunes_removed_masks_and_leaves_survivors(tmp_path: Path) -> Non
     out = tmp_path / "export"
     base = _export_base(tmp_path, out)
     kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
-    dropped = _record(9, 2, _box_wkt(1, 1, 3, 3))
+    dropped = _record(9, 2, _box_wkt(1, 1, 4, 4))
     export_section_crops(output_path=out, z=2, run=base, records=[kept, dropped], force=False)  # type: ignore[arg-type]
     previous = load_section_watermark(out, 2)
-    crop = next((out / "images").glob("*.png"))
     kept_mask = next(path for path in (out / "masks").glob("*.png") if path.name.endswith("_8.png"))
     dropped_mask = next(path for path in (out / "masks").glob("*.png") if path.name.endswith("_9.png"))
+    crop = out / "images" / f"{kept_mask.name[: -len('_8.png')]}.png"
     crop_mtime = crop.stat().st_mtime
     kept_mtime = kept_mask.stat().st_mtime
     update_section_crops(
@@ -1408,8 +1621,8 @@ def test_update_prune_unlinks_computed_paths_without_mask_glob(
     out = tmp_path / "export"
     base = _export_base(tmp_path, out)
     kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
-    dropped_a = _record(9, 2, _box_wkt(1, 1, 3, 3))
-    dropped_b = _record(10, 2, _box_wkt(1, 1, 2, 2))
+    dropped_a = _record(9, 2, _box_wkt(1, 1, 4, 4))
+    dropped_b = _record(10, 2, _box_wkt(1, 1, 4, 4))
     export_section_crops(output_path=out, z=2, run=base, records=[kept, dropped_a, dropped_b], force=False)  # type: ignore[arg-type]
     previous = load_section_watermark(out, 2)
     masks = [path for path in (out / "masks").glob("*.png") if path.name.endswith(("_9.png", "_10.png"))]
@@ -1433,6 +1646,31 @@ def test_update_prune_unlinks_computed_paths_without_mask_glob(
     assert mask_globs == []
     assert all(not path.exists() for path in masks)
     assert any(path.name.endswith("_8.png") for path in real_glob(out / "masks", "*.png"))
+
+
+def test_refresh_existing_location_does_not_add_a_crop(tmp_path: Path) -> None:
+    out = tmp_path / "export"
+    base = _export_base(tmp_path, out)
+    kept = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    export_section_crops(output_path=out, z=2, run=base, records=[kept], force=False)  # type: ignore[arg-type]
+    crop = next((out / "images").glob("*.png"))
+    mask = next(path for path in (out / "masks").glob("*.png") if path.name.endswith("_8.png"))
+    before_images = {path.name for path in (out / "images").glob("*.png")}
+    crop_mtime = crop.stat().st_mtime
+    edited = _record(8, 2, _box_wkt(1, 1, 6, 6), last_modified="2022-01-01T00:00:00+00:00")
+    keys = refresh_existing_location_masks(out, edited, exporter="legacy")
+    assert crop.stem in keys
+    assert {path.name for path in (out / "images").glob("*.png")} == before_images
+    assert crop.stat().st_mtime == crop_mtime
+    assert mask.read_bytes()
+    stranger = _record(99, 2, _box_wkt(1, 1, 3, 3))
+    assert refresh_existing_location_masks(out, stranger) == []
+    assert not any(path.name.endswith("_99.png") for path in (out / "masks").glob("*.png"))
+
+
+def test_record_export_exporter_rejects_unknown_mode(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        record_export_exporter(tmp_path, "sql")
 
 
 def test_update_remasks_only_a_changed_survivor(tmp_path: Path) -> None:
@@ -1521,6 +1759,88 @@ def test_update_stitches_only_a_new_crop(tmp_path: Path) -> None:
 def test_update_rejects_force() -> None:
     with pytest.raises(NornirUserException, match="-Update"):
         ExportSectionCrops(OutputPath="/tmp/unused", Update=True, Force=True, Z=1)
+
+
+def test_repair_rejects_force() -> None:
+    with pytest.raises(NornirUserException, match="-Repair"):
+        ExportSectionCrops(OutputPath="/tmp/unused", Repair=True, Force=True, Z=1)
+
+
+def test_repair_replaces_only_the_missing_crop(tmp_path: Path) -> None:
+    out = tmp_path / "export"
+    level = tmp_path / "tiles" / "001"
+    base = _export_base(tmp_path, out)
+    Image.fromarray(np.full((8, 8), 40, dtype=np.uint8), mode="L").save(
+        level / tile_filename("", ".png", 4, 0)
+    )
+    near = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    far = _record(12, 2, _box_wkt(40, 1, 44, 4))
+    export_section_crops(output_path=out, z=2, run=base, records=[near, far], force=False)
+    pngs = list((out / "images").glob("*.png"))
+    assert len(pngs) == 2
+    far_mask = next((out / "masks").glob("*_12.png"))
+    far_png = out / "images" / f"{far_mask.name[: -len('_12.png')]}.png"
+    near_png = next(path for path in pngs if path != far_png)
+    near_mtime = near_png.stat().st_mtime
+    near_mask = next((out / "masks").glob("*_8.png"))
+    near_mask_mtime = near_mask.stat().st_mtime
+    far_png.unlink()
+    written = ExportSectionCrops(
+        OutputPath=str(out),
+        Repair=True,
+        Z=2,
+        LevelDirs={1: str(level)},
+        TileXDim=8,
+        TileYDim=8,
+        FilePrefix="",
+        FilePostfix=".png",
+        Downsample=1,
+        MaxTexture=8,
+        Pad=0.0,
+        Channels="TEM",
+        Filters="Leveled",
+        StageTiles=str(tmp_path / "stage"),
+    )
+    assert written is None
+    assert far_png.is_file()
+    assert far_png.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert near_png.stat().st_mtime == near_mtime
+    assert near_mask.stat().st_mtime == near_mask_mtime
+    assert len(list((out / "images").glob("*.png"))) == 2
+
+
+def test_repair_skips_section_when_every_image_is_indexed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nornir_buildmanager.operations.segmentationtraining import pipeline as pipeline_mod
+
+    out = tmp_path / "export"
+    level = tmp_path / "tiles" / "001"
+    base = _export_base(tmp_path, out)
+    record = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    export_section_crops(output_path=out, z=2, run=base, records=[record], force=False)
+    png = next((out / "images").glob("*.png"))
+    mtime = png.stat().st_mtime
+
+    def _fail_sweep(*_args, **_kwargs):
+        raise AssertionError("repair restiched a crop that the image index already has")
+
+    monkeypatch.setattr(pipeline_mod, "sweep_stitch_jobs", _fail_sweep)
+    ExportSectionCrops(
+        OutputPath=str(out),
+        Repair=True,
+        Z=2,
+        LevelDirs={1: str(level)},
+        TileXDim=8,
+        TileYDim=8,
+        FilePrefix="",
+        FilePostfix=".png",
+        Downsample=1,
+        MaxTexture=8,
+        Pad=0.0,
+        StageTiles=str(tmp_path / "stage"),
+    )
+    assert png.stat().st_mtime == mtime
 
 
 def test_sanitize_volume_token() -> None:
@@ -1640,8 +1960,8 @@ def test_resolve_tileset_corrects_wrong_tile_dims(tmp_path: Path) -> None:
         filter_name="Leveled",
     )
     assert info is not None
-    assert info.tile_x_dim == 1024
-    assert info.tile_y_dim == 1024
+    assert info.tile_shape.y == 1024
+    assert info.tile_shape.x == 1024
     assert tileset.TileXDim == 1024
     assert tileset.TileYDim == 1024
     assert info.save_node is tileset
@@ -1678,8 +1998,7 @@ def test_sweep_removes_staged_tiles_when_no_longer_needed(tmp_path: Path) -> Non
             image_key=f"c{ix}",
             snap=TileRect(ix, ix + 1, 0, 1),
             downsample=1,
-            tile_x_dim=8,
-            tile_y_dim=8,
+            tile_shape=Shape.from_xy(x=8, y=8),
             image_path=str(out / f"c{ix}.png"),
         )
         for ix in (0, 1, 2)
@@ -1718,8 +2037,7 @@ def test_sweep_reports_column_strips(tmp_path: Path) -> None:
             image_key=f"c{ix}",
             snap=TileRect(ix, ix + 1, 0, 1),
             downsample=1,
-            tile_x_dim=8,
-            tile_y_dim=8,
+            tile_shape=Shape.from_xy(x=8, y=8),
             image_path=str(out / f"c{ix}.png"),
         )
         for ix in (0, 1, 2, 3)
@@ -1751,8 +2069,7 @@ def test_stitch_crops_half_tile_step() -> None:
         image_key="half",
         snap=TileRect(0, 2, 0, 1),
         downsample=1,
-        tile_x_dim=1024,
-        tile_y_dim=1024,
+        tile_shape=Shape.from_xy(x=1024, y=1024),
         image_path="unused.png",
         crop_x=512,
         crop_y=0,
@@ -1879,8 +2196,7 @@ def test_stitch_pastes_native_1024_tiles() -> None:
         image_key="RC2_3_D1_X124-126_Y117-118",
         snap=TileRect(124, 126, 117, 118),
         downsample=1,
-        tile_x_dim=1024,
-        tile_y_dim=1024,
+        tile_shape=Shape.from_xy(x=1024, y=1024),
         image_path="unused.png",
     )
 
@@ -1891,6 +2207,118 @@ def test_stitch_pastes_native_1024_tiles() -> None:
     assert canvas.shape == (1024, 2048)
     assert int(canvas[0, 0]) == 124 % 255
     assert int(canvas[0, 1024]) == 125 % 255
+
+
+def test_missing_tiles_omit_masks_and_delete_black_crop(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A crop with a missing tileset tile is logged and not exported.
+
+    A crop whose tiles are present still gets a mask. A black PNG and mask
+    already written for the missing window are deleted.
+    """
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True)
+    Image.fromarray(np.full((8, 8), 40, dtype=np.uint8), mode="L").save(
+        level / tile_filename("", ".png", 0, 0)
+    )
+    present = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    absent = _record(9, 2, _box_wkt(20, 1, 24, 4))
+    params = _params(pad=0.0, max_texture=8, volume="TestVolume")
+    tileset = _tileset_for(level)
+    plans, _polygons = plan_section_crops(
+        [present, absent],
+        params=params,
+        tileset=tileset,
+    )
+    absent_plan = next(plan for plan in plans if 9 in plan.location_ids)
+    out = tmp_path / "export"
+    (out / "images").mkdir(parents=True)
+    (out / "masks").mkdir()
+    black = out / "images" / f"{absent_plan.image_key}.png"
+    stale_mask = out / "masks" / f"{absent_plan.image_key}_9.png"
+    Image.fromarray(np.zeros((8, 8), dtype=np.uint8), mode="L").save(black)
+    stale_mask.write_bytes(b"mask")
+    run = _section_run(level, params)
+    with caplog.at_level(logging.INFO):
+        export_section_crops(output_path=out, z=2, records=[present, absent], run=run, force=False)
+    assert "missing tiles" in caplog.text
+    assert "masks not included" in caplog.text
+    assert not black.exists()
+    assert not stale_mask.exists()
+    assert not list((out / "masks").glob("*_9.png"))
+    written = list((out / "masks").glob("*_8.png"))
+    assert len(written) == 1
+    assert written[0].is_file()
+
+
+def test_fresh_section_drops_crop_when_tile_disappears(tmp_path: Path) -> None:
+    """A later run deletes a crop whose tileset tile is no longer on disk."""
+    from nornir_buildmanager.operations.segmentationtraining.freshness import load_section_watermark
+    from nornir_buildmanager.operations.segmentationtraining.pipeline import (
+        drop_recorded_crops_missing_tiles,
+    )
+
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True)
+    tile = level / tile_filename("", ".png", 0, 0)
+    Image.fromarray(np.full((8, 8), 40, dtype=np.uint8), mode="L").save(tile)
+    record = _record(8, 2, _box_wkt(1, 1, 4, 4))
+    out = tmp_path / "export"
+    params = _params(pad=0.0, max_texture=8, volume="TestVolume")
+    run = _section_run(level, params)
+    export_section_crops(output_path=out, z=2, records=[record], run=run, force=False)
+    mask = next((out / "masks").glob("*_8.png"))
+    watermark = load_section_watermark(out, 2)
+    tile.unlink()
+    assert drop_recorded_crops_missing_tiles(out, 2, watermark, run.tileset)
+    assert not mask.exists()
+    assert not list((out / "images").glob("*.png"))
+    reloaded = load_section_watermark(out, 2)
+    assert reloaded is not None
+    assert reloaded.image_keys == []
+
+
+@settings(max_examples=40)
+@given(st.lists(st.integers(min_value=0, max_value=255), min_size=1, max_size=64))
+@example([255, 255, 255, 255])
+@example([0, 0, 0, 0])
+@example([0, 128])
+@example([40, 40, 40, 40])
+def test_saturated_fraction_is_zero_or_255_count(values: list[int]) -> None:
+    """Saturated fraction is the 0/255 count over the array, blank only above one half."""
+    array = np.asarray(values, dtype=np.uint8)
+    expected = sum(value in (0, 255) for value in values) / len(values)
+    fraction = saturated_fraction(array)
+    assert fraction == pytest.approx(expected)
+    assert crop_is_blank(array) is (fraction > BLANK_CROP_FRACTION)
+    assert crop_is_blank(array.reshape(1, -1)) is (fraction > BLANK_CROP_FRACTION)
+
+
+def test_export_ignores_white_crop_and_keeps_png(tmp_path: Path) -> None:
+    """A fully white crop is listed in ignore.json; its mask moves and the TEM PNG stays."""
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True)
+    Image.fromarray(np.full((8, 8), 255, dtype=np.uint8), mode="L").save(
+        level / tile_filename("", ".png", 0, 0)
+    )
+    record = _record(8, 2, _box_wkt(0, 0, 8, 8))
+    out = tmp_path / "export"
+    export_section_crops(
+        output_path=out,
+        z=2,
+        records=[record],
+        run=_section_run(level, _params(pad=0.0, max_texture=8, volume="TestVolume"), mtime=1.0),
+        force=False,
+    )
+    assert load_ignore_ids(out) == {8}
+    images = list((out / "images").glob("*.png"))
+    assert len(images) == 1
+    assert images[0].read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+    assert not list((out / "masks").glob("*_8.png"))
+    ignored = list((out / "ignored").glob("*_8.png"))
+    assert len(ignored) == 1
 
 
 def test_window_tile_rect_2d_grid() -> None:

@@ -95,8 +95,8 @@ def plan_section_crops(
     available = tileset.available
     max_texture = params.max_texture
     min_process_pixels = params.min_process_pixels
-    tile_x_dim = tileset.tile_x_dim
-    tile_y_dim = tileset.tile_y_dim
+    tile_x_dim = tileset.tile_shape.x
+    tile_y_dim = tileset.tile_shape.y
     volume = params.volume
     level = max(int(downsample), 1)
     polygons_by_id: dict[int, list[PolygonRings]] = {}

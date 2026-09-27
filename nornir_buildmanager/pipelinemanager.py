@@ -631,8 +631,12 @@ class PipelineManager:
 
         # dargs = copy.deepcopy(defaultDargs)
 
-        no_delete = getattr(args, 'no_delete', False)
-        _no_delete_mod.set_no_delete(bool(no_delete))
+        no_delete = bool(getattr(args, 'no_delete', False)) or _no_delete_mod.element_requests_no_delete(
+            PipelineElement)
+        if no_delete and not getattr(args, 'no_delete', False):
+            prettyoutput.Log(
+                f"NO-DELETE: {self._PipelineName} does not delete volume inputs")
+        _no_delete_mod.set_no_delete(no_delete)
         try:
             self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
         finally:

@@ -2318,8 +2318,9 @@
     </Pipeline>
 
     <Pipeline Name="ExportAnnotationCrops"
+              NoDelete="True"
               Help="Export annotation crops for SAM2 / SA-1B training from OData or a saved OData dump."
-              Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Does not modify VolumeData.xml."
+              Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Records the OData service root in source.json, each crop JSON, and annotation_crops.sqlite. -Repair restitches only crop images missing from the output scan. Export only: section walks set Validate=False and NoDelete forces the process no-delete flag so Clean() cannot remove volume inputs. Stale products under -Output may still be replaced."
               Epilog="Example: nornir-build ExportAnnotationCrops /data/volume -OData http://host/odata -Output /data/sam2 -Channels TEM -Filters Leveled">
         <Arguments>
             <Argument flag="-OData" dest="OData"
@@ -2387,6 +2388,8 @@
                       help="Audit and repair corrupt AnnotationCrops products. Does not ingest OData or restitch."/>
             <Argument flag="-Update" dest="Update" action="store_true"
                       help="ID-set delta: delete masks for locations that no longer match, mask or stitch newly added locations, and remask survivors whose LastModified changed inside their existing crop. Other survivor masks and TEM crops are left alone. Incompatible with -Force."/>
+            <Argument flag="-Repair" dest="Repair" action="store_true"
+                      help="Restitch crop images that are missing from -Output. Uses one images/ directory scan, then writes only those files. Other crops in the section are left alone. Does not refetch OData. Incompatible with -Force, -Update, -RefreshOData, and -Cleanup."/>
         </Arguments>
 
         <PythonCall Function="segmentationtraining.IngestGeometries"
@@ -2399,15 +2402,17 @@
                     IncludeOffEdge="#IncludeOffEdge"
                     Force="#Force"
                     RefreshOData="#RefreshOData"
+                    Update="#Update"
+                    Repair="#Repair"
                     Cleanup="#Cleanup"/>
 
-        <Iterate VariableName="section_node" XPath="Block/Section" SortAttribute="Number">
+        <Iterate VariableName="section_node" XPath="Block/Section" SortAttribute="Number" Validate="False">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
 
-            <Iterate VariableName="ChannelNode" XPath="Channel">
+            <Iterate VariableName="ChannelNode" XPath="Channel" Validate="False">
                 <RequireMatch Attribute="Name" RegEx="#Channels"/>
 
-                <Iterate VariableName="FilterNode" XPath="Filter">
+                <Iterate VariableName="FilterNode" XPath="Filter" Validate="False">
                     <RequireMatch Attribute="Name" RegEx="#Filters"/>
 
                     <PythonCall Function="segmentationtraining.ExportSectionCrops"
@@ -2429,6 +2434,7 @@
                                 Force="#Force"
                                 RefreshOData="#RefreshOData"
                                 Update="#Update"
+                                Repair="#Repair"
                                 FailMissingTileset="#FailMissingTileset"
                                 NoOverlay="#NoOverlay"
                                 Cleanup="#Cleanup"/>

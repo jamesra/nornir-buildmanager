@@ -98,6 +98,12 @@ class TestNoDeleteModule(unittest.TestCase):
             if os.path.exists(path):
                 os.remove(path)
 
+    def test_element_requests_no_delete(self) -> None:
+        element = ElementTree.fromstring('<Pipeline NoDelete="True"/>')
+        self.assertTrue(no_delete.element_requests_no_delete(element))
+        self.assertFalse(no_delete.element_requests_no_delete(ElementTree.fromstring('<Pipeline/>')))
+        self.assertFalse(no_delete.element_requests_no_delete(ElementTree.fromstring('<Pipeline NoDelete="false"/>')))
+
     def test_maybe_remove_path_missing_file(self) -> None:
         result = no_delete.maybe_remove_path('/tmp/__nonexistent_nornir_test__', 'does not exist')
         self.assertFalse(result)
@@ -270,6 +276,44 @@ class TestProcessSelectNodeNoDelete(unittest.TestCase):
             add_var.assert_called_once()
             bound_elem = add_var.call_args[0][1]
             self.assertIsInstance(bound_elem, _AlwaysInvalidElement)
+
+
+class TestProcessIterateNodeValidateFalse(unittest.TestCase):
+    """Export walks set Validate=False so invalid volume nodes are not cleaned."""
+
+    def test_validate_false_does_not_clean(self) -> None:
+        from nornir_buildmanager.pipelinemanager import PipelineManager
+
+        root = _SimpleElement('Volume')
+        child = _AlwaysInvalidElement()
+        root.append(child)
+        cleaned = mock.Mock(wraps=child.Clean)
+        child.Clean = cleaned
+
+        pipeline_node = ElementTree.fromstring(
+            '<Iterate XPath="Invalid" VariableName="section_node" Validate="False"/>'
+        )
+        pm = PipelineManager.__new__(PipelineManager)
+        pm._iterate_depth = 0
+        pm.ExecuteChildPipelines = mock.Mock(return_value=1)
+
+        with mock.patch(
+            'nornir_buildmanager.pipelinemanager.resolve_iterate_candidates',
+            return_value=iter([child]),
+        ), mock.patch(
+            'nornir_buildmanager.pipelinemanager.publish_run_event',
+        ), mock.patch.object(
+            PipelineManager, 'GetSearchRoot', return_value=root,
+        ), mock.patch.object(
+            PipelineManager, '_ElementNeedsValidation', return_value=True,
+        ), mock.patch(
+            'nornir_buildmanager.pipelinemanager.PipelineManager._PipelineManager__extractXPathFromNode',
+            return_value='Invalid',
+        ):
+            pm.ProcessIterateNode(mock.MagicMock(), root, pipeline_node)
+
+        cleaned.assert_not_called()
+        self.assertIn(child, list(root))
 
 
 # ---------------------------------------------------------------------------

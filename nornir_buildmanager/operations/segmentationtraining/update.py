@@ -19,6 +19,7 @@ from nornir_shared import prettyoutput
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     apply_ignore_moves,
     connect,
+    ignore_blank_crops,
     prune_catalog_section,
     set_window_origins,
     sqlite_path,
@@ -32,11 +33,13 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     SectionCropRun,
     SectionWatermark,
     id_set,
+    load_section_watermark,
     max_last_modified,
     save_section_watermark,
 )
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.geometry import pixel_rings_in_crop
+from nornir_buildmanager.operations.segmentationtraining.ingest import odata_url_for_export
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
@@ -50,6 +53,7 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     write_sa1b_json,
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
+    BlankCrop,
     StitchJob,
     crop_image_filename,
     default_column_band,
@@ -76,6 +80,13 @@ def update_section_crops(
     overlay = run.overlay
     output = Path(output_path)
     products = get_product_index(output)
+    if previous is not None:
+        from nornir_buildmanager.operations.segmentationtraining.pipeline import (
+            drop_recorded_crops_missing_tiles,
+        )
+
+        if drop_recorded_crops_missing_tiles(output, z, previous, run.tileset):
+            previous = load_section_watermark(output, z)
     current_ids = id_set(records)
     old_ids = set(previous.ids) if previous is not None else set()
     removed = old_ids - current_ids
@@ -94,14 +105,20 @@ def update_section_crops(
     added = [record for record in records if record.id in added_ids]
     plans: list[PlannedCrop] = []
     polygons_by_id: dict[int, list] = {}
+    blank_crops: list[BlankCrop] = []
     if added:
+        from nornir_buildmanager.operations.segmentationtraining.pipeline import (
+            retain_plans_with_tiles,
+        )
+
         plans, polygons_by_id = plan_section_crops(
             added,
             params=params,
             tileset=tileset,
             exporter=exporter,
         )
-        _place_added(
+        plans = retain_plans_with_tiles(output, z, plans, tileset, products)
+        blank_crops = _place_added(
             output,
             z,
             plans,
@@ -143,20 +160,27 @@ def update_section_crops(
         ),
     )
 
+    exported_ids = {member for mark in image_marks for member in mark.member_ids}
     remove_only = not added_ids and not changed
     if remove_only:
         # No new masks and no mask redraws: skip the expensive catalog scandir
-        # and overview rebuild. Only prune stale rows that were removed.
-        prune_catalog_section(output, z, current_ids)
+        # and overview rebuild. Drop removed ids and crops whose tiles were missing.
+        prune_catalog_section(output, z, exported_ids)
     else:
         write_split_mask_overviews(
-            output, image_marks, current_ids, max_edge=params.max_texture
+            output, image_marks, exported_ids, max_edge=params.max_texture
         )
-        # Pass image_keys to avoid scanning the whole volume. apply_ignore_moves
-        # is skipped here: masks are not moved during -Update (that happens in
-        # the full export path). The caller did not touch ignore.json.
-        upsert_catalog(output, current_ids, z=z, image_keys=image_keys, apply_ignore=False)
-        prune_catalog_section(output, z, current_ids)
+        # Pass image_keys to avoid scanning the whole volume. Blank crops are
+        # listed here; apply_ignore stays off so this path does not glob every
+        # already-ignored id again.
+        ignore_blank_crops(
+            output,
+            z,
+            blank_crops,
+            {plan.image_key: plan.location_ids for plan in plans},
+        )
+        upsert_catalog(output, exported_ids, z=z, image_keys=image_keys, apply_ignore=False)
+        prune_catalog_section(output, z, exported_ids)
 
     prettyoutput.Log(
         f"ExportAnnotationCrops -Update: section {z} — "
@@ -419,6 +443,130 @@ def _refresh_changed_masks(
     return touched
 
 
+def refresh_existing_location_masks(
+    output_path: str | os.PathLike[str],
+    record: LocationRecord,
+    *,
+    exporter: str = "tiled",
+) -> list[str]:
+    """Redraw one location on crops that already contain it.
+
+    ``tiled`` and ``legacy`` both keep those crop windows. Neither mode
+    downloads a TEM image or writes a new crop file. Returns the image keys
+    whose masks were rewritten.
+    """
+    mode = (exporter or "tiled").strip().lower()
+    if mode not in {"tiled", "legacy"}:
+        raise ValueError("exporter must be tiled or legacy")
+    output = Path(output_path)
+    marks = _existing_marks_for_location(output, record)
+    if not marks:
+        return []
+    previous = SectionWatermark(
+        ids=[record.id],
+        max_last_modified=record.last_modified.isoformat(),
+        tileset_mtime=None,
+        params_hash="",
+        downsample=marks[0].downsample,
+        image_keys=[mark.key for mark in marks],
+        images=marks,
+    )
+    products = get_product_index(output)
+    touched = _refresh_changed_masks(
+        output,
+        [record.id],
+        {record.id: record},
+        previous,
+        products,
+        mask_workers=1,
+        overlay=False,
+    )
+    return sorted(touched)
+
+
+def _existing_marks_for_location(output: Path, record: LocationRecord) -> list[ImageWatermark]:
+    """Crop windows this location already occupies. Missing images are skipped."""
+    previous = load_section_watermark(output, record.z)
+    raw: list[ImageWatermark] = []
+    if previous is not None:
+        raw.extend(mark for mark in (previous.images or []) if record.id in mark.member_ids)
+    if not raw:
+        raw.extend(_marks_from_crop_json(output, record.id))
+    ready: list[ImageWatermark] = []
+    for mark in raw:
+        filled = _mark_with_extent(output, mark)
+        if filled is not None:
+            ready.append(filled)
+    return ready
+
+
+def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark]:
+    """Build windows from crop JSON when the section watermark has no membership."""
+    images = output / "images"
+    if not images.is_dir():
+        return []
+    marks: list[ImageWatermark] = []
+    for path in images.glob("*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        annotations = payload.get("annotations") or []
+        if not any(int(item.get("id", -1)) == location_id for item in annotations if isinstance(item, dict)):
+            continue
+        image = payload.get("image") if isinstance(payload.get("image"), dict) else {}
+        prior = next(
+            (item for item in annotations if isinstance(item, dict) and int(item.get("id", -1)) == location_id),
+            {},
+        )
+        marks.append(
+            ImageWatermark(
+                key=path.stem,
+                downsample=int(image.get("downsample") or 1),
+                ix0=0,
+                ix1=0,
+                iy0=0,
+                iy1=0,
+                member_ids=[location_id],
+                max_last_modified=str(prior.get("last_modified") or ""),
+                origin_x=int(prior.get("originX") or 0),
+                origin_y=int(prior.get("originY") or 0),
+                width=int(image.get("width") or 0),
+                height=int(image.get("height") or 0),
+            )
+        )
+    return marks
+
+
+def _mark_with_extent(output: Path, mark: ImageWatermark) -> ImageWatermark | None:
+    """Keep a mark only when its crop image exists, filling a missing pixel size."""
+    image = resolve_crop_image(output / "images", mark.key)
+    if not image.is_file():
+        return None
+    if mark.width > 0 and mark.height > 0:
+        return mark
+    from PIL import Image
+
+    with Image.open(image) as picture:
+        width, height = picture.size
+    if width <= 0 or height <= 0:
+        return None
+    return ImageWatermark(
+        key=mark.key,
+        downsample=mark.downsample,
+        ix0=mark.ix0,
+        ix1=mark.ix1,
+        iy0=mark.iy0,
+        iy1=mark.iy1,
+        member_ids=list(mark.member_ids),
+        max_last_modified=mark.max_last_modified,
+        origin_x=mark.origin_x,
+        origin_y=mark.origin_y,
+        width=width,
+        height=height,
+    )
+
+
 def _replace_changed_annotations(
     output: Path,
     jobs: list[MaskJob],
@@ -485,10 +633,9 @@ def _place_added(
     previous: SectionWatermark | None,
     products: CropProductIndex,
     run: SectionCropRun,
-) -> None:
+) -> list[BlankCrop]:
     """Stitch crops that are new and attach added locations onto crops that already exist."""
-    tile_x_dim = run.tileset.tile_x_dim
-    tile_y_dim = run.tileset.tile_y_dim
+    tile_shape = run.tileset.tile_shape
     mask_workers = run.mask_workers
     overlay = run.overlay
     known = {item.key for item in (previous.images or [])} if previous else set()
@@ -526,14 +673,13 @@ def _place_added(
                 )
             )
         if not exists:
-            crop_x, crop_y = plan.window.crop_offset(tile_x_dim, tile_y_dim)
+            crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
             stitch_jobs.append(
                 StitchJob(
                     image_key=plan.image_key,
                     snap=plan.snap,
                     downsample=plan.downsample,
-                    tile_x_dim=tile_x_dim,
-                    tile_y_dim=tile_y_dim,
+                    tile_shape=tile_shape,
                     image_path=str(output / "images" / image_name),
                     crop_x=crop_x,
                     crop_y=crop_y,
@@ -547,22 +693,28 @@ def _place_added(
             products.note_path(job.mask_path)
             products.note_path(job.rle_path)
     apply_ignore_moves(output)
+    blank_crops: list[BlankCrop] = []
     if stitch_jobs:
-        _stitch(stitch_jobs, run, products)
+        blank_crops = _stitch(stitch_jobs, run, products)
     _merge_added_json(output, plans, by_id, products, overlay)
+    return blank_crops
 
 
 def _stitch(
     jobs: list[StitchJob],
     run: SectionCropRun,
     products: CropProductIndex,
-) -> None:
-    """Stitch jobs grouped by downsample and record the written images."""
+) -> list[BlankCrop]:
+    """Stitch jobs grouped by downsample and record the written images.
+
+    Returns crops whose stitched pixels are more than half saturated.
+    """
     level_dirs = run.tileset.level_dirs
     file_prefix = run.tileset.prefix
     file_postfix = run.tileset.postfix
     workers = run.workers
     stage_tiles = run.stage_tiles
+    blank_crops: list[BlankCrop] = []
     by_d: dict[int, list[StitchJob]] = {}
     for job in jobs:
         by_d.setdefault(job.downsample, []).append(job)
@@ -575,8 +727,8 @@ def _stitch(
         if stage_tiles:
             stage_dir = downsample_stage_dir(stage_tiles, downsample)
             os.makedirs(stage_dir, exist_ok=True)
-        tile_x = group[0].tile_x_dim
-        tile_y = group[0].tile_y_dim
+        tile_x = group[0].tile_shape.x
+        tile_y = group[0].tile_shape.y
         band = default_column_band(workers, group, tile_x_dim=tile_x, tile_y_dim=tile_y)
         sweep_stitch_jobs(
             group,
@@ -590,9 +742,11 @@ def _stitch(
             tile_x_dim=tile_x,
             tile_y_dim=tile_y,
             column_band=band,
+            blank_crops=blank_crops,
         )
         for job in group:
             products.note_path(job.image_path)
+    return blank_crops
 
 
 def _merge_added_json(
@@ -644,6 +798,7 @@ def _merge_added_json(
             annotations=existing + new_items,
             downsample=plan.downsample,
             volume=image_meta.get("volume"),
+            odata=odata_url_for_export(output, image_meta),
         )
         products.note_path(json_path)
         if overlay:

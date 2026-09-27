@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import shutil
+import stat
 import time
 import xml.etree.ElementTree as ElementTree
 from dataclasses import dataclass, field
@@ -484,6 +485,28 @@ def _copy_if_needed(source: str, dest: str, dry_run: bool) -> None:
     shutil.copy2(source, dest)
 
 
+def _mark_file_readonly(path: str) -> None:
+    """Clear the write bit so pipelines cannot delete or overwrite the file."""
+    if not os.path.isfile(path):
+        return
+    mode = os.stat(path).st_mode
+    if mode & stat.S_IWRITE:
+        os.chmod(path, mode & ~stat.S_IWRITE)
+
+
+def _mark_imageset_pngs_readonly(filter_node: FilterNode, dry_run: bool) -> None:
+    """Make ImageSet assemble PNGs read-only. Tile pyramid / tileset files are left alone."""
+    if dry_run:
+        return
+    imageset_root = os.path.join(filter_node.FullPath, ImageSetNode.DefaultPath)
+    if not os.path.isdir(imageset_root):
+        return
+    for dirpath, _dirnames, filenames in os.walk(imageset_root):
+        for name in filenames:
+            if name.lower().endswith('.png'):
+                _mark_file_readonly(os.path.join(dirpath, name))
+
+
 def _lock_filter(filter_node: FilterNode) -> None:
     filter_node.Locked = True
 
@@ -772,7 +795,8 @@ def _imageset_image_name(section_number: int, channel_name: str, filter_name: st
     return BuildFilterImageName(section_number, channel_name, filter_name, '.png')
 
 
-def _attach_imageset_png(filter_node: FilterNode, png: RootPng, channel_name: str, dry_run: bool) -> str:
+def _attach_imageset_png(filter_node: FilterNode, png: RootPng, channel_name: str, dry_run: bool) -> bool:
+    """Move an assemble PNG onto the filter ImageSet. Returns True when a file was moved."""
     added, imageset = filter_node.GetOrCreateImageset()
     added_level, level = imageset.GetOrCreateLevel(png.downsample, GenerateData=False)
     if level is None:
@@ -783,9 +807,16 @@ def _attach_imageset_png(filter_node: FilterNode, png: RootPng, channel_name: st
     dest = image.FullPath
     if os.path.isfile(dest):
         prettyoutput.Log(f"SKIP image already present: {dest}")
-        return dest
+        if not dry_run:
+            _mark_file_readonly(dest)
+        return False
+    if not os.path.isfile(png.source_path):
+        prettyoutput.Log(f"SKIP missing assemble image: {png.source_path}")
+        return False
     _move(png.source_path, dest, dry_run)
-    return dest
+    if not dry_run:
+        _mark_file_readonly(dest)
+    return True
 
 
 def _adopt_mosaics(channel: ChannelNode, section: SectionInventory, dry_run: bool) -> None:
@@ -824,10 +855,11 @@ def _report_missing_tiles(section: SectionInventory) -> None:
             f"(not inventing transforms). First: {missing[:5]}")
 
 
-def _attach_existing_imagesets(channel: ChannelNode, section_number: int) -> None:
+def _attach_existing_imagesets(channel: ChannelNode, section_number: int) -> bool:
     """Create ImageSet nodes for assemble PNGs already sitting in dest filter folders."""
     if not os.path.isdir(channel.FullPath):
-        return
+        return False
+    changed = False
     with os.scandir(channel.FullPath) as entries:
         filter_dirs = [entry for entry in entries if entry.is_dir()]
     for entry in filter_dirs:
@@ -847,8 +879,112 @@ def _attach_existing_imagesets(channel: ChannelNode, section_number: int) -> Non
             if level is None:
                 continue
             image = ImageNode.Create(dest_name)
-            level.UpdateOrAddChildByAttrib(image, 'Path')
+            added_image, image = level.UpdateOrAddChildByAttrib(image, 'Path')
+            changed = changed or added or added_level or added_image
         _lock_filter(filter_node)
+    return changed
+
+
+def _adopt_tem_assemble_pngs(channel: ChannelNode, section: SectionInventory,
+                             root_pngs: Iterable[RootPng], dry_run: bool) -> bool:
+    """Move leftover TEM assemble PNGs (mosaic/blob/mask/thumbnail) onto dest ImageSets."""
+    moved = False
+    pngs = [png for png in root_pngs if png.section == section.number]
+    pngs.extend(png for png in section.local_pngs if png.png_type != 'immuno')
+    attached_thumbnail = False
+    for png in pngs:
+        if png.png_type == 'immuno':
+            continue
+        if png.png_type == '8-bit_mask':
+            prettyoutput.Log(f"Leaving 8-bit mask in source (Raw8 ImageSet collision): {png.source_path}")
+            continue
+        if png.png_type == 'thumbnail':
+            attached_thumbnail = True
+        bits = 8 if png.filter_name in {'Raw8', 'Leveled', 'Blob', 'Mask'} else None
+        mask_name = 'Mask' if png.filter_name == 'Blob' else None
+        filter_node = _get_or_create_filter(channel, png.filter_name, bits=bits, mask_name=mask_name)
+        moved = _attach_imageset_png(filter_node, png, TEM_CHANNEL, dry_run) or moved
+        _lock_filter(filter_node)
+
+    if section.local_thumbnail is not None and not attached_thumbnail:
+        match = re.search(r'(\d+)\.png$', section.local_thumbnail, re.IGNORECASE)
+        downsample = int(match.group(1)) if match else 1
+        png = RootPng(section.number, 'thumbnail', downsample, section.local_thumbnail, LEVELED_FILTER)
+        filter_node = _get_or_create_filter(channel, LEVELED_FILTER, bits=8)
+        moved = _attach_imageset_png(filter_node, png, TEM_CHANNEL, dry_run) or moved
+        _lock_filter(filter_node)
+    return moved
+
+
+def _adopt_immuno_assemble_pngs(immuno_channel: ChannelNode, immuno_name: str,
+                                section: SectionInventory, dry_run: bool) -> bool:
+    moved = False
+    for png in section.local_pngs:
+        if png.png_type != 'immuno':
+            continue
+        if immuno_name.lower() not in os.path.basename(png.source_path).lower():
+            continue
+        leveled = _get_or_create_filter(immuno_channel, LEVELED_FILTER, bits=8)
+        moved = _attach_imageset_png(leveled, png, immuno_name, dry_run) or moved
+        _lock_filter(leveled)
+    return moved
+
+
+def _refresh_adopted_section(section_node: SectionNode, section: SectionInventory, meta: VolumeMeta,
+                             root_pngs: Iterable[RootPng], dry_run: bool) -> list[ChannelNode]:
+    """Restore leftover Original files onto an already-adopted section and lock ImageSet PNGs."""
+    dest_section = section_node.FullPath
+    dest_channel_path = os.path.join(dest_section, TEM_CHANNEL)
+    dirty: list[ChannelNode] = []
+
+    channel = section_node.GetChannel(TEM_CHANNEL)
+    has_tem = (
+        bool(section.mosaics or section.capture_pyramids or section.viking_tileset)
+        or os.path.isdir(dest_channel_path)
+        or channel is not None)
+    if has_tem:
+        if channel is None:
+            channel = _get_or_create_channel(section_node, TEM_CHANNEL, meta.scale_nm)
+        _adopt_mosaics(channel, section, dry_run)
+        raw8_dest = os.path.join(channel.FullPath, 'Raw8', TilePyramidNode.DefaultPath)
+        if 'Raw8' in section.capture_pyramids or os.path.isdir(raw8_dest):
+            raw8 = _get_or_create_filter(channel, 'Raw8', bits=8)
+            _attach_tile_pyramid(raw8, section.capture_pyramids.get('Raw8'), dry_run)
+            _lock_filter(raw8)
+        raw16_dest = os.path.join(channel.FullPath, '16-bit', TilePyramidNode.DefaultPath)
+        if '16-bit' in section.capture_pyramids or os.path.isdir(raw16_dest):
+            raw16 = _get_or_create_filter(channel, '16-bit', bits=16)
+            _attach_tile_pyramid(raw16, section.capture_pyramids.get('16-bit'), dry_run)
+            _lock_filter(raw16)
+        png_moved = _adopt_tem_assemble_pngs(channel, section, root_pngs, dry_run)
+        xml_added = _attach_existing_imagesets(channel, section.number)
+        relocated = _relocate_tileset_to_leveled(channel, section.viking_tileset, dry_run)
+        for filter_node in channel.Filters:
+            _lock_filter(filter_node)
+            _mark_imageset_pngs_readonly(filter_node, dry_run)
+        if png_moved or xml_added or relocated:
+            dirty.append(channel)
+
+    immuno_items = dict(section.immuno_channels)
+    if os.path.isdir(dest_section):
+        with os.scandir(dest_section) as entries:
+            for entry in entries:
+                if entry.is_dir() and entry.name != TEM_CHANNEL:
+                    immuno_items.setdefault(entry.name, entry.path)
+    for immuno_name, immuno_path in sorted(immuno_items.items()):
+        immuno_channel = section_node.GetChannel(immuno_name)
+        if immuno_channel is None:
+            immuno_channel = _get_or_create_channel(section_node, immuno_name, meta.scale_nm)
+        png_moved = _adopt_immuno_assemble_pngs(immuno_channel, immuno_name, section, dry_run)
+        xml_added = _attach_existing_imagesets(immuno_channel, section.number)
+        tileset_source = immuno_path if os.path.isdir(immuno_path) else None
+        relocated = _relocate_immuno_tileset_to_vikingtem(immuno_channel, tileset_source, dry_run)
+        for filter_node in immuno_channel.Filters:
+            _lock_filter(filter_node)
+            _mark_imageset_pngs_readonly(filter_node, dry_run)
+        if png_moved or xml_added or relocated:
+            dirty.append(immuno_channel)
+    return dirty
 
 
 def _adopt_section(block: BlockNode, section: SectionInventory, meta: VolumeMeta,
@@ -861,10 +997,7 @@ def _adopt_section(block: BlockNode, section: SectionInventory, meta: VolumeMeta
         section_node = block.GetSection(section.number)
         if section_node is None:
             section_node = _get_or_create_section(block, section.number)
-        dirty_channels: list[ChannelNode] = []
-        for channel in list(section_node.Channels):
-            if _relocate_channel_tileset(channel, None, dry_run):
-                dirty_channels.append(channel)
+        dirty_channels = _refresh_adopted_section(section_node, section, meta, root_pngs, dry_run)
         if not dry_run:
             for channel in dirty_channels:
                 _save_xml(channel, recurse=True)
@@ -891,36 +1024,13 @@ def _adopt_section(block: BlockNode, section: SectionInventory, meta: VolumeMeta
             _attach_tile_pyramid(raw16, section.capture_pyramids.get('16-bit'), dry_run)
             _lock_filter(raw16)
 
-        pngs = [png for png in root_pngs if png.section == section.number]
-        pngs.extend(png for png in section.local_pngs if png.png_type != 'immuno')
-        attached_thumbnail = False
-        for png in pngs:
-            if png.png_type == 'immuno':
-                continue
-            if png.png_type == '8-bit_mask':
-                prettyoutput.Log(f"Leaving 8-bit mask in source (Raw8 ImageSet collision): {png.source_path}")
-                continue
-            if png.png_type == 'thumbnail':
-                attached_thumbnail = True
-            bits = 8 if png.filter_name in {'Raw8', 'Leveled', 'Blob', 'Mask'} else None
-            mask_name = 'Mask' if png.filter_name == 'Blob' else None
-            filter_node = _get_or_create_filter(channel, png.filter_name, bits=bits, mask_name=mask_name)
-            _attach_imageset_png(filter_node, png, TEM_CHANNEL, dry_run)
-            _lock_filter(filter_node)
-
-        if section.local_thumbnail is not None and not attached_thumbnail:
-            match = re.search(r'(\d+)\.png$', section.local_thumbnail, re.IGNORECASE)
-            downsample = int(match.group(1)) if match else 1
-            png = RootPng(section.number, 'thumbnail', downsample, section.local_thumbnail, LEVELED_FILTER)
-            filter_node = _get_or_create_filter(channel, LEVELED_FILTER, bits=8)
-            _attach_imageset_png(filter_node, png, TEM_CHANNEL, dry_run)
-            _lock_filter(filter_node)
-
+        _adopt_tem_assemble_pngs(channel, section, root_pngs, dry_run)
         _attach_existing_imagesets(channel, section.number)
         _relocate_tileset_to_leveled(channel, section.viking_tileset, dry_run)
 
         for filter_node in channel.Filters:
             _lock_filter(filter_node)
+            _mark_imageset_pngs_readonly(filter_node, dry_run)
 
         if section.histogram_path is not None:
             with open(section.histogram_path, encoding='utf-8', errors='replace') as handle:
@@ -935,19 +1045,13 @@ def _adopt_section(block: BlockNode, section: SectionInventory, meta: VolumeMeta
 
     for immuno_name, immuno_path in sorted(immuno_items.items()):
         immuno_channel = _get_or_create_channel(section_node, immuno_name, meta.scale_nm)
-        for png in section.local_pngs:
-            if png.png_type != 'immuno':
-                continue
-            if immuno_name.lower() not in os.path.basename(png.source_path).lower():
-                continue
-            leveled = _get_or_create_filter(immuno_channel, LEVELED_FILTER, bits=8)
-            _attach_imageset_png(leveled, png, immuno_name, dry_run)
-            _lock_filter(leveled)
+        _adopt_immuno_assemble_pngs(immuno_channel, immuno_name, section, dry_run)
         _attach_existing_imagesets(immuno_channel, section.number)
         tileset_source = immuno_path if os.path.isdir(immuno_path) else None
         _relocate_immuno_tileset_to_vikingtem(immuno_channel, tileset_source, dry_run)
         for filter_node in immuno_channel.Filters:
             _lock_filter(filter_node)
+            _mark_imageset_pngs_readonly(filter_node, dry_run)
 
     if section.number in flip_list:
         _add_notes(section_node, 'Listed in FlipList.txt (pixels not flipped)', 'FlipList.txt')

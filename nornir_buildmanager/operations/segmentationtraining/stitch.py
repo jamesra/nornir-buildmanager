@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -20,7 +20,11 @@ from PIL import Image
 
 import nornir_imageregistration
 import nornir_pools
+from nornir_imageregistration.type_info import Shape
+from nornir_shared import prettyoutput
+
 from nornir_buildmanager.operations.segmentationtraining.geometry import (
+    CropWindow,
     TileRect,
     next_power_of_two,
 )
@@ -35,6 +39,15 @@ LoadTile = Callable[[int, int], NDArray | None]
 
 CROP_IMAGE_EXT = ".png"
 LEGACY_CROP_IMAGE_EXT = ".jpg"
+# More than half the pixels exactly 0 or exactly 255 means the crop has no tissue.
+BLANK_CROP_FRACTION = 0.5
+
+
+class BlankCrop(NamedTuple):
+    """A stitched crop whose pixels are mostly saturated black or white."""
+
+    image_key: str
+    fraction: float
 
 # Container-local scratch (Linux overlay /tmp), not a Windows or CIFS mount.
 DEFAULT_STAGE_TILES_ROOT = "/tmp/nornir-stage-tiles"
@@ -180,8 +193,7 @@ class StitchJob:
     image_key: str
     snap: TileRect
     downsample: int
-    tile_x_dim: int
-    tile_y_dim: int
+    tile_shape: Shape
     image_path: str
     crop_x: int = 0
     crop_y: int = 0
@@ -197,6 +209,65 @@ def tile_filename(prefix: str, postfix: str, ix: int, iy: int) -> str:
         "X": ix,
         "Y": iy,
     }
+
+
+def missing_covering_tiles(
+    tiles: TileRect,
+    level_dir: str | None,
+    prefix: str,
+    postfix: str,
+) -> list[tuple[int, int]]:
+    """Tile coordinates in *tiles* that are not files in *level_dir*.
+
+    Negative indexes are outside the mosaic, not holes in it. A missing level
+    directory means every on-mosaic coordinate is missing. The rectangle is
+    half-open, matching :class:`TileRect`.
+    """
+    coords = [
+        (ix, iy)
+        for iy in range(tiles.iy0, tiles.iy1)
+        for ix in range(tiles.ix0, tiles.ix1)
+        if ix >= 0 and iy >= 0
+    ]
+    if not coords:
+        return []
+    if not level_dir or not os.path.isdir(level_dir):
+        return coords
+    missing: list[tuple[int, int]] = []
+    for ix, iy in coords:
+        path = os.path.join(level_dir, tile_filename(prefix, postfix, ix, iy))
+        if not os.path.isfile(path):
+            missing.append((ix, iy))
+    return missing
+
+
+def missing_tiles_for_window(
+    origin_x: int,
+    origin_y: int,
+    width: int,
+    height: int,
+    *,
+    tile_x_dim: int,
+    tile_y_dim: int,
+    level_dir: str | None,
+    prefix: str,
+    postfix: str,
+) -> list[tuple[int, int]]:
+    """Covering tiles for a pixel crop that are not on disk."""
+    if width <= 0 or height <= 0 or tile_x_dim <= 0 or tile_y_dim <= 0:
+        return []
+    rect = CropWindow(origin_x, origin_y, width, height).covering_tiles(tile_x_dim, tile_y_dim)
+    return missing_covering_tiles(rect, level_dir, prefix, postfix)
+
+
+def log_missing_crop_tiles(z: int, skipped: int) -> None:
+    """One line for the crops in a section dropped because tiles are absent."""
+    if skipped <= 0:
+        return
+    prettyoutput.Log(
+        f"ExportAnnotationCrops: section {z} skipped {skipped} crop(s) "
+        f"with missing tiles; masks not included"
+    )
 
 
 def probe_tile_pixel_size(
@@ -276,7 +347,7 @@ def stitch_from_loader(
     Pillow encode is a host boundary, so each loaded tile is converted once with
     :func:`nornir_imageregistration.EnsureNumpyArray`.
     """
-    width, height = job.snap.pixel_size(job.tile_x_dim, job.tile_y_dim)
+    width, height = job.snap.pixel_size(job.tile_shape.x, job.tile_shape.y)
     canvas = np.zeros((height, width), dtype=np.uint8)
     for iy in range(job.snap.iy0, job.snap.iy1):
         for ix in range(job.snap.ix0, job.snap.ix1):
@@ -290,13 +361,13 @@ def stitch_from_loader(
             if tile is None:
                 continue
             tile = _as_uint8_gray(tile)
-            px = (ix - job.snap.ix0) * job.tile_x_dim
-            py = (iy - job.snap.iy0) * job.tile_y_dim
+            px = (ix - job.snap.ix0) * job.tile_shape.x
+            py = (iy - job.snap.iy0) * job.tile_shape.y
             th, tw = tile.shape[:2]
-            if th > job.tile_y_dim or tw > job.tile_x_dim:
+            if th > job.tile_shape.y or tw > job.tile_shape.x:
                 raise ValueError(
                     f"Tile ({ix},{iy}) is {tw}x{th} but TileXDim/TileYDim is "
-                    f"{job.tile_x_dim}x{job.tile_y_dim}"
+                    f"{job.tile_shape.x}x{job.tile_shape.y}"
                 )
             rh = min(th, max(0, height - py))
             rw = min(tw, max(0, width - px))
@@ -318,6 +389,34 @@ def _crop_canvas(job: StitchJob, canvas: NDArray, width: int, height: int) -> ND
             f"is outside stitched canvas {width}x{height} for {job.image_key}"
         )
     return np.ascontiguousarray(canvas[job.crop_y:y1, job.crop_x:x1])
+
+
+def saturated_fraction(array: NDArray) -> float:
+    """Fraction of pixels that are exactly 0 or exactly 255. Empty arrays are blank."""
+    flat = np.asarray(array).reshape(-1)
+    if flat.size == 0:
+        return 1.0
+    blank = int(np.count_nonzero((flat == 0) | (flat == 255)))
+    return blank / float(flat.size)
+
+
+def crop_is_blank(array: NDArray, *, limit: float = BLANK_CROP_FRACTION) -> bool:
+    """True when more than *limit* of the pixels are saturated black or white."""
+    return saturated_fraction(array) > limit
+
+
+def _note_blank_crop(
+    job: StitchJob,
+    array: NDArray,
+    blank_crops: list[BlankCrop] | None,
+) -> None:
+    """Record *job* when its stitched pixels are mostly saturated. The array is not copied."""
+    if blank_crops is None:
+        return
+    fraction = saturated_fraction(array)
+    if fraction <= BLANK_CROP_FRACTION:
+        return
+    blank_crops.append(BlankCrop(job.image_key, fraction))
 
 
 def write_png(array: NDArray, path: str) -> None:
@@ -643,11 +742,15 @@ def run_stitch_jobs(
     workers: int,
     use_shared_memory: bool = True,
     io_workers: int | None = None,
+    blank_crops: list[BlankCrop] | None = None,
 ) -> list[str]:
     """Stitch jobs. Band gating is the caller's responsibility.
 
     When *workers* > 1 and *use_shared_memory*, unique tiles are loaded on a
     thread pool and published once via :func:`npArrayToSharedArray` (read-only).
+    Blank crops are appended to *blank_crops* when that list is set. Encode
+    workers run in another process, so they return the fraction and the parent
+    records it.
     """
     if not jobs:
         return []
@@ -655,12 +758,17 @@ def run_stitch_jobs(
         paths: list[str] = []
         for job in jobs:
             array = stitch_from_loader(job, loader)
+            _note_blank_crop(job, array, blank_crops)
             write_png(array, job.image_path)
             paths.append(job.image_path)
         return paths
     threads = default_io_workers() if io_workers is None else max(1, int(io_workers))
     return _stitch_with_shared_tiles(
-        jobs, loader=loader, workers=workers, io_workers=threads
+        jobs,
+        loader=loader,
+        workers=workers,
+        io_workers=threads,
+        blank_crops=blank_crops,
     )
 
 
@@ -683,13 +791,24 @@ def _submit_shared_stitch(
     return submit_bounded(submit, jobs, max_in_flight=workers)
 
 
-def _drain_shared_stitch(task_iter: Any, started: list[Any]) -> list[str]:
+def _drain_shared_stitch(
+    task_iter: Any,
+    started: list[Any],
+    blank_crops: list[BlankCrop] | None = None,
+) -> list[str]:
     """Wait for already-started encode tasks, then drain the rest of the iterator."""
     results: list[str] = []
+
+    def take(task: Any) -> None:
+        path, blank = task.wait_return()
+        results.append(path)
+        if blank is not None and blank_crops is not None:
+            blank_crops.append(blank)
+
     for task in started:
-        results.append(task.wait_return())
+        take(task)
     for task in task_iter:
-        results.append(task.wait_return())
+        take(task)
     return results
 
 
@@ -699,6 +818,7 @@ def _stitch_with_shared_tiles(
     loader: LoadTile,
     workers: int,
     io_workers: int,
+    blank_crops: list[BlankCrop] | None = None,
 ) -> list[str]:
     """Thread-load unique tiles, publish shared memory, and encode in a process pool."""
     tiles, handles = prefetch_shared_tiles(jobs, loader, io_workers=io_workers)
@@ -710,13 +830,20 @@ def _stitch_with_shared_tiles(
                 started.append(next(task_iter))
             except StopIteration:
                 break
-        return _drain_shared_stitch(task_iter, started)
+        return _drain_shared_stitch(task_iter, started, blank_crops)
     finally:
         _unlink_handles(handles)
 
 
-def stitch_job_from_shared(job: StitchJob, tiles: dict[tuple[int, int], Any]) -> str:
+def stitch_job_from_shared(
+    job: StitchJob,
+    tiles: dict[tuple[int, int], Any],
+) -> tuple[str, BlankCrop | None]:
     """Worker: attach read-only shared tiles once per coordinate and write PNG.
+
+    Returns the written path and a blank record when more than half the pixels
+    are saturated. The parent records that result; this process does not share
+    the caller's list.
 
     Caching attaches matters: each :func:`ImageParamToNumpyImageArray` call opens
     a new shared-memory file descriptor. Re-attaching every tile paste exhausts
@@ -738,8 +865,10 @@ def stitch_job_from_shared(job: StitchJob, tiles: dict[tuple[int, int], Any]) ->
 
     try:
         array = stitch_from_loader(job, loader)
+        fraction = saturated_fraction(array)
+        blank = BlankCrop(job.image_key, fraction) if fraction > BLANK_CROP_FRACTION else None
         write_png(array, job.image_path)
-        return job.image_path
+        return job.image_path, blank
     finally:
         attached.clear()
 
@@ -830,6 +959,7 @@ def sweep_stitch_jobs(
     io_workers: int | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     on_band: Callable[[int, int, str], None] | None = None,
+    blank_crops: list[BlankCrop] | None = None,
 ) -> list[str]:
     """Stitch *jobs* in RAM-sized column bands with overlapped tile I/O.
 
@@ -912,6 +1042,7 @@ def sweep_stitch_jobs(
                         workers=workers,
                         use_shared_memory=False,
                         io_workers=threads,
+                        blank_crops=blank_crops,
                     )
                 )
                 remaining = upcoming
@@ -934,7 +1065,7 @@ def sweep_stitch_jobs(
                     next_ix = upcoming[0].snap.ix0
                     next_band = jobs_in_column_band(upcoming, next_ix, next_ix + column_band)
                     next_shared = (next_band, *prepare_band(next_band))
-                written.extend(_drain_shared_stitch(task_iter, started))
+                written.extend(_drain_shared_stitch(task_iter, started, blank_crops))
             finally:
                 _unlink_handles(handles)
             remaining = upcoming

@@ -17,6 +17,10 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     save_section_watermark,
     section_meta_path,
 )
+from nornir_buildmanager.operations.segmentationtraining.ingest import (
+    ensure_export_source,
+    odata_url_from_output,
+)
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     CropProductIndex,
     get_product_index,
@@ -112,10 +116,12 @@ def cleanup_annotation_crops(
 ) -> CleanupSummary:
     """Report and repair crop/metadata mismatches. Does not read OData or tiles."""
     output = Path(output_path)
+    ensure_export_source(output)
+    odata = odata_url_from_output(output)
     wanted = set(sections) if sections is not None else None
     summary = CleanupSummary()
     for key in _candidate_keys(output, wanted):
-        _repair_key(output, key, summary)
+        _repair_key(output, key, summary, odata=odata)
     _repair_watermarks(output, wanted, summary)
     prettyoutput.Log(
         "CleanupAnnotationCrops: "
@@ -145,7 +151,13 @@ def CleanupAnnotationCrops(
     return None
 
 
-def _repair_key(output: Path, key: str, summary: CleanupSummary) -> None:
+def _repair_key(
+    output: Path,
+    key: str,
+    summary: CleanupSummary,
+    *,
+    odata: str | None = None,
+) -> None:
     """Delete or rewrite one image key when the crop, JSON, masks, or overlay disagree."""
     image_path = resolve_crop_image(output / "images", key)
     json_path = output / "images" / f"{key}.json"
@@ -178,7 +190,7 @@ def _repair_key(output: Path, key: str, summary: CleanupSummary) -> None:
     image_meta = payload.get("image")
     if not isinstance(image_meta, dict):
         raise NornirUserException(f"Annotation crop JSON is missing image: {json_path}")
-    changed = _align_image_meta(image_path, image_meta, key)
+    changed = _align_image_meta(image_path, image_meta, key, odata=odata)
     annotations = payload.get("annotations")
     if annotations is None:
         annotations = []
@@ -209,8 +221,14 @@ def _repair_key(output: Path, key: str, summary: CleanupSummary) -> None:
         summary.deleted_members += removed
 
 
-def _align_image_meta(image_path: Path, image_meta: dict[str, Any], key: str) -> bool:
-    """Set ``file_name`` and size on the JSON image block from the crop file. Returns whether it changed."""
+def _align_image_meta(
+    image_path: Path,
+    image_meta: dict[str, Any],
+    key: str,
+    *,
+    odata: str | None = None,
+) -> bool:
+    """Set ``file_name``, size, and OData URL on the JSON image block. Returns whether it changed."""
     try:
         with Image.open(image_path) as handle:
             width, height = handle.size
@@ -229,6 +247,12 @@ def _align_image_meta(image_path: Path, image_meta: dict[str, Any], key: str) ->
         )
         image_meta["width"] = width
         image_meta["height"] = height
+        changed = True
+    if odata and image_meta.get("odata") != odata:
+        prettyoutput.Log(
+            f"CleanupAnnotationCrops: record OData URL on {key}"
+        )
+        image_meta["odata"] = odata
         changed = True
     return changed
 

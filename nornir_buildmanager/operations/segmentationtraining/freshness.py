@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+from nornir_imageregistration.type_info import Shape
+
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 
@@ -51,26 +53,32 @@ class ExportParams:
     filter_name: str
     volume: str
     geometry_version: str = GEOMETRY_TILED
-    tile_x_dim: int = 0
-    tile_y_dim: int = 0
+    tile_shape: Shape = Shape(y=0, x=0)
     crop_format: str = "png"
 
     def hash(self) -> str:
-        payload = json.dumps(self.__dict__, sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+        """Hash the flags that invalidate a crop.
+
+        ``tile_shape`` is written as ``tile_y_dim`` and ``tile_x_dim`` numbers so
+        the digest matches the previous two-integer payload.
+        """
+        payload = {key: value for key, value in self.__dict__.items() if key != "tile_shape"}
+        payload["tile_y_dim"] = self.tile_shape.y
+        payload["tile_x_dim"] = self.tile_shape.x
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
 class ResolvedTileset:
     """Tile size and level directories after a sampled PNG wins over the XML size.
 
-    ``tile_x_dim`` and ``tile_y_dim`` are copied onto ``ExportParams`` so the
-    freshness hash changes when the tile size changes. ``save_node`` is the
-    volume tileset to persist when that size was corrected.
+    ``tile_shape`` is copied onto ``ExportParams`` so the freshness hash changes
+    when the tile size changes. ``y`` is height and ``x`` is width. ``save_node``
+    is the volume tileset to persist when that size was corrected.
     """
 
-    tile_x_dim: int
-    tile_y_dim: int
+    tile_shape: Shape
     available: list[int]
     level_dirs: dict[int, str]
     prefix: str

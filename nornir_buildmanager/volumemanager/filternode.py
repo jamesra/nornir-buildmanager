@@ -238,9 +238,14 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
         return super(FilterNode, cls).Create(tag='Filter', Name=Name, Path=Path, **extra)  # type: ignore[return-value]
 
     def _LogContrastMismatch(self, MinIntensityCutoff, MaxIntensityCutoff, Gamma):
-        print("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (
-            self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma, MinIntensityCutoff, MaxIntensityCutoff,
-            Gamma))
+        shown = tuple(
+            "-" if value is None else "%g" % value
+            for value in (
+                self.MinIntensityCutoff, self.MaxIntensityCutoff, self.Gamma,
+                MinIntensityCutoff, MaxIntensityCutoff, Gamma,
+            )
+        )
+        print("\tCurrent values (%s,%s,%s), target (%s,%s,%s)" % shown)
 
 
 #       XElementWrapper.logger.warning("\tCurrent values (%g,%g,%g), target (%g,%g,%g)" % (
