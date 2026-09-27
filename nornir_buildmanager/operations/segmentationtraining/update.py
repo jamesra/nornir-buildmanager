@@ -21,7 +21,7 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
     connect,
     ignore_blank_crops,
     prune_catalog_section,
-    set_window_origins,
+    record_crop_size,
     sqlite_path,
     upsert_catalog,
 )
@@ -93,10 +93,9 @@ def update_section_crops(
     added_ids = current_ids - old_ids
     changed = _changed_survivor_ids(output, records, old_ids - removed, previous)
     if not removed and not added_ids and not changed:
-        _refresh_window_origins(output, records, run)
+        record_crop_size(output, int(params.max_texture))
         prettyoutput.Log(
-            f"ExportAnnotationCrops -Update: section {z} membership unchanged, "
-            "catalog origins refreshed, pixels skipped"
+            f"ExportAnnotationCrops -Update: section {z} membership unchanged, pixels skipped"
         )
         return list(previous.image_keys or []) if previous is not None else []
 
@@ -188,28 +187,6 @@ def update_section_crops(
         f"remasked {len(changed)}, crops touched={len(touched)}"
     )
     return image_keys
-
-
-def _refresh_window_origins(
-    output: Path,
-    records: list[LocationRecord],
-    run: SectionCropRun,
-) -> None:
-    """Plan windows and store origins. Does not stitch tiles or rewrite masks."""
-    params = run.params
-    plans, _polygons = plan_section_crops(
-        records,
-        params=params,
-        tileset=run.tileset,
-        exporter=run.exporter,
-    )
-    origins: list[tuple[int, str, int, int]] = []
-    for plan in plans:
-        for location_id in plan.location_ids:
-            origins.append(
-                (int(location_id), plan.image_key, plan.window.origin_x, plan.window.origin_y)
-            )
-    set_window_origins(output, origins, crop_size=int(params.max_texture))
 
 
 def _prune_removed(

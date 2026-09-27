@@ -260,13 +260,23 @@ def missing_tiles_for_window(
     return missing_covering_tiles(rect, level_dir, prefix, postfix)
 
 
-def log_missing_crop_tiles(z: int, skipped: int) -> None:
-    """One line for the crops in a section dropped because tiles are absent."""
+def log_missing_crop_tiles(
+    z: int,
+    skipped: int,
+    location_ids: Iterable[int] | None = None,
+) -> None:
+    """MQTT error for crops dropped because tileset images are absent.
+
+    *location_ids* are the annotations removed from the export with those crops.
+    """
     if skipped <= 0:
         return
-    prettyoutput.Log(
+    ids = sorted({int(item) for item in (location_ids or ())})
+    id_text = ", ".join(str(item) for item in ids) if ids else "none"
+    prettyoutput.LogErr(
         f"ExportAnnotationCrops: section {z} skipped {skipped} crop(s) "
-        f"with missing tiles; masks not included"
+        f"with missing tiles; masks not included. "
+        f"Excluded location ids: {id_text}"
     )
 
 

@@ -61,8 +61,6 @@ CREATE TABLE IF NOT EXISTS locations (
     sam2GtIou REAL,
     sam2Checkpoint TEXT,
     sam2ScoredAt TEXT,
-    origin_x INTEGER,
-    origin_y INTEGER,
     PRIMARY KEY (location_id, image_key)
 )
 """
@@ -103,10 +101,7 @@ def _ensure_locations_schema(connection: sqlite3.Connection) -> None:
     if not key_matches:
         _migrate_location_primary_key(connection)
         columns = {row[1] for row in connection.execute("PRAGMA table_info(locations)")}
-    if "origin_x" not in columns:
-        connection.execute("ALTER TABLE locations ADD COLUMN origin_x INTEGER")
-    if "origin_y" not in columns:
-        connection.execute("ALTER TABLE locations ADD COLUMN origin_y INTEGER")
+    _drop_window_origin_columns(connection, columns)
     connection.execute(
         "CREATE TABLE IF NOT EXISTS crop_geometry ("
         "id INTEGER PRIMARY KEY CHECK (id = 1), crop_size INTEGER NOT NULL)"
@@ -124,6 +119,13 @@ def _ensure_locations_schema(connection: sqlite3.Connection) -> None:
     if "exporter" not in source_columns:
         connection.execute("ALTER TABLE source ADD COLUMN exporter TEXT")
     connection.commit()
+
+
+def _drop_window_origin_columns(connection: sqlite3.Connection, columns: set[str]) -> None:
+    """Drop catalog copies of the window box. The image key already records it."""
+    for name in ("origin_x", "origin_y"):
+        if name in columns:
+            connection.execute(f"ALTER TABLE locations DROP COLUMN {name}")
 
 
 def _primary_key_columns(connection: sqlite3.Connection) -> Iterator[str]:
@@ -456,8 +458,6 @@ _NON_SAM2_COLUMNS = (
     "image_relpath",
     "mask_relpath",
     "ignored",
-    "origin_x",
-    "origin_y",
 )
 
 
@@ -721,44 +721,21 @@ def _row(
         "image_relpath": _image_relpath(output, image_key),
         "mask_relpath": mask_rel,
         "ignored": 1 if ignored else 0,
-        "origin_x": _optional_int(annotation.get("originX")),
-        "origin_y": _optional_int(annotation.get("originY")),
     }
 
 
-def _optional_int(value: Any) -> int | None:
-    """Return an int, or None when the sidecar has no window origin."""
-    if value is None or value == "":
-        return None
-    return int(value)
-
-
-def set_window_origins(
-    output_path: str | os.PathLike[str],
-    origins: Iterable[tuple[int, str, int, int]],
-    *,
-    crop_size: int,
-) -> int:
-    """Write origin_x/origin_y for existing window rows. Does not stitch or move files."""
+def record_crop_size(output_path: str | os.PathLike[str], crop_size: int) -> None:
+    """Remember the volume crop size. Does not stitch or move files."""
     connection = connect(output_path)
-    updated = 0
     try:
         connection.execute(
             "INSERT INTO crop_geometry (id, crop_size) VALUES (1, ?) "
             "ON CONFLICT(id) DO UPDATE SET crop_size = excluded.crop_size",
             [int(crop_size)],
         )
-        for location_id, image_key, origin_x, origin_y in origins:
-            cursor = connection.execute(
-                "UPDATE locations SET origin_x = ?, origin_y = ? "
-                "WHERE location_id = ? AND image_key = ?",
-                [int(origin_x), int(origin_y), int(location_id), str(image_key)],
-            )
-            updated += int(cursor.rowcount)
         connection.commit()
     finally:
         connection.close()
-    return updated
 
 
 def read_crop_size(output_path: str | os.PathLike[str]) -> int | None:

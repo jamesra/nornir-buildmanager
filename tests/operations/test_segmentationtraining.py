@@ -2278,6 +2278,7 @@ def test_fresh_section_drops_crop_when_tile_disappears(tmp_path: Path) -> None:
     reloaded = load_section_watermark(out, 2)
     assert reloaded is not None
     assert reloaded.image_keys == []
+    assert reloaded.ids == []
 
 
 @settings(max_examples=40)

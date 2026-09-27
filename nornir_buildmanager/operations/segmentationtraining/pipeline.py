@@ -557,13 +557,6 @@ def _export_section_crops_entry(
             return None
         repair_marks = missing_crop_marks(prior, products)
         _log_repair_keys_without_geometry(z, prior, products)
-        if not repair_marks:
-            recorded = len({mark.key for mark in (prior.images or [])})
-            prettyoutput.Log(
-                f"ExportAnnotationCrops -Repair: section {z} — "
-                f"all {recorded} images present, skipping"
-            )
-            return None
 
     if repair_marks is None:
         records = load_section_records(OutputPath, z)
@@ -631,7 +624,22 @@ def _export_section_crops_entry(
         ),
         overlay=bool(Overlay) and not bool(NoOverlay),
     )
-    if repair_marks:
+    if Repair:
+        output = Path(OutputPath)
+        drop_recorded_crops_missing_tiles(
+            output, z, load_section_watermark(OutputPath, z), tileset
+        )
+        prior = load_section_watermark(OutputPath, z)
+        products = get_product_index(output)
+        repair_marks = missing_crop_marks(prior, products)
+        if not repair_marks:
+            recorded = len({mark.key for mark in ((prior.images if prior else None) or [])})
+            if recorded:
+                prettyoutput.Log(
+                    f"ExportAnnotationCrops -Repair: section {z} — "
+                    f"all {recorded} images present, skipping"
+                )
+            return save_node
         try:
             with force_numpy_computation():
                 stitch_missing_crop_marks(
@@ -722,14 +730,16 @@ def retain_plans_with_tiles(
     """
     kept: list[PlannedCrop] = []
     skipped = 0
+    dropped_ids: list[int] = []
     for plan in plans:
         missing = _missing_tiles_for_plan(plan, tileset)
         if not missing:
             kept.append(plan)
             continue
         skipped += 1
+        dropped_ids.extend(plan.location_ids)
         remove_image_key_products(output, plan.image_key, products=products)
-    log_missing_crop_tiles(z, skipped)
+    log_missing_crop_tiles(z, skipped, dropped_ids)
     return kept
 
 
@@ -756,9 +766,8 @@ def drop_recorded_crops_missing_tiles(
 ) -> bool:
     """Delete already-exported crops whose tiles are gone. Returns True if any were dropped.
 
-    Ingest location ids stay on the section watermark so a later run can still
-    skip stitch. Those locations leave the catalog and the manifest when no
-    remaining crop includes them.
+    Location ids that have no remaining crop are removed from the watermark,
+    catalog, and manifest. Their masks, JSON, and crop files are deleted.
     """
     if watermark is None:
         return False
@@ -770,6 +779,7 @@ def drop_recorded_crops_missing_tiles(
     tile_y = tileset.tile_shape.y
     kept: list[ImageWatermark] = []
     dropped_keys: list[str] = []
+    dropped_ids: list[int] = []
     skipped = 0
     for mark in marks:
         rect = _tiles_for_watermark_image(mark, tile_x, tile_y)
@@ -783,9 +793,10 @@ def drop_recorded_crops_missing_tiles(
             kept.append(mark)
             continue
         skipped += 1
+        dropped_ids.extend(mark.member_ids)
         remove_image_key_products(output, mark.key, products=products)
         dropped_keys.append(mark.key)
-    log_missing_crop_tiles(z, skipped)
+    log_missing_crop_tiles(z, skipped, dropped_ids)
     if not dropped_keys:
         return False
     kept_ids = {member for mark in kept for member in mark.member_ids}
@@ -793,7 +804,7 @@ def drop_recorded_crops_missing_tiles(
         output,
         z,
         SectionWatermark(
-            ids=list(watermark.ids),
+            ids=[item for item in watermark.ids if int(item) in kept_ids],
             max_last_modified=watermark.max_last_modified,
             tileset_mtime=watermark.tileset_mtime,
             params_hash=watermark.params_hash,
