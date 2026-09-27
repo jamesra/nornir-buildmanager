@@ -72,6 +72,7 @@ from nornir_buildmanager.progress import report_iterate
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     apply_ignore_moves,
     ignore_blank_crops,
+    mark_catalog_dirty,
     prune_catalog_section,
     upsert_catalog,
 )
@@ -557,6 +558,13 @@ def _export_section_crops_entry(
             return None
         repair_marks = missing_crop_marks(prior, products)
         _log_repair_keys_without_geometry(z, prior, products)
+        if not repair_marks:
+            recorded = len({mark.key for mark in (prior.images or [])})
+            prettyoutput.Log(
+                f"ExportAnnotationCrops -Repair: section {z} — "
+                f"all {recorded} images present, skipping"
+            )
+            return None
 
     if repair_marks is None:
         records = load_section_records(OutputPath, z)
@@ -626,19 +634,19 @@ def _export_section_crops_entry(
     )
     if Repair:
         output = Path(OutputPath)
+        # Tile stats only for crops that have no PNG. Crops already on disk are
+        # not rechecked; a full-volume stat of every window is minutes on CIFS.
         drop_recorded_crops_missing_tiles(
-            output, z, load_section_watermark(OutputPath, z), tileset
+            output,
+            z,
+            load_section_watermark(OutputPath, z),
+            tileset,
+            only_keys={mark.key for mark in (repair_marks or [])},
         )
         prior = load_section_watermark(OutputPath, z)
         products = get_product_index(output)
         repair_marks = missing_crop_marks(prior, products)
         if not repair_marks:
-            recorded = len({mark.key for mark in ((prior.images if prior else None) or [])})
-            if recorded:
-                prettyoutput.Log(
-                    f"ExportAnnotationCrops -Repair: section {z} — "
-                    f"all {recorded} images present, skipping"
-                )
             return save_node
         try:
             with force_numpy_computation():
@@ -763,11 +771,15 @@ def drop_recorded_crops_missing_tiles(
     z: int,
     watermark: SectionWatermark | None,
     tileset: ResolvedTileset,
+    only_keys: set[str] | None = None,
 ) -> bool:
     """Delete already-exported crops whose tiles are gone. Returns True if any were dropped.
 
     Location ids that have no remaining crop are removed from the watermark,
     catalog, and manifest. Their masks, JSON, and crop files are deleted.
+
+    *only_keys* limits the tile check to those image keys. Other recorded crops
+    stay without a tileset stat. ``None`` checks every recorded crop.
     """
     if watermark is None:
         return False
@@ -782,6 +794,9 @@ def drop_recorded_crops_missing_tiles(
     dropped_ids: list[int] = []
     skipped = 0
     for mark in marks:
+        if only_keys is not None and mark.key not in only_keys:
+            kept.append(mark)
+            continue
         rect = _tiles_for_watermark_image(mark, tile_x, tile_y)
         level_dir = tileset.level_dirs.get(int(mark.downsample))
         missing = (
@@ -799,6 +814,7 @@ def drop_recorded_crops_missing_tiles(
     log_missing_crop_tiles(z, skipped, dropped_ids)
     if not dropped_keys:
         return False
+    mark_catalog_dirty()
     kept_ids = {member for mark in kept for member in mark.member_ids}
     save_section_watermark(
         output,
@@ -1015,6 +1031,8 @@ def stitch_missing_crop_marks(
         blank,
         {mark.key: mark.member_ids for mark in marks},
     )
+    if jobs or blank:
+        mark_catalog_dirty()
     prettyoutput.Log(
         f"ExportAnnotationCrops -Repair: section {z} — "
         f"{len(jobs)} image(s) written, {skipped} crop(s) skipped for missing tiles"

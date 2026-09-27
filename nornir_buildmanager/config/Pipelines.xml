@@ -2449,7 +2449,8 @@
 
         <PythonCall Module="nornir_buildmanager.operations.segmentationtraining.sam2"
                     Function="WriteGallery"
-                    OutputPath="#OutputPath"/>
+                    OutputPath="#OutputPath"
+                    Repair="#Repair"/>
     </Pipeline>
 
     <Pipeline Name="RepairAnnotationOverlays"

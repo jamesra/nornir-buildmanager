@@ -2281,6 +2281,68 @@ def test_fresh_section_drops_crop_when_tile_disappears(tmp_path: Path) -> None:
     assert reloaded.ids == []
 
 
+def test_repair_tile_check_skips_crops_that_already_have_pngs(tmp_path: Path) -> None:
+    """only_keys leaves an on-disk crop alone even when its tiles are gone."""
+    from nornir_buildmanager.operations.segmentationtraining.freshness import (
+        ImageWatermark,
+        SectionWatermark,
+        load_section_watermark,
+        save_section_watermark,
+    )
+    from nornir_buildmanager.operations.segmentationtraining.pipeline import (
+        drop_recorded_crops_missing_tiles,
+    )
+
+    level = tmp_path / "tiles" / "001"
+    level.mkdir(parents=True)
+    out = tmp_path / "export"
+    (out / "images").mkdir(parents=True)
+    (out / "masks").mkdir()
+    kept_key = "Vol_2_D1_kept"
+    drop_key = "Vol_2_D1_drop"
+    for key, location_id in ((kept_key, 8), (drop_key, 9)):
+        (out / "images" / f"{key}.png").write_bytes(b"png")
+        (out / "masks" / f"{key}_{location_id}.png").write_bytes(b"mask")
+    tileset = _tileset_for(level)
+
+    def mark(key: str, location_id: int, ix: int) -> ImageWatermark:
+        return ImageWatermark(
+            key=key,
+            downsample=1,
+            ix0=ix,
+            ix1=ix + 1,
+            iy0=0,
+            iy1=1,
+            member_ids=[location_id],
+            max_last_modified="",
+            origin_x=ix * 8,
+            origin_y=0,
+            width=8,
+            height=8,
+        )
+
+    save_section_watermark(
+        out,
+        2,
+        SectionWatermark(
+            ids=[8, 9],
+            max_last_modified="",
+            tileset_mtime=1.0,
+            params_hash="abc",
+            downsample=1,
+            image_keys=[kept_key, drop_key],
+            images=[mark(kept_key, 8, 0), mark(drop_key, 9, 1)],
+        ),
+    )
+    assert drop_recorded_crops_missing_tiles(
+        out, 2, load_section_watermark(out, 2), tileset, only_keys={drop_key}
+    )
+    assert (out / "images" / f"{kept_key}.png").is_file()
+    assert (out / "masks" / f"{kept_key}_8.png").is_file()
+    assert not (out / "images" / f"{drop_key}.png").exists()
+    assert not (out / "masks" / f"{drop_key}_9.png").exists()
+
+
 @settings(max_examples=40)
 @given(st.lists(st.integers(min_value=0, max_value=255), min_size=1, max_size=64))
 @example([255, 255, 255, 255])

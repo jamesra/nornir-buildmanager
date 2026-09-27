@@ -371,6 +371,23 @@ def prune_catalog_section(
     return int(deleted)
 
 
+_catalog_dirty = False
+
+
+def mark_catalog_dirty() -> None:
+    """Remember that this process changed export products the gallery must reread."""
+    global _catalog_dirty
+    _catalog_dirty = True
+
+
+def take_catalog_dirty() -> bool:
+    """Return whether the catalog needs a full rebuild, then clear the flag."""
+    global _catalog_dirty
+    dirty = _catalog_dirty
+    _catalog_dirty = False
+    return dirty
+
+
 def rebuild_catalog(output_path: str | os.PathLike[str]) -> int:
     """Rebuild sqlite from images JSON, section JSONL, masks, and ignore.json.
 

@@ -7,6 +7,7 @@ from nornir_shared import prettyoutput
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     apply_ignore_moves,
     rebuild_catalog,
+    take_catalog_dirty,
 )
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     load_cache_meta_sections,
@@ -33,10 +34,17 @@ __all__ = [
 ]
 
 
-def WriteGallery(OutputPath: str | None = None, **kwargs: Any) -> None:
-    """Rebuild `{Output}/annotation_crops.sqlite` from crops, masks, and ignore.json."""
+def WriteGallery(OutputPath: str | None = None, Repair: bool = False, **kwargs: Any) -> None:
+    """Rebuild `{Output}/annotation_crops.sqlite` from crops, masks, and ignore.json.
+
+    ``-Repair`` skips the rebuild when no crop was deleted or written. The
+    rebuild rereads every crop JSON, which dominates an unchanged repair.
+    """
     del kwargs
     if not OutputPath:
+        return None
+    if Repair and not take_catalog_dirty():
+        prettyoutput.Log("WriteGallery: repair left the catalog unchanged")
         return None
     apply_ignore_moves(OutputPath)
     count = rebuild_catalog(OutputPath)

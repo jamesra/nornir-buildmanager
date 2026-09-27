@@ -222,6 +222,10 @@ def missing_covering_tiles(
     Negative indexes are outside the mosaic, not holes in it. A missing level
     directory means every on-mosaic coordinate is missing. The rectangle is
     half-open, matching :class:`TileRect`.
+
+    The returned list stops at the first gap. Callers only need to know the
+    window is incomplete, and a full stat of every tile in every crop is a
+    separate CIFS round trip.
     """
     coords = [
         (ix, iy)
@@ -232,13 +236,12 @@ def missing_covering_tiles(
     if not coords:
         return []
     if not level_dir or not os.path.isdir(level_dir):
-        return coords
-    missing: list[tuple[int, int]] = []
+        return coords[:1]
     for ix, iy in coords:
         path = os.path.join(level_dir, tile_filename(prefix, postfix, ix, iy))
         if not os.path.isfile(path):
-            missing.append((ix, iy))
-    return missing
+            return [(ix, iy)]
+    return []
 
 
 def missing_tiles_for_window(
