@@ -9,16 +9,15 @@ deliberate format change, update the golden values in the same commit and say wh
 The fixture volume is built with production node types and saved with production
 ``VolumeManager.Save``; no TESTINPUTPATH data is needed. CreationDate is pinned so
 the written bytes are deterministic. The XPath patterns come from
-``.cursor/issue-handoff/metadata-port/xpath-inventory.md`` (umbrella repo).
+``.cursor/issue-handoff/metadata-port/xpath-inventory.md`` (umbrella repo). Golden
+tables and the fixture builder live in ``metadata_port_characterize_data``.
 """
 
 from __future__ import annotations
 
-import hashlib
 import os
 import re
 import tempfile
-from collections.abc import Iterable
 from typing import Any, cast
 from xml.etree import ElementTree
 
@@ -26,93 +25,39 @@ import pytest
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
-import nornir_buildmanager
 import nornir_buildmanager.volumemanager as vm
 
-FIXED_DATE = '2020-01-02 03:04:05+00:00'
-ROOT_TOKEN = b'{ROOT}'
-
-# sha256[:16] of each VolumeData.xml after ROOT_TOKEN substitution, written by the code at the time of capture.
-GOLDEN_SHA = {
-    'TEM/0001/TEM/Leveled/Images/VolumeData.xml': '352ce5b1b3049356',
-    'TEM/0001/TEM/Leveled/TilePyramid/VolumeData.xml': '5606b8e4adf8d3e9',
-    'TEM/0001/TEM/Leveled/Tileset/VolumeData.xml': '1c5295e8416c37c7',
-    'TEM/0001/TEM/Leveled/VolumeData.xml': '0573bd20e366b656',
-    'TEM/0001/TEM/Raw8/Images/VolumeData.xml': '352ce5b1b3049356',
-    'TEM/0001/TEM/Raw8/TilePyramid/VolumeData.xml': '5606b8e4adf8d3e9',
-    'TEM/0001/TEM/Raw8/Tileset/VolumeData.xml': '1c5295e8416c37c7',
-    'TEM/0001/TEM/Raw8/VolumeData.xml': '995f098f8e285ce3',
-    'TEM/0001/TEM/VolumeData.xml': '22274ae237147af8',
-    'TEM/0001/VolumeData.xml': '1e89fb24dd067ff4',
-    'TEM/0002/TEM/Leveled/Images/VolumeData.xml': '352ce5b1b3049356',
-    'TEM/0002/TEM/Leveled/TilePyramid/VolumeData.xml': '5606b8e4adf8d3e9',
-    'TEM/0002/TEM/Leveled/Tileset/VolumeData.xml': '1c5295e8416c37c7',
-    'TEM/0002/TEM/Leveled/VolumeData.xml': '0573bd20e366b656',
-    'TEM/0002/TEM/Raw8/Images/VolumeData.xml': '352ce5b1b3049356',
-    'TEM/0002/TEM/Raw8/TilePyramid/VolumeData.xml': '5606b8e4adf8d3e9',
-    'TEM/0002/TEM/Raw8/Tileset/VolumeData.xml': '1c5295e8416c37c7',
-    'TEM/0002/TEM/Raw8/VolumeData.xml': '995f098f8e285ce3',
-    'TEM/0002/TEM/VolumeData.xml': '22274ae237147af8',
-    'TEM/0002/VolumeData.xml': '7db6f6e9250db7fe',
-    'TEM/StosBrute64/VolumeData.xml': '7d0e664fbf25b4ff',
-    'TEM/VolumeData.xml': '8c29f17de9603232',
-    'VolumeData.xml': '07297a61a34cb925',
-}
-
-
-def _touch(path: str) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, 'wb') as handle:
-        handle.write(b'x')
-
-
-def _build_volume(root: str, sections: Iterable[int] = (1, 2), filters: Iterable[str] = ('Raw8', 'Leveled'),
-                  notes: str = 'notes text \u00b5m') -> None:
-    """Sections each holding one channel with *filters*, plus one StosGroup and one StosMap, saved sharded."""
-    volume = cast(vm.XContainerElementWrapper, vm.VolumeManager.Load(root, Create=True))
-    _, block = volume.UpdateOrAddChildByAttrib(vm.BlockNode.Create('TEM'), 'Name')
-    for number in sections:
-        _, section = block.UpdateOrAddChildByAttrib(vm.SectionNode.Create(number), 'Number')
-        _, channel = section.UpdateOrAddChildByAttrib(vm.ChannelNode.Create('TEM'), 'Name')
-        for name in ('Stage', 'Prune'):
-            _, transform = channel.UpdateOrAddChildByAttrib(vm.TransformNode.Create(name, 'Mosaic'), 'Name')
-            _touch(transform.FullPath)
-        channel.UpdateOrAddChild(vm.TransformDataNode.Create('Stage.mosaic.data'))
-        channel.UpdateOrAddChild(vm.NotesNode.Create(Text=notes))
-        for name in filters:
-            _, filter_node = channel.UpdateOrAddChildByAttrib(vm.FilterNode.Create(name), 'Name')
-            _, pyramid = filter_node.UpdateOrAddChild(vm.TilePyramidNode.Create(NumberOfTiles=1))
-            _, level = pyramid.UpdateOrAddChildByAttrib(vm.LevelNode.Create(1), 'Downsample')
-            _touch(os.path.join(level.FullPath, '000.png'))
-            _, image_set = filter_node.UpdateOrAddChild(vm.ImageSetNode.Create(Type=''))
-            _, level = image_set.UpdateOrAddChildByAttrib(vm.LevelNode.Create(1), 'Downsample')
-            level.UpdateOrAddChild(vm.ImageNode.Create('image.png'))
-            _, histogram = filter_node.UpdateOrAddChild(vm.HistogramNode.Create(Type='Prune'))
-            histogram.UpdateOrAddChild(vm.ImageNode.Create('hist.png'))
-            histogram.UpdateOrAddChild(vm.DataNode.Create('hist.xml'))
-            _, prune = filter_node.UpdateOrAddChild(vm.PruneNode.Create(Type='Prune', Overlap=0.1))
-            prune.UpdateOrAddChild(vm.ImageNode.Create('prune.png'))
-            _, tileset = filter_node.UpdateOrAddChild(vm.TilesetNode.Create())
-            _, level = tileset.UpdateOrAddChildByAttrib(vm.LevelNode.Create(1), 'Downsample')
-            _touch(os.path.join(level.FullPath, 'X000_Y000.png'))
-    _, group = block.UpdateOrAddChildByAttrib(vm.StosGroupNode.Create('StosBrute64', 64), 'Name')
-    _, mappings = group.UpdateOrAddChildByAttrib(vm.SectionMappingsNode.Create(MappedSectionNumber=2),
-                                                 'MappedSectionNumber')
-    mappings.UpdateOrAddChild(vm.TransformNode.Create('2-1', 'Grid', Path='2-1.stos',
-                                                   ControlSectionNumber='1', MappedSectionNumber='2'))
-    _, stos_map = block.UpdateOrAddChildByAttrib(vm.StosMapNode.Create('PotentialRegistrationChain'), 'Name')
-    stos_map.append(vm.MappingNode.Create(1, [2]))
-
-    for element in volume.iter():
-        if 'CreationDate' in element.attrib:
-            element.attrib['CreationDate'] = FIXED_DATE
-    vm.VolumeManager.Save(volume)
+from .metadata_port_characterize_data import (
+    FIXED_DATE,
+    GOLDEN_SHA,
+    INDIRECT_PATTERNS,
+    ROOT_TOKEN,
+    XPATH_CASES,
+    ancestry_key,
+    build_volume,
+    canonical,
+    merged_oracle,
+    normalized_sha,
+    pipeline_patterns,
+    pipeline_xpaths,
+    snapshot,
+    source_patterns,
+    written,
+)
 
 
 @pytest.fixture
 def volume_root(tmp_path) -> str:
     root = os.path.join(str(tmp_path), 'vol')
-    _build_volume(root)
+    build_volume(root)
+    return root
+
+
+@pytest.fixture(scope='module')
+def query_volume_root(tmp_path_factory) -> str:
+    """Read-only fixture for the XPath table; module scoped because no XPath test writes."""
+    root = os.path.join(str(tmp_path_factory.mktemp('query')), 'vol')
+    build_volume(root, extras=True)
     return root
 
 
@@ -122,70 +67,10 @@ def _load(root: str) -> vm.XContainerElementWrapper:
     return cast(vm.XContainerElementWrapper, volume)
 
 
-def _xml_files(root: str) -> list[str]:
-    found = []
-    for dirpath, _, filenames in os.walk(root):
-        if 'VolumeData.xml' in filenames:
-            found.append(os.path.relpath(os.path.join(dirpath, 'VolumeData.xml'), root).replace(os.sep, '/'))
-    return sorted(found)
-
-
-def _snapshot(root: str) -> dict[str, tuple[int, int, bytes]]:
-    """relpath -> (inode, mtime_ns, bytes); inode changes on every tmp+replace write."""
-    result = {}
-    for rel in _xml_files(root):
-        path = os.path.join(root, rel)
-        stat = os.stat(path)
-        with open(path, 'rb') as handle:
-            result[rel] = (stat.st_ino, stat.st_mtime_ns, handle.read())
-    return result
-
-
-def _written(before: dict, after: dict) -> set[str]:
-    return {rel for rel in after if before.get(rel) != after[rel]}
-
-
-def _normalized_sha(root: str, raw: bytes) -> str:
-    return hashlib.sha256(raw.replace(root.encode('utf-8'), ROOT_TOKEN)).hexdigest()[:16]
-
-
-def _merged_oracle(dirpath: str) -> ElementTree.Element:
-    """Plain-ElementTree view of the volume with every ``*_Link`` replaced by its file's root.
-
-    Independent of the wrapper's link handling; links only occur as direct children
-    of a container's root element in today's layout.
-    """
-    element = ElementTree.parse(os.path.join(dirpath, 'VolumeData.xml')).getroot()
-    for index, child in enumerate(list(element)):
-        if child.tag.endswith('_Link'):
-            element[index] = _merged_oracle(os.path.join(dirpath, child.attrib['Path']))
-    return element
-
-
-def _canonical(element: ElementTree.Element, skip_root_path: bool = True) -> tuple:
-    """Tag, ordered attributes, whitespace-normalized text, and children, recursively."""
-    attrib = [(k, v) for k, v in element.attrib.items() if not (skip_root_path and k == 'Path')]
-    text = (element.text or '').strip() or None
-    return element.tag, tuple(attrib), text, tuple(_canonical(child, False) for child in element)
-
-
-def _ancestry_key(element: Any, parents: dict | None = None) -> tuple:
-    """Identity of an element below the Volume root, from wrapper ``Parent`` links or an oracle parent map."""
-    chain = []
-    node = element
-    while True:
-        parent = parents.get(node) if parents is not None else node.Parent
-        if parent is None:
-            break
-        chain.append((node.tag, tuple(sorted(node.attrib.items()))))
-        node = parent
-    return tuple(reversed(chain))
-
-
 def test_sharded_save_matches_golden_bytes(volume_root):
-    snapshot = _snapshot(volume_root)
-    actual = {rel: _normalized_sha(volume_root, raw) for rel, (_, _, raw) in snapshot.items()}
-    assert actual == GOLDEN_SHA, {rel: snapshot[rel][2].decode() for rel in actual if actual[rel] != GOLDEN_SHA.get(rel)}
+    files = snapshot(volume_root)
+    actual = {rel: normalized_sha(volume_root, raw) for rel, (_, _, raw) in files.items()}
+    assert actual == GOLDEN_SHA, {rel: files[rel][2].decode() for rel in actual if actual[rel] != GOLDEN_SHA.get(rel)}
 
 
 def test_volume_root_and_link_stub_bytes(volume_root):
@@ -198,11 +83,11 @@ def test_volume_root_and_link_stub_bytes(volume_root):
 
 
 def test_clean_load_resolve_save_writes_nothing(volume_root):
-    before = _snapshot(volume_root)
+    before = snapshot(volume_root)
     volume = _load(volume_root)
     volume.LoadAllLinkedNodes()
     vm.VolumeManager.Save(volume)
-    assert _written(before, _snapshot(volume_root)) == set()
+    assert written(before, snapshot(volume_root)) == set()
 
 
 def _force_attribute_only_save(root: str) -> None:
@@ -218,7 +103,7 @@ def _assert_children_reversed(rel: str, old_raw: bytes, new_raw: bytes) -> None:
     old_root = ElementTree.fromstring(old_raw)
     new_root = ElementTree.fromstring(new_raw)
     assert new_root.attrib == old_root.attrib, rel
-    assert [_canonical(c, False) for c in new_root] == [_canonical(c, False) for c in reversed(old_root)], rel
+    assert [canonical(c, False) for c in new_root] == [canonical(c, False) for c in reversed(old_root)], rel
 
 
 def test_attribute_only_save_reverses_child_order(volume_root):
@@ -230,10 +115,10 @@ def test_attribute_only_save_reverses_child_order(volume_root):
     reversed, so every attribute-only save flips each container's child order on
     disk; a second one flips it back.
     """
-    before = _snapshot(volume_root)
+    before = snapshot(volume_root)
     _force_attribute_only_save(volume_root)
-    after = _snapshot(volume_root)
-    assert _written(before, after) == set(after) == set(before)
+    after = snapshot(volume_root)
+    assert written(before, after) == set(after) == set(before)
     for rel, (_, _, raw) in after.items():
         _assert_children_reversed(rel, before[rel][2], raw)
         with open(os.path.join(volume_root, rel + '.backup.xml'), 'rb') as handle:
@@ -244,7 +129,7 @@ def test_attribute_only_save_reverses_child_order(volume_root):
         'TEM/0002/TEM/Raw8/VolumeData.xml', 'TEM/0002/TEM/Leveled/VolumeData.xml'}
 
     _force_attribute_only_save(volume_root)
-    assert {rel: raw for rel, (_, _, raw) in _snapshot(volume_root).items()} == {
+    assert {rel: raw for rel, (_, _, raw) in snapshot(volume_root).items()} == {
         rel: raw for rel, (_, _, raw) in before.items()}
 
 
@@ -255,15 +140,15 @@ def test_parent_sort_leaves_attribute_only_children_unsorted(volume_root):
     ``SortKey`` is the tag and the sort is stable, so the sorted save groups by tag
     but still writes same-tag siblings in reverse of their loaded order.
     """
-    before = _snapshot(volume_root)
+    before = snapshot(volume_root)
     volume = _load(volume_root)
     channel = _find(volume, "Block/Section[@Number='1']/Channel")
     for filter_node in channel.findall('Filter'):
         filter_node.AttributesChanged = True
     channel.UpdateOrAddChildByAttrib(vm.TransformNode.Create('Grid', 'Mosaic'), 'Name')
     vm.VolumeManager.Save(volume)
-    after = _snapshot(volume_root)
-    assert _written(before, after) == {'TEM/0001/TEM/VolumeData.xml', 'TEM/0001/TEM/Raw8/VolumeData.xml',
+    after = snapshot(volume_root)
+    assert written(before, after) == {'TEM/0001/TEM/VolumeData.xml', 'TEM/0001/TEM/Raw8/VolumeData.xml',
                                        'TEM/0001/TEM/Leveled/VolumeData.xml'}
     for rel in ('TEM/0001/TEM/Raw8/VolumeData.xml', 'TEM/0001/TEM/Leveled/VolumeData.xml'):
         _assert_children_reversed(rel, before[rel][2], after[rel][2])
@@ -282,17 +167,17 @@ def test_round_trip_property(sections, filters, notes):
     """Any small volume loads back to its merged files, keeps note text exactly, and re-saves nothing."""
     with tempfile.TemporaryDirectory(dir=os.environ.get('TESTOUTPUTPATH') or None) as base:
         root = os.path.join(base, 'vol')
-        _build_volume(root, sections, filters, notes)
-        before = _snapshot(root)
+        build_volume(root, sections, filters, notes)
+        before = snapshot(root)
         volume = _load(root)
         volume.LoadAllLinkedNodes()
-        assert _canonical(volume) == _canonical(_merged_oracle(root))
+        assert canonical(volume) == canonical(merged_oracle(root))
         assert not any(e.tag.endswith('_Link') for e in volume.iter())
         assert sorted(s.Number for s in volume.findall('Block/Section')) == sorted(sections)
         assert sorted(f.Name for f in volume.findall('Block/Section/Channel/Filter')) == sorted(filters * len(sections))
         assert {n.text for n in volume.findall('Block/Section/Channel/Notes')} == {notes}
         vm.VolumeManager.Save(volume)
-        assert _written(before, _snapshot(root)) == set()
+        assert written(before, snapshot(root)) == set()
 
 
 def test_single_file_round_trip(volume_root, tmp_path):
@@ -312,69 +197,35 @@ def test_single_file_round_trip(volume_root, tmp_path):
     reloaded = _load(single_root)
     assert reloaded.attrib['Path'] == single_root
     reloaded.LoadAllLinkedNodes()
-    assert _canonical(reloaded) == _canonical(_merged_oracle(volume_root))
+    assert canonical(reloaded) == canonical(merged_oracle(volume_root))
 
 
-# (root xpath from the Volume, query xpath, total matches over all roots). Values stand in for #Variables.
-XPATH_CASES = [
-    ('', 'Block', 1),
-    ('', 'Block/Section', 2),
-    ('', 'Block/Section/Channel', 2),
-    ('', 'Block/Section/Channel/Filter', 4),
-    ('', "Block/Section/Channel/Filter[@Name='Leveled']", 2),
-    ('', 'Block/Section/Channel/Filter/TilePyramid', 4),
-    ('', 'Block/Section/Channel/Transform', 4),
-    ('', 'Block/StosGroup/SectionMappings/Transform', 1),
-    ('', "Block/StosGroup[@Name='StosBrute64']/SectionMappings", 1),
-    ('', "Block/StosMap[@Name='PotentialRegistrationChain']", 1),
-    ('Block', 'Section', 2),
-    ('Block', "Section[@Number='2']", 1),
-    ('Block', 'Section/Channel', 2),
-    ('Block', "StosGroup[@Name='StosBrute64']", 1),
-    ('Block/Section', 'Channel', 2),
-    ('Block/Section/Channel', 'Filter', 4),
-    ('Block/Section/Channel', "Filter[@Name='Raw8']", 2),
-    ('Block/Section/Channel', "Filter[@Name='Missing']", 0),
-    ('Block/Section/Channel', 'Transform', 4),
-    ('Block/Section/Channel', "Transform[@Name='Prune']", 2),
-    ('Block/Section/Channel', 'TransformData', 2),
-    ('Block/Section/Channel', 'Notes', 2),
-    ('Block/Section/Channel', "Filter/TilePyramid/Level[@Downsample='1']", 4),
-    ('Block/Section/Channel/Filter', 'TilePyramid', 4),
-    ('Block/Section/Channel/Filter', 'Tileset', 4),
-    ('Block/Section/Channel/Filter', 'ImageSet', 4),
-    ('Block/Section/Channel/Filter', 'ImageSet/Level', 4),
-    ('Block/Section/Channel/Filter', 'ImageSet/Level/Image', 4),
-    ('Block/Section/Channel/Filter', 'Histogram', 4),
-    ('Block/Section/Channel/Filter', 'Histogram/Image', 4),
-    ('Block/Section/Channel/Filter', 'Prune', 4),
-    ('Block/Section/Channel/Filter', "Prune[@Overlap='0.1']", 4),
-    ('Block/Section/Channel/Filter/Histogram', 'Data', 4),
-    ('Block/Section/Channel/Filter/Histogram', 'Image', 4),
-    ('Block/StosGroup', 'SectionMappings/Transform', 1),
-    ('Block/StosGroup', "SectionMappings/Transform[@Type='Grid']", 1),
-    ('Block/StosGroup', "SectionMappings[@MappedSectionNumber='2']", 1),
-    ('Block/StosMap', 'Mapping', 1),
-]
+@pytest.mark.parametrize('pattern,root_xpath,xpath,expected', XPATH_CASES,
+                         ids=[f'{root or "Volume"}|{xpath}' for _, root, xpath, _ in XPATH_CASES])
+def test_xpath_results_match_merged_tree(query_volume_root, pattern, root_xpath, xpath, expected):
+    """The wrapper's link-aware find/findall over sharded files equals plain ElementTree on the merged tree.
 
-
-@pytest.mark.parametrize('root_xpath,xpath,expected', XPATH_CASES)
-def test_xpath_results_match_merged_tree(volume_root, root_xpath, xpath, expected):
-    """The wrapper's link-aware find/findall over sharded files equals plain ElementTree on the merged tree."""
-    oracle = _merged_oracle(volume_root)
+    ``find`` runs on its own fresh load: after ``findall`` the links are already
+    resolved, which would hide ``find``'s link handling.
+    """
+    assert re.fullmatch('.+'.join(map(re.escape, pattern.split('#v'))), xpath), (pattern, xpath)
+    oracle = merged_oracle(query_volume_root)
     parents = {child: parent for parent in oracle.iter() for child in parent}
-    volume = _load(volume_root)
 
-    wrapper_roots = list(volume.findall(root_xpath)) if root_xpath else [volume]
+    def roots(volume: Any) -> list:
+        return list(volume.findall(root_xpath)) if root_xpath else [volume]
+
+    findall_roots = roots(_load(query_volume_root))
+    find_roots = roots(_load(query_volume_root))
     oracle_roots = oracle.findall(root_xpath) if root_xpath else [oracle]
-    assert [_ancestry_key(r) for r in wrapper_roots] == [_ancestry_key(r, parents) for r in oracle_roots]
+    assert [ancestry_key(r) for r in findall_roots] == [ancestry_key(r, parents) for r in oracle_roots]
 
     total = 0
-    for wrapper_root, oracle_root in zip(wrapper_roots, oracle_roots):
-        expected_keys = [_ancestry_key(e, parents) for e in oracle_root.findall(xpath)]
-        assert [_ancestry_key(e) for e in wrapper_root.findall(xpath)] == expected_keys
-        first = wrapper_root.find(xpath)
-        assert (None if first is None else _ancestry_key(first)) == (expected_keys[0] if expected_keys else None)
+    for findall_root, find_root, oracle_root in zip(findall_roots, find_roots, oracle_roots):
+        expected_keys = [ancestry_key(e, parents) for e in oracle_root.findall(xpath)]
+        first = find_root.find(xpath)
+        assert (None if first is None else ancestry_key(first)) == (expected_keys[0] if expected_keys else None)
+        assert [ancestry_key(e) for e in findall_root.findall(xpath)] == expected_keys
         total += len(expected_keys)
     assert total == expected
 
@@ -388,14 +239,51 @@ def test_pipeline_xpaths_use_only_simple_steps():
     The inventory relies on this: no wildcards, '//', positional or text predicates,
     and no '/' inside values (``__ElementLinkNameFromXPath`` splits on '/').
     """
-    config = os.path.join(os.path.dirname(nornir_buildmanager.__file__), 'config', 'Pipelines.xml')
-    tree = ElementTree.parse(config)
-    xpaths = {e.attrib['XPath'] for e in tree.iter() if 'XPath' in e.attrib}
-    xpaths |= {e.attrib['RowXPath'] for e in tree.iter() if 'RowXPath' in e.attrib}
-    for e in tree.iter():
-        xpaths |= set(filter(None, e.attrib.get('ColumnXPaths', '').split(',')))
+    xpaths = pipeline_xpaths()
     assert len(xpaths) > 40
     assert sorted(x for x in xpaths if not SIMPLE_XPATH.match(x)) == []
+
+
+def test_every_inventoried_pattern_has_a_golden_case():
+    """A pattern added to Pipelines.xml or a find literal fails here until XPATH_CASES pins it."""
+    covered = {case[0] for case in XPATH_CASES}
+    inventoried = pipeline_patterns() | source_patterns() | set(INDIRECT_PATTERNS)
+    assert sorted(inventoried - covered) == []
+    assert sorted(covered - inventoried) == []
+
+
+def test_get_child_by_attrib_formats_floats_with_g(query_volume_root):
+    """Float values become ``%g`` text, so 1.0 matches Downsample="1"; the string '1.0' does not."""
+    pyramid = _find(_load(query_volume_root), "Block/Section[@Number='1']/Channel/Filter[@Name='Raw8']/TilePyramid")
+    level = _find(pyramid, 'Level')
+    assert pyramid.GetChildByAttrib('Level', 'Downsample', 1.0) is level
+    assert pyramid.GetChildByAttrib('Level', 'Downsample', '1') is level
+    assert pyramid.GetChildByAttrib('Level', 'Downsample', '1.0') is None
+    assert list(pyramid.GetChildrenByAttrib('Level', 'Downsample', 1.0)) == [level]
+    assert list(pyramid.GetChildrenByAttrib('Level', 'Downsample', '1')) == [level]
+    assert list(pyramid.GetChildrenByAttrib('Level', 'Downsample', '1.0')) == []
+
+
+def test_update_or_add_child_by_attrib_returns_existing_match(query_volume_root):
+    """Matches on Name by default; an existing match is returned rather than duplicated."""
+    channel = _find(_load(query_volume_root), "Block/Section[@Number='1']/Channel")
+    existing = _find(channel, "Transform[@Name='Stage']")
+    added, node = channel.UpdateOrAddChildByAttrib(vm.TransformNode.Create('Stage', 'Mosaic'))
+    assert not added and node is existing
+    added, node = channel.UpdateOrAddChildByAttrib(vm.FilterNode.Create('Leveled'), 'Name')
+    assert not added and node is _find(channel, "Filter[@Name='Leveled']")
+    assert len(list(channel.findall('Transform'))) == 3 and len(list(channel.findall('Filter'))) == 2
+
+
+def test_multi_attribute_update_or_add_is_rejected(query_volume_root):
+    """``UpdateOrAddChildByAttrib`` joins several names with ' and ', which ElementTree XPath rejects.
+
+    No live caller passes more than one name; pinned so a SQL query layer does not
+    silently start accepting it.
+    """
+    block = _find(_load(query_volume_root), 'Block')
+    with pytest.raises(SyntaxError, match='invalid predicate'):
+        block.UpdateOrAddChildByAttrib(vm.SectionNode.Create(1), ['Number', 'Name'])
 
 
 def _raw_tags(element: ElementTree.Element) -> list[str]:
@@ -410,7 +298,7 @@ def _find(node: ElementTree.Element, xpath: str) -> Any:
 
 
 def test_links_resolve_lazily_and_only_where_matched(volume_root):
-    before = _snapshot(volume_root)
+    before = snapshot(volume_root)
     volume = _load(volume_root)
     assert _raw_tags(volume) == ['Block_Link']
 
@@ -426,7 +314,7 @@ def test_links_resolve_lazily_and_only_where_matched(volume_root):
     assert _raw_tags(block) == ['Section', 'Section', 'StosGroup_Link', 'StosMap']
 
     assert not any(getattr(e, 'ElementHasChangesToSave', False) for e in volume.iter())
-    assert _written(before, _snapshot(volume_root)) == set()
+    assert written(before, snapshot(volume_root)) == set()
 
 
 def test_linked_attribute_change_rewrites_child_and_parent_stub(volume_root):
@@ -437,9 +325,9 @@ def test_linked_attribute_change_rewrites_child_and_parent_stub(volume_root):
     assert section.AttributesChanged
     assert not block.ChildrenChanged and not block.ElementHasChangesToSave
 
-    before = _snapshot(volume_root)
+    before = snapshot(volume_root)
     vm.VolumeManager.Save(volume)
-    assert _written(before, _snapshot(volume_root)) == {'TEM/VolumeData.xml', 'TEM/0001/VolumeData.xml'}
+    assert written(before, snapshot(volume_root)) == {'TEM/VolumeData.xml', 'TEM/0001/VolumeData.xml'}
     assert not section.ElementHasChangesToSave
     stub = _find(ElementTree.parse(os.path.join(volume_root, 'TEM', 'VolumeData.xml')).getroot(),
                  "Section_Link[@Number='1']")
@@ -452,9 +340,9 @@ def test_child_list_change_rewrites_only_that_container(volume_root):
     channel.UpdateOrAddChildByAttrib(vm.TransformNode.Create('Grid', 'Mosaic'), 'Name')
     assert channel.ChildrenChanged and not channel.Parent.ElementHasChangesToSave
 
-    before = _snapshot(volume_root)
+    before = snapshot(volume_root)
     vm.VolumeManager.Save(volume)
-    assert _written(before, _snapshot(volume_root)) == {'TEM/0002/TEM/VolumeData.xml'}
+    assert written(before, snapshot(volume_root)) == {'TEM/0002/TEM/VolumeData.xml'}
     assert not channel.ChildrenChanged
 
 
@@ -467,7 +355,7 @@ def test_embedded_child_change_dirties_its_container(volume_root):
     assert not channel.AttributesChanged and not channel.ChildrenChanged
     assert channel.ElementHasChangesToSave
 
-    before = _snapshot(volume_root)
+    before = snapshot(volume_root)
     vm.VolumeManager.Save(volume)
-    assert _written(before, _snapshot(volume_root)) == {'TEM/0001/TEM/VolumeData.xml'}
+    assert written(before, snapshot(volume_root)) == {'TEM/0001/TEM/VolumeData.xml'}
     assert not transform.AttributesChanged
