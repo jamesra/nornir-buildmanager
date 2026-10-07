@@ -68,10 +68,29 @@ class TestEnsureHistogramCache(_PoolCleanupTestCase):
             shared.ensure_histogram_cache(xml_path, calc, [tile], stride=4)
             self.assertEqual(calls['n'], 1)
 
-            time.sleep(0.05)
-            os.utime(tile, None)
+            newer = os.path.getmtime(xml_path) + 30.0
+            os.utime(tile, (newer, newer))
             shared.ensure_histogram_cache(xml_path, calc, [tile], stride=4)
             self.assertEqual(calls['n'], 2)
+
+    def test_fresh_on_tile_mtime_within_smb_skew(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tile = os.path.join(tmp, 't0.png')
+            self._write_png(tile, np.full((32, 32), 100, dtype=np.uint8))
+            xml_path = os.path.join(tmp, 'Histogram.xml')
+            calls = {'n': 0}
+
+            def calc() -> Histogram:
+                calls['n'] += 1
+                return self._make_hist()
+
+            shared.ensure_histogram_cache(xml_path, calc, [tile], stride=4)
+            self.assertEqual(calls['n'], 1)
+
+            skewed = os.path.getmtime(xml_path) + 1.0
+            os.utime(tile, (skewed, skewed))
+            shared.ensure_histogram_cache(xml_path, calc, [tile], stride=4)
+            self.assertEqual(calls['n'], 1)
 
     def test_stale_on_removed_tile_fingerprint(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

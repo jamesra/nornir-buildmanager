@@ -2391,3 +2391,23 @@ def test_window_tile_rect_2d_grid() -> None:
     windows = window_tile_rect(rect, max_tiles_x=4, max_tiles_y=4, overlap_tiles=1)
     assert len(windows) > 1
     assert all(window.n_x <= 4 and window.n_y <= 4 for window in windows)
+
+
+def test_watermark_mtime_comparisons_tolerate_smb_skew(tmp_path: Path) -> None:
+    """Tileset and crop mtimes within the SMB skew tolerance count as unchanged."""
+    from nornir_buildmanager.operations.segmentationtraining.freshness import (
+        _mtime_equal,
+        image_output_fresh,
+    )
+
+    assert _mtime_equal(1000.0, 1001.0)
+    assert not _mtime_equal(1000.0, 1030.0)
+    assert _mtime_equal(None, None)
+    assert not _mtime_equal(1000.0, None)
+
+    crop = tmp_path / "crop.png"
+    crop.write_bytes(b"x")
+    os.utime(crop, (1000.0, 1000.0))
+    assert image_output_fresh(crop, 1001.0)
+    assert not image_output_fresh(crop, 1030.0)
+    assert image_output_fresh(crop, 900.0)

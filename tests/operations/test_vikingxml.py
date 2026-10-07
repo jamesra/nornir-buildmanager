@@ -195,6 +195,29 @@ def test_parse_stos_skips_zip_rewrite_when_fresh() -> None:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+def test_parse_stos_keeps_zip_when_source_newer_within_smb_skew() -> None:
+    temp_dir = tempfile.mkdtemp(prefix="nornir-vikingxml-")
+    try:
+        volume = _build_volume_with_stos_groups(['GroupA'], volume_path=temp_dir)
+        block = volume.find('Block')
+        assert block is not None
+        written = _write_pending_stos_files(volume, 'GroupA')
+
+        output = ETree.Element('Volume', {'num_stos': '0'})
+        vikingxml.ParseStos(volume, output, 'TestMap', 'GroupA')
+        zip_path = os.path.join(block.FullPath, 'GroupA.zip')
+        first_mtime = os.path.getmtime(zip_path)
+
+        skewed = first_mtime + 1.0
+        os.utime(written[0], (skewed, skewed))
+
+        output2 = ETree.Element('Volume', {'num_stos': '0'})
+        vikingxml.ParseStos(volume, output2, 'TestMap', 'GroupA')
+        assert os.path.getmtime(zip_path) == first_mtime
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def test_parse_stos_rewrites_zip_when_stale() -> None:
     temp_dir = tempfile.mkdtemp(prefix="nornir-vikingxml-")
     try:

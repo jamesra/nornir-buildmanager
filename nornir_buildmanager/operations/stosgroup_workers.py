@@ -16,6 +16,7 @@ import numpy as np
 
 import nornir_imageregistration
 import nornir_imageregistration.transforms
+import nornir_shared.files
 from nornir_imageregistration.files import stosfile
 from nornir_buildmanager.validation.stos_image_check import (
     ImageCheckSnapshot,
@@ -239,11 +240,15 @@ def default_refine_scan_workers() -> int:
 
 
 def _input_file_newer_than_output(input_path: str | None, output_path: str) -> bool:
-    """True when the input transform file mtime is newer than the output file."""
+    """True when the input transform file mtime is significantly newer than the output file.
+
+    "Significantly" absorbs SMB client/server mtime skew; see
+    :func:`nornir_shared.files.mtime_skew_tolerance_ns`.
+    """
     if not input_path or not os.path.exists(input_path) or not os.path.exists(output_path):
         return False
     try:
-        return os.path.getmtime(input_path) > os.path.getmtime(output_path)
+        return bool(nornir_shared.files.path_is_significantly_newer(input_path, output_path))
     except OSError:
         return False
 

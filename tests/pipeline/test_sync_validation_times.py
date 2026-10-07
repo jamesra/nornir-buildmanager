@@ -4,6 +4,7 @@ These verify that ValidationTime metadata is realigned to current filesystem
 timestamps after a volume copy so pyramid levels do not look modified-since-last
 -validation (which would trigger spurious tile-pyramid rebuilds).
 """
+import datetime
 import os
 import tempfile
 import unittest
@@ -138,6 +139,32 @@ class TestSyncValidationTimes(unittest.TestCase):
 
     def test_missing_volume_node_returns_none(self):
         self.assertIsNone(migration.SyncValidationTimes())
+
+
+class TestChangesSinceLastValidationSkew(unittest.TestCase):
+    """ValidationTime tolerates SMB client/server directory mtime skew."""
+
+    def _level_with_validation_offset(self, temp_dir: str, offset: datetime.timedelta):
+        _write_linked_volume(temp_dir)
+        volume = VolumeManager.Load(temp_dir)
+        level = _get_level_node(volume)
+        level.ValidationTime = level.LastFileSystemModificationTime - offset
+        return level
+
+    def test_filesystem_slightly_newer_is_not_a_change(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            level = self._level_with_validation_offset(temp_dir, datetime.timedelta(seconds=1))
+            self.assertFalse(level.ChangesSinceLastValidation)
+
+    def test_filesystem_much_newer_is_a_change(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            level = self._level_with_validation_offset(temp_dir, datetime.timedelta(seconds=30))
+            self.assertTrue(level.ChangesSinceLastValidation)
+
+    def test_validation_time_ahead_of_filesystem_is_not_a_change(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            level = self._level_with_validation_offset(temp_dir, datetime.timedelta(seconds=-30))
+            self.assertFalse(level.ChangesSinceLastValidation)
 
 
 if __name__ == "__main__":

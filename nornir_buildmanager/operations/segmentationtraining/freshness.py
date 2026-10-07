@@ -11,6 +11,8 @@ from typing import Any, Iterable
 
 from nornir_imageregistration.type_info import Shape
 
+import nornir_shared.files
+
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 
@@ -282,7 +284,18 @@ def _mtime_equal(left: float | None, right: float | None) -> bool:
         return True
     if left is None or right is None:
         return False
-    return abs(float(left) - float(right)) <= 1e-6
+    return nornir_shared.files.mtimes_equivalent(
+        nornir_shared.files.seconds_to_ns(float(left)),
+        nornir_shared.files.seconds_to_ns(float(right)),
+    )
+
+
+def seconds_significantly_newer(left: float, right: float) -> bool:
+    """True when *left* (epoch seconds) is newer than *right* beyond the SMB mtime skew tolerance."""
+    return nornir_shared.files.is_significantly_newer(
+        nornir_shared.files.seconds_to_ns(float(left)),
+        nornir_shared.files.seconds_to_ns(float(right)),
+    )
 
 
 def image_output_fresh(
@@ -299,12 +312,12 @@ def image_output_fresh(
             return False
         if watermark_mtime is None:
             return True
-        return stamped + 1e-6 >= watermark_mtime
+        return not seconds_significantly_newer(watermark_mtime, stamped)
     if not path.is_file():
         return False
     if watermark_mtime is None:
         return True
-    return path.stat().st_mtime + 1e-6 >= watermark_mtime
+    return not seconds_significantly_newer(watermark_mtime, path.stat().st_mtime)
 
 
 def image_rebuild_mode(

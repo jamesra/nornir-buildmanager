@@ -69,7 +69,7 @@ def _snapshot(
 
     if input_newer and output_exists:
         os.utime(output_path, (1, 1))
-        os.utime(transform_path, (2, 2))
+        os.utime(transform_path, (100, 100))
     elif output_exists:
         os.utime(transform_path, (1, 1))
         os.utime(output_path, (2, 2))
@@ -235,6 +235,39 @@ def test_decide_invalidate_when_input_newer(tmp_path: Path) -> None:
         valid_output=True,
         input_newer=True,
     )
+    result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
+    assert result.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE
+    assert 'newer' in result.reason
+
+
+def test_decide_skip_when_input_newer_within_smb_skew(tmp_path: Path) -> None:
+    """Matching checksum with an input mtime only slightly ahead is SMB skew, not a stale output."""
+    if not _FIXTURE_STOS.is_file():
+        pytest.skip('STOS fixture unavailable')
+    snapshot = _snapshot(tmp_path=tmp_path, output_exists=True, valid_output=True)
+    assert snapshot.input_transform_path is not None
+    output_mtime = os.path.getmtime(snapshot.output_stos_path)
+    skewed = output_mtime + 1.0
+    os.utime(snapshot.input_transform_path, (skewed, skewed))
+    for check in snapshot.image_checks:
+        assert check.image_path is not None
+        os.utime(check.image_path, (output_mtime, output_mtime))
+    result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
+    assert result.decision == stosgroup_workers.RefineScanDecision.SKIP
+
+
+def test_decide_invalidate_when_input_newer_beyond_smb_skew(tmp_path: Path) -> None:
+    """The same setup with an input well past the tolerance forces a refine."""
+    if not _FIXTURE_STOS.is_file():
+        pytest.skip('STOS fixture unavailable')
+    snapshot = _snapshot(tmp_path=tmp_path, output_exists=True, valid_output=True)
+    assert snapshot.input_transform_path is not None
+    output_mtime = os.path.getmtime(snapshot.output_stos_path)
+    newer = output_mtime + 30.0
+    os.utime(snapshot.input_transform_path, (newer, newer))
+    for check in snapshot.image_checks:
+        assert check.image_path is not None
+        os.utime(check.image_path, (output_mtime, output_mtime))
     result = stosgroup_workers.decide_stos_grid_refine_need(snapshot)
     assert result.decision == stosgroup_workers.RefineScanDecision.INVALIDATE_THEN_REFINE
     assert 'newer' in result.reason

@@ -68,8 +68,42 @@ def test_outdated_when_image_newer_than_output(tmp_path: Path) -> None:
     size = _write(image)
     output.write_text('stos', encoding='utf-8')
     os.utime(output, (1, 1))
-    os.utime(image, (2, 2))
+    os.utime(image, (100, 100))
     check = ImageCheckSnapshot(size, size, str(image))
+    assert is_stos_input_image_outdated(check, str(output))
+
+
+def test_fresh_when_image_newer_within_smb_skew_tolerance(tmp_path: Path) -> None:
+    """Matching size with an image mtime only slightly ahead is client/server skew, not an edit."""
+    image = tmp_path / 'ctrl.png'
+    output = tmp_path / 'out.stos'
+    size = _write(image)
+    output.write_text('stos', encoding='utf-8')
+    os.utime(output, (1000, 1000))
+    os.utime(image, (1001, 1001))
+    check = ImageCheckSnapshot(size, size, str(image))
+    assert not is_stos_input_image_outdated(check, str(output))
+
+
+def test_outdated_when_image_newer_beyond_smb_skew_tolerance(tmp_path: Path) -> None:
+    image = tmp_path / 'ctrl.png'
+    output = tmp_path / 'out.stos'
+    size = _write(image)
+    output.write_text('stos', encoding='utf-8')
+    os.utime(output, (1000, 1000))
+    os.utime(image, (1003, 1003))
+    check = ImageCheckSnapshot(size, size, str(image))
+    assert is_stos_input_image_outdated(check, str(output))
+
+
+def test_size_mismatch_outdated_even_within_skew_tolerance(tmp_path: Path) -> None:
+    image = tmp_path / 'ctrl.png'
+    output = tmp_path / 'out.stos'
+    size = _write(image)
+    output.write_text('stos', encoding='utf-8')
+    os.utime(output, (1000, 1000))
+    os.utime(image, (1000, 1000))
+    check = ImageCheckSnapshot('999', size, str(image))
     assert is_stos_input_image_outdated(check, str(output))
 
 
@@ -90,7 +124,7 @@ def test_stos_group_node_delegates_to_shared_check(tmp_path: Path) -> None:
     assert not StosGroupNode._IsStosInputImageOutdated(
         stos_node, 'ControlImageChecksum', image_node)
 
-    os.utime(image_path, (3, 3))
+    os.utime(image_path, (100, 100))
     assert StosGroupNode._IsStosInputImageOutdated(
         stos_node, 'ControlImageChecksum', image_node)
 

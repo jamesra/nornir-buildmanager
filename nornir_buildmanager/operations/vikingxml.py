@@ -11,6 +11,7 @@ import zipfile
 import nornir_buildmanager.volumemanager
 from nornir_buildmanager.progress import report_iterate, report_iterate_complete
 from nornir_imageregistration.files import *
+import nornir_shared.files
 from nornir_shared.files import RecurseSubdirectoriesGenerator
 import nornir_shared.prettyoutput as prettyoutput
 import xml.etree.ElementTree as ETree
@@ -64,10 +65,10 @@ def _stos_group_zip_is_fresh(zip_fullpath: str, members: list[tuple[str, str]]) 
     if not members or not os.path.isfile(zip_fullpath):
         return False
 
-    zip_mtime = os.path.getmtime(zip_fullpath)
+    zip_mtime_ns = nornir_shared.files.file_mtime_ns(zip_fullpath)
     expected = set()
     for source, arcname in members:
-        if os.path.getmtime(source) > zip_mtime:
+        if nornir_shared.files.is_significantly_newer(nornir_shared.files.file_mtime_ns(source), zip_mtime_ns):
             return False
         expected.add(_normalize_zip_member_name(arcname))
 

@@ -598,17 +598,17 @@ def _is_histogram_cache_fresh(histogram_cache_path: str,
         return False
 
     try:
-        xml_mtime = os.path.getmtime(histogram_cache_path)
+        xml_mtime_ns = files.file_mtime_ns(histogram_cache_path)
     except OSError:
         return False
-    input_mtimes: list[float] = []
+    input_mtimes_ns: list[int] = []
     for path in cache_inputs:
         try:
             if os.path.exists(path):
-                input_mtimes.append(os.path.getmtime(path))
+                input_mtimes_ns.append(files.file_mtime_ns(path))
         except OSError:
             continue
-    if input_mtimes and xml_mtime < max(input_mtimes):
+    if input_mtimes_ns and files.is_significantly_newer(max(input_mtimes_ns), xml_mtime_ns):
         return False
     return True
 

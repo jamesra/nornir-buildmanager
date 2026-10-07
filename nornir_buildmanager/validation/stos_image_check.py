@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+import nornir_shared.files
+
 
 @dataclass(frozen=True)
 class ImageCheckSnapshot:
@@ -35,7 +37,7 @@ def is_stos_input_image_outdated(check: ImageCheckSnapshot, output_stos_path: st
 
     try:
         image_stat = os.stat(check.image_path)
-        output_mtime = os.path.getmtime(output_stos_path)
+        output_mtime_ns = nornir_shared.files.file_mtime_ns(output_stos_path)
     except OSError:
         return True
 
@@ -47,7 +49,7 @@ def is_stos_input_image_outdated(check: ImageCheckSnapshot, output_stos_path: st
     if check.image_checksum is not None and live_size != str(check.image_checksum):
         return True
 
-    if image_stat.st_mtime > output_mtime:
+    if nornir_shared.files.is_significantly_newer(image_stat.st_mtime_ns, output_mtime_ns):
         return True
 
     return False

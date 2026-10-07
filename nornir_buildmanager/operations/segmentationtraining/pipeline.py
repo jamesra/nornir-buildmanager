@@ -40,6 +40,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     save_section_watermark,
     section_is_fresh,
     section_meta_path,
+    seconds_significantly_newer,
 )
 from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow, TileRect, pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.grouping import sanitize_volume_token
@@ -1426,11 +1427,11 @@ def _overlay_is_fresh(output: Path, plan: PlannedCrop, products: CropProductInde
     if not products.exists("images", tem_name):
         tem_name = f"{plan.image_key}.jpg"
     tem_mtime = products.mtime("images", tem_name)
-    if tem_mtime is not None and tem_mtime > overlay_mtime + 1e-6:
+    if tem_mtime is not None and seconds_significantly_newer(tem_mtime, overlay_mtime):
         return False
     for location_id in plan.location_ids:
         mask_mtime = products.mtime("masks", f"{plan.image_key}_{location_id}.png")
-        if mask_mtime is not None and mask_mtime > overlay_mtime + 1e-6:
+        if mask_mtime is not None and seconds_significantly_newer(mask_mtime, overlay_mtime):
             return False
     return True
 

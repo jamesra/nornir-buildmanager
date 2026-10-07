@@ -47,7 +47,7 @@ class TestTransformRefineOrchestrator(unittest.TestCase):
             with open(output_path, 'w', encoding='utf-8') as handle:
                 handle.write('out')
             os.utime(output_path, (1, 1))
-            os.utime(input_path, (2, 2))
+            os.utime(input_path, (100, 100))
             input_node = SimpleNamespace(Checksum='abc', FullPath=input_path)
             output_node = SimpleNamespace(
                 Locked=False,
@@ -59,6 +59,28 @@ class TestTransformRefineOrchestrator(unittest.TestCase):
                 input_node, output_node, input_checksum='abc')
             self.assertFalse(decision.skip)
             self.assertIn('newer', decision.reason)
+
+    def test_skip_when_input_newer_within_smb_skew(self) -> None:
+        """A matching checksum with an input mtime only slightly ahead is SMB skew, not an edit."""
+        with tempfile.TemporaryDirectory() as tmp:
+            input_path = os.path.join(tmp, 'in.mosaic')
+            output_path = os.path.join(tmp, 'out.mosaic')
+            with open(input_path, 'w', encoding='utf-8') as handle:
+                handle.write('in')
+            with open(output_path, 'w', encoding='utf-8') as handle:
+                handle.write('out')
+            os.utime(output_path, (1000, 1000))
+            os.utime(input_path, (1001, 1001))
+            input_node = SimpleNamespace(Checksum='abc', FullPath=input_path)
+            output_node = SimpleNamespace(
+                Locked=False,
+                FullPath=output_path,
+                InputTransformChecksum='abc',
+                attrib={'InputTransformChecksum': 'abc'},
+            )
+            decision = TransformRefineOrchestrator().should_skip_refine(
+                input_node, output_node, input_checksum='abc')
+            self.assertTrue(decision.skip)
 
     def test_skip_with_input_checksum_when_source_file_missing(self) -> None:
         """Provided input_checksum avoids loading a missing source transform path."""

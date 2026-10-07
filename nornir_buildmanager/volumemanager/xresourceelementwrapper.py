@@ -119,7 +119,9 @@ class XResourceElementWrapper(lockable.Lockable,
             if dir_mod_time is None:
                 return True
             validation_time = self._as_utc_aware(self.ValidationTime)
-            return validation_time < dir_mod_time
+            # SMB writeback can stamp the directory slightly after the client recorded ValidationTime.
+            skew = datetime.timedelta(microseconds=nornir_shared.files.mtime_skew_tolerance_ns() // 1000)
+            return dir_mod_time - validation_time > skew
         except FileNotFoundError:  # If the file or directory is missing that is a change :-)
             return True
 
