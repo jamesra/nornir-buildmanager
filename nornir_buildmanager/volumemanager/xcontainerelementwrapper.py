@@ -451,7 +451,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
             if tabLevel is None:
                 tabLevel = 0
 
-            children_snapshot = list(self)[::-1]
+            # Write children in tree order (loaded order, or sort() order after a
+            # child-list change) so repeated saves write identical bytes.
+            children_snapshot = list(self)
             if not AnyChangesFound:
                 seen_link_keys: set[tuple[str, str]] = set()
                 can_skip_serialization = True
@@ -482,7 +484,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
 
             if self.ChildrenChanged:
                 self.sort(recurse=False)
-                children_snapshot = list(self)[::-1]
+                children_snapshot = list(self)
 
             if self.AttributesChanged:
                 ValidateAttributesAreStrings(self)

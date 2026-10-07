@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import logging
-import operator
 import threading
 from typing import Any, Generator, TypeVar
 from xml.etree import ElementTree as ElementTree
@@ -34,22 +33,26 @@ class XElementWrapper(ElementTree.Element):
     logger = logging.getLogger('XElementWrapper')
 
     def sort(self, recurse: bool = True):
-        """Order child elements"""
+        """Order child elements ascending; the order ``Save`` writes to VolumeData.xml.
+
+        Wrapped children sort by ``SortKey`` and come first, then unwrapped children
+        (unloaded ``*_Link`` stubs) by tag. Ties break on Path, then Name, so the
+        result does not depend on the order children were added and sorting a
+        sorted list leaves it unchanged.
+        """
 
         if len(self) <= 1:
             return
 
+        def identity(child: ElementTree.Element) -> tuple[str, str]:
+            return child.attrib.get('Path', ''), child.attrib.get('Name', '')
+
         children = list(self)
-        with_keys = [child for child in children if hasattr(child, 'SortKey')]
+        with_keys: list[Any] = [child for child in children if hasattr(child, 'SortKey')]
         without_keys = [child for child in children if not hasattr(child, 'SortKey')]
-        linked = [child for child in without_keys if child.tag.endswith('_Link')]
-        other = [child for child in without_keys if not child.tag.endswith('_Link')]
 
-        sorted_with_keys = sorted(with_keys, key=operator.attrgetter('SortKey'), reverse=True)
-        sorted_linked = sorted(linked, key=lambda child: child.attrib.get('Path', ''), reverse=True)
-        sorted_other = sorted(other, key=str, reverse=True)
-
-        self[:] = sorted_with_keys + sorted_linked + sorted_other
+        self[:] = (sorted(with_keys, key=lambda child: (child.SortKey, *identity(child))) +
+                   sorted(without_keys, key=lambda child: (child.tag, *identity(child))))
 
         if recurse:
             for c in self:

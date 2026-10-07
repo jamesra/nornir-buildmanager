@@ -15,6 +15,7 @@ tables and the fixture builder live in ``metadata_port_characterize_data``.
 
 from __future__ import annotations
 
+import itertools
 import os
 import re
 import tempfile
@@ -26,6 +27,7 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 import nornir_buildmanager.volumemanager as vm
+from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 
 from .metadata_port_characterize_data import (
     FIXED_DATE,
@@ -92,55 +94,50 @@ def test_clean_load_resolve_save_writes_nothing(volume_root):
     assert written(before, snapshot(volume_root)) == set()
 
 
-def _force_attribute_only_save(root: str) -> None:
+def _force_save(root: str, flag: str) -> None:
+    """Load everything, mark every container dirty through *flag*, and save."""
     volume = _load(root)
     volume.LoadAllLinkedNodes()
     for element in volume.iter():
         if isinstance(element, vm.XContainerElementWrapper):
-            element.AttributesChanged = True
+            setattr(element, flag, True)
     vm.VolumeManager.Save(volume)
 
 
-def _assert_children_reversed(rel: str, old_raw: bytes, new_raw: bytes) -> None:
-    old_root = ElementTree.fromstring(old_raw)
-    new_root = ElementTree.fromstring(new_raw)
-    assert new_root.attrib == old_root.attrib, rel
-    assert [canonical(c, False) for c in new_root] == [canonical(c, False) for c in reversed(old_root)], rel
+def _raw_by_file(files: dict) -> dict[str, bytes]:
+    return {rel: raw for rel, (_, _, raw) in files.items()}
 
 
-def test_attribute_only_save_reverses_child_order(volume_root):
-    """Known quirk, pinned rather than fixed (changing it changes saved bytes).
+def _assert_same_tag_siblings_ascending(rel: str, raw: bytes) -> None:
+    for parent in ElementTree.fromstring(raw).iter():
+        for a, b in itertools.pairwise(parent):
+            if a.tag == b.tag:
+                assert (a.get('Path', ''), a.get('Name', '')) <= (b.get('Path', ''), b.get('Name', '')), (rel, a, b)
 
-    ``sort()`` orders children descending in memory and ``_Save`` walks
-    ``list(self)[::-1]``, so a save that sorted writes ascending order. A save with
-    only ``AttributesChanged`` skips the sort and walks the loaded (ascending) order
-    reversed, so every attribute-only save flips each container's child order on
-    disk; a second one flips it back.
+
+@pytest.mark.parametrize('flag', ['AttributesChanged', 'ChildrenChanged'])
+def test_repeated_forced_saves_keep_child_order(volume_root, flag):
+    """Decision port-child-order-flip B: every save writes children in the same forward order.
+
+    Before the fix ``sort()`` was a stable descending sort and ``_Save`` walked
+    ``list(self)[::-1]``: an attribute-only save reversed each container's children
+    on disk and a sorting save reversed same-tag siblings, so consecutive saves flipped.
     """
     before = snapshot(volume_root)
-    _force_attribute_only_save(volume_root)
-    after = snapshot(volume_root)
-    assert written(before, after) == set(after) == set(before)
-    for rel, (_, _, raw) in after.items():
-        _assert_children_reversed(rel, before[rel][2], raw)
+    for _ in range(2):
+        _force_save(volume_root, flag)
+        after = snapshot(volume_root)
+        assert written(before, after) == set(after) == set(before)
+        assert _raw_by_file(after) == _raw_by_file(before)
+    for rel in before:
         with open(os.path.join(volume_root, rel + '.backup.xml'), 'rb') as handle:
             assert handle.read() == before[rel][2], f'backup of {rel} is not the previous file'
-    assert {rel for rel, (_, _, raw) in after.items() if raw != before[rel][2]} == {
-        'TEM/VolumeData.xml', 'TEM/0001/TEM/VolumeData.xml', 'TEM/0002/TEM/VolumeData.xml',
-        'TEM/0001/TEM/Raw8/VolumeData.xml', 'TEM/0001/TEM/Leveled/VolumeData.xml',
-        'TEM/0002/TEM/Raw8/VolumeData.xml', 'TEM/0002/TEM/Leveled/VolumeData.xml'}
-
-    _force_attribute_only_save(volume_root)
-    assert {rel: raw for rel, (_, _, raw) in snapshot(volume_root).items()} == {
-        rel: raw for rel, (_, _, raw) in before.items()}
 
 
-def test_parent_sort_leaves_attribute_only_children_unsorted(volume_root):
-    """A child-list change sorts only that container (``sort(recurse=False)``); loaded
-    linked children with only attribute changes still flip.
+def test_child_list_change_sorts_ascending_by_key_then_path(volume_root):
+    """A child-list change sorts that container ascending by ``SortKey``, ties by Path then Name.
 
-    ``SortKey`` is the tag and the sort is stable, so the sorted save groups by tag
-    but still writes same-tag siblings in reverse of their loaded order.
+    Linked Filters with only attribute changes are rewritten with unchanged bytes.
     """
     before = snapshot(volume_root)
     volume = _load(volume_root)
@@ -153,10 +150,65 @@ def test_parent_sort_leaves_attribute_only_children_unsorted(volume_root):
     assert written(before, after) == {'TEM/0001/TEM/VolumeData.xml', 'TEM/0001/TEM/Raw8/VolumeData.xml',
                                        'TEM/0001/TEM/Leveled/VolumeData.xml'}
     for rel in ('TEM/0001/TEM/Raw8/VolumeData.xml', 'TEM/0001/TEM/Leveled/VolumeData.xml'):
-        _assert_children_reversed(rel, before[rel][2], after[rel][2])
+        assert after[rel][2] == before[rel][2], rel
     tags = [(c.tag, c.get('Name')) for c in ElementTree.fromstring(after['TEM/0001/TEM/VolumeData.xml'][2])]
-    assert tags == [('Filter_Link', 'Raw8'), ('Filter_Link', 'Leveled'), ('Notes', None), ('Transform', 'Grid'),
-                    ('Transform', 'Stage'), ('Transform', 'Prune'), ('TransformData', None)]
+    assert tags == [('Filter_Link', 'Leveled'), ('Filter_Link', 'Raw8'), ('Notes', None), ('Transform', 'Grid'),
+                    ('Transform', 'Prune'), ('Transform', 'Stage'), ('TransformData', None)]
+
+
+# (wrapped?, tag, attrib) in the order sort() must produce: wrapped children by (SortKey, Path, Name) with
+# SortKey == tag here, then unwrapped ones (unloaded *_Link stubs) by (tag, Path, Name). Path and Name
+# disagree so each tie-break is observable.
+SORTED_CHILDREN = [
+    (True, 'T', {'Name': 'c'}),
+    (True, 'T', {'Name': 'm'}),
+    (True, 'T', {'Path': 'A'}),
+    (True, 'T', {'Path': 'A', 'Name': '0'}),
+    (True, 'T', {'Path': 'A', 'Name': 'z'}),
+    (True, 'T', {'Path': 'B', 'Name': 'a'}),
+    (True, 'U', {'Path': '0'}),
+    (False, 'A_Link', {'Path': '9'}),
+    (False, 'Z_Link', {'Path': '1'}),
+    (False, 'Z_Link', {'Path': '2'}),
+]
+
+
+@given(order=st.permutations(range(len(SORTED_CHILDREN))))
+@example(order=list(range(len(SORTED_CHILDREN)))[::-1])
+def test_sort_is_ascending_and_ignores_insertion_order(order):
+    parent = XElementWrapper('Parent')
+    # Slice assignment, as for parsed stubs: XElementWrapper.append sets Parent, which plain Elements lack.
+    parent[:] = [(XElementWrapper if wrapped else ElementTree.Element)(tag, attrib=dict(attrib))
+                 for wrapped, tag, attrib in (SORTED_CHILDREN[i] for i in order)]
+    nested = _find(parent, 'U')
+    nested[:] = [XElementWrapper('V', attrib={'Path': p}) for p in ('2', '1')]
+    parent.sort()
+    assert [(c.tag, {k: c.attrib[k] for k in ('Path', 'Name') if k in c.attrib}) for c in parent] == [
+        (tag, attrib) for _, tag, attrib in SORTED_CHILDREN]
+    assert [c.get('Path') for c in nested] == ['1', '2']
+
+
+def _ordered_and_permuted(values: st.SearchStrategy) -> st.SearchStrategy:
+    return values.flatmap(lambda xs: st.tuples(st.just(xs), st.permutations(xs)))
+
+
+@settings(max_examples=10, deadline=None)  # each example builds two volumes
+@given(sections=_ordered_and_permuted(st.lists(st.integers(1, 9999), min_size=1, max_size=3, unique=True)),
+       filters=_ordered_and_permuted(st.lists(st.sampled_from(['Raw8', 'Leveled', 'Mask', 'Blob_Leveled']),
+                                              min_size=2, max_size=4, unique=True)))
+@example(sections=([1, 2], [2, 1]), filters=(['Raw8', 'Leveled'], ['Leveled', 'Raw8']))
+def test_insertion_order_does_not_change_saved_bytes(sections, filters):
+    """Saved files depend on the tree's content, not on the order children were added."""
+    with tempfile.TemporaryDirectory(dir=os.environ.get('TESTOUTPUTPATH') or None) as base:
+        hashes = []
+        for i, (section_order, filter_order) in enumerate(zip(sections, filters)):
+            root = os.path.join(base, f'vol{i}', 'vol')
+            build_volume(root, section_order, filter_order)
+            files = snapshot(root)
+            for rel, (_, _, raw) in files.items():
+                _assert_same_tag_siblings_ascending(rel, raw)
+            hashes.append({rel: normalized_sha(root, raw) for rel, (_, _, raw) in files.items()})
+        assert hashes[0] == hashes[1]
 
 
 @settings(max_examples=12, deadline=None)  # each example writes a few dozen files

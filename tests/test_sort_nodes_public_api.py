@@ -21,7 +21,7 @@ class TestSortNodesPublicApi(unittest.TestCase):
         VolumeManager.__SortNodes__(root)
 
         names = [child.get('Name') for child in root]
-        self.assertEqual(names, ['b', 'a', 'c'])
+        self.assertEqual(names, ['c', 'a', 'b'])  # ascending SortKey: Section 0000, 0001, 0002
         self.assertFalse(hasattr(root, '_children'))
 
 
