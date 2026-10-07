@@ -10,6 +10,7 @@ completeness test until it gets a case here.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import os
 import pathlib
@@ -20,6 +21,7 @@ from xml.etree import ElementTree
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager as vm
+from nornir_buildmanager.metadatautils import GetOrCreateHistogramNodeHelper
 
 FIXED_DATE = '2020-01-02 03:04:05+00:00'
 ROOT_TOKEN = b'{ROOT}'
@@ -104,7 +106,8 @@ XPATH_CASES = [
     ('SectionMappings/Transform', 'Block/StosGroup', 'SectionMappings/Transform', 1),
     ("SectionMappings/Transform[@Type='#v']", 'Block/StosGroup', "SectionMappings/Transform[@Type='Grid']", 1),
     ('Mapping', 'Block/StosMap', 'Mapping', 1),
-    # Pipelines.xml reporting ColumnXPaths, relative to a Section row (Image/Transform columns run on SectionMappings)
+    # Pipelines.xml reporting ColumnXPaths, rooted at their RowXPath (Section for ImageReport, SectionMappings
+    # for StosReport); test_report_columns_are_pinned_under_their_row_context checks the pairing
     ("Channel/Filter[@Name='#v']", 'Block/Section', "Channel/Filter[@Name='Raw8']", 2),
     ('Channel/TransformData', 'Block/Section', 'Channel/TransformData', 2),
     ('Channel/Notes', 'Block/Section', 'Channel/Notes', 2),
@@ -112,7 +115,10 @@ XPATH_CASES = [
     ("Channel/Filter[@Name='#v']/Histogram/Image", 'Block/Section', "Channel/Filter[@Name='Leveled']/Histogram/Image", 2),
     ("Channel/Filter[@Name='#v']/Prune/Image", 'Block/Section', "Channel/Filter[@Name='Raw8']/Prune/Image", 2),
     ('Image', SM, 'Image', 1),
-    # operations/ and volumemanager/ literals
+    ('Histogram/Image', SM, 'Histogram/Image', 1),
+    # operations/ and volumemanager/ literals; tile.py concatenates the checksum into the Histogram predicate
+    ("Histogram[@InputTransformChecksum='#v']", F, "Histogram[@InputTransformChecksum='hist-Leveled']", 2),
+    ("Histogram[@InputTransformChecksum='#v']", F, "Histogram[@InputTransformChecksum='stale']", 0),
     ('Block/Section/Channel/Scale', '', f'{C}/Scale', 2),
     ('Section/Channel', 'Block', 'Section/Channel', 2),
     ("Section[@Number='#v']", 'Block', "Section[@Number='2']", 1),
@@ -160,7 +166,8 @@ INDIRECT_PATTERNS = {
 }
 
 _PLACEHOLDER = re.compile(r"#\w+|%\(\w+\)[sdg]|%[sdg]|\{[^}]*\}")
-_FIND_LITERAL = re.compile(r"""\.(?:find|findall|iterfind)\(\s*f?(?:"([A-Z*][^"]*)"|'([A-Z*][^']*)')""")
+_PREDICATE = re.compile(r"\[[^\]]*\]")
+_FIND_METHODS = frozenset({'find', 'findall', 'iterfind'})
 _PACKAGE_DIR = pathlib.Path(nornir_buildmanager.__file__).parent
 
 
@@ -183,14 +190,65 @@ def pipeline_patterns() -> set[str]:
     return {normalize_pattern(x) for x in pipeline_xpaths()}
 
 
+def root_context(xpath: str) -> str:
+    """Tag path of *xpath* with predicates dropped; which instance a predicate picks does not change the context."""
+    return _PREDICATE.sub('', xpath)
+
+
+def report_column_patterns() -> set[tuple[str, str]]:
+    """(row context, column pattern) for every reporting ``ColumnXPaths`` entry in ``Pipelines.xml``.
+
+    ``GenerateTableReport`` runs each column ``findall`` below every ``RowXPath`` match of the
+    pipeline's ``ReportingElement`` Select, so that Select joined to ``RowXPath`` is the context.
+    """
+    found = set()
+    for pipeline in ElementTree.parse(_PACKAGE_DIR / 'config' / 'Pipelines.xml').iter('Pipeline'):
+        reporting = None
+        for element in pipeline.iter():
+            if element.tag == 'Select' and element.get('VariableName') == 'ReportingElement':
+                reporting = element.attrib['XPath']
+            if 'RowXPath' not in element.attrib:
+                continue
+            if reporting is None:
+                raise ValueError(f"Pipeline {pipeline.get('Name')} reports rows without a ReportingElement Select")
+            context = root_context(f"{reporting}/{element.attrib['RowXPath']}")
+            found |= {(context, normalize_pattern(column))
+                      for column in element.attrib.get('ColumnXPaths', '').split(',') if column}
+    return found
+
+
+def _literal_xpath(node: ast.expr) -> str | None:
+    """Text of a string XPath argument with concatenated or f-string values as ``#v``; None if not built from literals."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.JoinedStr):
+        return ''.join(str(v.value) if isinstance(v, ast.Constant) else '#v' for v in node.values)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        return _literal_xpath(node.left)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _literal_xpath(node.left), _literal_xpath(node.right)
+        if left is None and right is None:
+            return None
+        return ('#v' if left is None else left) + ('#v' if right is None else right)
+    return None
+
+
 def source_patterns() -> set[str]:
-    """Literal ``find``/``findall``/``iterfind`` XPaths in ``operations/`` and ``volumemanager/``, skipping comment lines."""
+    """XPaths passed to ``find``/``findall``/``iterfind`` in ``operations/`` and ``volumemanager/``.
+
+    Parsed rather than grepped so calls split across lines or built by ``+`` are seen. An
+    argument that is a bare variable is invisible here and belongs in ``INDIRECT_PATTERNS``.
+    The leading capital or ``*`` skips ``str.find`` calls.
+    """
     found = set()
     for subdir in ('operations', 'volumemanager'):
         for path in (_PACKAGE_DIR / subdir).rglob('*.py'):
-            for line in path.read_text(encoding='utf-8').splitlines():
-                if not line.lstrip().startswith('#'):
-                    found |= {normalize_pattern(m.group(1) or m.group(2)) for m in _FIND_LITERAL.finditer(line)}
+            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
+                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and node.func.attr in _FIND_METHODS and node.args):
+                    xpath = _literal_xpath(node.args[0])
+                    if xpath and (xpath[0].isupper() or xpath[0] == '*'):
+                        found.add(normalize_pattern(xpath))
     return found
 
 
@@ -211,10 +269,13 @@ def _add_query_extras(block: Any) -> None:
         _touch(transform.FullPath)
         for filter_node in channel.findall('Filter'):
             filter_node.UpdateOrAddChild(vm.DataNode.Create('filter.data.xml'))
-            filter_node.find('Histogram').GetOrCreateAutoLevelHint()
+            histogram = filter_node.find('Histogram')
+            histogram.GetOrCreateAutoLevelHint()
+            histogram.InputTransformChecksum = f'hist-{filter_node.Name}'
             filter_node.find('Prune').UpdateOrAddChild(vm.DataNode.Create('prune.data.xml'))
-    block.find('StosGroup/SectionMappings').UpdateOrAddChild(
-        vm.ImageNode.Create('2-1.png', InputTransformChecksum='abc123'))
+    mappings = block.find('StosGroup/SectionMappings')
+    mappings.UpdateOrAddChild(vm.ImageNode.Create('2-1.png', InputTransformChecksum='abc123'))
+    GetOrCreateHistogramNodeHelper(mappings, 'warpHistogram_2-1.xml', 'warpHistogram_2-1.png', Type='WarpHistogram_Grid')
 
 
 def build_volume(root: str, sections: Iterable[int] = (1, 2), filters: Iterable[str] = ('Raw8', 'Leveled'),

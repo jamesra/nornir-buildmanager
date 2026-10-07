@@ -40,6 +40,8 @@ from .metadata_port_characterize_data import (
     normalized_sha,
     pipeline_patterns,
     pipeline_xpaths,
+    report_column_patterns,
+    root_context,
     snapshot,
     source_patterns,
     written,
@@ -250,6 +252,18 @@ def test_every_inventoried_pattern_has_a_golden_case():
     inventoried = pipeline_patterns() | source_patterns() | set(INDIRECT_PATTERNS)
     assert sorted(inventoried - covered) == []
     assert sorted(covered - inventoried) == []
+
+
+def test_report_columns_are_pinned_under_their_row_context():
+    """A report column is pinned only by a case rooted at its row, not by the same pattern elsewhere.
+
+    StosReport's ``Histogram/Image`` column runs below a SectionMappings row; a case rooted at
+    a Filter matched its pattern string and left the SectionMappings warp histogram unpinned.
+    """
+    covered = {(root_context(root), pattern) for pattern, root, _, _ in XPATH_CASES}
+    required = report_column_patterns()
+    assert len(required) == 9
+    assert sorted(required - covered) == []
 
 
 def test_get_child_by_attrib_formats_floats_with_g(query_volume_root):
