@@ -1666,6 +1666,13 @@ def test_refresh_existing_location_does_not_add_a_crop(tmp_path: Path) -> None:
     stranger = _record(99, 2, _box_wkt(1, 1, 3, 3))
     assert refresh_existing_location_masks(out, stranger) == []
     assert not any(path.name.endswith("_99.png") for path in (out / "masks").glob("*.png"))
+    (out / "ignore.json").write_text("[8, 99]", encoding="utf-8")
+    decoy = out / "masks" / "decoy_99.png"
+    decoy.write_bytes(b"leave-me")
+    refresh_existing_location_masks(out, edited, exporter="legacy")
+    assert not mask.exists()
+    assert (out / "ignored" / mask.name).is_file()
+    assert decoy.read_bytes() == b"leave-me"
 
 
 def test_record_export_exporter_rejects_unknown_mode(tmp_path: Path) -> None:

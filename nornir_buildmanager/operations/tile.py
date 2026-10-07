@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from numpy.typing import NDArray
 from typing import Any, Iterable, Sequence, cast
 
-from PIL import Image as PILImage
+from nornir_imageregistration.pillow_helpers import load_image_array
 
 import nornir_shared.misc
 import nornir_shared.images
@@ -452,23 +452,10 @@ def _submit_bounded(submit, items, *, max_in_flight: int):
     """Submit one task per item, yielding each task once the window is full.
 
     Globbing a level and queueing every tile up front makes both queue depth and the
-    retained task list scale with tile count, which on a NAS-sized level is tens of
-    thousands of entries before anything is collected. Sliding a bounded window caps
-    both at *max_in_flight* at no cost to throughput while the pool stays fed.
-
-    Tasks are yielded in submission order, so callers drain FIFO. Submission is driven by
-    consumption: the caller must exhaust the generator, or trailing tiles go unsubmitted.
+    retained task list scale with tile count. The shared window is
+    ``nornir_pools.submit_bounded``. The caller must exhaust the generator.
     """
-    max_in_flight = max(1, max_in_flight)
-    in_flight: collections.deque = collections.deque()
-
-    for item in items:
-        in_flight.append(submit(item))
-        if len(in_flight) >= max_in_flight:
-            yield in_flight.popleft()
-
-    while in_flight:
-        yield in_flight.popleft()
+    return nornir_pools.submit_bounded(submit, items, max_in_flight=max_in_flight)
 
 
 def _CorrectTilesDeprecated(Parameters, filter_node=None, image_node=None, OutputFilterName=None, InvertSource=False,
@@ -2450,8 +2437,7 @@ def _crop_or_pad_to_shape(image: NDArray, height: int, width: int) -> NDArray:
 
 def _load_image_pixels(path: str) -> NDArray:
     """Load file pixels without LoadImage's mask/extrema rewrite."""
-    with PILImage.open(path) as im:
-        return numpy.asarray(im)
+    return load_image_array(path)
 
 
 def _align_image_node_to_references(

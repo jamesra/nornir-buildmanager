@@ -20,6 +20,7 @@ from PIL import Image
 
 import nornir_imageregistration
 import nornir_pools
+from nornir_imageregistration.pillow_helpers import load_image_array
 from nornir_imageregistration.type_info import Shape
 from nornir_shared import prettyoutput
 
@@ -302,8 +303,8 @@ def probe_tile_pixel_size(
         for entry in entries:
             if not entry.is_file() or not entry.name.endswith(postfix):
                 continue
-            with Image.open(entry.path) as image:
-                file_w, file_h = image.size
+            pixels = load_image_array(entry.path)
+            file_h, file_w = pixels.shape[:2]
             widths.append(int(file_w))
             heights.append(int(file_h))
             if len(widths) >= samples:

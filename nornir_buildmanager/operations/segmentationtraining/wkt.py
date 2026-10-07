@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import re
-from typing import Sequence
+from typing import Any, Sequence
 
-from nornir_buildmanager.operations.segmentationtraining.records import SKIP_MASK_TYPE_CODES
+from nornir_buildmanager.operations.segmentationtraining.records import (
+    SKIP_MASK_TYPE_CODES,
+    LocationRecord,
+    parse_datetime,
+)
 
 Ring = tuple[tuple[float, float], ...]
 PolygonRings = tuple[Ring, ...]  # exterior first, then holes
@@ -142,6 +146,48 @@ def _parse_ring(ring: str) -> Ring:
         raise ValueError("Ring does not contain coordinate pairs")
     pairs = [(numbers[i], numbers[i + 1]) for i in range(0, len(numbers), 2)]
     return tuple(pairs)
+
+
+def location_from_odata_entity(
+    entity: dict[str, Any],
+    *,
+    include_off_edge: bool,
+) -> LocationRecord | None:
+    """Map one OData Location JSON object to a LocationRecord, or skip it."""
+    off_edge = bool(entity.get("OffEdge", False))
+    if off_edge and not include_off_edge:
+        return None
+    wkt = mosaic_wkt_from_odata_shape(entity.get("MosaicShape"))
+    raw_type_code = entity.get("TypeCode")
+    type_code = None if raw_type_code is None or raw_type_code == "" else int(raw_type_code)
+    if not wkt or is_skippable_location(type_code, wkt):
+        return None
+    parent = entity.get("Parent") or {}
+    parent_type = parent.get("Type") or {}
+    parent_id = entity.get("ParentID", parent.get("ID"))
+    type_id = parent.get("TypeID", parent_type.get("ID"))
+    raw_radius = entity.get("Radius")
+    radius = None if raw_radius is None or raw_radius == "" else float(raw_radius)
+    return LocationRecord(
+        id=int(entity["ID"]),
+        z=int(entity["Z"]),
+        wkt=wkt,
+        parent_id=None if parent_id is None else int(parent_id),
+        off_edge=off_edge,
+        last_modified=parse_datetime(entity.get("LastModified")),
+        type_id=None if type_id is None else int(type_id),
+        type_name=_optional_text(parent_type.get("Name")),
+        structure_label=_optional_text(parent.get("Label")),
+        type_code=type_code,
+        radius=radius,
+    )
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _geojson_polygon_to_wkt(coordinates: Sequence) -> str:

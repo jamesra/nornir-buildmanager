@@ -4,16 +4,27 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
-
-from nornir_imageregistration.type_info import Shape
+from typing import TYPE_CHECKING, Any, Iterable
 
 import nornir_shared.files
 
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
+
+if TYPE_CHECKING:
+    from nornir_imageregistration.type_info import Shape
+
+
+def _default_tile_shape() -> Shape:
+    """Default tile size for a freshness hash.
+
+    Imported on use so a mask-only refresh does not load imageregistration.
+    """
+    from nornir_imageregistration.type_info import Shape
+
+    return Shape(y=0, x=0)
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 
 EXPORTER_TILED = "tiled"
@@ -55,7 +66,7 @@ class ExportParams:
     filter_name: str
     volume: str
     geometry_version: str = GEOMETRY_TILED
-    tile_shape: Shape = Shape(y=0, x=0)
+    tile_shape: Shape = field(default_factory=_default_tile_shape)
     crop_format: str = "png"
 
     def hash(self) -> str:

@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import collections
 from collections.abc import Callable, Iterable, Iterator
 from typing import Any, TypeVar
-
-import nornir_pools
 
 T = TypeVar("T")
 R = TypeVar("R")
@@ -19,23 +16,18 @@ def submit_bounded(
     max_in_flight: int,
     on_in_flight: Callable[[int], None] | None = None,
 ) -> Iterator[Any]:
-    """Yield tasks in submission order while keeping at most *max_in_flight* queued.
+    """Delegate to ``nornir_pools.submit_bounded``.
 
-    ``GetMultithreadingPool`` runs pickleable Python callables in worker
-    processes (not ``GetProcessPool``, which launches shell commands).
+    The pools import stays inside the call so a mask-only import does not load it.
     """
-    max_in_flight = max(1, max_in_flight)
-    in_flight: collections.deque = collections.deque()
-    for item in items:
-        in_flight.append(submit(item))
-        if on_in_flight is not None:
-            on_in_flight(len(in_flight))
-        if len(in_flight) >= max_in_flight:
-            yield in_flight.popleft()
-    while in_flight:
-        if on_in_flight is not None:
-            on_in_flight(len(in_flight))
-        yield in_flight.popleft()
+    import nornir_pools
+
+    return nornir_pools.submit_bounded(
+        submit,
+        items,
+        max_in_flight=max_in_flight,
+        on_in_flight=on_in_flight,
+    )
 
 
 def run_process_jobs(
@@ -56,6 +48,10 @@ def run_process_jobs(
             if on_complete is not None:
                 on_complete(index)
         return results
+    # GetMultithreadingPool runs pickleable callables in worker processes.
+    # GetProcessPool launches shell commands and is the wrong pool here.
+    import nornir_pools
+
     pool = nornir_pools.GetMultithreadingPool(
         f"segtrain-{name_prefix}",
         num_threads=workers,

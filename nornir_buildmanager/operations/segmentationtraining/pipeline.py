@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import nornir_pools
+from nornir_imageregistration.pillow_helpers import load_image_array
 from nornir_imageregistration.type_info import Shape
 from nornir_imageregistration.computational_lib import (
     ComputationLib,
@@ -21,7 +22,6 @@ from nornir_imageregistration.computational_lib import (
 )
 from nornir_shared import prettyoutput
 from nornir_shared.argparse_helpers import IntegerList
-from PIL import Image
 
 from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
@@ -52,6 +52,8 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     load_section_records,
     odata_url_from_output,
 )
+from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
+
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
@@ -276,8 +278,8 @@ def _repair_one_overlay(
     if not tem.is_file():
         return False
     mask_paths = _mask_paths_for_key(output, key, member_ids)
-    with Image.open(tem) as image:
-        width, height = image.size
+    pixels = load_image_array(str(tem))
+    height, width = pixels.shape[:2]
     write_overlay(
         overlay,
         width=width,
@@ -1575,31 +1577,6 @@ def _image_watermark(plan: PlannedCrop, by_id: dict[int, LocationRecord]) -> Ima
         width=window.width,
         height=window.height,
     )
-
-
-def _bbox_area_from_rle(rle: dict[str, Any]) -> tuple[list[int], int]:
-    """Foreground bounding box and area from a column-major COCO RLE."""
-    counts = [int(c) for c in rle.get("counts") or []]
-    size = rle.get("size") or [0, 0]
-    height, width = int(size[0]), int(size[1])
-    area = 0
-    value = 0
-    offset = 0
-    xs: list[int] = []
-    ys: list[int] = []
-    for run in counts:
-        if value == 1:
-            area += run
-            for index in range(offset, offset + run):
-                ys.append(index % height)
-                xs.append(index // height)
-        offset += run
-        value = 1 - value
-    if not xs:
-        return [0, 0, 0, 0], 0
-    x0, x1 = min(xs), max(xs) + 1
-    y0, y1 = min(ys), max(ys) + 1
-    return [x0, y0, x1 - x0, y1 - y0], area
 
 
 def _empty_to_none(value: Any) -> Any:

@@ -11,6 +11,8 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw
 
+from annotation_crops.rle import encode_coco_rle
+
 from nornir_buildmanager.operations.segmentationtraining.geometry import PolygonRings
 from nornir_buildmanager.operations.segmentationtraining.poolutil import run_process_jobs
 
@@ -68,24 +70,6 @@ def rasterize_mask_job(job: MaskJob) -> dict[str, Any]:
         "bbox": bbox,
         "area": area,
     }
-
-
-def encode_coco_rle(mask: np.ndarray) -> dict[str, Any]:
-    """Uncompressed COCO RLE (Fortran order) for SA-1B JSON."""
-    height = int(mask.shape[0])
-    width = int(mask.shape[1])
-    if mask.size == 0:
-        return {"counts": [], "size": [height, width]}
-    pixels = np.asfortranarray(mask).astype(np.uint8, copy=False).ravel(order="F")
-    change = np.flatnonzero(pixels[1:] != pixels[:-1]) + 1
-    bounds = np.empty(change.size + 2, dtype=np.intp)
-    bounds[0] = 0
-    bounds[1:-1] = change
-    bounds[-1] = pixels.size
-    counts = np.diff(bounds).tolist()
-    if int(pixels[0]) == 1:
-        counts.insert(0, 0)
-    return {"counts": counts, "size": [height, width]}
 
 
 def run_mask_jobs(

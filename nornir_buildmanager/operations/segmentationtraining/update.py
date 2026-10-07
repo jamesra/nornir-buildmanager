@@ -40,6 +40,8 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.geometry import pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.ingest import odata_url_for_export
+from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
+
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
@@ -430,118 +432,14 @@ def refresh_existing_location_masks(
 
     ``tiled`` and ``legacy`` both keep those crop windows. Neither mode
     downloads a TEM image or writes a new crop file. Returns the image keys
-    whose masks were rewritten.
+    whose masks were rewritten. The body lives in ``maskrefresh`` so a caller
+    can import it without this module's pipeline dependencies.
     """
-    mode = (exporter or "tiled").strip().lower()
-    if mode not in {"tiled", "legacy"}:
-        raise ValueError("exporter must be tiled or legacy")
-    output = Path(output_path)
-    marks = _existing_marks_for_location(output, record)
-    if not marks:
-        return []
-    previous = SectionWatermark(
-        ids=[record.id],
-        max_last_modified=record.last_modified.isoformat(),
-        tileset_mtime=None,
-        params_hash="",
-        downsample=marks[0].downsample,
-        image_keys=[mark.key for mark in marks],
-        images=marks,
+    from nornir_buildmanager.operations.segmentationtraining.maskrefresh import (
+        refresh_existing_location_masks as redraw,
     )
-    products = get_product_index(output)
-    touched = _refresh_changed_masks(
-        output,
-        [record.id],
-        {record.id: record},
-        previous,
-        products,
-        mask_workers=1,
-        overlay=False,
-    )
-    return sorted(touched)
 
-
-def _existing_marks_for_location(output: Path, record: LocationRecord) -> list[ImageWatermark]:
-    """Crop windows this location already occupies. Missing images are skipped."""
-    previous = load_section_watermark(output, record.z)
-    raw: list[ImageWatermark] = []
-    if previous is not None:
-        raw.extend(mark for mark in (previous.images or []) if record.id in mark.member_ids)
-    if not raw:
-        raw.extend(_marks_from_crop_json(output, record.id))
-    ready: list[ImageWatermark] = []
-    for mark in raw:
-        filled = _mark_with_extent(output, mark)
-        if filled is not None:
-            ready.append(filled)
-    return ready
-
-
-def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark]:
-    """Build windows from crop JSON when the section watermark has no membership."""
-    images = output / "images"
-    if not images.is_dir():
-        return []
-    marks: list[ImageWatermark] = []
-    for path in images.glob("*.json"):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        annotations = payload.get("annotations") or []
-        if not any(int(item.get("id", -1)) == location_id for item in annotations if isinstance(item, dict)):
-            continue
-        image = payload.get("image") if isinstance(payload.get("image"), dict) else {}
-        prior = next(
-            (item for item in annotations if isinstance(item, dict) and int(item.get("id", -1)) == location_id),
-            {},
-        )
-        marks.append(
-            ImageWatermark(
-                key=path.stem,
-                downsample=int(image.get("downsample") or 1),
-                ix0=0,
-                ix1=0,
-                iy0=0,
-                iy1=0,
-                member_ids=[location_id],
-                max_last_modified=str(prior.get("last_modified") or ""),
-                origin_x=int(prior.get("originX") or 0),
-                origin_y=int(prior.get("originY") or 0),
-                width=int(image.get("width") or 0),
-                height=int(image.get("height") or 0),
-            )
-        )
-    return marks
-
-
-def _mark_with_extent(output: Path, mark: ImageWatermark) -> ImageWatermark | None:
-    """Keep a mark only when its crop image exists, filling a missing pixel size."""
-    image = resolve_crop_image(output / "images", mark.key)
-    if not image.is_file():
-        return None
-    if mark.width > 0 and mark.height > 0:
-        return mark
-    from PIL import Image
-
-    with Image.open(image) as picture:
-        width, height = picture.size
-    if width <= 0 or height <= 0:
-        return None
-    return ImageWatermark(
-        key=mark.key,
-        downsample=mark.downsample,
-        ix0=mark.ix0,
-        ix1=mark.ix1,
-        iy0=mark.iy0,
-        iy1=mark.iy1,
-        member_ids=list(mark.member_ids),
-        max_last_modified=mark.max_last_modified,
-        origin_x=mark.origin_x,
-        origin_y=mark.origin_y,
-        width=width,
-        height=height,
-    )
+    return redraw(output_path, record, exporter=exporter)
 
 
 def _replace_changed_annotations(
@@ -793,31 +691,6 @@ def _merge_added_json(
                 tem_path=tem,
             )
             products.note_path(overlay_path)
-
-
-def _bbox_area_from_rle(rle: dict[str, Any]) -> tuple[list[int], int]:
-    """Foreground bounding box and area from a column-major COCO RLE."""
-    counts = [int(c) for c in rle.get("counts") or []]
-    size = rle.get("size") or [0, 0]
-    height, width = int(size[0]), int(size[1])
-    area = 0
-    value = 0
-    offset = 0
-    xs: list[int] = []
-    ys: list[int] = []
-    for run in counts:
-        if value == 1 and height:
-            area += run
-            for index in range(offset, offset + run):
-                ys.append(index % height)
-                xs.append(index // height)
-        offset += run
-        value = 1 - value
-    if not xs:
-        return [0, 0, 0, 0], 0
-    x0, x1 = min(xs), max(xs) + 1
-    y0, y1 = min(ys), max(ys) + 1
-    return [x0, y0, x1 - x0, y1 - y0], area
 
 
 def _rebuild_watermarks(

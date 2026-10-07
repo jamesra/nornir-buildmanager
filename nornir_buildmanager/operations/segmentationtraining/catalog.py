@@ -12,6 +12,9 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Iterable
 
+from annotation_crops.ignore import load_ignore_ids as _load_ignore_ids
+from annotation_crops.ignore import save_ignore_ids as _save_ignore_ids
+from annotation_crops.maskname import MaskName
 from nornir_shared import prettyoutput
 
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
@@ -160,26 +163,12 @@ def _migrate_location_primary_key(connection: sqlite3.Connection) -> None:
 
 def load_ignore_ids(output_path: str | os.PathLike[str]) -> set[int]:
     """Load ignored location ids from `ignore.json` (a JSON array)."""
-    path = ignore_path(output_path)
-    if not path.is_file():
-        return set()
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        return set()
-    ids: set[int] = set()
-    for item in payload:
-        try:
-            ids.add(int(item))
-        except (TypeError, ValueError):
-            continue
-    return ids
+    return _load_ignore_ids(output_path)
 
 
 def save_ignore_ids(output_path: str | os.PathLike[str], ids: Iterable[int]) -> None:
     """Write `ignore.json` as a sorted JSON array of location ids."""
-    path = ignore_path(output_path)
-    ordered = sorted({int(item) for item in ids})
-    path.write_text(json.dumps(ordered), encoding="utf-8")
+    _save_ignore_ids(output_path, ids)
 
 
 def equivalent_radius(area: float | None, stored: float | None) -> float | None:
@@ -873,13 +862,11 @@ def _mask_relpath(output: Path, image_key: str, location_id: int, *, ignored: bo
 
 
 def _location_id_from_mask_name(path: Path) -> int | None:
-    """Location id from a ``{image_key}_{id}`` mask filename."""
-    if "_" not in path.stem:
+    """Location id from a ``{image_key}_{id}.png`` mask filename."""
+    parsed = MaskName.parse(path.name)
+    if parsed is None:
         return None
-    token = path.stem.rsplit("_", 1)[-1]
-    if not token.isdigit():
-        return None
-    return int(token)
+    return parsed.location_id
 
 
 def _row_z(record: LocationRecord | None, image_key: str, annotation: dict[str, Any]) -> int:
