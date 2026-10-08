@@ -9,12 +9,14 @@ arbitrary XML-like trees without requiring a fixed schema per node type.
 Schema versioning is built in so older volumes can be migrated forward.
 """
 
+import contextlib
 import logging
 import os
 import sqlite3
+from collections.abc import Iterator
 from typing import Optional, Dict, List
 
-from . import sqlite_journal
+from . import sqlite_journal, sqlite_write_lock
 from .volume_metadata import MetadataNode, VolumeMetadataBackend
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_attribs_node_key ON node_attribs(node_id, 
 """
 
 
+@contextlib.contextmanager
+def immediate_transaction(conn: sqlite3.Connection) -> Iterator[None]:
+    """Run the body in one ``BEGIN IMMEDIATE`` transaction: committed on success, rolled back on any exception."""
+    conn.execute('BEGIN IMMEDIATE')
+    try:
+        yield
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
 class SQLiteMetadataBackend(VolumeMetadataBackend):
     """Read/write volume metadata from/to a SQLite database file."""
 
@@ -89,6 +103,10 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
             pass
         return 0
 
+    def write_lock(self) -> contextlib.AbstractContextManager[None]:
+        """Return the cross-process lock a multi-statement write to this database must hold."""
+        return sqlite_write_lock.write_lock(self._db_path, BUSY_TIMEOUT_SECONDS)
+
     def _get_connection(self) -> sqlite3.Connection:
         """Open the database with a busy timeout and the journal mode its filesystem allows."""
         conn = sqlite3.connect(self._db_path, timeout=BUSY_TIMEOUT_SECONDS)
@@ -111,6 +129,8 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
         conn = self._get_connection()
         try:
             self._maybe_migrate_schema(conn)
+            # One read transaction, so both queries see the same commit of a concurrent writer.
+            conn.execute('BEGIN')
 
             cur = conn.execute(
                 "SELECT id, parent_id, tag, text, sort_order FROM nodes ORDER BY sort_order"
@@ -152,20 +172,22 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
             conn.close()
 
     def save(self, root: MetadataNode) -> None:
+        """Replace the whole stored tree with *root* in one transaction under the write lock.
+
+        A failure part way leaves the previous tree; readers never see it half written.
+        """
         os.makedirs(self._volume_path, exist_ok=True)
 
-        conn = self._get_connection()
-        try:
-            self._ensure_schema(conn)
-
-            conn.execute("DELETE FROM node_attribs")
-            conn.execute("DELETE FROM nodes")
-            conn.commit()
-
-            self._insert_node(conn, root, parent_id=None, sort_order=0)
-            conn.commit()
-        finally:
-            conn.close()
+        with self.write_lock():
+            conn = self._get_connection()
+            try:
+                self._ensure_schema(conn)
+                with immediate_transaction(conn):
+                    conn.execute("DELETE FROM node_attribs")
+                    conn.execute("DELETE FROM nodes")
+                    self._insert_node(conn, root, parent_id=None, sort_order=0)
+            finally:
+                conn.close()
 
     def _insert_node(self, conn: sqlite3.Connection, node: MetadataNode,
                      parent_id: Optional[int], sort_order: int) -> int:

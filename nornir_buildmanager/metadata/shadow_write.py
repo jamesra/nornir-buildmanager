@@ -8,16 +8,14 @@ loaded from its own folder. A failure or mismatch is logged as a warning naming 
 container and never reaches the XML save.
 """
 
-import contextlib
 import logging
 import os
 import sqlite3
-from collections.abc import Iterator
 from xml.etree import ElementTree
 
 from . import feature_flags
 from .migrate import compare_trees
-from .sqlite_backend import SQLiteMetadataBackend
+from .sqlite_backend import SQLiteMetadataBackend, immediate_transaction
 from .volume_metadata import MetadataNode
 from .xml_backend import XMLMetadataBackend
 
@@ -78,38 +76,29 @@ def _shadow_container(container_dir: str) -> None:
         raise ValueError("the saved VolumeData.xml could not be read back")
 
     backend = SQLiteMetadataBackend(volume_root)
-    conn = backend._get_connection()
-    try:
-        backend._maybe_migrate_schema(conn)
-        if _root_id(conn) is None:
-            _bootstrap(conn, backend, volume_root)
+    # Held through the parity read so no other writer changes the container between upsert and compare.
+    with backend.write_lock():
+        conn = backend._get_connection()
+        try:
+            backend._maybe_migrate_schema(conn)
+            if _root_id(conn) is None:
+                _bootstrap(conn, backend, volume_root)
 
-        with _immediate_transaction(conn):
-            node_id = _find_container(conn, _root_id(conn), volume_root, container_dir)
-            if node_id is not None:
-                _upsert_container(conn, backend, node_id, saved, container_dir)
+            with immediate_transaction(conn):
+                node_id = _find_container(conn, _root_id(conn), volume_root, container_dir)
+                if node_id is not None:
+                    _upsert_container(conn, backend, node_id, saved, container_dir)
 
-        if node_id is None:
-            # Children save before their parent, so a new container is added by the parent's save.
-            logger.debug("%s is not linked into the SQLite shadow yet", container_dir)
-            return
+            if node_id is None:
+                # Children save before their parent, so a new container is added by the parent's save.
+                logger.debug("%s is not linked into the SQLite shadow yet", container_dir)
+                return
 
-        for diff in compare_trees(saved, _load_container_level(conn, node_id, saved)):
-            logger.warning("SQLite shadow parity difference (%s) in container %s at %s: XML=%r SQLite=%r",
-                           diff.kind.value, container_dir, diff.path, diff.expected, diff.actual)
-    finally:
-        conn.close()
-
-
-@contextlib.contextmanager
-def _immediate_transaction(conn: sqlite3.Connection) -> Iterator[None]:
-    conn.execute('BEGIN IMMEDIATE')
-    try:
-        yield
-    except BaseException:
-        conn.rollback()
-        raise
-    conn.commit()
+            for diff in compare_trees(saved, _load_container_level(conn, node_id, saved)):
+                logger.warning("SQLite shadow parity difference (%s) in container %s at %s: XML=%r SQLite=%r",
+                               diff.kind.value, container_dir, diff.path, diff.expected, diff.actual)
+        finally:
+            conn.close()
 
 
 def _root_id(conn: sqlite3.Connection) -> int | None:
@@ -122,7 +111,7 @@ def _bootstrap(conn: sqlite3.Connection, backend: SQLiteMetadataBackend, volume_
     root = XMLMetadataBackend(volume_root, xml_filename=_VOLUME_DATA_FILENAME).load()
     if root is None:
         raise ValueError(f"volume XML under {volume_root} could not be loaded")
-    with _immediate_transaction(conn):
+    with immediate_transaction(conn):
         if _root_id(conn) is None:
             backend._insert_node(conn, root, parent_id=None, sort_order=0)
 
