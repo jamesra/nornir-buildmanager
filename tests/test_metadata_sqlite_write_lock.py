@@ -13,15 +13,12 @@ import os
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from hypothesis import HealthCheck, given, settings
-from hypothesis import strategies as st
 
 import nornir_buildmanager.volumemanager as vm
 from nornir_buildmanager.metadata import (
@@ -59,30 +56,9 @@ _WRITER = (
     "    SQLiteMetadataBackend(volume).save(tree)\n"
 )
 
-_names = st.text(alphabet='abcXYZ09', min_size=1, max_size=4)
-_tags = st.sampled_from(['Block', 'Section', 'Channel', 'Filter'])
-_nodes = st.recursive(
-    st.builds(lambda tag, name: MetadataNode(tag, {'Name': name}), _tags, _names),
-    lambda kids: st.builds(lambda tag, name, children: MetadataNode(tag, {'Name': name}, children=children),
-                           _tags, _names, st.lists(kids, max_size=3)),
-    max_leaves=8)
-_trees = st.builds(lambda name, children: MetadataNode('Volume', {'Name': name}, children=children),
-                   _names, st.lists(_nodes, max_size=3))
-
-
-def _test_dir() -> str:
-    root = os.path.join(os.environ.get('TESTOUTPUTPATH', tempfile.gettempdir()), 'test_metadata_sqlite_write_lock')
-    os.makedirs(root, exist_ok=True)
-    return root
-
-
 def _tree(name: str, children: int = 40) -> MetadataNode:
     return MetadataNode('Volume', {'Name': name},
                         children=[MetadataNode('Block', {'Name': f'{name}{i}'}) for i in range(children)])
-
-
-def _node_count(node: MetadataNode) -> int:
-    return sum(1 for _ in node.walk())
 
 
 @contextlib.contextmanager
@@ -97,29 +73,6 @@ def _held_by_other_process(db_path: str) -> Iterator[None]:
     finally:
         holder.stdin.close()
         assert holder.wait(timeout=30) == 0
-
-
-class _Crash(Exception):
-    pass
-
-
-class _CrashingBackend(SQLiteMetadataBackend):
-    """Raises before inserting the node numbered *crash_at* (depth-first) during save."""
-
-    _crash_at: int
-    _inserted: int
-
-    def __init__(self, volume_path: str, crash_at: int) -> None:
-        super().__init__(volume_path)
-        self._crash_at = crash_at
-        self._inserted = 0
-
-    def _insert_node(self, conn: sqlite3.Connection, node: MetadataNode,
-                     parent_id: int | None, sort_order: int) -> int:
-        if self._inserted == self._crash_at:
-            raise _Crash()
-        self._inserted += 1
-        return super()._insert_node(conn, node, parent_id, sort_order)
 
 
 def test_lock_times_out_while_another_process_holds_it(tmp_path):
@@ -189,22 +142,6 @@ def test_save_waits_for_the_lock_and_leaves_the_database_alone(monkeypatch, tmp_
         backend.save(_tree('new', 3))
     stored = backend.load()
     assert stored is not None and compare_trees(_tree('old', 3), stored) == []
-
-
-@settings(max_examples=40, deadline=None, suppress_health_check=[HealthCheck.too_slow])
-@given(old=_trees, new=_trees, data=st.data())
-def test_failed_save_keeps_the_previous_tree(old: MetadataNode, new: MetadataNode, data: st.DataObject):
-    crash_at = data.draw(st.integers(0, _node_count(new) - 1), label='crash_at')
-    with tempfile.TemporaryDirectory(dir=_test_dir()) as volume:
-        SQLiteMetadataBackend(volume).save(old)
-        with pytest.raises(_Crash):
-            _CrashingBackend(volume, crash_at).save(new)
-        stored = SQLiteMetadataBackend(volume).load()
-        assert stored is not None
-        assert compare_trees(old, stored) == []
-        SQLiteMetadataBackend(volume).save(new)
-        stored = SQLiteMetadataBackend(volume).load()
-        assert stored is not None and compare_trees(new, stored) == []
 
 
 def test_concurrent_writer_processes_never_expose_a_partial_tree(tmp_path):

@@ -15,7 +15,17 @@ from xml.etree import ElementTree
 
 from . import feature_flags
 from .migrate import compare_trees
-from .sqlite_backend import SQLiteMetadataBackend, immediate_transaction
+from .sqlite_backend import (
+    LINK_SUFFIX,
+    SQLiteMetadataBackend,
+    delete_nodes,
+    immediate_transaction,
+    insert_node,
+    pair_children,
+    stored_nodes,
+    sync_node,
+    update_node,
+)
 from .volume_metadata import MetadataNode
 from .xml_backend import XMLMetadataBackend
 
@@ -23,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 _VOLUME_DATA_FILENAME = 'VolumeData.xml'
 _VOLUME_TAG = 'Volume'
-_LINK_SUFFIX = '_Link'
 
 _CHILDREN_SQL = ("SELECT n.id, n.tag, a.value FROM nodes n "
                  "LEFT JOIN node_attribs a ON a.node_id = n.id AND a.key = 'Path' "
@@ -82,12 +91,12 @@ def _shadow_container(container_dir: str) -> None:
         try:
             backend._maybe_migrate_schema(conn)
             if _root_id(conn) is None:
-                _bootstrap(conn, backend, volume_root)
+                _bootstrap(conn, volume_root)
 
             with immediate_transaction(conn):
                 node_id = _find_container(conn, _root_id(conn), volume_root, container_dir)
                 if node_id is not None:
-                    _upsert_container(conn, backend, node_id, saved, container_dir)
+                    _upsert_container(conn, node_id, saved, container_dir)
 
             if node_id is None:
                 # Children save before their parent, so a new container is added by the parent's save.
@@ -106,14 +115,14 @@ def _root_id(conn: sqlite3.Connection) -> int | None:
     return row[0] if row else None
 
 
-def _bootstrap(conn: sqlite3.Connection, backend: SQLiteMetadataBackend, volume_root: str) -> None:
+def _bootstrap(conn: sqlite3.Connection, volume_root: str) -> None:
     """Fill an empty shadow database from the whole sharded XML volume."""
     root = XMLMetadataBackend(volume_root, xml_filename=_VOLUME_DATA_FILENAME).load()
     if root is None:
         raise ValueError(f"volume XML under {volume_root} could not be loaded")
     with immediate_transaction(conn):
         if _root_id(conn) is None:
-            backend._insert_node(conn, root, parent_id=None, sort_order=0)
+            insert_node(conn, root, None, 0)
 
 
 def _is_same_or_inside(path: str, directory: str) -> bool:
@@ -139,7 +148,7 @@ def _find_container(conn: sqlite3.Connection, node_id: int | None, node_dir: str
 
 
 def _link_key(tag: str, path: str | None) -> tuple[str, str | None]:
-    return tag.removesuffix(_LINK_SUFFIX), path
+    return tag.removesuffix(LINK_SUFFIX), path
 
 
 def _load_linked(container_dir: str, stub: MetadataNode) -> MetadataNode:
@@ -149,34 +158,21 @@ def _load_linked(container_dir: str, stub: MetadataNode) -> MetadataNode:
     return loaded if loaded is not None else stub
 
 
-def _upsert_container(conn: sqlite3.Connection, backend: SQLiteMetadataBackend, node_id: int,
-                      saved: MetadataNode, container_dir: str) -> None:
-    """Replace one container's own rows with *saved*, keeping the rows of child containers it links to."""
-    conn.execute("UPDATE nodes SET tag = ?, text = ? WHERE id = ?", (saved.tag, saved.text, node_id))
-    conn.execute("DELETE FROM node_attribs WHERE node_id = ?", (node_id,))
-    conn.executemany("INSERT INTO node_attribs (node_id, key, value) VALUES (?, ?, ?)",
-                     [(node_id, k, v) for k, v in saved.attribs.items()])
-
-    existing: dict[tuple[str, str | None], list[int]] = {}
-    old_ids: list[int] = []
-    for child_id, tag, path in conn.execute(_CHILDREN_SQL, (node_id,)).fetchall():
-        existing.setdefault(_link_key(tag, path), []).append(child_id)
-        old_ids.append(child_id)
-
-    kept: dict[int, int] = {}
-    inserts: list[tuple[int, MetadataNode]] = []
-    for order, child in enumerate(saved.children):
-        is_link = child.tag.endswith(_LINK_SUFFIX)
-        matches = existing.get(_link_key(child.tag, child.attribs.get('Path'))) if is_link else None
-        if matches:
-            kept[matches.pop(0)] = order
-        else:
-            inserts.append((order, _load_linked(container_dir, child) if is_link else child))
-
-    conn.executemany("DELETE FROM nodes WHERE id = ?", [(i,) for i in old_ids if i not in kept])
-    conn.executemany("UPDATE nodes SET sort_order = ? WHERE id = ?", [(o, i) for i, o in kept.items()])
-    for order, child in inserts:
-        backend._insert_node(conn, child, parent_id=node_id, sort_order=order)
+def _upsert_container(conn: sqlite3.Connection, node_id: int, saved: MetadataNode, container_dir: str) -> None:
+    """Write the rows of one container that differ from *saved*, keeping the rows of child containers it links to."""
+    (container,) = stored_nodes(conn, 'id = ?', (node_id,))
+    update_node(conn, container, saved, container.sort_order)
+    paired, new, gone = pair_children(stored_nodes(conn, 'parent_id = ?', (node_id,)), saved.children)
+    delete_nodes(conn, gone)
+    for order, row, child in paired:
+        if not child.tag.endswith(LINK_SUFFIX):
+            sync_node(conn, row, child, order)
+        elif row.sort_order != order:
+            # A stub mirrors attributes the linked container's own save already wrote; only its place changes.
+            conn.execute("UPDATE nodes SET sort_order = ? WHERE id = ?", (order, row.id))
+    for order, child in new:
+        insert_node(conn, _load_linked(container_dir, child) if child.tag.endswith(LINK_SUFFIX) else child,
+                    node_id, order)
 
 
 def _load_node(conn: sqlite3.Connection, node_id: int,
@@ -197,5 +193,5 @@ def _load_container_level(conn: sqlite3.Connection, node_id: int, saved: Metadat
     Only this container's own rows are read, so the check costs one container, not the volume;
     the order of the linked children is still compared.
     """
-    links = {_link_key(c.tag, c.attribs.get('Path')): c for c in saved.children if c.tag.endswith(_LINK_SUFFIX)}
+    links = {_link_key(c.tag, c.attribs.get('Path')): c for c in saved.children if c.tag.endswith(LINK_SUFFIX)}
     return _load_node(conn, node_id, links)

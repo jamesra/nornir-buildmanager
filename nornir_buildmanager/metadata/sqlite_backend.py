@@ -9,11 +9,13 @@ arbitrary XML-like trees without requiring a fixed schema per node type.
 Schema versioning is built in so older volumes can be migrated forward.
 """
 
+import collections
 import contextlib
+import dataclasses
 import logging
 import os
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from typing import Optional, Dict, List
 
 from . import sqlite_journal, sqlite_write_lock
@@ -28,6 +30,8 @@ DEFAULT_DB_FILENAME = 'VolumeData.db'
 # How long a connection waits for another process's lock before raising
 # "database is locked"; rollback-journal writes on a network share hold it longer.
 BUSY_TIMEOUT_SECONDS = 30.0
+
+LINK_SUFFIX = '_Link'
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -67,6 +71,103 @@ def immediate_transaction(conn: sqlite3.Connection) -> Iterator[None]:
         conn.rollback()
         raise
     conn.commit()
+
+
+@dataclasses.dataclass
+class StoredNode:
+    """One ``nodes`` row with its ``node_attribs`` rows as ``(attrib id, key, value)`` in load order."""
+    id: int
+    tag: str
+    text: str | None
+    sort_order: int
+    attribs: list[tuple[int, str, str]]
+
+
+def pairing_key(tag: str, attribs: Mapping[str, str]) -> tuple[str, str | None, str | None]:
+    """Identify a child among its siblings: by ``Path`` when it has one (a linked stub and its
+    container share it), otherwise by ``Name``; the ``_Link`` suffix is ignored."""
+    path = attribs.get('Path')
+    return tag.removesuffix(LINK_SUFFIX), path, attribs.get('Name') if path is None else None
+
+
+def stored_nodes(conn: sqlite3.Connection, where: str, params: tuple = ()) -> list[StoredNode]:
+    """Return the rows matching the ``nodes`` filter *where*, ordered by ``sort_order``, with their attributes."""
+    nodes = {row[0]: StoredNode(*row, attribs=[]) for row in conn.execute(
+        f"SELECT id, tag, text, sort_order FROM nodes WHERE {where} ORDER BY sort_order, id", params)}
+    for node_id, attrib_id, key, value in conn.execute(
+            f"SELECT node_id, id, key, value FROM node_attribs "
+            f"WHERE node_id IN (SELECT id FROM nodes WHERE {where}) ORDER BY id", params):
+        nodes[node_id].attribs.append((attrib_id, key, value))
+    return list(nodes.values())
+
+
+def insert_node(conn: sqlite3.Connection, node: MetadataNode, parent_id: int | None, sort_order: int) -> int:
+    """Insert *node* and its whole subtree under *parent_id*; return the new row id."""
+    cur = conn.execute("INSERT INTO nodes (parent_id, tag, text, sort_order) VALUES (?, ?, ?, ?)",
+                       (parent_id, node.tag, node.text, sort_order))
+    node_id = cur.lastrowid
+    assert node_id is not None
+    if node.attribs:
+        conn.executemany("INSERT INTO node_attribs (node_id, key, value) VALUES (?, ?, ?)",
+                         [(node_id, k, v) for k, v in node.attribs.items()])
+    for i, child in enumerate(node.children):
+        insert_node(conn, child, node_id, i)
+    return node_id
+
+
+def delete_nodes(conn: sqlite3.Connection, node_ids: list[int]) -> None:
+    """Delete the rows *node_ids*; their attributes and descendants go by ``ON DELETE CASCADE``."""
+    conn.executemany("DELETE FROM nodes WHERE id = ?", [(i,) for i in node_ids])
+
+
+def update_node(conn: sqlite3.Connection, stored: StoredNode, node: MetadataNode, sort_order: int) -> None:
+    """Rewrite only the parts of the *stored* row and its attributes that differ from *node*; children are left alone."""
+    if (stored.tag, stored.text, stored.sort_order) != (node.tag, node.text, sort_order):
+        conn.execute("UPDATE nodes SET tag = ?, text = ?, sort_order = ? WHERE id = ?",
+                     (node.tag, node.text, sort_order, stored.id))
+    if [(k, v) for _, k, v in stored.attribs] == list(node.attribs.items()):
+        return
+    if [k for _, k, _ in stored.attribs] == list(node.attribs):
+        conn.executemany("UPDATE node_attribs SET value = ? WHERE id = ?",
+                         [(node.attribs[k], i) for i, k, v in stored.attribs if node.attribs[k] != v])
+    else:
+        # Load returns attributes in row id order, so a changed key list is rewritten whole to keep XML order.
+        conn.execute("DELETE FROM node_attribs WHERE node_id = ?", (stored.id,))
+        conn.executemany("INSERT INTO node_attribs (node_id, key, value) VALUES (?, ?, ?)",
+                         [(stored.id, k, v) for k, v in node.attribs.items()])
+
+
+def pair_children(stored: list[StoredNode], children: list[MetadataNode]
+                  ) -> tuple[list[tuple[int, StoredNode, MetadataNode]], list[tuple[int, MetadataNode]], list[int]]:
+    """Pair each child, in order, with the first unclaimed stored sibling of the same pairing_key.
+
+    Returns ``(sort order, row, child)`` for each pair, ``(sort order, child)`` for children with
+    no row, and the ids of rows no child claimed.
+    """
+    unclaimed: dict[tuple, collections.deque[StoredNode]] = {}
+    for row in stored:
+        unclaimed.setdefault(pairing_key(row.tag, {k: v for _, k, v in row.attribs}),
+                             collections.deque()).append(row)
+    paired: list[tuple[int, StoredNode, MetadataNode]] = []
+    new: list[tuple[int, MetadataNode]] = []
+    for order, child in enumerate(children):
+        rows = unclaimed.get(pairing_key(child.tag, child.attribs))
+        if rows:
+            paired.append((order, rows.popleft(), child))
+        else:
+            new.append((order, child))
+    return paired, new, [row.id for rows in unclaimed.values() for row in rows]
+
+
+def sync_node(conn: sqlite3.Connection, stored: StoredNode, node: MetadataNode, sort_order: int) -> None:
+    """Make the stored subtree at *stored* equal *node*, writing only the rows that differ."""
+    update_node(conn, stored, node, sort_order)
+    paired, new, gone = pair_children(stored_nodes(conn, 'parent_id = ?', (stored.id,)), node.children)
+    delete_nodes(conn, gone)
+    for order, row, child in paired:
+        sync_node(conn, row, child, order)
+    for order, child in new:
+        insert_node(conn, child, stored.id, order)
 
 
 class SQLiteMetadataBackend(VolumeMetadataBackend):
@@ -172,9 +273,11 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
             conn.close()
 
     def save(self, root: MetadataNode) -> None:
-        """Replace the whole stored tree with *root* in one transaction under the write lock.
+        """Make the stored tree equal *root* in one transaction under the write lock.
 
-        A failure part way leaves the previous tree; readers never see it half written.
+        Only rows that differ are written, so unchanged nodes keep their row ids; an empty
+        database gets one full insert. A failure part way leaves the previous tree, and
+        readers never see it half written.
         """
         os.makedirs(self._volume_path, exist_ok=True)
 
@@ -183,30 +286,14 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
             try:
                 self._ensure_schema(conn)
                 with immediate_transaction(conn):
-                    conn.execute("DELETE FROM node_attribs")
-                    conn.execute("DELETE FROM nodes")
-                    self._insert_node(conn, root, parent_id=None, sort_order=0)
+                    roots = stored_nodes(conn, 'parent_id IS NULL')
+                    if roots:
+                        sync_node(conn, roots[0], root, 0)
+                        delete_nodes(conn, [r.id for r in roots[1:]])
+                    else:
+                        insert_node(conn, root, None, 0)
             finally:
                 conn.close()
-
-    def _insert_node(self, conn: sqlite3.Connection, node: MetadataNode,
-                     parent_id: Optional[int], sort_order: int) -> int:
-        cur = conn.execute(
-            "INSERT INTO nodes (parent_id, tag, text, sort_order) VALUES (?, ?, ?, ?)",
-            (parent_id, node.tag, node.text, sort_order)
-        )
-        node_id = cur.lastrowid
-
-        if node.attribs:
-            conn.executemany(
-                "INSERT INTO node_attribs (node_id, key, value) VALUES (?, ?, ?)",
-                [(node_id, k, v) for k, v in node.attribs.items()]
-            )
-
-        for i, child in enumerate(node.children):
-            self._insert_node(conn, child, parent_id=node_id, sort_order=i)
-
-        return node_id
 
     def _maybe_migrate_schema(self, conn: sqlite3.Connection) -> None:
         """Migrate the database schema if it is older than the current version.
