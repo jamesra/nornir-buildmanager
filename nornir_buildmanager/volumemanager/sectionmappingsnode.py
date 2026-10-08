@@ -45,8 +45,12 @@ class SectionMappingsNode(XElementWrapper):
         """
 
         # TODO: 3/10/2017 I believe I can stop checking MappedSectionNumber because it is built into the SectionMapping node.  This is a sanity check before I pull the plug
-        assert (MappedSectionNumber == self.MappedSectionNumber)
-        
+        if MappedSectionNumber != self.MappedSectionNumber:
+            raise ValueError(
+                f"MappedSectionNumber {MappedSectionNumber!r} does not match "
+                f"section mapping MappedSectionNumber {self.MappedSectionNumber!r}"
+            )
+
         return nornir_shared.find_first_match(self.Transforms, {'ControlSectionNumber' : ControlSectionNumber,  # type: ignore[return-value]
                                                                 'ControlChannelName' : ControlChannelName,
                                                                 'ControlFilterName'  : ControlFilterName,
