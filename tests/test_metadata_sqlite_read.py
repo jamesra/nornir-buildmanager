@@ -372,11 +372,15 @@ def test_legacy_section_and_filter_aliases_read_from_sqlite(monkeypatch, tmp_pat
     assert result.success
     monkeypatch.setenv(READ, '1')
     parsed = ElementTree.parse(xml_path).getroot()
-    assert 'SectionNumber' in parsed.find('.//Section').attrib
+    parsed_section = parsed.find('.//Section')
+    assert parsed_section is not None
+    assert 'SectionNumber' in parsed_section.attrib
     loaded = sqlite_read.load_container_element(root, parsed)
     assert loaded is not parsed
     section = loaded.find('.//Section')
     filt = loaded.find('.//Filter')
+    assert section is not None
+    assert filt is not None
     assert section.attrib.get('Number') == '1'
     assert 'SectionNumber' not in section.attrib
     assert filt.attrib.get('Name') == 'Raw'
