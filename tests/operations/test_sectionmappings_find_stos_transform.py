@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+import textwrap
 import unittest
 
 from nornir_buildmanager.volumemanager.sectionmappingsnode import SectionMappingsNode
@@ -25,3 +28,36 @@ class TestFindStosTransformMappedSection(unittest.TestCase):
                 MappedChannelName="",
                 MappedFilterName="",
             )
+
+    def test_mismatched_mapped_section_raises_under_python_o(self) -> None:
+        """ValueError must survive assert stripping (python -O); asserts would not."""
+        script = textwrap.dedent(
+            """
+            from nornir_buildmanager.volumemanager.sectionmappingsnode import SectionMappingsNode
+
+            section_mapping = SectionMappingsNode.Create(MappedSectionNumber=4)
+            try:
+                section_mapping.FindStosTransform(
+                    ControlSectionNumber=5,
+                    ControlChannelName="",
+                    ControlFilterName="",
+                    MappedSectionNumber=99,
+                    MappedChannelName="",
+                    MappedFilterName="",
+                )
+            except ValueError:
+                raise SystemExit(0)
+            raise SystemExit(1)
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-O", "-c", script],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            msg=(completed.stdout or "") + (completed.stderr or ""),
+        )
