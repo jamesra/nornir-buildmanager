@@ -16,6 +16,8 @@ from xml.etree import ElementTree
 from nornir_shared import prettyoutput
 from nornir_shared.files import ensure_directory
 
+from nornir_buildmanager.metadata import shadow_write
+
 VOLUME_DATA_FILENAME = 'VolumeData.xml'
 
 
@@ -57,7 +59,9 @@ class XmlContainerStorage:
         """Indent *element* in place and atomically replace ``<container_dir>/<filename>``.
 
         A non-empty existing file is moved to ``<filename>.backup.xml`` first. Writes and
-        replaces retry on the transient errors seen on CIFS/NFS shares.
+        replaces retry on the transient errors seen on CIFS/NFS shares. After a successful
+        ``VolumeData.xml`` replace, :func:`shadow_write.after_container_saved` mirrors the
+        container into SQLite when ``NORNIR_VOLUME_METADATA_SHADOW_SQLITE`` is on; it never raises.
         """
         try:
             ElementTree.indent(element, space='  ')
@@ -174,7 +178,6 @@ class XmlContainerStorage:
         for attempt in range(8):
             try:
                 os.replace(TmpFilename, XMLFilename)
-                return
             except FileNotFoundError as e:
                 # Parent dir vanished or not yet visible (Clean race / CIFS cache).
                 last_open_error = e
@@ -196,6 +199,10 @@ class XmlContainerStorage:
                         XMLFilename,
                     ) from e
                 raise
+            else:
+                if self.filename == VOLUME_DATA_FILENAME:
+                    shadow_write.after_container_saved(container_dir)
+                return
 
         if last_open_error is not None:
             raise last_open_error

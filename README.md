@@ -36,6 +36,14 @@ Contract for pipeline stages and volumemanager getters:
 
 Regression coverage: `tests/test_import_volumedata_save.py`.
 
+### Environment variables (XML-to-SQLite metadata port)
+
+All default to off; `VolumeData.xml` stays the source of truth. Read only in `nornir_buildmanager/metadata/feature_flags.py`.
+
+| Variable | Effect when `1` / `true` / `yes` / `on` |
+|----------|------------------------------------------|
+| `NORNIR_VOLUME_METADATA_SHADOW_SQLITE` | After each successful container `VolumeData.xml` save, upsert that container into `VolumeData.db` at the volume root and compare it with the saved file. Errors and mismatches are logged as warnings naming the container; the XML save never fails because of them. XML bytes are unchanged. |
+
 ## Documentation
 
 - **Full manual and API (umbrella):** [https://nornir.github.io/](https://nornir.github.io/)
