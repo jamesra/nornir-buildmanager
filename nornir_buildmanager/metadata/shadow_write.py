@@ -80,13 +80,15 @@ def _shadow_container(container_dir: str) -> None:
         logger.debug("No Volume at or above %s yet; SQLite shadow skipped", container_dir)
         return
 
-    saved = XMLMetadataBackend(container_dir, single_file=True, xml_filename=_VOLUME_DATA_FILENAME).load()
-    if saved is None:
-        raise ValueError("the saved VolumeData.xml could not be read back")
-
     backend = SQLiteMetadataBackend(volume_root)
     # Held through the parity read so no other writer changes the container between upsert and compare.
     with backend.write_lock():
+        # Read under the lock: a copy read before it could predate another process's later save of this
+        # container, whose shadow may then run first and be overwritten with the older content.
+        saved = XMLMetadataBackend(container_dir, single_file=True, xml_filename=_VOLUME_DATA_FILENAME).load()
+        if saved is None:
+            raise ValueError("the saved VolumeData.xml could not be read back")
+
         conn = backend._get_connection()
         try:
             backend._maybe_migrate_schema(conn)

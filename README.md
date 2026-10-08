@@ -48,6 +48,8 @@ All default to off; `VolumeData.xml` stays the source of truth. Read only in `no
 
 Every write to `VolumeData.db` (a shadow container upsert, a `nornir-migrate-volume` save) also holds an exclusive lock on `VolumeData.db.lock` beside it (`flock` on Linux/macOS, `msvcrt.locking` on Windows), so writers in different processes or threads take turns; a whole-tree save is one transaction, so a failed save leaves the previous tree. A save writes only the rows that differ from what is stored (unchanged nodes keep their row ids), and a container upsert leaves the rows of the containers it links to alone. A writer waits up to 30 s for the lock; a shadow write that times out logs a warning and the XML save still succeeds. The `.lock` file is left in place and is safe to delete when nothing is writing. Readers do not take it. A Windows process and a dev container writing the same share may not see each other's lock.
 
+Test-only: `tests/test_metadata_sqlite_concurrency.py` runs several writer processes through the shadow write at once. Its network-share test runs only when `NORNIR_VOLUME_METADATA_NET_TEST_PATH` names a writable folder on a network share (in the dev container, a share mounted with `NORNIR_NET_MOUNTS=1`, for example `/storage4`); it creates a `nornir-metadata-net-test-*` subfolder there and deletes it afterwards. Run it on the Windows host against the same share to cover the `msvcrt.locking` path.
+
 ## Documentation
 
 - **Full manual and API (umbrella):** [https://nornir.github.io/](https://nornir.github.io/)
