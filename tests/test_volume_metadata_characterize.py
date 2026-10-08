@@ -15,10 +15,12 @@ tables and the fixture builder live in ``metadata_port_characterize_data``.
 
 from __future__ import annotations
 
+import importlib.util
 import itertools
 import os
 import re
 import tempfile
+from pathlib import Path
 from typing import Any, cast
 from xml.etree import ElementTree
 
@@ -29,25 +31,44 @@ from hypothesis import strategies as st
 import nornir_buildmanager.volumemanager as vm
 from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 
-from .metadata_port_characterize_data import (
-    FIXED_DATE,
-    GOLDEN_SHA,
-    INDIRECT_PATTERNS,
-    ROOT_TOKEN,
-    XPATH_CASES,
-    ancestry_key,
-    build_volume,
-    canonical,
-    merged_oracle,
-    normalized_sha,
-    pipeline_patterns,
-    pipeline_xpaths,
-    report_column_patterns,
-    root_context,
-    snapshot,
-    source_patterns,
-    written,
-)
+
+def _load_characterize_data():
+    """Load the sibling helper without going through the top-level ``tests`` package.
+
+    Umbrella pytest collects several checkouts that each contain a ``tests`` package.
+    ``--import-mode=importlib`` keeps the first one in ``sys.modules``, so a relative
+    import of this helper looks in the wrong tree.
+    """
+    path = Path(__file__).resolve().with_name("metadata_port_characterize_data.py")
+    spec = importlib.util.spec_from_file_location(
+        "nornir_buildmanager_metadata_port_characterize_data",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_characterize = _load_characterize_data()
+FIXED_DATE = _characterize.FIXED_DATE
+GOLDEN_SHA = _characterize.GOLDEN_SHA
+INDIRECT_PATTERNS = _characterize.INDIRECT_PATTERNS
+ROOT_TOKEN = _characterize.ROOT_TOKEN
+XPATH_CASES = _characterize.XPATH_CASES
+ancestry_key = _characterize.ancestry_key
+build_volume = _characterize.build_volume
+canonical = _characterize.canonical
+merged_oracle = _characterize.merged_oracle
+normalized_sha = _characterize.normalized_sha
+pipeline_patterns = _characterize.pipeline_patterns
+pipeline_xpaths = _characterize.pipeline_xpaths
+report_column_patterns = _characterize.report_column_patterns
+root_context = _characterize.root_context
+snapshot = _characterize.snapshot
+source_patterns = _characterize.source_patterns
+written = _characterize.written
 
 
 @pytest.fixture
