@@ -163,6 +163,18 @@ def test_wal_database_moved_to_a_share_switches_to_rollback_journal(monkeypatch:
         assert _journal_mode(backend.db_path) == 'DELETE'
 
 
+def test_schema_version_read_on_a_share_leaves_wal(monkeypatch: pytest.MonkeyPatch) -> None:
+    with tempfile.TemporaryDirectory(dir=_test_dir()) as tmp:
+        backend = SQLiteMetadataBackend(tmp)
+        monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'ext4')])
+        backend.save(MetadataNode(tag='Volume'))
+        assert _journal_mode(backend.db_path) == 'WAL'
+        monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'cifs')])
+        assert backend.get_schema_version() == 1
+        assert _journal_mode(backend.db_path) == 'DELETE'
+        assert not os.path.exists(backend.db_path + '-shm')
+
+
 def test_mode_sqlite_cannot_use_is_a_warning(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
     monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'ext4')])
     conn = sqlite3.connect(':memory:')

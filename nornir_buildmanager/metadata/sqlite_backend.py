@@ -74,13 +74,15 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
         return 'sqlite'
 
     def get_schema_version(self) -> int:
+        """Return the stored schema version, or 0 if there is no readable database."""
         if not self.exists():
             return 0
         try:
-            conn = sqlite3.connect(self._db_path)
-            cur = conn.execute("SELECT value FROM schema_info WHERE key='schema_version'")
-            row = cur.fetchone()
-            conn.close()
+            conn = self._get_connection()
+            try:
+                row = conn.execute("SELECT value FROM schema_info WHERE key='schema_version'").fetchone()
+            finally:
+                conn.close()
             if row:
                 return int(row[0])
         except Exception:
