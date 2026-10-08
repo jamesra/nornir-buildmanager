@@ -17,7 +17,8 @@ from nornir_buildmanager.volumemanager import (
     SectionNode,
     VolumeManager,
 )
-from nornir_buildmanager.volumemanager.xcontainerelementwrapper import _save_link_element
+from nornir_buildmanager.volumemanager.container_storage import XmlContainerStorage
+from nornir_buildmanager.volumemanager.xcontainerelementwrapper import XContainerElementWrapper, _save_link_element
 from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 
 
@@ -70,7 +71,7 @@ class TestImportVolumeDataSave(unittest.TestCase):
         )
         child.text = "left < right"
 
-        self.volume._XContainerElementWrapper__SaveXML("Stream.xml", element)
+        XmlContainerStorage("Stream.xml").save_container(self._temp_dir, element)
 
         with open(os.path.join(self._temp_dir, "Stream.xml"), "rb") as handle:
             saved = handle.read()
@@ -87,8 +88,8 @@ class TestImportVolumeDataSave(unittest.TestCase):
                 "write",
                 side_effect=ValueError("encoding failed")):
             with self.assertRaisesRegex(ValueError, "encoding failed"):
-                self.volume._XContainerElementWrapper__SaveXML(
-                    "VolumeData.xml",
+                XContainerElementWrapper.storage.save_container(
+                    self._temp_dir,
                     ElementTree.Element("Volume", attrib={"Name": "new"}),
                 )
 
@@ -137,7 +138,7 @@ class TestImportVolumeDataSave(unittest.TestCase):
         block.ChildrenChanged = True
 
         with mock.patch.object(section, "sort", wraps=section.sort) as child_sort:
-            with mock.patch.object(block, "_XContainerElementWrapper__SaveXML"):
+            with mock.patch.object(XContainerElementWrapper, "storage"):
                 block._Save(recurse=False)
 
         child_sort.assert_not_called()

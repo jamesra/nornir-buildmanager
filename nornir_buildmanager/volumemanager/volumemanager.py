@@ -55,14 +55,7 @@ class VolumeManager:
             #    XMLTree = __LoadedVolumeXMLDict__[Filename]
             # else:
 
-            # I could use ElementTree.parse here.  However, there was a rare
-            # bug where saving the file would encounter a permissions error
-            # loading the file and closing it myself seems to have solved
-            # the problem
-            RawXML = None
-            with open(Filename, 'rb') as hFile:
-                RawXML = hFile.read()
-            VolumeRoot = ElementTree.fromstring(RawXML)
+            VolumeRoot = nornir_buildmanager.volumemanager.XContainerElementWrapper.storage.load_container(VolumePath)
             # VolumeData = Volumes.CreateFromDOM(XMLTree)
             # __LoadedVolumeXMLDict__[Filename] = XMLTree
 
