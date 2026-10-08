@@ -349,10 +349,8 @@ class StosGroupNode(XNamedContainerElementWrapped):
     def CleanIfInvalid(self) -> tuple[bool, str]:
         cleaned, reason = super(StosGroupNode, self).CleanIfInvalid()
 
-        # TODO: Deleting stale transforms and section mappinds needs to be enabled, but I identified this shortcoming in a remote and
-        # want to work on it in my own test environment
-        # if not cleaned:
-        # for mapping in self.SectionMappings:
-        # cleaned or mapping.CleanIfInvalid()
+        # Guard: do not recurse into SectionMappings here. ValidateSectionMapping
+        # (block) calls CleanIfInvalid on each mapping during pipeline validation;
+        # group-level recursion was deferred until that path is covered in tests.
 
         return cleaned, reason
