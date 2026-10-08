@@ -28,7 +28,7 @@ from hypothesis import strategies as st
 
 import nornir_buildmanager.volumemanager as vm
 from nornir_buildmanager.metadata import feature_flags, sqlite_read
-from nornir_buildmanager.metadata.migrate import verify_migration
+from nornir_buildmanager.metadata.migrate import migrate_volume, verify_migration
 from nornir_buildmanager.metadata.sqlite_backend import (
     DEFAULT_DB_FILENAME,
     SQLiteMetadataBackend,
@@ -347,3 +347,37 @@ def test_any_one_row_change_never_changes_the_loaded_tree(monkeypatch, query_roo
             volume = _load_all(root)
         assert canonical(volume) == from_xml
         assert sources and all(sources.values()) is (log.warnings() == [])
+
+
+_LEGACY_VOLUME_XML = """<?xml version='1.0' encoding='utf-8'?>
+<Volume Name="LegacyVolume" Path="." CreationDate="2020-06-01" Version="1.0">
+  <Block Name="TEM" Path="TEM" CreationDate="2020-06-01" Version="1.0">
+    <Section Name="0001" Path="0001" SectionNumber="1" CreationDate="2020-06-01" Version="1.0">
+      <Channel Name="TEM" Path="TEM" CreationDate="2020-06-01" Version="1.0">
+        <Filter FilterName="Raw" Path="Raw" CreationDate="2020-06-01" Version="1.0"/>
+      </Channel>
+    </Section>
+  </Block>
+</Volume>"""
+
+
+def test_legacy_section_and_filter_aliases_read_from_sqlite(monkeypatch, tmp_path):
+    """On-disk SectionNumber/FilterName must match normalized SQLite rows for parity (migration-style)."""
+    root = os.path.join(str(tmp_path), 'LegacyVolume')
+    os.makedirs(root, exist_ok=True)
+    xml_path = os.path.join(root, 'VolumeData.xml')
+    with open(xml_path, 'w', encoding='utf-8') as handle:
+        handle.write(_LEGACY_VOLUME_XML)
+    result = migrate_volume(root, merge_first=False, force=True)
+    assert result.success
+    monkeypatch.setenv(READ, '1')
+    parsed = ElementTree.parse(xml_path).getroot()
+    assert 'SectionNumber' in parsed.find('.//Section').attrib
+    loaded = sqlite_read.load_container_element(root, parsed)
+    assert loaded is not parsed
+    section = loaded.find('.//Section')
+    filt = loaded.find('.//Filter')
+    assert section.attrib.get('Number') == '1'
+    assert 'SectionNumber' not in section.attrib
+    assert filt.attrib.get('Name') == 'Raw'
+    assert 'FilterName' not in filt.attrib

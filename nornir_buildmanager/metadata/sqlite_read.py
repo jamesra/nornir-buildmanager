@@ -23,7 +23,6 @@ from xml.etree import ElementTree
 from . import feature_flags, shadow_write
 from .migrate import compare_trees
 from .sqlite_backend import SCHEMA_VERSION, SQLiteMetadataBackend
-from .volume_metadata import MetadataNode
 from .xml_backend import XMLMetadataBackend
 
 logger = logging.getLogger(__name__)
@@ -73,12 +72,6 @@ def _level(scope: str, reason: str) -> int:
     return logging.WARNING if first else logging.DEBUG
 
 
-def _as_node(element: ElementTree.Element) -> MetadataNode:
-    """Return *element* as a MetadataNode exactly as parsed, without the XML backend's legacy attribute renames."""
-    return MetadataNode(tag=element.tag, attribs=dict(element.attrib), text=element.text,
-                        children=[_as_node(child) for child in element])
-
-
 def _schema_version(conn: sqlite3.Connection) -> int:
     try:
         row = conn.execute("SELECT value FROM schema_info WHERE key='schema_version'").fetchone()
@@ -98,7 +91,8 @@ def _load_from_sqlite(container_dir: str, xml_root: ElementTree.Element) -> Elem
     if any(element.tail and element.tail.strip() for element in xml_root.iter()):
         raise _Fallback(container_dir, "it has text after an element, which the database does not store")
 
-    expected = _as_node(xml_root)
+    # Match shadow writes: parity uses the same legacy attribute renames as XMLMetadataBackend.load.
+    expected = XMLMetadataBackend(container_dir)._element_to_node(xml_root)
     conn = backend._get_connection()
     try:
         version = _schema_version(conn)
