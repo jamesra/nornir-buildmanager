@@ -96,11 +96,6 @@ class ImageNode(volumemanager.InputTransformHandler, volumemanager.XFileElementW
             dims = dims.split(' ')
             dims = (int(dims[1]), int(dims[0]))  # Report as [YDim, XDim]
 
-            # Todo: Remove after initial testing
-            # actual_dims = nornir_imageregistration.GetImageSize(self.FullPath)
-            # assert (actual_dims[0] == dims[0])
-            # assert (actual_dims[1] == dims[1])
-
         return dims  # type: ignore[return-value]
 
     @Dimensions.setter
