@@ -8,10 +8,12 @@ import os
 import tempfile
 import unittest
 import xml.etree.ElementTree as etree
+from unittest import mock
 
 import nornir_buildmanager.argparsexml as argparsexml
 import nornir_buildmanager.pipelinemanager as pm
 import nornir_shared.tasktimer
+from nornir_buildmanager.volumemanager.sectionnode import SectionNode
 
 ArgumentXML = '<Arguments> \
                  <Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/> \
@@ -191,6 +193,39 @@ class TestPipelineProgressLogging(unittest.TestCase):
         argset = pm.ArgumentSet()
         argset.AddArguments({"verbose": False})
         self.assertTrue(pm._should_log_pipeline_progress(argset))
+
+
+class TestProcessPythonCallElementArgs(unittest.TestCase):
+    """ProcessPythonCall hands the PythonCall element's attributes and Parameters to the stage."""
+
+    def test_stage_receives_element_attributes_and_parameters_then_clears_them(self) -> None:
+        manager = pm.PipelineManager(pipelinesRoot=etree.Element("Root"), pipelineData=etree.Element("Pipeline"))
+        manager.VolumeTree = mock.Mock()
+        argset = pm.ArgumentSet()
+        argset.AddArguments({"verbose": False, "debug": False, "Gamma": 2.5})
+        node = etree.fromstring(
+            '<PythonCall Module="m" Function="f" OutputFilterName="Leveled" Count="3" Ratio="0.5" Alias="#Gamma">'
+            '<Parameters><Entry Name="MinCutoff" Value="7"/><Entry Name="Gamma" Value="#Gamma"/></Parameters>'
+            '</PythonCall>')
+        captured: dict = {}
+
+        def stage(**kwargs):
+            captured.update(kwargs)
+            captured["Parameters"] = dict(kwargs["Parameters"])
+
+        with mock.patch("nornir_shared.reflection.get_module_class", return_value=stage), \
+                mock.patch.object(pm.PipelineManager, "_SaveNodes"), \
+                mock.patch("nornir_buildmanager.pipelinemanager.publish_run_event"), \
+                mock.patch("nornir_buildmanager.pipelinemanager.prettyoutput.CurseString"):
+            manager.ProcessPythonCall(argset, SectionNode.Create(Number=1), node)
+
+        self.assertEqual(captured["OutputFilterName"], "Leveled")
+        self.assertEqual(captured["Count"], 3)
+        self.assertEqual(captured["Ratio"], 0.5)
+        self.assertEqual(captured["Alias"], 2.5)
+        self.assertEqual(captured["Parameters"], {"MinCutoff": 7, "Gamma": 2.5})
+        self.assertEqual(argset.Attribs, {})
+        self.assertEqual(argset.Parameters, {})
 
 
 if __name__ == "__main__":

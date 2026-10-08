@@ -1031,11 +1031,11 @@ class PipelineManager:
             if not nested_stage:
                 prettyoutput.CurseString('Stage', stage_label)
 
-            # TODO: Update args from the element
-
             # Update dargs with the attributes
 
             ArgSet.AddAttributes(PipelineNode)
+
+            # Check for parameters under the function node and load them into the dictionary
             ArgSet.AddParameters(PipelineNode)
 
             stage_key = f"{PipelineModule}.{PipelineFunction} @ {PipelineManager._StageVolumeLabel(VolumeElem)}"
@@ -1048,11 +1048,6 @@ class PipelineManager:
 
             stage_started = time.perf_counter()
             try:
-                # PipelineManager.AddAttributes(dargs, PipelineNode)
-
-                # Check for parameters under the function node and load them into the dictionary
-                # PipelineManager.AddParameters(dargs, PipelineNode, dargsKeyname='Parameters')
-
                 kwargs = ArgSet.KeyWordArgs()
 
                 kwargs["Logger"] = PipelineManager.logger.getChild(PipelineFunction)
