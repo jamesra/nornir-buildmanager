@@ -10,9 +10,13 @@ Usage from command line:
 """
 
 import argparse
+import collections
+import dataclasses
+import enum
 import logging
 import os
 import sys
+from collections.abc import Iterator
 from typing import Optional
 
 from .volume_metadata import MetadataNode
@@ -163,7 +167,7 @@ def migrate_volume(volume_path: str,
 def verify_migration(volume_path: str,
                      db_filename: str = DEFAULT_DB_FILENAME) -> bool:
     """Verify that the SQLite database matches the XML source.
-    Returns True if they match."""
+    Logs each difference from compare_trees and returns True only if there are none."""
     xml_backend = XMLMetadataBackend(volume_path, single_file=False)
     sqlite_backend = SQLiteMetadataBackend(volume_path, db_filename)
 
@@ -181,46 +185,126 @@ def verify_migration(volume_path: str,
     if xml_root is None or sql_root is None:
         return False
 
-    return _compare_trees(xml_root, sql_root)
+    differences = compare_trees(xml_root, sql_root)
+    for diff in differences:
+        logger.error("Parity difference (%s) at %s: XML=%r SQLite=%r",
+                     diff.kind.value, diff.path, diff.expected, diff.actual)
+    return not differences
 
 
-def _compare_trees(a: MetadataNode, b: MetadataNode, path: str = '') -> bool:
-    """Recursively compare two metadata trees for structural equality."""
-    current_path = f"{path}/{a.tag}"
+_LINK_SUFFIX = '_Link'
 
-    if a.tag != b.tag:
-        logger.error("Tag mismatch at %s: %s vs %s", current_path, a.tag, b.tag)
-        return False
 
-    if a.attribs != b.attribs:
-        diff_keys = set(a.attribs.keys()) ^ set(b.attribs.keys())
-        val_diffs = {k for k in set(a.attribs.keys()) & set(b.attribs.keys())
-                     if a.attribs[k] != b.attribs[k]}
-        logger.error("Attribute mismatch at %s: missing/extra keys=%s, value diffs=%s",
-                      current_path, diff_keys, val_diffs)
-        return False
+class DifferenceKind(enum.Enum):
+    """Kind of a difference reported by compare_trees."""
+    TAG = 'tag'
+    LINK = 'link'
+    ATTRIBUTE = 'attribute'
+    ATTRIBUTE_ORDER = 'attribute_order'
+    TEXT = 'text'
+    WHITESPACE_TEXT = 'whitespace_text'
+    MISSING_CHILD = 'missing_child'
+    EXTRA_CHILD = 'extra_child'
+    CHILD_ORDER = 'child_order'
 
-    # Normalize text comparison (both None and empty/whitespace-only are equivalent)
-    a_text = a.text.strip() if a.text else None
-    b_text = b.text.strip() if b.text else None
-    a_text = a_text if a_text else None
-    b_text = b_text if b_text else None
-    if a_text != b_text:
-        logger.error("Text mismatch at %s: %r vs %r", current_path, a_text, b_text)
-        return False
 
-    if len(a.children) != len(b.children):
-        a_tags = [c.tag for c in a.children]
-        b_tags = [c.tag for c in b.children]
-        logger.error("Child count mismatch at %s: %d vs %d (%s vs %s)",
-                      current_path, len(a.children), len(b.children), a_tags, b_tags)
-        return False
+@dataclasses.dataclass(frozen=True)
+class TreeDifference:
+    """One difference between the expected (XML) tree and the actual tree.
 
-    for ca, cb in zip(a.children, b.children):
-        if not _compare_trees(ca, cb, current_path):
-            return False
+    ``path`` names the node as ``/Tag[index]/...`` using indices in the expected
+    tree; attribute differences append ``@Name``, and child differences
+    (missing, extra, order) name the parent.  ``expected`` and ``actual`` are
+    ``None`` on the side where the attribute or child is absent."""
+    path: str
+    kind: DifferenceKind
+    expected: object
+    actual: object
 
-    return True
+
+def compare_trees(expected: MetadataNode, actual: MetadataNode) -> list[TreeDifference]:
+    """Return every difference between two metadata trees; empty when they match.
+
+    Text is compared exactly; a difference only in whitespace (including
+    ``None`` versus whitespace-only text) is reported as WHITESPACE_TEXT.
+    Children are paired by (tag without ``_Link``, Name, Path) in document
+    order, so an inserted or reordered sibling does not misalign the rest."""
+    return list(_iter_differences(expected, actual, f"/{expected.tag}"))
+
+
+def _base_tag(tag: str) -> str:
+    return tag.removesuffix(_LINK_SUFFIX)
+
+
+def _child_key(node: MetadataNode) -> tuple[str, str | None, str | None]:
+    return _base_tag(node.tag), node.attribs.get('Name'), node.attribs.get('Path')
+
+
+def _iter_differences(expected: MetadataNode, actual: MetadataNode,
+                      path: str) -> Iterator[TreeDifference]:
+    if expected.tag != actual.tag:
+        is_link = _base_tag(expected.tag) == _base_tag(actual.tag)
+        kind = DifferenceKind.LINK if is_link else DifferenceKind.TAG
+        # A link stub and its resolved container hold different attributes and
+        # children by design, so comparing below this point is only noise.
+        yield TreeDifference(path, kind, expected.tag, actual.tag)
+        return
+
+    yield from _iter_attribute_differences(expected, actual, path)
+
+    if expected.text != actual.text:
+        whitespace_only = (expected.text or '').split() == (actual.text or '').split()
+        kind = DifferenceKind.WHITESPACE_TEXT if whitespace_only else DifferenceKind.TEXT
+        yield TreeDifference(path, kind, expected.text, actual.text)
+
+    yield from _iter_child_differences(expected, actual, path)
+
+
+def _iter_attribute_differences(expected: MetadataNode, actual: MetadataNode,
+                                path: str) -> Iterator[TreeDifference]:
+    keys = list(expected.attribs) + [k for k in actual.attribs if k not in expected.attribs]
+    for key in keys:
+        expected_value = expected.attribs.get(key)
+        actual_value = actual.attribs.get(key)
+        if expected_value != actual_value:
+            yield TreeDifference(f"{path}@{key}", DifferenceKind.ATTRIBUTE,
+                                 expected_value, actual_value)
+
+    expected_order = tuple(k for k in expected.attribs if k in actual.attribs)
+    actual_order = tuple(k for k in actual.attribs if k in expected.attribs)
+    if expected_order != actual_order:
+        yield TreeDifference(path, DifferenceKind.ATTRIBUTE_ORDER,
+                             expected_order, actual_order)
+
+
+def _iter_child_differences(expected: MetadataNode, actual: MetadataNode,
+                            path: str) -> Iterator[TreeDifference]:
+    unmatched: dict[tuple, collections.deque[int]] = {}
+    for j, child in enumerate(actual.children):
+        unmatched.setdefault(_child_key(child), collections.deque()).append(j)
+
+    pairs: list[tuple[int, int]] = []
+    for i, child in enumerate(expected.children):
+        candidates = unmatched.get(_child_key(child))
+        if candidates:
+            pairs.append((i, candidates.popleft()))
+        else:
+            yield TreeDifference(path, DifferenceKind.MISSING_CHILD, _child_key(child), None)
+
+    for j in sorted(j for candidates in unmatched.values() for j in candidates):
+        yield TreeDifference(path, DifferenceKind.EXTRA_CHILD,
+                             None, _child_key(actual.children[j]))
+
+    actual_indices = [j for _, j in pairs]
+    if actual_indices != sorted(actual_indices):
+        yield TreeDifference(
+            path, DifferenceKind.CHILD_ORDER,
+            tuple(_child_key(expected.children[i]) for i, _ in pairs),
+            tuple(_child_key(actual.children[j]) for j in sorted(actual_indices)))
+
+    for i, j in pairs:
+        child = expected.children[i]
+        yield from _iter_differences(child, actual.children[j], f"{path}/{child.tag}[{i}]")
 
 
 def main():

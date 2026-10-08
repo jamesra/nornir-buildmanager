@@ -18,6 +18,8 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
+from hypothesis import given, settings, strategies as st
+
 # Import the metadata subpackage directly using importlib to avoid triggering
 # the heavy-dependency nornir_buildmanager.__init__ import chain.
 import importlib
@@ -66,7 +68,9 @@ verify_migration = _migrate.verify_migration
 count_tree = _migrate.count_tree
 merge_xml_to_single_file = _migrate.merge_xml_to_single_file
 MigrationResult = _migrate.MigrationResult
-_compare_trees = _migrate._compare_trees
+compare_trees = _migrate.compare_trees
+DifferenceKind = _migrate.DifferenceKind
+TreeDifference = _migrate.TreeDifference
 
 
 def _build_synthetic_volume_xml() -> str:
@@ -390,7 +394,7 @@ class TestSQLiteBackend(unittest.TestCase):
 
         reloaded = sql_backend.load()
         self.assertIsNotNone(reloaded)
-        self.assertTrue(_compare_trees(root, reloaded))
+        self.assertEqual(compare_trees(root, reloaded), [])
 
     def test_node_text_preserved(self):
         vol_path = os.path.join(self.test_dir, 'TextVol')
@@ -538,7 +542,7 @@ class TestMigration(unittest.TestCase):
         sql_backend.save(xml_root)
         sql_root = sql_backend.load()
 
-        self.assertTrue(_compare_trees(xml_root, sql_root))
+        self.assertEqual(compare_trees(xml_root, sql_root), [])
 
     def test_deep_hierarchy_roundtrip(self):
         """Test a deeply nested structure survives the round trip."""
@@ -556,7 +560,7 @@ class TestMigration(unittest.TestCase):
         sql_backend.save(node)
         reloaded = sql_backend.load()
 
-        self.assertTrue(_compare_trees(node, reloaded))
+        self.assertEqual(compare_trees(node, reloaded), [])
 
     def test_many_children_order_preserved(self):
         """Test that child ordering is preserved through SQLite."""
@@ -576,8 +580,34 @@ class TestMigration(unittest.TestCase):
                              f"Child order not preserved at index {i}")
 
 
+_ATTRIBS = st.dictionaries(
+    st.sampled_from(['Name', 'Path', 'Number', 'CreationDate', 'Version', 'Checksum']),
+    st.text(alphabet=st.characters(codec='utf-8'), max_size=6), max_size=4)
+_TEXTS = st.one_of(st.none(), st.text(alphabet=' \n\tA1,', max_size=6))
+_TAGS = st.sampled_from(['Block', 'Section', 'Section_Link', 'Channel', 'Filter', 'Notes'])
+_TREES = st.recursive(
+    st.builds(MetadataNode, _TAGS, _ATTRIBS, _TEXTS),
+    lambda kids: st.builds(MetadataNode, _TAGS, _ATTRIBS, _TEXTS, st.lists(kids, max_size=3)),
+    max_leaves=12)
+
+
+def _clone(node):
+    return MetadataNode(node.tag, node.attribs, node.text, [_clone(c) for c in node.children])
+
+
+def _paths(node, path):
+    """Yield (path, node) using compare_trees' path convention."""
+    yield path, node
+    for i, child in enumerate(node.children):
+        yield from _paths(child, f"{path}/{child.tag}[{i}]")
+
+
+def _diff(path, kind, expected, actual):
+    return TreeDifference(path, getattr(DifferenceKind, kind), expected, actual)
+
+
 class TestCompareTreesFunction(unittest.TestCase):
-    """Tests for the tree comparison utility."""
+    """Tests for the structured tree comparison."""
 
     def test_identical_trees(self):
         a = MetadataNode('Volume', {'Name': 'Test'}, children=[
@@ -586,32 +616,147 @@ class TestCompareTreesFunction(unittest.TestCase):
         b = MetadataNode('Volume', {'Name': 'Test'}, children=[
             MetadataNode('Block', {'Name': 'B1'})
         ])
-        self.assertTrue(_compare_trees(a, b))
+        self.assertEqual(compare_trees(a, b), [])
 
     def test_tag_mismatch(self):
-        a = MetadataNode('Volume')
-        b = MetadataNode('NotVolume')
-        self.assertFalse(_compare_trees(a, b))
+        diffs = compare_trees(MetadataNode('Volume'), MetadataNode('NotVolume'))
+        self.assertEqual(diffs, [_diff('/Volume', 'TAG', 'Volume', 'NotVolume')])
 
-    def test_attrib_mismatch(self):
-        a = MetadataNode('Volume', {'Name': 'A'})
-        b = MetadataNode('Volume', {'Name': 'B'})
-        self.assertFalse(_compare_trees(a, b))
+    def test_attribute_value_missing_and_extra(self):
+        a = MetadataNode('Volume', {'Name': 'A', 'Path': '.'})
+        b = MetadataNode('Volume', {'Name': 'B', 'Version': '1'})
+        self.assertEqual(compare_trees(a, b), [
+            _diff('/Volume@Name', 'ATTRIBUTE', 'A', 'B'),
+            _diff('/Volume@Path', 'ATTRIBUTE', '.', None),
+            _diff('/Volume@Version', 'ATTRIBUTE', None, '1'),
+        ])
 
-    def test_child_count_mismatch(self):
+    def test_attribute_order_reported(self):
+        a = MetadataNode('Volume', {'Name': 'V', 'Path': '.', 'Version': '1'})
+        b = MetadataNode('Volume', {'Version': '1', 'Name': 'V', 'Path': '.'})
+        self.assertEqual(compare_trees(a, b), [
+            _diff('/Volume', 'ATTRIBUTE_ORDER', ('Name', 'Path', 'Version'),
+                  ('Version', 'Name', 'Path'))])
+
+    def test_extra_child(self):
         a = MetadataNode('Volume', children=[MetadataNode('Block')])
         b = MetadataNode('Volume', children=[MetadataNode('Block'), MetadataNode('Block')])
-        self.assertFalse(_compare_trees(a, b))
+        self.assertEqual(compare_trees(a, b),
+                         [_diff('/Volume', 'EXTRA_CHILD', None, ('Block', None, None))])
 
     def test_text_mismatch(self):
-        a = MetadataNode('Notes', text='hello')
-        b = MetadataNode('Notes', text='world')
-        self.assertFalse(_compare_trees(a, b))
+        diffs = compare_trees(MetadataNode('Notes', text='hello'),
+                              MetadataNode('Notes', text='world'))
+        self.assertEqual(diffs, [_diff('/Notes', 'TEXT', 'hello', 'world')])
 
-    def test_whitespace_text_treated_as_none(self):
-        a = MetadataNode('Notes', text=None)
-        b = MetadataNode('Notes', text='  \n  ')
-        self.assertTrue(_compare_trees(a, b))
+    def test_whitespace_only_text_reported_separately(self):
+        for expected, actual in [(None, '  \n  '), ('', None), ('99, 100', ' 99,\n  100 ')]:
+            with self.subTest(expected=expected, actual=actual):
+                diffs = compare_trees(MetadataNode('Notes', text=expected),
+                                      MetadataNode('Notes', text=actual))
+                self.assertEqual(diffs, [_diff('/Notes', 'WHITESPACE_TEXT', expected, actual)])
+
+    def test_inserted_child_does_not_misalign_siblings(self):
+        def block(*numbers):
+            return MetadataNode('Block', children=[
+                MetadataNode('Section', {'Name': n, 'Path': n}) for n in numbers])
+        expected = block('0001', '0003')
+        actual = block('0001', '0002', '0003')
+        actual.children[2].attribs['Version'] = '2'
+        self.assertEqual(compare_trees(expected, actual), [
+            _diff('/Block', 'EXTRA_CHILD', None, ('Section', '0002', '0002')),
+            _diff('/Block/Section[1]@Version', 'ATTRIBUTE', None, '2'),
+        ])
+
+    def test_reordered_children_reported_once(self):
+        keys = [('Section', n, n) for n in ('0001', '0002', '0003')]
+        expected = MetadataNode('Block', children=[MetadataNode(t, {'Name': n, 'Path': p})
+                                                   for t, n, p in keys])
+        actual = MetadataNode('Block', children=[_clone(expected.children[i]) for i in (2, 0, 1)])
+        self.assertEqual(compare_trees(expected, actual), [
+            _diff('/Block', 'CHILD_ORDER', tuple(keys), (keys[2], keys[0], keys[1]))])
+
+    def test_link_stub_versus_resolved_container(self):
+        stub = MetadataNode('Section_Link', {'Name': '0001', 'Path': '0001'})
+        resolved = MetadataNode('Section', {'Name': '0001', 'Path': '0001', 'Number': '1'},
+                                children=[MetadataNode('Channel', {'Name': 'TEM'})])
+        diffs = compare_trees(MetadataNode('Block', children=[resolved]),
+                              MetadataNode('Block', children=[stub]))
+        self.assertEqual(diffs, [_diff('/Block/Section[0]', 'LINK', 'Section', 'Section_Link')])
+
+    @given(_TREES)
+    @settings(max_examples=60, deadline=None)
+    def test_sqlite_round_trip_has_no_differences(self, tree):
+        with tempfile.TemporaryDirectory(prefix='nornir_test_parity_') as vol_path:
+            backend = SQLiteMetadataBackend(vol_path)
+            backend.save(tree)
+            self.assertEqual(compare_trees(tree, backend.load()), [])
+
+    @given(_TREES, st.data())
+    @settings(max_examples=60, deadline=None)
+    def test_one_added_attribute_is_the_only_difference(self, tree, data):
+        actual = _clone(tree)
+        expected_paths = list(_paths(tree, f"/{tree.tag}"))
+        actual_nodes = [node for _, node in _paths(actual, f"/{actual.tag}")]
+        index = data.draw(st.integers(0, len(actual_nodes) - 1))
+        actual_nodes[index].attribs['Probe'] = 'x'
+        self.assertEqual(compare_trees(tree, actual),
+                         [_diff(f"{expected_paths[index][0]}@Probe", 'ATTRIBUTE', None, 'x')])
+
+    @given(st.integers(1, 8).flatmap(lambda n: st.permutations(range(n))))
+    def test_permuted_children_report_child_order_only(self, order):
+        children = [MetadataNode('Section', {'Name': str(i)}) for i in range(len(order))]
+        expected = MetadataNode('Block', children=children)
+        actual = MetadataNode('Block', children=[_clone(children[i]) for i in order])
+        kinds = [d.kind for d in compare_trees(expected, actual)]
+        identity = list(order) == sorted(order)
+        self.assertEqual(kinds, [] if identity else [DifferenceKind.CHILD_ORDER])
+
+
+class TestXmlParityInputs(unittest.TestCase):
+    """The XML backend must not hide differences from the parity check."""
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp(prefix='nornir_test_parity_xml_')
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_text_is_loaded_and_migrated_exactly(self):
+        vol_path = _write_synthetic_volume(self.test_dir)
+        xml_path = os.path.join(vol_path, 'VolumeData.xml')
+        with open(xml_path, encoding='utf-8') as f:
+            content = f.read().replace('>Some volume notes here<', '>  padded notes\n<')
+        with open(xml_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+        for single_file in (False, True):
+            root = XMLMetadataBackend(vol_path, single_file=single_file).load()
+            self.assertEqual(root.find_child('Notes').text, '  padded notes\n')
+        self.assertTrue(migrate_volume(vol_path, merge_first=False, force=True).success)
+        self.assertTrue(verify_migration(vol_path))
+
+    def test_unresolved_link_keeps_link_tag_and_is_reported(self):
+        vol_path = _write_sharded_volume(self.test_dir)
+        shutil.rmtree(os.path.join(vol_path, 'TEM', '0001'))
+        stub = XMLMetadataBackend(vol_path).load().children[0].children[0]
+        self.assertEqual(stub.tag, 'Section_Link')
+        self.assertTrue(migrate_volume(vol_path, merge_first=False, force=True).success)
+        self.assertTrue(verify_migration(vol_path))
+
+        _write_sharded_volume(self.test_dir)
+        self.assertFalse(verify_migration(vol_path))
+        diffs = compare_trees(XMLMetadataBackend(vol_path).load(),
+                              SQLiteMetadataBackend(vol_path).load())
+        self.assertEqual(diffs, [_diff('/Volume/Block[0]/Section[0]', 'LINK',
+                                       'Section', 'Section_Link')])
+
+    def test_unparseable_shard_keeps_link_tag(self):
+        vol_path = _write_sharded_volume(self.test_dir)
+        with open(os.path.join(vol_path, 'TEM', '0001', 'VolumeData.xml'), 'w') as f:
+            f.write('<Section')
+        stub = XMLMetadataBackend(vol_path).load().children[0].children[0]
+        self.assertEqual((stub.tag, stub.attribs['Path']), ('Section_Link', '0001'))
 
 
 if __name__ == '__main__':

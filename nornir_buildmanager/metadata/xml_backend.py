@@ -93,7 +93,7 @@ class XMLMetadataBackend(VolumeMetadataBackend):
         node = MetadataNode(
             tag=elem.tag,
             attribs=dict(elem.attrib),
-            text=elem.text.strip() if elem.text and elem.text.strip() else elem.text,
+            text=elem.text,
             children=children
         )
         self._normalize_node(node)
@@ -107,7 +107,8 @@ class XMLMetadataBackend(VolumeMetadataBackend):
         for child_elem in elem:
             tag = child_elem.tag
             if tag.endswith('_Link'):
-                real_tag = tag[:-5]  # Strip '_Link'
+                # An unresolved link keeps its *_Link tag so the missing shard stays
+                # visible to parity checks instead of posing as an empty container.
                 child_path = child_elem.attrib.get('Path', '')
                 sub_dir = os.path.join(container_path, child_path)
                 sub_xml = os.path.join(sub_dir, 'VolumeData.xml')
@@ -120,12 +121,12 @@ class XMLMetadataBackend(VolumeMetadataBackend):
                     except (ElementTree.ParseError, IOError) as e:
                         logger.warning("Could not load linked XML %s: %s", sub_xml, e)
                         children.append(MetadataNode(
-                            tag=real_tag,
+                            tag=tag,
                             attribs=dict(child_elem.attrib)
                         ))
                 else:
                     children.append(MetadataNode(
-                        tag=real_tag,
+                        tag=tag,
                         attribs=dict(child_elem.attrib)
                     ))
             else:
@@ -134,7 +135,7 @@ class XMLMetadataBackend(VolumeMetadataBackend):
         node = MetadataNode(
             tag=elem.tag,
             attribs=dict(elem.attrib),
-            text=elem.text.strip() if elem.text and elem.text.strip() else elem.text,
+            text=elem.text,
             children=children
         )
         self._normalize_node(node)

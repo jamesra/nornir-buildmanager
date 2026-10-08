@@ -112,7 +112,7 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
                 return None
 
             cur_attribs = conn.execute(
-                "SELECT node_id, key, value FROM node_attribs"
+                "SELECT node_id, key, value FROM node_attribs ORDER BY id"
             )
             attrib_map: Dict[int, Dict[str, str]] = {}
             for node_id, key, value in cur_attribs.fetchall():
