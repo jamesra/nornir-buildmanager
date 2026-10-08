@@ -23,45 +23,43 @@ import pytest
 
 import nornir_buildmanager.volumemanager as vm
 from nornir_buildmanager.metadata import feature_flags, sqlite_read
-from nornir_buildmanager.metadata.migrate import migrate_volume
+from nornir_buildmanager.metadata.migrate import migrate_volume, verify_migration
 from nornir_buildmanager.metadata.sqlite_backend import DEFAULT_DB_FILENAME
 from nornir_buildmanager.volumemanager.levelnode import LevelNode
 
 READ = feature_flags.READ_SQLITE_ENV
 SHADOW = feature_flags.SHADOW_SQLITE_ENV
+TIMINGS_VOLUME_ENV = feature_flags.TIMINGS_VOLUME_ENV
 
-TIMINGS_VOLUME_ENV = 'NORNIR_VOLUME_METADATA_TIMINGS_VOLUME_PATH'
 _DEFAULT_REL = os.path.join('PlatformRaw', 'PMG', '6259_Registered')
 _COPY_NAME = 'metadata-port-read-timings'
 _TIMING_REPEATS = 3
 _TIMING_WARMUP = 1
-_LINK_TAGS = frozenset({'Block_Link', 'Section_Link', 'Channel_Link', 'StosGroup_Link', 'Filter_Link'})
 
 
 def _testinput_root() -> str:
     return os.environ.get('TESTINPUTPATH', '/nornir-testdata')
 
 
-def _prune_missing_links(root: str) -> None:
-    """Drop *_Link nodes whose target folder is absent (pipeline-only stubs on this fixture)."""
+def _remove_dead_links(root: str) -> None:
+    """Drop *_Link nodes whose target has no VolumeData.xml via normal container save."""
     for dirpath, _, filenames in os.walk(root):
         if 'VolumeData.xml' not in filenames:
             continue
-        path = os.path.join(dirpath, 'VolumeData.xml')
-        tree = ElementTree.parse(path)
-        element = tree.getroot()
-        container_dir = dirpath
+        container = vm.VolumeManager.Load(dirpath, UseCache=False)
+        if container is None:
+            continue
         removed = False
-        for link in list(element):
-            if link.tag not in _LINK_TAGS:
+        for link in list(container):
+            if not link.tag.endswith('_Link'):
                 continue
-            target = os.path.join(container_dir, link.attrib.get('Path', ''))
+            target = os.path.join(dirpath, link.attrib.get('Path', ''))
             if os.path.isfile(os.path.join(target, 'VolumeData.xml')):
                 continue
-            element.remove(link)
+            container.remove(link)
             removed = True
         if removed:
-            tree.write(path, encoding='utf-8', xml_declaration=True)
+            container.Save()
 
 
 def _prepare_volume_copy() -> str:
@@ -76,7 +74,7 @@ def _prepare_volume_copy() -> str:
     if os.path.isdir(dest):
         shutil.rmtree(dest)
     shutil.copytree(source, dest)
-    _prune_missing_links(dest)
+    _remove_dead_links(dest)
     return dest
 
 
@@ -152,6 +150,18 @@ def sources(monkeypatch) -> dict[str, bool]:
     return used
 
 
+def _may_fallback_from_sqlite(container_dir: str, volume_root: str) -> bool:
+    """Containers whose on-disk shard layout does not round-trip in per-container DB rows.
+
+    ``verify_migration`` compares the merged logical tree; Block and some Filter shards on
+    PMG 6259_Registered still fall back when only that folder's ``VolumeData.xml`` is checked.
+    """
+    rel = os.path.relpath(container_dir, volume_root)
+    if rel == 'TEM':
+        return True
+    return os.path.basename(container_dir) in ('ShadingCorrected', 'Mask', 'Leveled')
+
+
 def _volume_with_db() -> str:
     override = os.environ.get(TIMINGS_VOLUME_ENV, '').strip()
     root = os.path.abspath(override) if override else _prepare_volume_copy()
@@ -160,11 +170,12 @@ def _volume_with_db() -> str:
     result = migrate_volume(root, merge_first=False, force=True)
     assert result.success, result.message
     assert os.path.isfile(os.path.join(root, DEFAULT_DB_FILENAME))
+    assert verify_migration(root), 'VolumeData.db must match XML before timings'
     return root
 
 
 def test_pmg_registered_timings_and_sqlite_read(monkeypatch, sources: dict[str, bool]) -> None:
-    root_off = _volume_with_db()
+    root = _volume_with_db()
     timings: dict[str, Any] = {
         'volume': _DEFAULT_REL,
         'repeats': _TIMING_REPEATS,
@@ -175,26 +186,34 @@ def test_pmg_registered_timings_and_sqlite_read(monkeypatch, sources: dict[str, 
     monkeypatch.delenv(SHADOW, raising=False)
     monkeypatch.delenv(READ, raising=False)
     timings['seconds']['flagsOff'] = {
-        'path': root_off,
-        'load': _time_load(root_off),
-        'loadAllLinked': _time_load_linked(root_off),
-        'noopSave': _time_noop_save(root_off),
+        'path': root,
+        'load': _time_load(root),
+        'loadAllLinked': _time_load_linked(root),
     }
-    root_on = _volume_with_db()
+
     monkeypatch.setenv(SHADOW, '1')
     monkeypatch.setenv(READ, '1')
     sources.clear()
-    volume = cast(vm.XContainerElementWrapper, vm.VolumeManager.Load(root_on, UseCache=False))
+    volume = cast(vm.XContainerElementWrapper, vm.VolumeManager.Load(root, UseCache=False))
     volume.LoadAllLinkedNodes()
     assert sources, 'expected container loads while the read flag is on'
-    sqlite_reads = sum(1 for used in sources.values() if used)
-    assert sqlite_reads >= len(sources) // 2, sources
+    for container_dir, used_sqlite in sources.items():
+        if _may_fallback_from_sqlite(container_dir, root):
+            continue
+        assert used_sqlite, container_dir
+    sqlite_reads = sum(sources.values())
+    allowed = sum(1 for d in sources if _may_fallback_from_sqlite(d, root))
+    assert sqlite_reads >= len(sources) - allowed, (sqlite_reads, len(sources), allowed, sources)
 
     timings['seconds']['shadowReadOn'] = {
-        'path': root_on,
-        'load': _time_load(root_on),
-        'loadAllLinked': _time_load_linked(root_on),
-        'noopSave': _time_noop_save(root_on),
+        'path': root,
+        'load': _time_load(root),
+        'loadAllLinked': _time_load_linked(root),
+        'noopSave': _time_noop_save(root),
     }
+
+    monkeypatch.delenv(SHADOW, raising=False)
+    monkeypatch.delenv(READ, raising=False)
+    timings['seconds']['flagsOff']['noopSave'] = _time_noop_save(root)
 
     print('TIMINGS ' + json.dumps(timings, sort_keys=True), flush=True)
