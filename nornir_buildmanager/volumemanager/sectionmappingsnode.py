@@ -44,7 +44,7 @@ class SectionMappingsNode(XElementWrapper):
         :rtype TransformNode:
         """
 
-        # TODO: 3/10/2017 I believe I can stop checking MappedSectionNumber because it is built into the SectionMapping node.  This is a sanity check before I pull the plug
+        # Caller sanity check: MappedSectionNumber must match this SectionMappings node attribute.
         if MappedSectionNumber != self.MappedSectionNumber:
             raise ValueError(
                 f"MappedSectionNumber {MappedSectionNumber!r} does not match "
