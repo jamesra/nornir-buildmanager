@@ -29,12 +29,13 @@ from nornir_buildmanager.volumemanager.levelnode import LevelNode
 
 READ = feature_flags.READ_SQLITE_ENV
 SHADOW = feature_flags.SHADOW_SQLITE_ENV
-TIMINGS_VOLUME_ENV = feature_flags.TIMINGS_VOLUME_ENV
 
 _DEFAULT_REL = os.path.join('PlatformRaw', 'PMG', '6259_Registered')
 _COPY_NAME = 'metadata-port-read-timings'
 _TIMING_REPEATS = 3
 _TIMING_WARMUP = 1
+_LINK_TAGS = frozenset({'Block_Link', 'Section_Link', 'Channel_Link', 'StosGroup_Link', 'Filter_Link'})
+_EXEMPT_ROOT_TAGS = frozenset({'Block', 'Section', 'Channel', 'StosGroup'})
 
 
 def _testinput_root() -> str:
@@ -51,7 +52,7 @@ def _remove_dead_links(root: str) -> None:
             continue
         removed = False
         for link in list(container):
-            if not link.tag.endswith('_Link'):
+            if link.tag not in _LINK_TAGS:
                 continue
             target = os.path.join(dirpath, link.attrib.get('Path', ''))
             if os.path.isfile(os.path.join(target, 'VolumeData.xml')):
@@ -150,23 +151,56 @@ def sources(monkeypatch) -> dict[str, bool]:
     return used
 
 
-def _may_fallback_from_sqlite(container_dir: str, volume_root: str) -> bool:
-    """Containers whose on-disk shard layout does not round-trip in per-container DB rows.
-
-    ``verify_migration`` compares the merged logical tree; Block and some Filter shards on
-    PMG 6259_Registered still fall back when only that folder's ``VolumeData.xml`` is checked.
-    """
+def _is_filter_link_shard(container_dir: str, volume_root: str) -> bool:
+    """True when the parent channel's ``VolumeData.xml`` links here with ``Filter_Link``."""
     rel = os.path.relpath(container_dir, volume_root)
-    if rel == 'TEM':
+    parts = rel.split(os.sep)
+    if len(parts) < 2:
+        return False
+    parent_xml = os.path.join(volume_root, *parts[:-1], 'VolumeData.xml')
+    if not os.path.isfile(parent_xml):
+        return False
+    shard_name = parts[-1]
+    parent = ElementTree.parse(parent_xml).getroot()
+    return any(
+        child.tag == 'Filter_Link' and child.attrib.get('Path') == shard_name for child in parent
+    )
+
+
+def _container_in_sqlite_exempt_set(container_dir: str, volume_root: str) -> bool:
+    """Block/Section/Channel/StosGroup containers and ``Filter_Link`` shards may fall back when parity fails."""
+    xml_path = os.path.join(container_dir, 'VolumeData.xml')
+    root_tag = ElementTree.parse(xml_path).getroot().tag
+    if root_tag in _EXEMPT_ROOT_TAGS:
         return True
-    return os.path.basename(container_dir) in ('ShadingCorrected', 'Mask', 'Leveled')
+    return root_tag == 'Filter' and _is_filter_link_shard(container_dir, volume_root)
+
+
+def _container_sqlite_parity_matches(container_dir: str) -> bool:
+    """Same per-container check as ``sqlite_read.load_container_element`` before serving SQLite rows."""
+    xml_path = os.path.join(container_dir, 'VolumeData.xml')
+    xml_root = ElementTree.parse(xml_path).getroot()
+    try:
+        sqlite_read._load_from_sqlite(container_dir, xml_root)
+    except sqlite_read._Fallback:
+        return False
+    return True
+
+
+def _may_fallback_from_sqlite(container_dir: str, volume_root: str) -> bool:
+    """True when this container type may use XML because its rows do not match its file."""
+    if not _container_in_sqlite_exempt_set(container_dir, volume_root):
+        return False
+    return not _container_sqlite_parity_matches(container_dir)
 
 
 def _volume_with_db() -> str:
-    override = os.environ.get(TIMINGS_VOLUME_ENV, '').strip()
+    override = feature_flags.timings_volume_path()
     root = os.path.abspath(override) if override else _prepare_volume_copy()
     if override and not os.path.isfile(os.path.join(root, 'VolumeData.xml')):
-        pytest.skip(f'{TIMINGS_VOLUME_ENV} is not a volume root: {override!r}')
+        pytest.skip(
+            f'{feature_flags.TIMINGS_VOLUME_ENV} is not a volume root: {override!r}'
+        )
     result = migrate_volume(root, merge_first=False, force=True)
     assert result.success, result.message
     assert os.path.isfile(os.path.join(root, DEFAULT_DB_FILENAME))
@@ -202,8 +236,18 @@ def test_pmg_registered_timings_and_sqlite_read(monkeypatch, sources: dict[str, 
             continue
         assert used_sqlite, container_dir
     sqlite_reads = sum(sources.values())
-    allowed = sum(1 for d in sources if _may_fallback_from_sqlite(d, root))
-    assert sqlite_reads >= len(sources) - allowed, (sqlite_reads, len(sources), allowed, sources)
+    exempt_dirs = [d for d in sources if _may_fallback_from_sqlite(d, root)]
+    timings['sqliteFallbackExempt'] = {
+        'totalContainers': len(sources),
+        'exemptCount': len(exempt_dirs),
+        'exemptRelativePaths': sorted(os.path.relpath(d, root) for d in exempt_dirs),
+    }
+    assert sqlite_reads >= len(sources) - len(exempt_dirs), (
+        sqlite_reads,
+        len(sources),
+        len(exempt_dirs),
+        sources,
+    )
 
     timings['seconds']['shadowReadOn'] = {
         'path': root,

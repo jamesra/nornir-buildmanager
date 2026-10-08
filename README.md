@@ -51,7 +51,7 @@ Every write to `VolumeData.db` (a shadow container upsert, a `nornir-migrate-vol
 
 Test-only: `tests/test_metadata_sqlite_concurrency.py` runs several writer processes through the shadow write at once. Its network-share test runs only when `NORNIR_VOLUME_METADATA_NET_TEST_PATH` names a writable folder on a network share (in the dev container, a share mounted with `NORNIR_NET_MOUNTS=1`, for example `/storage4`); it creates a `nornir-metadata-net-test-*` subfolder there and deletes it afterwards. Run it on the Windows host against the same share to cover the `msvcrt.locking` path.
 
-`tests/test_metadata_sqlite_read_timings.py` copies `PlatformRaw/PMG/6259_Registered` from `TESTINPUTPATH` into `TESTOUTPUTPATH`, builds `VolumeData.db`, and prints a single `TIMINGS` JSON line with median load and no-op save seconds (flags off versus shadow+read on). Set `NORNIR_VOLUME_METADATA_TIMINGS_VOLUME_PATH` to an existing writable copy of that volume to skip the copy step.
+`tests/test_metadata_sqlite_read_timings.py` copies `PlatformRaw/PMG/6259_Registered` from `TESTINPUTPATH` into `TESTOUTPUTPATH`, builds `VolumeData.db`, and prints a single `TIMINGS` JSON line with median load and no-op save seconds (flags off versus shadow+read on) plus PMG sqlite-fallback exempt counts. Set `NORNIR_VOLUME_METADATA_TIMINGS_VOLUME_PATH` to an existing writable copy of that volume to skip the copy step (`feature_flags.timings_volume_path()`).
 
 ## Documentation
 

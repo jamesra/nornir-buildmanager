@@ -27,3 +27,8 @@ def read_sqlite_enabled() -> bool:
     """Return True when container loads should build their tree from the volume's SQLite database
     whenever its rows for the container match VolumeData.xml."""
     return _enabled(READ_SQLITE_ENV)
+
+
+def timings_volume_path() -> str:
+    """Return ``NORNIR_VOLUME_METADATA_TIMINGS_VOLUME_PATH`` when set, else an empty string."""
+    return os.environ.get(TIMINGS_VOLUME_ENV, '').strip()
