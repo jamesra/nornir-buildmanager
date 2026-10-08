@@ -9,6 +9,7 @@ Creates synthetic test volumes (XML on disk) and verifies:
 - Sharded XML with _Link nodes
 - Older XML format normalization
 - Verification tool
+- XML/SQLite parity under random edit, save, and reload sequences (state machine)
 """
 
 import os
@@ -18,7 +19,8 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import Phase, given, settings, strategies as st
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
 
 # Import the metadata subpackage directly using importlib to avoid triggering
 # the heavy-dependency nornir_buildmanager.__init__ import chain.
@@ -757,6 +759,168 @@ class TestXmlParityInputs(unittest.TestCase):
             f.write('<Section')
         stub = XMLMetadataBackend(vol_path).load().children[0].children[0]
         self.assertEqual((stub.tag, stub.attribs['Path']), ('Section_Link', '0001'))
+
+
+# Legacy keys (SectionNumber, FilterName) are left out because XML load renames them by design.
+_MACHINE_KEYS = st.sampled_from(['Name', 'Path', 'Number', 'CreationDate', 'Version',
+                                 'Checksum', 'Type'])
+# Letters, digits, punctuation (including markup characters), symbols, spaces, tab, and newline.
+_MACHINE_VALUES = st.text(st.characters(categories=('L', 'N', 'P', 'S', 'Zs'),
+                                        include_characters='\t\n'), max_size=8)
+# No carriage return: XML parsing turns it into a newline, so XML-loaded trees never hold one.
+_MACHINE_TEXTS = st.one_of(st.none(), st.text(alphabet=' \n\tA1,<&', max_size=6))
+_MACHINE_NODES = st.recursive(
+    st.builds(MetadataNode, _TAGS, st.dictionaries(_MACHINE_KEYS, _MACHINE_VALUES, max_size=4),
+              _MACHINE_TEXTS),
+    lambda kids: st.builds(MetadataNode, _TAGS,
+                           st.dictionaries(_MACHINE_KEYS, _MACHINE_VALUES, max_size=4),
+                           _MACHINE_TEXTS, st.lists(kids, max_size=2)),
+    max_leaves=3)
+
+
+def _all_nodes(tree):
+    return [node for _, node in _paths(tree, '')]
+
+
+def _as_saved_by_xml(node, depth=0):
+    """Return the tree XMLMetadataBackend reads back after saving ``node``.
+
+    Empty text is not written, and ElementTree.indent replaces empty or
+    whitespace-only text of a node with children by its indentation."""
+    text = node.text or None
+    if node.children and (text is None or not text.strip()):
+        text = '\n' + '  ' * (depth + 1)
+    return MetadataNode(node.tag, node.attribs, text,
+                        [_as_saved_by_xml(c, depth + 1) for c in node.children])
+
+
+class BackendParityMachine(RuleBasedStateMachine):
+    """Edit one tree, save it to an XML and a SQLite volume, and reload from either.
+
+    After every step SQLite must hold exactly the last saved tree, and XML must
+    hold the SQLite tree with XML's save whitespace applied.  XML is loaded as a
+    single file because save() writes one file; *_Link resolution is covered by
+    TestXmlParityInputs."""
+    xml_backend_type = XMLMetadataBackend
+    sqlite_backend_type = SQLiteMetadataBackend
+
+    def __init__(self):
+        super().__init__()
+        self._dir = tempfile.TemporaryDirectory(prefix='nornir_test_parity_machine_')
+        self.xml = self.xml_backend_type(os.path.join(self._dir.name, 'xml'), single_file=True)
+        self.sqlite = self.sqlite_backend_type(os.path.join(self._dir.name, 'sqlite'))
+        self.tree = MetadataNode('Volume', {'Name': 'Machine', 'Path': '.'})
+        self._save_both()
+
+    def teardown(self):
+        self._dir.cleanup()
+
+    def _save_both(self):
+        self.xml.save(self.tree)
+        self.sqlite.save(self.tree)
+        self.saved = _clone(self.tree)
+
+    @rule(data=st.data(), child=_MACHINE_NODES)
+    def add_child(self, data, child):
+        parent = data.draw(st.sampled_from(_all_nodes(self.tree)), label='parent')
+        parent.children.insert(data.draw(st.integers(0, len(parent.children)), label='index'),
+                               child)
+
+    @rule(data=st.data(), key=_MACHINE_KEYS, value=_MACHINE_VALUES)
+    def set_attribute(self, data, key, value):
+        data.draw(st.sampled_from(_all_nodes(self.tree)), label='node').attribs[key] = value
+
+    @rule(data=st.data())
+    def remove_child(self, data):
+        # A no-op on a childless tree instead of a precondition, which Hypothesis would reject.
+        parents = [n for n in _all_nodes(self.tree) if n.children]
+        if parents:
+            parent = data.draw(st.sampled_from(parents), label='parent')
+            del parent.children[data.draw(st.integers(0, len(parent.children) - 1),
+                                          label='index')]
+
+    @rule()
+    def save(self):
+        self._save_both()
+
+    @rule(from_xml=st.booleans())
+    def reload(self, from_xml):
+        self.tree = (self.xml if from_xml else self.sqlite).load()
+
+    @invariant()
+    def saved_trees_match(self):
+        sqlite_tree = self.sqlite.load()
+        assert compare_trees(self.saved, sqlite_tree) == []
+        assert compare_trees(_as_saved_by_xml(sqlite_tree), self.xml.load()) == []
+
+
+TestBackendParityMachine = BackendParityMachine.TestCase
+TestBackendParityMachine.settings = settings(max_examples=60, stateful_step_count=30,
+                                             deadline=None)
+
+
+def _edited(node, edit):
+    copy = MetadataNode(node.tag, node.attribs, node.text,
+                        [_edited(c, edit) for c in node.children])
+    edit(copy)
+    return copy
+
+
+def _sort_attributes(node):
+    node.attribs = dict(sorted(node.attribs.items()))
+
+
+def _strip_text(node):
+    node.text = node.text and node.text.strip()
+
+
+def _drop_last_child(node):
+    del node.children[-1:]
+
+
+def _reverse_children(node):
+    node.children.reverse()
+
+
+class _EditingSqliteBackend(SQLiteMetadataBackend):
+    """SQLite backend that applies ``edit`` to every node before saving it."""
+    edit = staticmethod(lambda node: None)
+
+    def save(self, root):
+        super().save(_edited(root, self.edit))
+
+
+class _UnindentedXmlBackend(XMLMetadataBackend):
+    """XML backend that saves without ElementTree.indent."""
+
+    def save(self, root):
+        os.makedirs(self._volume_path, exist_ok=True)
+        ET.ElementTree(self._node_to_element(root)).write(
+            os.path.join(self._volume_path, 'VolumeData.xml'),
+            encoding='utf-8', xml_declaration=True)
+
+
+class TestBackendParityMachineCatchesBrokenBackends(unittest.TestCase):
+    """Each deliberately broken backend must make the parity machine fail."""
+
+    _settings = settings(max_examples=100, stateful_step_count=30, deadline=None,
+                         database=None, derandomize=True, phases=[Phase.generate],
+                         report_multiple_bugs=False)
+
+    def _assert_machine_fails(self, **backend_types):
+        machine = type('BrokenBackendParityMachine', (BackendParityMachine,), backend_types)
+        with self.assertRaises(AssertionError):
+            run_state_machine_as_test(machine, settings=self._settings)
+
+    def test_broken_sqlite_save(self):
+        for edit in (_sort_attributes, _strip_text, _drop_last_child, _reverse_children):
+            with self.subTest(edit.__name__):
+                broken = type(f'Sqlite{edit.__name__}', (_EditingSqliteBackend,),
+                              {'edit': staticmethod(edit)})
+                self._assert_machine_fails(sqlite_backend_type=broken)
+
+    def test_xml_save_without_reindent(self):
+        self._assert_machine_fails(xml_backend_type=_UnindentedXmlBackend)
 
 
 if __name__ == '__main__':
