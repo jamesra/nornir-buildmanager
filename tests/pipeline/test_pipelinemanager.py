@@ -10,10 +10,14 @@ import unittest
 import xml.etree.ElementTree as etree
 from unittest import mock
 
+from hypothesis import given, settings, strategies as st
+
 import nornir_buildmanager.argparsexml as argparsexml
 import nornir_buildmanager.pipelinemanager as pm
 import nornir_shared.tasktimer
+from nornir_buildmanager.volumemanager.blocknode import BlockNode
 from nornir_buildmanager.volumemanager.sectionnode import SectionNode
+from nornir_buildmanager.volumemanager.volumenode import VolumeNode
 
 ArgumentXML = '<Arguments> \
                  <Argument flag="-Gamma" dest="Gamma" help="Gamma value for intensity auto-level" required="False"/> \
@@ -193,6 +197,67 @@ class TestPipelineProgressLogging(unittest.TestCase):
         argset = pm.ArgumentSet()
         argset.AddArguments({"verbose": False})
         self.assertTrue(pm._should_log_pipeline_progress(argset))
+
+
+class TestEmptyVolumeFailFast(unittest.TestCase):
+    """Non-import pipelines must exit when Create=True yields a volume with no Blocks."""
+
+    def test_execute_exits_when_created_volume_has_no_blocks(self) -> None:
+        """Fail-fast path counts Blocks without materializing the full findall list."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pipeline = etree.Element("Pipeline", Name="AlignSections")
+            manager = pm.PipelineManager(etree.Element("Root"), pipeline)
+            args = mock.Mock(
+                volumepath=temp_dir, outputpath=temp_dir, debug=False, PipelineName=None,
+            )
+            with mock.patch("nornir_buildmanager.pipelinemanager.prettyoutput.Log"), \
+                    mock.patch("nornir_buildmanager.pipelinemanager.prettyoutput.LogErr"):
+                with self.assertRaises(SystemExit) as ctx:
+                    manager.Execute(args)
+                self.assertEqual(ctx.exception.code, 2)
+
+    def test_non_import_pipeline_runs_when_volume_has_blocks(self) -> None:
+        """Under-counting Blocks must not trigger fail-fast when VolumeData.xml existed."""
+        volume = VolumeNode.Create(Name="V", Path="/tmp/v")
+        volume.append(BlockNode.Create(Name="B0"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pipeline = etree.Element("Pipeline", Name="AlignSections")
+            manager = pm.PipelineManager(etree.Element("Root"), pipeline)
+            args = mock.Mock(
+                volumepath=temp_dir, outputpath=temp_dir, debug=False, PipelineName=None,
+            )
+            with mock.patch("nornir_buildmanager.pipelinemanager.os.path.exists", return_value=True), \
+                    mock.patch(
+                        "nornir_buildmanager.pipelinemanager.VolumeManager.Load",
+                        return_value=volume,
+                    ), \
+                    mock.patch("nornir_buildmanager.pipelinemanager.prettyoutput.Log"), \
+                    mock.patch.object(manager, "ExecuteChildPipelines", return_value=None):
+                result = manager.Execute(args)
+                self.assertIs(result, volume)
+
+    def test_import_pipeline_skips_empty_volume_fail_fast(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pipeline = etree.Element("Pipeline", Name="ImportVolume")
+            manager = pm.PipelineManager(etree.Element("Root"), pipeline)
+            args = mock.Mock(
+                volumepath=temp_dir, outputpath=temp_dir, debug=False, PipelineName=None,
+            )
+            with mock.patch("nornir_buildmanager.pipelinemanager.prettyoutput.Log"), \
+                    mock.patch.object(manager, "ExecuteChildPipelines", return_value=None):
+                volume = manager.Execute(args)
+                self.assertIsNotNone(volume)
+
+    @given(st.integers(min_value=0, max_value=12))
+    @settings(max_examples=25)
+    def test_block_count_equivalent_to_list_materialization(self, n_blocks: int) -> None:
+        volume = VolumeNode.Create(Name="V", Path="/tmp/v")
+        for i in range(n_blocks):
+            volume.append(BlockNode.Create(Name=f"B{i}"))
+        listed = len(list(volume.findall("Block")))
+        counted = sum(1 for _ in volume.findall("Block"))
+        self.assertEqual(listed, counted)
+        self.assertEqual(counted, n_blocks)
 
 
 class TestProcessPythonCallElementArgs(unittest.TestCase):

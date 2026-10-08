@@ -612,7 +612,7 @@ class PipelineManager:
         # Fail fast when Create=True invented an empty volume for a non-import pipeline.
         # Alignment/assemble stages select Block/Section and otherwise skip silently.
         if volume_tree is None:
-            block_count = len(list(self.VolumeTree.findall('Block')))
+            block_count = sum(1 for _ in self.VolumeTree.findall('Block'))
             pipeline_name = self._PipelineName or ""
             is_import_pipeline = pipeline_name.startswith("Import") or pipeline_name.startswith("Adopt")
             if (not volume_xml_existed or block_count == 0) and not is_import_pipeline:
