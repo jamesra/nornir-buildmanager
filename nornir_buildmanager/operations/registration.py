@@ -17,8 +17,6 @@ import nornir_buildmanager.volumemanager.transformnode
 import nornir_imageregistration
 import nornir_pools
 from nornir_shared import *
-from nornir_shared.processoutputinterceptor import ProcessOutputInterceptor, \
-    ProgressOutputInterceptor
 
 
 def TransformNodeToZeroOrigin(transform_node, **kwargs):
