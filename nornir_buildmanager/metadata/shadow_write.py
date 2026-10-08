@@ -92,11 +92,11 @@ def _shadow_container(container_dir: str) -> None:
         conn = backend._get_connection()
         try:
             backend._maybe_migrate_schema(conn)
-            if _root_id(conn) is None:
+            if root_id(conn) is None:
                 _bootstrap(conn, volume_root)
 
             with immediate_transaction(conn):
-                node_id = _find_container(conn, _root_id(conn), volume_root, container_dir)
+                node_id = find_container(conn, root_id(conn), volume_root, container_dir)
                 if node_id is not None:
                     _upsert_container(conn, node_id, saved, container_dir)
 
@@ -105,14 +105,15 @@ def _shadow_container(container_dir: str) -> None:
                 logger.debug("%s is not linked into the SQLite shadow yet", container_dir)
                 return
 
-            for diff in compare_trees(saved, _load_container_level(conn, node_id, saved)):
+            for diff in compare_trees(saved, load_container_level(conn, node_id, saved)):
                 logger.warning("SQLite shadow parity difference (%s) in container %s at %s: XML=%r SQLite=%r",
                                diff.kind.value, container_dir, diff.path, diff.expected, diff.actual)
         finally:
             conn.close()
 
 
-def _root_id(conn: sqlite3.Connection) -> int | None:
+def root_id(conn: sqlite3.Connection) -> int | None:
+    """Return the row id of the stored Volume root, or None for an empty database."""
     row = conn.execute("SELECT id FROM nodes WHERE parent_id IS NULL ORDER BY id LIMIT 1").fetchone()
     return row[0] if row else None
 
@@ -123,7 +124,7 @@ def _bootstrap(conn: sqlite3.Connection, volume_root: str) -> None:
     if root is None:
         raise ValueError(f"volume XML under {volume_root} could not be loaded")
     with immediate_transaction(conn):
-        if _root_id(conn) is None:
+        if root_id(conn) is None:
             insert_node(conn, root, None, 0)
 
 
@@ -131,7 +132,7 @@ def _is_same_or_inside(path: str, directory: str) -> bool:
     return path == directory or path.startswith(directory + os.sep)
 
 
-def _find_container(conn: sqlite3.Connection, node_id: int | None, node_dir: str,
+def find_container(conn: sqlite3.Connection, node_id: int | None, node_dir: str,
                     target_dir: str) -> int | None:
     """Return the row id of the container stored for *target_dir*, descending by ``Path`` attributes."""
     if node_id is None:
@@ -143,7 +144,7 @@ def _find_container(conn: sqlite3.Connection, node_id: int | None, node_dir: str
             continue
         child_dir = os.path.normpath(os.path.join(node_dir, path))
         if child_dir != node_dir and _is_same_or_inside(target_dir, child_dir):
-            found = _find_container(conn, child_id, child_dir, target_dir)
+            found = find_container(conn, child_id, child_dir, target_dir)
             if found is not None:
                 return found
     return None
@@ -189,7 +190,7 @@ def _load_node(conn: sqlite3.Connection, node_id: int,
     return node
 
 
-def _load_container_level(conn: sqlite3.Connection, node_id: int, saved: MetadataNode) -> MetadataNode:
+def load_container_level(conn: sqlite3.Connection, node_id: int, saved: MetadataNode) -> MetadataNode:
     """Load one container from SQLite with each linked child container replaced by the saved stub.
 
     Only this container's own rows are read, so the check costs one container, not the volume;

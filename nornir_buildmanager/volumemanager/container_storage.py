@@ -2,7 +2,8 @@
 
 Containers read and write their meta-data through a :class:`ContainerStorage`.
 :class:`XmlContainerStorage`, which reads and writes ``VolumeData.xml`` in the
-container directory, is the only implementation and the source of truth.
+container directory, is the only implementation and the source of truth; the
+opt-in SQLite read (stage 5) only replaces a loaded tree with an equal one.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from xml.etree import ElementTree
 from nornir_shared import prettyoutput
 from nornir_shared.files import ensure_directory
 
-from nornir_buildmanager.metadata import shadow_write
+from nornir_buildmanager.metadata import shadow_write, sqlite_read
 
 VOLUME_DATA_FILENAME = 'VolumeData.xml'
 
@@ -45,7 +46,10 @@ class XmlContainerStorage:
         """Parse ``<container_dir>/<filename>`` and return its root element.
 
         Raises ``OSError`` when the file cannot be read and ``ElementTree.ParseError``
-        when it is not well-formed XML.
+        when it is not well-formed XML. For ``VolumeData.xml`` with
+        ``NORNIR_VOLUME_METADATA_READ_SQLITE`` on, :func:`sqlite_read.load_container_element`
+        returns an equal tree built from the volume's SQLite rows instead, or the parsed
+        file when the database cannot stand in for it.
         """
         # I could use ElementTree.parse here.  However, there was a rare
         # bug where saving the file would encounter a permissions error
@@ -53,7 +57,10 @@ class XmlContainerStorage:
         # the problem
         with open(os.path.join(container_dir, self.filename), 'rb') as hFile:
             RawXML = hFile.read()
-        return ElementTree.fromstring(RawXML)
+        element = ElementTree.fromstring(RawXML)
+        if self.filename == VOLUME_DATA_FILENAME:
+            return sqlite_read.load_container_element(container_dir, element)
+        return element
 
     def save_container(self, container_dir: str, element: ElementTree.Element) -> None:
         """Indent *element* in place and atomically replace ``<container_dir>/<filename>``.

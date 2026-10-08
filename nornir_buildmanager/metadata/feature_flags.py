@@ -7,13 +7,22 @@ Each defaults to off, which keeps XML as the only metadata store.
 import os
 
 SHADOW_SQLITE_ENV = 'NORNIR_VOLUME_METADATA_SHADOW_SQLITE'
+READ_SQLITE_ENV = 'NORNIR_VOLUME_METADATA_READ_SQLITE'
 
 _TRUE_VALUES = frozenset({'1', 'true', 'yes', 'on'})
 
 
-def shadow_sqlite_enabled() -> bool:
-    """Return True when each VolumeData.xml container save should also update the volume's SQLite shadow.
+def _enabled(name: str) -> bool:
+    """Read on every call so a process (or test) can switch a flag without reloading modules."""
+    return os.environ.get(name, '').strip().lower() in _TRUE_VALUES
 
-    Read on every call so a process (or test) can switch it without reloading modules.
-    """
-    return os.environ.get(SHADOW_SQLITE_ENV, '').strip().lower() in _TRUE_VALUES
+
+def shadow_sqlite_enabled() -> bool:
+    """Return True when each VolumeData.xml container save should also update the volume's SQLite shadow."""
+    return _enabled(SHADOW_SQLITE_ENV)
+
+
+def read_sqlite_enabled() -> bool:
+    """Return True when container loads should build their tree from the volume's SQLite database
+    whenever its rows for the container match VolumeData.xml."""
+    return _enabled(READ_SQLITE_ENV)

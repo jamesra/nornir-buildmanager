@@ -200,5 +200,7 @@ def test_shadow_write_waits_for_the_lock_then_warns_and_xml_save_succeeds(monkey
     caplog.clear()
     with caplog.at_level(logging.WARNING, logger=shadow_write.__name__):
         save_block_notes('after release')
-    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+    # Only the shadow's records: with NORNIR_VOLUME_METADATA_READ_SQLITE on, the load before this save
+    # rightly warns that the Block rows lag the XML the locked save wrote.
+    assert [r for r in caplog.records if r.levelno == logging.WARNING and r.name == shadow_write.__name__] == []
     assert stored_block_notes() == 'after release'
