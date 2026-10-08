@@ -44,6 +44,8 @@ All default to off; `VolumeData.xml` stays the source of truth. Read only in `no
 |----------|------------------------------------------|
 | `NORNIR_VOLUME_METADATA_SHADOW_SQLITE` | After each successful container `VolumeData.xml` save, upsert that container into `VolumeData.db` at the volume root and compare it with the saved file. Errors and mismatches are logged as warnings naming the container; the XML save never fails because of them. XML bytes are unchanged. |
 
+`VolumeData.db` connections (shadow write and `nornir-migrate-volume`) use the WAL journal only on a local disk. On a network share (`cifs`, `smb3`, `nfs`, `9p`, `drvfs`, `virtiofs`, any `fuse` mount, a UNC `\\server\share` path, or a Windows mapped network drive), or when the filesystem cannot be identified, they use the rollback journal (`DELETE`), because WAL's shared-memory file is unsafe across machines. In the dev container `/workspace` and other host folders are `9p`/`virtiofs` mounts, so a volume there gets `DELETE`. The choice is logged at INFO once per database (`nornir_buildmanager.metadata.sqlite_journal`). Connections wait up to 30 s for another process's lock before failing with `database is locked`.
+
 ## Documentation
 
 - **Full manual and API (umbrella):** [https://nornir.github.io/](https://nornir.github.io/)

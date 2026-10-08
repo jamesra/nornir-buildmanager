@@ -14,6 +14,7 @@ import os
 import sqlite3
 from typing import Optional, Dict, List
 
+from . import sqlite_journal
 from .volume_metadata import MetadataNode, VolumeMetadataBackend
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,10 @@ logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
 
 DEFAULT_DB_FILENAME = 'VolumeData.db'
+
+# How long a connection waits for another process's lock before raising
+# "database is locked"; rollback-journal writes on a network share hold it longer.
+BUSY_TIMEOUT_SECONDS = 30.0
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS schema_info (
@@ -83,8 +88,9 @@ class SQLiteMetadataBackend(VolumeMetadataBackend):
         return 0
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
+        """Open the database with a busy timeout and the journal mode its filesystem allows."""
+        conn = sqlite3.connect(self._db_path, timeout=BUSY_TIMEOUT_SECONDS)
+        sqlite_journal.apply_journal_mode(conn, self._db_path)
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
