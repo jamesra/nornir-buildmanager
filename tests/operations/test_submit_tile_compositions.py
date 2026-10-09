@@ -44,7 +44,7 @@ class _Pool:
 
 
 def _hand_rolled_submit(pool, stov_transform, image_to_transform, *, max_in_flight: int):
-    """Pre-feca4a83 window (kept here for old-vs-new equivalence)."""
+    """Pre-feca4a83 window minus unread dimX/dimY (kept for old-vs-new equivalence)."""
     max_in_flight = max(1, max_in_flight)
     in_flight: collections.deque = collections.deque()
 
@@ -52,11 +52,6 @@ def _hand_rolled_submit(pool, stov_transform, image_to_transform, *, max_in_flig
         task = pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms,
                              stov_transform, mosaic_to_section_transform)
         task.imagename = imagename
-        if hasattr(mosaic_to_section_transform, 'gridWidth'):
-            task.dimX = mosaic_to_section_transform.gridWidth
-        if hasattr(mosaic_to_section_transform, 'gridHeight'):
-            task.dimY = mosaic_to_section_transform.gridHeight
-
         in_flight.append(task)
         if len(in_flight) >= max_in_flight:
             yield in_flight.popleft()
@@ -115,6 +110,22 @@ class TestSubmitTileCompositions(unittest.TestCase):
         self.assertEqual((stov, mosaic_tf), args)
         self.assertEqual({}, kwargs)
         self.assertEqual("t.png", tasks[0].imagename)
+
+    def test_does_not_set_unread_dimX_dimY(self) -> None:
+        """gridWidth/gridHeight must not become task.dimX/dimY; gather only reads imagename."""
+
+        class _Grid:
+            gridWidth = 10
+            gridHeight = 20
+
+        tasks = list(
+            block_ops._submit_tile_compositions(
+                _Pool(), object(), [("t.png", _Grid())], max_in_flight=1
+            )
+        )
+        self.assertEqual("t.png", tasks[0].imagename)
+        self.assertFalse(hasattr(tasks[0], "dimX"))
+        self.assertFalse(hasattr(tasks[0], "dimY"))
 
     def test_delegates_to_nornir_pools_submit_bounded(self) -> None:
         pool = _Pool()

@@ -2937,11 +2937,8 @@ def _submit_tile_compositions(
         imagename, mosaic_to_section_transform = item
         task = pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms,
                              stov_transform, mosaic_to_section_transform)
+        # imagename is the only task attribute _gather_volume_space_tiles reads.
         task.imagename = imagename  # type: ignore[attr-defined]
-        if hasattr(mosaic_to_section_transform, 'gridWidth'):
-            task.dimX = mosaic_to_section_transform.gridWidth  # type: ignore[attr-defined]
-        if hasattr(mosaic_to_section_transform, 'gridHeight'):
-            task.dimY = mosaic_to_section_transform.gridHeight  # type: ignore[attr-defined]
         return task
 
     yield from nornir_pools.submit_bounded(submit, image_to_transform, max_in_flight=max_in_flight)
