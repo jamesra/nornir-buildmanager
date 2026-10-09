@@ -3,7 +3,6 @@ Created on Jun 22, 2012
 
 @author: Jamesan
 """
-import collections
 import contextlib
 import copy
 import math
@@ -2925,12 +2924,12 @@ def _submit_tile_compositions(pool, stov_transform, image_to_transform, *, max_i
     kept one pickled copy per tile of the section alive at once, which for a dense
     grid runs to hundreds of MiB on a large section and grows with tile count.
     Bounding the window keeps that to ``max_in_flight`` copies regardless of
-    section size, at no cost to throughput while the pool stays fed.
+    section size, at no cost to throughput while the pool stays fed. The window
+    is ``nornir_pools.submit_bounded`` (same helper as tile.py / poolutil).
     """
-    max_in_flight = max(1, max_in_flight)
-    in_flight: collections.deque = collections.deque()
 
-    for imagename, mosaic_to_section_transform in image_to_transform:
+    def submit(item):
+        imagename, mosaic_to_section_transform = item
         task = pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms,
                              stov_transform, mosaic_to_section_transform)
         task.imagename = imagename  # type: ignore[attr-defined]
@@ -2938,13 +2937,9 @@ def _submit_tile_compositions(pool, stov_transform, image_to_transform, *, max_i
             task.dimX = mosaic_to_section_transform.gridWidth  # type: ignore[attr-defined]
         if hasattr(mosaic_to_section_transform, 'gridHeight'):
             task.dimY = mosaic_to_section_transform.gridHeight  # type: ignore[attr-defined]
+        return task
 
-        in_flight.append(task)
-        if len(in_flight) >= max_in_flight:
-            yield in_flight.popleft()
-
-    while in_flight:
-        yield in_flight.popleft()
+    yield from nornir_pools.submit_bounded(submit, image_to_transform, max_in_flight=max_in_flight)
 
 
 def _gather_volume_space_tiles(mosaic_transform, tasks, *, mosaic_path: str, Logger) -> None:
