@@ -2916,7 +2916,12 @@ def _message_reports_nonfinite(text: str) -> bool:
     return _NONFINITE_TOKEN_RE.search(text) is not None
 
 
-def _submit_tile_compositions(pool, stov_transform, image_to_transform, *, max_in_flight: int):
+def _submit_tile_compositions(
+        pool: typing.Any,
+        stov_transform: typing.Any,
+        image_to_transform: typing.Iterable[tuple[str, typing.Any]],
+        *,
+        max_in_flight: int) -> typing.Iterator[typing.Any]:
     """Compose each tile into volume space, yielding tasks as the window slides.
 
     Every task pickles ``stov_transform`` -- a whole dense-grid slice-to-volume
@@ -2928,7 +2933,7 @@ def _submit_tile_compositions(pool, stov_transform, image_to_transform, *, max_i
     is ``nornir_pools.submit_bounded`` (same helper as tile.py / poolutil).
     """
 
-    def submit(item):
+    def submit(item: tuple[str, typing.Any]) -> typing.Any:
         imagename, mosaic_to_section_transform = item
         task = pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms,
                              stov_transform, mosaic_to_section_transform)
