@@ -6,15 +6,18 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from PIL import Image, ImageDraw
 
 from annotation_crops.rle import encode_coco_rle
 
-from nornir_buildmanager.operations.segmentationtraining.geometry import PolygonRings
+from nornir_buildmanager.operations.segmentationtraining.geometry import PolygonRings, pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.poolutil import run_process_jobs
+
+if TYPE_CHECKING:
+    from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,67 @@ class MaskJob:
     rings: tuple[PolygonRings, ...]
     mask_path: str
     rle_path: str
+
+
+def mask_job_for_crop(
+    output: Path,
+    location_id: int,
+    image_key: str,
+    polygons: list[PolygonRings],
+    *,
+    origin_x: float,
+    origin_y: float,
+    downsample: float,
+    width: int,
+    height: int,
+) -> MaskJob | None:
+    """Mask job for one location in one crop window, or None when no ring lands inside it.
+
+    Owns the on-disk layout: ``masks/<key>_<id>.png`` and ``_work/rle/<key>_<id>.json``.
+    """
+    rings = pixel_rings_in_crop(
+        polygons,
+        origin_x=origin_x,
+        origin_y=origin_y,
+        downsample=downsample,
+        width=width,
+        height=height,
+    )
+    if not rings:
+        return None
+    return MaskJob(
+        location_id=location_id,
+        image_key=image_key,
+        width=width,
+        height=height,
+        rings=tuple(rings),
+        mask_path=str(output / "masks" / f"{image_key}_{location_id}.png"),
+        rle_path=str(output / "_work" / "rle" / f"{image_key}_{location_id}.json"),
+    )
+
+
+def mask_jobs_for_plan(
+    output: Path, plan: PlannedCrop, polygons_by_id: dict[int, list[PolygonRings]]
+) -> list[MaskJob]:
+    """Mask jobs for every member of a planned crop, in ``plan.location_ids`` order."""
+    width, height = plan.output_size()
+    origin_x, origin_y = plan.mosaic_origin()
+    jobs: list[MaskJob] = []
+    for location_id in plan.location_ids:
+        job = mask_job_for_crop(
+            output,
+            location_id,
+            plan.image_key,
+            polygons_by_id[location_id],
+            origin_x=origin_x,
+            origin_y=origin_y,
+            downsample=float(plan.downsample),
+            width=width,
+            height=height,
+        )
+        if job is not None:
+            jobs.append(job)
+    return jobs
 
 
 def rasterize_mask_job(job: MaskJob) -> dict[str, Any]:

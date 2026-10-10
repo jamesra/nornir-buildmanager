@@ -17,8 +17,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     ImageWatermark,
     load_section_watermark,
 )
-from nornir_buildmanager.operations.segmentationtraining.geometry import pixel_rings_in_crop
-from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
+from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_job_for_crop, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import sa1b_annotation
 from nornir_buildmanager.operations.segmentationtraining.wkt import (
@@ -26,7 +25,7 @@ from nornir_buildmanager.operations.segmentationtraining.wkt import (
     parse_wkt_polygons,
 )
 
-__all__ = ["location_from_odata_entity", "refresh_existing_location_masks"]
+__all__ = ["location_from_odata_entity", "mask_jobs_for_record", "refresh_existing_location_masks"]
 
 
 def refresh_existing_location_masks(
@@ -48,7 +47,7 @@ def refresh_existing_location_masks(
     marks = _existing_marks_for_location(output, record)
     if not marks:
         return []
-    jobs = _mask_jobs(output, record, marks)
+    jobs = mask_jobs_for_record(output, record, marks)
     if not jobs:
         return []
     results = run_mask_jobs(jobs, workers=1)
@@ -152,7 +151,7 @@ def _crop_image(images_dir: Path, image_key: str) -> Path:
     return png
 
 
-def _mask_jobs(output: Path, record: LocationRecord, marks: list[ImageWatermark]) -> list[MaskJob]:
+def mask_jobs_for_record(output: Path, record: LocationRecord, marks: list[ImageWatermark]) -> list[MaskJob]:
     """One raster job per existing window that still contains this polygon."""
     polygons = hydrate_polygons(parse_wkt_polygons(record.wkt), record.type_code)
     if not polygons:
@@ -162,7 +161,10 @@ def _mask_jobs(output: Path, record: LocationRecord, marks: list[ImageWatermark]
         if record.id not in mark.member_ids:
             continue
         scale = float(mark.downsample)
-        rings = pixel_rings_in_crop(
+        job = mask_job_for_crop(
+            output,
+            record.id,
+            mark.key,
             polygons,
             origin_x=mark.origin_x * scale,
             origin_y=mark.origin_y * scale,
@@ -170,19 +172,8 @@ def _mask_jobs(output: Path, record: LocationRecord, marks: list[ImageWatermark]
             width=mark.width,
             height=mark.height,
         )
-        if not rings:
-            continue
-        jobs.append(
-            MaskJob(
-                location_id=record.id,
-                image_key=mark.key,
-                width=mark.width,
-                height=mark.height,
-                rings=tuple(rings),
-                mask_path=str(output / "masks" / f"{mark.key}_{record.id}.png"),
-                rle_path=str(output / "_work" / "rle" / f"{mark.key}_{record.id}.json"),
-            )
-        )
+        if job is not None:
+            jobs.append(job)
     return jobs
 
 

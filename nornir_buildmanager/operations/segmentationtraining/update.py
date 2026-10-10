@@ -37,17 +37,15 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     max_last_modified,
     save_section_watermark,
 )
-from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
-from nornir_buildmanager.operations.segmentationtraining.geometry import pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.ingest import odata_url_for_export
 from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 
-from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
+from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask_jobs_for_record
+from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, get_product_index
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord, parse_datetime
-from nornir_buildmanager.operations.segmentationtraining.wkt import parse_wkt_polygons
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     replace_manifest_rows,
     sa1b_annotation,
@@ -382,35 +380,9 @@ def _refresh_changed_masks(
         record = by_id.get(location_id)
         if record is None:
             continue
-        polygons = hydrate_polygons(parse_wkt_polygons(record.wkt), record.type_code)
-        if not polygons:
-            continue
-        for mark in marks:
-            if location_id not in mark.member_ids:
-                continue
-            scale = float(mark.downsample)
-            rings = pixel_rings_in_crop(
-                polygons,
-                origin_x=mark.origin_x * scale,
-                origin_y=mark.origin_y * scale,
-                downsample=scale,
-                width=mark.width,
-                height=mark.height,
-            )
-            if not rings:
-                continue
-            jobs.append(
-                MaskJob(
-                    location_id=location_id,
-                    image_key=mark.key,
-                    width=mark.width,
-                    height=mark.height,
-                    rings=tuple(rings),
-                    mask_path=str(output / "masks" / f"{mark.key}_{location_id}.png"),
-                    rle_path=str(output / "_work" / "rle" / f"{mark.key}_{location_id}.json"),
-                )
-            )
-            touched.add(mark.key)
+        for job in mask_jobs_for_record(output, record, marks):
+            jobs.append(job)
+            touched.add(job.image_key)
     if not jobs:
         return touched
     run_mask_jobs(jobs, workers=mask_workers)
@@ -524,29 +496,7 @@ def _place_added(
         if not exists:
             exists = products.exists("images", f"{plan.image_key}.jpg")
         width, height = plan.output_size()
-        origin_x, origin_y = plan.mosaic_origin()
-        for location_id in plan.location_ids:
-            rings = pixel_rings_in_crop(
-                polygons_by_id[location_id],
-                origin_x=origin_x,
-                origin_y=origin_y,
-                downsample=float(plan.downsample),
-                width=width,
-                height=height,
-            )
-            if not rings:
-                continue
-            mask_jobs.append(
-                MaskJob(
-                    location_id=location_id,
-                    image_key=plan.image_key,
-                    width=width,
-                    height=height,
-                    rings=tuple(rings),
-                    mask_path=str(output / "masks" / f"{plan.image_key}_{location_id}.png"),
-                    rle_path=str(output / "_work" / "rle" / f"{plan.image_key}_{location_id}.json"),
-                )
-            )
+        mask_jobs.extend(mask_jobs_for_plan(output, plan, polygons_by_id))
         if not exists:
             crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
             stitch_jobs.append(

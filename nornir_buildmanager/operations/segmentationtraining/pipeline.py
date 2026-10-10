@@ -42,7 +42,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     section_meta_path,
     seconds_significantly_newer,
 )
-from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow, TileRect, pixel_rings_in_crop
+from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow, TileRect
 from nornir_buildmanager.operations.segmentationtraining.grouping import sanitize_volume_token
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ensure_export_source,
@@ -54,7 +54,7 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
 )
 from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 
-from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, run_mask_jobs
+from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
@@ -1115,30 +1115,8 @@ def export_section_crops(
                 manifest_rows.append(_manifest_row(plan, z, params.volume))
                 continue
             width, height = plan.output_size()
-            origin_x, origin_y = plan.mosaic_origin()
             crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
-            for location_id in plan.location_ids:
-                rings = pixel_rings_in_crop(
-                    polygons_by_id[location_id],
-                    origin_x=origin_x,
-                    origin_y=origin_y,
-                    downsample=float(plan.downsample),
-                    width=width,
-                    height=height,
-                )
-                if not rings:
-                    continue
-                mask_jobs.append(
-                    MaskJob(
-                        location_id=location_id,
-                        image_key=plan.image_key,
-                        width=width,
-                        height=height,
-                        rings=tuple(rings),
-                        mask_path=str(output / "masks" / f"{plan.image_key}_{location_id}.png"),
-                        rle_path=str(output / "_work" / "rle" / f"{plan.image_key}_{location_id}.json"),
-                    )
-                )
+            mask_jobs.extend(mask_jobs_for_plan(output, plan, polygons_by_id))
             if mode == "full":
                 if not force and products.exists("images", image_path.name):
                     # PNG already on disk; skip restitch unless -Force was passed.
