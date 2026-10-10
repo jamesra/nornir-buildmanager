@@ -101,7 +101,8 @@ class PruneObj:
         transforms.RemoveWhere(TransformParent, 'Transform[@Name="' + OutputTransformName + '"]',
                                lambda t: (t.Threshold != Threshold) or (t.Type != MangledName))
 
-        '''TODO: Add function to remove duplicate Prune Transforms with different thresholds'''
+        # RemoveWhere above removed same-named transforms with a different threshold or type; any remaining
+        # duplicates share both, so keep only the newest.
 
         TransformParent.RemoveOldChildrenByAttrib('Transform', 'Name', OutputTransformName)
 
