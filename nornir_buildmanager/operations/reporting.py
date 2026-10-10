@@ -1403,7 +1403,11 @@ def __ValueToTableRow(value, IndentLevel):
 
 
 def __ValueToTableCell(value, IndentLevel):
-    """Converts a value to a table cell"""
+    """Converts a value to a table cell.
+
+    Strings are inlined; dicts and lists render as a nested block one indent level
+    deeper, chosen by the first matching type in the table below.
+    """
     HTML = HTMLBuilder(IndentLevel)
     if hasattr(value, 'bgColor'):
         bgColor = value.bgColor
@@ -1411,30 +1415,23 @@ def __ValueToTableCell(value, IndentLevel):
     else:
         HTML.Add('<td valign="top">')
 
+    # Order matters: the list subclasses must come before plain list.
+    # ColumnList and plain list both render as columns.
+    renderers = ((dict, DictToTable),
+                 (UnorderedItemList, __ListToUnorderedList),
+                 (RowList, __ListToTableRows),
+                 (list, __ListToTableColumns))
+
     if isinstance(value, str):
         HTML.Add(value)
-    elif isinstance(value, dict):
-        HTML.Indent()
-        HTML.Add(DictToTable(value, HTML.IndentLevel))
-        HTML.Dedent()
-    elif isinstance(value, UnorderedItemList):
-        HTML.Indent()
-        HTML.Add(__ListToUnorderedList(value, HTML.IndentLevel))
-        HTML.Dedent()
-    elif isinstance(value, RowList):
-        HTML.Indent()
-        HTML.Add(__ListToTableRows(value, HTML.IndentLevel))
-        HTML.Dedent()
-    elif isinstance(value, ColumnList):
-        HTML.Indent()
-        HTML.Add(__ListToTableColumns(value, HTML.IndentLevel))
-        HTML.Dedent()
-    elif isinstance(value, list):
-        HTML.Indent()
-        HTML.Add(__ListToTableColumns(value, HTML.IndentLevel))
-        HTML.Dedent()
     else:
-        HTML.Add(f"Unknown type passed to __ValueToHTML: {value}")
+        renderer = next((r for t, r in renderers if isinstance(value, t)), None)
+        if renderer is None:
+            HTML.Add(f"Unknown type passed to __ValueToHTML: {value}")
+        else:
+            HTML.Indent()
+            HTML.Add(renderer(value, HTML.IndentLevel))
+            HTML.Dedent()
 
     HTML.Add("</td>\n")
 
