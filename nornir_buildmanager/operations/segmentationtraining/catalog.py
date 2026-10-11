@@ -84,8 +84,13 @@ def connect(output_path: str | os.PathLike[str]) -> sqlite3.Connection:
     path = sqlite_path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(str(path))
-    connection.row_factory = sqlite3.Row
-    _ensure_locations_schema(connection)
+    try:
+        connection.row_factory = sqlite3.Row
+        _ensure_locations_schema(connection)
+    except BaseException:
+        # A corrupt or locked file must not stay open (and locked on Windows).
+        connection.close()
+        raise
     return connection
 
 
