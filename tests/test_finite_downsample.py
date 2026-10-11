@@ -36,7 +36,7 @@ class TestRequireFiniteDownsample(unittest.TestCase):
 
         with mock.patch.object(block.stosfile.StosFile, 'Load') as load:
             with self.assertRaises(NornirUserException) as ctx:
-                generate(transform, 'out.stos', 4, MagicMock(), MagicMock(), None)
+                generate(transform, block._StosOutputSpec(MagicMock(), MagicMock(), 4, None))
             self.assertIn('Downsample', str(ctx.exception))
             load.assert_not_called()
 

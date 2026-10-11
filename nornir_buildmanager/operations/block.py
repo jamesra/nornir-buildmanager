@@ -1728,9 +1728,47 @@ def SelectBestRegistrationChain(Parameters, InputGroupNode: nornir_buildmanager.
     yield block_node
 
 
+@dataclass(frozen=True, slots=True)
+class _StosOutputSpec:
+    """Filters, downsample and mask request that a scaled ``.stos`` must reference.
+
+    Owns the rule for which image and mask paths such a ``.stos`` embeds: each
+    filter's imageset path at ``downsample`` (predicted when that level does not
+    exist yet) and the mask imageset paths only when masks are used.
+    """
+
+    control_filter: FilterNode
+    mapped_filter: FilterNode
+    downsample: int
+    use_masks: bool | None  # None: copy HasMasks from the input .stos
+
+    def image_paths(self) -> tuple[str, str]:
+        """Return the (control, mapped) image paths at ``downsample``.
+
+        Reading ``FilterNode.Imageset`` creates a missing imageset node.
+        """
+        return (self.control_filter.Imageset.GetOrPredictImageFullPath(self.downsample),
+                self.mapped_filter.Imageset.GetOrPredictImageFullPath(self.downsample))
+
+    def mask_paths(self, use_masks: bool) -> tuple[str | None, str | None]:
+        """Return the (control, mapped) mask paths at ``downsample``, or ``(None, None)`` without masks."""
+        if not use_masks:
+            return None, None
+        return (self.control_filter.MaskImageset.GetOrPredictImageFullPath(self.downsample),  # type: ignore[union-attr]
+                self.mapped_filter.MaskImageset.GetOrPredictImageFullPath(self.downsample))  # type: ignore[union-attr]
+
+
+def _stos_references_paths(stos: stosfile.StosFile, ControlImageFullPath: str, MappedImageFullPath: str,
+                           ControlMaskFullPath: str | None, MappedMaskFullPath: str | None) -> bool:
+    """True when ``stos`` embeds all four image and mask paths (a None mask must be absent)."""
+    return (stosfile.paths_refer_to_same_file(stos.ControlImageFullPath, ControlImageFullPath)
+            and stosfile.paths_refer_to_same_file(stos.MappedImageFullPath, MappedImageFullPath)
+            and stosfile.paths_refer_to_same_file(stos.ControlMaskFullPath, ControlMaskFullPath)
+            and stosfile.paths_refer_to_same_file(stos.MappedMaskFullPath, MappedMaskFullPath))
+
+
 def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, InputTransformNode: TransformNode,
-                                              OutputDownsample: int, ControlFilter: FilterNode,
-                                              MappedFilter: FilterNode, UseMasks: bool):
+                                              spec: _StosOutputSpec):
     """Build the scaled input ``.stos`` for refine under the *output* StosGroup.
 
     Cascade (honors transform checksums end-to-end):
@@ -1753,7 +1791,7 @@ def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, In
     os.makedirs(AutomaticInputDir, exist_ok=True)
 
     ExpectedStosFileName = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
-        ControlFilter, MappedFilter)
+        spec.control_filter, spec.mapped_filter)
 
     # Copy the input stos or converted stos to the input directory
     AutomaticInputStosFullPath = os.path.join(AutomaticInputDir, InputTransformNode.Path)
@@ -1763,8 +1801,7 @@ def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, In
                                                               ManualInputStosFullPath=ManualInputStosFullPath)  # type: ignore[arg-type]
     InputChecksum = None
     if InputStosFullPath == AutomaticInputStosFullPath:
-        __GenerateStosFileIfOutdated(InputTransformNode, AutomaticInputStosFullPath, OutputDownsample, ControlFilter,
-                                     MappedFilter, UseMasks)
+        __GenerateStosFileIfOutdated(InputTransformNode, AutomaticInputStosFullPath, spec)
         InputChecksum = InputTransformNode.attrib.get('Checksum')
         if InputChecksum is None:
             if os.path.exists(InputTransformNode.FullPath):
@@ -1774,10 +1811,10 @@ def __GetOrCreateInputStosFileForRegistration(stos_group_node: StosGroupNode, In
     else:
         RebaseCopiedStosPaths(
             InputStosFullPath,
-            ControlFilter,
-            MappedFilter,
-            OutputDownsample,
-            UseMasks,
+            spec.control_filter,
+            spec.mapped_filter,
+            spec.downsample,
+            spec.use_masks,  # type: ignore[arg-type]
         )
         InputChecksum = stosfile.StosFile.LoadChecksum(InputStosFullPath)
 
@@ -1851,33 +1888,18 @@ def IsStosNodeOutdated(InputTransformNode: TransformNode, OutputTransformNode: T
     if OutputStos.HasMasks != UseMasks:
         return True
 
-    ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-    MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-
-    ControlMaskImageFullPath = None
-    MappedMaskImageFullPath = None
-    if UseMasks:
-        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
-        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
-
+    spec = _StosOutputSpec(ControlFilter, MappedFilter, OutputDownsample, UseMasks)
     return not (
-        stosfile.paths_refer_to_same_file(OutputStos.ControlImageFullPath, ControlImageFullPath)
-        and stosfile.paths_refer_to_same_file(OutputStos.MappedImageFullPath, MappedImageFullPath)
-        and stosfile.paths_refer_to_same_file(OutputStos.ControlMaskFullPath, ControlMaskImageFullPath)
-        and stosfile.paths_refer_to_same_file(OutputStos.MappedMaskFullPath, MappedMaskImageFullPath)
+        _stos_references_paths(OutputStos, *spec.image_paths(), *spec.mask_paths(UseMasks))
         and OutputStos.HasMasks == UseMasks)
 
 
-def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: str, OutputDownsample: int,
-                       ControlFilter: FilterNode, MappedFilter: FilterNode,
-                       UseMasks: bool | None):
+def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: str, spec: _StosOutputSpec):
     """
     :param InputTransformNode:
     :param OutputTransformPath:
-    :param OutputDownsample:
-    :param ControlFilter:
-    :param MappedFilter:
-    :param bool UseMasks: True if masks should be included.  None if we should use masks if they exist in the input stos transform
+    :param spec: Filters and downsample the output must reference.  ``spec.use_masks`` True if masks should be
+                 included, None if we should use masks if they exist in the input stos transform
     :return: True if any part of the stos file is out of date compared to the input stos file
     """
 
@@ -1891,6 +1913,7 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
     if not os.path.exists(OutputTransformPath):
         return True
 
+    UseMasks = spec.use_masks
     if UseMasks is None:
         InputStos = stosfile.StosFile.Load(InputTransformNode.FullPath)
         UseMasks = InputStos.HasMasks
@@ -1903,20 +1926,15 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
     if not OutputStos.HasMasks == UseMasks:
         return True
 
-    ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-    MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-
+    ControlImageFullPath, MappedImageFullPath = spec.image_paths()
     if not (
             stosfile.paths_refer_to_same_file(OutputStos.ControlImageFullPath, ControlImageFullPath)
             and stosfile.paths_refer_to_same_file(OutputStos.MappedImageFullPath, MappedImageFullPath)):
         return True
 
-    ControlMaskImageFullPath = None
-    MappedMaskImageFullPath = None
+    # Mask paths are compared only when masks are used; HasMasks already matched above.
     if UseMasks:
-        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
-        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
-
+        ControlMaskImageFullPath, MappedMaskImageFullPath = spec.mask_paths(UseMasks)
         if not (
                 stosfile.paths_refer_to_same_file(OutputStos.ControlMaskFullPath, ControlMaskImageFullPath)
                 and stosfile.paths_refer_to_same_file(OutputStos.MappedMaskFullPath, MappedMaskImageFullPath)):
@@ -1925,27 +1943,24 @@ def IsStosFileOutdated(InputTransformNode: TransformNode, OutputTransformPath: s
     return False
 
 
-def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransformPath: str, OutputDownsample: int,
-                                 ControlFilter: FilterNode, MappedFilter: FilterNode,
-                                 UseMasks: bool):
+def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransformPath: str,
+                                 spec: _StosOutputSpec):
     """Only generates a stos file if the Output stos path has an earlier last modified time compared to the input
-    :param bool UseMasks: True if masks should be included.  None if we should copy setting from input stos transform
+    :param spec: ``spec.use_masks`` True if masks should be included.  None if we should copy setting from input
+                 stos transform
     :return: True if a file was generated and saved, False if the output already existed and was valid
     """
 
     # We should not be trying to create output if we have no input
     # assert(os.path.exists(InputTransformNode.FullPath))
-    if IsStosFileOutdated(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter, MappedFilter,
-                          UseMasks):
+    if IsStosFileOutdated(InputTransformNode, OutputTransformPath, spec):
         try:
             os.remove(OutputTransformPath)
         except (OSError, FileNotFoundError):
             pass
 
     if not os.path.exists(OutputTransformPath):
-        result = __GenerateStosFile(InputTransformNode, OutputTransformPath, OutputDownsample, ControlFilter,
-                                    MappedFilter,
-                                    UseMasks)
+        result = __GenerateStosFile(InputTransformNode, spec)
         result.Save(OutputTransformPath)  # type: ignore[union-attr]
         return True
 
@@ -1974,12 +1989,11 @@ def _require_finite_downsample(value: float | int | None, *, source: str) -> flo
     return downsample
 
 
-def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: str, OutputDownsample: int,
-                       ControlFilter: FilterNode, MappedFilter: FilterNode,
-                       UseMasks: bool | None):
+def __GenerateStosFile(InputTransformNode: TransformNode, spec: _StosOutputSpec):
     """Generates a new stos file using the specified filters and scales the transform to match the
        requested downsample as needed.
-       :param UseMasks: True if masks should be included.  None if we should copy setting from input stos transform
+       :param spec: ``spec.use_masks`` True if masks should be included.  None if we should copy setting from
+                    input stos transform
        :rtype: bool
        :return: A StosFile if a new file was needed, otherwise None
     """
@@ -2004,29 +2018,20 @@ def __GenerateStosFile(InputTransformNode: TransformNode, OutputTransformPath: s
             prettyoutput.LogErr(
                 f"Input STOS transform does not map onto its control image: "
                 f"{InputTransformNode.FullPath}")
-    if UseMasks is None:
-        UseMasks = InputStos.HasMasks
+    UseMasks = InputStos.HasMasks if spec.use_masks is None else spec.use_masks
 
-    ControlImageFullPath = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-    MappedImageFullPath = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-
-    ControlMaskImageFullPath = None
-    MappedMaskImageFullPath = None
-    if UseMasks:
-        ControlMaskImageFullPath = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
-        MappedMaskImageFullPath = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)  # type: ignore[union-attr]
+    ControlImageFullPath, MappedImageFullPath = spec.image_paths()
+    ControlMaskImageFullPath, MappedMaskImageFullPath = spec.mask_paths(UseMasks)
 
     # If all the core details are the same we can save time by copying the data instead
     if not (
-            stosfile.paths_refer_to_same_file(InputStos.ControlImageFullPath, ControlImageFullPath)
-            and stosfile.paths_refer_to_same_file(InputStos.MappedImageFullPath, MappedImageFullPath)
-            and stosfile.paths_refer_to_same_file(InputStos.ControlMaskFullPath, ControlMaskImageFullPath)
-            and stosfile.paths_refer_to_same_file(InputStos.MappedMaskFullPath, MappedMaskImageFullPath)
-            and float(OutputDownsample) == InputDownsample
+            _stos_references_paths(InputStos, ControlImageFullPath, MappedImageFullPath,
+                                   ControlMaskImageFullPath, MappedMaskImageFullPath)
+            and float(spec.downsample) == InputDownsample
             and InputStos.HasMasks == UseMasks):
 
         ModifiedInputStos = InputStos.ChangeTransformPixelSpacing(oldspacing=InputDownsample,
-                                                                  newspacing=OutputDownsample,
+                                                                  newspacing=spec.downsample,
                                                                   ControlImageFullPath=ControlImageFullPath,
                                                                   MappedImageFullPath=MappedImageFullPath,
                                                                   ControlMaskFullPath=ControlMaskImageFullPath,
@@ -2312,10 +2317,7 @@ def _enumerate_stos_grid_refine_candidates(
             (InputStosFullPath, InputStosFileChecksum) = __GetOrCreateInputStosFileForRegistration(
                 stos_group_node=OutputStosGroupNode,
                 InputTransformNode=InputTransformNode,
-                ControlFilter=ControlFilter,
-                MappedFilter=MappedFilter,
-                OutputDownsample=OutputDownsample,
-                UseMasks=UseMasks)
+                spec=_StosOutputSpec(ControlFilter, MappedFilter, OutputDownsample, UseMasks))
 
             if not os.path.exists(InputStosFullPath):
                 Logger.error("ir-stos-grid did not produce output for " + InputStosFullPath)
