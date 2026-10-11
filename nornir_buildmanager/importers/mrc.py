@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import collections
 import enum
-import errno
 import struct
 import sys
 import tempfile
@@ -51,17 +50,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
-    ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
-    if len(ContrastMap) == 0:
-        try:
-            nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
-        except OSError as e:
-            if e.errno == errno.EROFS:
-                prettyoutput.Log(
-                    f"Warning: Unable to create default histogram cutoff file on read-only filesystem: {histogramFilename}"
-                )
-            else:
-                raise
+    ContrastMap = nornir_buildmanager.importers.LoadOrCreateHistogramCutoffs(histogramFilename)
 
     matches = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[],
                                                    ExcludedDownsampleLevels=[])

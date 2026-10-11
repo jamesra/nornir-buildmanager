@@ -1,8 +1,11 @@
 import csv
+import errno
 import os
+from collections.abc import Collection
 from typing import NamedTuple
 
 import nornir_buildmanager
+from nornir_shared import prettyoutput
 from . import idoc, serialemlog, shared
 from .shared import ContrastValue
 
@@ -71,6 +74,32 @@ def LoadHistogramCutoffs(filename: str) -> dict[int, ContrastValue]:
                 print(f"Could not parse histogram line #{line_number}: {', '.join(line)} ({e})")
 
     return Values
+
+
+def LoadOrCreateHistogramCutoffs(histogramFilename: str,
+                                 tolerated_errnos: Collection[int] = (errno.EROFS,)) -> dict[int, ContrastValue]:
+    """
+    Load the contrast overrides for an import, creating an empty override file when there are none.
+
+    Importers read from source directories that may be mounted read-only. An OSError from creating the
+    default file whose errno is in tolerated_errnos is logged as a warning and the import continues with
+    no overrides; any other OSError propagates.
+    :param str histogramFilename: Path of the ContrastOverrides file
+    :param tolerated_errnos: errno values that mean the file cannot be written and should be skipped
+    """
+    ContrastMap = LoadHistogramCutoffs(histogramFilename)
+    if len(ContrastMap) == 0:
+        try:
+            CreateDefaultHistogramCutoffFile(histogramFilename)
+        except OSError as e:
+            if e.errno in tolerated_errnos:
+                prettyoutput.Log(
+                    f"Warning: Unable to create default histogram cutoff file on read-only filesystem: {histogramFilename}"
+                )
+            else:
+                raise
+
+    return ContrastMap
 
 
 def SaveHistogramCutoffs(filename: str, SectionToContrast: dict[int, ContrastValue]):

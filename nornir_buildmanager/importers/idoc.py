@@ -166,17 +166,8 @@ def Import(VolumeElement: VolumeNode,
     histogramFilename = os.path.join(
         serialem_utils.get_import_cache_path(ImportPath),
         nornir_buildmanager.importers.DefaultHistogramFilename)
-    ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
-    if len(ContrastMap) == 0:
-        try:
-            nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
-        except OSError as e:
-            if e.errno in (errno.EROFS, errno.EACCES):
-                prettyoutput.Log(
-                    f"Warning: Unable to create default histogram cutoff file on read-only filesystem: {histogramFilename}"
-                )
-            else:
-                raise
+    ContrastMap = nornir_buildmanager.importers.LoadOrCreateHistogramCutoffs(
+        histogramFilename, tolerated_errnos=(errno.EROFS, errno.EACCES))
 
     if not os.path.exists(ImportPath):
         raise ValueError("Import Path does not exist: %s" % ImportPath)

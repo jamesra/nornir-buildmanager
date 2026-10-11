@@ -5,7 +5,6 @@ Created on Aug 7, 2015
 '''
 
 import collections
-import errno
 import unicodedata
 
 import PIL
@@ -53,17 +52,7 @@ def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
-    ContrastMap = nornir_buildmanager.importers.LoadHistogramCutoffs(histogramFilename)
-    if len(ContrastMap) == 0:
-        try:
-            nornir_buildmanager.importers.CreateDefaultHistogramCutoffFile(histogramFilename)
-        except OSError as e:
-            if e.errno == errno.EROFS:
-                prettyoutput.Log(
-                    f"Warning: Unable to create default histogram cutoff file on read-only filesystem: {histogramFilename}"
-                )
-            else:
-                raise
+    ContrastMap = nornir_buildmanager.importers.LoadOrCreateHistogramCutoffs(histogramFilename)
 
     matches = nornir_shared.files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles=f'*.{extension}',
                                                                  ExcludeNames=[], ExcludedDownsampleLevels=[])
