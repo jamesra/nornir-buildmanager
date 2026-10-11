@@ -70,7 +70,9 @@ class StosMapNode(XElementWrapper):
 
     def ClearMissingSections(self, existing_section_numbers: Iterable[int]):
         """Remove any control sections that are not in the list of known sections"""
-        missing_controls = [m for m in self.Mappings if m.Control not in existing_section_numbers]
+        # Callers pass a list; one set keeps membership O(1) per Mapping instead of O(sections).
+        existing = frozenset(existing_section_numbers)
+        missing_controls = [m for m in self.Mappings if m.Control not in existing]
 
         missing_section_numbers = frozenset(mc.Control for mc in missing_controls)
         for control_mapping in missing_controls:
