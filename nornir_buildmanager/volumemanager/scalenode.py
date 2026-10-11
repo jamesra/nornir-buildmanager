@@ -73,6 +73,20 @@ class ScaleNode(XElementWrapper):
         return output
 
 
+def _as_scale_axis(val: float | ScaleAxis | None) -> ScaleAxis | None:
+    """Convert a Scale axis setter argument to the ScaleAxis it stores.
+
+    None stays None, a float (int is rejected) becomes nanometres, and a ScaleAxis is kept as is.
+    """
+    if val is None:
+        return None
+    if isinstance(val, float):
+        return ScaleAxis(val, 'nm')
+    if isinstance(val, ScaleAxis):
+        return val
+    raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
+
+
 class Scale(object):
     """
     A 2/3 dimensional representation of scale.
@@ -88,14 +102,7 @@ class Scale(object):
 
     @X.setter
     def X(self, val: float | ScaleAxis | None):
-        if val is None:
-            self._x = None
-        elif isinstance(val, float):
-            self._x = ScaleAxis(val, 'nm')
-        elif isinstance(val, ScaleAxis):
-            self._x = val
-        else:
-            raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
+        self._x = _as_scale_axis(val)
 
     @property
     def Y(self) -> ScaleAxis | None:
@@ -103,14 +110,7 @@ class Scale(object):
 
     @Y.setter
     def Y(self, val: float | ScaleAxis | None):
-        if val is None:
-            self._y = None
-        elif isinstance(val, float):
-            self._y = ScaleAxis(val, 'nm')
-        elif isinstance(val, ScaleAxis):
-            self._y = val
-        else:
-            raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
+        self._y = _as_scale_axis(val)
 
     @property
     def Z(self) -> ScaleAxis | None:
@@ -118,14 +118,7 @@ class Scale(object):
 
     @Z.setter
     def Z(self, val: float | ScaleAxis | None):
-        if val is None:
-            self._z = None
-        elif isinstance(val, float):
-            self._z = ScaleAxis(val, 'nm')
-        elif isinstance(val, ScaleAxis):
-            self._z = val
-        else:
-            raise NotImplementedError('Unknown type passed to Scale setter %s' % val)
+        self._z = _as_scale_axis(val)
 
     @staticmethod
     def Create(ScaleData):
