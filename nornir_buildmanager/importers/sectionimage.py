@@ -84,7 +84,7 @@ class SectionImage(object):
             prettyoutput.Log("PNG importer ignoring probable histogram file: " + filename)
             return None
 
-        # TODO wrap in try except and print nice error on badly named files?
+        # ParseFilename prints the filename mapping usage and raises naming the file when it is badly named.
         fileData = filenameparser.ParseFilename(filename, imageNameMappings)
         fileData = FillInMissingImageNameData(fileData)
 

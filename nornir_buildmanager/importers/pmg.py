@@ -133,12 +133,12 @@ class PMGImport(object):
         [addedBlock, BlockObj] = VolumeObj.UpdateOrAddChild(BlockObj)
 
         ChannelName = None
-        # TODO wrap in try except and print nice error on badly named files?
+        # ParseFilename prints the filename mapping usage and raises naming the file when it is badly named.
         PMG = cast(PMGInfo, ParseFilename(PMGFullPath, pmgMappings))
         PMGDir = os.path.dirname(PMGFullPath)
 
         if PMG is None:
-            raise Exception("Could not parse section from PMG filename: %s" + PMGFullPath)
+            raise Exception(f"Could not parse section from PMG filename: {PMGFullPath}")
 
         if PMG.Section is None:
             PMG.Section = PMG.Spot
