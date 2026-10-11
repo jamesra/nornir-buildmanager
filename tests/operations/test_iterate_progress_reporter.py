@@ -14,7 +14,6 @@ from unittest import mock
 
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
-
 from nornir_buildmanager.operations.segmentationtraining import progress
 
 _TRACK_ID = "unit:track"

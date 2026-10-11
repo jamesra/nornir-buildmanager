@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
+
+from nornir_shared.prettyoutput import ThrottledProgressReporter
 
 from nornir_buildmanager.progress import report_iterate, report_iterate_complete
 
@@ -22,20 +23,15 @@ STRIPS_LABEL = "ExportAnnotationCrops strips"
 GALLERY_LABEL = "ExportAnnotationCrops gallery"
 
 
-class IterateProgressReporter:
-    """Throttled determinate ``report_iterate`` track with configurable depth."""
+class IterateProgressReporter(ThrottledProgressReporter):
+    """Throttled determinate ``report_iterate`` track with configurable depth.
 
-    _track_id: str
-    _total: int
+    Unlike the base class, ``complete`` on a never-started reporter starts it
+    first, so the dashboard still sees 0/N then N/N.
+    """
+
     _label: str
     _depth: int
-    _min_interval_s: float
-    _step: int
-    _last_published: int
-    _last_time: float
-    _started: bool
-    _completed: bool
-    _section: int | str | None
 
     def __init__(
         self,
@@ -47,54 +43,16 @@ class IterateProgressReporter:
         min_interval_s: float = 0.25,
         section: int | str | None = None,
     ) -> None:
-        self._track_id = track_id
-        self._total = max(0, int(total))
+        super().__init__(track_id, total, min_interval_s=min_interval_s, section=section)
         self._label = label
         self._depth = depth
-        self._min_interval_s = min_interval_s
-        self._step = max(1, self._total // 100) if self._total else 1
-        self._last_published = -1
-        self._last_time = 0.0
-        self._started = False
-        self._completed = False
-        self._section = section
-
-    def start(self) -> None:
-        """Publish the initial 0/N progress event."""
-        if self._total <= 0 or self._started:
-            return
-        self._started = True
-        self._publish(0)
-
-    def update(self, current: int, **fields: Any) -> None:
-        """Publish progress when enough items or time have elapsed."""
-        if self._total <= 0 or self._completed:
-            return
-        if not self._started:
-            self.start()
-        current = min(max(0, int(current)), self._total)
-        now = time.time()
-        if (
-            current >= self._total
-            or self._last_published < 0
-            or current - self._last_published >= self._step
-            or now - self._last_time >= self._min_interval_s
-        ):
-            self._publish(current, **fields)
 
     def complete(self) -> None:
-        """Publish final progress then remove the track."""
-        if self._completed or self._total <= 0:
-            return
-        if not self._started:
-            self.start()
-        self._completed = True
-        self._publish(self._total)
-        report_iterate_complete(self._track_id, self._total)
+        """Start if needed, publish final progress, then remove the track."""
+        self.start()
+        super().complete()
 
-    def _publish(self, current: int, **fields: Any) -> None:
-        self._last_published = current
-        self._last_time = time.time()
+    def _emit(self, current: int, **fields: Any) -> None:
         extra = dict(fields)
         if self._section is not None and "section" not in extra:
             extra["section"] = self._section
@@ -106,3 +64,6 @@ class IterateProgressReporter:
             depth=self._depth,
             **extra,
         )
+
+    def _emit_complete(self) -> None:
+        report_iterate_complete(self._track_id, self._total)
