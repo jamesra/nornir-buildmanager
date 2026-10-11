@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import Generator, Iterable
 
 from nornir_buildmanager.volumemanager import MappingNode, XElementWrapper
@@ -205,18 +206,23 @@ class StosMapNode(XElementWrapper):
 
         NonStosSectionsNode = self.Parent.find('NonStosSectionNumbers')  # type: ignore[union-attr]
 
-        AlreadyMappedSections = []
+        AlreadyMappedSections: set[int] = set()
 
         if NonStosSectionsNode is None:
             return super(StosMapNode, self).IsValid()
 
-        NonStosSections = misc.ListFromAttribute(NonStosSectionsNode.text)
+        NonStosSections = frozenset(misc.ListFromAttribute(NonStosSectionsNode.text))
 
         MappingNodes = list(self.findall('Mapping'))
 
-        for i in range(len(MappingNodes) - 1, -1, -1):
-            mapping_node = MappingNodes[i]
-            self.RemoveDuplicateControlEntries(mapping_node.Control)
+        # RemoveDuplicateControlEntries runs an XPath scan of every Mapping, so calling it per
+        # Mapping was quadratic. It is a no-op unless two Mappings share a Control, so only
+        # those controls are merged, once each, in the same last-to-first order as before.
+        control_counts = Counter(mapping_node.Control for mapping_node in MappingNodes)
+        for mapping_node in reversed(MappingNodes):
+            if control_counts[mapping_node.Control] > 1:
+                control_counts[mapping_node.Control] = 1
+                self.RemoveDuplicateControlEntries(mapping_node.Control)
 
         MappingNodes = list(self.findall('Mapping'))
 
@@ -236,7 +242,7 @@ class StosMapNode(XElementWrapper):
                         XElementWrapper.logger.warning(
                             f'Removing duplicate mapping {mapped_section} -> {mapping_node.Control}')
                     else:
-                        AlreadyMappedSections.append(mapped_section)
+                        AlreadyMappedSections.add(mapped_section)
 
                 if len(mapped_sections) == 0:
                     mapping_node.Clean()
