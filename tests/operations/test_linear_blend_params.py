@@ -7,6 +7,7 @@ from unittest import mock
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
+
 from nornir_buildmanager.operations import block
 from nornir_buildmanager.volumemanager.transformnode import TransformNode
 
