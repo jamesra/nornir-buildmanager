@@ -2238,11 +2238,8 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                     target_space_scale=1.0 / InputLevelNode.Downsample,
                     tile_dims=tile_dims,
                     max_temp_image_area=max_temp_image_area):
-                tilename = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-                    'prefix': tile_set_node.FilePrefix,
-                    'X': iCol,
-                    'Y': iRow,
-                    'postfix': tile_set_node.FilePostfix}
+                tilename = nornir_buildmanager.templates.Current.GridTileName(
+                    tile_set_node.FilePrefix, iCol, iRow, tile_set_node.FilePostfix)
                 temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename)
                 output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
                 _submit_tile_save(
@@ -3004,10 +3001,7 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
             Y2 = Y1 + 1
 
             # OutputFile = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % iX + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % iY + FilePostfix
-            OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                       'X': iX,
-                                                                                       'Y': iY,
-                                                                                       'postfix': FilePostfix}
+            OutputFile = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, iX, iY, FilePostfix)
 
             OutputFileFullPath = os.path.join(DestPath, OutputFile)
 
@@ -3019,22 +3013,10 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
             # TopRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y1 + FilePostfix
             # BottomLeft = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X1 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
             # BottomRight = FilePrefix + 'X' + nornir_buildmanager.templates.GridTileCoordFormat % X2 + '_Y' + nornir_buildmanager.templates.GridTileCoordFormat % Y2 + FilePostfix
-            TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                    'X': X1,
-                                                                                    'Y': Y1,
-                                                                                    'postfix': FilePostfix}
-            TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                     'X': X2,
-                                                                                     'Y': Y1,
-                                                                                     'postfix': FilePostfix}
-            BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                       'X': X1,
-                                                                                       'Y': Y2,
-                                                                                       'postfix': FilePostfix}
-            BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {'prefix': FilePrefix,
-                                                                                        'X': X2,
-                                                                                        'Y': Y2,
-                                                                                        'postfix': FilePostfix}
+            TopLeft = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X1, Y1, FilePostfix)
+            TopRight = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X2, Y1, FilePostfix)
+            BottomLeft = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X1, Y2, FilePostfix)
+            BottomRight = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X2, Y2, FilePostfix)
 
             TopLeft = os.path.join(SourcePath, TopLeft)
             TopRight = os.path.join(SourcePath, TopRight)
@@ -3139,38 +3121,13 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
         Y1 = iY * 2
         Y2 = Y1 + 1
 
-        OutputFile = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-            'prefix': FilePrefix,
-            'X': iX,
-            'Y': iY,
-            'postfix': FilePostfix
-        }
+        OutputFile = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, iX, iY, FilePostfix)
         OutputFileFullPath = os.path.join(DestPath, OutputFile)
 
-        TopLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-            'prefix': FilePrefix,
-            'X': X1,
-            'Y': Y1,
-            'postfix': FilePostfix
-        }
-        TopRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-            'prefix': FilePrefix,
-            'X': X2,
-            'Y': Y1,
-            'postfix': FilePostfix
-        }
-        BottomLeft = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-            'prefix': FilePrefix,
-            'X': X1,
-            'Y': Y2,
-            'postfix': FilePostfix
-        }
-        BottomRight = nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-            'prefix': FilePrefix,
-            'X': X2,
-            'Y': Y2,
-            'postfix': FilePostfix
-        }
+        TopLeft = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X1, Y1, FilePostfix)
+        TopRight = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X2, Y1, FilePostfix)
+        BottomLeft = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X1, Y2, FilePostfix)
+        BottomRight = nornir_buildmanager.templates.Current.GridTileName(FilePrefix, X2, Y2, FilePostfix)
 
         TopLeft = os.path.join(SourcePath, TopLeft)
         TopRight = os.path.join(SourcePath, TopRight)
@@ -3214,12 +3171,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     if missing_parents:
         sample_limit = 10
         sample_names = [
-            nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-                'prefix': FilePrefix,
-                'X': x,
-                'Y': y,
-                'postfix': FilePostfix,
-            }
+            nornir_buildmanager.templates.Current.GridTileName(FilePrefix, x, y, FilePostfix)
             for x, y in missing_parents[:sample_limit]
         ]
         logging.getLogger(__name__).error(

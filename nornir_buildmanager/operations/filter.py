@@ -102,7 +102,7 @@ def AssembleTilesetFromImageSet(Parameters,
         GridDimY = int(math.ceil(YDim / float(TileHeight)))
         GridDimX = int(math.ceil(XDim / float(TileWidth)))
 
-        GridTileNameTemplate = nornir_buildmanager.templates.Current.GridTileNameTemplate
+        GridTileName = nornir_buildmanager.templates.Current.GridTileName
 
         os.makedirs(output_level.FullPath, exist_ok=True)
 
@@ -110,10 +110,7 @@ def AssembleTilesetFromImageSet(Parameters,
         for iY in range(0, GridDimY):
             for iX in range(0, GridDimX):
                 tileFileName = os.path.join(tile_set_node.FullPath, tile_output % iFile)
-                gridTileFileName = GridTileNameTemplate % {'prefix': tile_set_node.FilePrefix,
-                                                           'X': iX,
-                                                           'Y': iY,
-                                                           'postfix': tile_set_node.FilePostfix}
+                gridTileFileName = GridTileName(tile_set_node.FilePrefix, iX, iY, tile_set_node.FilePostfix)
 
                 gridTileFileName = os.path.join(output_level.FullPath, gridTileFileName)
 

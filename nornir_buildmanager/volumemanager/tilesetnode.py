@@ -223,11 +223,8 @@ class TilesetNode(XContainerElementWrapper, PyramidLevelHandler, InputTransformH
                 level_node.UpdateValidationTime()
                 return [True, "Last column of tileset found"]
 
-            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileNameTemplate % {
-                'prefix': FilePrefix,
-                'X': GridXDim,
-                'Y': iY,
-                'postfix': FilePostfix})
+            MatchString = os.path.join(level_full_path, nornir_buildmanager.templates.Current.GridTileName(
+                FilePrefix, GridXDim, iY, FilePostfix))
             if os.path.exists(MatchString):
                 try:
                     [YSize, XSize] = nornir_imageregistration.GetImageSize(MatchString)

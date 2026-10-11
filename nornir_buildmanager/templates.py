@@ -30,6 +30,14 @@ class __Config:
 
         return self.__NumProcs
 
+    def GridTileName(self, prefix: str, x: int, y: int, postfix: str) -> str:
+        """Return the optimized grid tile file name for column ``x`` and row ``y``.
+
+        Formats ``GridTileNameTemplate`` at call time, so the coordinates are zero
+        padded to ``GridTileCoordFormat`` and wider values are written in full.
+        """
+        return self.GridTileNameTemplate % {'prefix': prefix, 'X': x, 'Y': y, 'postfix': postfix}
+
     def BlobCmd(self):
         return "ir-blob -sh 1 -max 3 -threads " + str(self.NumProcs) + " "
 

@@ -204,12 +204,7 @@ class StitchJob:
 
 def tile_filename(prefix: str, postfix: str, ix: int, iy: int) -> str:
     """Tileset file name using the buildmanager grid template."""
-    return Templates.GridTileNameTemplate % {
-        "prefix": prefix,
-        "postfix": postfix,
-        "X": ix,
-        "Y": iy,
-    }
+    return Templates.GridTileName(prefix, ix, iy, postfix)
 
 
 def missing_covering_tiles(
