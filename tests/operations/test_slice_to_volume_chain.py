@@ -75,11 +75,7 @@ class TestSliceToVolumeChainComposition(unittest.TestCase):
                 ab_path,
                 bc_path,
                 enrich_tolerance=None,
-                min_blend=0.2,
-                travel_limit=32.0,
-                reblend_iterations=1,
-                reblend_tolerance=0.5,
-                max_blend=None,
+                blend=block._LinearBlendParams(0.2, 32.0, 1, 0.5, None),
                 rigid_ac=rigid_ac,
             )
 

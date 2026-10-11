@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 from nornir_buildmanager.operations import block
 from nornir_buildmanager.volumemanager.transformnode import TransformNode
 
+_BLEND = block._LinearBlendParams(0.5, 10.0, 1, 0.01, None)
+
 
 class TestLinearBlendChainParams(unittest.TestCase):
     """LinearBlendStosGroup must not ignore a chain-consistent stamp on reuse."""
@@ -26,13 +28,13 @@ class TestLinearBlendChainParams(unittest.TestCase):
         stamped_chain = self._blend_node(chain_consistent_linear=True)
         self.assertFalse(
             block._linear_blend_params_matched(
-                stamped_chain, 0.5, 10.0, 1, 0.01, None))
+                stamped_chain, _BLEND))
 
     def test_params_matched_accepts_non_chain_stamp(self):
         non_chain = self._blend_node(chain_consistent_linear=False)
         self.assertTrue(
             block._linear_blend_params_matched(
-                non_chain, 0.5, 10.0, 1, 0.01, None))
+                non_chain, _BLEND))
 
     def test_params_matched_accepts_legacy_unstamped_node(self):
         """Pre-fix LinearBlend outputs omit the attrib; property defaults False."""
@@ -40,7 +42,7 @@ class TestLinearBlendChainParams(unittest.TestCase):
         self.assertFalse(legacy.chain_consistent_linear)
         self.assertTrue(
             block._linear_blend_params_matched(
-                legacy, 0.5, 10.0, 1, 0.01, None))
+                legacy, _BLEND))
 
     def test_omit_chain_kwarg_would_incorrectly_keep_chain_stamp(self):
         """Documents the pre-fix omit behaviour so a revert fails this guard."""
@@ -51,7 +53,7 @@ class TestLinearBlendChainParams(unittest.TestCase):
             "omit chain_consistent_linear= still matches; helper must pass False")
         self.assertFalse(
             block._linear_blend_params_matched(
-                stamped_chain, 0.5, 10.0, 1, 0.01, None))
+                stamped_chain, _BLEND))
 
     def test_apply_job_stamps_non_chain(self):
         output = TransformNode.Create(Name="out", Path="out.stos", Type="Grid")
@@ -63,7 +65,7 @@ class TestLinearBlendChainParams(unittest.TestCase):
             output_group_node=MagicMock(),
         )
         block._apply_linear_blend_job(
-            context, MagicMock(), 0.5, 10.0, 1, 0.01, None)
+            context, MagicMock(), _BLEND)
         self.assertFalse(output.chain_consistent_linear)
         self.assertEqual(output.attrib.get('chain_consistent_linear'), '0')
 

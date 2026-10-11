@@ -401,9 +401,8 @@ class TestCountSliceToVolumeSkipsValid(unittest.TestCase):
         with mock.patch.object(block_mod.os.path, "exists", return_value=True):
             total = block_mod._count_slice_to_volume_stos_writes(
                 rt, input_group, output_group,
-                min_blend=None, travel_limit=None,
-                reblend_iterations=None, reblend_tolerance=None,
-                max_blend=None, chain_consistent_linear=True)
+                blend=block_mod._LinearBlendParams(None, None, None, None, None),
+                chain_consistent_linear=True)
         self.assertEqual(total, 0)
 
 

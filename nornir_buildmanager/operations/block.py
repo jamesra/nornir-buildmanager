@@ -85,6 +85,42 @@ def _ensure_stage_pools_released():
         nornir_pools.ReleaseStagePools()
 
 
+@dataclass(frozen=True, slots=True)
+class _LinearBlendParams:
+    """Linear-blend pipeline parameters that travel together through one blend stage."""
+
+    min_blend: float | None
+    travel_limit: float | None
+    reblend_iterations: int | None
+    reblend_tolerance: float | None
+    max_blend: float | None
+
+    @property
+    def enabled(self) -> bool:
+        """True when a min_blend or travel_limit asks for terminal linear blending."""
+        return self.min_blend is not None or self.travel_limit is not None
+
+    def is_matched(self, node: typing.Any, chain_consistent_linear: bool) -> bool:
+        """True when the parameters stamped on ``node`` match these values."""
+        return node.IsLinearBlendParamsMatched(
+            self.min_blend,
+            self.travel_limit,
+            self.reblend_iterations,
+            self.reblend_tolerance,
+            max_blend=self.max_blend,
+            chain_consistent_linear=chain_consistent_linear)
+
+    def stamp(self, node: TransformNode, chain_consistent_linear: bool) -> None:
+        """Persist these parameters on ``node`` so a later run can detect a change."""
+        node.SetLinearBlendParams(
+            self.min_blend,
+            self.travel_limit,
+            self.reblend_iterations,
+            self.reblend_tolerance,
+            max_blend=self.max_blend,
+            chain_consistent_linear=chain_consistent_linear)
+
+
 @dataclass
 class _LinearBlendJobContext:
     """Main-process metadata for one linear-blend job."""
@@ -182,36 +218,16 @@ _LINEAR_BLEND_CHAIN_CONSISTENT = False
 
 
 def _linear_blend_params_matched(output_stos_node: TransformNode,
-                                 min_blend: float | None,
-                                 travel_limit: float | None,
-                                 reblend_iterations: int | None,
-                                 reblend_tolerance: float | None,
-                                 max_blend: float | None) -> bool:
+                                 blend: _LinearBlendParams) -> bool:
     """True when stored linear-blend params match this stage (always non-chain)."""
-    return output_stos_node.IsLinearBlendParamsMatched(
-        min_blend,
-        travel_limit,
-        reblend_iterations,
-        reblend_tolerance,
-        max_blend=max_blend,
-        chain_consistent_linear=_LINEAR_BLEND_CHAIN_CONSISTENT)
+    return blend.is_matched(output_stos_node, _LINEAR_BLEND_CHAIN_CONSISTENT)
 
 
 def _apply_linear_blend_job(context: _LinearBlendJobContext,
                             result: stosgroup_workers.LinearBlendResult,
-                            min_blend: float | None,
-                            travel_limit: float | None,
-                            reblend_iterations: int | None,
-                            reblend_tolerance: float | None,
-                            max_blend: float | None) -> None:
+                            blend: _LinearBlendParams) -> None:
     """Update volume metadata after a linear-blend worker completes."""
-    context.output_stos_node.SetLinearBlendParams(
-        min_blend,
-        travel_limit,
-        reblend_iterations,
-        reblend_tolerance,
-        max_blend=max_blend,
-        chain_consistent_linear=_LINEAR_BLEND_CHAIN_CONSISTENT)
+    blend.stamp(context.output_stos_node, _LINEAR_BLEND_CHAIN_CONSISTENT)
     context.output_stos_node.ResetChecksum()
     context.output_stos_node.SetTransform(context.input_transform_node)
 
@@ -2748,10 +2764,9 @@ def TranslateVolumeToZeroOrigin(stos_group_node: StosGroupNode, **kwargs):
 
 
 def _use_chain_consistent_linear(chain_consistent_linear: bool,
-                                 min_blend: float | None,
-                                 travel_limit: float | None) -> bool:
+                                 blend: _LinearBlendParams) -> bool:
     """Return True when linear blend should use the composed rigid slice-to-slice chain."""
-    return bool(chain_consistent_linear and (min_blend is not None or travel_limit is not None))
+    return bool(chain_consistent_linear and blend.enabled)
 
 
 def _rigid_chain_for_slice_to_volume_hop(mapped_to_control_stos_path: str,
@@ -2777,29 +2792,22 @@ def _unblended_sidecar_path(output_stos_path: str) -> str:
     return f"{base}.unblended{ext}"
 
 
-def _slice_to_volume_uses_linear_blend(min_blend: float | None,
-                                       travel_limit: float | None) -> bool:
-    """Return True when SliceToVolume should apply terminal linear blending."""
-    return min_blend is not None or travel_limit is not None
-
-
 def _compose_slice_to_volume_pair(mapped_to_control_path: str,
                                   control_to_volume_path: str,
                                   *,
                                   enrich_tolerance: float | None,
-                                  min_blend: float | None,
-                                  travel_limit: float | None,
-                                  reblend_iterations: int,
-                                  reblend_tolerance: float | None,
-                                  max_blend: float | None,
+                                  blend: _LinearBlendParams,
                                   rigid_ac: ITransform | None) -> tuple[stosfile.StosFile, stosfile.StosFile]:
-    """Compose mapped→center using an unblended B→C chain, then blend once at the terminal hop."""
+    """Compose mapped→center using an unblended B→C chain, then blend once at the terminal hop.
+
+    ``blend.reblend_iterations`` of None runs a single blend pass.
+    """
     unblended = stosfile.AddStosTransforms(mapped_to_control_path,
                                            control_to_volume_path,
                                            EnrichTolerance=enrich_tolerance,
                                            min_blend=None,
                                            travel_limit=None)
-    if not _slice_to_volume_uses_linear_blend(min_blend, travel_limit):
+    if not blend.enabled:
         return unblended, unblended
 
     if rigid_ac is None:
@@ -2807,14 +2815,14 @@ def _compose_slice_to_volume_pair(mapped_to_control_path: str,
 
     nonlinear = nornir_imageregistration.transforms.LoadTransform(unblended.Transform)  # type: ignore[arg-type]
     blend_kwargs: dict[str, float | int | None] = {
-        'min_blend': min_blend,
-        'travel_limit': travel_limit,
-        'reblend_iterations': reblend_iterations,
+        'min_blend': blend.min_blend,
+        'travel_limit': blend.travel_limit,
+        'reblend_iterations': blend.reblend_iterations or 1,
     }
-    if reblend_tolerance is not None:
-        blend_kwargs['reblend_tolerance'] = reblend_tolerance
-    if max_blend is not None:
-        blend_kwargs['max_blend'] = max_blend
+    if blend.reblend_tolerance is not None:
+        blend_kwargs['reblend_tolerance'] = blend.reblend_tolerance
+    if blend.max_blend is not None:
+        blend_kwargs['max_blend'] = blend.max_blend
 
     blended_transform = nornir_imageregistration.transforms.utils.BlendTransformsIteratively(
         nonlinear,  # type: ignore[arg-type]
@@ -3021,11 +3029,7 @@ def _slice_to_volume_hop_needs_write(
         output_transform: typing.Any | None,
         *,
         is_direct_to_center: bool,
-        min_blend: float | None,
-        travel_limit: float | None,
-        reblend_iterations: int | None,
-        reblend_tolerance: float | None,
-        max_blend: float | None,
+        blend: _LinearBlendParams,
         use_chain_linear: bool) -> bool:
     """Return True when this hop will write a ``.stos`` given current files."""
     mapped_path = getattr(mapped_to_control, 'FullPath', None)
@@ -3048,15 +3052,9 @@ def _slice_to_volume_hop_needs_write(
     stored = getattr(output_transform, 'ControlToVolumeTransformChecksum', None)
     if stored is None:
         return True
-    blend_matched = getattr(output_transform, 'IsLinearBlendParamsMatched', None)
-    if callable(blend_matched):
+    if callable(getattr(output_transform, 'IsLinearBlendParamsMatched', None)):
         try:
-            if not blend_matched(min_blend,
-                                 travel_limit,
-                                 reblend_iterations,
-                                 reblend_tolerance,
-                                 max_blend=max_blend,
-                                 chain_consistent_linear=use_chain_linear):
+            if not blend.is_matched(output_transform, use_chain_linear):
                 return True
         except TypeError:
             return True
@@ -3068,15 +3066,10 @@ def _count_slice_to_volume_stos_writes(
         input_group: StosGroupNode,
         output_group: StosGroupNode,
         *,
-        min_blend: float | None,
-        travel_limit: float | None,
-        reblend_iterations: int | None,
-        reblend_tolerance: float | None,
-        max_blend: float | None,
+        blend: _LinearBlendParams,
         chain_consistent_linear: bool) -> int:
     """Count registration-tree hops whose output ``.stos`` is missing or stale."""
-    use_chain_linear = _use_chain_consistent_linear(
-        chain_consistent_linear, min_blend, travel_limit)
+    use_chain_linear = _use_chain_consistent_linear(chain_consistent_linear, blend)
     total = 0
     getter = getattr(output_group, 'GetSectionMapping', None)
     for section_number in list(getattr(rt, 'RootNodes', []) or []):
@@ -3130,11 +3123,7 @@ def _count_slice_to_volume_stos_writes(
                         mapped_to_control,
                         output_transform,
                         is_direct_to_center=is_direct,
-                        min_blend=min_blend,
-                        travel_limit=travel_limit,
-                        reblend_iterations=reblend_iterations,
-                        reblend_tolerance=reblend_tolerance,
-                        max_blend=max_blend,
+                        blend=blend,
                         use_chain_linear=use_chain_linear):
                     total += 1
     return total
@@ -3217,11 +3206,8 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
         rt,
         InputStosGroupNode,
         OutputGroupNode,
-        min_blend=min_blend,
-        travel_limit=travel_limit,
-        reblend_iterations=reblend_iterations,
-        reblend_tolerance=reblend_tolerance,
-        max_blend=max_blend,
+        blend=_LinearBlendParams(min_blend, travel_limit, reblend_iterations,
+                                 reblend_tolerance, max_blend),
         chain_consistent_linear=chain_consistent_linear,
     )
 
@@ -3274,15 +3260,14 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
     Logger = logging.getLogger(__name__ + '.SliceToVolumeFromRegistrationTreeNode')
 
 
-    min_blend = _resolve_min_blend(min_blend, linear_blend_factor)
+    blend = _LinearBlendParams(_resolve_min_blend(min_blend, linear_blend_factor),
+                               travel_limit, reblend_iterations, reblend_tolerance, max_blend)
 
     SectionToRootTransformMap = {}
     SectionToRigidTransformMap = {}
-    use_linear_blend = _slice_to_volume_uses_linear_blend(min_blend, travel_limit)
+    use_linear_blend = blend.enabled
     SectionToUnblendedPathMap: dict[tuple[int, int], str] = {} if use_linear_blend else None
-    use_chain_linear = _use_chain_consistent_linear(chain_consistent_linear,
-                                                    min_blend,
-                                                    travel_limit)
+    use_chain_linear = _use_chain_consistent_linear(chain_consistent_linear, blend)
     for step in rt.GenerateOrderedMappingsToRootNode(rootNode):
         MappedSectionNode = step.MappedNode  # type: ignore[attr-defined]
         IntermediateControlSection = step.ParentNode.SectionNumber  # type: ignore[attr-defined]
@@ -3428,12 +3413,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                     needs_rebuild = True
 
                 if (os.path.exists(OutputTransform.FullPath)
-                        and not OutputTransform.IsLinearBlendParamsMatched(min_blend,
-                                                                         travel_limit,
-                                                                         reblend_iterations,
-                                                                         reblend_tolerance,
-                                                                         max_blend=max_blend,
-                                                                         chain_consistent_linear=use_chain_linear)):
+                        and not blend.is_matched(OutputTransform, use_chain_linear)):
                     Logger.info(" %s: Linear blend parameters changed %s" % (logStr, OutputTransform.Path))
                     needs_rebuild = True
 
@@ -3463,11 +3443,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                 MappedToControlTransform.FullPath,
                                 control_to_volume_unblended_path,
                                 enrich_tolerance=EnrichTolerance,
-                                min_blend=min_blend,
-                                travel_limit=travel_limit,
-                                reblend_iterations=reblend_iterations or 1,
-                                reblend_tolerance=reblend_tolerance,
-                                max_blend=max_blend,
+                                blend=blend,
                                 rigid_ac=rigid_ac)
                             tmp_output_path = OutputTransform.FullPath + '.tmp'
                             final_stos.Save(tmp_output_path)
@@ -3480,12 +3456,7 @@ def SliceToVolumeFromRegistrationTreeNode(rt: registrationtree.RegistrationTree,
                                     os.remove(sidecar_path)
 
                             OutputTransform.ControlToVolumeTransformChecksum = ControlToVolumeTransform.Checksum
-                            OutputTransform.SetLinearBlendParams(min_blend,
-                                                                 travel_limit,
-                                                                 reblend_iterations,
-                                                                 reblend_tolerance,
-                                                                 max_blend=max_blend,
-                                                                 chain_consistent_linear=use_chain_linear)
+                            blend.stamp(OutputTransform, use_chain_linear)
                             OutputTransform.ResetChecksum()
                             OutputTransform.SetTransform(MappedToControlTransform)
                             compose_succeeded = True
@@ -3999,6 +3970,7 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
 
     if travel_limit is not None:
         travel_limit = travel_limit / float(OutputDownsample)
+    blend = _LinearBlendParams(min_blend, travel_limit, reblend_iterations, reblend_tolerance, max_blend)
 
     OutputGroupNode = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.Create(OutputGroupName,
                                                                                            OutputDownsample)  # type: ignore[arg-type]
@@ -4043,12 +4015,7 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
 
         if not stosNode_added:
             if not (output_stos_node.IsInputTransformMatched(InputTransformNode)
-                    and _linear_blend_params_matched(output_stos_node,
-                                                     min_blend,
-                                                     travel_limit,
-                                                     reblend_iterations,
-                                                     reblend_tolerance,
-                                                     max_blend)):
+                    and _linear_blend_params_matched(output_stos_node, blend)):
                 if _no_delete_mod.is_no_delete():
                     if os.path.exists(output_stos_node.FullPath):
                         prettyoutput.Log(
@@ -4117,13 +4084,7 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
                                                                      max_in_flight=max_in_flight):
             context = job.context
             try:
-                _apply_linear_blend_job(context,
-                                        result,
-                                        min_blend,
-                                        travel_limit,
-                                        reblend_iterations,
-                                        reblend_tolerance,
-                                        max_blend)
+                _apply_linear_blend_job(context, result, blend)
             except FileNotFoundError:
                 context.output_group_node.remove(context.output_stos_node)
                 continue

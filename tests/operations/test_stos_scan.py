@@ -65,18 +65,16 @@ class TestSliceToVolumeHopNeedsWrite(unittest.TestCase):
         with mock.patch.object(block_mod.os.path, 'exists', return_value=True):
             self.assertFalse(block_mod._slice_to_volume_hop_needs_write(
                 mapped, output, is_direct_to_center=True,
-                min_blend=None, travel_limit=None,
-                reblend_iterations=None, reblend_tolerance=None,
-                max_blend=None, use_chain_linear=False))
+                blend=block_mod._LinearBlendParams(None, None, None, None, None),
+                use_chain_linear=False))
 
     def test_needs_write_when_output_missing(self) -> None:
         mapped = SimpleNamespace(FullPath='/tmp/in.stos')
         with mock.patch.object(block_mod.os.path, 'exists', side_effect=lambda p: p == '/tmp/in.stos'):
             self.assertTrue(block_mod._slice_to_volume_hop_needs_write(
                 mapped, None, is_direct_to_center=True,
-                min_blend=None, travel_limit=None,
-                reblend_iterations=None, reblend_tolerance=None,
-                max_blend=None, use_chain_linear=False))
+                blend=block_mod._LinearBlendParams(None, None, None, None, None),
+                use_chain_linear=False))
 
 
 @given(st.lists(
