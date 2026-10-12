@@ -15,6 +15,7 @@ from hypothesis import given, settings, strategies as st
 from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
+    _iter_indexed_masks,
     apply_ignore_moves,
     equivalent_radius,
     ignore_location,
@@ -33,6 +34,10 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
 )
 from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     RepairAnnotationOverlays,
+)
+from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    drop_product_index,
+    get_product_index,
 )
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 from nornir_buildmanager.operations.segmentationtraining.sam2 import WriteGallery
@@ -308,3 +313,46 @@ def test_pipelines_xml_gallery_and_score() -> None:
     write = root.find("Pipeline[@Name='ExportAnnotationCrops']/PythonCall[@Function='WriteGallery']")
     assert write is not None
     assert "segmentationtraining.sam2" in (write.get("Module") or "")
+
+
+def _touch_masks(output: Path, folder: str, names: list[str]) -> None:
+    target = output / folder
+    target.mkdir(parents=True, exist_ok=True)
+    for name in names:
+        (target / name).write_bytes(b"x")
+
+
+def test_iter_indexed_masks_walk_filters_z_names_and_folder(tmp_path: Path) -> None:
+    output = tmp_path / "AnnotationCrops"
+    _touch_masks(
+        output,
+        "masks",
+        ["RC2_17_D1_X0_Y0_5.png", "RC2_18_D1_X0_Y0_6.png", "notamask.png", "RC2_17_D1_X0_Y0_7.txt"],
+    )
+    _touch_masks(output, "ignored", ["RC2_17_D1_X0_Y0_9.png"])
+    drop_product_index(output)
+    products = get_product_index(output)
+    try:
+        everything = set(_iter_indexed_masks(products, "masks", z=None, image_keys=None))
+        assert everything == {(5, "RC2_17_D1_X0_Y0"), (6, "RC2_18_D1_X0_Y0")}
+        only17 = set(_iter_indexed_masks(products, "masks", z=17, image_keys=None))
+        assert only17 == {(5, "RC2_17_D1_X0_Y0")}
+        ignored = set(_iter_indexed_masks(products, "ignored", z=None, image_keys=None))
+        assert ignored == {(9, "RC2_17_D1_X0_Y0")}
+    finally:
+        drop_product_index(output)
+
+
+def test_iter_indexed_masks_explicit_keys_apply_z_filter(tmp_path: Path) -> None:
+    output = tmp_path / "AnnotationCrops"
+    _touch_masks(output, "masks", ["RC2_17_D1_X0_Y0_5.png", "RC2_18_D1_X0_Y0_6.png"])
+    drop_product_index(output)
+    products = get_product_index(output)
+    try:
+        keys = {"RC2_17_D1_X0_Y0", "RC2_18_D1_X0_Y0", "RC2_19_D1_X0_Y0"}
+        got = set(_iter_indexed_masks(products, "masks", z=None, image_keys=keys))
+        assert got == {(5, "RC2_17_D1_X0_Y0"), (6, "RC2_18_D1_X0_Y0")}
+        got18 = set(_iter_indexed_masks(products, "masks", z=18, image_keys=keys))
+        assert got18 == {(6, "RC2_18_D1_X0_Y0")}
+    finally:
+        drop_product_index(output)
