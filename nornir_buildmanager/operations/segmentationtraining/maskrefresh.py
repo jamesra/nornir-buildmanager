@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from nornir_buildmanager.operations.segmentationtraining.product_index import IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     ImageWatermark,
@@ -75,7 +76,7 @@ def _existing_marks_for_location(output: Path, record: LocationRecord) -> list[I
 
 def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark]:
     """Build windows from crop JSON when the section watermark has no membership."""
-    images = output / "images"
+    images = output / IMAGES_FOLDER
     if not images.is_dir():
         return []
     marks: list[ImageWatermark] = []
@@ -113,7 +114,7 @@ def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark
 
 def _mark_with_extent(output: Path, mark: ImageWatermark) -> ImageWatermark | None:
     """Keep a mark only when its crop image exists, filling a missing pixel size."""
-    image = _crop_image(output / "images", mark.key)
+    image = _crop_image(output / IMAGES_FOLDER, mark.key)
     if not image.is_file():
         return None
     if mark.width > 0 and mark.height > 0:
@@ -183,7 +184,7 @@ def _replace_annotations(output: Path, results: list[dict[str, Any]], record: Lo
     for item in results:
         by_key.setdefault(str(item["image_key"]), []).append(item)
     for image_key, group in by_key.items():
-        json_path = output / "images" / f"{image_key}.json"
+        json_path = output / IMAGES_FOLDER / f"{image_key}.json"
         if not json_path.is_file():
             continue
         payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -238,9 +239,9 @@ def _move_refreshed_masks_if_ignored(output: Path, location_id: int, image_keys:
             break
     if not listed:
         return
-    ignored = output / "ignored"
+    ignored = output / IGNORED_FOLDER
     for image_key in image_keys:
-        source = output / "masks" / f"{image_key}_{location_id}.png"
+        source = output / MASKS_FOLDER / f"{image_key}_{location_id}.png"
         if not source.is_file():
             continue
         ignored.mkdir(parents=True, exist_ok=True)

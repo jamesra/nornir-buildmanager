@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 
 from annotation_crops.rle import encode_coco_rle
 
+from nornir_buildmanager.operations.segmentationtraining.product_index import MASKS_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.geometry import PolygonRings, pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.poolutil import run_process_jobs
 
@@ -65,7 +66,7 @@ def mask_job_for_crop(
         width=width,
         height=height,
         rings=tuple(rings),
-        mask_path=str(output / "masks" / f"{image_key}_{location_id}.png"),
+        mask_path=str(output / MASKS_FOLDER / f"{image_key}_{location_id}.png"),
         rle_path=str(output / "_work" / "rle" / f"{image_key}_{location_id}.json"),
     )
 

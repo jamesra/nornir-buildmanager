@@ -22,14 +22,17 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     odata_url_from_output,
 )
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    IGNORED_FOLDER,
+    IMAGES_FOLDER,
+    MASKS_FOLDER,
     CropProductIndex,
     get_product_index,
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import resolve_crop_image
 
 _MEMBER_FOLDERS = (
-    ("masks", ".png"),
-    ("ignored", ".png"),
+    (MASKS_FOLDER, ".png"),
+    (IGNORED_FOLDER, ".png"),
     ("_work/rle", ".json"),
 )
 
@@ -55,9 +58,9 @@ def remove_image_key_products(
     """Delete crop, JSON, overlay, masks, ignored masks, and RLE for one image key."""
     removed = 0
     for folder, name in (
-        ("images", f"{key}.png"),
-        ("images", f"{key}.jpg"),
-        ("images", f"{key}.json"),
+        (IMAGES_FOLDER, f"{key}.png"),
+        (IMAGES_FOLDER, f"{key}.jpg"),
+        (IMAGES_FOLDER, f"{key}.json"),
         ("overlays", f"{key}.png"),
     ):
         path = output.joinpath(*folder.split("/")) / name
@@ -159,8 +162,8 @@ def _repair_key(
     odata: str | None = None,
 ) -> None:
     """Delete or rewrite one image key when the crop, JSON, masks, or overlay disagree."""
-    image_path = resolve_crop_image(output / "images", key)
-    json_path = output / "images" / f"{key}.json"
+    image_path = resolve_crop_image(output / IMAGES_FOLDER, key)
+    json_path = output / IMAGES_FOLDER / f"{key}.json"
     image_ok = image_path.is_file()
     json_ok = json_path.is_file()
     if image_ok != json_ok:
@@ -298,7 +301,7 @@ def _candidate_keys(output: Path, wanted: set[int] | None) -> list[str]:
     """Image keys in the product index, optionally limited to *wanted* sections."""
     products = get_product_index(output)
     keys: set[str] = set()
-    for name in products.iter_names("images"):
+    for name in products.iter_names(IMAGES_FOLDER):
         if name.endswith((".png", ".jpg", ".json")):
             keys.add(Path(name).stem)
     for name in products.iter_names("overlays"):
@@ -368,11 +371,11 @@ def _split_member_stem(stem: str) -> tuple[str, int | None]:
 def _mask_exists(output: Path, key: str, location_id: int) -> bool:
     """True when a mask or an ignored mask exists for this location on the crop."""
     name = f"{key}_{location_id}.png"
-    return (output / "masks" / name).is_file() or (output / "ignored" / name).is_file()
+    return (output / MASKS_FOLDER / name).is_file() or (output / IGNORED_FOLDER / name).is_file()
 
 
 def _has_crop_image(output: Path, key: str) -> bool:
-    return resolve_crop_image(output / "images", key).is_file()
+    return resolve_crop_image(output / IMAGES_FOLDER, key).is_file()
 
 
 def _image_key_matches_sections(key: str, sections: set[int]) -> bool:

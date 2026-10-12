@@ -44,7 +44,7 @@ from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, image_watermark, plan_section_crops
-from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, get_product_index
+from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER, get_product_index
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord, parse_datetime
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     replace_manifest_rows,
@@ -259,8 +259,8 @@ def _unlink_computed_member(
 ) -> None:
     """Delete one location's mask, ignored mask, and RLE, and drop them from the index."""
     for folder, name in (
-        ("masks", f"{image_key}_{location_id}.png"),
-        ("ignored", f"{image_key}_{location_id}.png"),
+        (MASKS_FOLDER, f"{image_key}_{location_id}.png"),
+        (IGNORED_FOLDER, f"{image_key}_{location_id}.png"),
         ("_work/rle", f"{image_key}_{location_id}.json"),
     ):
         path = output.joinpath(*folder.split("/")) / name
@@ -300,7 +300,7 @@ def _drop_annotations(
     products: CropProductIndex,
 ) -> None:
     """Remove location ids from one crop JSON, or delete the crop when none remain."""
-    json_path = output / "images" / f"{image_key}.json"
+    json_path = output / IMAGES_FOLDER / f"{image_key}.json"
     if not json_path.is_file():
         return
     payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -351,7 +351,7 @@ def _stored_last_modified(output: Path, image_keys: list[str]) -> dict[int, Any]
     """Read annotation timestamps from the known crop JSON files for one section."""
     found: dict[int, Any] = {}
     for image_key in image_keys:
-        path = output / "images" / f"{image_key}.json"
+        path = output / IMAGES_FOLDER / f"{image_key}.json"
         if not path.is_file():
             continue
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -426,7 +426,7 @@ def _replace_changed_annotations(
     for job in jobs:
         by_key.setdefault(job.image_key, []).append(job)
     for image_key, group in by_key.items():
-        json_path = output / "images" / f"{image_key}.json"
+        json_path = output / IMAGES_FOLDER / f"{image_key}.json"
         if not json_path.is_file():
             continue
         payload = json.loads(json_path.read_text(encoding="utf-8"))
@@ -455,11 +455,11 @@ def _replace_changed_annotations(
         if overlay:
             image_meta = payload.get("image") or {}
             mask_paths = [
-                str(output / "masks" / f"{image_key}_{int(item['id'])}.png")
+                str(output / MASKS_FOLDER / f"{image_key}_{int(item['id'])}.png")
                 for item in payload["annotations"]
                 if "id" in item
             ]
-            tem = resolve_crop_image(output / "images", image_key)
+            tem = resolve_crop_image(output / IMAGES_FOLDER, image_key)
             overlay_path = output / "overlays" / f"{image_key}.png"
             write_overlay(
                 overlay_path,
@@ -492,9 +492,9 @@ def _place_added(
     stitch_jobs: list[StitchJob] = []
     for plan in plans:
         image_name = crop_image_filename(plan.image_key)
-        exists = plan.image_key in known or products.exists("images", image_name)
+        exists = plan.image_key in known or products.exists(IMAGES_FOLDER, image_name)
         if not exists:
-            exists = products.exists("images", f"{plan.image_key}.jpg")
+            exists = products.exists(IMAGES_FOLDER, f"{plan.image_key}.jpg")
         width, height = plan.output_size()
         mask_jobs.extend(mask_jobs_for_plan(output, plan, polygons_by_id))
         if not exists:
@@ -505,7 +505,7 @@ def _place_added(
                     snap=plan.snap,
                     downsample=plan.downsample,
                     tile_shape=tile_shape,
-                    image_path=str(output / "images" / image_name),
+                    image_path=str(output / IMAGES_FOLDER / image_name),
                     crop_x=crop_x,
                     crop_y=crop_y,
                     crop_width=width,
@@ -583,7 +583,7 @@ def _merge_added_json(
 ) -> None:
     """Append new annotations onto existing crop JSON and refresh overlays."""
     for plan in plans:
-        json_path = output / "images" / f"{plan.image_key}.json"
+        json_path = output / IMAGES_FOLDER / f"{plan.image_key}.json"
         existing: list[dict[str, Any]] = []
         image_meta: dict[str, Any] = {}
         if json_path.is_file():
@@ -628,10 +628,10 @@ def _merge_added_json(
         products.note_path(json_path)
         if overlay:
             mask_paths = [
-                str(output / "masks" / f"{plan.image_key}_{int(item['id'])}.png")
+                str(output / MASKS_FOLDER / f"{plan.image_key}_{int(item['id'])}.png")
                 for item in existing + new_items
             ]
-            tem = resolve_crop_image(output / "images", plan.image_key)
+            tem = resolve_crop_image(output / IMAGES_FOLDER, plan.image_key)
             overlay_path = output / "overlays" / f"{plan.image_key}.png"
             write_overlay(
                 overlay_path,
@@ -657,7 +657,7 @@ def _rebuild_watermarks(
             kept = [member for member in item.member_ids if member not in removed]
             if not kept:
                 continue
-            if not resolve_crop_image(output / "images", item.key).is_file():
+            if not resolve_crop_image(output / IMAGES_FOLDER, item.key).is_file():
                 continue
             members = [by_id[i] for i in kept if i in by_id]
             marks[item.key] = ImageWatermark(
@@ -675,8 +675,8 @@ def _rebuild_watermarks(
                 height=item.height,
             )
     for plan in plans:
-        if not resolve_crop_image(output / "images", plan.image_key).is_file():
-            json_path = output / "images" / f"{plan.image_key}.json"
+        if not resolve_crop_image(output / IMAGES_FOLDER, plan.image_key).is_file():
+            json_path = output / IMAGES_FOLDER / f"{plan.image_key}.json"
             if not json_path.is_file():
                 continue
         prior = marks.get(plan.image_key)

@@ -22,6 +22,9 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     load_section_records,
 )
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    IGNORED_FOLDER,
+    IMAGES_FOLDER,
+    MASKS_FOLDER,
     CropProductIndex,
     get_product_index,
 )
@@ -192,15 +195,15 @@ def apply_ignore_moves(output_path: str | os.PathLike[str]) -> int:
     """
     output = Path(output_path)
     products = get_product_index(output)
-    ignored_dir = output / "ignored"
+    ignored_dir = output / IGNORED_FOLDER
     moved = 0
     for location_id in load_ignore_ids(output):
-        sources = _find_masks(output, "masks", location_id)
+        sources = _find_masks(output, MASKS_FOLDER, location_id)
         if not sources:
             continue
         ignored_dir.mkdir(parents=True, exist_ok=True)
         for source in sources:
-            _relocate_indexed(products, source, ignored_dir / source.name, "masks", "ignored")
+            _relocate_indexed(products, source, ignored_dir / source.name, MASKS_FOLDER, IGNORED_FOLDER)
             moved += 1
     return moved
 
@@ -262,12 +265,12 @@ def restore_location(output_path: str | os.PathLike[str], location_id: int) -> b
     save_ignore_ids(output_path, ids)
     output = Path(output_path)
     products = get_product_index(output)
-    sources = _find_masks(output, "ignored", location_id)
+    sources = _find_masks(output, IGNORED_FOLDER, location_id)
     if sources:
-        masks = output / "masks"
+        masks = output / MASKS_FOLDER
         masks.mkdir(parents=True, exist_ok=True)
         for source in sources:
-            _relocate_indexed(products, source, masks / source.name, "ignored", "masks")
+            _relocate_indexed(products, source, masks / source.name, IGNORED_FOLDER, MASKS_FOLDER)
     _set_ignored_flag(output_path, location_id, ignored=False)
     return True
 
@@ -607,14 +610,14 @@ def _iter_image_json_paths(
     image_keys: set[str] | None,
 ) -> Iterator[Path]:
     """Yield JSON sidecars from the product index. Prefer an explicit key list."""
-    images = output / "images"
+    images = output / IMAGES_FOLDER
     if image_keys is not None:
         for key in image_keys:
             name = f"{key}.json"
-            if products.exists("images", name):
+            if products.exists(IMAGES_FOLDER, name):
                 yield images / name
         return
-    for name in products.iter_names("images"):
+    for name in products.iter_names(IMAGES_FOLDER):
         if not name.endswith(".json"):
             continue
         if z is not None and not _image_key_matches_z(name[:-5], z):
@@ -675,7 +678,7 @@ def _collect_location_rows(
                 stored_radius=stored_radius,
                 ignored_ids=ignored_ids,
             )
-    for folder, ignored_flag in (("masks", False), ("ignored", True)):
+    for folder, ignored_flag in ((MASKS_FOLDER, False), (IGNORED_FOLDER, True)):
         for location_id, image_key in _iter_indexed_masks(
             products, folder, z=z, image_keys=image_keys
         ):
@@ -818,7 +821,7 @@ def read_source_odata(output_path: str | os.PathLike[str]) -> str | None:
 
 def _image_relpath(output: Path, image_key: str) -> str:
     """Relative crop path, PNG when that file is present."""
-    path = resolve_crop_image(output / "images", image_key)
+    path = resolve_crop_image(output / IMAGES_FOLDER, image_key)
     if path.is_file():
         return str(path.relative_to(output)).replace("\\", "/")
     return f"images/{crop_image_filename(image_key)}"
@@ -856,7 +859,7 @@ def _mask_relpath(output: Path, image_key: str, location_id: int, *, ignored: bo
     """Relative mask path. A lone fragment name is used when the expected file is absent."""
     products = get_product_index(output)
     name = f"{image_key}_{location_id}.png"
-    folder = "ignored" if ignored else "masks"
+    folder = IGNORED_FOLDER if ignored else MASKS_FOLDER
     relative = f"{folder}/{name}"
     if products.exists(folder, name):
         return relative

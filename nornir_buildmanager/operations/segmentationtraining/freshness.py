@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
-from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
+from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IMAGES_FOLDER
 
 if TYPE_CHECKING:
     from nornir_imageregistration.type_info import Shape
@@ -316,7 +316,7 @@ def image_output_fresh(
     watermark_mtime: float | None,
     *,
     products: CropProductIndex | None = None,
-    folder: str = "images",
+    folder: str = IMAGES_FOLDER,
 ) -> bool:
     """True when an imageKey file exists and is at least as new as the watermark."""
     if products is not None:
@@ -365,12 +365,12 @@ def image_rebuild_mode(
     if not previous.same_tiles(current):
         return "full"
     image_present = (
-        products.exists("images", image_path.name)
+        products.exists(IMAGES_FOLDER, image_path.name)
         if products is not None
         else image_path.is_file()
     )
     json_present = (
-        products.exists("images", json_path.name)
+        products.exists(IMAGES_FOLDER, json_path.name)
         if products is not None
         else json_path.is_file()
     )

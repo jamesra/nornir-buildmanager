@@ -12,15 +12,21 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+# On-disk folder names under an AnnotationCrops output tree. Sam2SegmentationTrainer reads this layout,
+# so the values must not change.
+IMAGES_FOLDER = "images"
+MASKS_FOLDER = "masks"
+IGNORED_FOLDER = "ignored"
+
 PRODUCT_FOLDERS: tuple[str, ...] = (
-    "images",
-    "masks",
+    IMAGES_FOLDER,
+    MASKS_FOLDER,
     "overlays",
-    "ignored",
+    IGNORED_FOLDER,
     "_work/rle",
 )
 
-_MEMBER_FOLDERS = frozenset({"masks", "ignored", "_work/rle"})
+_MEMBER_FOLDERS = frozenset({MASKS_FOLDER, IGNORED_FOLDER, "_work/rle"})
 
 _indexes: dict[str, CropProductIndex] = {}
 _indexes_lock = threading.Lock()

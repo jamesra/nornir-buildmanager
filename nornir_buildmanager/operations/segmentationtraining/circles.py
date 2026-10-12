@@ -49,6 +49,7 @@ from PIL import Image, ImageDraw
 from scipy import ndimage
 
 from nornir_buildmanager.operations.segmentationtraining import geometry
+from nornir_buildmanager.operations.segmentationtraining.product_index import IMAGES_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
@@ -598,7 +599,7 @@ def _default_image_exists(output: Path) -> Callable[[str], bool]:
     from nornir_buildmanager.operations.segmentationtraining.product_index import get_product_index
 
     products = get_product_index(output)
-    return lambda name: products.exists("images", name)
+    return lambda name: products.exists(IMAGES_FOLDER, name)
 
 
 def WriteCircleAnnotations(

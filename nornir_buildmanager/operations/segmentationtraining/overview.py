@@ -13,6 +13,10 @@ from pathlib import Path
 from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.freshness import ImageWatermark
+from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    IGNORED_FOLDER,
+    MASKS_FOLDER,
+)
 
 _PART_COLORS = (
     (255, 0, 0),
@@ -129,9 +133,9 @@ def _paste_mask(
     height: int,
     index: int,
 ) -> None:
-    mask_path = output / "masks" / f"{mark.key}_{location_id}.png"
+    mask_path = output / MASKS_FOLDER / f"{mark.key}_{location_id}.png"
     if not mask_path.is_file():
-        mask_path = output / "ignored" / f"{mark.key}_{location_id}.png"
+        mask_path = output / IGNORED_FOLDER / f"{mark.key}_{location_id}.png"
     if not mask_path.is_file():
         return
     with Image.open(mask_path) as handle:
