@@ -56,7 +56,7 @@ from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
-from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
+from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, image_watermark, plan_section_crops
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     CropProductIndex,
     get_product_index,
@@ -1096,7 +1096,7 @@ def export_section_crops(
         for plan in plans:
             image_path = output / "images" / crop_image_filename(plan.image_key)
             json_path = output / "images" / f"{plan.image_key}.json"
-            current_mark = _image_watermark(plan, by_id)
+            current_mark = image_watermark(plan, by_id)
             mode = image_rebuild_mode(
                 current_mark,
                 previous_images.get(plan.image_key),
@@ -1174,7 +1174,7 @@ def export_section_crops(
         mask_by_member = {(item["image_key"], item["location_id"]): item for item in mask_results}
         image_marks: list[ImageWatermark] = []
         for plan, mode in join_specs:
-            image_marks.append(_image_watermark(plan, by_id))
+            image_marks.append(image_watermark(plan, by_id))
             if mode == "skip":
                 # Crop/mask membership and OData LastModified already matched. Only
                 # ``stat`` overlay vs on-disk TEM/masks — never load pixels or restitch.
@@ -1534,26 +1534,6 @@ def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, str]])
         f"{len(regenerate)} need regeneration "
         f"({crops_mask_only} crop(s) mask-only, {crops_full} crop(s) full stitch); "
         f"crops skip={crops_skip} mask_only={crops_mask_only} full={crops_full}"
-    )
-
-
-def _image_watermark(plan: PlannedCrop, by_id: dict[int, LocationRecord]) -> ImageWatermark:
-    """Watermark for one planned crop from its member location records."""
-    members = [by_id[i] for i in plan.location_ids if i in by_id]
-    window = plan.window
-    return ImageWatermark(
-        key=plan.image_key,
-        downsample=plan.downsample,
-        ix0=plan.snap.ix0,
-        ix1=plan.snap.ix1,
-        iy0=plan.snap.iy0,
-        iy1=plan.snap.iy1,
-        member_ids=list(plan.location_ids),
-        max_last_modified=max_last_modified(members).isoformat() if members else "",
-        origin_x=window.origin_x,
-        origin_y=window.origin_y,
-        width=window.width,
-        height=window.height,
     )
 
 

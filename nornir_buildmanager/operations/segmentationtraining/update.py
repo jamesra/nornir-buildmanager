@@ -43,7 +43,7 @@ from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask_jobs_for_record
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
-from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, plan_section_crops
+from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, image_watermark, plan_section_crops
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, get_product_index
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord, parse_datetime
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
@@ -682,22 +682,7 @@ def _rebuild_watermarks(
         prior = marks.get(plan.image_key)
         extra = [i for i in plan.location_ids if prior is None or i not in prior.member_ids]
         if prior is None:
-            window = plan.window
-            members = [by_id[i] for i in plan.location_ids if i in by_id]
-            marks[plan.image_key] = ImageWatermark(
-                key=plan.image_key,
-                downsample=plan.downsample,
-                ix0=plan.snap.ix0,
-                ix1=plan.snap.ix1,
-                iy0=plan.snap.iy0,
-                iy1=plan.snap.iy1,
-                member_ids=list(plan.location_ids),
-                max_last_modified=max_last_modified(members).isoformat() if members else "",
-                origin_x=window.origin_x,
-                origin_y=window.origin_y,
-                width=window.width,
-                height=window.height,
-            )
+            marks[plan.image_key] = image_watermark(plan, by_id)
             continue
         member_ids = list(prior.member_ids) + extra
         members = [by_id[i] for i in member_ids if i in by_id]

@@ -686,13 +686,13 @@ def test_refresh_odata_reruns_masks_when_last_modified_changed(tmp_path: Path) -
 
     # LastModified bumped (DB trigger fired on MosaicShape change) → mask_only.
     updated = _record(8, 2, _box_wkt(1, 1, 5, 5), last_modified="2021-06-01T00:00:00+00:00")
-    from nornir_buildmanager.operations.segmentationtraining.pipeline import _image_watermark
+    from nornir_buildmanager.operations.segmentationtraining.planning import image_watermark
     plans, _ = plan_section_crops(
         [updated],
         params=_params(pad=0.0, max_texture=8, min_process_pixels=16, volume="volume", tile_x_dim=8, tile_y_dim=8),
         tileset=_tileset_for(level, mtime=None),
     )
-    updated_mark = _image_watermark(plans[0], {updated.id: updated})
+    updated_mark = image_watermark(plans[0], {updated.id: updated})
     assert (
         image_rebuild_mode(
             updated_mark,

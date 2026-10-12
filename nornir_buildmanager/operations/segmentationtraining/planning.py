@@ -10,7 +10,9 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     EXPORTER_LEGACY,
     EXPORTER_TILED,
     ExportParams,
+    ImageWatermark,
     ResolvedTileset,
+    max_last_modified,
 )
 from nornir_buildmanager.operations.segmentationtraining.geometry import (
     CropWindow,
@@ -247,3 +249,23 @@ def _assign_window_indices(plans: list[PlannedCrop]) -> None:
         count = len(hosts)
         for index, plan in enumerate(hosts):
             plan.window_of[location_id] = (index, count)
+
+
+def image_watermark(plan: PlannedCrop, by_id: dict[int, LocationRecord]) -> ImageWatermark:
+    """Watermark for one planned crop from its member location records."""
+    members = [by_id[i] for i in plan.location_ids if i in by_id]
+    window = plan.window
+    return ImageWatermark(
+        key=plan.image_key,
+        downsample=plan.downsample,
+        ix0=plan.snap.ix0,
+        ix1=plan.snap.ix1,
+        iy0=plan.snap.iy0,
+        iy1=plan.snap.iy1,
+        member_ids=list(plan.location_ids),
+        max_last_modified=max_last_modified(members).isoformat() if members else "",
+        origin_x=window.origin_x,
+        origin_y=window.origin_y,
+        width=window.width,
+        height=window.height,
+    )
