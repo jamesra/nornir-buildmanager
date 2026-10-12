@@ -425,7 +425,7 @@ def ExportSectionCrops(
             )
 
 
-_section_visit_order: dict[str, list[int]] = {}
+_section_visit_order: dict[str, dict[int, int]] = {}
 _repair_image_scan: set[str] = set()
 
 
@@ -509,12 +509,8 @@ def section_visit_index(output_path: str, z: int) -> int:
     Volume XML may visit high Z first (RPC2) or low Z first (RPC1). The bar
     follows that visit order instead of the ascending ingest list.
     """
-    order = _section_visit_order.setdefault(str(output_path), [])
-    try:
-        return order.index(z)
-    except ValueError:
-        order.append(z)
-        return len(order) - 1
+    order = _section_visit_order.setdefault(str(output_path), {})
+    return order.setdefault(z, len(order))
 
 
 def _export_section_crops_entry(
