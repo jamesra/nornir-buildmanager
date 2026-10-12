@@ -9,8 +9,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable
 
-import nornir_shared.files
-
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
 
 if TYPE_CHECKING:
@@ -295,6 +293,8 @@ def _mtime_equal(left: float | None, right: float | None) -> bool:
         return True
     if left is None or right is None:
         return False
+    import nornir_shared.files  # Imported on use: a mask-only refresh (the gallery image has no Nornir) never compares mtimes.
+
     return nornir_shared.files.mtimes_equivalent(
         nornir_shared.files.seconds_to_ns(float(left)),
         nornir_shared.files.seconds_to_ns(float(right)),
@@ -303,6 +303,8 @@ def _mtime_equal(left: float | None, right: float | None) -> bool:
 
 def seconds_significantly_newer(left: float, right: float) -> bool:
     """True when *left* (epoch seconds) is newer than *right* beyond the SMB mtime skew tolerance."""
+    import nornir_shared.files  # Imported on use, like _mtime_equal.
+
     return nornir_shared.files.is_significantly_newer(
         nornir_shared.files.seconds_to_ns(float(left)),
         nornir_shared.files.seconds_to_ns(float(right)),

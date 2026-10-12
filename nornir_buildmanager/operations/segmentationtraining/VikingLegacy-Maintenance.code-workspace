@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../../../../../VikingLegacy-Maintenance"
+		},
+		{
+			"path": "../../../.."
+		}
+	],
+	"settings": {
+		"dotnet.preferCSharpExtension": true,
+		"dotnet.defaultSolution": "Everything.sln"
+	}
+}
