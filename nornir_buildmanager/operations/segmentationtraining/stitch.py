@@ -207,6 +207,25 @@ def tile_filename(prefix: str, postfix: str, ix: int, iy: int) -> str:
     return Templates.GridTileName(prefix, ix, iy, postfix)
 
 
+@dataclass(frozen=True, slots=True)
+class _TileLayout:
+    """Tile file naming plus pixel tile size, shared by load and finer-level recovery."""
+
+    prefix: str
+    postfix: str
+    tile_x_dim: int
+    tile_y_dim: int
+
+    def filename(self, ix: int, iy: int) -> str:
+        """Tileset file name for grid cell (*ix*, *iy*)."""
+        return tile_filename(self.prefix, self.postfix, ix, iy)
+
+    @property
+    def has_tile_size(self) -> bool:
+        """True when both tile dimensions are known, which recovery requires."""
+        return self.tile_x_dim > 0 and self.tile_y_dim > 0
+
+
 def missing_covering_tiles(
     tiles: TileRect,
     level_dir: str | None,
@@ -441,32 +460,21 @@ def rebuild_tile_from_finer(
     ix: int,
     iy: int,
     finer_dirs: list[str],
-    *,
-    prefix: str,
-    postfix: str,
-    tile_x_dim: int,
-    tile_y_dim: int,
+    layout: _TileLayout,
 ) -> NDArray | None:
     """Recursively reconstruct a tile from progressively finer levels.
 
     Each of the four sub-tiles at ``finer_dirs[0]`` must load or recover;
     a single missing or unrecoverable sub-tile aborts the whole tile.
     """
-    if not finer_dirs or tile_x_dim <= 0 or tile_y_dim <= 0:
+    if not finer_dirs or not layout.has_tile_size:
         return None
+    tile_x_dim = layout.tile_x_dim
+    tile_y_dim = layout.tile_y_dim
     canvas = np.zeros((tile_y_dim * 2, tile_x_dim * 2), dtype=np.uint8)
     for sub_iy in range(iy * 2, iy * 2 + 2):
         for sub_ix in range(ix * 2, ix * 2 + 2):
-            sub = _load_or_recover(
-                sub_ix,
-                sub_iy,
-                level_dir=finer_dirs[0],
-                finer_dirs=finer_dirs[1:],
-                prefix=prefix,
-                postfix=postfix,
-                tile_x_dim=tile_x_dim,
-                tile_y_dim=tile_y_dim,
-            )
+            sub = _load_or_recover(sub_ix, sub_iy, finer_dirs[0], finer_dirs[1:], layout)
             if sub is None:
                 return None
             px = (sub_ix - ix * 2) * tile_x_dim
@@ -485,17 +493,13 @@ def rebuild_tile_from_finer(
 def _load_or_recover(
     ix: int,
     iy: int,
-    *,
     level_dir: str,
     finer_dirs: list[str],
-    prefix: str,
-    postfix: str,
-    tile_x_dim: int,
-    tile_y_dim: int,
+    layout: _TileLayout,
     repair_dir: str | None = None,
 ) -> NDArray | None:
     """Load one tile; on IOError try recursive reconstruction from *finer_dirs*."""
-    name = tile_filename(prefix, postfix, ix, iy)
+    name = layout.filename(ix, iy)
     path = os.path.join(level_dir, name)
     if not os.path.isfile(path):
         return None
@@ -503,22 +507,13 @@ def _load_or_recover(
         tile = nornir_imageregistration.LoadImage(path, backend="numpy")
         return _as_uint8_gray(tile)
     except (IOError, OSError) as exc:
-        can_recover = bool(finer_dirs) and tile_x_dim > 0 and tile_y_dim > 0
-        if can_recover:
+        if finer_dirs and layout.has_tile_size:
             _logger.warning(
                 "Tile %s unreadable (%s); attempting recursive recovery",
                 path,
                 exc,
             )
-            recovered = rebuild_tile_from_finer(
-                ix,
-                iy,
-                finer_dirs,
-                prefix=prefix,
-                postfix=postfix,
-                tile_x_dim=tile_x_dim,
-                tile_y_dim=tile_y_dim,
-            )
+            recovered = rebuild_tile_from_finer(ix, iy, finer_dirs, layout)
             if recovered is not None:
                 _logger.warning("Recovered tile %s; overwriting corrupt file", path)
                 write_png(recovered, path)
@@ -548,19 +543,10 @@ def disk_tile_loader(
     A warning is emitted so the operator can repair or remove the bad file.
     """
     recovery_dirs = list(finer_dirs) if finer_dirs else []
+    layout = _TileLayout(prefix, postfix, tile_x_dim, tile_y_dim)
 
     def load(ix: int, iy: int) -> NDArray | None:
-        return _load_or_recover(
-            ix,
-            iy,
-            level_dir=level_dir,
-            finer_dirs=recovery_dirs,
-            prefix=prefix,
-            postfix=postfix,
-            tile_x_dim=tile_x_dim,
-            tile_y_dim=tile_y_dim,
-            repair_dir=repair_dir,
-        )
+        return _load_or_recover(ix, iy, level_dir, recovery_dirs, layout, repair_dir)
 
     return load
 

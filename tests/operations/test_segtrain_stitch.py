@@ -96,6 +96,34 @@ def test_single_level_recovery_overwrites_corrupt_tile(tmp_path: Path) -> None:
     np.testing.assert_array_equal(repaired, expected)
 
 
+def test_recovery_also_repairs_source_dir_when_loading_staged_copy(tmp_path: Path) -> None:
+    """A tile recovered from a staged copy is written back to *repair_dir* (the source level)."""
+    staged = tmp_path / "stage"
+    source = tmp_path / "4"
+    finer = tmp_path / "2"
+    values = (10, 80, 160, 240)
+    for index, value in enumerate(values):
+        dy, dx = divmod(index, 2)
+        _write_tile(finer, dx, dy, value)
+    _corrupt_tile(staged, 0, 0)
+    _corrupt_tile(source, 0, 0)
+
+    loader = disk_tile_loader(
+        str(staged),
+        _PREFIX,
+        _POSTFIX,
+        finer_dirs=[str(finer)],
+        tile_x_dim=_TILE,
+        tile_y_dim=_TILE,
+        repair_dir=str(source),
+    )
+    loaded = loader(0, 0)
+    expected = _downsample_quad(tuple(_constant_tile(value) for value in values))
+    assert loaded is not None
+    repaired = np.array(Image.open(_tile_path(source, 0, 0)), dtype=np.uint8)
+    np.testing.assert_array_equal(repaired, expected)
+
+
 def test_two_level_recursive_recovery(tmp_path: Path) -> None:
     level_4 = tmp_path / "4"
     level_2 = tmp_path / "2"
