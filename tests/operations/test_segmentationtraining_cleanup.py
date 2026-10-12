@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from nornir_imageregistration.type_info import Shape
 from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
@@ -19,7 +20,10 @@ from nornir_buildmanager.operations.segmentationtraining.cleanup import (
     cleanup_annotation_crops,
 )
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
+    EXPORTER_TILED,
     ExportParams,
+    ResolvedTileset,
+    SectionCropRun,
     load_section_watermark,
     section_meta_path,
 )
@@ -28,6 +32,7 @@ from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     IngestGeometries,
     export_section_crops,
 )
+from nornir_buildmanager.operations.segmentationtraining.product_index import drop_product_index
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord, LocationType
 from nornir_buildmanager.operations.segmentationtraining.stitch import tile_filename
 
@@ -70,6 +75,27 @@ def _params() -> ExportParams:
     )
 
 
+def _run(level_dir: str) -> SectionCropRun:
+    return SectionCropRun(
+        params=_params(),
+        tileset=ResolvedTileset(
+            tile_shape=Shape(y=8, x=8),
+            available=[1],
+            level_dirs={1: level_dir},
+            prefix="",
+            postfix=".png",
+            mtime=1.0,
+        ),
+        exporter=EXPORTER_TILED,
+        max_tiles_x=1,
+        max_tiles_y=1,
+        workers=1,
+        mask_workers=1,
+        stage_tiles=None,
+        overlay=False,
+    )
+
+
 def _export_one(tmp_path: Path, record: LocationRecord) -> tuple[Path, str]:
     level = tmp_path / "tiles" / "001"
     level.mkdir(parents=True, exist_ok=True)
@@ -81,20 +107,7 @@ def _export_one(tmp_path: Path, record: LocationRecord) -> tuple[Path, str]:
         output_path=out,
         z=record.z,
         records=[record],
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=_params(),
-        tileset_mtime=1.0,
-        max_tiles_x=1,
-        max_tiles_y=1,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
+        run=_run(str(level)),
         force=False,
     )
     assert len(keys) == 1
@@ -106,6 +119,7 @@ def test_export_removes_orphan_member_and_catalog_row(tmp_path: Path) -> None:
     out, key = _export_one(tmp_path, record)
     orphan = out / "masks" / f"{key}_99.png"
     Image.fromarray(np.zeros((8, 8), dtype=np.uint8), mode="L").save(orphan)
+    drop_product_index(out)  # the orphan was written behind the cached product index
     upsert_catalog(out)
     assert any(row["location_id"] == 99 for row in list_catalog_rows(out))
     previous = load_section_watermark(out, 7)
@@ -114,20 +128,7 @@ def test_export_removes_orphan_member_and_catalog_row(tmp_path: Path) -> None:
         output_path=out,
         z=7,
         records=[edited],
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(tmp_path / "tiles" / "001")},
-        file_prefix="",
-        file_postfix=".png",
-        params=_params(),
-        tileset_mtime=1.0,
-        max_tiles_x=1,
-        max_tiles_y=1,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
+        run=_run(str(tmp_path / "tiles" / "001")),
         force=False,
         previous=previous,
     )

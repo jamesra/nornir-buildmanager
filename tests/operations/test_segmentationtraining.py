@@ -1590,7 +1590,7 @@ def test_mask_only_when_geometry_changes_but_tiles_do_not(tmp_path: Path) -> Non
 def _export_base(tmp_path: Path, out: Path) -> SectionCropRun:
     level = tmp_path / "tiles" / "001"
     level.mkdir(parents=True, exist_ok=True)
-    for ix in (0, 5):
+    for ix in (0, 4, 5):
         Image.fromarray(np.full((8, 8), 40, dtype=np.uint8), mode="L").save(
             level / tile_filename("", ".png", ix, 0)
         )

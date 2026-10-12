@@ -10,10 +10,16 @@ from urllib.parse import unquote
 
 import numpy as np
 import pytest
+from nornir_imageregistration.type_info import Shape
 from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.catalog import rebuild_catalog
-from nornir_buildmanager.operations.segmentationtraining.freshness import ExportParams
+from nornir_buildmanager.operations.segmentationtraining.freshness import (
+    EXPORTER_TILED,
+    ExportParams,
+    ResolvedTileset,
+    SectionCropRun,
+)
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ingest_to_section_files,
 )
@@ -187,9 +193,8 @@ def _track_events(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, 
         raising=False,
     )
     monkeypatch.setattr(
-        "nornir_buildmanager.operations.segmentationtraining.sam2.report_iterate_complete",
+        "nornir_buildmanager.progress.report_iterate_complete",
         report_iterate_complete,
-        raising=False,
     )
     return events
 
@@ -358,20 +363,24 @@ def test_export_reports_mask_and_stitch_progress(
         output_path=tmp_path / "export",
         z=7,
         records=records,
-        tile_x_dim=8,
-        tile_y_dim=8,
-        available=[1],
-        level_dirs={1: str(level)},
-        file_prefix="",
-        file_postfix=".png",
-        params=params,
-        tileset_mtime=1.0,
-        max_tiles_x=8,
-        max_tiles_y=8,
-        workers=1,
-        mask_workers=1,
-        stage_tiles=None,
-        overlay=False,
+        run=SectionCropRun(
+            params=params,
+            tileset=ResolvedTileset(
+                tile_shape=Shape(y=8, x=8),
+                available=[1],
+                level_dirs={1: str(level)},
+                prefix="",
+                postfix=".png",
+                mtime=1.0,
+            ),
+            exporter=EXPORTER_TILED,
+            max_tiles_x=8,
+            max_tiles_y=8,
+            workers=1,
+            mask_workers=1,
+            stage_tiles=None,
+            overlay=False,
+        ),
         force=False,
     )
     assert len(keys) == 2
