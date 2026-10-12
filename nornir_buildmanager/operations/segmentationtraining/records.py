@@ -17,6 +17,10 @@ DEFAULT_ODATA_FILTER = (
 
 CLOSED_POLYGON_TYPE_FILTER = "(TypeCode eq 4 or TypeCode eq 6)"
 
+CIRCLE_TYPE_FILTER = "(TypeCode eq 1)"
+
+DEFAULT_CIRCLE_ODATA_FILTER = DEFAULT_ODATA_FILTER.replace(CLOSED_POLYGON_TYPE_FILTER, CIRCLE_TYPE_FILTER)
+
 
 class LocationType(IntEnum):
     """Viking ``Locations.TypeCode``. WKT is control points; only 6 is curve-fit."""
@@ -31,6 +35,8 @@ class LocationType(IntEnum):
     CLOSEDCURVE = 7
 
 
+# Circles (1) never produce masks. They are ingested on a separate path and feed
+# only circle_annotations.json (see circles.py and ingest.iter_odata_circles).
 SKIP_MASK_TYPE_CODES = frozenset({
     LocationType.POINT,
     LocationType.CIRCLE,
@@ -141,6 +147,24 @@ def resolve_odata_filter(
     if structure_type_ids:
         return odata_filter_for_structure_type_ids(structure_type_ids)
     return DEFAULT_ODATA_FILTER
+
+
+def circle_odata_filter(
+    odata_filter: str | None,
+    structure_type_ids: list[int] | None,
+) -> str | None:
+    """``$filter`` for circle annotations that mirrors the polygon filter's parent clause.
+
+    The polygon filter is resolved first (explicit filter, else exact
+    StructureTypeId, else the Cell default) and its closed-polygon TypeCode
+    clause is swapped for ``TypeCode eq 1``. A custom ``-ODataFilter`` that does
+    not contain the standard clause cannot be rewritten safely, so it yields
+    None and the caller skips circle ingest.
+    """
+    polygon_filter = resolve_odata_filter(odata_filter, structure_type_ids)
+    if CLOSED_POLYGON_TYPE_FILTER not in polygon_filter:
+        return None
+    return polygon_filter.replace(CLOSED_POLYGON_TYPE_FILTER, CIRCLE_TYPE_FILTER)
 
 
 def parse_datetime(value: Any) -> datetime:

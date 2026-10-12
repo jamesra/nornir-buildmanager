@@ -8,6 +8,7 @@ from typing import Any, Sequence
 from nornir_buildmanager.operations.segmentationtraining.records import (
     SKIP_MASK_TYPE_CODES,
     LocationRecord,
+    LocationType,
     parse_datetime,
 )
 
@@ -158,10 +159,45 @@ def location_from_odata_entity(
     if off_edge and not include_off_edge:
         return None
     wkt = mosaic_wkt_from_odata_shape(entity.get("MosaicShape"))
-    raw_type_code = entity.get("TypeCode")
-    type_code = None if raw_type_code is None or raw_type_code == "" else int(raw_type_code)
+    type_code = _entity_type_code(entity)
     if not wkt or is_skippable_location(type_code, wkt):
         return None
+    return _record_from_entity(entity, wkt=wkt, type_code=type_code, off_edge=off_edge)
+
+
+def circle_from_odata_entity(
+    entity: dict[str, Any],
+    *,
+    include_off_edge: bool,
+) -> LocationRecord | None:
+    """Map an OData Location with ``TypeCode == 1`` (circle) to a record, else None.
+
+    Circles never reach mask planning: they are kept in a separate list by the
+    ingest layer and only feed ``circle_annotations.json``.
+    """
+    off_edge = bool(entity.get("OffEdge", False))
+    if off_edge and not include_off_edge:
+        return None
+    if _entity_type_code(entity) != int(LocationType.CIRCLE):
+        return None
+    wkt = mosaic_wkt_from_odata_shape(entity.get("MosaicShape"))
+    if not wkt:
+        return None
+    return _record_from_entity(entity, wkt=wkt, type_code=int(LocationType.CIRCLE), off_edge=off_edge)
+
+
+def _entity_type_code(entity: dict[str, Any]) -> int | None:
+    raw_type_code = entity.get("TypeCode")
+    return None if raw_type_code is None or raw_type_code == "" else int(raw_type_code)
+
+
+def _record_from_entity(
+    entity: dict[str, Any],
+    *,
+    wkt: str,
+    type_code: int | None,
+    off_edge: bool,
+) -> LocationRecord:
     parent = entity.get("Parent") or {}
     parent_type = parent.get("Type") or {}
     parent_id = entity.get("ParentID", parent.get("ID"))

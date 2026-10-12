@@ -23,10 +23,12 @@ from nornir_buildmanager.operations.segmentationtraining.progress import (
 from nornir_buildmanager.operations.segmentationtraining.records import (
     SCHEMA_VERSION,
     LocationRecord,
+    circle_odata_filter,
     parse_datetime,
     resolve_odata_filter,
 )
 from nornir_buildmanager.operations.segmentationtraining.wkt import (
+    circle_from_odata_entity,
     is_skippable_location,
     location_from_odata_entity,
     mosaic_wkt_from_odata_shape,
@@ -55,6 +57,11 @@ def work_dir(output_path: str | os.PathLike[str]) -> Path:
 def section_jsonl_path(output_path: str | os.PathLike[str], z: int) -> Path:
     """Per-section spill file used by ExportSectionCrops."""
     return work_dir(output_path) / f"section_{z}.jsonl"
+
+
+def circles_jsonl_path(output_path: str | os.PathLike[str], z: int) -> Path:
+    """Per-section circle spill. Never read by mask planning; only by ``circles.py``."""
+    return work_dir(output_path) / f"circles_{z}.jsonl"
 
 
 def cache_meta_path(output_path: str | os.PathLike[str]) -> Path:
@@ -280,7 +287,22 @@ def ingest_to_section_files(
     except ValueError as exc:
         raise NornirUserException(str(exc)) from exc
     prior_odata = odata_url_from_output(output_path)
+    circle_records: Iterable[LocationRecord] = ()
     if odata:
+        circle_filter = circle_odata_filter(odata_filter, structure_type_ids)
+        if circle_filter is None:
+            _logger.warning(
+                "ExportAnnotationCrops: -ODataFilter has no closed-polygon TypeCode clause; "
+                "circle_annotations.json will have no annotated circles"
+            )
+        else:
+            circle_records = iter_odata_circles(
+                odata,
+                filter_text=circle_filter,
+                include_off_edge=include_off_edge,
+                sections=sections,
+                http_get=http_get,
+            )
         records: Iterable[LocationRecord] = iter_odata_locations(
             odata,
             filter_text=filter_text,
@@ -292,8 +314,15 @@ def ingest_to_section_files(
         )
         source = {"kind": "odata", "url": odata, "filter": filter_text}
     else:
+        dump_entities = list(_parse_odata_dump(Path(geometries).read_text(encoding="utf-8")))  # type: ignore[arg-type]
         records = iter_geometries_dump(
             Path(geometries),  # type: ignore[arg-type]
+            include_off_edge=include_off_edge,
+            sections=sections,
+            entities=dump_entities,
+        )
+        circle_records = iter_geometries_dump_circles(
+            dump_entities,
             include_off_edge=include_off_edge,
             sections=sections,
         )
@@ -306,6 +335,11 @@ def ingest_to_section_files(
         records,
         prune_missing=sections is None,
     )
+    written_circles = write_circle_jsonl(
+        output_path,
+        circle_records,
+        sections=sections,
+    )
     meta = {
         "schemaVersion": SCHEMA_VERSION,
         "source": source,
@@ -314,6 +348,7 @@ def ingest_to_section_files(
         "ingestedAt": datetime.now(timezone.utc).isoformat(),
         "sections": sorted(written.keys()),
         "counts": {str(z): len(rows) for z, rows in written.items()},
+        "circleCounts": {str(z): len(rows) for z, rows in written_circles.items()},
     }
     cache_meta_path(output_path).write_text(json.dumps(meta, indent=2), encoding="utf-8")
     write_export_source(output_path, meta)
@@ -346,6 +381,57 @@ def write_section_jsonl(
     return by_z
 
 
+def write_circle_jsonl(
+    output_path: str | os.PathLike[str],
+    records: Iterable[LocationRecord],
+    *,
+    sections: list[int] | None = None,
+) -> dict[int, list[LocationRecord]]:
+    """Flush circle records grouped by Z into ``_work/circles_{z}.jsonl``.
+
+    With *sections* None every circle spill not rewritten is removed. With
+    *sections* only those Z are replaced, so a partial ingest leaves other
+    sections' circles alone but still clears a listed section that lost all of
+    its circles. Returns the groups written.
+    """
+    by_z: dict[int, list[LocationRecord]] = {}
+    for record in records:
+        by_z.setdefault(record.z, []).append(record)
+    work = work_dir(output_path)
+    existing = {path: _circle_spill_z(path) for path in work.glob("circles_*.jsonl")}
+    for z, group in by_z.items():
+        group.sort(key=lambda item: item.id)
+        with circles_jsonl_path(output_path, z).open("w", encoding="utf-8") as handle:
+            for item in group:
+                handle.write(json.dumps(item.to_json(), separators=(",", ":")) + "\n")
+    replaced = set(sections) if sections else None
+    for path, z in existing.items():
+        if z in by_z:
+            continue
+        if replaced is None or z in replaced:
+            path.unlink(missing_ok=True)
+    return by_z
+
+
+def _circle_spill_z(path: Path) -> int | None:
+    token = path.stem[len("circles_"):]
+    return int(token) if token.isdigit() else None
+
+
+def load_circle_records(output_path: str | os.PathLike[str], z: int) -> list[LocationRecord]:
+    """Read the circle spill for one section. Missing file means no circles."""
+    path = circles_jsonl_path(output_path, z)
+    if not path.is_file():
+        return []
+    records: list[LocationRecord] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                records.append(LocationRecord.from_json(json.loads(line)))
+    return records
+
+
 def load_section_records(output_path: str | os.PathLike[str], z: int) -> list[LocationRecord]:
     """Read the ingest spill for one section."""
     path = section_jsonl_path(output_path, z)
@@ -366,10 +452,15 @@ def iter_geometries_dump(
     *,
     include_off_edge: bool,
     sections: list[int] | None,
+    entities: list[dict[str, Any]] | None = None,
 ) -> Iterator[LocationRecord]:
-    """Yield LocationRecords from an OData dump (JSONL or {value:[]})."""
-    text = path.read_text(encoding="utf-8")
-    entities = list(_parse_odata_dump(text))
+    """Yield closed-polygon LocationRecords from an OData dump (JSONL or {value:[]}).
+
+    *entities* lets the caller parse the dump once and share it with
+    :func:`iter_geometries_dump_circles`.
+    """
+    if entities is None:
+        entities = list(_parse_odata_dump(path.read_text(encoding="utf-8")))
     section_set = set(sections) if sections else None
     reporter = IterateProgressReporter(
         INGEST_TRACK_ID, len(entities), label=INGEST_LABEL, depth=0
@@ -387,6 +478,23 @@ def iter_geometries_dump(
             reporter.update(index)
     finally:
         reporter.complete()
+
+
+def iter_geometries_dump_circles(
+    entities: Iterable[dict[str, Any]],
+    *,
+    include_off_edge: bool,
+    sections: list[int] | None,
+) -> Iterator[LocationRecord]:
+    """Yield circle (TypeCode 1) records from already-parsed dump entities.
+
+    A dump that was saved without circles simply yields nothing.
+    """
+    section_set = set(sections) if sections else None
+    for entity in entities:
+        record = circle_from_odata_entity(entity, include_off_edge=include_off_edge)
+        if record is not None and (section_set is None or record.z in section_set):
+            yield record
 
 
 def _parse_odata_dump(text: str) -> Iterator[dict[str, Any]]:
@@ -498,6 +606,44 @@ def iter_odata_locations(
                 yield record
     finally:
         reporter.complete()
+
+
+def iter_odata_circles(
+    base_url: str,
+    *,
+    filter_text: str,
+    include_off_edge: bool,
+    sections: list[int] | None,
+    http_get: HttpGet | None = None,
+) -> Iterator[LocationRecord]:
+    """Second OData query: circle locations, kept apart from the mask records.
+
+    Circles are re-fetched on every OData ingest because they are small and have
+    no mask products to protect with a LastModified pass. A *sections* subset
+    narrows the server query with the same Z-range chunking as the polygon pass.
+    """
+    getter = http_get or http_get_json
+    select = "ID,ParentID,TypeCode,Z,OffEdge,MosaicShape,LastModified,Radius"
+    expand = "Parent($select=ID,TypeID,Label;$expand=Type($select=ID,Name,ParentID))"
+    section_set = set(sections) if sections else None
+    if section_set is None:
+        filters = [filter_text]
+    else:
+        filters = [
+            _combined_z_filter(filter_text, chunk)
+            for chunk in _chunk_z_for_odata_filter(sorted(section_set), filter_text)
+        ]
+    for page_filter in filters:
+        for entity in _iter_odata_pages(
+            _odata_locations_url(base_url, filter_text=page_filter, select=select, expand=expand),
+            getter,
+        ):
+            record = circle_from_odata_entity(entity, include_off_edge=include_off_edge)
+            if record is None:
+                continue
+            if section_set is not None and record.z not in section_set:
+                continue
+            yield record
 
 
 def _section_needs_geometry(

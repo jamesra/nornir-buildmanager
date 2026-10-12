@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -200,6 +201,18 @@ def _getter(entities: list[dict]) -> object:
 
     getter.calls = calls  # type: ignore[attr-defined]
     return getter
+
+
+def _is_circle_query(url: str) -> bool:
+    return "TypeCode eq 1)" in unquote(url)
+
+
+def _polygon_pass_b_count(getter: object) -> int:
+    """MosaicShape requests for closed polygons; the circle query always runs and is excluded."""
+    return sum(
+        "MosaicShape" in unquote(url) and not _is_circle_query(url)
+        for url in getter.calls  # type: ignore[attr-defined]
+    )
 
 
 def _params(**overrides) -> ExportParams:
@@ -997,7 +1010,7 @@ def test_mock_odata_two_phase_and_pass_b_skip(tmp_path: Path) -> None:
     decoded = [unquote(url) for url in getter.calls]  # type: ignore[attr-defined]
     assert any("MosaicShape" in url for url in decoded)
     assert any("LastModified" in url and "MosaicShape" not in unquote(url) for url in getter.calls)  # type: ignore[attr-defined]
-    first_pass_b = sum("MosaicShape" in unquote(url) for url in getter.calls)  # type: ignore[attr-defined]
+    first_pass_b = _polygon_pass_b_count(getter)
 
     getter2 = _getter([entity])
     ingest_to_section_files(
@@ -1006,7 +1019,8 @@ def test_mock_odata_two_phase_and_pass_b_skip(tmp_path: Path) -> None:
         geometries=None,
         http_get=getter2,  # type: ignore[arg-type]
     )
-    assert sum("MosaicShape" in unquote(url) for url in getter2.calls) == 0  # type: ignore[attr-defined]
+    assert _polygon_pass_b_count(getter2) == 0
+    assert any(_is_circle_query(url) for url in getter2.calls)  # type: ignore[attr-defined]
     assert load_section_records(out, 4)[0].id == 9
     assert load_section_records(out, 4)[0].type_code == LocationType.POLYGON
     assert first_pass_b >= 1
@@ -1093,7 +1107,11 @@ def test_odata_pass_b_uses_z_ranges(tmp_path: Path) -> None:
         geometries=None,
         http_get=getter,  # type: ignore[arg-type]
     )
-    pass_b = [unquote(url) for url in getter.calls if "MosaicShape" in unquote(url)]  # type: ignore[attr-defined]
+    pass_b = [
+        unquote(url)
+        for url in getter.calls  # type: ignore[attr-defined]
+        if "MosaicShape" in unquote(url) and not _is_circle_query(url)
+    ]
     assert len(pass_b) == 1
     assert "Z ge 1 and Z le 10" in pass_b[0]
     assert "Z eq 1 or Z eq 2" not in pass_b[0]
@@ -2418,3 +2436,286 @@ def test_watermark_mtime_comparisons_tolerate_smb_skew(tmp_path: Path) -> None:
     assert image_output_fresh(crop, 1001.0)
     assert not image_output_fresh(crop, 1030.0)
     assert image_output_fresh(crop, 900.0)
+
+
+# ---------------------------------------------------------------------------
+# circle_annotations.json
+# ---------------------------------------------------------------------------
+
+_CIRCLE_WKT = (
+    "CURVEPOLYGON(CIRCULARSTRING ({x0} {y} 5, {x} {y1} 5, {x1} {y} 5, {x} {y0} 5, {x0} {y} 5))"
+)
+
+
+def _circle_wkt(x: float, y: float, radius: float) -> str:
+    return _CIRCLE_WKT.format(x0=x - radius, x1=x + radius, y0=y - radius, y1=y + radius, x=x, y=y)
+
+
+def _circle_entity(loc_id: int, z: int, x: float, y: float, radius: float, *, label: str | None = None) -> dict:
+    entity = _entity(loc_id, z, _circle_wkt(x, y, radius), label=label, type_code=LocationType.CIRCLE)
+    entity["Radius"] = radius
+    return entity
+
+
+def _c_shape_polygon() -> list:
+    """A square with a slot cut from the right, so the area centroid lies in the slot (outside)."""
+    ring = (
+        (0.0, 0.0), (100.0, 0.0), (100.0, 30.0), (30.0, 30.0),
+        (30.0, 70.0), (100.0, 70.0), (100.0, 100.0), (0.0, 100.0), (0.0, 0.0),
+    )
+    return [(ring,)]
+
+
+# Largest circle in the C: it sits in a corner and touches the slot's inner corner (30, 30).
+_C_SHAPE_RADIUS = 30.0 * math.sqrt(2.0) / (1.0 + math.sqrt(2.0))
+
+
+def _point_in_c_shape(x: float, y: float) -> bool:
+    return 0.0 <= x <= 100.0 and 0.0 <= y <= 100.0 and not (x > 30.0 and 30.0 < y < 70.0)
+
+
+def test_inscribed_circle_of_c_shape_is_inside_when_centroid_is_not() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import max_inscribed_circle
+
+    polygons = _c_shape_polygon()
+    # Shoelace centroid of the C: x = 46.9..., y = 50. That point is inside the slot.
+    assert not _point_in_c_shape(46.0, 50.0)
+    center_x, center_y, radius = max_inscribed_circle(polygons)  # type: ignore[misc]
+    assert radius == pytest.approx(_C_SHAPE_RADIUS, abs=0.1)
+    assert _point_in_c_shape(center_x, center_y)
+    # Every sample on the circle's rim stays inside the polygon (it really fits).
+    for angle in np.linspace(0.0, 2.0 * math.pi, 90, endpoint=False):
+        rim_x = center_x + (radius - 0.05) * math.cos(angle)
+        rim_y = center_y + (radius - 0.05) * math.sin(angle)
+        assert _point_in_c_shape(rim_x, rim_y)
+
+
+def test_inscribed_circle_caps_the_raster_and_stays_precise() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import max_inscribed_circle
+
+    scaled = [
+        tuple(tuple((x * 100.0, y * 100.0) for x, y in ring) for ring in rings)
+        for rings in _c_shape_polygon()
+    ]
+    _, _, radius = max_inscribed_circle(scaled)  # type: ignore[misc]
+    assert radius == pytest.approx(_C_SHAPE_RADIUS * 100.0, abs=2.0)
+
+
+def test_inscribed_circle_ignores_holes() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import max_inscribed_circle
+
+    outer = ((0.0, 0.0), (40.0, 0.0), (40.0, 40.0), (0.0, 40.0), (0.0, 0.0))
+    hole = ((15.0, 15.0), (25.0, 15.0), (25.0, 25.0), (15.0, 25.0), (15.0, 15.0))
+    center_x, center_y, radius = max_inscribed_circle([(outer, hole)])  # type: ignore[misc]
+    assert radius == pytest.approx(20.0, abs=0.1)
+    assert (center_x, center_y) == pytest.approx((20.0, 20.0), abs=0.5)
+
+
+def test_mosaic_to_crop_pixels_and_y_convention() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import circle_in_crop_pixels
+    from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow
+
+    window = CropWindow(origin_x=1000, origin_y=500, width=1024, height=1024)
+    # Crop origin is (4000, 2000) in mosaic at D4. Larger mosaic y means a larger image row.
+    assert circle_in_crop_pixels(4040.0, 2080.0, 40.0, window=window, downsample=4) == (10.0, 20.0, 10.0)
+    assert circle_in_crop_pixels(3996.0, 1996.0, 8.0, window=window, downsample=4) == (-1.0, -1.0, 2.0)
+
+
+def test_window_from_image_key_round_trips_the_pixel_extents() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import window_from_image_key
+    from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow
+
+    decoded = window_from_image_key("RC2_73_D1_X44032-45056_Y42496-43520")
+    assert decoded == (1, CropWindow(44032, 42496, 1024, 1024))
+    assert window_from_image_key("not_a_key") is None
+
+
+def _crops() -> list:
+    from nornir_buildmanager.operations.segmentationtraining.circles import CropRef
+    from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow
+
+    return [
+        CropRef("V_1_D1_X0-1024_Y0-1024", 1, CropWindow(0, 0, 1024, 1024)),
+        CropRef("V_1_D1_X1024-2048_Y0-1024", 1, CropWindow(1024, 0, 1024, 1024)),
+    ]
+
+
+def test_annotated_circle_straddling_two_crops_is_unclipped_in_both() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import MosaicCircle, cells_for_circles
+
+    circle = MosaicCircle(7, 1020.0, 500.0, 100.0, "mito", False, "annotated")
+    cells = cells_for_circles(_crops(), [circle], 0.8)
+    left = cells["V_1_D1_X0-1024_Y0-1024"][0]
+    right = cells["V_1_D1_X1024-2048_Y0-1024"][0]
+    assert (left["center_x"], left["center_y"], left["radius"]) == (1020.0, 500.0, 80.0)
+    assert (right["center_x"], right["center_y"], right["radius"]) == (-4.0, 500.0, 80.0)
+    assert left["source"] == "annotated" and left["has_polygon_mask"] is False
+
+
+def test_circle_outside_every_crop_is_dropped() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import MosaicCircle, cells_for_circles
+
+    far = MosaicCircle(8, 9000.0, 9000.0, 50.0, "", False, "annotated")
+    touching = MosaicCircle(9, 2048.0 + 80.0, 500.0, 80.0, "", False, "annotated")
+    assert cells_for_circles(_crops(), [far, touching], 1.0) == {}
+
+
+def _write_circle_volume(out: Path) -> None:
+    """Dump with one polygon and two circles, manifest rows, and crop PNGs for z=1."""
+    entities = [
+        _entity(1, 1, _box_wkt(100, 100, 300, 200), label="axon"),
+        _circle_entity(2, 1, 1020.0, 500.0, 100.0, label="mito"),
+        _circle_entity(3, 1, 9000.0, 9000.0, 50.0),
+    ]
+    dump = out.parent / "dump.jsonl"
+    dump.write_text("\n".join(json.dumps(item) for item in entities) + "\n", encoding="utf-8")
+    ingest_to_section_files(output_path=out, odata=None, geometries=dump)
+    (out / "images").mkdir(parents=True, exist_ok=True)
+    rows = []
+    for key, members in (("V_1_D1_X0-1024_Y0-1024", [1]), ("V_1_D1_X1024-2048_Y0-1024", [])):
+        (out / "images" / f"{key}.png").write_bytes(b"png")
+        rows.append({"z": 1, "volume": "V", "imageKey": key, "downsample": 1, "locationIds": members})
+    (out / "manifest.jsonl").write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+
+
+def _volume_images(out: Path):
+    return lambda name: (out / "images" / name).is_file()
+
+
+def test_write_circle_annotations_schema_sources_and_scale(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import write_circle_annotations
+
+    out = tmp_path / "AnnotationCrops"
+    _write_circle_volume(out)
+    path = write_circle_annotations(out, diameter_scale=0.5, image_exists=_volume_images(out))
+    assert path is not None
+    document = json.loads(path.read_text(encoding="utf-8"))
+    assert document["version"] == 1
+    assert document["diameter_scale"] == 0.5
+    left = document["grid_cells"]["V_1_D1_X0-1024_Y0-1024"]
+    right = document["grid_cells"]["V_1_D1_X1024-2048_Y0-1024"]
+    by_id = {entry["location_id"]: entry for entry in left}
+    assert set(by_id) == {1, 2}
+    assert [entry["location_id"] for entry in right] == [2]
+    polygon, circle = by_id[1], by_id[2]
+    assert polygon["source"] == "inscribed" and polygon["has_polygon_mask"] is True
+    assert polygon["structure_label"] == "axon"
+    assert polygon["radius"] == pytest.approx(50.0 * 0.5, abs=0.1)
+    assert polygon["center_y"] == pytest.approx(150.0, abs=1.0)
+    assert 100.0 <= polygon["center_x"] <= 300.0
+    assert circle["source"] == "annotated" and circle["has_polygon_mask"] is False
+    assert circle["structure_label"] == "mito"
+    assert (circle["center_x"], circle["center_y"], circle["radius"]) == (1020.0, 500.0, 50.0)
+    assert right[0]["center_x"] == -4.0
+    assert 3 not in {entry["location_id"] for entry in left + right}  # circle 3 is over no crop
+
+
+def test_circles_never_become_mask_records(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.ingest import load_circle_records
+
+    out = tmp_path / "AnnotationCrops"
+    _write_circle_volume(out)
+    assert [record.id for record in load_section_records(out, 1)] == [1]
+    circles = load_circle_records(out, 1)
+    assert [record.id for record in circles] == [2, 3]
+    assert all(record.type_code == LocationType.CIRCLE and record.radius for record in circles)
+
+
+def test_circle_annotations_regenerate_when_manifest_images_scale_or_circles_change(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import (
+        load_circle_diameter_scale,
+        write_circle_annotations,
+    )
+
+    out = tmp_path / "AnnotationCrops"
+    _write_circle_volume(out)
+    exists = _volume_images(out)
+    path = write_circle_annotations(out, diameter_scale=0.8, image_exists=exists)
+    assert path is not None
+    first = path.read_text(encoding="utf-8")
+    mtime = path.stat().st_mtime_ns
+    assert write_circle_annotations(out, image_exists=exists) == path
+    assert path.read_text(encoding="utf-8") == first
+    assert path.stat().st_mtime_ns == mtime  # unchanged content is not rewritten
+    assert load_circle_diameter_scale(out) == 0.8
+
+    write_circle_annotations(out, diameter_scale=0.4, image_exists=exists)
+    scaled = json.loads(path.read_text(encoding="utf-8"))
+    assert scaled["diameter_scale"] == 0.4
+    assert scaled["grid_cells"]["V_1_D1_X1024-2048_Y0-1024"][0]["radius"] == 40.0
+
+    (out / "images" / "V_1_D1_X1024-2048_Y0-1024.png").unlink()  # e.g. -Cleanup removed the crop
+    write_circle_annotations(out, image_exists=exists)
+    assert "V_1_D1_X1024-2048_Y0-1024" not in json.loads(path.read_text(encoding="utf-8"))["grid_cells"]
+
+    (out / "manifest.jsonl").write_text("", encoding="utf-8")  # every section purged
+    write_circle_annotations(out, image_exists=exists)
+    assert json.loads(path.read_text(encoding="utf-8"))["grid_cells"] == {}
+
+
+def test_circle_annotations_skipped_without_manifest_or_file(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import write_circle_annotations
+
+    assert write_circle_annotations(tmp_path) is None
+    assert not (tmp_path / "circle_annotations.json").exists()
+
+
+def test_odata_ingest_queries_circles_separately(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.ingest import load_circle_records
+    from nornir_buildmanager.operations.segmentationtraining.records import (
+        DEFAULT_CIRCLE_ODATA_FILTER,
+        circle_odata_filter,
+    )
+
+    assert DEFAULT_CIRCLE_ODATA_FILTER == (
+        "(TypeCode eq 1) and (Parent/TypeID eq 1 or Parent/Type/ParentID eq 1)"
+    )
+    assert circle_odata_filter(None, None) == DEFAULT_CIRCLE_ODATA_FILTER
+    assert circle_odata_filter(None, [5]) == "(TypeCode eq 1) and (Parent/TypeID eq 5)"
+    assert circle_odata_filter("TypeCode eq 4", None) is None
+
+    polygon = _entity(1, 3, _box_wkt(0, 0, 4, 4))
+    circle = _circle_entity(2, 3, 50.0, 60.0, 10.0, label="vesicle")
+
+    def getter(url: str) -> dict:
+        decoded = unquote(url)
+        if _is_circle_query(url):
+            return {"value": [circle]}
+        if "MosaicShape" in decoded:
+            return {"value": [polygon]}
+        return {"value": [{key: polygon[key] for key in ("ID", "Z", "LastModified", "ParentID", "OffEdge")}]}
+
+    out = tmp_path / "out"
+    meta = ingest_to_section_files(
+        output_path=out, odata="http://example/odata", geometries=None, http_get=getter
+    )
+    assert [record.id for record in load_section_records(out, 3)] == [1]
+    stored = load_circle_records(out, 3)
+    assert [record.id for record in stored] == [2]
+    assert stored[0].structure_label == "vesicle" and stored[0].radius == 10.0
+    assert meta["circleCounts"] == {"3": 1}
+
+    def getter_empty(url: str) -> dict:
+        return {"value": [] if _is_circle_query(url) else [polygon]}
+
+    # A rerun that finds no circles removes the stale spill.
+    ingest_to_section_files(
+        output_path=out, odata="http://example/odata", geometries=None, http_get=getter_empty, force=True
+    )
+    assert load_circle_records(out, 3) == []
+
+
+def test_pipelines_xml_wires_circle_diameter_scale() -> None:
+    pipeline = ElementTree.parse(_PIPELINES).find(".//Pipeline[@Name='ExportAnnotationCrops']")
+    assert pipeline is not None
+    argument = pipeline.find(".//Argument[@dest='CircleDiameterScale']")
+    assert argument is not None and argument.get("flag") == "-CircleDiameterScale"
+    assert argument.get("type") == "float" and argument.get("default") == "0.8"
+    call = pipeline.find(".//PythonCall[@Function='segmentationtraining.WriteCircleAnnotations']")
+    assert call is not None and call.get("CircleDiameterScale") == "#CircleDiameterScale"
+    from nornir_buildmanager.operations.segmentationtraining.circles import WriteCircleAnnotations
+
+    assert (
+        get_module_class("nornir_buildmanager.operations", "segmentationtraining.WriteCircleAnnotations")
+        is WriteCircleAnnotations
+    )
