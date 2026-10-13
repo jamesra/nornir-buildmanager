@@ -623,7 +623,7 @@ def iter_odata_circles(
     narrows the server query with the same Z-range chunking as the polygon pass.
     """
     getter = http_get or http_get_json
-    select = "ID,ParentID,TypeCode,Z,OffEdge,MosaicShape,LastModified,Radius"
+    select = "ID,ParentID,TypeCode,Z,OffEdge,MosaicShape,LastModified,Radius,Username"
     expand = "Parent($select=ID,TypeID,Label;$expand=Type($select=ID,Name,ParentID))"
     section_set = set(sections) if sections else None
     if section_set is None:

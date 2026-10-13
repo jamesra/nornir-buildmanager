@@ -2353,8 +2353,8 @@
             <Argument flag="-Pad" dest="Pad" type="float" default="1"
                       help="Mosaic pixels added to each bbox side. Default is 1."
                       required="False"/>
-            <Argument flag="-CircleDiameterScale" dest="CircleDiameterScale" type="float" default="0.8"
-                      help="Factor applied to every radius written to circle_annotations.json (annotated circles and inscribed circles of polygons), so the trainer receives a prompt circle smaller than the object. Recorded as diameter_scale in the file. Changing it regenerates every section's entries. Default is 0.8."
+            <Argument flag="-CircleDiameterScale" dest="CircleDiameterScale" type="float" default="0.95"
+                      help="Factor applied to every radius written to circle_annotations.json (annotated circles and inscribed circles of polygons), so the trainer receives a prompt circle smaller than the object. Recorded as diameter_scale in the file. Changing it regenerates every section's entries. Default is 0.95 (annotators keep circles inside the cell)."
                       required="False"/>
             <Argument flag="-MaxTexture" dest="MaxTexture" type="int"
                       help="Max pixels per crop axis. Default is 1024."

@@ -216,6 +216,7 @@ def _record_from_entity(
         structure_label=_optional_text(parent.get("Label")),
         type_code=type_code,
         radius=radius,
+        username=_optional_text(entity.get("Username")),
     )
 
 

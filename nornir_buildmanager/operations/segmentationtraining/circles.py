@@ -68,7 +68,7 @@ _logger = logging.getLogger(__name__)
 
 CIRCLE_ANNOTATIONS_FILENAME = "circle_annotations.json"
 CIRCLE_ANNOTATIONS_VERSION = 1
-DEFAULT_DIAMETER_SCALE = 0.8
+DEFAULT_DIAMETER_SCALE = 0.95
 SOURCE_ANNOTATED = "annotated"
 SOURCE_INSCRIBED = "inscribed"
 

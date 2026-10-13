@@ -64,6 +64,9 @@ class LocationRecord:
     structure_label: str | None
     type_code: int | None = None
     radius: float | None = None
+    username: str | None = None
+    """Viking ``Locations.Username``: the account that last saved the location. Only the circle
+    query requests it, so circle quality can be reviewed per annotator; None elsewhere."""
 
     def to_json(self) -> dict[str, Any]:
         """Serialize for section JSONL. Keep this shape stable for a later SQL ingest."""
@@ -77,6 +80,8 @@ class LocationRecord:
         payload["structureLabel"] = payload.pop("structure_label")
         payload["typeCode"] = payload.pop("type_code")
         payload["radius"] = payload.pop("radius")
+        if payload.get("username") is None:
+            payload.pop("username")
         return payload
 
     @classmethod
@@ -94,6 +99,7 @@ class LocationRecord:
             structure_label=_optional_str(payload.get("structureLabel", payload.get("structure_label"))),
             type_code=_optional_int(payload.get("typeCode", payload.get("type_code"))),
             radius=_optional_float(payload.get("radius")),
+            username=_optional_str(payload.get("username")),
         )
 
     def category_name(self) -> str:
