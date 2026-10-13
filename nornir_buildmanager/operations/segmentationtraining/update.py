@@ -167,7 +167,7 @@ def update_section_crops(
         prune_catalog_section(output, z, exported_ids)
     else:
         write_split_mask_overviews(
-            output, image_marks, exported_ids, max_edge=params.max_texture
+            output, image_marks, exported_ids, max_edge=params.max_texture, png=overlay
         )
         # Pass image_keys to avoid scanning the whole volume. Blank crops are
         # listed here; apply_ignore stays off so this path does not glob every

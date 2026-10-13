@@ -1,6 +1,6 @@
 """One overlay per location that was split across crop tiles.
 
-The PNG keeps the aspect ratio of those tiles: three 1024-pixel tiles stacked
+The optional PNG (written only with ``-Overlay``; the gallery does not read it) keeps the aspect ratio of those tiles: three 1024-pixel tiles stacked
 vertically are 1024x3072, not a square. The JSON is one card whose
 ``gridColumns`` and ``gridRows`` say how many squares it occupies.
 """
@@ -34,8 +34,9 @@ def write_split_mask_overviews(
     location_ids: set[int],
     *,
     max_edge: int = 1024,
+    png: bool = False,
 ) -> int:
-    """Write ``overlays/parts/{locationId}.png`` and ``.json`` for split masks.
+    """Write ``overlays/parts/{locationId}.json`` for split masks, and the ``.png`` when *png* is set.
 
     Locations in *location_ids* that occupy one crop have any previous part
     files removed. Returns the number of overviews written.
@@ -55,7 +56,7 @@ def write_split_mask_overviews(
         if len(unique) < 2:
             continue
         split_ids.add(location_id)
-        _write_one(folder, location_id, list(unique.values()), max_edge=max_edge)
+        _write_one(folder, location_id, list(unique.values()), max_edge=max_edge, png=png)
         written += 1
     if folder.is_dir():
         for location_id in location_ids - split_ids:
@@ -70,6 +71,7 @@ def _write_one(
     marks: list[ImageWatermark],
     *,
     max_edge: int,
+    png: bool = False,
 ) -> None:
     ordered = sorted(marks, key=lambda mark: (mark.origin_y, mark.origin_x, mark.key))
     min_x = min(mark.origin_x for mark in ordered)
@@ -81,12 +83,13 @@ def _write_one(
     cell = _grid_cell(ordered, max_edge)
     grid_columns = max(1, round(width / cell))
     grid_rows = max(1, round(height / cell))
-    canvas = Image.new("RGB", (width, height), (0, 0, 0))
+    canvas = Image.new("RGB", (width, height), (0, 0, 0)) if png else None
     parts: list[dict[str, int | str]] = []
     for index, mark in enumerate(ordered):
         x = mark.origin_x - min_x
         y = mark.origin_y - min_y
-        _paste_mask(canvas, folder.parents[1], mark, location_id, x, y, mark.width, mark.height, index)
+        if canvas is not None:
+            _paste_mask(canvas, folder.parents[1], mark, location_id, x, y, mark.width, mark.height, index)
         parts.append({
             "windowIndex": index,
             "windowCount": len(ordered),
@@ -99,7 +102,8 @@ def _write_one(
             "gridY": round(y / cell),
         })
     folder.mkdir(parents=True, exist_ok=True)
-    canvas.save(folder / f"{location_id}.png")
+    if canvas is not None:
+        canvas.save(folder / f"{location_id}.png")
     payload = {
         "locationId": location_id,
         "width": width,

@@ -335,8 +335,7 @@ def ExportSectionCrops(
     StageTiles: str | None = None,
     Force: bool = False,
     FailMissingTileset: bool = False,
-    NoOverlay: bool = False,
-    Overlay: bool = True,
+    Overlay: bool = False,
     TileXDim: int | None = None,
     TileYDim: int | None = None,
     LevelDirs: dict[int, str] | None = None,
@@ -400,7 +399,6 @@ def ExportSectionCrops(
             Update=Update,
             Repair=Repair,
             FailMissingTileset=FailMissingTileset,
-            NoOverlay=NoOverlay,
             Overlay=Overlay,
             TileXDim=TileXDim,
             TileYDim=TileYDim,
@@ -534,7 +532,6 @@ def _export_section_crops_entry(
     Update: bool,
     Repair: bool,
     FailMissingTileset: bool,
-    NoOverlay: bool,
     Overlay: bool,
     TileXDim: int | None,
     TileYDim: int | None,
@@ -631,7 +628,7 @@ def _export_section_crops_entry(
             volume=volume,
             z=z,
         ),
-        overlay=bool(Overlay) and not bool(NoOverlay),
+        overlay=bool(Overlay),
     )
     if Repair:
         output = Path(OutputPath)
@@ -1265,7 +1262,9 @@ def export_section_crops(
             blank_crops,
             {plan.image_key: plan.location_ids for plan in plans},
         )
-        write_split_mask_overviews(output, image_marks, exported_ids, max_edge=params.max_texture)
+        write_split_mask_overviews(
+            output, image_marks, exported_ids, max_edge=params.max_texture, png=overlay
+        )
         upsert_catalog(output, exported_ids, z=z, image_keys=image_keys)
         prune_catalog_section(output, z, exported_ids)
         return image_keys

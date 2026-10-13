@@ -1243,7 +1243,7 @@ def test_split_mask_overview_lists_clickable_parts(tmp_path: Path) -> None:
         folder = output / "masks"
         folder.mkdir(parents=True, exist_ok=True)
         Image.new("L", (8, 8), fill).save(folder / f"{mark.key}_3.png")
-    assert write_split_mask_overviews(output, [left, right], {3}, max_edge=8) == 1
+    assert write_split_mask_overviews(output, [left, right], {3}, max_edge=8, png=True) == 1
     payload = json.loads((output / "overlays" / "parts" / "3.json").read_text(encoding="utf-8"))
     assert (payload["width"], payload["height"]) == (16, 8)
     assert (payload["gridColumns"], payload["gridRows"]) == (2, 1)
@@ -1274,13 +1274,35 @@ def test_split_overview_keeps_a_1x3_tile_stack(tmp_path: Path) -> None:
         folder = output / "masks"
         folder.mkdir(parents=True, exist_ok=True)
         Image.new("L", (1024, 1024), 255).save(folder / f"{mark.key}_9.png")
-    assert write_split_mask_overviews(output, marks, {9}, max_edge=1024) == 1
+    assert write_split_mask_overviews(output, marks, {9}, max_edge=1024, png=True) == 1
     payload = json.loads((output / "overlays" / "parts" / "9.json").read_text(encoding="utf-8"))
     assert (payload["width"], payload["height"]) == (1024, 3072)
     assert (payload["gridColumns"], payload["gridRows"]) == (1, 3)
     assert [part["gridY"] for part in payload["parts"]] == [0, 1, 2]
     with Image.open(output / "overlays" / "parts" / "9.png") as overview:
         assert overview.size == (1024, 3072)
+def test_split_overview_writes_the_png_only_when_asked(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.freshness import ImageWatermark
+    from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
+
+    output = tmp_path / "crops"
+    marks = [
+        ImageWatermark(
+            key=f"Vol_1_D1_X{x}-{x + 8}_Y0-8", downsample=1, ix0=i, ix1=i + 1, iy0=0, iy1=1,
+            member_ids=[5], max_last_modified="", origin_x=x, origin_y=0, width=8, height=8,
+        )
+        for i, x in enumerate((0, 8))
+    ]
+    (output / "masks").mkdir(parents=True)
+    for mark in marks:
+        Image.new("L", (8, 8), 255).save(output / "masks" / f"{mark.key}_5.png")
+    assert write_split_mask_overviews(output, marks, {5}, max_edge=8) == 1
+    assert (output / "overlays" / "parts" / "5.json").is_file()
+    assert not (output / "overlays" / "parts" / "5.png").exists()
+    assert write_split_mask_overviews(output, marks, {5}, max_edge=8, png=True) == 1
+    assert (output / "overlays" / "parts" / "5.png").is_file()
+
+
 
 
 def test_contained_mask_uses_nearest_center_once() -> None:
@@ -2530,6 +2552,16 @@ def test_window_from_image_key_round_trips_the_pixel_extents() -> None:
     assert window_from_image_key("not_a_key") is None
 
 
+def test_window_from_image_key_accepts_windows_that_hang_over_the_mosaic_edge() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import window_from_image_key
+    from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow
+
+    assert window_from_image_key("RPC1_5_D1_X-512-512_Y0-1024") == (1, CropWindow(-512, 0, 1024, 1024))
+    assert window_from_image_key("RPC1_5_D1_X0-1024_Y-512-512") == (1, CropWindow(0, -512, 1024, 1024))
+    assert window_from_image_key("RPC1_5_D2_X-4096--2048_Y-512-1536") == (2, CropWindow(-4096, -512, 2048, 2048))
+    assert window_from_image_key("RPC1_5_D1_X512-0_Y0-1024") is None
+
+
 def _crops() -> list:
     from nornir_buildmanager.operations.segmentationtraining.circles import CropRef
     from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow
@@ -2710,7 +2742,7 @@ def test_pipelines_xml_wires_circle_diameter_scale() -> None:
     assert pipeline is not None
     argument = pipeline.find(".//Argument[@dest='CircleDiameterScale']")
     assert argument is not None and argument.get("flag") == "-CircleDiameterScale"
-    assert argument.get("type") == "float" and argument.get("default") == "0.8"
+    assert argument.get("type") == "float" and argument.get("default") == "0.95"
     call = pipeline.find(".//PythonCall[@Function='segmentationtraining.WriteCircleAnnotations']")
     assert call is not None and call.get("CircleDiameterScale") == "#CircleDiameterScale"
     from nornir_buildmanager.operations.segmentationtraining.circles import WriteCircleAnnotations

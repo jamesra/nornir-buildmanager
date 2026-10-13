@@ -2385,8 +2385,8 @@
                       help="Refetch OData MosaicShape into Output/_work, then update masks and JSON (and restitch only where crop windows changed). Unchanged crops are skipped."/>
             <Argument flag="-FailMissingTileset" dest="FailMissingTileset" action="store_true"
                       help="Fail instead of skipping a section whose filter has no Tileset/level."/>
-            <Argument flag="-NoOverlay" dest="NoOverlay" action="store_true"
-                      help="Skip QA overlay PNGs (TEM + Viking HCL hue, TEM luma). SAM2 does not use them."/>
+            <Argument flag="-Overlay" dest="Overlay" action="store_true"
+                      help="Also write QA overlay PNGs (overlays/{imageKey}.png). Off by default: the gallery draws overlays itself and SAM2 does not use them. overlays/parts/{locationId}.json is always written; the parts PNGs are written only with this flag."/>
             <Argument flag="-Cleanup" dest="Cleanup" action="store_true"
                       help="Audit and repair corrupt AnnotationCrops products. Does not ingest OData or restitch."/>
             <Argument flag="-Update" dest="Update" action="store_true"
@@ -2439,7 +2439,7 @@
                                 Update="#Update"
                                 Repair="#Repair"
                                 FailMissingTileset="#FailMissingTileset"
-                                NoOverlay="#NoOverlay"
+                                Overlay="#Overlay"
                                 Cleanup="#Cleanup"/>
                 </Iterate>
             </Iterate>
