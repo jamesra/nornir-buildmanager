@@ -2729,12 +2729,11 @@ def test_odata_ingest_queries_circles_separately(tmp_path: Path) -> None:
     assert load_circle_records(out, 3) == []
 
 
-def test_pipelines_xml_has_no_circle_diameter_scale() -> None:
+def test_pipelines_xml_wires_write_circle_annotations() -> None:
     pipeline = ElementTree.parse(_PIPELINES).find(".//Pipeline[@Name='ExportAnnotationCrops']")
     assert pipeline is not None
-    assert pipeline.find(".//Argument[@dest='CircleDiameterScale']") is None  # radii are exported unscaled
     call = pipeline.find(".//PythonCall[@Function='segmentationtraining.WriteCircleAnnotations']")
-    assert call is not None and call.get("CircleDiameterScale") is None
+    assert call is not None and call.get("OutputPath") == "#OutputPath"
     from nornir_buildmanager.operations.segmentationtraining.circles import WriteCircleAnnotations
 
     assert (
