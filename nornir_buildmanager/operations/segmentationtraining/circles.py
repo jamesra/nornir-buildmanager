@@ -81,7 +81,8 @@ _RASTER_PAD = 2
 # Bump to invalidate the per-section inscribed-circle cache after an algorithm change.
 _INSCRIBED_CACHE_VERSION = 1
 
-_IMAGE_KEY_WINDOW = re.compile(r"_D(\d+)_X(\d+)-(\d+)_Y(\d+)-(\d+)$")
+# Origins can be negative: a window that hangs over the mosaic edge is keyed X-512-512 (x0 = -512, x1 = 512).
+_IMAGE_KEY_WINDOW = re.compile(r"_D(\d+)_X(-?\d+)-(-?\d+)_Y(-?\d+)-(-?\d+)$")
 
 
 @dataclass(frozen=True)
