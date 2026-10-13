@@ -292,7 +292,7 @@ def log_missing_crop_tiles(
     ids = sorted({int(item) for item in (location_ids or ())})
     id_text = ", ".join(str(item) for item in ids) if ids else "none"
     prettyoutput.LogErr(
-        f"ExportAnnotationCrops: section {z} skipped {skipped} crop(s) "
+        f"ExportTrainingData: section {z} skipped {skipped} crop(s) "
         f"with missing tiles; masks not included. "
         f"Excluded location ids: {id_text}"
     )

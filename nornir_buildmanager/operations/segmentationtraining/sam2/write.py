@@ -258,7 +258,7 @@ def write_gallery(output_path: str | Path, image_keys: list[str]) -> None:
     """Minimal index.html pointing at overlay images."""
     root = Path(output_path)
     lines = [
-        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>ExportAnnotationCrops</title></head><body>",
+        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>ExportTrainingData</title></head><body>",
         "<h1>SegmentationTraining overlays</h1>",
         "<ul>",
     ]

@@ -310,7 +310,7 @@ def test_pipelines_xml_gallery_and_score() -> None:
     assert "RepairAnnotationOverlays" in names
     xml = _PIPELINES.read_text(encoding="utf-8")
     assert "ForceOverlays" not in xml
-    write = root.find("Pipeline[@Name='ExportAnnotationCrops']/PythonCall[@Function='WriteGallery']")
+    write = root.find("Pipeline[@Name='ExportTrainingData']/PythonCall[@Function='WriteGallery']")
     assert write is not None
     assert "segmentationtraining.sam2" in (write.get("Module") or "")
 

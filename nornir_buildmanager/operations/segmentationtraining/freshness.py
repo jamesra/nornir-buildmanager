@@ -37,7 +37,7 @@ _GEOMETRY_BY_EXPORTER = {
 
 
 def geometry_version_for(exporter: str) -> str:
-    """Watermark version for an ExportAnnotationCrops -Exporter value.
+    """Watermark version for an ExportTrainingData -Exporter value.
 
     ``tiled`` keeps the existing half-step version so current section watermarks
     still match. ``legacy`` is a different version so those sections rebuild.

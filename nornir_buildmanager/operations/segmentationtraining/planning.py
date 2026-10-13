@@ -106,14 +106,14 @@ def plan_section_crops(
     for record in records:
         if is_skippable_location(record.type_code, record.wkt):
             _logger.info(
-                "ExportAnnotationCrops: skip location %s, point/polyline/circle annotation",
+                "ExportTrainingData: skip location %s, point/polyline/circle annotation",
                 record.id,
             )
             continue
         polygons = hydrate_polygons(parse_wkt_polygons(record.wkt), record.type_code)
         if not polygons:
             _logger.info(
-                "ExportAnnotationCrops: skip location %s, no polygon rings",
+                "ExportTrainingData: skip location %s, no polygon rings",
                 record.id,
             )
             continue
@@ -151,7 +151,7 @@ def plan_section_crops(
             )
             if not windows:
                 _logger.info(
-                    "ExportAnnotationCrops: skip location %s, mask has no area at downsample %s",
+                    "ExportTrainingData: skip location %s, mask has no area at downsample %s",
                     record.id,
                     level,
                 )
@@ -208,7 +208,7 @@ def _legacy_groups(
         )
         if snap is None:
             _logger.info(
-                "ExportAnnotationCrops: skip location %s, mask does not fit any available downsample",
+                "ExportTrainingData: skip location %s, mask does not fit any available downsample",
                 record.id,
             )
             continue

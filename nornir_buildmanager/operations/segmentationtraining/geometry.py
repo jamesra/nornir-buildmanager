@@ -267,7 +267,7 @@ def _log_uneven_texture_span(tile_x_dim: int, tile_y_dim: int, max_texture: int)
         return
     _logged_uneven_texture_span = True
     _logger.info(
-        "ExportAnnotationCrops: MaxTexture %s is not an integer tile count "
+        "ExportTrainingData: MaxTexture %s is not an integer tile count "
         "(%sx%s); keeping tight snaps",
         max_texture,
         tile_x_dim,

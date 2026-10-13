@@ -3,7 +3,7 @@
 MosaicShape WKT stores control points only. Viking restores the filled outline
 with ``LocationType.GetSmoothedShape`` → ``CatmullRom.FitCurve`` (centripetal,
 α=0.5) using ``ShapeSmoothingExtensions.NumClosedCurveInterpolationPoints`` (10)
-and recursive extra samples where turning exceeds 10°. ExportAnnotationCrops
+and recursive extra samples where turning exceeds 10°. ExportTrainingData
 must apply the same fit before pad/snap and rasterize, because the curve can
 leave the control-point AABB.
 """

@@ -1,4 +1,4 @@
-"""ID-set delta for ExportAnnotationCrops -Update.
+"""ID-set delta for ExportTrainingData -Update.
 
 Removed locations lose mask, RLE, and JSON membership. Added locations are
 planned alone and either merged into an existing crop or stitched as a new
@@ -95,7 +95,7 @@ def update_section_crops(
     if not removed and not added_ids and not changed:
         record_crop_size(output, int(params.max_texture))
         prettyoutput.Log(
-            f"ExportAnnotationCrops -Update: section {z} membership unchanged, pixels skipped"
+            f"ExportTrainingData -Update: section {z} membership unchanged, pixels skipped"
         )
         return list(previous.image_keys or []) if previous is not None else []
 
@@ -182,7 +182,7 @@ def update_section_crops(
         prune_catalog_section(output, z, exported_ids)
 
     prettyoutput.Log(
-        f"ExportAnnotationCrops -Update: section {z} — "
+        f"ExportTrainingData -Update: section {z} — "
         f"removed {len(removed)} location(s), added {len(added_ids)}, "
         f"remasked {len(changed)}, crops touched={len(touched)}"
     )

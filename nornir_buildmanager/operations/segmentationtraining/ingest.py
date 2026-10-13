@@ -280,7 +280,7 @@ def ingest_to_section_files(
     """Write per-section JSONL from exactly one of OData or a Geometries dump."""
     if bool(odata) == bool(geometries):
         raise NornirUserException(
-            "ExportAnnotationCrops requires exactly one of -OData or -Geometries"
+            "ExportTrainingData requires exactly one of -OData or -Geometries"
         )
     try:
         filter_text = resolve_odata_filter(odata_filter, structure_type_ids)
@@ -292,7 +292,7 @@ def ingest_to_section_files(
         circle_filter = circle_odata_filter(odata_filter, structure_type_ids)
         if circle_filter is None:
             _logger.warning(
-                "ExportAnnotationCrops: -ODataFilter has no closed-polygon TypeCode clause; "
+                "ExportTrainingData: -ODataFilter has no closed-polygon TypeCode clause; "
                 "circle_annotations.json will have no annotated circles"
             )
         else:

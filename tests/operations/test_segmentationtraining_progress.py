@@ -1,4 +1,4 @@
-"""Tests for ExportAnnotationCrops iterate_progress telemetry."""
+"""Tests for ExportTrainingData iterate_progress telemetry."""
 
 from __future__ import annotations
 

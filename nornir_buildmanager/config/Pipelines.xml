@@ -2317,11 +2317,11 @@
         </Iterate>
     </Pipeline>
 
-    <Pipeline Name="ExportAnnotationCrops"
+    <Pipeline Name="ExportTrainingData"
               NoDelete="True"
               Help="Export annotation crops for SAM2 / SA-1B training from OData or a saved OData dump."
               Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Records the OData service root in source.json, each crop JSON, and annotation_crops.sqlite. Also writes circle_annotations.json, rebuilt from the manifest on every run (including -Update, -Repair, and -Cleanup): version 1, diameter_scale, and grid_cells keyed by manifest imageKey, each entry a circle (location_id, center_x, center_y, radius, structure_label, has_polygon_mask, source) in that crop's pixel space at its downsample, x right and y down from the crop's top-left, unclipped, listed in every crop it overlaps. source is annotated for circle-type annotations (center from MosaicShape, radius from the stored Radius, mosaic pixels at D1) and inscribed for masked polygons (largest circle inside the exterior ring). Radii are the true radius (the file records diameter_scale 1.0); the trainer applies its own prompt scale. Circle annotations are ingested separately and never produce masks. -Repair restitches only crop images missing from the output scan. Export only: section walks set Validate=False and NoDelete forces the process no-delete flag so Clean() cannot remove volume inputs. Stale products under -Output may still be replaced."
-              Epilog="Example: nornir-build ExportAnnotationCrops /data/volume -OData http://host/odata -Output /data/sam2 -Channels TEM -Filters Leveled">
+              Epilog="Example: nornir-build ExportTrainingData /data/volume -OData http://host/odata -Output /data/sam2 -Channels TEM -Filters Leveled">
         <Arguments>
             <Argument flag="-OData" dest="OData"
                       help="Connectome OData V4 service root. Exactly one of -OData or -Geometries is required."
@@ -2336,8 +2336,8 @@
                       help="Exact Parent/TypeID values for closed polygons. One id or a list, same syntax as -Sections (1,3,5-7). No subtype expansion. Omitted keeps the Cell-plus-subtypes default. Overridden by -ODataFilter."
                       required="False"/>
             <Argument flag="-Output" dest="OutputPath"
-                      help="Directory for PNG crops, JSON, masks, overlays, and _work cache"
-                      required="True"/>
+                      help="Directory for PNG crops, JSON, masks, overlays, circle_annotations.json, and the _work cache. Optional: defaults to AnnotationCrops inside the volume folder."
+                      required="False"/>
             <Argument flag="-Channels" dest="Channels" default="TEM"
                       help="Regular expression for the channel that owns the tileset"
                       required="False"/>

@@ -274,7 +274,7 @@ def _section_run(
 
 def test_pipelines_xml_registers_export_annotation_crops() -> None:
     tree = ElementTree.parse(_PIPELINES)
-    pipeline = tree.find(".//Pipeline[@Name='ExportAnnotationCrops']")
+    pipeline = tree.find(".//Pipeline[@Name='ExportTrainingData']")
     assert pipeline is not None
     assert pipeline.get("NoDelete") == "True"
     iterates = pipeline.findall(".//Iterate")
@@ -2729,8 +2729,17 @@ def test_odata_ingest_queries_circles_separately(tmp_path: Path) -> None:
     assert load_circle_records(out, 3) == []
 
 
+def test_export_training_data_pipeline_output_is_optional() -> None:
+    root = ElementTree.parse(_PIPELINES)
+    assert root.find(".//Pipeline[@Name='ExportAnnotationCrops']") is None  # renamed
+    pipeline = root.find(".//Pipeline[@Name='ExportTrainingData']")
+    assert pipeline is not None
+    output = pipeline.find(".//Argument[@flag='-Output']")
+    assert output is not None and output.get("dest") == "OutputPath" and output.get("required") == "False"
+
+
 def test_pipelines_xml_wires_write_circle_annotations() -> None:
-    pipeline = ElementTree.parse(_PIPELINES).find(".//Pipeline[@Name='ExportAnnotationCrops']")
+    pipeline = ElementTree.parse(_PIPELINES).find(".//Pipeline[@Name='ExportTrainingData']")
     assert pipeline is not None
     call = pipeline.find(".//PythonCall[@Function='segmentationtraining.WriteCircleAnnotations']")
     assert call is not None and call.get("OutputPath") == "#OutputPath"

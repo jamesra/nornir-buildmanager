@@ -314,6 +314,22 @@ def _pipeline_name_from_args(args: argparse.Namespace) -> str | None:
     return pipeline
 
 
+#: Pipelines whose ``-Output`` is optional, and the folder inside the volume it defaults to.
+_DEFAULT_OUTPUT_FOLDER = {"ExportTrainingData": "AnnotationCrops"}
+
+
+def _apply_default_output(args: argparse.Namespace) -> None:
+    """Fill in ``-Output`` for pipelines where it is optional: ``<volumepath>/<folder>``.
+
+    Runs before the dashboard meta is published so the header shows the folder actually written.
+    """
+    pipeline = _pipeline_name_from_args(args)
+    folder = _DEFAULT_OUTPUT_FOLDER.get(pipeline) if isinstance(pipeline, str) else None
+    volumepath = getattr(args, "volumepath", None)
+    if folder and volumepath and not getattr(args, "OutputPath", None):
+        args.OutputPath = os.path.join(volumepath, folder)
+
+
 def _chain_pipeline_display_name(name: str, index: int, total: int) -> str:
     """Sidebar/meta title for a chain segment (``Name (k/n)`` when chained)."""
     if total > 1:
@@ -322,9 +338,9 @@ def _chain_pipeline_display_name(name: str, index: int, total: int) -> str:
 
 
 # Pipelines whose -Output directory is the primary product root; include it in
-# the dashboard header so parallel ExportAnnotationCrops runs are distinguishable.
+# the dashboard header so parallel ExportTrainingData runs are distinguishable.
 _OUTPUT_IN_HEADER_PIPELINES = frozenset({
-    "ExportAnnotationCrops",
+    "ExportTrainingData",
     "RepairAnnotationOverlays",
     "ScoreAnnotationCrops",
 })
@@ -336,7 +352,7 @@ def _dashboard_volumepath(args: argparse.Namespace, pipeline: str | None = None)
     if not volumepath:
         return None
     name = pipeline if pipeline is not None else _pipeline_name_from_args(args)
-    # Chain display names look like "ExportAnnotationCrops (2/3)".
+    # Chain display names look like "ExportTrainingData (2/3)".
     base = name.split(" (", 1)[0] if name else ""
     output = getattr(args, "OutputPath", None)
     if base in _OUTPUT_IN_HEADER_PIPELINES and isinstance(output, str) and output:
@@ -641,6 +657,7 @@ def ExecuteChain(buildArgs: list[str]) -> None:
                 segment_argv = _ReorderArgs(root_flags + [segment[0], volumepath] + segment[1:])
 
             args = parser.parse_args(segment_argv)
+            _apply_default_output(args)
             cmd_name = _pipeline_name_from_args(args) or getattr(args, 'PipelineName', None)
             display_name = _chain_pipeline_display_name(cmd_name, index, num_segments)
 
@@ -701,6 +718,7 @@ def Execute(buildArgs=None):
     parser = BuildParserRoot()
 
     args = parser.parse_args(buildArgs)
+    _apply_default_output(args)
 
     # Help command does not require volumepath or timing output.
     if getattr(args, 'command', None) == 'help':

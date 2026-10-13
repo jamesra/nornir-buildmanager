@@ -1,5 +1,7 @@
 """Tests for early dashboard run metadata published from build.py."""
 
+import argparse
+import os
 import unittest
 from unittest import mock
 
@@ -46,18 +48,31 @@ class TestEarlyRunMeta(unittest.TestCase):
 
     def test_publish_early_run_meta_includes_annotation_crops_output(self) -> None:
         args = mock.Mock(
-            PipelineName="ExportAnnotationCrops",
-            command="ExportAnnotationCrops",
+            PipelineName="ExportTrainingData",
+            command="ExportTrainingData",
             volumepath="/storage4/RPC2",
             OutputPath="/storage4/RPC2/AnnotationCrops_v1",
         )
         with mock.patch("nornir_buildmanager.build.prettyoutput.publish_early_run_meta") as publish:
             build._publish_early_run_meta_from_args(args)
         publish.assert_called_once_with(
-            pipeline="ExportAnnotationCrops",
+            pipeline="ExportTrainingData",
             volumepath="/storage4/RPC2 → /storage4/RPC2/AnnotationCrops_v1",
             compute=mock.ANY,
         )
+
+    def test_export_training_data_output_defaults_to_annotation_crops_in_the_volume(self) -> None:
+        args = argparse.Namespace(PipelineName="ExportTrainingData", volumepath="/storage4/RPC2", OutputPath=None)
+        build._apply_default_output(args)
+        self.assertEqual(args.OutputPath, os.path.join("/storage4/RPC2", "AnnotationCrops"))
+
+    def test_explicit_output_and_other_pipelines_are_left_alone(self) -> None:
+        explicit = argparse.Namespace(PipelineName="ExportTrainingData", volumepath="/v", OutputPath="/data/sam2")
+        build._apply_default_output(explicit)
+        self.assertEqual(explicit.OutputPath, "/data/sam2")
+        other = argparse.Namespace(PipelineName="Assemble", volumepath="/v", OutputPath=None)
+        build._apply_default_output(other)
+        self.assertIsNone(other.OutputPath)
 
     def test_publish_early_run_meta_ignores_output_for_other_pipelines(self) -> None:
         args = mock.Mock(

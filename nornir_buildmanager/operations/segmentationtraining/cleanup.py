@@ -149,7 +149,7 @@ def CleanupAnnotationCrops(
     if not Cleanup:
         return None
     if not OutputPath:
-        raise NornirUserException("ExportAnnotationCrops requires -Output")
+        raise NornirUserException("ExportTrainingData needs an output folder (-Output)")
     cleanup_annotation_crops(OutputPath, sections=_as_int_list(Sections))
     return None
 

@@ -1,4 +1,4 @@
-"""Dashboard track ids and throttled reporters for ExportAnnotationCrops."""
+"""Dashboard track ids and throttled reporters for ExportTrainingData."""
 
 from __future__ import annotations
 
@@ -15,12 +15,12 @@ STITCH_TRACK_ID = "export_annotation:stitch"
 STRIPS_TRACK_ID = "export_annotation:strips"
 GALLERY_TRACK_ID = "export_annotation:gallery"
 
-INGEST_LABEL = "ExportAnnotationCrops ingest"
-SECTIONS_LABEL = "ExportAnnotationCrops sections"
-MASKS_LABEL = "ExportAnnotationCrops annotations"
-STITCH_LABEL = "ExportAnnotationCrops stitch"
-STRIPS_LABEL = "ExportAnnotationCrops strips"
-GALLERY_LABEL = "ExportAnnotationCrops gallery"
+INGEST_LABEL = "ExportTrainingData ingest"
+SECTIONS_LABEL = "ExportTrainingData sections"
+MASKS_LABEL = "ExportTrainingData annotations"
+STITCH_LABEL = "ExportTrainingData stitch"
+STRIPS_LABEL = "ExportTrainingData strips"
+GALLERY_LABEL = "ExportTrainingData gallery"
 
 
 class IterateProgressReporter(ThrottledProgressReporter):

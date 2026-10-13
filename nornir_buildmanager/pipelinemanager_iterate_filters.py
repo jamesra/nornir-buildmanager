@@ -470,7 +470,7 @@ def sort_iterate_candidates(
         attribute: str) -> list[XElementWrapper]:
     """Return *candidates* ordered by *attribute*, numeric when the value is an int.
 
-    ExportAnnotationCrops uses this so a block stored high-Z first (RPC2) is
+    ExportTrainingData uses this so a block stored high-Z first (RPC2) is
     visited in ascending section number, matching a block stored low-Z first.
     """
 

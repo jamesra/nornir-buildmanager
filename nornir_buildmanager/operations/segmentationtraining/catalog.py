@@ -247,7 +247,7 @@ def ignore_blank_crops(
     for key, fraction in blank:
         members = [int(item) for item in members_by_key.get(key, ())]
         prettyoutput.Log(
-            f"ExportAnnotationCrops: section {z} image {key} is "
+            f"ExportTrainingData: section {z} image {key} is "
             f"{fraction:.0%} saturated; ignoring locations {members}"
         )
         for member in members:

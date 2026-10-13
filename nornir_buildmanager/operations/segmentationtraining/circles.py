@@ -586,11 +586,11 @@ def WriteCircleAnnotations(
     OutputPath: str | None = None,
     **kwargs: Any,
 ) -> None:
-    """Pipeline entry for ExportAnnotationCrops: regenerate the volume's circle file. Returns None."""
+    """Pipeline entry for ExportTrainingData: regenerate the volume's circle file. Returns None."""
     del kwargs
     from nornir_buildmanager.exceptions import NornirUserException
 
     if not OutputPath:
-        raise NornirUserException("ExportAnnotationCrops requires -Output")
+        raise NornirUserException("ExportTrainingData needs an output folder (-Output)")
     write_circle_annotations(OutputPath)
     return None

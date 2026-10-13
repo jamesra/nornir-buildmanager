@@ -1,4 +1,4 @@
-"""Pipeline entry points for ExportAnnotationCrops. PythonCalls return None."""
+"""Pipeline entry points for ExportTrainingData. PythonCalls return None."""
 
 from __future__ import annotations
 
@@ -147,7 +147,7 @@ def IngestGeometries(
     """Volume-level ingest. Writes `{Output}/_work/section_{z}.jsonl` only."""
     del kwargs
     if not OutputPath:
-        raise NornirUserException("ExportAnnotationCrops requires -Output")
+        raise NornirUserException("ExportTrainingData needs an output folder (-Output)")
     _reject_repair_combination(
         repair=bool(Repair),
         force=bool(Force),
@@ -351,7 +351,7 @@ def ExportSectionCrops(
 ) -> Any:
     """Per-section crop/mask/SA-1B write. Returns a Tileset node only if TileXDim/TileYDim were corrected."""
     if not OutputPath:
-        raise NornirUserException("ExportAnnotationCrops requires -Output")
+        raise NornirUserException("ExportTrainingData needs an output folder (-Output)")
     if Cleanup:
         return None
     _reject_repair_combination(
@@ -362,7 +362,7 @@ def ExportSectionCrops(
         cleanup=False,
     )
     if bool(Update) and bool(Force):
-        raise NornirUserException("ExportAnnotationCrops -Update cannot be combined with -Force")
+        raise NornirUserException("ExportTrainingData -Update cannot be combined with -Force")
     filter_node = FilterNode if FilterNode is not None else VolumeElement
     section = section_node
     if section is None and filter_node is not None and hasattr(filter_node, "FindParent"):
@@ -440,7 +440,7 @@ def _reject_repair_combination(
         return
     if force or update or refresh_odata or cleanup:
         raise NornirUserException(
-            "ExportAnnotationCrops -Repair cannot be combined with "
+            "ExportTrainingData -Repair cannot be combined with "
             "-Force, -Update, -RefreshOData, or -Cleanup"
         )
 
@@ -491,7 +491,7 @@ def _log_repair_keys_without_geometry(
         if key in known or _crop_image_indexed(products, key):
             continue
         prettyoutput.Log(
-            f"ExportAnnotationCrops -Repair: section {z} image {key} "
+            f"ExportTrainingData -Repair: section {z} image {key} "
             "is missing and has no crop geometry; skipping"
         )
 
@@ -551,7 +551,7 @@ def _export_section_crops_entry(
         prior = load_section_watermark(OutputPath, z)
         if prior is None:
             prettyoutput.Log(
-                f"ExportAnnotationCrops -Repair: section {z} has no watermark, skipping"
+                f"ExportTrainingData -Repair: section {z} has no watermark, skipping"
             )
             return None
         repair_marks = missing_crop_marks(prior, products)
@@ -559,7 +559,7 @@ def _export_section_crops_entry(
         if not repair_marks:
             recorded = len({mark.key for mark in (prior.images or [])})
             prettyoutput.Log(
-                f"ExportAnnotationCrops -Repair: section {z} — "
+                f"ExportTrainingData -Repair: section {z} — "
                 f"all {recorded} images present, skipping"
             )
             return None
@@ -569,7 +569,7 @@ def _export_section_crops_entry(
         if not IncludeOffEdge:
             records = [record for record in records if not record.off_edge]
         if not records:
-            prettyoutput.Log(f"ExportAnnotationCrops: no geometries for section {z}")
+            prettyoutput.Log(f"ExportTrainingData: no geometries for section {z}")
             _purge_empty_section(Path(OutputPath), z)
             return None
     else:
@@ -669,7 +669,7 @@ def _export_section_crops_entry(
     ):
         if not drop_recorded_crops_missing_tiles(Path(OutputPath), z, watermark, tileset):
             prettyoutput.Log(
-                f"ExportAnnotationCrops: section {z} is fresh, skipping "
+                f"ExportTrainingData: section {z} is fresh, skipping "
                 f"({len(records)} annotation(s))"
             )
         return save_node
@@ -996,7 +996,7 @@ def stitch_missing_crop_marks(
         job = _stitch_job_from_mark(mark, tile_shape, image_path)
         if job is None:
             prettyoutput.Log(
-                f"ExportAnnotationCrops -Repair: section {z} image {mark.key} "
+                f"ExportTrainingData -Repair: section {z} image {mark.key} "
                 "has no stored crop window; skipping"
             )
             continue
@@ -1032,7 +1032,7 @@ def stitch_missing_crop_marks(
     if jobs or blank:
         mark_catalog_dirty()
     prettyoutput.Log(
-        f"ExportAnnotationCrops -Repair: section {z} — "
+        f"ExportTrainingData -Repair: section {z} — "
         f"{len(jobs)} image(s) written, {skipped} crop(s) skipped for missing tiles"
     )
     return len(jobs)
@@ -1323,7 +1323,7 @@ def _resolve_tileset(
             mtime=tileset_mtime,
         )
     if filter_node is None or not hasattr(filter_node, "Tileset"):
-        message = "ExportAnnotationCrops needs a Filter with a Tileset"
+        message = "ExportTrainingData needs a Filter with a Tileset"
         if fail_missing:
             raise NornirUserException(message)
         prettyoutput.Log(message)
@@ -1359,7 +1359,7 @@ def _resolve_tileset(
         resolved_x, resolved_y = actual
         if resolved_x != declared_x or resolved_y != declared_y:
             prettyoutput.Log(
-                f"ExportAnnotationCrops: tileset PNG is {resolved_x}x{resolved_y} but "
+                f"ExportTrainingData: tileset PNG is {resolved_x}x{resolved_y} but "
                 f"TileXDim/TileYDim is {declared_x}x{declared_y}; updating VolumeData"
             )
             tileset.TileXDim = resolved_x
@@ -1526,7 +1526,7 @@ def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, str]])
     # A location on both a skipped crop and a regen crop still needs work.
     left_alone -= regenerate
     prettyoutput.Log(
-        f"ExportAnnotationCrops: section {z} — "
+        f"ExportTrainingData: section {z} — "
         f"{len(left_alone)} annotation(s) left alone, "
         f"{len(regenerate)} need regeneration "
         f"({crops_mask_only} crop(s) mask-only, {crops_full} crop(s) full stitch); "
