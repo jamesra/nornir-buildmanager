@@ -2576,11 +2576,11 @@ def test_annotated_circle_straddling_two_crops_is_unclipped_in_both() -> None:
     from nornir_buildmanager.operations.segmentationtraining.circles import MosaicCircle, cells_for_circles
 
     circle = MosaicCircle(7, 1020.0, 500.0, 100.0, "mito", False, "annotated")
-    cells = cells_for_circles(_crops(), [circle], 0.8)
+    cells = cells_for_circles(_crops(), [circle])
     left = cells["V_1_D1_X0-1024_Y0-1024"][0]
     right = cells["V_1_D1_X1024-2048_Y0-1024"][0]
-    assert (left["center_x"], left["center_y"], left["radius"]) == (1020.0, 500.0, 80.0)
-    assert (right["center_x"], right["center_y"], right["radius"]) == (-4.0, 500.0, 80.0)
+    assert (left["center_x"], left["center_y"], left["radius"]) == (1020.0, 500.0, 100.0)
+    assert (right["center_x"], right["center_y"], right["radius"]) == (-4.0, 500.0, 100.0)
     assert left["source"] == "annotated" and left["has_polygon_mask"] is False
 
 
@@ -2589,7 +2589,7 @@ def test_circle_outside_every_crop_is_dropped() -> None:
 
     far = MosaicCircle(8, 9000.0, 9000.0, 50.0, "", False, "annotated")
     touching = MosaicCircle(9, 2048.0 + 80.0, 500.0, 80.0, "", False, "annotated")
-    assert cells_for_circles(_crops(), [far, touching], 1.0) == {}
+    assert cells_for_circles(_crops(), [far, touching]) == {}
 
 
 def _write_circle_volume(out: Path) -> None:
@@ -2614,16 +2614,16 @@ def _volume_images(out: Path):
     return lambda name: (out / "images" / name).is_file()
 
 
-def test_write_circle_annotations_schema_sources_and_scale(tmp_path: Path) -> None:
+def test_write_circle_annotations_schema_sources_and_true_radii(tmp_path: Path) -> None:
     from nornir_buildmanager.operations.segmentationtraining.circles import write_circle_annotations
 
     out = tmp_path / "AnnotationCrops"
     _write_circle_volume(out)
-    path = write_circle_annotations(out, diameter_scale=0.5, image_exists=_volume_images(out))
+    path = write_circle_annotations(out, image_exists=_volume_images(out))
     assert path is not None
     document = json.loads(path.read_text(encoding="utf-8"))
     assert document["version"] == 1
-    assert document["diameter_scale"] == 0.5
+    assert document["diameter_scale"] == 1.0  # radii are unscaled; the trainer applies its own scale
     left = document["grid_cells"]["V_1_D1_X0-1024_Y0-1024"]
     right = document["grid_cells"]["V_1_D1_X1024-2048_Y0-1024"]
     by_id = {entry["location_id"]: entry for entry in left}
@@ -2632,12 +2632,12 @@ def test_write_circle_annotations_schema_sources_and_scale(tmp_path: Path) -> No
     polygon, circle = by_id[1], by_id[2]
     assert polygon["source"] == "inscribed" and polygon["has_polygon_mask"] is True
     assert polygon["structure_label"] == "axon"
-    assert polygon["radius"] == pytest.approx(50.0 * 0.5, abs=0.1)
+    assert polygon["radius"] == pytest.approx(50.0, abs=0.1)  # the full inscribed radius
     assert polygon["center_y"] == pytest.approx(150.0, abs=1.0)
     assert 100.0 <= polygon["center_x"] <= 300.0
     assert circle["source"] == "annotated" and circle["has_polygon_mask"] is False
     assert circle["structure_label"] == "mito"
-    assert (circle["center_x"], circle["center_y"], circle["radius"]) == (1020.0, 500.0, 50.0)
+    assert (circle["center_x"], circle["center_y"], circle["radius"]) == (1020.0, 500.0, 100.0)
     assert right[0]["center_x"] == -4.0
     assert 3 not in {entry["location_id"] for entry in left + right}  # circle 3 is over no crop
 
@@ -2653,28 +2653,20 @@ def test_circles_never_become_mask_records(tmp_path: Path) -> None:
     assert all(record.type_code == LocationType.CIRCLE and record.radius for record in circles)
 
 
-def test_circle_annotations_regenerate_when_manifest_images_scale_or_circles_change(tmp_path: Path) -> None:
-    from nornir_buildmanager.operations.segmentationtraining.circles import (
-        load_circle_diameter_scale,
-        write_circle_annotations,
-    )
+def test_circle_annotations_regenerate_when_manifest_images_or_circles_change(tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.circles import write_circle_annotations
 
     out = tmp_path / "AnnotationCrops"
     _write_circle_volume(out)
     exists = _volume_images(out)
-    path = write_circle_annotations(out, diameter_scale=0.8, image_exists=exists)
+    path = write_circle_annotations(out, image_exists=exists)
     assert path is not None
     first = path.read_text(encoding="utf-8")
     mtime = path.stat().st_mtime_ns
     assert write_circle_annotations(out, image_exists=exists) == path
     assert path.read_text(encoding="utf-8") == first
     assert path.stat().st_mtime_ns == mtime  # unchanged content is not rewritten
-    assert load_circle_diameter_scale(out) == 0.8
-
-    write_circle_annotations(out, diameter_scale=0.4, image_exists=exists)
-    scaled = json.loads(path.read_text(encoding="utf-8"))
-    assert scaled["diameter_scale"] == 0.4
-    assert scaled["grid_cells"]["V_1_D1_X1024-2048_Y0-1024"][0]["radius"] == 40.0
+    assert json.loads(first)["grid_cells"]["V_1_D1_X1024-2048_Y0-1024"][0]["radius"] == 100.0
 
     (out / "images" / "V_1_D1_X1024-2048_Y0-1024.png").unlink()  # e.g. -Cleanup removed the crop
     write_circle_annotations(out, image_exists=exists)
@@ -2737,14 +2729,12 @@ def test_odata_ingest_queries_circles_separately(tmp_path: Path) -> None:
     assert load_circle_records(out, 3) == []
 
 
-def test_pipelines_xml_wires_circle_diameter_scale() -> None:
+def test_pipelines_xml_has_no_circle_diameter_scale() -> None:
     pipeline = ElementTree.parse(_PIPELINES).find(".//Pipeline[@Name='ExportAnnotationCrops']")
     assert pipeline is not None
-    argument = pipeline.find(".//Argument[@dest='CircleDiameterScale']")
-    assert argument is not None and argument.get("flag") == "-CircleDiameterScale"
-    assert argument.get("type") == "float" and argument.get("default") == "0.95"
+    assert pipeline.find(".//Argument[@dest='CircleDiameterScale']") is None  # radii are exported unscaled
     call = pipeline.find(".//PythonCall[@Function='segmentationtraining.WriteCircleAnnotations']")
-    assert call is not None and call.get("CircleDiameterScale") == "#CircleDiameterScale"
+    assert call is not None and call.get("CircleDiameterScale") is None
     from nornir_buildmanager.operations.segmentationtraining.circles import WriteCircleAnnotations
 
     assert (

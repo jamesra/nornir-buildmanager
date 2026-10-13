@@ -22,9 +22,12 @@ multiplies ``Location.Radius`` by an XY scale to reach nanometers, which confirm
 it is a pixel quantity. No fixture in this repo carries a real circle, so this
 was not checked against live data.
 
-Stored ``radius`` values are multiplied by ``diameter_scale`` so the trainer
-receives the prompt circle, not the full object extent. The scale is recorded in
-the file and a change of scale regenerates every section.
+Stored ``radius`` values are the true radius: the annotated circle as drawn, or
+the full inscribed circle of a polygon. Shrinking a circle into a prompt is the
+consumer's job (the trainer's ``prompt.circle_diameter_scale``), so the scale can
+change without a re-export. ``diameter_scale`` stays in the file, fixed at 1.0,
+so a consumer can tell these radii from files written by older exporters that
+baked a scale in.
 
 Coordinates are crop pixels at the crop's own downsample, x right and y down,
 row 0 being the top row of the crop image (mosaic MinY, see
@@ -68,7 +71,8 @@ _logger = logging.getLogger(__name__)
 
 CIRCLE_ANNOTATIONS_FILENAME = "circle_annotations.json"
 CIRCLE_ANNOTATIONS_VERSION = 1
-DEFAULT_DIAMETER_SCALE = 0.95
+#: Recorded as ``diameter_scale``: the radii in the file are unscaled.
+FAITHFUL_DIAMETER_SCALE = 1.0
 SOURCE_ANNOTATED = "annotated"
 SOURCE_INSCRIBED = "inscribed"
 
@@ -365,13 +369,12 @@ def _refine_center(
 def cells_for_circles(
     crops: Sequence[CropRef],
     circles: Iterable[MosaicCircle],
-    diameter_scale: float,
 ) -> dict[str, list[dict[str, Any]]]:
     """Per-``imageKey`` entries for every circle that overlaps each crop window.
 
-    Pure: no I/O. Crops that no circle touches are omitted. Radius is multiplied
-    by *diameter_scale* before the overlap test, so the test uses the prompt
-    circle the trainer will actually draw.
+    Pure: no I/O. Crops that no circle touches are omitted. The radius is the
+    true radius, so a crop lists every circle that reaches it at full size; a
+    consumer that shrinks circles only ever draws less of them.
     """
     cells: dict[str, list[dict[str, Any]]] = {}
     circle_list = list(circles)
@@ -381,7 +384,7 @@ def cells_for_circles(
             px, py, radius = circle_in_crop_pixels(
                 circle.center_x,
                 circle.center_y,
-                circle.radius * diameter_scale,
+                circle.radius,
                 window=crop.window,
                 downsample=crop.downsample,
             )
@@ -406,14 +409,11 @@ def cells_for_circles(
     return cells
 
 
-def build_circle_document(
-    cells: dict[str, list[dict[str, Any]]],
-    diameter_scale: float,
-) -> dict[str, Any]:
+def build_circle_document(cells: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     """Wrap *cells* in the version-1 file layout with keys in stable order."""
     return {
         "version": CIRCLE_ANNOTATIONS_VERSION,
-        "diameter_scale": diameter_scale,
+        "diameter_scale": FAITHFUL_DIAMETER_SCALE,
         "grid_cells": {key: cells[key] for key in sorted(cells)},
     }
 
@@ -421,18 +421,6 @@ def build_circle_document(
 def circle_annotations_path(output_path: str | os.PathLike[str]) -> Path:
     """``{AnnotationCrops}/circle_annotations.json``."""
     return Path(output_path) / CIRCLE_ANNOTATIONS_FILENAME
-
-
-def load_circle_diameter_scale(output_path: str | os.PathLike[str]) -> float | None:
-    """``diameter_scale`` recorded in an existing file, or None."""
-    path = circle_annotations_path(output_path)
-    if not path.is_file():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        return float(payload["diameter_scale"])
-    except (OSError, ValueError, KeyError, TypeError):
-        return None
 
 
 def section_circles(
@@ -529,7 +517,6 @@ def _read_manifest_rows(output: Path) -> list[dict[str, Any]]:
 def write_circle_annotations(
     output_path: str | os.PathLike[str],
     *,
-    diameter_scale: float | None = None,
     image_exists: Callable[[str], bool] | None = None,
 ) -> Path | None:
     """Regenerate ``circle_annotations.json`` from the manifest and circle spills.
@@ -541,8 +528,7 @@ def write_circle_annotations(
     reads ``manifest.jsonl`` once); it is not thread safe against concurrent
     manifest writers.
 
-    *diameter_scale* None keeps the scale already recorded in the file, else
-    ``DEFAULT_DIAMETER_SCALE``. *image_exists* receives the crop PNG basename;
+    Radii are written unscaled (``diameter_scale`` 1.0). *image_exists* receives the crop PNG basename;
     the default consults the shared product index.
 
     Returns the path written, or None when there is nothing to write (no
@@ -553,13 +539,6 @@ def write_circle_annotations(
     rows = _read_manifest_rows(output)
     if not rows and not path.is_file():
         return None
-    scale = (
-        float(diameter_scale)
-        if diameter_scale is not None
-        else (load_circle_diameter_scale(output) or DEFAULT_DIAMETER_SCALE)
-    )
-    if scale <= 0:
-        raise ValueError(f"CircleDiameterScale must be positive, got {scale}")
     exists = image_exists if image_exists is not None else _default_image_exists(output)
 
     from nornir_buildmanager.operations.segmentationtraining.stitch import crop_image_filename
@@ -584,9 +563,9 @@ def write_circle_annotations(
     cells: dict[str, list[dict[str, Any]]] = {}
     for z in sorted(crops_by_z):
         circles = section_circles(output, z, members_by_z[z])
-        cells.update(cells_for_circles(crops_by_z[z], circles, scale))
+        cells.update(cells_for_circles(crops_by_z[z], circles))
 
-    document = build_circle_document(cells, scale)
+    document = build_circle_document(cells)
     text = json.dumps(document, indent=1)
     if path.is_file() and path.read_text(encoding="utf-8") == text:
         return path
@@ -605,7 +584,6 @@ def _default_image_exists(output: Path) -> Callable[[str], bool]:
 
 def WriteCircleAnnotations(
     OutputPath: str | None = None,
-    CircleDiameterScale: float | None = None,
     **kwargs: Any,
 ) -> None:
     """Pipeline entry for ExportAnnotationCrops: regenerate the volume's circle file. Returns None."""
@@ -614,8 +592,5 @@ def WriteCircleAnnotations(
 
     if not OutputPath:
         raise NornirUserException("ExportAnnotationCrops requires -Output")
-    try:
-        write_circle_annotations(OutputPath, diameter_scale=CircleDiameterScale)
-    except ValueError as exc:
-        raise NornirUserException(str(exc)) from exc
+    write_circle_annotations(OutputPath)
     return None

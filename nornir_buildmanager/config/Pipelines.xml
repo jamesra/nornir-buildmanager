@@ -2320,7 +2320,7 @@
     <Pipeline Name="ExportAnnotationCrops"
               NoDelete="True"
               Help="Export annotation crops for SAM2 / SA-1B training from OData or a saved OData dump."
-              Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Records the OData service root in source.json, each crop JSON, and annotation_crops.sqlite. Also writes circle_annotations.json, rebuilt from the manifest on every run (including -Update, -Repair, and -Cleanup): version 1, diameter_scale, and grid_cells keyed by manifest imageKey, each entry a circle (location_id, center_x, center_y, radius, structure_label, has_polygon_mask, source) in that crop's pixel space at its downsample, x right and y down from the crop's top-left, unclipped, listed in every crop it overlaps. source is annotated for circle-type annotations (center from MosaicShape, radius from the stored Radius, mosaic pixels at D1) and inscribed for masked polygons (largest circle inside the exterior ring). Radii are multiplied by -CircleDiameterScale. Circle annotations are ingested separately and never produce masks. -Repair restitches only crop images missing from the output scan. Export only: section walks set Validate=False and NoDelete forces the process no-delete flag so Clean() cannot remove volume inputs. Stale products under -Output may still be replaced."
+              Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Records the OData service root in source.json, each crop JSON, and annotation_crops.sqlite. Also writes circle_annotations.json, rebuilt from the manifest on every run (including -Update, -Repair, and -Cleanup): version 1, diameter_scale, and grid_cells keyed by manifest imageKey, each entry a circle (location_id, center_x, center_y, radius, structure_label, has_polygon_mask, source) in that crop's pixel space at its downsample, x right and y down from the crop's top-left, unclipped, listed in every crop it overlaps. source is annotated for circle-type annotations (center from MosaicShape, radius from the stored Radius, mosaic pixels at D1) and inscribed for masked polygons (largest circle inside the exterior ring). Radii are the true radius (the file records diameter_scale 1.0); the trainer applies its own prompt scale. Circle annotations are ingested separately and never produce masks. -Repair restitches only crop images missing from the output scan. Export only: section walks set Validate=False and NoDelete forces the process no-delete flag so Clean() cannot remove volume inputs. Stale products under -Output may still be replaced."
               Epilog="Example: nornir-build ExportAnnotationCrops /data/volume -OData http://host/odata -Output /data/sam2 -Channels TEM -Filters Leveled">
         <Arguments>
             <Argument flag="-OData" dest="OData"
@@ -2352,9 +2352,6 @@
                       required="False"/>
             <Argument flag="-Pad" dest="Pad" type="float" default="1"
                       help="Mosaic pixels added to each bbox side. Default is 1."
-                      required="False"/>
-            <Argument flag="-CircleDiameterScale" dest="CircleDiameterScale" type="float" default="0.95"
-                      help="Factor applied to every radius written to circle_annotations.json (annotated circles and inscribed circles of polygons), so the trainer receives a prompt circle smaller than the object. Recorded as diameter_scale in the file. Changing it regenerates every section's entries. Default is 0.95 (annotators keep circles inside the cell)."
                       required="False"/>
             <Argument flag="-MaxTexture" dest="MaxTexture" type="int"
                       help="Max pixels per crop axis. Default is 1024."
@@ -2451,8 +2448,7 @@
                     Cleanup="#Cleanup"/>
 
         <PythonCall Function="segmentationtraining.WriteCircleAnnotations"
-                    OutputPath="#OutputPath"
-                    CircleDiameterScale="#CircleDiameterScale"/>
+                    OutputPath="#OutputPath"/>
 
         <PythonCall Module="nornir_buildmanager.operations.segmentationtraining.sam2"
                     Function="WriteGallery"
