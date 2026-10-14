@@ -6,7 +6,8 @@ import json
 import logging
 import math
 import os
-from collections.abc import Iterator
+import re
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -343,6 +344,8 @@ def ExportSectionCrops(
     FilePostfix: str | None = None,
     TilesetMtime: float | None = None,
     AvailableDownsamples: list[int] | None = None,
+    TileFetcher: Callable[[int, Iterable[tuple[int, int]]], None] | None = None,
+    VolumeName: str | None = None,
     Cleanup: bool = False,
     RefreshOData: bool = False,
     Update: bool = False,
@@ -407,6 +410,8 @@ def ExportSectionCrops(
             FilePostfix=FilePostfix,
             TilesetMtime=TilesetMtime,
             AvailableDownsamples=AvailableDownsamples,
+            TileFetcher=TileFetcher,
+            VolumeName=VolumeName,
             filter_node=filter_node,
             section=section,
             z=z,
@@ -421,6 +426,123 @@ def ExportSectionCrops(
                 depth=0,
                 section=z,
             )
+
+
+def ExportRemoteSections(
+    OutputPath: str | None = None,
+    VikingXML: str | None = None,
+    TileHost: str | None = None,
+    TileCache: str | None = None,
+    TileRevalidate: str | None = None,
+    Sections: list[int] | str | None = None,
+    Channels: str = "TEM",
+    Filters: str = "Leveled",
+    Pad: float = 1.0,
+    Downsample: int = 1,
+    Exporter: str = EXPORTER_TILED,
+    MaxTexture: int | None = None,
+    MaxTiles: int | None = None,
+    MinProcessPixels: int = 16,
+    IncludeOffEdge: bool = False,
+    Workers: int | None = None,
+    MaskWorkers: int | None = None,
+    Force: bool = False,
+    RefreshOData: bool = False,
+    Update: bool = False,
+    Repair: bool = False,
+    FailMissingTileset: bool = False,
+    Overlay: bool = False,
+    Cleanup: bool = False,
+    http_get: Any = None,
+    **kwargs: Any,
+) -> None:
+    """Export sections of a volume that lives on another server, tiles read through its VikingXML.
+
+    A no-op without ``-VikingXML``. Sections come from the ingest (the annotated ones), limited to
+    ``-Sections`` and to those the VikingXML has a matching Channel.Filter tileset for. Tiles are
+    fetched into a validated cache folder (see :mod:`remote_tiles`) and the rest is the normal
+    section export, so crops, masks and the other products are the same as for a local volume.
+    """
+    del kwargs
+    source = _empty_to_none(VikingXML)
+    if source is None or Cleanup:
+        return None
+    if not OutputPath:
+        raise NornirUserException("ExportTrainingData needs an output folder (-Output)")
+    from nornir_buildmanager.operations.segmentationtraining.ingest import (
+        _write_source_document,
+        load_export_source,
+    )
+    from nornir_buildmanager.operations.segmentationtraining.remote_tiles import (
+        RemoteSession,
+        load_viking_xml,
+        parse_revalidate,
+    )
+
+    try:
+        volume = load_viking_xml(str(source), host=_empty_to_none(TileHost), http_get=http_get)
+        policy = parse_revalidate(_empty_to_none(TileRevalidate))
+    except (OSError, ValueError) as exc:
+        raise NornirUserException(f"ExportTrainingData -VikingXML {source}: {exc}") from exc
+    cache_root = Path(_empty_to_none(TileCache) or Path(OutputPath) / "_work" / "remote_tiles")
+    session = RemoteSession(volume, cache_root, http_get=http_get, revalidate=policy)
+
+    ingested = load_cache_meta_sections(OutputPath)
+    wanted = _as_int_list(Sections)
+    candidates = ingested or volume.sections()
+    if wanted is not None:
+        candidates = [z for z in candidates if z in set(wanted)]
+    channel_pattern, filter_pattern = re.compile(str(Channels)), re.compile(str(Filters))
+    for z in sorted(set(candidates)):
+        matches = [
+            item
+            for item in volume.tilesets.get(z, ())
+            if channel_pattern.match(item.channel) and filter_pattern.match(item.filter)
+        ]
+        if not matches:
+            prettyoutput.Log(f"ExportTrainingData: section {z} has no {Channels}.{Filters} tileset in the VikingXML")
+            continue
+        if len(matches) > 1:
+            prettyoutput.Log(
+                f"ExportTrainingData: section {z} has {len(matches)} matching tilesets; using {matches[0].name}"
+            )
+        tileset = matches[0]
+        tiles = session.source_for(tileset)
+        ExportSectionCrops(
+            OutputPath=OutputPath,
+            Z=z,
+            VolumeName=volume.name,
+            Pad=Pad,
+            Downsample=Downsample,
+            Exporter=Exporter,
+            MaxTexture=MaxTexture,
+            MaxTiles=MaxTiles,
+            MinProcessPixels=MinProcessPixels,
+            IncludeOffEdge=IncludeOffEdge,
+            Channels=Channels,
+            Filters=Filters,
+            Workers=Workers,
+            MaskWorkers=MaskWorkers,
+            Force=Force,
+            RefreshOData=RefreshOData,
+            Update=Update,
+            Repair=Repair,
+            FailMissingTileset=FailMissingTileset,
+            Overlay=Overlay,
+            TileXDim=tileset.tile_x,
+            TileYDim=tileset.tile_y,
+            LevelDirs=tiles.level_dirs,
+            FilePrefix=tileset.prefix,
+            FilePostfix=tileset.postfix,
+            AvailableDownsamples=sorted(tileset.levels),
+            TileFetcher=tiles.fetch,
+        )
+    session.finish()
+    prettyoutput.Log(f"ExportTrainingData: {session.summary()}")
+    document = load_export_source(OutputPath)
+    document["tiles"] = {"vikingXml": str(source), "base": volume.base_url, "cache": str(cache_root)}
+    _write_source_document(OutputPath, document)
+    return None
 
 
 _section_visit_order: dict[str, dict[int, int]] = {}
@@ -540,6 +662,8 @@ def _export_section_crops_entry(
     FilePostfix: str | None,
     TilesetMtime: float | None,
     AvailableDownsamples: list[int] | None,
+    TileFetcher: Callable[[int, Iterable[tuple[int, int]]], None] | None,
+    VolumeName: str | None,
     filter_node: Any,
     section: Any,
     z: int,
@@ -588,6 +712,7 @@ def _export_section_crops_entry(
         available=AvailableDownsamples,
         channel_name=str(Channels),
         filter_name=str(Filters),
+        fetch_tiles=TileFetcher,
     )
     if tileset is None:
         return None
@@ -597,7 +722,7 @@ def _export_section_crops_entry(
     max_tiles_x, max_tiles_y = _max_tiles(
         MaxTiles, max_texture, tileset.tile_shape.x, tileset.tile_shape.y
     )
-    volume = _resolve_volume_name(VolumeNode, filter_node, section)
+    volume = sanitize_volume_token(VolumeName) if VolumeName else _resolve_volume_name(VolumeNode, filter_node, section)
     exporter = (Exporter or EXPORTER_TILED).strip().lower()
     try:
         geometry_version = geometry_version_for(exporter)
@@ -706,6 +831,26 @@ def _export_section_crops_entry(
     return save_node
 
 
+def _prefetch_tiles(tileset: ResolvedTileset, requests: Iterable[tuple[int, TileRect | None]]) -> None:
+    """Make the tiles under each ``(downsample, tile rectangle)`` current when the tileset is remote.
+
+    Local tilesets have no fetcher and this does nothing. It runs before every check for missing
+    tiles, so a cache that is empty or stale is filled first instead of its crops being dropped.
+    """
+    fetch = tileset.fetch_tiles
+    if fetch is None:
+        return
+    by_downsample: dict[int, list[tuple[int, int]]] = {}
+    for downsample, rect in requests:
+        if rect is None:
+            continue
+        by_downsample.setdefault(int(downsample), []).extend(
+            (ix, iy) for iy in range(rect.iy0, rect.iy1) for ix in range(rect.ix0, rect.ix1)
+        )
+    for downsample in sorted(by_downsample):
+        fetch(downsample, by_downsample[downsample])
+
+
 def _missing_tiles_for_plan(plan: PlannedCrop, tileset: ResolvedTileset) -> list[tuple[int, int]]:
     """Covering tiles for *plan* that are not in the tileset level directory."""
     window = plan.window
@@ -737,6 +882,13 @@ def retain_plans_with_tiles(
     kept: list[PlannedCrop] = []
     skipped = 0
     dropped_ids: list[int] = []
+    _prefetch_tiles(
+        tileset,
+        (
+            (plan.downsample, plan.window.covering_tiles(tileset.tile_shape.x, tileset.tile_shape.y))
+            for plan in plans
+        ),
+    )
     for plan in plans:
         missing = _missing_tiles_for_plan(plan, tileset)
         if not missing:
@@ -791,6 +943,14 @@ def drop_recorded_crops_missing_tiles(
     dropped_keys: list[str] = []
     dropped_ids: list[int] = []
     skipped = 0
+    _prefetch_tiles(
+        tileset,
+        (
+            (mark.downsample, _tiles_for_watermark_image(mark, tile_x, tile_y))
+            for mark in marks
+            if only_keys is None or mark.key in only_keys
+        ),
+    )
     for mark in marks:
         if only_keys is not None and mark.key not in only_keys:
             kept.append(mark)
@@ -991,6 +1151,13 @@ def stitch_missing_crop_marks(
     tile_shape = tileset.tile_shape
     jobs: list[StitchJob] = []
     skipped = 0
+    _prefetch_tiles(
+        tileset,
+        (
+            (mark.downsample, _tiles_for_watermark_image(mark, tile_shape.x, tile_shape.y))
+            for mark in marks
+        ),
+    )
     for mark in marks:
         image_path = output / IMAGES_FOLDER / crop_image_filename(mark.key)
         job = _stitch_job_from_mark(mark, tile_shape, image_path)
@@ -1307,6 +1474,7 @@ def _resolve_tileset(
     available: list[int] | None,
     channel_name: str,
     filter_name: str,
+    fetch_tiles: Callable[[int, Iterable[tuple[int, int]]], None] | None = None,
 ) -> ResolvedTileset | None:
     """Tile size and level directories from the filter, or from explicit overrides.
 
@@ -1321,6 +1489,7 @@ def _resolve_tileset(
             prefix=file_prefix or "",
             postfix=file_postfix or ".png",
             mtime=tileset_mtime,
+            fetch_tiles=fetch_tiles,
         )
     if filter_node is None or not hasattr(filter_node, "Tileset"):
         message = "ExportTrainingData needs a Filter with a Tileset"

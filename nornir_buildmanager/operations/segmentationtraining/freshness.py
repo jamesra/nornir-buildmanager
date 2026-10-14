@@ -7,6 +7,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Iterable
 
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IMAGES_FOLDER
@@ -96,6 +97,8 @@ class ResolvedTileset:
     postfix: str
     mtime: float | None
     save_node: Any = None
+    #: ``(downsample, tile coords) -> None``. Remote tilesets: make those tiles current in ``level_dirs``.
+    fetch_tiles: Callable[[int, Iterable[tuple[int, int]]], None] | None = None
 
 
 @dataclass(frozen=True)

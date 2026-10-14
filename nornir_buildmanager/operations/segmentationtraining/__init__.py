@@ -11,6 +11,7 @@ from typing import Any
 
 __all__ = [
     "CleanupAnnotationCrops",
+    "ExportRemoteSections",
     "ExportSectionCrops",
     "IngestGeometries",
     "RepairAnnotationOverlays",
@@ -26,6 +27,7 @@ __all__ = [
 
 _EXPORTS = {
     "CleanupAnnotationCrops": "cleanup",
+    "ExportRemoteSections": "pipeline",
     "ExportSectionCrops": "pipeline",
     "IngestGeometries": "pipeline",
     "RepairAnnotationOverlays": "pipeline",

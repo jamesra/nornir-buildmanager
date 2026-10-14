@@ -2338,6 +2338,18 @@
             <Argument flag="-Output" dest="OutputPath"
                       help="Directory for PNG crops, JSON, masks, overlays, circle_annotations.json, and the _work cache. Optional: defaults to AnnotationCrops inside the volume folder."
                       required="False"/>
+            <Argument flag="-VikingXML" dest="VikingXML"
+                      help="Export a volume on another server: URL or file of its VikingXML. Tiles are fetched over HTTP into a cache folder and checked against the server before reuse; no local Nornir volume is needed (the volume path may be an empty folder). Combine with -OData for that lab's annotations. Their endpoints must be open: no credentials are sent."
+                      required="False"/>
+            <Argument flag="-TileHost" dest="TileHost"
+                      help="With -VikingXML: base URL for tiles, replacing the VikingXML's host/path."
+                      required="False"/>
+            <Argument flag="-TileCache" dest="TileCache"
+                      help="With -VikingXML: folder for the fetched-tile cache. Default is _work/remote_tiles inside -Output."
+                      required="False"/>
+            <Argument flag="-TileRevalidate" dest="TileRevalidate" default="once"
+                      help="With -VikingXML: how often cached tiles are checked against the server. once = each level once per run (default), always, never, or a number of hours. A VikingXML unchanged since the last run skips the check."
+                      required="False"/>
             <Argument flag="-Channels" dest="Channels" default="TEM"
                       help="Regular expression for the channel that owns the tileset"
                       required="False"/>
@@ -2441,6 +2453,32 @@
                 </Iterate>
             </Iterate>
         </Iterate>
+
+        <PythonCall Function="segmentationtraining.ExportRemoteSections"
+                    OutputPath="#OutputPath"
+                    VikingXML="#VikingXML"
+                    TileHost="#TileHost"
+                    TileCache="#TileCache"
+                    TileRevalidate="#TileRevalidate"
+                    Sections="#Sections"
+                    Channels="#Channels"
+                    Filters="#Filters"
+                    Pad="#Pad"
+                    Downsample="#Downsample"
+                    Exporter="#Exporter"
+                    MaxTexture="#MaxTexture"
+                    MaxTiles="#MaxTiles"
+                    MinProcessPixels="#MinProcessPixels"
+                    IncludeOffEdge="#IncludeOffEdge"
+                    Workers="#Workers"
+                    MaskWorkers="#MaskWorkers"
+                    Force="#Force"
+                    RefreshOData="#RefreshOData"
+                    Update="#Update"
+                    Repair="#Repair"
+                    FailMissingTileset="#FailMissingTileset"
+                    Overlay="#Overlay"
+                    Cleanup="#Cleanup"/>
 
         <PythonCall Function="segmentationtraining.CleanupAnnotationCrops"
                     OutputPath="#OutputPath"
