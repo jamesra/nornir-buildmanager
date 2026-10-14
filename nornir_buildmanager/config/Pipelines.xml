@@ -2320,7 +2320,7 @@
     <Pipeline Name="ExportTrainingData"
               NoDelete="True"
               Help="Export annotation crops for SAM2 / SA-1B training from OData or a saved OData dump."
-              Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Records the OData service root in source.json, each crop JSON, and annotation_crops.sqlite. Also writes circle_annotations.json, rebuilt from the manifest on every run (including -Update, -Repair, and -Cleanup): version 1, diameter_scale, and grid_cells keyed by manifest imageKey, each entry a circle (location_id, center_x, center_y, radius, structure_label, has_polygon_mask, source) in that crop's pixel space at its downsample, x right and y down from the crop's top-left, unclipped, listed in every crop it overlaps. source is annotated for circle-type annotations (center from MosaicShape, radius from the stored Radius, mosaic pixels at D1) and inscribed for masked polygons (largest circle inside the exterior ring). Radii are the true radius (the file records diameter_scale 1.0); the trainer applies its own prompt scale. Circle annotations are ingested separately and never produce masks. -Repair restitches only crop images missing from the output scan. Export only: section walks set Validate=False and NoDelete forces the process no-delete flag so Clean() cannot remove volume inputs. Stale products under -Output may still be replaced."
+              Description="Ingests Locations via -OData or -Geometries, then writes lossless PNG crops, 1-bit masks, COCO RLE JSON, and optional overlays. Records the OData service root in source.json, each crop JSON, and annotation_crops.sqlite. Also writes circle_annotations.json, rebuilt from the manifest on every run (including -Update, -Repair, and -Cleanup): version 1, diameter_scale, and grid_cells keyed by manifest imageKey, each entry a circle (location_id, center_x, center_y, radius, structure_label, has_polygon_mask, source) in that crop's pixel space at its downsample, x right and y down from the crop's top-left, unclipped, listed in every crop it overlaps. source is annotated for circle-type annotations (center from MosaicShape, radius from the stored Radius, mosaic pixels at D1) and inscribed for masked polygons (largest circle inside the exterior ring). Radii are the true radius (the file records diameter_scale 1.0); the trainer applies its own prompt scale. Circle annotations are ingested separately and never produce masks. Also writes shapes.jsonl, rebuilt from the ingest spills on every run: per polygon location its structure_id, whether it has a mask, its outline relative to its centroid (D1 mosaic pixels), and the locations Viking links it to within 2 sections on the same structure (one LocationLinks pull, cached in _work and repeated with -Update, -RefreshOData or -Force, or when the set of locations changes). manifest.jsonl rows gain structureIds and linkedIds parallel to locationIds. A volume exported before this existed is brought up to date by running the pipeline again; no crop is restitched. -Repair restitches only crop images missing from the output scan. Export only: section walks set Validate=False and NoDelete forces the process no-delete flag so Clean() cannot remove volume inputs. Stale products under -Output may still be replaced."
               Epilog="Example: nornir-build ExportTrainingData /data/volume -OData http://host/odata -Output /data/sam2 -Channels TEM -Filters Leveled">
         <Arguments>
             <Argument flag="-OData" dest="OData"
@@ -2487,6 +2487,12 @@
 
         <PythonCall Function="segmentationtraining.WriteCircleAnnotations"
                     OutputPath="#OutputPath"/>
+
+        <PythonCall Function="segmentationtraining.WriteLocationShapes"
+                    OutputPath="#OutputPath"
+                    RefreshOData="#RefreshOData"
+                    Update="#Update"
+                    Force="#Force"/>
 
         <PythonCall Module="nornir_buildmanager.operations.segmentationtraining.sam2"
                     Function="WriteGallery"
