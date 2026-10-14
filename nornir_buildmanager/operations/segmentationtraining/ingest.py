@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urljoin, urlparse
+from urllib.parse import parse_qs, quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from nornir_buildmanager.exceptions import NornirUserException
@@ -238,6 +238,12 @@ def odata_url_from_output(output_path: str | os.PathLike[str]) -> str | None:
         if text:
             return text
     return None
+
+
+def odata_filter_from_output(output_path: str | os.PathLike[str]) -> str | None:
+    """``$filter`` the export's locations were ingested with, or None."""
+    text = load_export_source(output_path).get("filter")
+    return text.strip() if isinstance(text, str) and text.strip() else None
 
 
 def odata_url_for_export(
@@ -788,15 +794,45 @@ def _odata_count(document: dict[str, Any]) -> int | None:
 
 
 def _iter_odata_documents(url: str, getter: HttpGet) -> Iterator[dict[str, Any]]:
-    """Follow ``@odata.nextLink`` until a page omits it."""
+    """Follow ``@odata.nextLink``; without one, continue with ``$skip`` while the result is incomplete.
+
+    The Viking OData service caps a page (16384 rows) and sends no ``@odata.nextLink``, so a
+    page that is as large as ``$top`` or short of ``@odata.count`` means more rows remain.
+    """
     next_url: str | None = url
+    top = _query_top(url)
+    fetched = 0
     while next_url:
         document = getter(next_url)
         yield document
+        page_size = len(_entities_from_odata_document(document))
+        fetched += page_size
         link = document.get("@odata.nextLink") if isinstance(document, dict) else None
-        if not link:
+        if link:
+            next_url = _absolute_next_link(next_url, str(link))
+            continue
+        total = _odata_count(document) if isinstance(document, dict) else None
+        full_page = top is not None and page_size >= top
+        if page_size == 0 or not (full_page or (total is not None and fetched < total)):
             break
-        next_url = _absolute_next_link(next_url, str(link))
+        next_url = _with_skip(url, fetched)
+
+
+def _query_top(url: str) -> int | None:
+    """The ``$top`` of *url*, or None."""
+    values = parse_qs(urlparse(url).query).get("$top")
+    try:
+        return int(values[0]) if values else None
+    except ValueError:
+        return None
+
+
+def _with_skip(url: str, skip: int) -> str:
+    """*url* with its ``$skip`` set to *skip*."""
+    parts = urlparse(url)
+    pairs = [pair for pair in parts.query.split("&") if pair and not pair.startswith("$skip=")]
+    pairs.append(f"$skip={skip}")
+    return parts._replace(query="&".join(pairs)).geturl()
 
 
 def _fetch_odata_entities(url: str, getter: HttpGet) -> list[dict[str, Any]]:

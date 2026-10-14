@@ -47,15 +47,31 @@ def _entity(loc_id: int, z: int, structure: int, wkt: str, label: str | None = "
 
 
 class LinkServer:
-    """``http_get`` for LocationLinks that counts requests."""
+    """``http_get`` for the export's Locations with their links expanded; counts requests.
 
-    def __init__(self, links: list[tuple[int, int]]) -> None:
+    Like the Viking service it caps a page (``page_cap``) and sends no ``@odata.nextLink``.
+    """
+
+    def __init__(self, links: list[tuple[int, int]], page_cap: int = 2) -> None:
         self.links = links
+        self.page_cap = page_cap
         self.calls: list[str] = []
 
     def __call__(self, url: str) -> dict:
         self.calls.append(unquote(url))
-        return {"value": [{"A": a, "B": b} for a, b in self.links]}
+        query = dict(part.split("=", 1) for part in unquote(url).split("?", 1)[1].split("&") if "=" in part)
+        skip = int(query.get("$skip", 0))
+        top = min(int(query["$top"]), self.page_cap)
+        ids = sorted({end for pair in self.links for end in pair})
+        entities = [
+            {
+                "ID": loc,
+                "LocationLinksA": [{"A": a, "B": b} for a, b in self.links if a == loc],
+                "LocationLinksB": [{"A": a, "B": b} for a, b in self.links if b == loc],
+            }
+            for loc in ids
+        ]
+        return {"@odata.count": len(entities), "value": entities[skip : skip + top]}
 
 
 def _volume(tmp_path: Path, *, odata: bool = True) -> Path:
@@ -174,11 +190,12 @@ def test_links_are_cached_and_refetched_only_when_needed(tmp_path: Path) -> None
     out = _volume(tmp_path)
     server = LinkServer([(11, 12)])
     write_location_shapes(out, http_get=server)
-    assert len(server.calls) == 1 and server.calls[0].startswith(ODATA + "/LocationLinks")
+    assert server.calls and server.calls[0].startswith(ODATA + "/Locations")
+    calls = len(server.calls)
     write_location_shapes(out, http_get=server)
-    assert len(server.calls) == 1  # cache hit
+    assert len(server.calls) == calls  # cache hit
     write_location_shapes(out, http_get=server, refresh=True)  # -Update / -RefreshOData / -Force
-    assert len(server.calls) == 2
+    assert len(server.calls) == 2 * calls
     # A new location changes the known set, so the cache no longer covers it.
     spill = out / "_work" / "section_3.jsonl"
     extra = LocationRecord.from_json(json.loads(spill.read_text(encoding="utf-8").splitlines()[0]))
@@ -186,7 +203,7 @@ def test_links_are_cached_and_refetched_only_when_needed(tmp_path: Path) -> None
     new["id"] = 500
     spill.write_text(spill.read_text(encoding="utf-8") + json.dumps(new) + "\n", encoding="utf-8")
     write_location_shapes(out, http_get=server)
-    assert len(server.calls) == 3
+    assert len(server.calls) == 3 * calls
 
 
 def test_unchanged_outputs_are_not_rewritten(tmp_path: Path) -> None:
@@ -266,3 +283,26 @@ def test_simplification_keeps_the_shape_within_the_tolerance() -> None:
     assert all(abs(math.hypot(x, y) - 100) < 1.0 for x, y in simple)  # still on the circle
     square = ((0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0), (0.0, 0.0))
     assert simplify_ring(square, 0.75) == square  # four corners cannot be reduced
+
+
+def test_links_are_read_past_the_servers_page_cap(tmp_path: Path) -> None:
+    """A page capped below $top with no nextLink must not end the links (the 16384-row cap)."""
+    out = _volume(tmp_path)
+    server = LinkServer([(11, 12), (12, 13), (11, 13)], page_cap=1)
+    write_location_shapes(out, http_get=server)
+    assert len(server.calls) > 1 and any("$skip=" in call for call in server.calls)
+    assert _shapes(out)[11]["linked"] == [[12, 2], [13, 3]]
+    assert _shapes(out)[13]["linked"] == [[11, 1], [12, 2]]
+
+
+def test_odata_paging_continues_with_skip_when_a_full_page_has_no_next_link() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.ingest import _iter_odata_pages
+
+    rows = [{"ID": i} for i in range(7)]
+
+    def getter(url: str) -> dict:
+        skip = int(url.split("$skip=")[1].split("&")[0]) if "$skip=" in url else 0
+        return {"value": rows[skip : skip + 3]}  # the server caps every page at 3 rows
+
+    assert [r["ID"] for r in _iter_odata_pages("http://x/Locations?$top=3&$count=true", getter)] == list(range(7))
+    assert [r["ID"] for r in _iter_odata_pages("http://x/Locations?$top=10", getter)] == [0, 1, 2]  # not full: done

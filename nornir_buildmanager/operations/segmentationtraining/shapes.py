@@ -36,16 +36,16 @@ import os
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote
 
 import numpy as np
 
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
-    ODATA_PAGE_SIZE,
     _iter_odata_pages,
+    _odata_locations_url,
     http_get_json,
     load_section_records,
+    odata_filter_from_output,
     odata_url_from_output,
     work_dir,
 )
@@ -60,7 +60,7 @@ _logger = logging.getLogger(__name__)
 
 SHAPES_FILENAME = "shapes.jsonl"
 LINKS_CACHE_FILENAME = "location_links.json"
-LINKS_CACHE_VERSION = 1
+LINKS_CACHE_VERSION = 2
 #: Viking links a location to the same structure on neighbouring sections; ignore anything farther.
 LINK_MAX_DZ = 2
 _PRECISION = 2
@@ -214,33 +214,43 @@ def _load_links_cache(path: Path, digest: str, root: str) -> list[tuple[int, int
     return [(int(a), int(b)) for a, b in pairs]
 
 
+LINKS_EXPAND = "LocationLinksA($select=A,B),LocationLinksB($select=A,B)"
+
+
 def fetch_links(
     root: str,
     known: dict[int, tuple[int, int | None]],
     *,
+    filter_text: str | None = None,
     http_get: HttpGet | None = None,
 ) -> list[tuple[int, int]]:
     """``LocationLinks`` between two known locations of the same structure within LINK_MAX_DZ sections.
 
-    *known* maps location id to ``(z, structure id)``. Every page is streamed and filtered, so
-    memory stays at the size of the result rather than the size of the volume's link table.
+    *known* maps location id to ``(z, structure id)``. The links come expanded on the export's own
+    locations (*filter_text* is the ``$filter`` they were ingested with) rather than from the
+    volume's whole link table, which is mostly links between locations that are not exported.
+    Every page is streamed and filtered, so memory stays at the size of the result.
     """
-    url = f"{root.rstrip('/')}/LocationLinks?$select={quote('A,B', safe=',')}&$top={ODATA_PAGE_SIZE}"
-    pairs: list[tuple[int, int]] = []
+    url = _odata_locations_url(
+        root.rstrip("/"), filter_text=filter_text or "ID gt 0", select="ID", expand=LINKS_EXPAND
+    )
+    pairs: set[tuple[int, int]] = set()
     seen = 0
     for entity in _iter_odata_pages(url, http_get or http_get_json):
-        seen += 1
-        try:
-            a, b = int(entity["A"]), int(entity["B"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        left, right = known.get(a), known.get(b)
-        if left is None or right is None or left[1] is None or left[1] != right[1]:
-            continue
-        if a != b and 1 <= abs(left[0] - right[0]) <= LINK_MAX_DZ:
-            pairs.append((a, b))
-    _logger.info("shapes: read %d link(s), kept %d", seen, len(pairs))
-    return pairs
+        for key in ("LocationLinksA", "LocationLinksB"):
+            for link in entity.get(key) or ():
+                seen += 1
+                try:
+                    a, b = int(link["A"]), int(link["B"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                left, right = known.get(a), known.get(b)
+                if left is None or right is None or left[1] is None or left[1] != right[1]:
+                    continue
+                if a != b and 1 <= abs(left[0] - right[0]) <= LINK_MAX_DZ:
+                    pairs.add((min(a, b), max(a, b)))
+    _logger.info("shapes: read %d link end(s), kept %d link(s)", seen, len(pairs))
+    return sorted(pairs)
 
 
 def collect_links(
@@ -272,7 +282,7 @@ def collect_links(
         if not refresh:
             pairs = _load_links_cache(cache_path, digest, root)
         if pairs is None:
-            pairs = fetch_links(root, known, http_get=http_get)
+            pairs = fetch_links(root, known, filter_text=odata_filter_from_output(output), http_get=http_get)
             payload = {"version": LINKS_CACHE_VERSION, "root": root, "ids": digest, "links": [list(p) for p in pairs]}
             temp = cache_path.with_suffix(".json.tmp")
             temp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
