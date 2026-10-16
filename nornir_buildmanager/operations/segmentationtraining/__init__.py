@@ -10,6 +10,7 @@ import importlib
 from typing import Any
 
 __all__ = [
+    "CheckTrainingSet",
     "CleanupAnnotationCrops",
     "ExportRemoteSections",
     "ExportSectionCrops",
@@ -18,6 +19,7 @@ __all__ = [
     "ScoreAnnotationCrops",
     "WriteCircleAnnotations",
     "WriteLocationShapes",
+    "WriteTrainingSetInfo",
     "apply_ignore_moves",
     "export_section_crops",
     "rebuild_catalog",
@@ -27,6 +29,7 @@ __all__ = [
 ]
 
 _EXPORTS = {
+    "CheckTrainingSet": "training_set",
     "CleanupAnnotationCrops": "cleanup",
     "ExportRemoteSections": "pipeline",
     "ExportSectionCrops": "pipeline",
@@ -35,6 +38,7 @@ _EXPORTS = {
     "ScoreAnnotationCrops": "score",
     "WriteCircleAnnotations": "circles",
     "WriteLocationShapes": "shapes",
+    "WriteTrainingSetInfo": "training_set",
     "apply_ignore_moves": "catalog",
     "export_section_crops": "pipeline",
     "rebuild_catalog": "catalog",

@@ -2400,9 +2400,39 @@
                       help="Audit and repair corrupt AnnotationCrops products. Does not ingest OData or restitch."/>
             <Argument flag="-Update" dest="Update" action="store_true"
                       help="ID-set delta: delete masks for locations that no longer match, mask or stitch newly added locations, and remask survivors whose LastModified changed inside their existing crop. Other survivor masks and TEM crops are left alone. Incompatible with -Force."/>
+            <Argument flag="-SetVersion" dest="SetVersion"
+                      help="The training set this export belongs to: v2, or v2.1 for a repopulated or tweaked v2 made with the same creation rules. Written to training_set.json in -Output. Omitted keeps the set already named there. Refused when the creation rules changed since that set number was started: new rules are a new set number (v3), not a new revision. Sets and models have separate version numbers."
+                      required="False"/>
+            <Argument flag="-ParentSet" dest="ParentSet"
+                      help="The earlier set this one revises or derives from (for example v2 for -SetVersion v3). A revision such as v2.1 defaults to v2. Needs -SetVersion."
+                      required="False"/>
+            <Argument flag="-SetDescription" dest="SetDescription"
+                      help="Free text about the set, kept in training_set.json. Omitted keeps the description already there; an operator may also edit the file."
+                      required="False"/>
             <Argument flag="-Repair" dest="Repair" action="store_true"
                       help="Restitch crop images that are missing from -Output. Uses one images/ directory scan, then writes only those files. Other crops in the section are left alone. Does not refetch OData. Incompatible with -Force, -Update, -RefreshOData, and -Cleanup."/>
         </Arguments>
+
+        <PythonCall Function="segmentationtraining.CheckTrainingSet"
+                    OutputPath="#OutputPath"
+                    OData="#OData"
+                    Geometries="#Geometries"
+                    VikingXML="#VikingXML"
+                    ODataFilter="#ODataFilter"
+                    StructureTypeId="#StructureTypeId"
+                    Channels="#Channels"
+                    Filters="#Filters"
+                    Downsample="#Downsample"
+                    Exporter="#Exporter"
+                    Pad="#Pad"
+                    MaxTexture="#MaxTexture"
+                    MinProcessPixels="#MinProcessPixels"
+                    IncludeOffEdge="#IncludeOffEdge"
+                    SetVersion="#SetVersion"
+                    ParentSet="#ParentSet"
+                    SetDescription="#SetDescription"
+                    Cleanup="#Cleanup"
+                    Repair="#Repair"/>
 
         <PythonCall Function="segmentationtraining.IngestGeometries"
                     OutputPath="#OutputPath"
@@ -2497,6 +2527,27 @@
         <PythonCall Module="nornir_buildmanager.operations.segmentationtraining.sam2"
                     Function="WriteGallery"
                     OutputPath="#OutputPath"
+                    Repair="#Repair"/>
+
+        <PythonCall Function="segmentationtraining.WriteTrainingSetInfo"
+                    OutputPath="#OutputPath"
+                    OData="#OData"
+                    Geometries="#Geometries"
+                    VikingXML="#VikingXML"
+                    ODataFilter="#ODataFilter"
+                    StructureTypeId="#StructureTypeId"
+                    Channels="#Channels"
+                    Filters="#Filters"
+                    Downsample="#Downsample"
+                    Exporter="#Exporter"
+                    Pad="#Pad"
+                    MaxTexture="#MaxTexture"
+                    MinProcessPixels="#MinProcessPixels"
+                    IncludeOffEdge="#IncludeOffEdge"
+                    SetVersion="#SetVersion"
+                    ParentSet="#ParentSet"
+                    SetDescription="#SetDescription"
+                    Cleanup="#Cleanup"
                     Repair="#Repair"/>
     </Pipeline>
 
