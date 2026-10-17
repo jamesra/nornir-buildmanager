@@ -25,6 +25,7 @@ def _default_tile_shape() -> Shape:
 
     return Shape(y=0, x=0)
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 
 EXPORTER_TILED = "tiled"
 EXPORTER_LEGACY = "legacy"
@@ -234,7 +235,7 @@ class SectionWatermark:
 
 
 def section_meta_path(output_path: str | Path, z: int) -> Path:
-    return Path(output_path) / "_work" / f"section_{z}.meta.json"
+    return work_root(output_path) / f"section_{z}.meta.json"
 
 
 def load_section_watermark(output_path: str | Path, z: int) -> SectionWatermark | None:

@@ -14,6 +14,7 @@ import pytest
 from hypothesis import given, settings, strategies as st
 from PIL import Image
 
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     _iter_indexed_masks,
     apply_ignore_moves,
@@ -76,10 +77,10 @@ def _mini_crops(tmp_path: Path, *, location_id: int = 42, z: int = 17) -> Path:
     output = tmp_path / "AnnotationCrops"
     images = output / "images"
     masks = output / "masks"
-    work = output / "_work"
+    work = work_root(output)
     images.mkdir(parents=True)
     masks.mkdir()
-    work.mkdir()
+    work.mkdir(parents=True)
     key = f"RC2_{z}_D1_X0_Y0"
     Image.new("L", (16, 16), 20).save(images / f"{key}.png")
     mask = Image.new("L", (16, 16), 0)

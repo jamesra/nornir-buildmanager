@@ -12,6 +12,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from nornir_imageregistration.type_info import Shape
 
+from nornir_buildmanager.operations.segmentationtraining.workdir import rle_dir
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     ExportParams,
     ImageWatermark,
@@ -88,7 +89,7 @@ def test_mask_job_for_crop_owns_mask_and_rle_layout() -> None:
     assert job.image_key == "Vol_1_D1_X0-1_Y0-1"
     assert (job.width, job.height) == (8, 8)
     assert job.mask_path == str(OUTPUT / "masks" / "Vol_1_D1_X0-1_Y0-1_7.png")
-    assert job.rle_path == str(OUTPUT / "_work" / "rle" / "Vol_1_D1_X0-1_Y0-1_7.json")
+    assert job.rle_path == str(rle_dir(OUTPUT) / "Vol_1_D1_X0-1_Y0-1_7.json")
     assert len(job.rings) == 1
     assert isinstance(job.rings, tuple)
 

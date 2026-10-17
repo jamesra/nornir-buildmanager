@@ -13,6 +13,7 @@ import pytest
 from nornir_imageregistration.type_info import Shape
 from PIL import Image
 
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.catalog import rebuild_catalog
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     EXPORTER_TILED,
@@ -214,10 +215,10 @@ def _mini_crops(tmp_path: Path, *, location_id: int = 42, z: int = 17) -> Path:
     output = tmp_path / "AnnotationCrops"
     images = output / "images"
     masks = output / "masks"
-    work = output / "_work"
+    work = work_root(output)
     images.mkdir(parents=True)
     masks.mkdir()
-    work.mkdir()
+    work.mkdir(parents=True)
     key = f"RC2_{z}_D1_X0_Y0"
     Image.new("L", (16, 16), 20).save(images / f"{key}.png")
     mask = Image.new("L", (16, 16), 0)
@@ -279,7 +280,7 @@ def test_odata_ingest_reports_count_and_complete(
     assert completes
     assert completes[-1][1]["total"] == 2
     meta = json.loads(
-        (tmp_path / "out" / "_work" / "cache.meta.json").read_text(encoding="utf-8")
+        (work_root(tmp_path / "out") / "cache.meta.json").read_text(encoding="utf-8")
     )
     assert meta["sections"] == [4, 5]
 
@@ -312,8 +313,8 @@ def test_export_section_crops_reports_section_progress(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     events = _track_events(monkeypatch)
-    work = tmp_path / "_work"
-    work.mkdir()
+    work = work_root(tmp_path)
+    work.mkdir(parents=True)
     (work / "cache.meta.json").write_text(
         json.dumps({"sections": [4, 7]}), encoding="utf-8"
     )
@@ -420,7 +421,7 @@ def test_write_gallery_completes_sections_track(
 ) -> None:
     events = _track_events(monkeypatch)
     output = _mini_crops(tmp_path)
-    (output / "_work" / "cache.meta.json").write_text(
+    (work_root(output) / "cache.meta.json").write_text(
         json.dumps({"sections": [17]}), encoding="utf-8"
     )
     WriteGallery(OutputPath=str(output))

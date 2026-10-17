@@ -432,7 +432,7 @@ def section_circles(
 
     *member_ids* are the locations that appear in a manifest row (they have
     masks). Inscribed circles are cached per section in
-    ``_work/circle_inscribed_{z}.json`` keyed by location id and LastModified,
+    ``circle_inscribed_{z}.json`` in the work folder keyed by location id and LastModified,
     because the distance transform dominates the cost of a no-op rerun.
     """
     circles: list[MosaicCircle] = []

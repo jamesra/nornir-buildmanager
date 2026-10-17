@@ -38,13 +38,14 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     save_section_watermark,
 )
 from nornir_buildmanager.operations.segmentationtraining.ingest import odata_url_for_export
+from nornir_buildmanager.operations.segmentationtraining.workdir import rle_dir
 from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 
 from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask_jobs_for_record
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, image_watermark, plan_section_crops
-from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER, get_product_index
+from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER, RLE_FOLDER, get_product_index, product_folder_path
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord, parse_datetime
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     replace_manifest_rows,
@@ -261,9 +262,9 @@ def _unlink_computed_member(
     for folder, name in (
         (MASKS_FOLDER, f"{image_key}_{location_id}.png"),
         (IGNORED_FOLDER, f"{image_key}_{location_id}.png"),
-        ("_work/rle", f"{image_key}_{location_id}.json"),
+        (RLE_FOLDER, f"{image_key}_{location_id}.json"),
     ):
-        path = output.joinpath(*folder.split("/")) / name
+        path = product_folder_path(output, folder) / name
         if not path.is_file():
             continue
         path.unlink()
@@ -596,7 +597,7 @@ def _merge_added_json(
         for location_id in plan.location_ids:
             if location_id in present:
                 continue
-            rle_path = output / "_work" / "rle" / f"{plan.image_key}_{location_id}.json"
+            rle_path = rle_dir(output) / f"{plan.image_key}_{location_id}.json"
             if not rle_path.is_file():
                 continue
             rle = json.loads(rle_path.read_text(encoding="utf-8"))

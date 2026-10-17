@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ingest_to_section_files,
 )
@@ -393,7 +394,7 @@ def test_remote_export_matches_a_local_volume_export(lab: dict) -> None:
     local_out = lab["tmp"] / "local_out"
     ingest_to_section_files(output_path=local_out, odata=None, geometries=lab["dump"])
     ExportSectionCrops(
-        OutputPath=str(local_out), Z=1, LevelDirs={1: str(lab["level"])}, TileXDim=8, TileYDim=8,
+        OutputPath=str(local_out), VolumeName="RemoteLab", Z=1, LevelDirs={1: str(lab["level"])}, TileXDim=8, TileYDim=8,
         FilePrefix="", FilePostfix=".png", AvailableDownsamples=[1], **_export_args(),
     )
     assert _images(remote_out), "the remote export wrote no crops"
@@ -404,8 +405,9 @@ def test_remote_export_matches_a_local_volume_export(lab: dict) -> None:
     source = json.loads((remote_out / "source.json").read_text(encoding="utf-8"))
     assert source["tiles"]["vikingXml"] == lab["url"]
     # Only tiles under the annotation were fetched, not the whole 16-tile level.
-    fetched = list((remote_out / "_work" / "remote_tiles").rglob("*.png"))
+    fetched = list((work_root(remote_out) / "remote_tiles").rglob("*.png"))
     assert 0 < len(fetched) < 16
+    assert not (remote_out / "_work").exists()
     assert any("RemoteLab" in path.name for path in (remote_out / "images").glob("*.png"))
 
 

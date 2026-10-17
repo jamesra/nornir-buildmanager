@@ -44,7 +44,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     seconds_significantly_newer,
 )
 from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow, TileRect
-from nornir_buildmanager.operations.segmentationtraining.grouping import sanitize_volume_token
+from nornir_buildmanager.operations.segmentationtraining.grouping import sanitize_volume_token, volume_name_from_odata_url
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ensure_export_source,
     ingest_to_section_files,
@@ -53,6 +53,7 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     load_section_records,
     odata_url_from_output,
 )
+from nornir_buildmanager.operations.segmentationtraining.workdir import RLE_FOLDER, rle_dir, work_root
 from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
@@ -145,7 +146,7 @@ def IngestGeometries(
     http_get: Callable[[str], dict[str, Any]] | None = None,
     **kwargs: Any,
 ) -> None:
-    """Volume-level ingest. Writes `{Output}/_work/section_{z}.jsonl` only."""
+    """Volume-level ingest. Writes `section_{z}.jsonl` in the work folder only."""
     del kwargs
     if not OutputPath:
         raise NornirUserException("ExportTrainingData needs an output folder (-Output)")
@@ -250,8 +251,8 @@ def _iter_crop_images(output: Path) -> Iterator[Path]:
 
 
 def _section_meta_numbers(output: Path) -> list[int]:
-    """Section numbers that already have a watermark under ``_work``."""
-    work = output / "_work"
+    """Section numbers that already have a watermark in the work folder."""
+    work = work_root(output)
     if not work.is_dir():
         return []
     numbers: list[int] = []
@@ -453,6 +454,7 @@ def ExportRemoteSections(
     FailMissingTileset: bool = False,
     Overlay: bool = False,
     Cleanup: bool = False,
+    VolumeName: str | None = None,
     http_get: Any = None,
     **kwargs: Any,
 ) -> None:
@@ -484,7 +486,8 @@ def ExportRemoteSections(
         policy = parse_revalidate(_empty_to_none(TileRevalidate))
     except (OSError, ValueError) as exc:
         raise NornirUserException(f"ExportTrainingData -VikingXML {source}: {exc}") from exc
-    cache_root = Path(_empty_to_none(TileCache) or Path(OutputPath) / "_work" / "remote_tiles")
+    volume_name = _resolve_export_volume_name(_empty_to_none(VolumeName), volume.name, OutputPath)
+    cache_root = Path(_empty_to_none(TileCache) or work_root(OutputPath) / "remote_tiles")
     session = RemoteSession(volume, cache_root, http_get=http_get, revalidate=policy)
 
     ingested = load_cache_meta_sections(OutputPath)
@@ -511,7 +514,7 @@ def ExportRemoteSections(
         ExportSectionCrops(
             OutputPath=OutputPath,
             Z=z,
-            VolumeName=volume.name,
+            VolumeName=volume_name,
             Pad=Pad,
             Downsample=Downsample,
             Exporter=Exporter,
@@ -722,7 +725,10 @@ def _export_section_crops_entry(
     max_tiles_x, max_tiles_y = _max_tiles(
         MaxTiles, max_texture, tileset.tile_shape.x, tileset.tile_shape.y
     )
-    volume = sanitize_volume_token(VolumeName) if VolumeName else _resolve_volume_name(VolumeNode, filter_node, section)
+    volume = sanitize_volume_token(VolumeName) if VolumeName else (
+        _resolve_volume_name(VolumeNode, filter_node, section)
+        or _resolve_export_volume_name(None, None, OutputPath)
+    )
     exporter = (Exporter or EXPORTER_TILED).strip().lower()
     try:
         geometry_version = geometry_version_for(exporter)
@@ -1352,14 +1358,14 @@ def export_section_crops(
             for location_id in plan.location_ids:
                 rle_name = f"{plan.image_key}_{location_id}.json"
                 mask_name = f"{plan.image_key}_{location_id}.png"
-                rle_path = output / "_work" / "rle" / rle_name
+                rle_path = rle_dir(output) / rle_name
                 mask_path = output / MASKS_FOLDER / mask_name
-                if not products.exists("_work/rle", rle_name):
+                if not products.exists(RLE_FOLDER, rle_name):
                     continue
                 try:
                     rle = json.loads(rle_path.read_text(encoding="utf-8"))
                 except OSError:
-                    products.refresh_one("_work/rle", rle_name)
+                    products.refresh_one(RLE_FOLDER, rle_name)
                     continue
                 record = by_id[location_id]
                 window_index, window_count = plan.window_of.get(location_id, (0, 1))
@@ -1655,8 +1661,8 @@ def _remove_stale_image_products(
         remove_image_key_products(output, key, products=products)
 
 
-def _resolve_volume_name(*nodes: Any) -> str:
-    """Volume XML Name, sanitized for filenames."""
+def _resolve_volume_name(*nodes: Any) -> str | None:
+    """Volume XML Name, sanitized for filenames, or None when no node names the volume."""
     for node in nodes:
         if node is None:
             continue
@@ -1671,7 +1677,26 @@ def _resolve_volume_name(*nodes: Any) -> str:
         parent_name = getattr(parent, "Name", None) if parent is not None else None
         if parent_name:
             return sanitize_volume_token(str(parent_name))
-    return "volume"
+    return None
+
+
+def _resolve_export_volume_name(explicit: str | None, declared: str | None, output_path: str | None) -> str:
+    """Volume name for the manifest, image keys and links: ``-VolumeName``, then the volume's own name,
+    then the name of the annotation server. Raises when none of them names the volume, because a guessed
+    placeholder ends up in every manifest row and in the links built from it."""
+    for name in (explicit, declared):
+        if name and str(name).strip():
+            return sanitize_volume_token(str(name))
+    odata = odata_url_from_output(output_path) if output_path else None
+    derived = volume_name_from_odata_url(odata)
+    if derived:
+        prettyoutput.Log(f"ExportTrainingData: volume has no name; using {derived} from the annotation server {odata}")
+        return sanitize_volume_token(derived)
+    raise NornirUserException(
+        "ExportTrainingData cannot tell what the volume is called: the VikingXML has no Name"
+        + (f" and the annotation server {odata} does not name it" if odata else " and no annotation server is recorded")
+        + ". Pass -VolumeName."
+    )
 
 
 def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, str]]) -> None:

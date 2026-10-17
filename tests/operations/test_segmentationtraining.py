@@ -21,6 +21,7 @@ from nornir_imageregistration.type_info import Shape
 from nornir_shared.reflection import get_module_class
 
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     ignore_location,
     list_catalog_rows,
@@ -954,7 +955,7 @@ def test_purge_empty_section_deletes_members_without_per_key_glob(tmp_path: Path
     _purge_empty_section(tmp_path, 211)
     assert not stale.exists()
     assert kept.is_file()
-    assert not (tmp_path / "_work" / "section_211.meta.json").exists()
+    assert not (work_root(tmp_path) / "section_211.meta.json").exists()
     drop_product_index(tmp_path)
 
 
@@ -1833,6 +1834,7 @@ def test_repair_replaces_only_the_missing_crop(tmp_path: Path) -> None:
     near_mask_mtime = near_mask.stat().st_mtime
     far_png.unlink()
     written = ExportSectionCrops(
+        VolumeName="Vol",
         OutputPath=str(out),
         Repair=True,
         Z=2,
@@ -1911,7 +1913,7 @@ def test_resolve_volume_name_from_volume_node() -> None:
 
     assert _resolve_volume_name(_Volume()) == "RC2"
     assert _resolve_volume_name(None, _Filter()) == "RC2"
-    assert _resolve_volume_name(None) == "volume"
+    assert _resolve_volume_name(None) is None
 
 
 def test_volume_prefix_change_removes_old_files(tmp_path: Path) -> None:

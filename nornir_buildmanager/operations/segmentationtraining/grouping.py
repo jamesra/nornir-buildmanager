@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
-from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow, TileRect
+from nornir_buildmanager.operations.segmentationtraining.geometry import (
+    CropWindow,
+    TileRect,
+)
 
 _VOLUME_TOKEN = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -14,6 +18,40 @@ def sanitize_volume_token(name: str | None) -> str:
     """Filename-safe volume prefix so mixed-volume training sets do not collide."""
     cleaned = _VOLUME_TOKEN.sub("_", (name or "").strip()).strip("._")
     return cleaned or "volume"
+
+
+# Annotation servers here are named for their volume with deployment decoration around it, e.g.
+# ``NeitzTemporalMonkeyTokenTest`` for TemporalMonkey. The decoration is not part of the volume's name.
+_SERVER_NAME_PREFIXES = ("Neitz",)
+_SERVER_NAME_SUFFIXES = ("TokenTest", "Test")
+
+
+def volume_name_from_odata_url(odata_url: str | None) -> str | None:
+    """Volume name taken from the annotation server's name, or None when the URL does not carry one.
+
+    The server name is the path segment before ``OData`` (``…/NeitzCPED/OData`` -> ``CPED``), minus the
+    deployment prefix and suffix. A name that is nothing but decoration yields None.
+    """
+    if not odata_url:
+        return None
+    segments = [part for part in urlparse(odata_url.strip()).path.split("/") if part]
+    for index, part in enumerate(segments):
+        if part.lower() == "odata" and index > 0:
+            server = segments[index - 1]
+            break
+    else:
+        return None
+    name = server
+    for prefix in _SERVER_NAME_PREFIXES:
+        if name.startswith(prefix) and len(name) > len(prefix):
+            name = name[len(prefix):]
+            break
+    for suffix in _SERVER_NAME_SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            name = name[: -len(suffix)]
+            break
+    cleaned = _VOLUME_TOKEN.sub("_", name.strip()).strip("._")
+    return cleaned or None
 
 
 @dataclass

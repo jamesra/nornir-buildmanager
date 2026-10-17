@@ -20,10 +20,10 @@ into tile-sized masks), so this module writes it once per volume:
 
 * ``structureIds`` and ``linkedIds`` on every ``manifest.jsonl`` row, parallel to ``locationIds``.
 
-Both are rebuilt from the ingest spills in ``_work`` on every run (including ``-Update``,
+Both are rebuilt from the ingest spills in the work folder on every run (including ``-Update``,
 ``-Repair`` and ``-Cleanup``), so an export made before this module existed is brought up to
 date by running the pipeline again; no crop is restitched. The only network use is one
-``LocationLinks`` pull, cached in ``_work/location_links.json`` and repeated when the cache is
+``LocationLinks`` pull, cached in the work folder's ``location_links.json`` and repeated when the cache is
 missing, when the set of locations changed, or with ``-Update`` / ``-RefreshOData`` / ``-Force``.
 """
 
@@ -50,6 +50,7 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     work_dir,
 )
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.wkt import (
     PolygonRings,
     Ring,
@@ -315,9 +316,10 @@ def _read_manifest_rows(output: Path) -> list[dict[str, Any]]:
 
 
 def _spilled_sections(output: Path) -> list[int]:
-    """Section numbers that have an ingest spill in ``_work``."""
+    """Section numbers that have an ingest spill in the work folder."""
     found: list[int] = []
-    for path in (output / "_work").glob("section_*.jsonl") if (output / "_work").is_dir() else ():
+    work = work_root(output)
+    for path in work.glob("section_*.jsonl") if work.is_dir() else ():
         try:
             found.append(int(path.stem.split("_", 1)[1]))
         except (IndexError, ValueError):

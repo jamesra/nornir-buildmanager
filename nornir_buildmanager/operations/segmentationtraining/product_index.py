@@ -12,6 +12,8 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from nornir_buildmanager.operations.segmentationtraining.workdir import RLE_FOLDER, rle_dir
+
 # On-disk folder names under an AnnotationCrops output tree. Sam2SegmentationTrainer reads this layout,
 # so the values must not change.
 IMAGES_FOLDER = "images"
@@ -23,10 +25,17 @@ PRODUCT_FOLDERS: tuple[str, ...] = (
     MASKS_FOLDER,
     "overlays",
     IGNORED_FOLDER,
-    "_work/rle",
+    RLE_FOLDER,
 )
 
-_MEMBER_FOLDERS = frozenset({MASKS_FOLDER, IGNORED_FOLDER, "_work/rle"})
+_MEMBER_FOLDERS = frozenset({MASKS_FOLDER, IGNORED_FOLDER, RLE_FOLDER})
+
+
+def product_folder_path(output: str | Path, folder: str) -> Path:
+    """Directory of product *folder*: under *output*, except RLE sidecars, which live in the work folder."""
+    if folder == RLE_FOLDER:
+        return rle_dir(output)
+    return Path(output).joinpath(*folder.split("/"))
 
 _indexes: dict[str, CropProductIndex] = {}
 _indexes_lock = threading.Lock()
@@ -138,12 +147,15 @@ class CropProductIndex:
                 self._rebuild_members(folder)
 
     def _folder_path(self, folder: str) -> Path:
-        return self.output.joinpath(*folder.split("/"))
+        return product_folder_path(self.output, folder)
 
     def _split_path(self, path: Path) -> tuple[str | None, str]:
-        """Product folder and basename for a path under this output tree."""
+        """Product folder and basename for a path under this output tree or its RLE folder."""
+        resolved = path.resolve()
+        if resolved.parent == rle_dir(self.output).resolve():
+            return RLE_FOLDER, resolved.name
         try:
-            relative = path.resolve().relative_to(self.output)
+            relative = resolved.relative_to(self.output)
         except ValueError:
             return None, path.name
         if relative.parent == Path("."):

@@ -25,15 +25,18 @@ from nornir_buildmanager.operations.segmentationtraining.product_index import (
     IGNORED_FOLDER,
     IMAGES_FOLDER,
     MASKS_FOLDER,
+    RLE_FOLDER,
     CropProductIndex,
     get_product_index,
+    product_folder_path,
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import resolve_crop_image
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 
 _MEMBER_FOLDERS = (
     (MASKS_FOLDER, ".png"),
     (IGNORED_FOLDER, ".png"),
-    ("_work/rle", ".json"),
+    (RLE_FOLDER, ".json"),
 )
 
 
@@ -63,7 +66,7 @@ def remove_image_key_products(
         (IMAGES_FOLDER, f"{key}.json"),
         ("overlays", f"{key}.png"),
     ):
-        path = output.joinpath(*folder.split("/")) / name
+        path = product_folder_path(output, folder) / name
         present = products.exists(folder, name) if products is not None else path.is_file()
         if not present:
             continue
@@ -100,7 +103,7 @@ def delete_location_member_files(
     for folder, suffix in _MEMBER_FOLDERS:
         needle = f"_{suffix_id}{suffix}"
         matches = [name for name in index.iter_names(folder) if name.endswith(needle)]
-        directory = output.joinpath(*folder.split("/"))
+        directory = product_folder_path(output, folder)
         for name in matches:
             key = name[: -len(needle)]
             if z is not None and f"_{int(z)}_D" not in key:
@@ -262,7 +265,7 @@ def _align_image_meta(
 
 def _repair_watermarks(output: Path, wanted: set[int] | None, summary: CleanupSummary) -> None:
     """Drop watermark keys whose crop files are gone."""
-    work = output / "_work"
+    work = work_root(output)
     if not work.is_dir():
         return
     for path in sorted(work.glob("section_*.meta.json")):
@@ -329,7 +332,7 @@ def _unlink_member_files(
     removed = 0
     index = products if products is not None else get_product_index(output)
     for folder, suffix in _MEMBER_FOLDERS:
-        root = output.joinpath(*folder.split("/"))
+        root = product_folder_path(output, folder)
         for name in _iter_member_names(index, key, suffix, folder):
             member_key, location_id = _split_member_stem(Path(name).stem)
             if member_key != key or location_id is None:

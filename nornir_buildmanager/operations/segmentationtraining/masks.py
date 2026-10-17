@@ -16,6 +16,7 @@ from annotation_crops.rle import encode_coco_rle
 from nornir_buildmanager.operations.segmentationtraining.product_index import MASKS_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.geometry import PolygonRings, pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.poolutil import run_process_jobs
+from nornir_buildmanager.operations.segmentationtraining.workdir import rle_dir
 
 if TYPE_CHECKING:
     from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop
@@ -48,7 +49,7 @@ def mask_job_for_crop(
 ) -> MaskJob | None:
     """Mask job for one location in one crop window, or None when no ring lands inside it.
 
-    Owns the on-disk layout: ``masks/<key>_<id>.png`` and ``_work/rle/<key>_<id>.json``.
+    Owns the on-disk layout: ``masks/<key>_<id>.png`` and ``<work folder>/rle/<key>_<id>.json``.
     """
     rings = pixel_rings_in_crop(
         polygons,
@@ -67,7 +68,7 @@ def mask_job_for_crop(
         height=height,
         rings=tuple(rings),
         mask_path=str(output / MASKS_FOLDER / f"{image_key}_{location_id}.png"),
-        rle_path=str(output / "_work" / "rle" / f"{image_key}_{location_id}.json"),
+        rle_path=str(rle_dir(output) / f"{image_key}_{location_id}.json"),
     )
 
 

@@ -2336,7 +2336,10 @@
                       help="Exact Parent/TypeID values for closed polygons. One id or a list, same syntax as -Sections (1,3,5-7). No subtype expansion. Omitted keeps the Cell-plus-subtypes default. Overridden by -ODataFilter."
                       required="False"/>
             <Argument flag="-Output" dest="OutputPath"
-                      help="Directory for PNG crops, JSON, masks, overlays, circle_annotations.json, and the _work cache. Optional: defaults to AnnotationCrops inside the volume folder."
+                      help="Directory for PNG crops, JSON, masks, overlays, and circle_annotations.json. The re-run cache is kept beside it in ../_work_cache/&lt;output folder name&gt;. Optional: defaults to AnnotationCrops inside the volume folder."
+                      required="False"/>
+            <Argument flag="-VolumeName" dest="VolumeName"
+                      help="Name of the volume in the manifest, image keys and links. Optional: defaults to the VikingXML's Name, then to the name of the annotation server (-OData). Required when neither names the volume."
                       required="False"/>
             <Argument flag="-VikingXML" dest="VikingXML"
                       help="Export a volume on another server: URL or file of its VikingXML. Tiles are fetched over HTTP into a cache folder and checked against the server before reuse; no local Nornir volume is needed (the volume path may be an empty folder). Combine with -OData for that lab's annotations. Their endpoints must be open: no credentials are sent."
@@ -2345,7 +2348,7 @@
                       help="With -VikingXML: base URL for tiles, replacing the VikingXML's host/path."
                       required="False"/>
             <Argument flag="-TileCache" dest="TileCache"
-                      help="With -VikingXML: folder for the fetched-tile cache. Default is _work/remote_tiles inside -Output."
+                      help="With -VikingXML: folder for the fetched-tile cache. Default is remote_tiles in ../_work_cache/&lt;output folder name&gt; beside -Output."
                       required="False"/>
             <Argument flag="-TileRevalidate" dest="TileRevalidate" default="once"
                       help="With -VikingXML: how often cached tiles are checked against the server. once = each level once per run (default), always, never, or a number of hours. A VikingXML unchanged since the last run skips the check."
@@ -2391,7 +2394,7 @@
             <Argument flag="-Force" dest="Force" action="store_true"
                       help="Full rebuild: refetch OData MosaicShape and restitch every crop even when watermarks match."/>
             <Argument flag="-RefreshOData" dest="RefreshOData" action="store_true"
-                      help="Refetch OData MosaicShape into Output/_work, then update masks and JSON (and restitch only where crop windows changed). Unchanged crops are skipped."/>
+                      help="Refetch OData MosaicShape into the work folder, then update masks and JSON (and restitch only where crop windows changed). Unchanged crops are skipped."/>
             <Argument flag="-FailMissingTileset" dest="FailMissingTileset" action="store_true"
                       help="Fail instead of skipping a section whose filter has no Tileset/level."/>
             <Argument flag="-Overlay" dest="Overlay" action="store_true"
@@ -2479,6 +2482,7 @@
                                 Repair="#Repair"
                                 FailMissingTileset="#FailMissingTileset"
                                 Overlay="#Overlay"
+                                VolumeName="#VolumeName"
                                 Cleanup="#Cleanup"/>
                 </Iterate>
             </Iterate>
@@ -2508,6 +2512,7 @@
                     Repair="#Repair"
                     FailMissingTileset="#FailMissingTileset"
                     Overlay="#Overlay"
+                    VolumeName="#VolumeName"
                     Cleanup="#Cleanup"/>
 
         <PythonCall Function="segmentationtraining.CleanupAnnotationCrops"
@@ -2557,7 +2562,7 @@
               Epilog="Example: nornir-build RepairAnnotationOverlays /data/volume -Output /data/volume/AnnotationCrops">
         <Arguments>
             <Argument flag="-Output" dest="OutputPath"
-                      help="Directory that already contains images/, masks/, and optional _work watermarks"
+                      help="Directory that already contains images/, masks/, and optional watermarks in the work folder"
                       required="True"/>
             <Argument flag="-Sections" dest="Sections" type="IntegerList"
                       help="Section numbers to repair. Omitted means every Z with a watermark, else every crop image."

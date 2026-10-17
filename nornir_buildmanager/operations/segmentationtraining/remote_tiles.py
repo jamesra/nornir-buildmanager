@@ -186,7 +186,7 @@ class RemoteTileset:
 class RemoteVolume:
     """The parts of a VikingXML the exporter uses."""
 
-    name: str
+    name: str | None
     base_url: str
     checksum: str
     tilesets: Mapping[int, tuple[RemoteTileset, ...]]
@@ -275,7 +275,7 @@ def parse_viking_xml(
                 )
             )
     return RemoteVolume(
-        name=root.get("Name") or "volume",
+        name=root.get("Name") or None,
         base_url=base,
         checksum=root.get("InputChecksum") or "",
         tilesets={z: tuple(sorted(items, key=lambda item: item.name)) for z, items in tilesets.items()},

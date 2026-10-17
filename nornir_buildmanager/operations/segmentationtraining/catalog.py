@@ -27,7 +27,9 @@ from nornir_buildmanager.operations.segmentationtraining.product_index import (
     MASKS_FOLDER,
     CropProductIndex,
     get_product_index,
+    product_folder_path,
 )
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.progress import (
     GALLERY_LABEL,
     GALLERY_TRACK_ID,
@@ -561,7 +563,7 @@ def _find_masks(output: Path, folder: str, location_id: int) -> list[Path]:
     """Every mask file for *location_id* in the cached *folder*."""
     products = get_product_index(output)
     suffix = f"_{int(location_id)}.png"
-    root = output.joinpath(*folder.split("/"))
+    root = product_folder_path(output, folder)
     names = sorted(name for name in products.iter_names(folder) if name.endswith(suffix))
     return [root / name for name in names]
 
@@ -580,7 +582,7 @@ def _records_by_id(
     z: int | None = None,
 ) -> dict[int, LocationRecord]:
     """Location records from one section JSONL, or every section when *z* is omitted."""
-    work = output / "_work"
+    work = work_root(output)
     if not work.is_dir():
         return {}
     by_id: dict[int, LocationRecord] = {}

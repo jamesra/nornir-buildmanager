@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.progress import (
     INGEST_LABEL,
     INGEST_TRACK_ID,
@@ -48,8 +49,8 @@ HttpGet = Callable[[str], dict[str, Any]]
 
 
 def work_dir(output_path: str | os.PathLike[str]) -> Path:
-    """Return `{Output}/_work`."""
-    path = Path(output_path) / "_work"
+    """Return the work folder for *output_path* (outside it; see ``workdir``), creating it."""
+    path = work_root(output_path)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -70,7 +71,7 @@ def cache_meta_path(output_path: str | os.PathLike[str]) -> Path:
 
 
 def export_source_path(output_path: str | os.PathLike[str]) -> Path:
-    """Durable provenance file next to crops, not under `_work`."""
+    """Durable provenance file next to crops, not in the work folder."""
     return Path(output_path) / "source.json"
 
 
@@ -199,7 +200,7 @@ def record_export_exporter(output_path: str | os.PathLike[str], exporter: str) -
 
 
 def load_export_source(output_path: str | os.PathLike[str]) -> dict[str, Any]:
-    """Load `source.json`, or reconstruct it from `_work/cache.meta.json`."""
+    """Load `source.json`, or reconstruct it from the work folder's `cache.meta.json`."""
     path = export_source_path(output_path)
     if path.is_file():
         try:
@@ -393,7 +394,7 @@ def write_circle_jsonl(
     *,
     sections: list[int] | None = None,
 ) -> dict[int, list[LocationRecord]]:
-    """Flush circle records grouped by Z into ``_work/circles_{z}.jsonl``.
+    """Flush circle records grouped by Z into ``circles_{z}.jsonl`` in the work folder.
 
     With *sections* None every circle spill not rewritten is removed. With
     *sections* only those Z are replaced, so a partial ingest leaves other

@@ -10,6 +10,7 @@ from urllib.parse import unquote
 
 import pytest
 
+from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ingest_to_section_files,
 )
@@ -197,7 +198,7 @@ def test_links_are_cached_and_refetched_only_when_needed(tmp_path: Path) -> None
     write_location_shapes(out, http_get=server, refresh=True)  # -Update / -RefreshOData / -Force
     assert len(server.calls) == 2 * calls
     # A new location changes the known set, so the cache no longer covers it.
-    spill = out / "_work" / "section_3.jsonl"
+    spill = work_root(out) / "section_3.jsonl"
     extra = LocationRecord.from_json(json.loads(spill.read_text(encoding="utf-8").splitlines()[0]))
     new = json.loads(json.dumps(extra.to_json()))
     new["id"] = 500
