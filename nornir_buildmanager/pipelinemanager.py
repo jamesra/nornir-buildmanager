@@ -615,7 +615,9 @@ class PipelineManager:
             block_count = len(list(self.VolumeTree.findall('Block')))
             pipeline_name = self._PipelineName or ""
             is_import_pipeline = pipeline_name.startswith("Import") or pipeline_name.startswith("Adopt")
-            if (not volume_xml_existed or block_count == 0) and not is_import_pipeline:
+            # ExportTrainingData -VikingXML reads another server's volume; the local folder may be empty.
+            is_remote_export = bool(getattr(args, "VikingXML", None))
+            if (not volume_xml_existed or block_count == 0) and not (is_import_pipeline or is_remote_export):
                 err = (
                     f"Volume at {args.volumepath} has no usable data "
                     f"(VolumeData.xml existed={volume_xml_existed}, Block count={block_count}). "
@@ -974,7 +976,10 @@ class PipelineManager:
         for parent in save_parent:
             PipelineManager._SaveNodes(parent)
 
-        if NumProcessed == 0:
+        # AllowEmpty="True": matching nothing is fine and later sibling stages still run. Without it an
+        # empty iterate raises, and the parent loop skips every remaining stage in the pipeline.
+        allow_empty = PipelineNode.attrib.get('AllowEmpty', 'False').lower() in ('true', '1', 'y', 'yes')
+        if NumProcessed == 0 and not allow_empty:
             raise PipelineSearchFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
     @classmethod

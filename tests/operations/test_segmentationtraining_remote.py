@@ -466,3 +466,19 @@ def test_pipeline_xml_declares_the_remote_arguments_and_call() -> None:
 
     assert exported is ExportRemoteSections
     assert os.path.isfile(str(pipelines))
+
+
+@pytest.mark.parametrize(
+    ("name", "path"),
+    [
+        ("SEM.Leveled", "SEM\Leveled\Tileset"),
+        ("Leveled", "SEM\Leveled\Tileset"),
+        ("Leveled", "SEM/Leveled/Tileset"),
+    ],
+)
+def test_tileset_channel_and_filter_from_name_or_path(name: str, path: str) -> None:
+    """A tileset named just ``Leveled`` takes its channel and filter from its path."""
+    from nornir_buildmanager.operations.segmentationtraining.remote_tiles import RemoteTileset
+
+    tileset = RemoteTileset(1, "", name, path, 512, 512, "", ".png", {})
+    assert (tileset.channel, tileset.filter) == ("SEM", "Leveled")

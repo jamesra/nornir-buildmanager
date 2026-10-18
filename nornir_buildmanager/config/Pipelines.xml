@@ -2451,13 +2451,13 @@
                     Repair="#Repair"
                     Cleanup="#Cleanup"/>
 
-        <Iterate VariableName="section_node" XPath="Block/Section" SortAttribute="Number" Validate="False">
+        <Iterate VariableName="section_node" XPath="Block/Section" SortAttribute="Number" Validate="False" AllowEmpty="True">
             <RequireSetMembership Attribute="Number" List="#Sections"/>
 
-            <Iterate VariableName="ChannelNode" XPath="Channel" Validate="False">
+            <Iterate VariableName="ChannelNode" XPath="Channel" Validate="False" AllowEmpty="True">
                 <RequireMatch Attribute="Name" RegEx="#Channels"/>
 
-                <Iterate VariableName="FilterNode" XPath="Filter" Validate="False">
+                <Iterate VariableName="FilterNode" XPath="Filter" Validate="False" AllowEmpty="True">
                     <RequireMatch Attribute="Name" RegEx="#Filters"/>
 
                     <PythonCall Function="segmentationtraining.ExportSectionCrops"

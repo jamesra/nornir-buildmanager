@@ -168,13 +168,27 @@ class RemoteTileset:
     postfix: str
     levels: Mapping[int, RemoteLevel]
 
+    def _channel_filter(self) -> tuple[str, str]:
+        """``Channel.Filter`` from the name; else ``Channel/Filter/...`` from the tileset path.
+
+        Some volumes name the tileset just ``Leveled``; their path (``SEM/Leveled/Tileset``) still
+        says which channel and filter it is.
+        """
+        if "." in self.name:
+            channel, filter_name = self.name.split(".", 1)
+            return channel, filter_name
+        parts = [part for part in re.split(r"[\\/]", self.path) if part]
+        if len(parts) >= 2:
+            return parts[0], parts[1]
+        return self.name, ""
+
     @property
     def channel(self) -> str:
-        return self.name.split(".", 1)[0]
+        return self._channel_filter()[0]
 
     @property
     def filter(self) -> str:
-        return self.name.split(".", 1)[1] if "." in self.name else ""
+        return self._channel_filter()[1]
 
     def level_url(self, base: str, downsample: int) -> str:
         """Folder URL of one level, without a trailing slash."""
