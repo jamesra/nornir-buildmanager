@@ -138,8 +138,8 @@ def group_snaps(
     for location_id, tight, window, item_d in items:
         if item_d != downsample:
             raise ValueError("group_snaps requires a single downsample")
-        hosts = [rect for rect in candidates if rect.contains(tight)]
-        host = min(hosts, key=lambda rect: (rect.ix0, rect.iy0, rect.ix1, rect.iy1)) if hosts else window
+        # *candidates* is sorted by the host-preference key, so the first containing rect is the minimum.
+        host = next((rect for rect in candidates if rect.contains(tight)), window)
         assigned.setdefault(host, []).append(location_id)
     return [
         CropGroup(snap=rect, location_ids=ids, downsample=downsample)
