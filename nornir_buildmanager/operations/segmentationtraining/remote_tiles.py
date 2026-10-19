@@ -39,6 +39,9 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    atomic_write_text,
+)
 from nornir_buildmanager.operations.segmentationtraining.stitch import tile_filename
 
 _logger = logging.getLogger(__name__)
@@ -502,9 +505,7 @@ class RemoteTileSource:
             return
         state.directory.mkdir(parents=True, exist_ok=True)
         payload = {"version": 1, "validatedAt": state.validated_at, "tiles": state.tiles}
-        temp = state.directory / (INDEX_NAME + ".tmp")
-        temp.write_text(json.dumps(payload), encoding="utf-8")
-        os.replace(temp, state.directory / INDEX_NAME)
+        atomic_write_text(state.directory / INDEX_NAME, json.dumps(payload))
         state.dirty = False
 
     # ------------------------------------------------------------------ policy
@@ -760,9 +761,7 @@ class RemoteSession:
         revalidates what the interrupted one did not get to.
         """
         self.cache_root.mkdir(parents=True, exist_ok=True)
-        temp = self.cache_root / (VOLUME_STATE_NAME + ".tmp")
-        temp.write_text(json.dumps(self.volume.fingerprint()), encoding="utf-8")
-        os.replace(temp, self.cache_root / VOLUME_STATE_NAME)
+        atomic_write_text(self.cache_root / VOLUME_STATE_NAME, json.dumps(self.volume.fingerprint()))
 
     def summary(self) -> str:
         requests = sum(item.requests for item in self.sources)

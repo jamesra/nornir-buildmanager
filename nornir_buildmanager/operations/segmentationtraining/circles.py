@@ -52,6 +52,9 @@ from PIL import Image, ImageDraw
 from scipy import ndimage
 
 from nornir_buildmanager.operations.segmentationtraining import geometry
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    write_text_if_changed,
+)
 from nornir_buildmanager.operations.segmentationtraining.product_index import IMAGES_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.geometry import CropWindow
@@ -566,12 +569,7 @@ def write_circle_annotations(
         cells.update(cells_for_circles(crops_by_z[z], circles))
 
     document = build_circle_document(cells)
-    text = json.dumps(document, indent=1)
-    if path.is_file() and path.read_text(encoding="utf-8") == text:
-        return path
-    temp = path.with_suffix(".json.tmp")
-    temp.write_text(text, encoding="utf-8")
-    os.replace(temp, path)
+    write_text_if_changed(path, json.dumps(document, indent=1))
     return path
 
 

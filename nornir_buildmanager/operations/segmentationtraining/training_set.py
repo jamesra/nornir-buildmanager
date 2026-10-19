@@ -23,6 +23,9 @@ from pathlib import Path
 from typing import Any
 
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    atomic_write_text,
+)
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     geometry_version_for,
 )
@@ -203,9 +206,7 @@ def write_training_set_info(output_path: str | os.PathLike[str], record: Mapping
     folder = Path(output_path)
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / SIDECAR_FILENAME
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(json.dumps(dict(record), indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    atomic_write_text(path, json.dumps(dict(record), indent=2, sort_keys=True) + "\n")
     return path
 
 

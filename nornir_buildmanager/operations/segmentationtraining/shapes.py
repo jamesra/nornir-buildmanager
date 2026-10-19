@@ -39,6 +39,10 @@ from typing import Any
 
 import numpy as np
 
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    atomic_write_text,
+    write_text_if_changed,
+)
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     _iter_odata_pages,
@@ -285,9 +289,7 @@ def collect_links(
         if pairs is None:
             pairs = fetch_links(root, known, filter_text=odata_filter_from_output(output), http_get=http_get)
             payload = {"version": LINKS_CACHE_VERSION, "root": root, "ids": digest, "links": [list(p) for p in pairs]}
-            temp = cache_path.with_suffix(".json.tmp")
-            temp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-            os.replace(temp, cache_path)
+            atomic_write_text(cache_path, json.dumps(payload, separators=(",", ":")))
     linked: dict[int, set[int]] = {}
     for a, b in pairs:
         linked.setdefault(a, set()).add(b)
@@ -325,15 +327,6 @@ def _spilled_sections(output: Path) -> list[int]:
         except (IndexError, ValueError):
             continue
     return sorted(found)
-
-
-def _write_if_changed(path: Path, text: str) -> bool:
-    if path.is_file() and path.read_text(encoding="utf-8") == text:
-        return False
-    temp = path.with_name(path.name + ".tmp")
-    temp.write_text(text, encoding="utf-8")
-    os.replace(temp, path)
-    return True
 
 
 def write_location_shapes(
@@ -388,7 +381,7 @@ def write_location_shapes(
         }
         lines.append(json.dumps(entry, separators=(",", ":")))
     path = output / SHAPES_FILENAME
-    _write_if_changed(path, "\n".join(lines) + ("\n" if lines else ""))
+    write_text_if_changed(path, "\n".join(lines) + ("\n" if lines else ""))
 
     if rows:
         decorated: list[str] = []
@@ -397,7 +390,7 @@ def write_location_shapes(
             row["structureIds"] = [known[i][1] if i in known else None for i in ids]
             row["linkedIds"] = [links.get(i, []) for i in ids]
             decorated.append(json.dumps(row, separators=(",", ":")))
-        _write_if_changed(output / "manifest.jsonl", "\n".join(decorated) + "\n")
+        write_text_if_changed(output / "manifest.jsonl", "\n".join(decorated) + "\n")
     return path
 
 
