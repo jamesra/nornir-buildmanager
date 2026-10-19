@@ -41,6 +41,7 @@ from xml.etree import ElementTree
 
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
     atomic_write_text,
+    read_json_object,
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import tile_filename
 
@@ -489,12 +490,8 @@ class RemoteTileSource:
 
     @staticmethod
     def _load_index(state: _LevelState) -> None:
-        path = state.directory / INDEX_NAME
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return
-        if isinstance(payload, dict) and payload.get("version") == 1:
+        payload = read_json_object(state.directory / INDEX_NAME)
+        if payload is not None and payload.get("version") == 1:
             tiles = payload.get("tiles")
             state.tiles = tiles if isinstance(tiles, dict) else {}
             validated = payload.get("validatedAt")
@@ -729,12 +726,11 @@ class RemoteSession:
         self.sources: list[RemoteTileSource] = []
 
     def _matches_saved_state(self) -> bool:
-        try:
-            saved = json.loads((self.cache_root / VOLUME_STATE_NAME).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        saved = read_json_object(self.cache_root / VOLUME_STATE_NAME)
+        if saved is None:
             return False
         mine = self.volume.fingerprint()
-        if not isinstance(saved, dict) or saved.get("source") != mine["source"]:
+        if saved.get("source") != mine["source"]:
             return False
         for key in ("checksum", "etag", "lastModified"):
             if mine[key]:

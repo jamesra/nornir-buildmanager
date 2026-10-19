@@ -1,4 +1,4 @@
-"""Atomic text writes for the export's sidecars and caches.
+"""Atomic text writes, and lenient JSON reads, for the export's sidecars and caches.
 
 A reader (the trainer, the gallery, or a later run) sees either the old file or the new one, never a
 partial write: the text goes to ``<name>.tmp`` beside the target, then ``os.replace`` swaps it in.
@@ -6,8 +6,10 @@ partial write: the text goes to ``<name>.tmp`` beside the target, then ``os.repl
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 
 def atomic_write_text(path: Path, text: str) -> None:
@@ -29,3 +31,16 @@ def write_text_if_changed(path: Path, text: str) -> bool:
         return False
     atomic_write_text(path, text)
     return True
+
+
+def read_json_object(path: Path) -> dict[str, Any] | None:
+    """Return the JSON object stored in ``path`` (utf-8), or ``None`` when there is no usable object.
+
+    A missing or unreadable file (``OSError``), malformed JSON, and a payload that is not an object all
+    give ``None``. Text that is not valid utf-8 raises ``UnicodeDecodeError``; it is not swallowed.
+    """
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None

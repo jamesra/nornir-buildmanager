@@ -53,6 +53,7 @@ from scipy import ndimage
 
 from nornir_buildmanager.operations.segmentationtraining import geometry
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    read_json_object,
     write_text_if_changed,
 )
 from nornir_buildmanager.operations.segmentationtraining.product_index import IMAGES_FOLDER
@@ -487,13 +488,8 @@ def _inscribed_for_record(record: LocationRecord) -> tuple[float, float, float] 
 
 
 def _load_inscribed_cache(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    if not isinstance(payload, dict) or payload.get("version") != _INSCRIBED_CACHE_VERSION:
+    payload = read_json_object(path)
+    if payload is None or payload.get("version") != _INSCRIBED_CACHE_VERSION:
         return {}
     items = payload.get("items")
     return items if isinstance(items, dict) else {}

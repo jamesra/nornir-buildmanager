@@ -15,6 +15,7 @@ from urllib.parse import parse_qs, quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import read_json_object
 from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.progress import (
     INGEST_LABEL,
@@ -77,14 +78,7 @@ def export_source_path(output_path: str | os.PathLike[str]) -> Path:
 
 def load_cache_meta(output_path: str | os.PathLike[str]) -> dict[str, Any]:
     """Return the ingest cache sidecar, or `{}` when it is missing or invalid."""
-    path = cache_meta_path(output_path)
-    if not path.is_file():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    return read_json_object(cache_meta_path(output_path)) or {}
 
 
 def load_cache_meta_sections(output_path: str | os.PathLike[str]) -> list[int]:
@@ -169,15 +163,7 @@ def write_export_source(
     server, or credentials. An OData URL already saved on a SQL export is kept.
     """
     payload = _source_from_meta(meta)
-    path = export_source_path(output_path)
-    existing: dict[str, Any] = {}
-    if path.is_file():
-        try:
-            loaded = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            loaded = None
-        if isinstance(loaded, dict):
-            existing = loaded
+    existing = read_json_object(export_source_path(output_path)) or {}
     if "exporter" not in payload:
         prior_exporter = _exporter_name(existing.get("exporter"))
         if prior_exporter:
@@ -201,14 +187,9 @@ def record_export_exporter(output_path: str | os.PathLike[str], exporter: str) -
 
 def load_export_source(output_path: str | os.PathLike[str]) -> dict[str, Any]:
     """Load `source.json`, or reconstruct it from the work folder's `cache.meta.json`."""
-    path = export_source_path(output_path)
-    if path.is_file():
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            payload = None
-        if isinstance(payload, dict) and payload:
-            return payload
+    payload = read_json_object(export_source_path(output_path))
+    if payload:
+        return payload
     meta = load_cache_meta(output_path)
     source = meta.get("source") if isinstance(meta.get("source"), dict) else {}
     if not meta and not source:

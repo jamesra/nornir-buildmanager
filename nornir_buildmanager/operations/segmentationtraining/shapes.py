@@ -41,6 +41,7 @@ import numpy as np
 
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
     atomic_write_text,
+    read_json_object,
     write_text_if_changed,
 )
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
@@ -202,12 +203,9 @@ def _links_cache_path(output: Path) -> Path:
 
 
 def _load_links_cache(path: Path, digest: str, root: str) -> list[tuple[int, int]] | None:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
+    payload = read_json_object(path)
     if (
-        not isinstance(payload, dict)
+        payload is None
         or payload.get("version") != LINKS_CACHE_VERSION
         or payload.get("ids") != digest
         or payload.get("root") != root
