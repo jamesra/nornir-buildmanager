@@ -112,22 +112,23 @@ def rasterize_mask_job(job: MaskJob) -> dict[str, Any]:
         for hole in polygon[1:]:
             if len(hole) >= 3:
                 draw.polygon(list(hole), fill=0)
-    array = np.asarray(image)
-    binary = Image.fromarray((array > 0).astype(np.uint8) * 255, mode="L").convert("1")
+    foreground = np.asarray(image) > 0
     Path(job.mask_path).parent.mkdir(parents=True, exist_ok=True)
     Path(job.rle_path).parent.mkdir(parents=True, exist_ok=True)
-    binary.save(job.mask_path)
-    rle = encode_coco_rle(array > 0)
+    # A bool array maps straight to a mode "1" image; same PNG bytes as L*255 -> convert("1").
+    Image.fromarray(foreground).save(job.mask_path)
+    rle = encode_coco_rle(foreground)
     Path(job.rle_path).write_text(json.dumps(rle), encoding="utf-8")
-    ys, xs = np.nonzero(array > 0)
-    if len(xs) == 0:
+    area = int(np.count_nonzero(foreground))
+    if area == 0:
         bbox = [0, 0, 0, 0]
-        area = 0
     else:
-        x0, x1 = int(xs.min()), int(xs.max()) + 1
-        y0, y1 = int(ys.min()), int(ys.max()) + 1
+        # Occupied columns/rows instead of np.nonzero, which builds two int64 arrays of size area.
+        cols = np.flatnonzero(foreground.any(axis=0))
+        rows = np.flatnonzero(foreground.any(axis=1))
+        x0, x1 = int(cols[0]), int(cols[-1]) + 1
+        y0, y1 = int(rows[0]), int(rows[-1]) + 1
         bbox = [x0, y0, x1 - x0, y1 - y0]
-        area = int((array > 0).sum())
     return {
         "location_id": job.location_id,
         "image_key": job.image_key,
