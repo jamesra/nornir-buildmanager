@@ -197,15 +197,21 @@ def apply_ignore_moves(output_path: str | os.PathLike[str]) -> int:
     """
     output = Path(output_path)
     products = get_product_index(output)
+    ignore_ids = load_ignore_ids(output)
+    if not ignore_ids:
+        return 0
+    masks_dir = product_folder_path(output, MASKS_FOLDER)
     ignored_dir = output / IGNORED_FOLDER
+    # One scan for every id; the snapshot stays valid because each name moves only for its own id.
+    names_by_id = _mask_names_by_id_token(output, MASKS_FOLDER)
     moved = 0
-    for location_id in load_ignore_ids(output):
-        sources = _find_masks(output, MASKS_FOLDER, location_id)
-        if not sources:
+    for location_id in ignore_ids:
+        names = names_by_id.get(str(int(location_id)))
+        if not names:
             continue
         ignored_dir.mkdir(parents=True, exist_ok=True)
-        for source in sources:
-            _relocate_indexed(products, source, ignored_dir / source.name, MASKS_FOLDER, IGNORED_FOLDER)
+        for name in sorted(names):
+            _relocate_indexed(products, masks_dir / name, ignored_dir / name, MASKS_FOLDER, IGNORED_FOLDER)
             moved += 1
     return moved
 
@@ -566,6 +572,23 @@ def _find_masks(output: Path, folder: str, location_id: int) -> list[Path]:
     root = product_folder_path(output, folder)
     names = sorted(name for name in products.iter_names(folder) if name.endswith(suffix))
     return [root / name for name in names]
+
+
+def _mask_names_by_id_token(output: Path, folder: str) -> dict[str, list[str]]:
+    """Snapshot of the cached ``*.png`` names in *folder*, grouped by the text after the last ``_``.
+
+    A name ends with ``_{id}.png`` exactly when that text is ``str(int(id))``, because an
+    int's string holds no ``_``. So ``sorted(result.get(str(int(id)), []))`` names the same
+    files as ``_find_masks(output, folder, id)``, and one pass serves many ids.
+    """
+    by_token: dict[str, list[str]] = {}
+    for name in get_product_index(output).iter_names(folder):
+        if not name.endswith(".png"):
+            continue
+        _, underscore, token = name[: -len(".png")].rpartition("_")
+        if underscore:
+            by_token.setdefault(token, []).append(name)
+    return by_token
 
 
 def _find_mask(output: Path, folder: str, location_id: int) -> Path | None:
