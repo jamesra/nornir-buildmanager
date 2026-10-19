@@ -488,6 +488,7 @@ def _inscribed_for_record(record: LocationRecord) -> tuple[float, float, float] 
 
 
 def _load_inscribed_cache(path: Path) -> dict[str, Any]:
+    """Return the cached inscribed-circle items, or ``{}`` when the cache is unusable or another version."""
     payload = read_json_object(path)
     if payload is None or payload.get("version") != _INSCRIBED_CACHE_VERSION:
         return {}

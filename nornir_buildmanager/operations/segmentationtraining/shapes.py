@@ -203,6 +203,7 @@ def _links_cache_path(output: Path) -> Path:
 
 
 def _load_links_cache(path: Path, digest: str, root: str) -> list[tuple[int, int]] | None:
+    """Return the cached link pairs, or ``None`` unless the cache matches this version, ``digest``, and ``root``."""
     payload = read_json_object(path)
     if (
         payload is None

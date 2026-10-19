@@ -490,6 +490,7 @@ class RemoteTileSource:
 
     @staticmethod
     def _load_index(state: _LevelState) -> None:
+        """Fill ``state`` from the level's saved tile index; leave it unchanged when there is no usable version-1 index."""
         payload = read_json_object(state.directory / INDEX_NAME)
         if payload is not None and payload.get("version") == 1:
             tiles = payload.get("tiles")
@@ -726,6 +727,7 @@ class RemoteSession:
         self.sources: list[RemoteTileSource] = []
 
     def _matches_saved_state(self) -> bool:
+        """Whether the saved volume state names this volume's source and its first known checksum, etag, or lastModified."""
         saved = read_json_object(self.cache_root / VOLUME_STATE_NAME)
         if saved is None:
             return False
