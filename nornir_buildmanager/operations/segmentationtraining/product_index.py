@@ -75,11 +75,6 @@ class CropProductIndex:
         """
         yield from self._by_folder.get(folder, {})
 
-    def names_with_prefix(self, folder: str, prefix: str) -> list[str]:
-        """Indexed basenames in *folder* that start with *prefix*."""
-        entries = self._by_folder.get(folder, {})
-        return [name for name in entries if name.startswith(prefix)]
-
     def members(self, folder: str, key: str) -> list[tuple[int, str]]:
         """``(location_id, filename)`` pairs indexed for *key* in *folder*."""
         table = self._members.get(folder, {}).get(key, {})

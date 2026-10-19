@@ -798,8 +798,6 @@ def test_product_index_prefix_and_write_through(tmp_path: Path) -> None:
     index = get_product_index(tmp_path)
     assert index.exists("images", crop.name)
     assert index.mtime("masks", kept.name) == kept.stat().st_mtime
-    prefixed = index.names_with_prefix("masks", "RC1_1_D1_X0-1_Y0-1_")
-    assert prefixed == [kept.name]
     assert set(index.iter_names("masks")) == {kept.name, other.name}
     assert list(index.iter_names("missing")) == []
     added = masks / "RC1_1_D1_X0-1_Y0-1_10.png"
