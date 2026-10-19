@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -184,33 +185,47 @@ def _replace_annotations(output: Path, results: list[dict[str, Any]], record: Lo
     for item in results:
         by_key.setdefault(str(item["image_key"]), []).append(item)
     for image_key, group in by_key.items():
-        json_path = output / IMAGES_FOLDER / f"{image_key}.json"
-        if not json_path.is_file():
-            continue
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-        annotations = list(payload.get("annotations") or [])
-        replacements: dict[int, dict[str, Any]] = {}
-        for item in group:
-            rle_path = Path(str(item["rle_path"]))
-            if not rle_path.is_file():
-                continue
-            rle = json.loads(rle_path.read_text(encoding="utf-8"))
-            prior = next(
-                (row for row in annotations if int(row.get("id", -1)) == record.id),
-                {},
-            )
-            replacements[record.id] = sa1b_annotation(
-                record,
-                rle=rle,
-                bbox=list(item["bbox"]),
-                area=int(item["area"]),
-                window_index=prior.get("windowIndex"),
-                window_count=prior.get("windowCount"),
-            )
-        payload["annotations"] = [
-            replacements.get(int(row.get("id", -1)), row) for row in annotations
+        rows = [
+            (record, Path(str(item["rle_path"])), lambda _rle, item=item: (list(item["bbox"]), int(item["area"])))
+            for item in group
         ]
-        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        replace_image_annotations(output / IMAGES_FOLDER / f"{image_key}.json", rows)
+
+
+def replace_image_annotations(
+    json_path: Path,
+    rows: Iterable[tuple[LocationRecord, Path, Callable[[Any], tuple[list[int], int]]]],
+) -> dict[str, Any] | None:
+    """Rewrite one crop's SA-1B json with freshly rasterized rows.
+
+    Each row is ``(record, rle_path, measure)``; ``measure(rle)`` returns the
+    ``(bbox, area)`` to store. The prior row's ``windowIndex`` / ``windowCount``
+    carry over and rows for other ids are untouched. A row whose RLE file is
+    missing is skipped. Returns the rewritten payload, or None when the json
+    does not exist.
+    """
+    if not json_path.is_file():
+        return None
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    annotations = list(payload.get("annotations") or [])
+    replacements: dict[int, dict[str, Any]] = {}
+    for record, rle_path, measure in rows:
+        if not rle_path.is_file():
+            continue
+        rle = json.loads(rle_path.read_text(encoding="utf-8"))
+        bbox, area = measure(rle)
+        prior = next((row for row in annotations if int(row.get("id", -1)) == record.id), {})
+        replacements[record.id] = sa1b_annotation(
+            record,
+            rle=rle,
+            bbox=bbox,
+            area=area,
+            window_index=prior.get("windowIndex"),
+            window_count=prior.get("windowCount"),
+        )
+    payload["annotations"] = [replacements.get(int(row.get("id", -1)), row) for row in annotations]
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    return payload
 
 
 def _move_refreshed_masks_if_ignored(output: Path, location_id: int, image_keys: list[str]) -> None:

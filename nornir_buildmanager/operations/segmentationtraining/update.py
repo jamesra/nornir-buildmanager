@@ -41,7 +41,7 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import odata_url
 from nornir_buildmanager.operations.segmentationtraining.workdir import rle_dir
 from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 
-from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask_jobs_for_record
+from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask_jobs_for_record, replace_image_annotations
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, image_watermark, plan_section_crops
@@ -438,30 +438,10 @@ def _replace_changed_annotations(
         by_key.setdefault(job.image_key, []).append(job)
     for image_key, group in by_key.items():
         json_path = output / IMAGES_FOLDER / f"{image_key}.json"
-        if not json_path.is_file():
+        rows = [(by_id[job.location_id], Path(job.rle_path), _bbox_area_from_rle) for job in group]
+        payload = replace_image_annotations(json_path, rows)
+        if payload is None:
             continue
-        payload = json.loads(json_path.read_text(encoding="utf-8"))
-        annotations = list(payload.get("annotations") or [])
-        replacements: dict[int, dict[str, Any]] = {}
-        for job in group:
-            rle_path = Path(job.rle_path)
-            if not rle_path.is_file():
-                continue
-            rle = json.loads(rle_path.read_text(encoding="utf-8"))
-            bbox, area = _bbox_area_from_rle(rle)
-            prior = next((item for item in annotations if int(item.get("id", -1)) == job.location_id), {})
-            replacements[job.location_id] = sa1b_annotation(
-                by_id[job.location_id],
-                rle=rle,
-                bbox=bbox,
-                area=area,
-                window_index=prior.get("windowIndex"),
-                window_count=prior.get("windowCount"),
-            )
-        payload["annotations"] = [
-            replacements.get(int(item.get("id", -1)), item) for item in annotations
-        ]
-        json_path.write_text(json.dumps(payload), encoding="utf-8")
         products.note_path(json_path)
         if overlay:
             image_meta = payload.get("image") or {}
