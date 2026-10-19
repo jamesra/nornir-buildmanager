@@ -67,7 +67,9 @@ def parse_wkt_polygons(wkt: str) -> list[PolygonRings]:
     upper = stripped.upper()
     if upper.startswith("MULTIPOLYGON"):
         body = _paren_body(stripped, "MULTIPOLYGON")
-        return [_parse_polygon_body(part) for part in _split_top_level(body)]
+        # Each part keeps its own outer parentheses, ``((exterior),(hole),...)``;
+        # strip them so the part's rings split like a POLYGON body.
+        return [_parse_polygon_body(part[1:-1]) for part in _split_top_level(body)]
     if upper.startswith("POLYGON"):
         body = _paren_body(stripped, "POLYGON")
         return [_parse_polygon_body(body)]

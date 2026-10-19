@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 from nornir_buildmanager.operations.segmentationtraining.wkt import (
     _geojson_polygon_to_wkt,
     _optional_text,
@@ -247,3 +249,50 @@ def test_parse_wkt_polygons_polygon_with_hole_gives_exterior_then_hole() -> None
     polygons = parse_wkt_polygons("POLYGON((0 0,9 0,9 9,0 0),(2 2,3 2,3 3,2 2))")
     assert [len(rings) for rings in polygons] == [2]
     assert polygons[0][1] == ((2.0, 2.0), (3.0, 2.0), (3.0, 3.0), (2.0, 2.0))
+
+
+_HOLED_PART = "((0 0,9 0,9 9,0 9,0 0),(2 2,3 2,3 3,2 2))"
+
+
+def test_parse_wkt_polygons_multipolygon_part_with_hole_keeps_hole_separate() -> None:
+    polygons = parse_wkt_polygons(f"MULTIPOLYGON({_HOLED_PART})")
+    assert polygons == [
+        (
+            ((0.0, 0.0), (9.0, 0.0), (9.0, 9.0), (0.0, 9.0), (0.0, 0.0)),
+            ((2.0, 2.0), (3.0, 2.0), (3.0, 3.0), (2.0, 2.0)),
+        )
+    ]
+
+
+def test_parse_wkt_polygons_multipolygon_mixed_parts_match_polygon_parse() -> None:
+    plain_part = "((20 20,30 20,30 30,20 20))"
+    polygons = parse_wkt_polygons(f"MULTIPOLYGON({_HOLED_PART}, {plain_part})")
+    assert polygons == parse_wkt_polygons(f"POLYGON{_HOLED_PART}") + parse_wkt_polygons(f"POLYGON{plain_part}")
+
+
+def test_geojson_multipolygon_with_hole_round_trips_through_parse() -> None:
+    exterior = [[0, 0], [9, 0], [9, 9], [0, 9], [0, 0]]
+    hole = [[2, 2], [3, 2], [3, 3], [2, 2]]
+    other = [[20, 20], [30, 20], [30, 30], [20, 20]]
+    shape = {"Geometry": {"type": "MultiPolygon", "coordinates": [[exterior, hole], [other]]}}
+    wkt = mosaic_wkt_from_odata_shape(shape)
+    assert wkt is not None
+    polygons = parse_wkt_polygons(wkt)
+    as_tuples = [[tuple((float(x), float(y)) for x, y in ring) for ring in poly] for poly in ([exterior, hole], [other])]
+    assert [list(rings) for rings in polygons] == as_tuples
+
+
+_coord = st.floats(min_value=-500_000, max_value=500_000, allow_nan=False, allow_infinity=False)
+_ring = st.lists(st.tuples(_coord, _coord), min_size=3, max_size=6).map(tuple)
+_polygon = st.lists(_ring, min_size=1, max_size=3).map(tuple)
+
+
+def _polygon_wkt_body(rings: tuple) -> str:
+    return "(" + ",".join("(" + ",".join(f"{x!r} {y!r}" for x, y in ring) + ")" for ring in rings) + ")"
+
+
+@given(st.lists(_polygon, min_size=1, max_size=3))
+@example([(((0.0, 0.0), (9.0, 0.0), (9.0, 9.0)), ((2.0, 2.0), (3.0, 2.0), (3.0, 3.0)))])
+def test_parse_wkt_polygons_multipolygon_round_trips_every_ring(polygons: list) -> None:
+    wkt = "MULTIPOLYGON(" + ",".join(_polygon_wkt_body(rings) for rings in polygons) + ")"
+    assert parse_wkt_polygons(wkt) == polygons
