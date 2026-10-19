@@ -363,6 +363,15 @@ def _stored_last_modified(output: Path, image_keys: list[str]) -> dict[int, Any]
     return found
 
 
+def _marks_by_member_id(marks: list[ImageWatermark]) -> dict[int, list[ImageWatermark]]:
+    """Index crop watermarks by member id, keeping *marks* order within each id."""
+    index: dict[int, list[ImageWatermark]] = {}
+    for mark in marks:
+        for member_id in dict.fromkeys(mark.member_ids):
+            index.setdefault(member_id, []).append(mark)
+    return index
+
+
 def _refresh_changed_masks(
     output: Path,
     changed: list[int],
@@ -377,11 +386,12 @@ def _refresh_changed_masks(
     jobs: list[MaskJob] = []
     touched: set[str] = set()
     marks = [mark for mark in (previous.images or []) if mark.width > 0 and mark.height > 0]
+    marks_by_id = _marks_by_member_id(marks)
     for location_id in changed:
         record = by_id.get(location_id)
         if record is None:
             continue
-        for job in mask_jobs_for_record(output, record, marks):
+        for job in mask_jobs_for_record(output, record, marks_by_id.get(record.id, [])):
             jobs.append(job)
             touched.add(job.image_key)
     if not jobs:
