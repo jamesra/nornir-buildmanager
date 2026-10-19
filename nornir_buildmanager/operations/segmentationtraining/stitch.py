@@ -424,7 +424,8 @@ def saturated_fraction(array: NDArray) -> float:
     flat = np.asarray(array).reshape(-1)
     if flat.size == 0:
         return 1.0
-    blank = int(np.count_nonzero((flat == 0) | (flat == 255)))
+    # The two masks are disjoint, so counting each avoids the OR temporary and its extra pass.
+    blank = int(np.count_nonzero(flat == 0)) + int(np.count_nonzero(flat == 255))
     return blank / float(flat.size)
 
 

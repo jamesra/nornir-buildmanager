@@ -2749,3 +2749,20 @@ def test_pipelines_xml_wires_write_circle_annotations() -> None:
         get_module_class("nornir_buildmanager.operations", "segmentationtraining.WriteCircleAnnotations")
         is WriteCircleAnnotations
     )
+
+
+@settings(max_examples=40)
+@given(
+    st.sampled_from([np.uint8, np.uint16, np.int16, np.float32, np.float64]),
+    st.lists(st.sampled_from([0, 1, 127, 254, 255, 256, -1]), min_size=0, max_size=64),
+    st.sampled_from([(-1,), (1, -1), (-1, 1)]),
+)
+def test_saturated_fraction_matches_or_mask_reference(dtype, values: list[int], shape: tuple[int, ...]) -> None:
+    """Fraction equals the (==0)|(==255) mask count for any dtype and shape; empty is 1.0."""
+    array = np.asarray(values).astype(dtype)
+    if len(values) == 0:
+        assert saturated_fraction(array) == 1.0
+        return
+    array = array.reshape(shape if shape == (-1,) else (len(values), 1) if shape == (-1, 1) else (1, len(values)))
+    reference = int(np.count_nonzero((array == 0) | (array == 255))) / array.size
+    assert saturated_fraction(array) == reference
