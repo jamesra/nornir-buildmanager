@@ -47,12 +47,16 @@ class CropProductIndex:
     output: Path
     _by_folder: dict[str, dict[str, float]]
     _members: dict[str, dict[str, dict[int, str]]]
+    # Every member filename per image key (folder -> key -> {name: id}). Unlike ``_members``,
+    # two names with the same id (``k_5.png`` and ``k_5.json``, or ``k_05`` and ``k_5``) both stay.
+    _member_names: dict[str, dict[str, dict[str, int]]]
 
     def __init__(self, output: str | Path) -> None:
         """Scan every product folder once and keep the maps for this process."""
         self.output = Path(output).resolve()
         self._by_folder = {folder: {} for folder in PRODUCT_FOLDERS}
         self._members = {folder: {} for folder in _MEMBER_FOLDERS}
+        self._member_names = {folder: {} for folder in _MEMBER_FOLDERS}
         self._build()
 
     def exists(self, folder: str, name: str) -> bool:
@@ -80,6 +84,13 @@ class CropProductIndex:
         """``(location_id, filename)`` pairs indexed for *key* in *folder*."""
         table = self._members.get(folder, {}).get(key, {})
         return list(table.items())
+
+    def member_names(self, folder: str, key: str) -> list[tuple[str, int]]:
+        """``(filename, location_id)`` for every indexed name in *folder* that splits to exactly *key*.
+
+        Returns a snapshot, so the caller may forget names while walking it.
+        """
+        return list(self._member_names.get(folder, {}).get(key, {}).items())
 
     def note(self, folder: str, name: str, mtime: float | None = None) -> None:
         """Record *name* after a successful write. Stats the file when *mtime* is omitted."""
@@ -167,12 +178,15 @@ class CropProductIndex:
         if folder not in _MEMBER_FOLDERS:
             return
         table: dict[str, dict[int, str]] = {}
+        names: dict[str, dict[str, int]] = {}
         for name in self._by_folder.get(folder, {}):
             key, location_id = split_member_stem(Path(name).stem)
             if location_id is None:
                 continue
             table.setdefault(key, {})[location_id] = name
+            names.setdefault(key, {})[name] = location_id
         self._members[folder] = table
+        self._member_names[folder] = names
 
     def _register_member(self, folder: str, name: str) -> None:
         """Index one member filename under its image key and location id."""
@@ -182,6 +196,7 @@ class CropProductIndex:
         if location_id is None:
             return
         self._members.setdefault(folder, {}).setdefault(key, {})[location_id] = name
+        self._member_names.setdefault(folder, {}).setdefault(key, {})[name] = location_id
 
     def _unregister_member(self, folder: str, name: str) -> None:
         """Drop one member filename from the location-id map."""
@@ -193,6 +208,11 @@ class CropProductIndex:
         table = self._members.get(folder, {}).get(key)
         if table is not None:
             table.pop(location_id, None)
+        names = self._member_names.get(folder, {}).get(key)
+        if names is not None:
+            names.pop(name, None)
+            if not names:
+                del self._member_names[folder][key]
 
 
 def get_product_index(output_path: str | Path) -> CropProductIndex:

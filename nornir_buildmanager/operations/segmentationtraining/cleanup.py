@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -329,14 +328,18 @@ def _unlink_member_files(
     *,
     products: CropProductIndex | None = None,
 ) -> int:
-    """Delete member files for one image key. *keep_ids* are left in place."""
+    """Delete member files for one image key. *keep_ids* are left in place.
+
+    Looks the key up in the index's per-key name table instead of scanning every name in
+    the folder, so a pass over all keys stays linear in the number of member files.
+    """
     removed = 0
     index = products if products is not None else get_product_index(output)
     for folder, suffix in _MEMBER_FOLDERS:
         root = product_folder_path(output, folder)
-        for name in _iter_member_names(index, key, suffix, folder):
-            member_key, location_id = split_member_stem(Path(name).stem)
-            if member_key != key or location_id is None:
+        # member_names snapshots the key's names, so forgetting while walking is safe.
+        for name, location_id in index.member_names(folder, key):
+            if not name.endswith(suffix):
                 continue
             if keep_ids is not None and location_id in keep_ids:
                 continue
@@ -344,22 +347,6 @@ def _unlink_member_files(
             index.forget(folder, name)
             removed += 1
     return removed
-
-
-def _iter_member_names(
-    products: CropProductIndex,
-    key: str,
-    suffix: str,
-    folder: str,
-) -> Iterator[str]:
-    """Yield member basenames for one image key.
-
-    ``names_with_prefix`` snapshots the match so the caller can forget names
-    while walking the result.
-    """
-    for name in products.names_with_prefix(folder, f"{key}_"):
-        if name.endswith(suffix):
-            yield name
 
 
 def _mask_exists(output: Path, key: str, location_id: int) -> bool:
