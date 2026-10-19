@@ -153,9 +153,17 @@ def write_overlay(
         luma = (1.0 - _INPUT_LUMA_ALPHA) * tem_luma[mask] + _INPUT_LUMA_ALPHA * color_luma
         limited = np.minimum(chroma, max_chroma_at_luma(hue, luma))
         tinted = hcl_to_rgb(hue, limited, luma)
-        canvas[mask] = (1.0 - _OVERLAY_COLOR_ALPHA) * canvas[mask] + _OVERLAY_COLOR_ALPHA * tinted
+        tinted *= _OVERLAY_COLOR_ALPHA
+        blended = canvas[mask]
+        blended *= 1.0 - _OVERLAY_COLOR_ALPHA
+        blended += tinted
+        canvas[mask] = blended
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(np.clip(np.rint(canvas * 255.0), 0, 255).astype(np.uint8), mode="RGB").save(path)
+    # In place: same rint/clip values as a fresh array, without three full-crop float64 temporaries.
+    canvas *= 255.0
+    np.rint(canvas, out=canvas)
+    np.clip(canvas, 0, 255, out=canvas)
+    Image.fromarray(canvas.astype(np.uint8), mode="RGB").save(path)
 
 
 def _load_tem_rgb(tem_path: str | Path | None, width: int, height: int) -> np.ndarray:
@@ -165,7 +173,9 @@ def _load_tem_rgb(tem_path: str | Path | None, width: int, height: int) -> np.nd
     image = Image.open(tem_path).convert("RGB")
     if image.size != (width, height):
         image = image.resize((width, height), Image.BILINEAR)
-    return np.asarray(image, dtype=np.float64) / 255.0
+    rgb = np.array(image, dtype=np.float64)
+    rgb /= 255.0
+    return rgb
 
 
 def perceptual_luma(rgb: np.ndarray) -> np.ndarray:
@@ -216,12 +226,9 @@ def hcl_to_rgb(hue: float, chroma: np.ndarray, luma: np.ndarray) -> np.ndarray:
     slope = chroma * slope_coeff
     components = np.stack((chroma, slope, np.zeros_like(chroma)), axis=-1)
     components = _correct_luma(hextant, components, luma)
-    red_i, green_i, blue_i = _RGB_INDEX_MAP[hextant]
-    rgb = np.empty(components.shape, dtype=np.float64)
-    rgb[..., 0] = components[..., red_i]
-    rgb[..., 1] = components[..., green_i]
-    rgb[..., 2] = components[..., blue_i]
-    return np.clip(rgb, 0.0, 1.0)
+    rgb = components[..., list(_RGB_INDEX_MAP[hextant])]
+    np.clip(rgb, 0.0, 1.0, out=rgb)
+    return rgb
 
 
 def _hue_hextant(hue: float) -> tuple[float, int, float]:
@@ -233,25 +240,31 @@ def _hue_hextant(hue: float) -> tuple[float, int, float]:
 
 
 def _correct_luma(hextant: int, components: np.ndarray, luma: np.ndarray) -> np.ndarray:
-    """Port of ``CorrectLuma``: shift {chroma, slope, 0} so luma matches the TEM."""
+    """Port of ``CorrectLuma``: shift {chroma, slope, 0} so luma matches the TEM.
+
+    The second (clip, spill into slope and zero) and third (clip, spill into zero) passes
+    are skipped when every row's first pass keeps the chroma component in 0..1. When
+    they run, they run on the full array: the ``@`` row sums must keep the same shape,
+    because BLAS can round a row differently when the matrix has fewer rows.
+    """
     weights = np.array(_COMPONENT_LUMA_WEIGHTS[hextant], dtype=np.float64)
     inv_rg = 1.0 / (weights[0] + weights[1])
     luma = np.asarray(luma, dtype=np.float64)
     first = components + (luma - components @ weights)[..., None]
-    ok_first = (first[..., 0] >= 0.0) & (first[..., 0] <= 1.0)
+    redo = ~((first[..., 0] >= 0.0) & (first[..., 0] <= 1.0))
+    if not redo.any():
+        return first
     second = first.copy()
-    second[..., 0] = np.clip(second[..., 0], 0.0, 1.0)
-    second[..., 1] = np.clip(second[..., 1], 0.0, 1.0)
+    np.clip(second[..., :2], 0.0, 1.0, out=second[..., :2])
     spill = (luma - second @ weights) * inv_rg
-    second[..., 1] = second[..., 1] + spill
-    second[..., 2] = second[..., 2] + spill
-    ok_second = (second[..., 1] >= 0.0) & (second[..., 1] <= 1.0)
+    second[..., 1:] += spill[..., None]
+    redo_third = redo & ~((second[..., 1] >= 0.0) & (second[..., 1] <= 1.0))
     third = second.copy()
-    third[..., 1] = np.clip(third[..., 1], 0.0, 1.0)
-    third[..., 2] = np.clip(third[..., 2], 0.0, 1.0)
-    third[..., 2] = third[..., 2] + (luma - third @ weights) * inv_rg
-    result = np.where(ok_first[..., None], first, second)
-    return np.where((~ok_first & ~ok_second)[..., None], third, result)
+    np.clip(third[..., 1:], 0.0, 1.0, out=third[..., 1:])
+    third[..., 2] += (luma - third @ weights) * inv_rg
+    np.copyto(first, second, where=redo[..., None])
+    np.copyto(first, third, where=redo_third[..., None])
+    return first
 
 
 def write_gallery(output_path: str | Path, image_keys: list[str]) -> None:
