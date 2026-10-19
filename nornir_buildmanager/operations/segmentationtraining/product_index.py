@@ -168,7 +168,7 @@ class CropProductIndex:
             return
         table: dict[str, dict[int, str]] = {}
         for name in self._by_folder.get(folder, {}):
-            key, location_id = _split_member_stem(Path(name).stem)
+            key, location_id = split_member_stem(Path(name).stem)
             if location_id is None:
                 continue
             table.setdefault(key, {})[location_id] = name
@@ -178,7 +178,7 @@ class CropProductIndex:
         """Index one member filename under its image key and location id."""
         if folder not in _MEMBER_FOLDERS:
             return
-        key, location_id = _split_member_stem(Path(name).stem)
+        key, location_id = split_member_stem(Path(name).stem)
         if location_id is None:
             return
         self._members.setdefault(folder, {}).setdefault(key, {})[location_id] = name
@@ -187,7 +187,7 @@ class CropProductIndex:
         """Drop one member filename from the location-id map."""
         if folder not in _MEMBER_FOLDERS:
             return
-        key, location_id = _split_member_stem(Path(name).stem)
+        key, location_id = split_member_stem(Path(name).stem)
         if location_id is None:
             return
         table = self._members.get(folder, {}).get(key)
@@ -229,7 +229,7 @@ def _scan_folder(folder: Path) -> dict[str, float]:
     return found
 
 
-def _split_member_stem(stem: str) -> tuple[str, int | None]:
+def split_member_stem(stem: str) -> tuple[str, int | None]:
     """Split ``{image_key}_{location_id}`` into the key and id."""
     if "_" not in stem:
         return stem, None

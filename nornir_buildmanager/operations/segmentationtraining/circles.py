@@ -54,6 +54,7 @@ from scipy import ndimage
 from nornir_buildmanager.operations.segmentationtraining import geometry
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
     read_json_object,
+    read_manifest_rows,
     write_text_if_changed,
 )
 from nornir_buildmanager.operations.segmentationtraining.product_index import IMAGES_FOLDER
@@ -501,19 +502,6 @@ def _save_inscribed_cache(path: Path, items: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
 
 
-def _read_manifest_rows(output: Path) -> list[dict[str, Any]]:
-    path = output / "manifest.jsonl"
-    rows: list[dict[str, Any]] = []
-    if not path.is_file():
-        return rows
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
 def write_circle_annotations(
     output_path: str | os.PathLike[str],
     *,
@@ -536,7 +524,7 @@ def write_circle_annotations(
     """
     output = Path(output_path)
     path = circle_annotations_path(output)
-    rows = _read_manifest_rows(output)
+    rows = read_manifest_rows(output)
     if not rows and not path.is_file():
         return None
     exists = image_exists if image_exists is not None else _default_image_exists(output)

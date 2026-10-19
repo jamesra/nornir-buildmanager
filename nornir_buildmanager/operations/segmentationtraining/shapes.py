@@ -42,6 +42,7 @@ import numpy as np
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
     atomic_write_text,
     read_json_object,
+    read_manifest_rows,
     write_text_if_changed,
 )
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
@@ -303,19 +304,6 @@ def collect_links(
 # --------------------------------------------------------------------------- writing
 
 
-def _read_manifest_rows(output: Path) -> list[dict[str, Any]]:
-    path = output / "manifest.jsonl"
-    rows: list[dict[str, Any]] = []
-    if not path.is_file():
-        return rows
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if line:
-                rows.append(json.loads(line))
-    return rows
-
-
 def _spilled_sections(output: Path) -> list[int]:
     """Section numbers that have an ingest spill in the work folder."""
     found: list[int] = []
@@ -340,7 +328,7 @@ def write_location_shapes(
     and no ingested sections). An unchanged file is not rewritten.
     """
     output = Path(output_path)
-    rows = _read_manifest_rows(output)
+    rows = read_manifest_rows(output)
     masked = {int(i) for row in rows for i in row.get("locationIds", [])}
     records: list[LocationRecord] = []
     for z in _spilled_sections(output):

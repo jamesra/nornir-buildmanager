@@ -29,6 +29,7 @@ from nornir_buildmanager.operations.segmentationtraining.product_index import (
     CropProductIndex,
     get_product_index,
     product_folder_path,
+    split_member_stem,
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import resolve_crop_image
 from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
@@ -312,7 +313,7 @@ def _candidate_keys(output: Path, wanted: set[int] | None) -> list[str]:
             keys.add(Path(name).stem)
     for folder, _suffix in _MEMBER_FOLDERS:
         for name in products.iter_names(folder):
-            key, _location_id = _split_member_stem(Path(name).stem)
+            key, _location_id = split_member_stem(Path(name).stem)
             if key:
                 keys.add(key)
     ordered = sorted(keys)
@@ -334,7 +335,7 @@ def _unlink_member_files(
     for folder, suffix in _MEMBER_FOLDERS:
         root = product_folder_path(output, folder)
         for name in _iter_member_names(index, key, suffix, folder):
-            member_key, location_id = _split_member_stem(Path(name).stem)
+            member_key, location_id = split_member_stem(Path(name).stem)
             if member_key != key or location_id is None:
                 continue
             if keep_ids is not None and location_id in keep_ids:
@@ -359,16 +360,6 @@ def _iter_member_names(
     for name in products.names_with_prefix(folder, f"{key}_"):
         if name.endswith(suffix):
             yield name
-
-
-def _split_member_stem(stem: str) -> tuple[str, int | None]:
-    """Split ``{image_key}_{location_id}`` into the key and id."""
-    if "_" not in stem:
-        return stem, None
-    key, token = stem.rsplit("_", 1)
-    if not token.isdigit():
-        return stem, None
-    return key, int(token)
 
 
 def _mask_exists(output: Path, key: str, location_id: int) -> bool:

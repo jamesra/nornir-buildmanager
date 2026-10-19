@@ -44,3 +44,20 @@ def read_json_object(path: Path) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def read_manifest_rows(output: Path) -> list[dict[str, Any]]:
+    """Return the rows of ``<output>/manifest.jsonl`` (one JSON value per non-blank line, in file order).
+
+    A missing manifest gives ``[]``. A malformed line raises ``json.JSONDecodeError``.
+    """
+    path = output / "manifest.jsonl"
+    rows: list[dict[str, Any]] = []
+    if not path.is_file():
+        return rows
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
