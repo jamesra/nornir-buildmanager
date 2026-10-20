@@ -13,6 +13,13 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     _odata_count,
     _odata_locations_url,
     _parse_odata_dump,
+    _source_from_meta,
+    _stripped_text,
+    load_export_source,
+    odata_filter_from_output,
+    odata_url_for_export,
+    odata_url_from_output,
+    write_export_source,
 )
 
 
@@ -118,3 +125,63 @@ def test_parse_odata_dump_array_text_is_not_json_lines() -> None:
     # A leading "[" skips the concatenated-document branch; each line must be a JSON value.
     with pytest.raises(json.JSONDecodeError):
         list(_parse_odata_dump("[1,\n2]"))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("http://x/odata", "http://x/odata"),
+        ("  http://x/odata \n", "http://x/odata"),
+        ("a b", "a b"),
+        ("", None),
+        ("   \t\n", None),
+        (None, None),
+        (5, None),
+        (b" x ", None),
+        (["x"], None),
+    ],
+)
+def test_stripped_text(value: object, expected: str | None) -> None:
+    assert _stripped_text(value) == expected
+
+
+def test_source_from_meta_strips_url_and_drops_blank() -> None:
+    assert _source_from_meta({"source": {"kind": "odata", "url": " http://s/ "}})["odata"] == "http://s/"
+    assert "odata" not in _source_from_meta({"source": {"kind": "odata", "url": "  "}})
+    assert "odata" not in _source_from_meta({"source": {"kind": "sql", "url": "http://s/"}})
+
+
+def test_write_export_source_keeps_prior_url_on_sql(tmp_path) -> None:
+    (tmp_path / "source.json").write_text(json.dumps({"odata": "  http://prior/ "}))
+    write_export_source(tmp_path, {"source": {"kind": "sql"}})
+    assert json.loads((tmp_path / "source.json").read_text())["odata"] == "http://prior/"
+
+
+def test_load_export_source_reconstructs_stripped_url(tmp_path) -> None:
+    (tmp_path / "source.json").write_text(json.dumps({"odata": "  http://u/ ", "filter": " $f "}))
+    assert odata_url_from_output(tmp_path) == "http://u/"
+    assert odata_filter_from_output(tmp_path) == "$f"
+    (tmp_path / "source.json").write_text(json.dumps({"odata": "  ", "filter": ""}))
+    assert odata_url_from_output(tmp_path) is None
+    assert odata_filter_from_output(tmp_path) is None
+    assert load_export_source(tmp_path) == {"odata": "  ", "filter": ""}
+
+
+def test_odata_url_for_export_falls_back_to_image_meta(tmp_path) -> None:
+    assert odata_url_for_export(tmp_path, {"odata": " http://m/ "}) == "http://m/"
+    assert odata_url_for_export(tmp_path, {"odata": "  "}) is None
+    assert odata_url_for_export(tmp_path, {"odata": 3}) is None
+    assert odata_url_for_export(tmp_path, None) is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "expected_odata"),
+    [("odata", "http://c/"), ("sql", None)],
+)
+def test_load_export_source_reconstructs_from_cache_meta(tmp_path, kind: str, expected_odata: str | None) -> None:
+    from nornir_buildmanager.operations.segmentationtraining.ingest import cache_meta_path
+
+    meta_path = cache_meta_path(tmp_path)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps({"source": {"kind": kind, "url": " http://c/ "}}))
+    assert load_export_source(tmp_path).get("odata") == expected_odata

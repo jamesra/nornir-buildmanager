@@ -104,6 +104,15 @@ _SOURCE_SECRET_KEYS = frozenset({
 })
 
 
+def _stripped_text(value: Any) -> str | None:
+    """`value` stripped of surrounding whitespace, or None if it is not a non-blank string."""
+    if isinstance(value, str):
+        text = value.strip()
+        if text:
+            return text
+    return None
+
+
 def _exporter_name(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
@@ -128,9 +137,9 @@ def _source_from_meta(meta: dict[str, Any]) -> dict[str, Any]:
         payload["exporter"] = exporter
     if kind == "sql":
         return payload
-    url = source.get("url")
-    if isinstance(url, str) and url.strip():
-        payload["odata"] = url.strip()
+    url = _stripped_text(source.get("url"))
+    if url:
+        payload["odata"] = url
     dump_path = source.get("path")
     if dump_path:
         payload["path"] = str(dump_path)
@@ -165,9 +174,9 @@ def write_export_source(
         if prior_exporter:
             payload["exporter"] = prior_exporter
     if payload.get("kind") == "sql" and "odata" not in payload:
-        prior_url = existing.get("odata")
-        if isinstance(prior_url, str) and prior_url.strip():
-            payload["odata"] = prior_url.strip()
+        prior_url = _stripped_text(existing.get("odata"))
+        if prior_url:
+            payload["odata"] = prior_url
     _write_source_document(output_path, payload)
 
 
@@ -196,9 +205,9 @@ def load_export_source(output_path: str | os.PathLike[str]) -> dict[str, Any]:
         "includeOffEdge": bool(meta.get("includeOffEdge")),
         "ingestedAt": meta.get("ingestedAt"),
     }
-    url = source.get("url")
-    if isinstance(url, str) and url.strip() and source.get("kind") != "sql":
-        reconstructed["odata"] = url.strip()
+    url = _stripped_text(source.get("url"))
+    if url and source.get("kind") != "sql":
+        reconstructed["odata"] = url
     dump_path = source.get("path")
     if dump_path and source.get("kind") != "sql":
         reconstructed["path"] = str(dump_path)
@@ -210,18 +219,12 @@ def load_export_source(output_path: str | os.PathLike[str]) -> dict[str, Any]:
 
 def odata_url_from_output(output_path: str | os.PathLike[str]) -> str | None:
     """OData service root recorded for this export, or None."""
-    url = load_export_source(output_path).get("odata")
-    if isinstance(url, str):
-        text = url.strip()
-        if text:
-            return text
-    return None
+    return _stripped_text(load_export_source(output_path).get("odata"))
 
 
 def odata_filter_from_output(output_path: str | os.PathLike[str]) -> str | None:
     """``$filter`` the export's locations were ingested with, or None."""
-    text = load_export_source(output_path).get("filter")
-    return text.strip() if isinstance(text, str) and text.strip() else None
+    return _stripped_text(load_export_source(output_path).get("filter"))
 
 
 def odata_url_for_export(
@@ -234,10 +237,7 @@ def odata_url_for_export(
         return url
     if image_meta is None:
         return None
-    raw = image_meta.get("odata")
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return None
+    return _stripped_text(image_meta.get("odata"))
 
 
 def ensure_export_source(output_path: str | os.PathLike[str]) -> None:
