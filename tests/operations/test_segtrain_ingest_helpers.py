@@ -16,6 +16,7 @@ from nornir_buildmanager.operations.segmentationtraining.ingest import (
     _entities_from_odata_document,
     _exporter_name,
     _odata_count,
+    _odata_next_link,
     _odata_locations_url,
     _parse_odata_dump,
     _source_from_meta,
@@ -94,6 +95,20 @@ def test_odata_locations_url_empty_expand_omitted() -> None:
 )
 def test_odata_count(doc: dict, expected: int | None) -> None:
     assert _odata_count(doc) == expected
+
+
+@pytest.mark.parametrize("doc", [None, [], [{"@odata.count": 3}], "text", 5])
+def test_odata_accessors_return_none_for_non_dict_documents(doc: object) -> None:
+    assert _odata_count(doc) is None
+    assert _odata_next_link(doc) is None
+
+
+@pytest.mark.parametrize(
+    ("doc", "expected"),
+    [({}, None), ({"@odata.nextLink": "http://x/next"}, "http://x/next"), ({"@odata.nextLink": ""}, "")],
+)
+def test_odata_next_link(doc: dict, expected: str | None) -> None:
+    assert _odata_next_link(doc) == expected
 
 
 def test_entities_from_document_variants() -> None:

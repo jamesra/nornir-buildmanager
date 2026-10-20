@@ -748,8 +748,15 @@ def _odata_locations_url(
     return url
 
 
-def _odata_count(document: dict[str, Any]) -> int | None:
-    """Return ``@odata.count`` when it is a positive integer."""
+def _odata_next_link(document: Any) -> Any:
+    """The raw ``@odata.nextLink`` of *document*, or None when absent or *document* is not a dict."""
+    return document.get("@odata.nextLink") if isinstance(document, dict) else None
+
+
+def _odata_count(document: Any) -> int | None:
+    """Return ``@odata.count`` when it is a positive integer; None when *document* is not a dict."""
+    if not isinstance(document, dict):
+        return None
     raw = document.get("@odata.count")
     if raw is None:
         return None
@@ -774,11 +781,11 @@ def _iter_odata_documents(url: str, getter: HttpGet) -> Iterator[dict[str, Any]]
         yield document
         page_size = len(_entities_from_odata_document(document))
         fetched += page_size
-        link = document.get("@odata.nextLink") if isinstance(document, dict) else None
+        link = _odata_next_link(document)
         if link:
             next_url = _absolute_next_link(next_url, str(link))
             continue
-        total = _odata_count(document) if isinstance(document, dict) else None
+        total = _odata_count(document)
         full_page = top is not None and page_size >= top
         if page_size == 0 or not (full_page or (total is not None and fetched < total)):
             break
@@ -810,10 +817,8 @@ def _fetch_odata_entities(url: str, getter: HttpGet) -> list[dict[str, Any]]:
         for document in _iter_odata_documents(url, getter):
             page = _entities_from_odata_document(document)
             if reporter is None:
-                total = _odata_count(document) if isinstance(document, dict) else None
-                has_next = bool(
-                    isinstance(document, dict) and document.get("@odata.nextLink")
-                )
+                total = _odata_count(document)
+                has_next = bool(_odata_next_link(document))
                 if total is None and not has_next:
                     total = len(page)
                 if total:
