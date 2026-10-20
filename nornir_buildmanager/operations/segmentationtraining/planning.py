@@ -37,6 +37,14 @@ from nornir_buildmanager.operations.segmentationtraining.wkt import (
 _logger = logging.getLogger(__name__)
 
 
+def image_key_matches_sections(key: str, sections: set[int]) -> bool:
+    """True when *key* looks like ``{volume}_{z}_D...`` for a requested Z."""
+    for z in sections:
+        if f"_{z}_D" in key:
+            return True
+    return False
+
+
 @dataclass
 class PlannedCrop:
     """One shared output image after half-step placement and identical-window grouping."""

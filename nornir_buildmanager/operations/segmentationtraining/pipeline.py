@@ -58,7 +58,12 @@ from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
 
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
-from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, image_watermark, plan_section_crops
+from nornir_buildmanager.operations.segmentationtraining.planning import (
+    PlannedCrop,
+    image_key_matches_sections,
+    image_watermark,
+    plan_section_crops,
+)
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     IMAGES_FOLDER,
     MASKS_FOLDER,
@@ -230,7 +235,7 @@ def _overlay_repair_keys(
         return jobs
     for image in _iter_crop_images(output):
         key = image.stem
-        if wanted is not None and not _image_key_matches_sections(key, wanted):
+        if wanted is not None and not image_key_matches_sections(key, wanted):
             continue
         jobs.append((key, None))
     return jobs
@@ -262,14 +267,6 @@ def _section_meta_numbers(output: Path) -> list[int]:
         if token.isdigit():
             numbers.append(int(token))
     return sorted(numbers)
-
-
-def _image_key_matches_sections(key: str, sections: set[int]) -> bool:
-    """True when *key* looks like ``{volume}_{z}_D...`` for a requested Z."""
-    for z in sections:
-        if f"_{z}_D" in key:
-            return True
-    return False
 
 
 def _repair_one_overlay(

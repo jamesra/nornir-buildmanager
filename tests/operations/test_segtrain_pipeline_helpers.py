@@ -18,11 +18,11 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
 from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     _as_int_list,
     _empty_to_none,
-    _image_key_matches_sections,
     _level_mtime,
     _manifest_row,
     _max_tiles,
     _section_meta_numbers,
+    image_key_matches_sections,
     missing_crop_marks,
     resolve_max_texture,
 )
@@ -83,11 +83,12 @@ def test_as_int_list_list_items() -> None:
 
 def test_image_key_matches_sections() -> None:
     key = "vol_12_D1_x0"
-    assert _image_key_matches_sections(key, {12})
-    assert _image_key_matches_sections(key, {3, 12})
-    assert not _image_key_matches_sections(key, {1})
-    assert not _image_key_matches_sections(key, set())
-    assert not _image_key_matches_sections("vol_112_D1", {12})
+    assert image_key_matches_sections(key, {12})
+    assert image_key_matches_sections(key, {3, 12})
+    assert not image_key_matches_sections(key, {1})
+    assert not image_key_matches_sections(key, set())
+    assert not image_key_matches_sections("vol_112_D1", {12})
+    assert not image_key_matches_sections("vol_12_X1", {12})
 
 
 def test_section_meta_numbers(output: Path) -> None:

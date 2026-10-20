@@ -17,6 +17,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     save_section_watermark,
     section_meta_path,
 )
+from nornir_buildmanager.operations.segmentationtraining.planning import image_key_matches_sections
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ensure_export_source,
     odata_url_from_output,
@@ -319,7 +320,7 @@ def _candidate_keys(output: Path, wanted: set[int] | None) -> list[str]:
     ordered = sorted(keys)
     if wanted is None:
         return ordered
-    return [key for key in ordered if _image_key_matches_sections(key, wanted)]
+    return [key for key in ordered if image_key_matches_sections(key, wanted)]
 
 
 def _unlink_member_files(
@@ -358,14 +359,6 @@ def _mask_exists(output: Path, key: str, location_id: int) -> bool:
 
 def _has_crop_image(output: Path, key: str) -> bool:
     return resolve_crop_image(output / IMAGES_FOLDER, key).is_file()
-
-
-def _image_key_matches_sections(key: str, sections: set[int]) -> bool:
-    """True when *key* looks like ``{volume}_{z}_D...`` for a requested Z."""
-    for z in sections:
-        if f"_{z}_D" in key:
-            return True
-    return False
 
 
 def _load_json(path: Path) -> dict[str, Any]:
