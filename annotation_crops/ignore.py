@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Iterable
 
@@ -39,6 +40,19 @@ def load_ignore_ids(crops: str | os.PathLike[str]) -> set[int]:
 
 
 def save_ignore_ids(crops: str | os.PathLike[str], ids: Iterable[int]) -> None:
-    """Write ``ignore.json`` as a sorted JSON array of ints."""
+    """Write ``ignore.json`` as a sorted JSON array of ints.
+
+    The text goes to a temp file beside the target, then ``os.replace`` swaps it in, so a
+    crash or a concurrent reader never sees a truncated list (which ``load_ignore_ids``
+    would read as empty, un-ignoring every location). The temp name carries the pid and
+    thread id so concurrent writers do not share it; the last writer still wins.
+    """
     ordered = sorted({int(item) for item in ids})
-    ignore_path(crops).write_text(json.dumps(ordered), encoding="utf-8")
+    path = ignore_path(crops)
+    temp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        temp.write_text(json.dumps(ordered), encoding="utf-8")
+        os.replace(temp, path)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
