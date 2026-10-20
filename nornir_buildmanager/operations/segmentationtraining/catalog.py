@@ -79,11 +79,6 @@ def sqlite_path(output_path: str | os.PathLike[str]) -> Path:
     return Path(output_path) / "annotation_crops.sqlite"
 
 
-def ignore_path(output_path: str | os.PathLike[str]) -> Path:
-    """Return `{Output}/ignore.json`."""
-    return Path(output_path) / "ignore.json"
-
-
 def connect(output_path: str | os.PathLike[str]) -> sqlite3.Connection:
     """Open (and create) the per-volume catalog database."""
     path = sqlite_path(output_path)
@@ -206,12 +201,6 @@ def apply_ignore_moves(output_path: str | os.PathLike[str]) -> int:
     return moved
 
 
-def ignore_location(output_path: str | os.PathLike[str], location_id: int) -> bool:
-    """Add *location_id* to ignore.json and move every mask for it. Returns True if listed."""
-    ignore_locations(output_path, [int(location_id)])
-    return True
-
-
 def ignore_locations(output_path: str | os.PathLike[str], location_ids: Iterable[int]) -> int:
     """Add *location_ids* to ignore.json and move their masks once.
 
@@ -253,24 +242,6 @@ def ignore_blank_crops(
                 seen.add(member)
                 ids.append(member)
     return ignore_locations(output_path, ids)
-
-
-def restore_location(output_path: str | os.PathLike[str], location_id: int) -> bool:
-    """Remove *location_id* from ignore.json and move every mask back to `masks/`."""
-    location_id = int(location_id)
-    ids = load_ignore_ids(output_path)
-    ids.discard(location_id)
-    save_ignore_ids(output_path, ids)
-    output = Path(output_path)
-    products = get_product_index(output)
-    sources = _find_masks(output, IGNORED_FOLDER, location_id)
-    if sources:
-        masks = output / MASKS_FOLDER
-        masks.mkdir(parents=True, exist_ok=True)
-        for source in sources:
-            _relocate_indexed(products, source, masks / source.name, IGNORED_FOLDER, MASKS_FOLDER)
-    _set_ignored_flag(output_path, location_id, ignored=False)
-    return True
 
 
 def load_sam2_by_id(output_path: str | os.PathLike[str]) -> dict[tuple[int, str], dict[str, Any]]:
@@ -756,22 +727,6 @@ def record_crop_size(output_path: str | os.PathLike[str], crop_size: int) -> Non
         connection.commit()
     finally:
         connection.close()
-
-
-def read_crop_size(output_path: str | os.PathLike[str]) -> int | None:
-    """Return the volume crop size, or None when the catalog has not recorded one."""
-    if not sqlite_path(output_path).is_file():
-        return None
-    connection = connect(output_path)
-    try:
-        row = connection.execute("SELECT crop_size FROM crop_geometry WHERE id = 1").fetchone()
-    except sqlite3.OperationalError:
-        return None
-    finally:
-        connection.close()
-    if row is None:
-        return None
-    return int(row[0])
 
 
 def sync_source_catalog(output_path: str | os.PathLike[str]) -> None:

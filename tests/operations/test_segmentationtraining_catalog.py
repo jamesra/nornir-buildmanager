@@ -20,11 +20,10 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
     _iter_indexed_masks,
     apply_ignore_moves,
     equivalent_radius,
-    ignore_location,
+    ignore_locations,
     list_catalog_rows,
     load_ignore_ids,
     rebuild_catalog,
-    restore_location,
     save_ignore_ids,
     sqlite_path,
     upsert_catalog,
@@ -182,16 +181,12 @@ def test_ignore_moves_mask_and_catalog(tmp_path: Path) -> None:
     rebuild_catalog(output)
     key = "RC2_17_D1_X0_Y0"
     mask_name = f"{key}_42.png"
-    ignore_location(output, 42)
+    ignore_locations(output, [42])
     assert load_ignore_ids(output) == {42}
     assert not (output / "masks" / mask_name).is_file()
     assert (output / "ignored" / mask_name).is_file()
     rows = list_catalog_rows(output)
     assert rows[0]["ignored"] == 1
-    restore_location(output, 42)
-    assert load_ignore_ids(output) == set()
-    assert (output / "masks" / mask_name).is_file()
-    assert list_catalog_rows(output)[0]["ignored"] == 0
 
 
 @given(st.lists(st.integers(min_value=1, max_value=10_000), unique=True, max_size=15))

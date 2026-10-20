@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,7 +15,6 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
     _location_id_from_mask_name,
     _mask_relpath,
     _row_z,
-    read_crop_size,
     record_crop_size,
 )
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
@@ -136,11 +136,18 @@ def test_iter_image_json_paths_explicit_keys_skip_unindexed_and_ignore_z(output:
     assert got == [output / "images" / "RC2_17_D1_a.json"]
 
 
-def test_crop_size_round_trip_and_absent(tmp_path: Path) -> None:
+def _stored_crop_size(out: Path) -> int:
+    """Read the recorded crop size straight from the catalog (the gallery is the production reader)."""
+    connection = sqlite3.connect(str(out / "annotation_crops.sqlite"))
+    try:
+        return connection.execute("SELECT crop_size FROM crop_geometry WHERE id = 1").fetchone()[0]
+    finally:
+        connection.close()
+
+
+def test_crop_size_round_trip(tmp_path: Path) -> None:
     out = tmp_path / "vol"
-    assert read_crop_size(out) is None
-    assert not out.exists()  # reading never creates the catalog
     record_crop_size(out, 512)
-    assert read_crop_size(out) == 512
+    assert _stored_crop_size(out) == 512
     record_crop_size(out, 1024)
-    assert read_crop_size(out) == 1024
+    assert _stored_crop_size(out) == 1024

@@ -23,7 +23,7 @@ from nornir_shared.reflection import get_module_class
 from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
-    ignore_location,
+    ignore_locations,
     list_catalog_rows,
     load_ignore_ids,
     rebuild_catalog,
@@ -871,7 +871,6 @@ def test_ignore_move_updates_product_index_without_rescan(tmp_path: Path, monkey
     """Moving a mask into ignored/ is visible in the index without another folder scan."""
     from nornir_buildmanager.operations.segmentationtraining.catalog import (
         apply_ignore_moves,
-        restore_location,
         save_ignore_ids,
     )
     from nornir_buildmanager.operations.segmentationtraining.product_index import (
@@ -910,11 +909,6 @@ def test_ignore_move_updates_product_index_without_rescan(tmp_path: Path, monkey
     assert index.exists("ignored", name)
     assert (tmp_path / "ignored" / name).is_file()
     assert not (masks / name).exists()
-
-    assert restore_location(tmp_path, 5)
-    assert index.exists("masks", name)
-    assert not index.exists("ignored", name)
-    assert (masks / name).is_file()
 
 
 def test_purge_empty_section_deletes_members_without_per_key_glob(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2172,7 +2166,7 @@ def test_catalog_keeps_each_mask_fragment(tmp_path: Path) -> None:
     scores = {row["image_key"]: row["sam2PredIou"] for row in rows}
     assert scores[key_a] == 0.5
     assert scores[key_b] is None
-    assert ignore_location(tmp_path, 5)
+    assert ignore_locations(tmp_path, [5]) == 1
     assert not list(masks.glob("*_5.png"))
     assert len(list((tmp_path / "ignored").glob("*_5.png"))) == 2
 
