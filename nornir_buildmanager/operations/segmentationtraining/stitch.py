@@ -667,11 +667,16 @@ def load_tiles_threaded(
 def _publish_shared_tiles(
     arrays: dict[tuple[int, int], NDArray],
 ) -> tuple[dict[tuple[int, int], Any], list[Any]]:
-    """Publish decoded host tiles into read-only shared memory (parent thread)."""
+    """Publish decoded host tiles into read-only shared memory (parent thread).
+
+    Consumes *arrays*: each tile is popped as it is published, so a band never
+    holds both a host and a shared copy of every tile. Callers must not keep other
+    references to the host tiles. Output order matches the input insertion order.
+    """
     tiles: dict[tuple[int, int], Any] = {}
     handles: list[Any] = []
-    for coord, array in arrays.items():
-        host = nornir_imageregistration.EnsureNumpyArray(array)
+    for coord in list(arrays):
+        host = nornir_imageregistration.EnsureNumpyArray(arrays.pop(coord))
         meta, _view = nornir_imageregistration.npArrayToSharedArray(
             np.ascontiguousarray(host), read_only=True
         )

@@ -5,15 +5,21 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import hypothesis.extra.numpy as hnp
+import hypothesis.strategies as st
 import numpy as np
 import pytest
+from hypothesis import given, settings
 from numpy.typing import NDArray
 from PIL import Image
 
+import nornir_imageregistration
 import nornir_pools
 from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     StitchJob,
+    _publish_shared_tiles,
+    _unlink_handles,
     default_column_band,
     default_io_workers,
     disk_tile_loader,
@@ -239,6 +245,39 @@ def test_load_tiles_threaded_skips_missing_and_loads_present(tmp_path: Path) -> 
     assert set(loaded) == {(0, 0), (1, 0)}
     np.testing.assert_array_equal(loaded[(0, 0)], _constant_tile(11))
     np.testing.assert_array_equal(loaded[(1, 0)], _constant_tile(22))
+
+
+_tile_arrays = st.dictionaries(
+    st.tuples(st.integers(0, 50), st.integers(0, 50)),
+    hnp.arrays(
+        dtype=st.sampled_from([np.uint8, np.uint16, np.float32]),
+        shape=hnp.array_shapes(min_dims=2, max_dims=2, min_side=1, max_side=12),
+    ),
+    max_size=8,
+)
+
+
+@settings(max_examples=40, deadline=None)
+@given(arrays=_tile_arrays, transpose=st.booleans())
+def test_publish_shared_tiles_preserves_content_and_order(
+    arrays: dict[tuple[int, int], NDArray], transpose: bool
+) -> None:
+    """Published tiles keep input order and bytes; the input dict is drained."""
+    if transpose:
+        arrays = {coord: array.T for coord, array in arrays.items()}
+    expected = {coord: np.array(array, copy=True) for coord, array in arrays.items()}
+    tiles, handles = _publish_shared_tiles(arrays)
+    try:
+        assert list(tiles) == list(expected)
+        assert handles == list(tiles.values())
+        for coord, meta in tiles.items():
+            shared = nornir_imageregistration.ImageParamToNumpyImageArray(meta)
+            assert shared.dtype == expected[coord].dtype
+            np.testing.assert_array_equal(shared, expected[coord])
+            assert not shared.flags.writeable
+        assert arrays == {}
+    finally:
+        _unlink_handles(handles)
 
 
 def test_sweep_stitch_jobs_writes_crops_across_columns(tmp_path: Path) -> None:
