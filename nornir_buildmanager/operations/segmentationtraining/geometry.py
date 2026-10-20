@@ -348,66 +348,6 @@ def snap_fits_max_texture(
     return width <= max_texture and height <= max_texture
 
 
-def window_tile_rect(
-    rect: TileRect,
-    *,
-    max_tiles_x: int,
-    max_tiles_y: int,
-    overlap_tiles: int = 1,
-) -> list[TileRect]:
-    """Split a snapped rect into overlapping windows that fit MaxTiles."""
-    max_tiles_x = max(1, max_tiles_x)
-    max_tiles_y = max(1, max_tiles_y)
-    overlap_tiles = max(0, overlap_tiles)
-    if rect.n_x <= max_tiles_x and rect.n_y <= max_tiles_y:
-        return [rect]
-    windows: list[TileRect] = []
-    if rect.n_x > max_tiles_x and rect.n_y > max_tiles_y:
-        step_x = max(1, max_tiles_x - overlap_tiles)
-        step_y = max(1, max_tiles_y - overlap_tiles)
-        x0 = rect.ix0
-        while True:
-            x1 = min(x0 + max_tiles_x, rect.ix1)
-            y0 = rect.iy0
-            while True:
-                y1 = min(y0 + max_tiles_y, rect.iy1)
-                windows.append(TileRect(x0, x1, y0, y1))
-                if y1 >= rect.iy1:
-                    break
-                y0 += step_y
-                if y0 >= rect.iy1:
-                    break
-            if x1 >= rect.ix1:
-                break
-            x0 += step_x
-            if x0 >= rect.ix1:
-                break
-        return windows
-    if rect.n_x >= rect.n_y:
-        step = max(1, max_tiles_x - overlap_tiles)
-        x0 = rect.ix0
-        while True:
-            x1 = min(x0 + max_tiles_x, rect.ix1)
-            windows.append(TileRect(x0, x1, rect.iy0, rect.iy1))
-            if x1 >= rect.ix1:
-                break
-            x0 += step
-            if x0 >= rect.ix1:
-                break
-        return windows
-    step = max(1, max_tiles_y - overlap_tiles)
-    y0 = rect.iy0
-    while True:
-        y1 = min(y0 + max_tiles_y, rect.iy1)
-        windows.append(TileRect(rect.ix0, rect.ix1, y0, y1))
-        if y1 >= rect.iy1:
-            break
-        y0 += step
-        if y0 >= rect.iy1:
-            break
-    return windows
-
-
 def pixel_rings_in_crop(
     polygons: list[PolygonRings],
     *,

@@ -47,7 +47,6 @@ from nornir_buildmanager.operations.segmentationtraining.geometry import (
     choose_downsample,
     pixel_rings_in_crop,
     place_mask_windows,
-    window_tile_rect,
 )
 from nornir_buildmanager.operations.segmentationtraining.grouping import (
     group_snaps,
@@ -2429,15 +2428,6 @@ def test_export_ignores_white_crop_and_keeps_png(tmp_path: Path) -> None:
     assert not list((out / "masks").glob("*_8.png"))
     ignored = list((out / "ignored").glob("*_8.png"))
     assert len(ignored) == 1
-
-
-def test_window_tile_rect_2d_grid() -> None:
-    from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
-
-    rect = TileRect(0, 10, 0, 10)
-    windows = window_tile_rect(rect, max_tiles_x=4, max_tiles_y=4, overlap_tiles=1)
-    assert len(windows) > 1
-    assert all(window.n_x <= 4 and window.n_y <= 4 for window in windows)
 
 
 def test_watermark_mtime_comparisons_tolerate_smb_skew(tmp_path: Path) -> None:
