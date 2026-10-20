@@ -645,6 +645,60 @@ def section_visit_index(output_path: str, z: int) -> int:
     return order.setdefault(z, len(order))
 
 
+def _repair_marks_or_skip(output_path: str, z: int) -> list[ImageWatermark] | None:
+    """-Repair precheck: watermark crops with no image file, or None to skip the section.
+
+    Logs the skip reason (no watermark, or every recorded image present) and any
+    image keys that have no stored crop geometry.
+    """
+    products = _images_index_for_repair(Path(output_path))
+    prior = load_section_watermark(output_path, z)
+    if prior is None:
+        prettyoutput.Log(
+            f"ExportTrainingData -Repair: section {z} has no watermark, skipping"
+        )
+        return None
+    repair_marks = missing_crop_marks(prior, products)
+    _log_repair_keys_without_geometry(z, prior, products)
+    if not repair_marks:
+        recorded = len({mark.key for mark in (prior.images or [])})
+        prettyoutput.Log(
+            f"ExportTrainingData -Repair: section {z} — "
+            f"all {recorded} images present, skipping"
+        )
+        return None
+    return repair_marks
+
+
+def _load_export_records(
+    output_path: str, z: int, *, include_off_edge: bool
+) -> list[LocationRecord]:
+    """Section records to export; when none remain, log it and purge the section's outputs."""
+    records = load_section_records(output_path, z)
+    if not include_off_edge:
+        records = [record for record in records if not record.off_edge]
+    if not records:
+        prettyoutput.Log(f"ExportTrainingData: no geometries for section {z}")
+        _purge_empty_section(Path(output_path), z)
+    return records
+
+
+@contextmanager
+def _staged_section_work(stage_tiles: str | None) -> Iterator[None]:
+    """Run one section's stitch work under NumPy.
+
+    Stage pools are released only when the work succeeds; removal of the section
+    stage tree is scheduled either way.
+    """
+    try:
+        with force_numpy_computation():
+            yield
+            nornir_pools.ReleaseStagePools()
+    finally:
+        # Different sections use distinct z{n} roots; do not block the next section.
+        schedule_remove_stage_tree(stage_tiles)
+
+
 def _export_section_crops_entry(
     *,
     OutputPath: str,
@@ -682,34 +736,15 @@ def _export_section_crops_entry(
 ) -> Any:
     """Body of ExportSectionCrops after the sections progress track is opened."""
     repair_marks: list[ImageWatermark] | None = None
+    records: list[LocationRecord] = []
     if Repair:
-        products = _images_index_for_repair(Path(OutputPath))
-        prior = load_section_watermark(OutputPath, z)
-        if prior is None:
-            prettyoutput.Log(
-                f"ExportTrainingData -Repair: section {z} has no watermark, skipping"
-            )
-            return None
-        repair_marks = missing_crop_marks(prior, products)
-        _log_repair_keys_without_geometry(z, prior, products)
-        if not repair_marks:
-            recorded = len({mark.key for mark in (prior.images or [])})
-            prettyoutput.Log(
-                f"ExportTrainingData -Repair: section {z} — "
-                f"all {recorded} images present, skipping"
-            )
-            return None
-
-    if repair_marks is None:
-        records = load_section_records(OutputPath, z)
-        if not IncludeOffEdge:
-            records = [record for record in records if not record.off_edge]
-        if not records:
-            prettyoutput.Log(f"ExportTrainingData: no geometries for section {z}")
-            _purge_empty_section(Path(OutputPath), z)
+        repair_marks = _repair_marks_or_skip(OutputPath, z)
+        if repair_marks is None:
             return None
     else:
-        records = []
+        records = _load_export_records(OutputPath, z, include_off_edge=bool(IncludeOffEdge))
+        if not records:
+            return None
 
     tileset = _resolve_tileset(
         filter_node,
@@ -786,17 +821,13 @@ def _export_section_crops_entry(
         repair_marks = missing_crop_marks(prior, products)
         if not repair_marks:
             return save_node
-        try:
-            with force_numpy_computation():
-                stitch_missing_crop_marks(
-                    output_path=OutputPath,
-                    z=z,
-                    marks=repair_marks,
-                    run=run,
-                )
-                nornir_pools.ReleaseStagePools()
-        finally:
-            schedule_remove_stage_tree(run.stage_tiles)
+        with _staged_section_work(run.stage_tiles):
+            stitch_missing_crop_marks(
+                output_path=OutputPath,
+                z=z,
+                marks=repair_marks,
+                run=run,
+            )
         return save_node
     watermark = load_section_watermark(OutputPath, z)
     if not Update and section_is_fresh(
@@ -814,35 +845,26 @@ def _export_section_crops_entry(
             )
         return save_node
     if Update:
-        try:
-            with force_numpy_computation():
-                update_section_crops(
-                    output_path=OutputPath,
-                    z=z,
-                    records=records,
-                    previous=watermark,
-                    run=run,
-                )
-                nornir_pools.ReleaseStagePools()
-        finally:
-            schedule_remove_stage_tree(run.stage_tiles)
-        return save_node
-
-    try:
-        with force_numpy_computation():
-            export_section_crops(
+        with _staged_section_work(run.stage_tiles):
+            update_section_crops(
                 output_path=OutputPath,
                 z=z,
                 records=records,
-                run=run,
-                force=bool(Force),
-                refresh_odata=bool(RefreshOData),
                 previous=watermark,
+                run=run,
             )
-            nornir_pools.ReleaseStagePools()
-    finally:
-        # Different sections use distinct z{n} roots; do not block the next section.
-        schedule_remove_stage_tree(run.stage_tiles)
+        return save_node
+
+    with _staged_section_work(run.stage_tiles):
+        export_section_crops(
+            output_path=OutputPath,
+            z=z,
+            records=records,
+            run=run,
+            force=bool(Force),
+            refresh_odata=bool(RefreshOData),
+            previous=watermark,
+        )
     return save_node
 
 
