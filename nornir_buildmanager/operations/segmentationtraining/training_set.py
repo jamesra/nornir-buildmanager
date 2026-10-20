@@ -113,39 +113,6 @@ def _generator() -> dict[str, str]:
     return {"name": "nornir-buildmanager", "version": "unknown"}
 
 
-def _check_set_version(
-    output_path: str | os.PathLike[str],
-    set_version: str | None,
-    parent: str | None,
-    wanted: str | None,
-    existing_version: str | None,
-    existing_number: tuple[int, int] | None,
-) -> tuple[int, int] | None:
-    """Parse the wanted set and refuse a malformed name, a set number going backwards, or a parent that is not earlier.
-
-    ``wanted`` is ``set_version`` or, when that is omitted, the folder's ``existing_version`` (``existing_number`` when
-    well formed). Returns the wanted set's ``(set number, revision)``, or None when no set is wanted.
-    """
-    number: tuple[int, int] | None = None
-    if set_version:
-        number = parse_set_version(set_version)
-        if existing_number is not None and number < existing_number:
-            raise NornirUserException(
-                f"{output_path} already holds set {existing_version}; a set number only goes forward, "
-                f"so {set_version} cannot be written there"
-            )
-    if parent:
-        if wanted is None:
-            raise NornirUserException("-ParentSet needs -SetVersion: a parent is the set that one revises")
-        parent_number = parse_set_version(parent, what="parent set")
-        number = number or parse_set_version(wanted)
-        if parent_number >= number:
-            raise NornirUserException(f"the parent set {parent} must be an earlier set than {wanted}")
-    elif wanted and number is None:
-        number = parse_set_version(wanted)  # a malformed name kept from the folder is refused here
-    return number
-
-
 def plan_training_set_info(
     output_path: str | os.PathLike[str],
     *,
@@ -167,46 +134,59 @@ def plan_training_set_info(
             or the creation rules changed since the sidecar's set number was started (a set keeps its rules; a change
             is a new set number).
     """
-    existing = read_training_set_info(output_path) or None  # an empty sidecar counts as none
+    existing = read_training_set_info(output_path)
     existing_version = existing.get("set_version") if existing else None
-    if not isinstance(existing_version, str):
+    if existing_version is not None and not isinstance(existing_version, str):
         existing_version = None
-    existing_number = (
-        parse_set_version(existing_version) if existing_version and SET_VERSION_RE.match(existing_version) else None
-    )
     fingerprint = rules_fingerprint(rules)
 
     wanted = set_version if set_version else existing_version
-    wanted_number = _check_set_version(output_path, set_version, parent, wanted, existing_version, existing_number)
+    if set_version:
+        new_number = parse_set_version(set_version)
+        if (
+            existing_version
+            and SET_VERSION_RE.match(existing_version)
+            and new_number < parse_set_version(existing_version, what="existing set version")
+        ):
+            raise NornirUserException(
+                f"{output_path} already holds set {existing_version}; a set number only goes forward, "
+                f"so {set_version} cannot be written there"
+            )
+    if parent:
+        if wanted is None:
+            raise NornirUserException("-ParentSet needs -SetVersion: a parent is the set that one revises")
+        if parse_set_version(parent, what="parent set") >= parse_set_version(wanted):
+            raise NornirUserException(f"the parent set {parent} must be an earlier set than {wanted}")
 
     old_fingerprint = existing.get("creation_rules_fingerprint") if existing else None
-    if (
-        wanted_number is not None
-        and existing_number is not None
-        and old_fingerprint
-        and old_fingerprint != fingerprint
-        and wanted_number[0] == existing_number[0]
-    ):
-        raise NornirUserException(
-            f"The creation rules changed since set {existing_version} was started in {output_path} "
-            f"(fingerprint {old_fingerprint}, now {fingerprint}). A set number keeps one set of rules; "
-            f"use a new set number (-SetVersion v{wanted_number[0] + 1}) or restore the rules."
+    if wanted and existing_version and old_fingerprint and old_fingerprint != fingerprint:
+        same_number = (
+            SET_VERSION_RE.match(existing_version) is not None
+            and parse_set_version(wanted)[0] == parse_set_version(existing_version)[0]
         )
+        if same_number:
+            raise NornirUserException(
+                f"The creation rules changed since set {existing_version} was started in {output_path} "
+                f"(fingerprint {old_fingerprint}, now {fingerprint}). A set number keeps one set of rules; "
+                f"use a new set number (-SetVersion v{parse_set_version(wanted)[0] + 1}) or restore the rules."
+            )
 
     stamp = (now or datetime.now(UTC)).isoformat(timespec="seconds")
-    kept = (existing or {}) if existing_version == wanted else {}  # carried over only within the same set
+    same_set = existing is not None and existing_version == wanted
     if parent:
         resolved_parent: str | None = parent
-    elif wanted_number is not None and wanted_number[1] > 0:
-        resolved_parent = f"v{wanted_number[0]}"
+    elif wanted and parse_set_version(wanted)[1] > 0:
+        resolved_parent = f"v{parse_set_version(wanted)[0]}"
+    elif same_set and isinstance(existing.get("parent"), str):  # type: ignore[union-attr]
+        resolved_parent = existing["parent"]  # type: ignore[index]
     else:
-        resolved_parent = kept.get("parent") if isinstance(kept.get("parent"), str) else None
+        resolved_parent = None
     if description is not None:
         text = description
     else:
-        old_text = existing.get("description") if existing else None
-        text = old_text if isinstance(old_text, str) else ""
-    created = kept.get("created_at")
+        kept = existing.get("description") if existing else None
+        text = kept if isinstance(kept, str) else ""
+    created = existing.get("created_at") if same_set and existing else None
     return {
         "schema_version": SCHEMA_VERSION,
         "set_version": wanted,
