@@ -57,6 +57,7 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     BlankCrop,
     StitchJob,
+    TileLayout,
     crop_image_filename,
     default_column_band,
     downsample_stage_dir,
@@ -537,14 +538,11 @@ def _stitch(
         sweep_stitch_jobs(
             group,
             source_dir=level_dir,
-            prefix=file_prefix,
-            postfix=file_postfix,
+            layout=TileLayout(file_prefix, file_postfix, tile_x, tile_y),
             workers=workers,
             stage_dir=stage_dir,
             use_shared_memory=workers > 1,
             finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
-            tile_x_dim=tile_x,
-            tile_y_dim=tile_y,
             column_band=band,
             blank_crops=blank_crops,
         )

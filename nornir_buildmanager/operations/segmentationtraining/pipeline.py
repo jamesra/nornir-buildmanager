@@ -110,6 +110,7 @@ from nornir_buildmanager.operations.segmentationtraining.stitch import (
     BlankCrop,
     StitchJob,
     TileExistenceMemo,
+    TileLayout,
     count_column_bands,
     crop_image_filename,
     default_column_band,
@@ -861,6 +862,11 @@ def _prefetch_tiles(tileset: ResolvedTileset, requests: Iterable[tuple[int, Tile
         fetch(downsample, by_downsample[downsample])
 
 
+def _tile_layout(tileset: ResolvedTileset) -> TileLayout:
+    """Tile naming and pixel size of *tileset*."""
+    return TileLayout(tileset.prefix, tileset.postfix, tileset.tile_shape.x, tileset.tile_shape.y)
+
+
 def _missing_tiles_for_plan(
     plan: PlannedCrop,
     tileset: ResolvedTileset,
@@ -873,11 +879,8 @@ def _missing_tiles_for_plan(
         window.origin_y,
         window.width,
         window.height,
-        tile_x_dim=tileset.tile_shape.x,
-        tile_y_dim=tileset.tile_shape.y,
+        layout=_tile_layout(tileset),
         level_dir=tileset.level_dirs.get(int(plan.downsample)),
-        prefix=tileset.prefix,
-        postfix=tileset.postfix,
         known=known,
     )
 
@@ -1041,6 +1044,7 @@ def _run_stitch_jobs(
     blank_crops: list[BlankCrop] = []
     level_dirs = tileset.level_dirs
     tile_shape = tileset.tile_shape
+    layout = _tile_layout(tileset)
     by_d: dict[int, list[StitchJob]] = {}
     for job in jobs:
         by_d.setdefault(job.downsample, []).append(job)
@@ -1101,14 +1105,11 @@ def _run_stitch_jobs(
                 sweep_stitch_jobs(
                     group,
                     source_dir=level_dir,
-                    prefix=tileset.prefix,
-                    postfix=tileset.postfix,
+                    layout=layout,
                     workers=workers,
                     stage_dir=stage_dir,
                     use_shared_memory=workers > 1,
                     finer_dirs=finer_dirs_for_downsample(downsample, level_dirs) or None,
-                    tile_x_dim=tile_shape.x,
-                    tile_y_dim=tile_shape.y,
                     column_band=band_width,
                     on_progress=on_stitch_progress,
                     on_band=on_band if strip_reporter is not None else None,
@@ -1170,6 +1171,7 @@ def stitch_missing_crop_marks(
         ),
     )
     known: TileExistenceMemo = {}
+    layout = _tile_layout(tileset)
     for mark in marks:
         image_path = output / IMAGES_FOLDER / crop_image_filename(mark.key)
         job = _stitch_job_from_mark(mark, tile_shape, image_path)
@@ -1184,11 +1186,8 @@ def stitch_missing_crop_marks(
             mark.origin_y,
             mark.width,
             mark.height,
-            tile_x_dim=tile_shape.x,
-            tile_y_dim=tile_shape.y,
+            layout=layout,
             level_dir=tileset.level_dirs.get(int(mark.downsample)),
-            prefix=tileset.prefix,
-            postfix=tileset.postfix,
             known=known,
         )
         if missing:

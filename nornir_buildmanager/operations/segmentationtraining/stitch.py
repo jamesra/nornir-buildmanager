@@ -228,8 +228,12 @@ def tile_filename(prefix: str, postfix: str, ix: int, iy: int) -> str:
 
 
 @dataclass(frozen=True, slots=True)
-class _TileLayout:
-    """Tile file naming plus pixel tile size, shared by load and finer-level recovery."""
+class TileLayout:
+    """Tile file naming plus pixel tile size for one tileset level.
+
+    Shared by the existence check, staging, load, and finer-level recovery. A
+    zero tile dimension means the size is unknown (no recovery, no window check).
+    """
 
     prefix: str
     postfix: str
@@ -306,18 +310,17 @@ def missing_tiles_for_window(
     width: int,
     height: int,
     *,
-    tile_x_dim: int,
-    tile_y_dim: int,
+    layout: TileLayout,
     level_dir: str | None,
-    prefix: str,
-    postfix: str,
     known: TileExistenceMemo | None = None,
 ) -> list[tuple[int, int]]:
     """Covering tiles for a pixel crop that are not on disk (see :func:`missing_covering_tiles`)."""
-    if width <= 0 or height <= 0 or tile_x_dim <= 0 or tile_y_dim <= 0:
+    if width <= 0 or height <= 0 or not layout.has_tile_size:
         return []
-    rect = CropWindow(origin_x, origin_y, width, height).covering_tiles(tile_x_dim, tile_y_dim)
-    return missing_covering_tiles(rect, level_dir, prefix, postfix, known)
+    rect = CropWindow(origin_x, origin_y, width, height).covering_tiles(
+        layout.tile_x_dim, layout.tile_y_dim
+    )
+    return missing_covering_tiles(rect, level_dir, layout.prefix, layout.postfix, known)
 
 
 def log_missing_crop_tiles(
@@ -516,7 +519,7 @@ def rebuild_tile_from_finer(
     ix: int,
     iy: int,
     finer_dirs: list[str],
-    layout: _TileLayout,
+    layout: TileLayout,
 ) -> NDArray | None:
     """Recursively reconstruct a tile from progressively finer levels.
 
@@ -551,7 +554,7 @@ def _load_or_recover(
     iy: int,
     level_dir: str,
     finer_dirs: list[str],
-    layout: _TileLayout,
+    layout: TileLayout,
     repair_dir: str | None = None,
 ) -> NDArray | None:
     """Load one tile; on IOError try recursive reconstruction from *finer_dirs*."""
@@ -584,12 +587,9 @@ def _load_or_recover(
 
 def disk_tile_loader(
     level_dir: str,
-    prefix: str,
-    postfix: str,
+    layout: TileLayout,
     *,
     finer_dirs: list[str] | None = None,
-    tile_x_dim: int = 0,
-    tile_y_dim: int = 0,
     repair_dir: str | None = None,
 ) -> LoadTile:
     """Load a tileset PNG from *level_dir*.
@@ -597,9 +597,9 @@ def disk_tile_loader(
     Returns None for missing tiles and also for tiles that are present but
     unreadable (corrupt / truncated) after any finer-level recovery fails.
     A warning is emitted so the operator can repair or remove the bad file.
+    Recovery needs both tile dimensions of *layout*.
     """
     recovery_dirs = list(finer_dirs) if finer_dirs else []
-    layout = _TileLayout(prefix, postfix, tile_x_dim, tile_y_dim)
 
     def load(ix: int, iy: int) -> NDArray | None:
         return _load_or_recover(ix, iy, level_dir, recovery_dirs, layout, repair_dir)
@@ -764,8 +764,7 @@ def stage_tiles_threaded(
     source_dir: str,
     stage_dir: str | None,
     *,
-    prefix: str,
-    postfix: str,
+    layout: TileLayout,
     num_threads: int,
 ) -> None:
     """Copy unique tiles to *stage_dir* with a thread pool when staging is on."""
@@ -776,9 +775,7 @@ def stage_tiles_threaded(
         return
     if num_threads <= 1:
         for ix, iy in unique:
-            stage_tile_file(
-                source_dir, stage_dir, prefix=prefix, postfix=postfix, ix=ix, iy=iy
-            )
+            stage_tile_file(source_dir, stage_dir, layout=layout, ix=ix, iy=iy)
         return
     pool = nornir_pools.GetThreadPool("segtrain-tile-io", num_threads=num_threads)
 
@@ -789,8 +786,7 @@ def stage_tiles_threaded(
             stage_tile_file,
             source_dir,
             stage_dir,
-            prefix=prefix,
-            postfix=postfix,
+            layout=layout,
             ix=ix,
             iy=iy,
         )
@@ -980,13 +976,12 @@ def stage_tile_file(
     source_dir: str,
     stage_dir: str | None,
     *,
-    prefix: str,
-    postfix: str,
+    layout: TileLayout,
     ix: int,
     iy: int,
 ) -> str | None:
     """Copy one tileset file to *stage_dir* when staging is enabled. Return the path to load."""
-    name = tile_filename(prefix, postfix, ix, iy)
+    name = layout.filename(ix, iy)
     source = os.path.join(source_dir, name)
     if stage_dir:
         dest_dir = stage_dir
@@ -1005,15 +1000,12 @@ def sweep_stitch_jobs(
     jobs: list[StitchJob],
     *,
     source_dir: str,
-    prefix: str,
-    postfix: str,
+    layout: TileLayout,
     workers: int,
     stage_dir: str | None = None,
     use_shared_memory: bool = True,
     column_band: int | None = None,
     finer_dirs: list[str] | None = None,
-    tile_x_dim: int = 0,
-    tile_y_dim: int = 0,
     io_workers: int | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     on_band: Callable[[int, int, str], None] | None = None,
@@ -1040,21 +1032,13 @@ def sweep_stitch_jobs(
         column_band = default_column_band(
             workers,
             remaining,
-            tile_x_dim=tile_x_dim,
-            tile_y_dim=tile_y_dim,
+            tile_x_dim=layout.tile_x_dim,
+            tile_y_dim=layout.tile_y_dim,
         )
     column_band = max(1, int(column_band))
     total_bands = count_column_bands(remaining, column_band) if on_band is not None else 0
     load_root = stage_dir if stage_dir else source_dir
-    loader = disk_tile_loader(
-        load_root,
-        prefix,
-        postfix,
-        finer_dirs=finer_dirs,
-        tile_x_dim=tile_x_dim,
-        tile_y_dim=tile_y_dim,
-        repair_dir=source_dir,
-    )
+    loader = disk_tile_loader(load_root, layout, finer_dirs=finer_dirs, repair_dir=source_dir)
     parallel = workers > 1 and use_shared_memory
     written: list[str] = []
     next_shared: tuple[list[StitchJob], dict[tuple[int, int], Any], list[Any]] | None = None
@@ -1065,8 +1049,7 @@ def sweep_stitch_jobs(
             tiles_for_jobs(band_jobs),
             source_dir,
             stage_dir,
-            prefix=prefix,
-            postfix=postfix,
+            layout=layout,
             num_threads=threads,
         )
         if not parallel:
@@ -1104,7 +1087,7 @@ def sweep_stitch_jobs(
                     )
                 )
                 remaining = upcoming
-                _schedule_band_stage_cleanup(stage_dir, band, remaining, prefix, postfix)
+                _schedule_band_stage_cleanup(stage_dir, band, remaining, layout)
                 bands_completed += 1
                 if on_band is not None:
                     on_band(bands_completed, total_bands, label)
@@ -1127,7 +1110,7 @@ def sweep_stitch_jobs(
             finally:
                 _unlink_handles(handles)
             remaining = upcoming
-            _schedule_band_stage_cleanup(stage_dir, band, remaining, prefix, postfix)
+            _schedule_band_stage_cleanup(stage_dir, band, remaining, layout)
             bands_completed += 1
             if on_band is not None:
                 on_band(bands_completed, total_bands, label)
@@ -1145,12 +1128,13 @@ def _schedule_band_stage_cleanup(
     stage_dir: str | None,
     finished: list[StitchJob],
     remaining: list[StitchJob],
-    prefix: str,
-    postfix: str,
+    layout: TileLayout,
 ) -> None:
     """Drop staged tiles that no remaining job still references."""
     if not stage_dir:
         return
     keep = tiles_for_jobs(remaining)
     obsolete = tiles_for_jobs(finished) - keep
-    schedule_remove_staged_tiles(stage_dir, obsolete, prefix=prefix, postfix=postfix)
+    schedule_remove_staged_tiles(
+        stage_dir, obsolete, prefix=layout.prefix, postfix=layout.postfix
+    )

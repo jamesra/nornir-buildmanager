@@ -109,6 +109,7 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     DEFAULT_STAGE_TILES_ROOT,
     StitchJob,
+    TileLayout,
     downsample_stage_dir,
     probe_tile_pixel_size,
     resolve_section_stage_root,
@@ -2048,14 +2049,11 @@ def test_sweep_removes_staged_tiles_when_no_longer_needed(tmp_path: Path) -> Non
     sweep_stitch_jobs(
         jobs,
         source_dir=str(source),
-        prefix="",
-        postfix=".png",
+        layout=TileLayout("", ".png", 8, 8),
         workers=1,
         stage_dir=str(stage),
         use_shared_memory=False,
         column_band=1,
-        tile_x_dim=8,
-        tile_y_dim=8,
     )
     wait_stage_cleanup()
     assert not stage.exists() or not any(stage.iterdir())
@@ -2089,14 +2087,11 @@ def test_sweep_reports_column_strips(tmp_path: Path) -> None:
     sweep_stitch_jobs(
         jobs,
         source_dir=str(source),
-        prefix="",
-        postfix=".png",
+        layout=TileLayout("", ".png", 8, 8),
         workers=1,
         stage_dir=None,
         use_shared_memory=False,
         column_band=1,
-        tile_x_dim=8,
-        tile_y_dim=8,
         on_band=lambda done, total, element: bands.append((done, total, element)),
     )
     assert bands[0] == (0, 4, "X0-1")

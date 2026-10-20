@@ -20,21 +20,27 @@ from nornir_imageregistration.type_info import Shape
 from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     StitchJob,
+    TileLayout,
     _publish_shared_tiles,
+    _schedule_band_stage_cleanup,
     _unlink_handles,
     default_column_band,
     default_io_workers,
     disk_tile_loader,
     finer_dirs_for_downsample,
     load_tiles_threaded,
+    missing_tiles_for_window,
+    stage_tile_file,
     sweep_stitch_jobs,
     tile_filename,
+    wait_stage_cleanup,
     write_png,
 )
 
 _TILE = 8
 _PREFIX = "t_"
 _POSTFIX = ".png"
+_LAYOUT = TileLayout(_PREFIX, _POSTFIX, _TILE, _TILE)
 _STITCH_LOGGER = "nornir_buildmanager.operations.segmentationtraining.stitch"
 
 
@@ -72,11 +78,8 @@ def _downsample_quad(quads: tuple[NDArray[np.uint8], ...]) -> NDArray[np.uint8]:
 def _loader(level_dir: Path, finer_dirs: list[Path] | None = None):
     return disk_tile_loader(
         str(level_dir),
-        _PREFIX,
-        _POSTFIX,
+        _LAYOUT,
         finer_dirs=[str(path) for path in finer_dirs] if finer_dirs else None,
-        tile_x_dim=_TILE,
-        tile_y_dim=_TILE,
     )
 
 
@@ -118,11 +121,8 @@ def test_recovery_also_repairs_source_dir_when_loading_staged_copy(tmp_path: Pat
 
     loader = disk_tile_loader(
         str(staged),
-        _PREFIX,
-        _POSTFIX,
+        _LAYOUT,
         finer_dirs=[str(finer)],
-        tile_x_dim=_TILE,
-        tile_y_dim=_TILE,
         repair_dir=str(source),
     )
     loaded = loader(0, 0)
@@ -330,13 +330,10 @@ def test_sweep_stitch_jobs_writes_crops_across_columns(tmp_path: Path) -> None:
         written = sweep_stitch_jobs(
             jobs,
             source_dir=str(level),
-            prefix=_PREFIX,
-            postfix=_POSTFIX,
+            layout=_LAYOUT,
             workers=1,
             column_band=1,
             io_workers=4,
-            tile_x_dim=_TILE,
-            tile_y_dim=_TILE,
         )
     finally:
         nornir_pools.ClosePools(timeout=10)
@@ -361,13 +358,10 @@ def test_sweep_stitch_jobs_process_pool_shared_tiles(tmp_path: Path) -> None:
         written = sweep_stitch_jobs(
             jobs,
             source_dir=str(level),
-            prefix=_PREFIX,
-            postfix=_POSTFIX,
+            layout=_LAYOUT,
             workers=2,
             column_band=1,
             io_workers=2,
-            tile_x_dim=_TILE,
-            tile_y_dim=_TILE,
         )
     finally:
         nornir_pools.ClosePools(timeout=10)
@@ -380,3 +374,63 @@ def test_sweep_stitch_jobs_process_pool_shared_tiles(tmp_path: Path) -> None:
     )
 
 
+def test_missing_tiles_for_window_needs_both_tile_dims(tmp_path: Path) -> None:
+    """An unknown tile size skips the check; a known size reports the first gap."""
+    gone = str(tmp_path / "absent")
+    for unknown in (TileLayout(_PREFIX, _POSTFIX, 0, _TILE), TileLayout(_PREFIX, _POSTFIX, _TILE, 0)):
+        assert missing_tiles_for_window(0, 0, _TILE, _TILE, layout=unknown, level_dir=gone) == []
+    assert missing_tiles_for_window(0, 0, _TILE, _TILE, layout=_LAYOUT, level_dir=gone) == [(0, 0)]
+
+
+def test_stage_tile_file_copies_the_named_tile(tmp_path: Path) -> None:
+    """Staging copies tile (ix, iy), not its transpose, and returns the staged path."""
+    source = tmp_path / "source"
+    stage = tmp_path / "stage"
+    _write_tile(source, 2, 1, 50)
+    staged = stage_tile_file(str(source), str(stage), layout=_LAYOUT, ix=2, iy=1)
+    assert staged == str(_tile_path(stage, 2, 1))
+    assert _tile_path(stage, 2, 1).read_bytes() == _tile_path(source, 2, 1).read_bytes()
+    assert stage_tile_file(str(source), None, layout=_LAYOUT, ix=2, iy=1) == str(_tile_path(source, 2, 1))
+    assert stage_tile_file(str(source), str(stage), layout=_LAYOUT, ix=1, iy=2) is None
+
+
+def test_band_stage_cleanup_removes_only_unreferenced_tiles(tmp_path: Path) -> None:
+    """Staged tiles that a remaining job still needs stay; the rest are deleted."""
+    stage = tmp_path / "stage"
+    for ix in (0, 1, 2):
+        _write_tile(stage, ix, 0, 10 + ix)
+    finished = [_job(0, 2, 0, 1, "done")]
+    remaining = [_job(1, 3, 0, 1, "next")]
+    _schedule_band_stage_cleanup(str(stage), finished, remaining, _LAYOUT)
+    wait_stage_cleanup()
+    assert not _tile_path(stage, 0, 0).exists()
+    assert _tile_path(stage, 1, 0).is_file()
+    assert _tile_path(stage, 2, 0).is_file()
+
+
+def test_sweep_stitch_jobs_recovers_corrupt_tile_from_finer_dirs(tmp_path: Path) -> None:
+    """*finer_dirs* reaches the loader: a corrupt source tile is rebuilt from the finer level."""
+    coarser = tmp_path / "4"
+    finer = tmp_path / "2"
+    out = tmp_path / "out"
+    out.mkdir()
+    values = (10, 80, 160, 240)
+    for index, value in enumerate(values):
+        dy, dx = divmod(index, 2)
+        _write_tile(finer, dx, dy, value)
+    _corrupt_tile(coarser, 0, 0)
+    job = _job(0, 1, 0, 1, "c", str(out / "c.png"))
+    try:
+        sweep_stitch_jobs(
+            [job],
+            source_dir=str(coarser),
+            layout=_LAYOUT,
+            workers=1,
+            column_band=1,
+            io_workers=1,
+            finer_dirs=[str(finer)],
+        )
+    finally:
+        nornir_pools.ClosePools(timeout=10)
+    expected = _downsample_quad(tuple(_constant_tile(value) for value in values))
+    np.testing.assert_array_equal(np.array(Image.open(job.image_path), dtype=np.uint8), expected)
