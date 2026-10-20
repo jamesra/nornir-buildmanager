@@ -227,7 +227,12 @@ class _TileLayout:
 
 
 TileExistenceMemo = dict[tuple[str, int, int], bool]
-"""Per-call cache of tile file presence keyed by ``(level_dir, ix, iy)``."""
+"""Tile file presence for one pass over a section, keyed by ``(level_dir, ix, iy)``.
+
+The key leaves out the tile filename *prefix* and *postfix*, so one memo is valid only
+for a single prefix/postfix pair (one tileset). The caller creates it for a pass and
+drops it afterwards. It holds one entry per distinct tile checked in that pass.
+"""
 
 
 def missing_covering_tiles(
@@ -249,7 +254,8 @@ def missing_covering_tiles(
 
     *known* remembers each stat result so overlapping crop windows stat a
     shared tile once. The caller creates it for one pass over a section and
-    drops it afterwards, so a tile fetched later is never hidden.
+    drops it afterwards, so a tile fetched later is never hidden. Reuse it only
+    with the same *prefix* and *postfix*: they are not part of its key.
     """
     coords = (
         (ix, iy)

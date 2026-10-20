@@ -3,19 +3,41 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
+from nornir_imageregistration.type_info import Shape
 
-from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
+from nornir_buildmanager.operations.segmentationtraining import pipeline
+from nornir_buildmanager.operations.segmentationtraining.freshness import (
+    ImageWatermark,
+    ResolvedTileset,
+    SectionCropRun,
+    SectionWatermark,
+)
+from nornir_buildmanager.operations.segmentationtraining.geometry import (
+    CropWindow,
+    TileRect,
+)
+from nornir_buildmanager.operations.segmentationtraining.grouping import CropGroup
+from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop
+from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    get_product_index,
+)
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     missing_covering_tiles,
     tile_filename,
 )
 
 _GRID = 5
+_TILE_PX = 8
+#: 3x3 half-step crop windows of 2x2 tiles over a 4x4 tile grid: 36 visits, 16 distinct tiles.
+_HALF_STEP_ORIGINS = [(x * _TILE_PX, y * _TILE_PX) for y in range(3) for x in range(3)]
 
 
 def _reference(tiles: TileRect, level_dir: str | None, prefix: str, postfix: str) -> list[tuple[int, int]]:
@@ -108,3 +130,119 @@ def test_memo_remembers_absence_only_for_its_own_pass(tmp_path: Path) -> None:
     assert missing_covering_tiles(rect, level, "", ".png", first) == [(1, 0)]
     (Path(level) / tile_filename("", ".png", 1, 0)).write_bytes(b"x")
     assert missing_covering_tiles(rect, level, "", ".png", {}) == []
+
+
+def _complete_tileset(tmp_path: Path) -> ResolvedTileset:
+    """Local 4x4 tileset with every tile present, so no pass drops or deletes anything."""
+    level = _make_level(tmp_path / "tiles", {(x, y) for x in range(4) for y in range(4)})
+    return ResolvedTileset(
+        tile_shape=Shape.from_xy(x=_TILE_PX, y=_TILE_PX),
+        available=[1],
+        level_dirs={1: level},
+        prefix="",
+        postfix=".png",
+        mtime=1.0,
+    )
+
+
+def _count_level_stats(monkeypatch: pytest.MonkeyPatch, level: str) -> list[str]:
+    """Record every os.path.isfile call that lands in *level*; other stats are not counted."""
+    calls: list[str] = []
+    real: Callable[[str], bool] = os.path.isfile
+    root = os.path.normcase(os.path.abspath(level))
+
+    def counting(path: str) -> bool:
+        if os.path.normcase(os.path.abspath(os.fspath(path))).startswith(root):
+            calls.append(os.fspath(path))
+        return real(path)
+
+    monkeypatch.setattr(os.path, "isfile", counting)
+    return calls
+
+
+def _half_step_marks() -> list[ImageWatermark]:
+    """Recorded crops for the half-step windows, each with its pixel extent."""
+    return [
+        ImageWatermark(
+            key=f"Vol_2_D1_{ox}_{oy}",
+            downsample=1,
+            ix0=ox // _TILE_PX,
+            ix1=ox // _TILE_PX + 2,
+            iy0=oy // _TILE_PX,
+            iy1=oy // _TILE_PX + 2,
+            member_ids=[index],
+            max_last_modified="",
+            origin_x=ox,
+            origin_y=oy,
+            width=2 * _TILE_PX,
+            height=2 * _TILE_PX,
+        )
+        for index, (ox, oy) in enumerate(_HALF_STEP_ORIGINS)
+    ]
+
+
+def test_retain_plans_with_tiles_stats_each_tile_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """retain_plans_with_tiles shares one memo across its plans: 16 stats for 36 tile visits."""
+    tileset = _complete_tileset(tmp_path)
+    output = tmp_path / "export"
+    plans = [
+        PlannedCrop(
+            group=CropGroup(
+                snap=TileRect(ox // _TILE_PX, ox // _TILE_PX + 2, oy // _TILE_PX, oy // _TILE_PX + 2),
+                location_ids=[index],
+                downsample=1,
+                window=CropWindow(ox, oy, 2 * _TILE_PX, 2 * _TILE_PX),
+            ),
+            z=2,
+            image_key=f"Vol_2_D1_{ox}_{oy}",
+        )
+        for index, (ox, oy) in enumerate(_HALF_STEP_ORIGINS)
+    ]
+    products = get_product_index(output)
+    calls = _count_level_stats(monkeypatch, tileset.level_dirs[1])
+    kept = pipeline.retain_plans_with_tiles(output, 2, plans, tileset, products)
+    assert kept == plans
+    assert len(calls) == 16
+
+
+def test_drop_recorded_crops_missing_tiles_stats_each_tile_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """drop_recorded_crops_missing_tiles shares one memo across its marks: 16 stats for 36 visits."""
+    tileset = _complete_tileset(tmp_path)
+    output = tmp_path / "export"
+    marks = _half_step_marks()
+    watermark = SectionWatermark(
+        ids=[mark.member_ids[0] for mark in marks],
+        max_last_modified="",
+        tileset_mtime=1.0,
+        params_hash="abc",
+        downsample=1,
+        image_keys=[mark.key for mark in marks],
+        images=marks,
+    )
+    calls = _count_level_stats(monkeypatch, tileset.level_dirs[1])
+    assert not pipeline.drop_recorded_crops_missing_tiles(output, 2, watermark, tileset)
+    assert len(calls) == 16
+
+
+def test_stitch_missing_crop_marks_stats_each_tile_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The repair loop shares one memo across its marks: 16 stats for 36 visits, every crop queued."""
+    tileset = _complete_tileset(tmp_path)
+    queued: list[int] = []
+
+    def fake_run(jobs: list[object], **_kwargs: object) -> list[tuple[str, float]]:
+        queued.append(len(jobs))
+        return []
+
+    monkeypatch.setattr(pipeline, "_run_stitch_jobs", fake_run)
+    monkeypatch.setattr(pipeline, "ignore_blank_crops", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(pipeline, "mark_catalog_dirty", lambda: None)
+    run = cast(SectionCropRun, SimpleNamespace(tileset=tileset, workers=1, stage_tiles=None))
+    calls = _count_level_stats(monkeypatch, tileset.level_dirs[1])
+    written = pipeline.stitch_missing_crop_marks(
+        output_path=tmp_path / "export", z=2, marks=_half_step_marks(), run=run
+    )
+    assert written == len(_HALF_STEP_ORIGINS)
+    assert queued == [len(_HALF_STEP_ORIGINS)]
+    assert len(calls) == 16
