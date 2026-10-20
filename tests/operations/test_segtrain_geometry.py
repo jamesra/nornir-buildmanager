@@ -6,26 +6,12 @@ from nornir_buildmanager.operations.segmentationtraining.geometry import (
     TileRect,
     _lattice_step,
     _phase_offsets,
-    available_downsamples,
     clamp_downsample_to_available,
     next_available_downsample,
-    parse_and_snap,
+    pad_bbox,
     snap_fits_max_texture,
     snap_to_tiles,
 )
-
-
-def test_available_downsamples_sorts_dedupes_and_truncates() -> None:
-    assert available_downsamples([4, 1, 2, 2, 4.9, 1.5]) == [1, 2, 4]
-
-
-def test_available_downsamples_drops_levels_below_one() -> None:
-    assert available_downsamples([0, 0.5, -3, 8]) == [8]
-
-
-def test_available_downsamples_empty_or_all_invalid_defaults_to_one() -> None:
-    assert available_downsamples([]) == [1]
-    assert available_downsamples([0, 0.9]) == [1]
 
 
 def test_clamp_picks_smallest_available_at_or_above_request() -> None:
@@ -113,18 +99,6 @@ def test_snap_to_tiles_degenerate_extent_grows_to_one_tile() -> None:
     assert snap_to_tiles(5.0, 5.0, 5.0, 5.0, tile_w=512.0, tile_h=256.0) == TileRect(0, 1, 0, 1)
 
 
-def test_parse_and_snap_pad_and_downsample() -> None:
-    wkt = "POLYGON ((600 600, 900 600, 900 900, 600 900, 600 600))"
-    polygons, snap, padded = parse_and_snap(wkt, pad=100, downsample=2, tile_x_dim=256, tile_y_dim=256)
-    assert len(polygons) == 1
-    assert padded == (500.0, 500.0, 1000.0, 1000.0)
-    assert snap == TileRect(0, 2, 0, 2)
-
-
-def test_parse_and_snap_mosaic_bounds_clamp_padding() -> None:
-    wkt = "POLYGON ((10 10, 40 10, 40 40, 10 40, 10 10))"
-    _polygons, snap, padded = parse_and_snap(
-        wkt, pad=100, downsample=1, tile_x_dim=512, tile_y_dim=512, mosaic_bounds=(0.0, 0.0, 200.0, 300.0)
-    )
-    assert padded == (0.0, 0.0, 140.0, 140.0)
-    assert snap == TileRect(0, 1, 0, 1)
+def test_pad_bbox_mosaic_bounds_clamp_padding() -> None:
+    assert pad_bbox(10.0, 10.0, 40.0, 40.0, 100.0, (0.0, 0.0, 200.0, 300.0)) == (0.0, 0.0, 140.0, 140.0)
+    assert pad_bbox(150.0, 250.0, 190.0, 290.0, 100.0, (0.0, 0.0, 200.0, 300.0)) == (50.0, 150.0, 200.0, 300.0)

@@ -458,11 +458,6 @@ def saturated_fraction(array: NDArray) -> float:
     return blank / float(flat.size)
 
 
-def crop_is_blank(array: NDArray, *, limit: float = BLANK_CROP_FRACTION) -> bool:
-    """True when more than *limit* of the pixels are saturated black or white."""
-    return saturated_fraction(array) > limit
-
-
 def _note_blank_crop(
     job: StitchJob,
     array: NDArray,

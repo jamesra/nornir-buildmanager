@@ -108,10 +108,8 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     write_sa1b_json,
 )
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
-    BLANK_CROP_FRACTION,
     DEFAULT_STAGE_TILES_ROOT,
     StitchJob,
-    crop_is_blank,
     downsample_stage_dir,
     probe_tile_pixel_size,
     resolve_section_stage_root,
@@ -2401,8 +2399,7 @@ def test_saturated_fraction_is_zero_or_255_count(values: list[int]) -> None:
     expected = sum(value in (0, 255) for value in values) / len(values)
     fraction = saturated_fraction(array)
     assert fraction == pytest.approx(expected)
-    assert crop_is_blank(array) is (fraction > BLANK_CROP_FRACTION)
-    assert crop_is_blank(array.reshape(1, -1)) is (fraction > BLANK_CROP_FRACTION)
+    assert saturated_fraction(array.reshape(1, -1)) == fraction
 
 
 def test_export_ignores_white_crop_and_keeps_png(tmp_path: Path) -> None:

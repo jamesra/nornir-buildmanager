@@ -6,11 +6,7 @@ import logging
 import math
 from dataclasses import dataclass
 
-from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
-from nornir_buildmanager.operations.segmentationtraining.wkt import (
-    PolygonRings,
-    parse_wkt_polygons,
-)
+from nornir_buildmanager.operations.segmentationtraining.wkt import PolygonRings
 
 # Image row 0 is mosaic MinY (tile iY0). Overlay vs Viking is a first real-data check.
 MOSAIC_Y_INCREASES_WITH_IMAGE_ROW = True
@@ -258,12 +254,6 @@ def _log_uneven_texture_span(tile_x_dim: int, tile_y_dim: int, max_texture: int)
         tile_x_dim,
         tile_y_dim,
     )
-
-
-def available_downsamples(levels: list[float | int]) -> list[int]:
-    """Sorted integer downsample factors present on a tileset."""
-    values = sorted({int(level) for level in levels if int(level) >= 1})
-    return values or [1]
 
 
 def next_power_of_two(value: int) -> int:
@@ -660,23 +650,3 @@ def _maximin_phase_windows(
     if best is None:
         return []
     return best[1]
-
-
-def parse_and_snap(
-    wkt: str,
-    *,
-    pad: float,
-    downsample: int,
-    tile_x_dim: int,
-    tile_y_dim: int,
-    mosaic_bounds: tuple[float, float, float, float] | None = None,
-    type_code: int | None = None,
-) -> tuple[list[PolygonRings], TileRect, tuple[float, float, float, float]]:
-    """Parse WKT, hydrate TypeCode 6 curves, pad, and snap at *downsample*."""
-    polygons = hydrate_polygons(parse_wkt_polygons(wkt), type_code)
-    min_x, min_y, max_x, max_y = mosaic_bbox(polygons)
-    padded = pad_bbox(min_x, min_y, max_x, max_y, pad, mosaic_bounds)
-    tile_w = tile_x_dim * downsample
-    tile_h = tile_y_dim * downsample
-    snap = snap_to_tiles(*padded, tile_w=float(tile_w), tile_h=float(tile_h))
-    return polygons, snap, padded
