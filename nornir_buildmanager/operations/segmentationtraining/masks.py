@@ -102,8 +102,9 @@ def rasterize_mask_job(job: MaskJob) -> dict[str, Any]:
 
     Returns paths only (plus small RLE stats) so the parent never receives bitmaps.
     """
-    mask = np.zeros((job.height, job.width), dtype=np.uint8)
-    image = Image.fromarray(mask, mode="L")
+    # Image.new, not np.zeros + fromarray: fromarray shares the array read-only, so the first draw copies it
+    # and both h*w buffers stay alive for the whole call.
+    image = Image.new("L", (job.width, job.height), 0)
     draw = ImageDraw.Draw(image)
     for polygon in job.rings:
         exterior = list(polygon[0])
