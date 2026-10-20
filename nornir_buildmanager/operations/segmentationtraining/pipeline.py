@@ -122,6 +122,7 @@ from nornir_buildmanager.operations.segmentationtraining.stitch import (
     resolve_crop_image,
     resolve_section_stage_root,
     schedule_remove_stage_tree,
+    stitch_job_for_plan,
     sweep_stitch_jobs,
 )
 
@@ -1394,21 +1395,7 @@ def _queue_stitch_job(
         # PNG already on disk; skip restitch unless -Force was passed.
         # Masks still run since we may have no prior watermark.
         return REBUILD_MASK_ONLY
-    width, height = plan.output_size()
-    crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
-    stitch_jobs.append(
-        StitchJob(
-            image_key=plan.image_key,
-            snap=plan.snap,
-            downsample=plan.downsample,
-            tile_shape=tile_shape,
-            image_path=str(image_path),
-            crop_x=crop_x,
-            crop_y=crop_y,
-            crop_width=width,
-            crop_height=height,
-        )
-    )
+    stitch_jobs.append(stitch_job_for_plan(plan, tile_shape, image_path))
     return mode
 
 

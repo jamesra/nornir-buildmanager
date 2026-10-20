@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import TYPE_CHECKING, Any, Callable, NamedTuple
 
 import numpy as np
 from numpy.typing import NDArray
@@ -33,6 +33,9 @@ from nornir_buildmanager.operations.segmentationtraining.grouping import sanitiz
 
 from nornir_buildmanager.operations.segmentationtraining.poolutil import submit_bounded
 from nornir_buildmanager.templates import Current as Templates
+
+if TYPE_CHECKING:
+    from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop
 
 _logger = logging.getLogger(__name__)
 
@@ -200,6 +203,23 @@ class StitchJob:
     crop_y: int = 0
     crop_width: int = 0
     crop_height: int = 0
+
+
+def stitch_job_for_plan(plan: PlannedCrop, tile_shape: Shape, image_path: Path) -> StitchJob:
+    """Stitch job for a planned crop: its pixel window inside the plan's tile snap."""
+    width, height = plan.output_size()
+    crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
+    return StitchJob(
+        image_key=plan.image_key,
+        snap=plan.snap,
+        downsample=plan.downsample,
+        tile_shape=tile_shape,
+        image_path=str(image_path),
+        crop_x=crop_x,
+        crop_y=crop_y,
+        crop_width=width,
+        crop_height=height,
+    )
 
 
 def tile_filename(prefix: str, postfix: str, ix: int, iy: int) -> str:

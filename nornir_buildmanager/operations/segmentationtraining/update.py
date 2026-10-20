@@ -62,6 +62,7 @@ from nornir_buildmanager.operations.segmentationtraining.stitch import (
     downsample_stage_dir,
     finer_dirs_for_downsample,
     resolve_crop_image,
+    stitch_job_for_plan,
     sweep_stitch_jobs,
 )
 
@@ -487,23 +488,9 @@ def _place_added(
         exists = plan.image_key in known or products.exists(IMAGES_FOLDER, image_name)
         if not exists:
             exists = products.exists(IMAGES_FOLDER, f"{plan.image_key}.jpg")
-        width, height = plan.output_size()
         mask_jobs.extend(mask_jobs_for_plan(output, plan, polygons_by_id))
         if not exists:
-            crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
-            stitch_jobs.append(
-                StitchJob(
-                    image_key=plan.image_key,
-                    snap=plan.snap,
-                    downsample=plan.downsample,
-                    tile_shape=tile_shape,
-                    image_path=str(output / IMAGES_FOLDER / image_name),
-                    crop_x=crop_x,
-                    crop_y=crop_y,
-                    crop_width=width,
-                    crop_height=height,
-                )
-            )
+            stitch_jobs.append(stitch_job_for_plan(plan, tile_shape, output / IMAGES_FOLDER / image_name))
     if mask_jobs:
         run_mask_jobs(mask_jobs, workers=mask_workers)
         for job in mask_jobs:
