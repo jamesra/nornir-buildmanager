@@ -230,6 +230,71 @@ def test_string_annotation_id_is_coerced_to_int_for_mask_lookup(out: Path) -> No
     assert (out / "masks" / f"{KEY}_4.png").exists()
 
 
+def _capture_logs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Record every ``prettyoutput.Log`` message cleanup emits."""
+    messages: list[str] = []
+    monkeypatch.setattr(cleanup.prettyoutput, "Log", lambda text, *a, **k: messages.append(text))
+    return messages
+
+
+def test_repair_logs_and_bytes_are_pinned(out: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _png(out / "images" / f"{KEY}.png")
+    _png(out / "masks" / f"{KEY}_1.png")
+    _png(out / "masks" / f"{KEY}_99.png")
+    payload = _good_payload(file_name="old.png")
+    payload["extra"] = {"keep": [1, 2]}
+    payload["annotations"] = [{"id": 3}, {"id": 1, "area": 5}, {"id": "4"}]
+    path = _write_json(out, payload)
+    messages = _capture_logs(monkeypatch)
+    summary = _repair(out)
+    assert messages == [
+        f"CleanupAnnotationCrops: rewrite file_name for {KEY} to {KEY}.png",
+        f"CleanupAnnotationCrops: drop annotation 3 with no mask from {KEY}",
+        f"CleanupAnnotationCrops: drop annotation 4 with no mask from {KEY}",
+        f"CleanupAnnotationCrops: delete 1 orphan member file(s) for {KEY}",
+    ]
+    expected = {
+        "image": {"file_name": f"{KEY}.png", "width": 4, "height": 3},
+        "annotations": [{"id": 1, "area": 5}],
+        "extra": {"keep": [1, 2]},
+    }
+    assert path.read_text(encoding="utf-8") == json.dumps(expected)
+    assert summary == CleanupSummary(rewritten_json=1, deleted_members=1)
+
+
+def test_no_image_logs_are_pinned(out: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _png(out / "overlays" / f"{KEY}.png")
+    _png(out / "masks" / f"{KEY}_7.png")
+    _png(out / "ignored" / f"{KEY}_8.png")
+    messages = _capture_logs(monkeypatch)
+    summary = _repair(out)
+    assert messages == [
+        f"CleanupAnnotationCrops: delete overlay with no image {KEY}",
+        f"CleanupAnnotationCrops: delete 2 member file(s) with no image {KEY}",
+    ]
+    assert summary == CleanupSummary(deleted_overlays=1, deleted_members=2)
+
+
+def test_bad_annotation_after_a_drop_raises_before_any_write(
+    out: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _png(out / "images" / f"{KEY}.png")
+    _png(out / "masks" / f"{KEY}_99.png")
+    payload = _good_payload()
+    payload["annotations"] = [{"id": 3}, {"area": 1}]
+    path = _write_json(out, payload)
+    before = path.read_text(encoding="utf-8")
+    messages = _capture_logs(monkeypatch)
+    summary = CleanupSummary()
+    drop_product_index(out)
+    with pytest.raises(NornirUserException, match=r"annotation without id: .*\.json$"):
+        _repair_key(out, KEY, summary)
+    assert messages == [f"CleanupAnnotationCrops: drop annotation 3 with no mask from {KEY}"]
+    assert path.read_text(encoding="utf-8") == before
+    assert (out / "masks" / f"{KEY}_99.png").exists()
+    assert summary == CleanupSummary()
+
+
 def test_entry_is_noop_when_cleanup_falsy(monkeypatch: pytest.MonkeyPatch) -> None:
     def _boom(*args: Any, **kwargs: Any) -> None:
         raise AssertionError("must not run")
