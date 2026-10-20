@@ -1267,14 +1267,11 @@ def export_section_crops(
         manifest_rows: list[dict[str, Any]] = []
 
         for plan in plans:
-            image_path = output / IMAGES_FOLDER / crop_image_filename(plan.image_key)
-            json_path = output / IMAGES_FOLDER / f"{plan.image_key}.json"
-            current_mark = image_watermark(plan, by_id)
             mode = image_rebuild_mode(
-                current_mark,
+                image_watermark(plan, by_id),
                 previous_images.get(plan.image_key),
-                image_path=image_path,
-                json_path=json_path,
+                image_path=output / IMAGES_FOLDER / crop_image_filename(plan.image_key),
+                json_path=output / IMAGES_FOLDER / f"{plan.image_key}.json",
                 params_hash=params.hash(),
                 previous_params_hash=previous_hash,
                 tileset_mtime=tileset_mtime,
@@ -1284,55 +1281,14 @@ def export_section_crops(
                 products=products,
             )
             if mode == REBUILD_SKIP:
-                join_specs.append((plan, mode))
                 manifest_rows.append(_manifest_row(plan, z, params.volume))
-                continue
-            width, height = plan.output_size()
-            crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
-            mask_jobs.extend(mask_jobs_for_plan(output, plan, polygons_by_id))
-            if mode == REBUILD_FULL:
-                if not force and products.exists(IMAGES_FOLDER, image_path.name):
-                    # PNG already on disk; skip restitch unless -Force was passed.
-                    # Masks still run below since we may have no prior watermark.
-                    mode = REBUILD_MASK_ONLY
-                else:
-                    stitch_jobs.append(
-                        StitchJob(
-                            image_key=plan.image_key,
-                            snap=plan.snap,
-                            downsample=plan.downsample,
-                            tile_shape=tile_shape,
-                            image_path=str(image_path),
-                            crop_x=crop_x,
-                            crop_y=crop_y,
-                            crop_width=width,
-                            crop_height=height,
-                        )
-                    )
+            else:
+                mask_jobs.extend(mask_jobs_for_plan(output, plan, polygons_by_id))
+                mode = _queue_stitch_job(output, plan, mode, tile_shape, force, products, stitch_jobs)
             join_specs.append((plan, mode))
 
         _log_section_rebuild_plan(z, join_specs)
-
-        mask_results: list[dict[str, Any]] = []
-        if mask_jobs:
-            mask_reporter = prettyoutput.TaskProgressReporter(
-                MASKS_TRACK_ID,
-                len(mask_jobs),
-                name=MASKS_LABEL,
-                section=z,
-            )
-            mask_reporter.start()
-            try:
-                mask_results = run_mask_jobs(
-                    mask_jobs,
-                    workers=mask_workers,
-                    on_complete=mask_reporter.update,
-                )
-            finally:
-                mask_reporter.complete()
-            for job in mask_jobs:
-                products.note_path(job.mask_path)
-                products.note_path(job.rle_path)
+        mask_results = _run_tracked_mask_jobs(mask_jobs, z, mask_workers, products)
         apply_ignore_moves(output)
 
         blank_crops = _run_stitch_jobs(
@@ -1414,6 +1370,79 @@ def export_section_crops(
         upsert_catalog(output, exported_ids, z=z, image_keys=image_keys)
         prune_catalog_section(output, z, exported_ids)
         return image_keys
+
+
+def _queue_stitch_job(
+    output: Path,
+    plan: PlannedCrop,
+    mode: RebuildMode,
+    tile_shape: Shape,
+    force: bool,
+    products: CropProductIndex,
+    stitch_jobs: list[StitchJob],
+) -> RebuildMode:
+    """Append a stitch job for a full rebuild and return the mode the crop actually gets.
+
+    A full rebuild whose crop PNG is already indexed becomes mask-only unless
+    *force* is set; other modes pass through without a job.
+    """
+    if mode != REBUILD_FULL:
+        return mode
+    image_path = output / IMAGES_FOLDER / crop_image_filename(plan.image_key)
+    if not force and products.exists(IMAGES_FOLDER, image_path.name):
+        # PNG already on disk; skip restitch unless -Force was passed.
+        # Masks still run since we may have no prior watermark.
+        return REBUILD_MASK_ONLY
+    width, height = plan.output_size()
+    crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
+    stitch_jobs.append(
+        StitchJob(
+            image_key=plan.image_key,
+            snap=plan.snap,
+            downsample=plan.downsample,
+            tile_shape=tile_shape,
+            image_path=str(image_path),
+            crop_x=crop_x,
+            crop_y=crop_y,
+            crop_width=width,
+            crop_height=height,
+        )
+    )
+    return mode
+
+
+def _run_tracked_mask_jobs(
+    mask_jobs: list[MaskJob],
+    z: int,
+    workers: int,
+    products: CropProductIndex,
+) -> list[dict[str, Any]]:
+    """Rasterize *mask_jobs* under a section progress bar and index their outputs.
+
+    Returns the per-job stats from ``run_mask_jobs``; no reporter is created
+    when there are no jobs.
+    """
+    if not mask_jobs:
+        return []
+    mask_reporter = prettyoutput.TaskProgressReporter(
+        MASKS_TRACK_ID,
+        len(mask_jobs),
+        name=MASKS_LABEL,
+        section=z,
+    )
+    mask_reporter.start()
+    try:
+        mask_results = run_mask_jobs(
+            mask_jobs,
+            workers=workers,
+            on_complete=mask_reporter.update,
+        )
+    finally:
+        mask_reporter.complete()
+    for job in mask_jobs:
+        products.note_path(job.mask_path)
+        products.note_path(job.rle_path)
+    return mask_results
 
 
 def _collect_plan_annotations(
