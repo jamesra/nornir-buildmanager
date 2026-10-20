@@ -26,6 +26,7 @@ from nornir_buildmanager.operations.segmentationtraining.product_index import (
     IGNORED_FOLDER,
     IMAGES_FOLDER,
     MASKS_FOLDER,
+    OVERLAYS_FOLDER,
     RLE_FOLDER,
     CropProductIndex,
     get_product_index,
@@ -66,7 +67,7 @@ def remove_image_key_products(
         (IMAGES_FOLDER, f"{key}.png"),
         (IMAGES_FOLDER, f"{key}.jpg"),
         (IMAGES_FOLDER, f"{key}.json"),
-        ("overlays", f"{key}.png"),
+        (OVERLAYS_FOLDER, f"{key}.png"),
     ):
         path = product_folder_path(output, folder) / name
         present = products.exists(folder, name) if products is not None else path.is_file()
@@ -153,7 +154,7 @@ def _repair_key(
         summary.deleted_keys += 1
         return
     if not image_ok:
-        overlay = output / "overlays" / f"{key}.png"
+        overlay = output / OVERLAYS_FOLDER / f"{key}.png"
         if overlay.is_file():
             prettyoutput.Log(
                 f"CleanupAnnotationCrops: delete overlay with no image {key}"
@@ -283,7 +284,7 @@ def _candidate_keys(output: Path, wanted: set[int] | None) -> list[str]:
     for name in products.iter_names(IMAGES_FOLDER):
         if name.endswith((".png", ".jpg", ".json")):
             keys.add(Path(name).stem)
-    for name in products.iter_names("overlays"):
+    for name in products.iter_names(OVERLAYS_FOLDER):
         if name.endswith(".png"):
             keys.add(Path(name).stem)
     for folder, _suffix in _MEMBER_FOLDERS:

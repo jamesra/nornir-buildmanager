@@ -16,6 +16,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import ImageW
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     IGNORED_FOLDER,
     MASKS_FOLDER,
+    OVERLAYS_FOLDER,
 )
 
 _PART_COLORS = (
@@ -41,7 +42,7 @@ def write_split_mask_overviews(
     Locations in *location_ids* that occupy one crop have any previous part
     files removed. Returns the number of overviews written.
     """
-    folder = output / "overlays" / "parts"
+    folder = output / OVERLAYS_FOLDER / "parts"
     hosts: dict[int, list[ImageWatermark]] = {}
     for mark in marks:
         if mark.width <= 0 or mark.height <= 0:

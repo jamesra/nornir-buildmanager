@@ -76,6 +76,7 @@ from nornir_buildmanager.operations.segmentationtraining.planning import (
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     IMAGES_FOLDER,
     MASKS_FOLDER,
+    OVERLAYS_FOLDER,
     CropProductIndex,
     get_product_index,
 )
@@ -287,7 +288,7 @@ def _repair_one_overlay(
 ) -> bool:
     """Rewrite one QA overlay from the crop image and its masks."""
     tem = resolve_crop_image(output / IMAGES_FOLDER, key)
-    overlay = output / "overlays" / f"{key}.png"
+    overlay = output / OVERLAYS_FOLDER / f"{key}.png"
     if not tem.is_file():
         return False
     mask_paths = _mask_paths_for_key(output, key, member_ids)
@@ -1347,7 +1348,7 @@ def export_section_crops(
             )
             products.note_path(json_path)
             if overlay:
-                overlay_path = output / "overlays" / f"{plan.image_key}.png"
+                overlay_path = output / OVERLAYS_FOLDER / f"{plan.image_key}.png"
                 write_overlay(
                     overlay_path,
                     width=width,
@@ -1663,7 +1664,7 @@ def _overlay_is_fresh(output: Path, plan: PlannedCrop, products: CropProductInde
     ``image_rebuild_mode`` before skip.
     """
     del output
-    overlay_mtime = products.mtime("overlays", f"{plan.image_key}.png")
+    overlay_mtime = products.mtime(OVERLAYS_FOLDER, f"{plan.image_key}.png")
     if overlay_mtime is None:
         return False
     tem_name = f"{plan.image_key}.png"
@@ -1702,7 +1703,7 @@ def _write_plan_overlay(
         for location_id in plan.location_ids
         if products.exists(MASKS_FOLDER, f"{plan.image_key}_{location_id}.png")
     ]
-    overlay_path = output / "overlays" / f"{plan.image_key}.png"
+    overlay_path = output / OVERLAYS_FOLDER / f"{plan.image_key}.png"
     write_overlay(
         overlay_path,
         width=width,

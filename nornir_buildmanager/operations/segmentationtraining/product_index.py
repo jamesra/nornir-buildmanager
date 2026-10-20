@@ -19,11 +19,12 @@ from nornir_buildmanager.operations.segmentationtraining.workdir import RLE_FOLD
 IMAGES_FOLDER = "images"
 MASKS_FOLDER = "masks"
 IGNORED_FOLDER = "ignored"
+OVERLAYS_FOLDER = "overlays"
 
 PRODUCT_FOLDERS: tuple[str, ...] = (
     IMAGES_FOLDER,
     MASKS_FOLDER,
-    "overlays",
+    OVERLAYS_FOLDER,
     IGNORED_FOLDER,
     RLE_FOLDER,
 )

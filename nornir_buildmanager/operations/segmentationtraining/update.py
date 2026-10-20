@@ -46,7 +46,7 @@ from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
 from nornir_buildmanager.operations.segmentationtraining.overview import write_split_mask_overviews
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop, image_watermark, plan_section_crops
-from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER, RLE_FOLDER, get_product_index, product_folder_path
+from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER, OVERLAYS_FOLDER, RLE_FOLDER, get_product_index, product_folder_path
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord, parse_datetime
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     replace_manifest_rows,
@@ -454,7 +454,7 @@ def _replace_changed_annotations(
                 if "id" in item
             ]
             tem = resolve_crop_image(output / IMAGES_FOLDER, image_key)
-            overlay_path = output / "overlays" / f"{image_key}.png"
+            overlay_path = output / OVERLAYS_FOLDER / f"{image_key}.png"
             write_overlay(
                 overlay_path,
                 width=int(image_meta.get("width") or group[0].width),
@@ -609,7 +609,7 @@ def _merge_added_json(
                 for item in existing + new_items
             ]
             tem = resolve_crop_image(output / IMAGES_FOLDER, plan.image_key)
-            overlay_path = output / "overlays" / f"{plan.image_key}.png"
+            overlay_path = output / OVERLAYS_FOLDER / f"{plan.image_key}.png"
             write_overlay(
                 overlay_path,
                 width=int(image_meta.get("width") or width),
