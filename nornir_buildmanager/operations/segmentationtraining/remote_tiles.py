@@ -552,7 +552,28 @@ class RemoteTileSource:
         state = self._levels.get(int(downsample))
         if state is None:
             return
-        wanted: list[tuple[str, int, int]] = []
+        wanted = self._wanted_tiles(state, coords)
+        if not wanted:
+            return
+        state.directory.mkdir(parents=True, exist_ok=True)
+        trusted = self._trusted(state)
+        if not trusted and any((state.directory / name).is_file() for name in wanted):
+            self._ensure_listing(state)
+        jobs: list[tuple[str, dict[str, str], bool]] = []
+        for name in wanted:
+            job = self._plan_job(state, name, trusted)
+            if job is not None:
+                jobs.append(job)
+        self._apply_outcomes(state, jobs, self._run_downloads(state, jobs))
+        if not trusted:
+            state.checked_this_run = True
+            state.validated_at = self._clock()
+            state.dirty = True
+        self._save_index(state)
+
+    def _wanted_tiles(self, state: _LevelState, coords: Iterable[tuple[int, int]]) -> list[str]:
+        """Tile names for *coords* inside the level's grid, first occurrence only, skipping tiles known missing this run."""
+        wanted: list[str] = []
         seen: set[str] = set()
         for ix, iy in coords:
             if ix < 0 or iy < 0 or (state.grid_x and ix >= state.grid_x) or (state.grid_y and iy >= state.grid_y):
@@ -561,47 +582,55 @@ class RemoteTileSource:
             if name in seen or name in state.missing:
                 continue
             seen.add(name)
-            wanted.append((name, ix, iy))
-        if not wanted:
-            return
-        state.directory.mkdir(parents=True, exist_ok=True)
-        trusted = self._trusted(state)
-        if not trusted and any((state.directory / name).is_file() for name, _, _ in wanted):
-            self._ensure_listing(state)
-        jobs: list[tuple[str, dict[str, str], bool]] = []
-        for name, _ix, _iy in wanted:
-            cached = state.directory / name
-            have = cached.is_file() and cached.stat().st_size > 0
-            entry = state.tiles.get(name) or {}
-            if have and trusted:
-                continue
-            if have and state.listing is not None:
-                listed = state.listing.get(name)
-                if listed is None:
-                    self._forget(state, name, cached)
-                    state.missing.add(name)
-                    continue
-                same_size = listed.size is None or listed.size == cached.stat().st_size
-                # A cache filled before a listing was seen has no listed date yet: size decides.
-                same_stamp = listed.stamp is None or entry.get("listed") in (None, listed.stamp)
-                if same_size and same_stamp:
-                    if listed.stamp and entry.get("listed") != listed.stamp:
-                        state.tiles.setdefault(name, {})["listed"] = listed.stamp
-                        state.dirty = True
-                    continue
-                jobs.append((name, {}, True))
-                continue
-            if not have and state.listing is not None and name not in state.listing:
+            wanted.append(name)
+        return wanted
+
+    def _plan_job(self, state: _LevelState, name: str, trusted: bool) -> tuple[str, dict[str, str], bool] | None:
+        """Decide one tile from the cache, the level's listing and the saved index.
+
+        Returns the download job ``(name, request headers, have cached copy)``, or ``None`` when
+        the tile needs no request. A ``None`` may still update ``state``: a cached tile the listing
+        no longer shows is deleted and marked missing, an uncached unlisted tile is marked missing,
+        and a listing hit backfills the entry's ``listed`` date.
+        """
+        cached = state.directory / name
+        have = cached.is_file() and cached.stat().st_size > 0
+        entry = state.tiles.get(name) or {}
+        if have and trusted:
+            return None
+        if have and state.listing is not None:
+            listed = state.listing.get(name)
+            if listed is None:
+                self._forget(state, name, cached)
                 state.missing.add(name)
-                continue
-            headers: dict[str, str] = {}
-            if have:
-                if entry.get("etag"):
-                    headers["If-None-Match"] = str(entry["etag"])
-                if entry.get("lastModified"):
-                    headers["If-Modified-Since"] = str(entry["lastModified"])
-            jobs.append((name, headers, have))
-        results = self._run_downloads(state, jobs)
+                return None
+            same_size = listed.size is None or listed.size == cached.stat().st_size
+            # A cache filled before a listing was seen has no listed date yet: size decides.
+            same_stamp = listed.stamp is None or entry.get("listed") in (None, listed.stamp)
+            if same_size and same_stamp:
+                if listed.stamp and entry.get("listed") != listed.stamp:
+                    state.tiles.setdefault(name, {})["listed"] = listed.stamp
+                    state.dirty = True
+                return None
+            return name, {}, True
+        if not have and state.listing is not None and name not in state.listing:
+            state.missing.add(name)
+            return None
+        headers: dict[str, str] = {}
+        if have:
+            if entry.get("etag"):
+                headers["If-None-Match"] = str(entry["etag"])
+            if entry.get("lastModified"):
+                headers["If-Modified-Since"] = str(entry["lastModified"])
+        return name, headers, have
+
+    @staticmethod
+    def _apply_outcomes(
+        state: _LevelState,
+        jobs: list[tuple[str, dict[str, str], bool]],
+        results: dict[str, tuple[str, HttpResponse | None] | None],
+    ) -> None:
+        """Record download outcomes in the level's tile index: validators of new bodies, 404s as missing, listed dates."""
         for name, outcome in results.items():
             entry = state.tiles.setdefault(name, {})
             if outcome is None:
@@ -622,11 +651,6 @@ class RemoteTileSource:
             if name in state.tiles and state.listing and name in state.listing and state.listing[name].stamp:
                 state.tiles[name]["listed"] = state.listing[name].stamp
                 state.dirty = True
-        if not trusted:
-            state.checked_this_run = True
-            state.validated_at = self._clock()
-            state.dirty = True
-        self._save_index(state)
 
     def _forget(self, state: _LevelState, name: str, cached: Path) -> None:
         try:
