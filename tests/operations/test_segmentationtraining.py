@@ -26,7 +26,6 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
     ignore_location,
     list_catalog_rows,
     load_ignore_ids,
-    read_source_odata,
     rebuild_catalog,
     upsert_catalog,
 )
@@ -549,7 +548,6 @@ def test_export_records_odata_url_in_sa1b_and_catalog(tmp_path: Path) -> None:
     assert keys
     payload = json.loads((out / "images" / f"{keys[0]}.json").read_text(encoding="utf-8"))
     assert payload["image"]["odata"] == "http://connectomes.utah.edu/RC1/OData"
-    assert read_source_odata(out) == "http://connectomes.utah.edu/RC1/OData"
     recorded = json.loads((out / "source.json").read_text(encoding="utf-8"))
     assert recorded["exporter"] == "tiled"
 

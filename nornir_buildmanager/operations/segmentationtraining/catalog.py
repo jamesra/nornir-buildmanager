@@ -805,26 +805,6 @@ def sync_source_catalog(output_path: str | os.PathLike[str]) -> None:
         connection.close()
 
 
-def read_source_odata(output_path: str | os.PathLike[str]) -> str | None:
-    """OData service root stored on the catalog, or None."""
-    if not sqlite_path(output_path).is_file():
-        return None
-    connection = connect(output_path)
-    try:
-        row = connection.execute("SELECT odata FROM source WHERE id = 1").fetchone()
-    except sqlite3.OperationalError:
-        return None
-    finally:
-        connection.close()
-    if row is None:
-        return None
-    value = row["odata"]
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
 def _image_relpath(output: Path, image_key: str) -> str:
     """Relative crop path, PNG when that file is present."""
     path = resolve_crop_image(output / IMAGES_FOLDER, image_key)
