@@ -25,6 +25,8 @@ from nornir_imageregistration.computational_lib import (
 from nornir_shared import prettyoutput
 from nornir_shared.argparse_helpers import IntegerList
 
+from annotation_crops.maskname import MaskName
+
 from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
     MANIFEST_FILENAME,
@@ -313,11 +315,8 @@ def _mask_paths_for_key(
     products = get_product_index(output)
     masks = output / MASKS_FOLDER
     if member_ids:
-        return [
-            str(masks / f"{key}_{location_id}.png")
-            for location_id in member_ids
-            if products.exists(MASKS_FOLDER, f"{key}_{location_id}.png")
-        ]
+        names = (MaskName(key, location_id).format() for location_id in member_ids)
+        return [str(masks / name) for name in names if products.exists(MASKS_FOLDER, name)]
     found = [
         (location_id, name)
         for location_id, name in products.members(MASKS_FOLDER, key)
@@ -1465,7 +1464,7 @@ def _collect_plan_annotations(
     mask_paths: list[str] = []
     for location_id in plan.location_ids:
         rle_name = f"{plan.image_key}_{location_id}.json"
-        mask_name = f"{plan.image_key}_{location_id}.png"
+        mask_name = MaskName(plan.image_key, location_id).format()
         if not products.exists(RLE_FOLDER, rle_name):
             continue
         try:
@@ -1674,7 +1673,7 @@ def _overlay_is_fresh(output: Path, plan: PlannedCrop, products: CropProductInde
     if tem_mtime is not None and seconds_significantly_newer(tem_mtime, overlay_mtime):
         return False
     for location_id in plan.location_ids:
-        mask_mtime = products.mtime(MASKS_FOLDER, f"{plan.image_key}_{location_id}.png")
+        mask_mtime = products.mtime(MASKS_FOLDER, MaskName(plan.image_key, location_id).format())
         if mask_mtime is not None and seconds_significantly_newer(mask_mtime, overlay_mtime):
             return False
     return True
@@ -1698,11 +1697,8 @@ def _write_plan_overlay(
     if not products.exists(IMAGES_FOLDER, tem_name) and products.exists(IMAGES_FOLDER, f"{plan.image_key}.jpg"):
         tem_name = f"{plan.image_key}.jpg"
     tem = output / IMAGES_FOLDER / tem_name
-    mask_paths = [
-        str(output / MASKS_FOLDER / f"{plan.image_key}_{location_id}.png")
-        for location_id in plan.location_ids
-        if products.exists(MASKS_FOLDER, f"{plan.image_key}_{location_id}.png")
-    ]
+    mask_names = (MaskName(plan.image_key, location_id).format() for location_id in plan.location_ids)
+    mask_paths = [str(output / MASKS_FOLDER / name) for name in mask_names if products.exists(MASKS_FOLDER, name)]
     overlay_path = output / OVERLAYS_FOLDER / f"{plan.image_key}.png"
     write_overlay(
         overlay_path,

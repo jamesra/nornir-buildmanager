@@ -12,6 +12,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from annotation_crops.maskname import MaskName
 from nornir_buildmanager.operations.segmentationtraining.freshness import ImageWatermark
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     IGNORED_FOLDER,
@@ -138,9 +139,10 @@ def _paste_mask(
     height: int,
     index: int,
 ) -> None:
-    mask_path = output / MASKS_FOLDER / f"{mark.key}_{location_id}.png"
+    mask_name = MaskName(mark.key, location_id).format()
+    mask_path = output / MASKS_FOLDER / mask_name
     if not mask_path.is_file():
-        mask_path = output / IGNORED_FOLDER / f"{mark.key}_{location_id}.png"
+        mask_path = output / IGNORED_FOLDER / mask_name
     if not mask_path.is_file():
         return
     with Image.open(mask_path) as handle:

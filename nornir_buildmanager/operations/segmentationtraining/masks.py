@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from annotation_crops.rle import encode_coco_rle
+from annotation_crops.maskname import MaskName
 
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_save_png, atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.product_index import MASKS_FOLDER
@@ -68,7 +69,7 @@ def mask_job_for_crop(
         width=width,
         height=height,
         rings=tuple(rings),
-        mask_path=str(output / MASKS_FOLDER / f"{image_key}_{location_id}.png"),
+        mask_path=str(output / MASKS_FOLDER / MaskName(image_key, location_id).format()),
         rle_path=str(rle_dir(output) / f"{image_key}_{location_id}.json"),
     )
 

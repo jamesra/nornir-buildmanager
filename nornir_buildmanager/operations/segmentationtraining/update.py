@@ -41,6 +41,7 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
 from nornir_buildmanager.operations.segmentationtraining.ingest import odata_url_for_export
 from nornir_buildmanager.operations.segmentationtraining.workdir import rle_dir
 from annotation_crops.rle import bbox_area_from_rle as _bbox_area_from_rle
+from annotation_crops.maskname import MaskName
 
 from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask_jobs_for_record, replace_image_annotations
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, mask_jobs_for_plan, run_mask_jobs
@@ -262,9 +263,10 @@ def _unlink_computed_member(
     products: CropProductIndex,
 ) -> None:
     """Delete one location's mask, ignored mask, and RLE, and drop them from the index."""
+    mask_name = MaskName(image_key, location_id).format()
     for folder, name in (
-        (MASKS_FOLDER, f"{image_key}_{location_id}.png"),
-        (IGNORED_FOLDER, f"{image_key}_{location_id}.png"),
+        (MASKS_FOLDER, mask_name),
+        (IGNORED_FOLDER, mask_name),
         (RLE_FOLDER, f"{image_key}_{location_id}.json"),
     ):
         path = product_folder_path(output, folder) / name
@@ -449,7 +451,7 @@ def _replace_changed_annotations(
         if overlay:
             image_meta = payload.get("image") or {}
             mask_paths = [
-                str(output / MASKS_FOLDER / f"{image_key}_{int(item['id'])}.png")
+                str(output / MASKS_FOLDER / MaskName(image_key, int(item["id"])).format())
                 for item in payload["annotations"]
                 if "id" in item
             ]
@@ -605,7 +607,7 @@ def _merge_added_json(
         products.note_path(json_path)
         if overlay:
             mask_paths = [
-                str(output / MASKS_FOLDER / f"{plan.image_key}_{int(item['id'])}.png")
+                str(output / MASKS_FOLDER / MaskName(plan.image_key, int(item["id"])).format())
                 for item in existing + new_items
             ]
             tem = resolve_crop_image(output / IMAGES_FOLDER, plan.image_key)

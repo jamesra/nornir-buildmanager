@@ -806,7 +806,7 @@ def _mask_relpath(
     while the product index is not changing.
     """
     products = get_product_index(output)
-    name = f"{image_key}_{location_id}.png"
+    name = MaskName(image_key, location_id).format()
     folder = IGNORED_FOLDER if ignored else MASKS_FOLDER
     relative = f"{folder}/{name}"
     if products.exists(folder, name):

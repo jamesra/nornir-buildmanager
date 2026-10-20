@@ -93,3 +93,11 @@ def test_format_parse_round_trip(image_key: str, location_id: int) -> None:
     """``parse(format(x)) == x`` for any key without path separators or drive colons (Path treats "1:" as a Windows drive) and any non-negative id."""
     name = MaskName(image_key, location_id)
     assert MaskName.parse(name.format()) == name
+
+
+@settings(max_examples=200)
+@given(image_key=_image_keys, location_id=_location_ids)
+def test_format_matches_legacy_hand_formatted_name(image_key: str, location_id: int) -> None:
+    """``format()`` equals the f-string that segmentationtraining sites used before they called it."""
+    assert MaskName(image_key, location_id).format() == f"{image_key}_{location_id}.png"
+    assert MaskName("k", 0).format() == "k_0.png"

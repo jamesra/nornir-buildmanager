@@ -13,6 +13,8 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+from annotation_crops.maskname import MaskName
+
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.product_index import IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
@@ -257,7 +259,7 @@ def _move_refreshed_masks_if_ignored(output: Path, location_id: int, image_keys:
         return
     ignored = output / IGNORED_FOLDER
     for image_key in image_keys:
-        source = output / MASKS_FOLDER / f"{image_key}_{location_id}.png"
+        source = output / MASKS_FOLDER / MaskName(image_key, location_id).format()
         if not source.is_file():
             continue
         ignored.mkdir(parents=True, exist_ok=True)

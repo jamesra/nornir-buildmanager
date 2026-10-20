@@ -10,6 +10,8 @@ from typing import Any
 from nornir_shared import prettyoutput
 from PIL import Image, UnidentifiedImageError
 
+from annotation_crops.maskname import MaskName
+
 from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
@@ -348,7 +350,7 @@ def _unlink_member_files(
 
 def _mask_exists(output: Path, key: str, location_id: int) -> bool:
     """True when a mask or an ignored mask exists for this location on the crop."""
-    name = f"{key}_{location_id}.png"
+    name = MaskName(key, location_id).format()
     return (output / MASKS_FOLDER / name).is_file() or (output / IGNORED_FOLDER / name).is_file()
 
 
