@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 
 from annotation_crops.rle import encode_coco_rle
 
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_save_png, atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.product_index import MASKS_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.geometry import PolygonRings, pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.poolutil import run_process_jobs
@@ -116,9 +117,10 @@ def rasterize_mask_job(job: MaskJob) -> dict[str, Any]:
     Path(job.mask_path).parent.mkdir(parents=True, exist_ok=True)
     Path(job.rle_path).parent.mkdir(parents=True, exist_ok=True)
     # A bool array maps straight to a mode "1" image; same PNG bytes as L*255 -> convert("1").
-    Image.fromarray(foreground).save(job.mask_path)
+    # Atomic: a killed worker leaves the old file, never a truncated PNG or RLE that maskrefresh would crash on.
+    atomic_save_png(Image.fromarray(foreground), Path(job.mask_path))
     rle = encode_coco_rle(foreground)
-    Path(job.rle_path).write_text(json.dumps(rle), encoding="utf-8")
+    atomic_write_text(Path(job.rle_path), json.dumps(rle))
     area = int(np.count_nonzero(foreground))
     if area == 0:
         bbox = [0, 0, 0, 0]

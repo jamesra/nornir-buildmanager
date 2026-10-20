@@ -11,6 +11,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 
 def atomic_write_text(path: Path, text: str) -> None:
     """Write ``text`` (utf-8, platform newlines) to ``path`` through ``<name>.tmp`` and ``os.replace``.
@@ -19,6 +21,17 @@ def atomic_write_text(path: Path, text: str) -> None:
     """
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(text, encoding="utf-8")
+    os.replace(temp, path)
+
+
+def atomic_save_png(image: Image.Image, path: Path) -> None:
+    """Save ``image`` as a PNG at ``path`` through ``<name>.tmp`` and ``os.replace``.
+
+    The bytes equal ``image.save(path)`` for a ``.png`` path. The temp name is fixed, so two writers of
+    the same path must not run at once.
+    """
+    temp = path.with_name(path.name + ".tmp")
+    image.save(temp, format="PNG")
     os.replace(temp, path)
 
 
