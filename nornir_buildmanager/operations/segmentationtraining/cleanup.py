@@ -11,6 +11,7 @@ from nornir_shared import prettyoutput
 from PIL import Image, UnidentifiedImageError
 
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     load_section_watermark,
     save_section_watermark,
@@ -216,7 +217,7 @@ def _repair_key(
         changed = True
     if changed:
         payload["annotations"] = kept
-        json_path.write_text(json.dumps(payload), encoding="utf-8")
+        atomic_write_text(json_path, json.dumps(payload))
         summary.rewritten_json += 1
     keep_ids = {int(item["id"]) for item in kept}
     removed = remove_member_files_not_in(output, key, keep_ids)

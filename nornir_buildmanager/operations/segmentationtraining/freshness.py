@@ -10,6 +10,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Iterable
 
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IMAGES_FOLDER
 
 if TYPE_CHECKING:
@@ -248,7 +249,7 @@ def load_section_watermark(output_path: str | Path, z: int) -> SectionWatermark 
 def save_section_watermark(output_path: str | Path, z: int, watermark: SectionWatermark) -> None:
     path = section_meta_path(output_path, z)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(watermark.to_json(), indent=2), encoding="utf-8")
+    atomic_write_text(path, json.dumps(watermark.to_json(), indent=2))
 
 
 def id_set(records: Iterable[LocationRecord]) -> set[int]:

@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.product_index import IGNORED_FOLDER, IMAGES_FOLDER, MASKS_FOLDER
 from nornir_buildmanager.operations.segmentationtraining.curves import hydrate_polygons
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
@@ -224,7 +225,7 @@ def replace_image_annotations(
             window_count=prior.get("windowCount"),
         )
     payload["annotations"] = [replacements.get(int(row.get("id", -1)), row) for row in annotations]
-    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    atomic_write_text(json_path, json.dumps(payload))
     return payload
 
 
