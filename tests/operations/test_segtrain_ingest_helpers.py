@@ -12,11 +12,13 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ODATA_PAGE_SIZE,
+    _chunk_z_for_odata_filter,
     _consecutive_ranges,
     _entities_from_odata_document,
     _exporter_name,
     _odata_count,
     _odata_next_link,
+    _odata_z_filter,
     _odata_locations_url,
     _parse_odata_dump,
     _source_from_meta,
@@ -297,3 +299,14 @@ _metas = st.fixed_dictionaries(
 @given(meta=_metas)
 def test_load_export_source_reconstruction_matches_old_body(meta: dict[str, Any]) -> None:
     assert _reconstructed(meta) == _old_reconstruct(meta)
+
+
+@given(st.sets(st.integers(min_value=-50, max_value=400), max_size=120))
+@settings(max_examples=60, deadline=None)
+def test_z_helpers_accept_any_iterable_like_sorted_list(zs: set[int]) -> None:
+    """A set or one-shot generator gives the same filter and chunks as the sorted list."""
+    base = "TypeCode eq 1"
+    ordered = sorted(zs)
+    assert _odata_z_filter(iter(zs)) == _odata_z_filter(ordered)
+    assert list(_chunk_z_for_odata_filter(zs, base)) == list(_chunk_z_for_odata_filter(ordered, base))
+    assert list(_chunk_z_for_odata_filter(iter(zs), base)) == list(_chunk_z_for_odata_filter(ordered, base))

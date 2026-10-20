@@ -604,7 +604,7 @@ def iter_odata_circles(
     else:
         filters = [
             _combined_z_filter(filter_text, chunk)
-            for chunk in _chunk_z_for_odata_filter(sorted(section_set), filter_text)
+            for chunk in _chunk_z_for_odata_filter(section_set, filter_text)
         ]
     for page_filter in filters:
         for entity in _iter_odata_pages(
@@ -652,7 +652,7 @@ def _section_needs_geometry(
     return False
 
 
-def _consecutive_ranges(values: list[int]) -> list[tuple[int, int]]:
+def _consecutive_ranges(values: Iterable[int]) -> list[tuple[int, int]]:
     """Collapse sorted unique integers into inclusive (start, end) runs."""
     ordered = sorted(set(values))
     if not ordered:
@@ -669,7 +669,7 @@ def _consecutive_ranges(values: list[int]) -> list[tuple[int, int]]:
     return ranges
 
 
-def _odata_z_filter(values: list[int]) -> str:
+def _odata_z_filter(values: Iterable[int]) -> str:
     """OData predicate for Z membership using ge/le runs instead of eq/or chains."""
     predicates: list[str] = []
     for start, end in _consecutive_ranges(values):
@@ -704,7 +704,7 @@ def estimate_odata_filter_nodes(filter_text: str) -> int:
     return count + comparisons
 
 
-def _chunk_z_for_odata_filter(values: list[int], base_filter: str) -> Iterator[list[int]]:
+def _chunk_z_for_odata_filter(values: Iterable[int], base_filter: str) -> Iterator[list[int]]:
     """Yield Z lists whose combined $filter stays under MaxNodeCount."""
     budget = ODATA_MAX_FILTER_NODES - ODATA_FILTER_NODE_MARGIN
     chunk: list[int] = []
