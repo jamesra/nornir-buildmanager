@@ -61,3 +61,11 @@ def read_manifest_rows(output: Path) -> list[dict[str, Any]]:
             if line:
                 rows.append(json.loads(line))
     return rows
+
+
+def write_manifest_rows(output: Path, rows: list[dict[str, Any]]) -> None:
+    """Atomically replace ``<output>/manifest.jsonl`` with ``rows`` (compact JSON, one row per line)."""
+    atomic_write_text(
+        output / "manifest.jsonl",
+        "".join(json.dumps(row, separators=(",", ":")) + "\n" for row in rows),
+    )

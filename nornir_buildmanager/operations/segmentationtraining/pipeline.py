@@ -25,6 +25,7 @@ from nornir_shared import prettyoutput
 from nornir_shared.argparse_helpers import IntegerList
 
 from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import read_manifest_rows, write_manifest_rows
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     EXPORTER_TILED,
     ExportParams,
@@ -999,22 +1000,16 @@ def drop_recorded_crops_missing_tiles(
 
 def _strip_manifest_keys(output: Path, z: int, image_keys: set[str]) -> None:
     """Remove manifest rows for *image_keys* on section *z*."""
-    path = output / "manifest.jsonl"
-    if not path.is_file() or not image_keys:
+    if not (output / "manifest.jsonl").is_file() or not image_keys:
         return
-    kept: list[dict[str, Any]] = []
-    with path.open(encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            item = json.loads(line)
-            if int(item.get("z", -1)) == int(z) and item.get("imageKey") in image_keys:
-                continue
-            kept.append(item)
-    with path.open("w", encoding="utf-8") as handle:
-        for item in kept:
-            handle.write(json.dumps(item, separators=(",", ":")) + "\n")
+    write_manifest_rows(
+        output,
+        [
+            item
+            for item in read_manifest_rows(output)
+            if not (int(item.get("z", -1)) == int(z) and item.get("imageKey") in image_keys)
+        ],
+    )
 
 
 def _run_stitch_jobs(

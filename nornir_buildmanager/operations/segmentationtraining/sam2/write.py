@@ -9,6 +9,10 @@ from typing import Any, Iterable
 import numpy as np
 from PIL import Image
 
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    read_manifest_rows,
+    write_manifest_rows,
+)
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
 
 
@@ -291,19 +295,8 @@ def append_manifest(output_path: str | Path, row: dict[str, Any]) -> None:
 
 
 def replace_manifest_rows(output_path: str | Path, z: int, rows: list[dict[str, Any]]) -> None:
-    """Replace all manifest rows for one Z so rebuilds do not duplicate keys."""
-    path = Path(output_path) / "manifest.jsonl"
-    kept: list[dict[str, Any]] = []
-    if path.is_file():
-        with path.open(encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                item = json.loads(line)
-                if int(item.get("z", -1)) != int(z):
-                    kept.append(item)
+    """Replace all manifest rows for one Z so rebuilds do not duplicate keys (atomic: old file survives a crash)."""
+    output = Path(output_path)
+    kept = [item for item in read_manifest_rows(output) if int(item.get("z", -1)) != int(z)]
     kept.extend(rows)
-    with path.open("w", encoding="utf-8") as handle:
-        for item in kept:
-            handle.write(json.dumps(item, separators=(",", ":")) + "\n")
+    write_manifest_rows(output, kept)
