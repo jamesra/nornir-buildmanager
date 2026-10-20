@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from PIL import Image
 import nornir_imageregistration
 import nornir_pools
 from nornir_imageregistration.type_info import Shape
+from nornir_buildmanager.operations.segmentationtraining import stitch as stitch_mod
 from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     StitchJob,
@@ -30,6 +32,8 @@ from nornir_buildmanager.operations.segmentationtraining.stitch import (
     finer_dirs_for_downsample,
     load_tiles_threaded,
     missing_tiles_for_window,
+    schedule_remove_stage_tree,
+    schedule_remove_staged_tiles,
     stage_tile_file,
     sweep_stitch_jobs,
     tile_filename,
@@ -406,6 +410,45 @@ def test_band_stage_cleanup_removes_only_unreferenced_tiles(tmp_path: Path) -> N
     assert not _tile_path(stage, 0, 0).exists()
     assert _tile_path(stage, 1, 0).is_file()
     assert _tile_path(stage, 2, 0).is_file()
+
+
+def _schedule_finished_cleanups(missing: str, count: int) -> None:
+    """Schedule *count* no-op cleanups of both kinds, waiting for each to finish."""
+    for _ in range(count):
+        tree = schedule_remove_stage_tree(missing)
+        tiles = schedule_remove_staged_tiles(missing, [(0, 0)], prefix=_PREFIX, postfix=_POSTFIX)
+        assert tree is not None and tiles is not None
+        tree.result()
+        tiles.result()
+
+
+def test_stage_cleanup_pending_drops_finished_futures(tmp_path: Path) -> None:
+    """Production never calls wait_stage_cleanup, so succeeded futures must not pile up."""
+    wait_stage_cleanup()
+    _schedule_finished_cleanups(str(tmp_path / "missing"), 500)
+    assert len(stitch_mod._stage_cleanup_pending) < stitch_mod._STAGE_CLEANUP_PRUNE_MIN
+    wait_stage_cleanup()
+    assert stitch_mod._stage_cleanup_pending == []
+
+
+def test_stage_cleanup_keeps_failed_cancelled_and_unfinished_futures(tmp_path: Path) -> None:
+    """wait_stage_cleanup still waits on unfinished work and re-raises a failed cleanup."""
+    wait_stage_cleanup()
+    failed: Future[Any] = Future()
+    failed.set_exception(RuntimeError("cleanup failed"))
+    cancelled: Future[Any] = Future()
+    cancelled.cancel()
+    unfinished: Future[Any] = Future()
+    for future in (failed, cancelled, unfinished):
+        stitch_mod._track_stage_cleanup(future)
+    _schedule_finished_cleanups(str(tmp_path / "missing"), 200)
+    pending = stitch_mod._stage_cleanup_pending
+    assert pending[:3] == [failed, cancelled, unfinished]
+    assert len(pending) < stitch_mod._STAGE_CLEANUP_PRUNE_MIN
+    unfinished.set_result(None)
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        wait_stage_cleanup()
+    assert stitch_mod._stage_cleanup_pending == []
 
 
 def test_sweep_stitch_jobs_recovers_corrupt_tile_from_finer_dirs(tmp_path: Path) -> None:

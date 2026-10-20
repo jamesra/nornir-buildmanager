@@ -59,6 +59,9 @@ DEFAULT_STAGE_TILES_ROOT = "/tmp/nornir-stage-tiles"
 _stage_cleanup_lock = threading.Lock()
 _stage_cleanup_pool: ThreadPoolExecutor | None = None
 _stage_cleanup_pending: list[Future[Any]] = []
+# _track_stage_cleanup drops succeeded futures once the list reaches this size.
+_STAGE_CLEANUP_PRUNE_MIN = 64
+_stage_cleanup_prune_at = _STAGE_CLEANUP_PRUNE_MIN
 
 
 def crop_image_filename(image_key: str) -> str:
@@ -111,16 +114,38 @@ def _stage_cleanup_executor() -> ThreadPoolExecutor:
 
 
 def _track_stage_cleanup(future: Future[Any]) -> Future[Any]:
+    """Record *future* for wait_stage_cleanup, pruning ones that already succeeded.
+
+    Nothing in production calls wait_stage_cleanup, so without the pruning every
+    finished cleanup future stayed alive for the life of the process. Failed,
+    cancelled and unfinished futures are kept so wait_stage_cleanup still waits
+    on them and re-raises their errors. Pruning runs only when the list doubles
+    past its size after the last prune (at least _STAGE_CLEANUP_PRUNE_MIN), so
+    the cost stays amortized O(1) per call even when cleanups queue faster than
+    the worker drains them.
+    """
+    global _stage_cleanup_prune_at
     with _stage_cleanup_lock:
         _stage_cleanup_pending.append(future)
+        if len(_stage_cleanup_pending) >= _stage_cleanup_prune_at:
+            _stage_cleanup_pending[:] = [
+                f
+                for f in _stage_cleanup_pending
+                if not f.done() or f.cancelled() or f.exception() is not None
+            ]
+            _stage_cleanup_prune_at = max(
+                _STAGE_CLEANUP_PRUNE_MIN, 2 * len(_stage_cleanup_pending)
+            )
     return future
 
 
 def wait_stage_cleanup() -> None:
-    """Block until queued stage-file deletions finish. Used by tests and section ends."""
+    """Block until queued stage-file deletions finish; re-raise a failed one. Used by tests."""
+    global _stage_cleanup_prune_at
     with _stage_cleanup_lock:
         pending = list(_stage_cleanup_pending)
         _stage_cleanup_pending.clear()
+        _stage_cleanup_prune_at = _STAGE_CLEANUP_PRUNE_MIN
     for future in pending:
         future.result()
 
