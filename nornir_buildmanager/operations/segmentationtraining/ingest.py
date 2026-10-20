@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, quote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from nornir_buildmanager.exceptions import NornirUserException
-from nornir_buildmanager.operations.segmentationtraining.atomic_io import read_json_object
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text, read_json_object
 from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.progress import (
     INGEST_LABEL,
@@ -145,9 +145,7 @@ def _write_source_document(output_path: str | os.PathLike[str], payload: dict[st
         if str(key).lower() not in _SOURCE_SECRET_KEYS
     }
     export_source_path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    export_source_path(output_path).write_text(
-        json.dumps(cleaned, indent=2), encoding="utf-8"
-    )
+    atomic_write_text(export_source_path(output_path), json.dumps(cleaned, indent=2))
 
 
 def write_export_source(
@@ -336,9 +334,14 @@ def ingest_to_section_files(
         "counts": {str(z): len(rows) for z, rows in written.items()},
         "circleCounts": {str(z): len(rows) for z, rows in written_circles.items()},
     }
-    cache_meta_path(output_path).write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    atomic_write_text(cache_meta_path(output_path), json.dumps(meta, indent=2))
     write_export_source(output_path, meta)
     return meta
+
+
+def _jsonl_text(group: list[LocationRecord]) -> str:
+    """Return ``group`` as compact JSON, one record per line, for an atomic spill write."""
+    return "".join(json.dumps(item.to_json(), separators=(",", ":")) + "\n" for item in group)
 
 
 def write_section_jsonl(
@@ -357,9 +360,7 @@ def write_section_jsonl(
     for z, group in by_z.items():
         group.sort(key=lambda item: item.id)
         path = section_jsonl_path(output_path, z)
-        with path.open("w", encoding="utf-8") as handle:
-            for item in group:
-                handle.write(json.dumps(item.to_json(), separators=(",", ":")) + "\n")
+        atomic_write_text(path, _jsonl_text(group))
         kept.add(path)
     if prune_missing:
         for stale in existing - kept:
@@ -387,9 +388,7 @@ def write_circle_jsonl(
     existing = {path: _circle_spill_z(path) for path in work.glob("circles_*.jsonl")}
     for z, group in by_z.items():
         group.sort(key=lambda item: item.id)
-        with circles_jsonl_path(output_path, z).open("w", encoding="utf-8") as handle:
-            for item in group:
-                handle.write(json.dumps(item.to_json(), separators=(",", ":")) + "\n")
+        atomic_write_text(circles_jsonl_path(output_path, z), _jsonl_text(group))
     replaced = set(sections) if sections else None
     for path, z in existing.items():
         if z in by_z:
