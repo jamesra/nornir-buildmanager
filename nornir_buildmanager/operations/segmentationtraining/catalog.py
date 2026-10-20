@@ -12,8 +12,8 @@ from itertools import zip_longest
 from pathlib import Path
 from typing import Any, Iterable
 
-from annotation_crops.ignore import load_ignore_ids as _load_ignore_ids
-from annotation_crops.ignore import save_ignore_ids as _save_ignore_ids
+from annotation_crops.ignore import load_ignore_ids
+from annotation_crops.ignore import save_ignore_ids
 from annotation_crops.maskname import MaskName
 from nornir_shared import prettyoutput
 
@@ -169,16 +169,6 @@ def _migrate_location_primary_key(connection: sqlite3.Connection) -> None:
         )
     connection.execute("DROP TABLE locations_old")
     connection.commit()
-
-
-def load_ignore_ids(output_path: str | os.PathLike[str]) -> set[int]:
-    """Load ignored location ids from `ignore.json` (a JSON array)."""
-    return _load_ignore_ids(output_path)
-
-
-def save_ignore_ids(output_path: str | os.PathLike[str], ids: Iterable[int]) -> None:
-    """Write `ignore.json` as a sorted JSON array of location ids."""
-    _save_ignore_ids(output_path, ids)
 
 
 def equivalent_radius(area: float | None, stored: float | None) -> float | None:
