@@ -24,10 +24,37 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     ResolvedTileset,
 )
 from nornir_buildmanager.operations.segmentationtraining.pipeline import (
-    _resolve_tileset,
+    TilesetOverrides,
 )
 
 MISSING_DIR = "Z:/does/not/exist/resolve_tileset"
+
+
+def _resolve_tileset(
+    filter_node: Any,
+    *,
+    tile_x_dim: Any,
+    tile_y_dim: Any,
+    level_dirs: Any,
+    file_prefix: Any,
+    file_postfix: Any,
+    tileset_mtime: Any,
+    available: Any,
+    fetch_tiles: Any = None,
+    **kwargs: Any,
+) -> ResolvedTileset | None:
+    """Call ``pipeline._resolve_tileset`` with the pre-``TilesetOverrides`` flat keywords."""
+    overrides = TilesetOverrides(
+        tile_x_dim=tile_x_dim,
+        tile_y_dim=tile_y_dim,
+        level_dirs=level_dirs,
+        file_prefix=file_prefix,
+        file_postfix=file_postfix,
+        mtime=tileset_mtime,
+        available=available,
+        fetch_tiles=fetch_tiles,
+    )
+    return pipeline._resolve_tileset(filter_node, overrides=overrides, **kwargs)
 
 
 class _Level:

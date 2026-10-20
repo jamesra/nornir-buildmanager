@@ -61,14 +61,9 @@ def _entry_kwargs(out: Path, **overrides: Any) -> dict[str, Any]:
         "Repair": False,
         "FailMissingTileset": False,
         "Overlay": False,
-        "TileXDim": 8,
-        "TileYDim": 8,
-        "LevelDirs": None,
-        "FilePrefix": "",
-        "FilePostfix": ".png",
-        "TilesetMtime": None,
-        "AvailableDownsamples": None,
-        "TileFetcher": None,
+        "overrides": pipeline_mod.TilesetOverrides(
+            tile_x_dim=8, tile_y_dim=8, file_prefix="", file_postfix=".png"
+        ),
         "VolumeName": "Vol",
         "filter_node": None,
         "section": None,
@@ -342,3 +337,34 @@ def test_branches_run_under_numpy_backend(
     start = names.index("numpy-enter")
     assert names[start + 2 :] == ["release", "numpy-exit", "remove"]
     assert ("release", True) in harness.calls
+
+
+def test_export_section_crops_passes_every_tileset_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(pipeline_mod, "_export_section_crops_entry", lambda **kw: captured.update(kw))
+    fetch = lambda _d, _coords: None
+    pipeline_mod.ExportSectionCrops(
+        OutputPath=str(tmp_path),
+        Z=_Z,
+        TileXDim=256,
+        TileYDim=128,
+        LevelDirs={1: "d1"},
+        FilePrefix="P_",
+        FilePostfix=".tif",
+        TilesetMtime=12.5,
+        AvailableDownsamples=[1, 2],
+        TileFetcher=fetch,
+    )
+    assert captured["overrides"] == pipeline_mod.TilesetOverrides(
+        tile_x_dim=256,
+        tile_y_dim=128,
+        level_dirs={1: "d1"},
+        file_prefix="P_",
+        file_postfix=".tif",
+        mtime=12.5,
+        available=[1, 2],
+        fetch_tiles=fetch,
+    )
+    assert captured["z"] == _Z

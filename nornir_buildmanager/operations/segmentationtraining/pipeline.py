@@ -9,6 +9,7 @@ import os
 import re
 from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -412,14 +413,16 @@ def ExportSectionCrops(
             Repair=Repair,
             FailMissingTileset=FailMissingTileset,
             Overlay=Overlay,
-            TileXDim=TileXDim,
-            TileYDim=TileYDim,
-            LevelDirs=LevelDirs,
-            FilePrefix=FilePrefix,
-            FilePostfix=FilePostfix,
-            TilesetMtime=TilesetMtime,
-            AvailableDownsamples=AvailableDownsamples,
-            TileFetcher=TileFetcher,
+            overrides=TilesetOverrides(
+                tile_x_dim=TileXDim,
+                tile_y_dim=TileYDim,
+                level_dirs=LevelDirs,
+                file_prefix=FilePrefix,
+                file_postfix=FilePostfix,
+                mtime=TilesetMtime,
+                available=AvailableDownsamples,
+                fetch_tiles=TileFetcher,
+            ),
             VolumeName=VolumeName,
             filter_node=filter_node,
             section=section,
@@ -721,14 +724,7 @@ def _export_section_crops_entry(
     Repair: bool,
     FailMissingTileset: bool,
     Overlay: bool,
-    TileXDim: int | None,
-    TileYDim: int | None,
-    LevelDirs: dict[int, str] | None,
-    FilePrefix: str | None,
-    FilePostfix: str | None,
-    TilesetMtime: float | None,
-    AvailableDownsamples: list[int] | None,
-    TileFetcher: Callable[[int, Iterable[tuple[int, int]]], None] | None,
+    overrides: TilesetOverrides,
     VolumeName: str | None,
     filter_node: Any,
     section: Any,
@@ -750,16 +746,9 @@ def _export_section_crops_entry(
         filter_node,
         downsample=int(Downsample),
         fail_missing=bool(FailMissingTileset),
-        tile_x_dim=TileXDim,
-        tile_y_dim=TileYDim,
-        level_dirs=LevelDirs,
-        file_prefix=FilePrefix,
-        file_postfix=FilePostfix,
-        tileset_mtime=TilesetMtime,
-        available=AvailableDownsamples,
+        overrides=overrides,
         channel_name=str(Channels),
         filter_name=str(Filters),
-        fetch_tiles=TileFetcher,
     )
     if tileset is None:
         return None
@@ -1528,36 +1517,49 @@ def _max_tiles(
     return max(1, math.floor(max_texture / tile_x_dim)), max(1, math.floor(max_texture / tile_y_dim))
 
 
+@dataclass(frozen=True, slots=True)
+class TilesetOverrides:
+    """Explicit ExportSectionCrops tileset values (all set by ExportRemoteSections for a VikingXML tileset).
+
+    With ``level_dirs`` and both tile dims set the Filter is not consulted; otherwise each
+    non-None value overrides the matching Tileset field and ``fetch_tiles`` is unused.
+    """
+
+    tile_x_dim: int | None = None
+    tile_y_dim: int | None = None
+    level_dirs: dict[int, str] | None = None
+    file_prefix: str | None = None
+    file_postfix: str | None = None
+    mtime: float | None = None
+    available: list[int] | None = None
+    #: ``(downsample, tile coords) -> None``: make those tiles current in ``level_dirs``.
+    fetch_tiles: Callable[[int, Iterable[tuple[int, int]]], None] | None = None
+
+
 def _resolve_tileset(
     filter_node: Any,
     *,
     downsample: int,
     fail_missing: bool,
-    tile_x_dim: int | None,
-    tile_y_dim: int | None,
-    level_dirs: dict[int, str] | None,
-    file_prefix: str | None,
-    file_postfix: str | None,
-    tileset_mtime: float | None,
-    available: list[int] | None,
+    overrides: TilesetOverrides,
     channel_name: str,
     filter_name: str,
-    fetch_tiles: Callable[[int, Iterable[tuple[int, int]]], None] | None = None,
 ) -> ResolvedTileset | None:
     """Tile size and level directories from the filter, or from explicit overrides.
 
     A sampled PNG wins over ``TileXDim`` / ``TileYDim`` when they disagree, and
     the tileset node is updated so later stages see the real size.
     """
-    if level_dirs is not None and tile_x_dim and tile_y_dim:
+    o = overrides
+    if o.level_dirs is not None and o.tile_x_dim and o.tile_y_dim:
         return ResolvedTileset(
-            tile_shape=Shape.from_xy(x=int(tile_x_dim), y=int(tile_y_dim)),
-            available=available or sorted(level_dirs),
-            level_dirs={int(k): str(v) for k, v in level_dirs.items()},
-            prefix=file_prefix or "",
-            postfix=file_postfix or ".png",
-            mtime=tileset_mtime,
-            fetch_tiles=fetch_tiles,
+            tile_shape=Shape.from_xy(x=int(o.tile_x_dim), y=int(o.tile_y_dim)),
+            available=o.available or sorted(o.level_dirs),
+            level_dirs={int(k): str(v) for k, v in o.level_dirs.items()},
+            prefix=o.file_prefix or "",
+            postfix=o.file_postfix or ".png",
+            mtime=o.mtime,
+            fetch_tiles=o.fetch_tiles,
         )
     if filter_node is None or not hasattr(filter_node, "Tileset"):
         return _missing_tileset("ExportTrainingData needs a Filter with a Tileset", fail_missing)
@@ -1566,22 +1568,22 @@ def _resolve_tileset(
         where = getattr(filter_node, "FullPath", channel_name + "/" + filter_name)
         return _missing_tileset(f"No Tileset on filter {where}", fail_missing)
     available_levels, dirs, level_mtime = _scan_levels(tileset, downsample)
-    prefix = file_prefix if file_prefix is not None else (tileset.FilePrefix or "")
-    postfix = file_postfix if file_postfix is not None else (tileset.FilePostfix or ".png")
+    prefix = o.file_prefix if o.file_prefix is not None else (tileset.FilePrefix or "")
+    postfix = o.file_postfix if o.file_postfix is not None else (tileset.FilePostfix or ".png")
     resolved_x, resolved_y, save_node = _reconcile_tile_size(
         tileset,
         dirs.get(min(dirs)) if dirs else None,
         str(postfix),
-        int(tile_x_dim or tileset.TileXDim or 0),
-        int(tile_y_dim or tileset.TileYDim or 0),
+        int(o.tile_x_dim or tileset.TileXDim or 0),
+        int(o.tile_y_dim or tileset.TileYDim or 0),
     )
     return ResolvedTileset(
         tile_shape=Shape.from_xy(x=resolved_x, y=resolved_y),
-        available=available or available_levels,
+        available=o.available or available_levels,
         level_dirs=dirs,
         prefix=prefix,
         postfix=postfix,
-        mtime=tileset_mtime if tileset_mtime is not None else level_mtime,
+        mtime=o.mtime if o.mtime is not None else level_mtime,
         save_node=save_node,
     )
 
