@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    atomic_write_text,
     read_manifest_rows,
     write_manifest_rows,
 )
@@ -42,7 +43,7 @@ def write_sa1b_json(
         "image": image,
         "annotations": annotations,
     }
-    Path(path).write_text(json.dumps(payload), encoding="utf-8")
+    atomic_write_text(Path(path), json.dumps(payload))
 
 
 def ensure_sa1b_odata(path: str | Path, odata: str | None) -> bool:
@@ -67,7 +68,7 @@ def ensure_sa1b_odata(path: str | Path, odata: str | None) -> bool:
     if image.get("odata") == url:
         return False
     image["odata"] = url
-    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    atomic_write_text(json_path, json.dumps(payload))
     return True
 
 

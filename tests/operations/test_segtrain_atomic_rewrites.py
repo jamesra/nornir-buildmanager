@@ -24,7 +24,10 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
 from nornir_buildmanager.operations.segmentationtraining.maskrefresh import (
     replace_image_annotations,
 )
+from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex
 from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord
+from nornir_buildmanager.operations.segmentationtraining.sam2.write import ensure_sa1b_odata, write_sa1b_json
+from nornir_buildmanager.operations.segmentationtraining.update import _drop_annotations
 
 
 def _fail_replace(src: object, dst: object) -> None:
@@ -99,3 +102,69 @@ def test_repair_key_failed_rewrite_keeps_old_json(tmp_path: Path, monkeypatch: p
         _repair_key(tmp_path, "k", CleanupSummary())
     monkeypatch.undo()
     assert json_path.read_text(encoding="utf-8") == original
+
+
+def test_ensure_sa1b_odata_failed_rewrite_keeps_old_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    json_path = tmp_path / "k.json"
+    original = json.dumps({"image": {"file_name": "k.png"}, "annotations": []})
+    json_path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(os, "replace", _fail_replace)
+    with pytest.raises(OSError):
+        ensure_sa1b_odata(json_path, "http://example/odata")
+    monkeypatch.undo()
+    assert json_path.read_text(encoding="utf-8") == original
+
+
+def test_ensure_sa1b_odata_rewrite_bytes_and_no_temp(tmp_path: Path) -> None:
+    json_path = tmp_path / "k.json"
+    json_path.write_text(json.dumps({"image": {"file_name": "k.png"}, "annotations": []}), encoding="utf-8")
+    assert ensure_sa1b_odata(json_path, "http://example/odata") is True
+    expected = json.dumps({"image": {"file_name": "k.png", "odata": "http://example/odata"}, "annotations": []})
+    assert json_path.read_text(encoding="utf-8") == expected
+    assert _leftover_json_temps(tmp_path) == []
+
+
+def test_write_sa1b_json_bytes_and_no_temp(tmp_path: Path) -> None:
+    json_path = tmp_path / "images" / "k.json"
+    write_sa1b_json(json_path, file_name="k.png", width=4, height=3, annotations=[{"id": 1}], downsample=2, volume="v")
+    expected = json.dumps(
+        {"image": {"file_name": "k.png", "width": 4, "height": 3, "downsample": 2, "volume": "v"},
+         "annotations": [{"id": 1}]}
+    )
+    assert json_path.read_text(encoding="utf-8") == expected
+    assert _leftover_json_temps(tmp_path) == []
+
+
+def test_write_sa1b_json_failed_write_keeps_old_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    json_path = tmp_path / "k.json"
+    original = json.dumps({"image": {"file_name": "old.png"}, "annotations": []})
+    json_path.write_text(original, encoding="utf-8")
+    monkeypatch.setattr(os, "replace", _fail_replace)
+    with pytest.raises(OSError):
+        write_sa1b_json(json_path, file_name="k.png", width=4, height=3, annotations=[])
+    monkeypatch.undo()
+    assert json_path.read_text(encoding="utf-8") == original
+
+
+def test_drop_annotations_failed_rewrite_keeps_old_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    images = tmp_path / "images"
+    images.mkdir()
+    json_path = images / "k.json"
+    original = json.dumps({"image": {"file_name": "k.png"}, "annotations": [{"id": 1}, {"id": 2}]})
+    json_path.write_text(original, encoding="utf-8")
+    products = CropProductIndex(tmp_path)
+    monkeypatch.setattr(os, "replace", _fail_replace)
+    with pytest.raises(OSError):
+        _drop_annotations(tmp_path, "k", {1}, products)
+    monkeypatch.undo()
+    assert json_path.read_text(encoding="utf-8") == original
+
+
+def test_drop_annotations_rewrite_bytes_and_no_temp(tmp_path: Path) -> None:
+    images = tmp_path / "images"
+    images.mkdir()
+    json_path = images / "k.json"
+    json_path.write_text(json.dumps({"image": {"file_name": "k.png"}, "annotations": [{"id": 1}, {"id": 2}]}), encoding="utf-8")
+    _drop_annotations(tmp_path, "k", {1}, CropProductIndex(tmp_path))
+    assert json_path.read_text(encoding="utf-8") == json.dumps({"image": {"file_name": "k.png"}, "annotations": [{"id": 2}]})
+    assert _leftover_json_temps(tmp_path) == []

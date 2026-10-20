@@ -16,6 +16,7 @@ from typing import Any
 
 from nornir_shared import prettyoutput
 
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     apply_ignore_moves,
     connect,
@@ -313,7 +314,7 @@ def _drop_annotations(
         remove_image_key_products(output, image_key, products=products)
         return
     payload["annotations"] = kept
-    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    atomic_write_text(json_path, json.dumps(payload))
     products.note_path(json_path)
 
 
