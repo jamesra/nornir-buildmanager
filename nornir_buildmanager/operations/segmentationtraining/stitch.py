@@ -897,12 +897,6 @@ def jobs_in_column_band(jobs: list[StitchJob], ix_min: int, ix_max: int) -> list
     return [job for job in jobs if job.snap.ix0 < ix_max and job.snap.ix1 > ix_min]
 
 
-def remaining_min_ix(jobs: list[StitchJob]) -> int | None:
-    if not jobs:
-        return None
-    return min(job.snap.ix0 for job in jobs)
-
-
 def count_column_bands(jobs: list[StitchJob], column_band: int) -> int:
     """How many column strips :func:`sweep_stitch_jobs` will walk for *jobs*."""
     column_band = max(1, int(column_band))

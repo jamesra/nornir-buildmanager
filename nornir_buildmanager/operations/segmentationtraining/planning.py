@@ -74,11 +74,6 @@ class PlannedCrop:
         return self.window.mosaic_origin(self.downsample)
 
 
-def overlap_tiles_for(max_tiles: int) -> int:
-    """~25% of the window, at least one tile."""
-    return max(1, max_tiles // 4)
-
-
 def plan_section_crops(
     records: list[LocationRecord],
     *,

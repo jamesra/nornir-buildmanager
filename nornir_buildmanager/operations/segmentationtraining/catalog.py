@@ -581,14 +581,6 @@ def _mask_names_by_id_token(output: Path, folder: str) -> dict[str, list[str]]:
     return by_token
 
 
-def _find_mask(output: Path, folder: str, location_id: int) -> Path | None:
-    """First cached mask for a location id."""
-    matches = _find_masks(output, folder, location_id)
-    if not matches:
-        return None
-    return matches[0]
-
-
 def _records_by_id(
     output: Path,
     *,

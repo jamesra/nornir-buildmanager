@@ -103,21 +103,6 @@ class SnapPlan:
     window: TileRect
 
 
-@dataclass(frozen=True)
-class AnnotationGeometry:
-    """One location after WKT parse, pad, and snap at a chosen D."""
-
-    location_id: int
-    z: int
-    downsample: int
-    mosaics: tuple[PolygonRings, ...]
-    padded_min_x: float
-    padded_min_y: float
-    padded_max_x: float
-    padded_max_y: float
-    snap: TileRect
-
-
 def mosaic_bbox(polygons: list[PolygonRings]) -> tuple[float, float, float, float]:
     """Axis-aligned mosaic bounds of all exterior rings."""
     xs: list[float] = []
