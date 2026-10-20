@@ -125,9 +125,10 @@ def test_image_block_not_a_dict_raises(out: Path) -> None:
         _repair(out)
 
 
-def test_annotations_not_a_list_raises(out: Path) -> None:
+@pytest.mark.parametrize("annotations", [{"id": 1}, "ab", 5])
+def test_annotations_not_a_list_raises(out: Path, annotations: Any) -> None:
     _png(out / "images" / f"{KEY}.png")
-    _write_json(out, {**_good_payload(), "annotations": {"id": 1}})
+    _write_json(out, {**_good_payload(), "annotations": annotations})
     with pytest.raises(NornirUserException, match="not a list"):
         _repair(out)
 
@@ -262,17 +263,21 @@ def test_repair_logs_and_bytes_are_pinned(out: Path, monkeypatch: pytest.MonkeyP
     assert summary == CleanupSummary(rewritten_json=1, deleted_members=1)
 
 
-def test_no_image_logs_are_pinned(out: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("members", [["masks/7"], ["masks/7", "ignored/8"]])
+def test_no_image_logs_are_pinned(
+    out: Path, monkeypatch: pytest.MonkeyPatch, members: list[str]
+) -> None:
     _png(out / "overlays" / f"{KEY}.png")
-    _png(out / "masks" / f"{KEY}_7.png")
-    _png(out / "ignored" / f"{KEY}_8.png")
+    for member in members:
+        folder, location_id = member.split("/")
+        _png(out / folder / f"{KEY}_{location_id}.png")
     messages = _capture_logs(monkeypatch)
     summary = _repair(out)
     assert messages == [
         f"CleanupAnnotationCrops: delete overlay with no image {KEY}",
-        f"CleanupAnnotationCrops: delete 2 member file(s) with no image {KEY}",
+        f"CleanupAnnotationCrops: delete {len(members)} member file(s) with no image {KEY}",
     ]
-    assert summary == CleanupSummary(deleted_overlays=1, deleted_members=2)
+    assert summary == CleanupSummary(deleted_overlays=1, deleted_members=len(members))
 
 
 def test_bad_annotation_after_a_drop_raises_before_any_write(

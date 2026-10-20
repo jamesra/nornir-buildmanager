@@ -154,19 +154,7 @@ def _repair_key(
         summary.deleted_keys += 1
         return
     if not image_ok:
-        overlay = output / OVERLAYS_FOLDER / f"{key}.png"
-        if overlay.is_file():
-            prettyoutput.Log(
-                f"CleanupAnnotationCrops: delete overlay with no image {key}"
-            )
-            overlay.unlink()
-            summary.deleted_overlays += 1
-        removed = remove_member_files_not_in(output, key, set())
-        if removed:
-            prettyoutput.Log(
-                f"CleanupAnnotationCrops: delete {removed} member file(s) with no image {key}"
-            )
-            summary.deleted_members += removed
+        _remove_key_without_image(output, key, summary)
         return
 
     payload = _load_json(json_path)
@@ -174,24 +162,8 @@ def _repair_key(
     if not isinstance(image_meta, dict):
         raise NornirUserException(f"Annotation crop JSON is missing image: {json_path}")
     changed = _align_image_meta(image_path, image_meta, key, odata=odata)
-    annotations = payload.get("annotations")
-    if annotations is None:
-        annotations = []
-    if not isinstance(annotations, list):
-        raise NornirUserException(f"Annotation crop JSON annotations are not a list: {json_path}")
-    kept: list[Any] = []
-    for item in annotations:
-        if not isinstance(item, dict) or "id" not in item:
-            raise NornirUserException(f"Annotation crop JSON has an annotation without id: {json_path}")
-        location_id = int(item["id"])
-        if _mask_exists(output, key, location_id):
-            kept.append(item)
-            continue
-        prettyoutput.Log(
-            f"CleanupAnnotationCrops: drop annotation {location_id} with no mask from {key}"
-        )
-        changed = True
-    if changed:
+    kept, dropped = _kept_annotations(output, key, payload.get("annotations"), json_path)
+    if changed or dropped:
         payload["annotations"] = kept
         atomic_write_text(json_path, json.dumps(payload))
         summary.rewritten_json += 1
@@ -202,6 +174,54 @@ def _repair_key(
             f"CleanupAnnotationCrops: delete {removed} orphan member file(s) for {key}"
         )
         summary.deleted_members += removed
+
+
+def _remove_key_without_image(output: Path, key: str, summary: CleanupSummary) -> None:
+    """Delete the overlay and member files left behind by a key with neither crop nor JSON."""
+    overlay = output / OVERLAYS_FOLDER / f"{key}.png"
+    if overlay.is_file():
+        prettyoutput.Log(
+            f"CleanupAnnotationCrops: delete overlay with no image {key}"
+        )
+        overlay.unlink()
+        summary.deleted_overlays += 1
+    removed = remove_member_files_not_in(output, key, set())
+    if removed:
+        prettyoutput.Log(
+            f"CleanupAnnotationCrops: delete {removed} member file(s) with no image {key}"
+        )
+        summary.deleted_members += removed
+
+
+def _kept_annotations(
+    output: Path,
+    key: str,
+    annotations: Any,
+    json_path: Path,
+) -> tuple[list[Any], bool]:
+    """Return the annotations that still have a mask, and whether any were dropped.
+
+    Raises on a non-list or an entry that is not a dict with ``id``; drops logged before
+    the bad entry stay logged and nothing is written.
+    """
+    if annotations is None:
+        annotations = []
+    if not isinstance(annotations, list):
+        raise NornirUserException(f"Annotation crop JSON annotations are not a list: {json_path}")
+    kept: list[Any] = []
+    dropped = False
+    for item in annotations:
+        if not isinstance(item, dict) or "id" not in item:
+            raise NornirUserException(f"Annotation crop JSON has an annotation without id: {json_path}")
+        location_id = int(item["id"])
+        if _mask_exists(output, key, location_id):
+            kept.append(item)
+            continue
+        prettyoutput.Log(
+            f"CleanupAnnotationCrops: drop annotation {location_id} with no mask from {key}"
+        )
+        dropped = True
+    return kept, dropped
 
 
 def _align_image_meta(
