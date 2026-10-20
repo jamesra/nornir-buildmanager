@@ -380,12 +380,37 @@ def cells_for_circles(
     Pure: no I/O. Crops that no circle touches are omitted. The radius is the
     true radius, so a crop lists every circle that reaches it at full size; a
     consumer that shrinks circles only ever draws less of them.
+
+    Per crop, a float64 numpy pass over all circles keeps only those whose
+    clamped x and y offsets are each below the radius. ``math.hypot`` is never
+    below the larger offset, so this rejects nothing the exact test accepts;
+    survivors then go through the same scalar functions as before, which keeps
+    entries bit-identical and in input order.
     """
     cells: dict[str, list[dict[str, Any]]] = {}
     circle_list = list(circles)
+    if not circle_list:
+        return cells
+    center_x = np.fromiter((c.center_x for c in circle_list), dtype=np.float64, count=len(circle_list))
+    center_y = np.fromiter((c.center_y for c in circle_list), dtype=np.float64, count=len(circle_list))
+    radii = np.fromiter((c.radius for c in circle_list), dtype=np.float64, count=len(circle_list))
     for crop in crops:
+        # Same operations as circle_in_crop_pixels / circle_intersects_window.
+        scale = float(crop.downsample)
+        width, height = float(crop.window.width), float(crop.window.height)
+        origin_x, origin_y = crop.window.mosaic_origin(scale)
+        # Python floats never warn; match that if a caller enabled np.seterr warnings.
+        with np.errstate(all="ignore"):
+            all_px = (center_x - origin_x) / scale
+            all_py = (center_y - origin_y) / scale
+            if not geometry.MOSAIC_Y_INCREASES_WITH_IMAGE_ROW:
+                all_py = height - all_py
+            all_radius = radii / scale
+            near = np.abs(all_px - np.clip(all_px, 0.0, width)) < all_radius
+            near &= np.abs(all_py - np.clip(all_py, 0.0, height)) < all_radius
         entries: list[dict[str, Any]] = []
-        for circle in circle_list:
+        for index in np.flatnonzero(near).tolist():
+            circle = circle_list[index]
             px, py, radius = circle_in_crop_pixels(
                 circle.center_x,
                 circle.center_y,
