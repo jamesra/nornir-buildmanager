@@ -57,13 +57,11 @@ def run_process_jobs(
         num_threads=workers,
     )
     results: list[R] = []
-    peak = 0
     outstanding = 0
 
     def submit(job: T):
-        nonlocal outstanding, peak
+        nonlocal outstanding
         outstanding += 1
-        peak = max(peak, outstanding)
         return pool.add_task(f"{name_prefix}-{outstanding}", func, job)
 
     for task in submit_bounded(submit, jobs, max_in_flight=workers):
