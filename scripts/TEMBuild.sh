@@ -14,7 +14,7 @@
 #
 # Environment (optional overrides; defaults match the launch config):
 #   NORNIR_HEADLESS, PYTHONUNBUFFERED, NORNIR_MQTT_* ,
-#   NORNIR_COMPUTATIONAL_LIBRARY (default: cupy),
+#   NORNIR_COMPUTATIONAL_LIBRARY (default: cupy when a GPU is usable, else numpy),
 #   NORNIR_BUILD_PYTHON (python executable; default: python3 then python)
 
 set -euo pipefail
@@ -24,7 +24,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_nornir_tem_common.sh"
 
 VOLUME_DIR="$(resolve_volume_dir "${1:-}")"
 PYTHON="$(resolve_python)"
-COMP_LIB="${NORNIR_COMPUTATIONAL_LIBRARY:-cupy}"
+COMP_LIB="${NORNIR_COMPUTATIONAL_LIBRARY:-$(default_computational_library "$PYTHON")}"
 export_nornir_tem_env
 
 echo "Volume folder : $VOLUME_DIR"

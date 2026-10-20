@@ -68,3 +68,13 @@ resolve_volume_dir() {
   require_existing_dir "volume folder" "$volume_dir"
   printf '%s\n' "$volume_dir"
 }
+
+default_computational_library() {
+  # cupy only when it imports and sees a GPU; nornir:prod (CPU image) and GPU-less hosts get numpy.
+  local py="$1"
+  if "$py" -c "import cupy, sys; sys.exit(0 if cupy.cuda.runtime.getDeviceCount() > 0 else 1)" >/dev/null 2>&1; then
+    printf 'cupy\n'
+  else
+    printf 'numpy\n'
+  fi
+}

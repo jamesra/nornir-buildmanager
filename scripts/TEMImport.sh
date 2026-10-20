@@ -14,7 +14,7 @@
 #
 # Environment (optional overrides; defaults match launch configs):
 #   NORNIR_HEADLESS, PYTHONUNBUFFERED, NORNIR_MQTT_* ,
-#   NORNIR_COMPUTATIONAL_LIBRARY (default: cupy),
+#   NORNIR_COMPUTATIONAL_LIBRARY (default: cupy when a GPU is usable, else numpy),
 #   NORNIR_BUILD_PYTHON (python executable; default: python3 then python)
 
 set -euo pipefail
@@ -41,7 +41,7 @@ require_existing_dir "import folder" "$IMPORT_DIR"
 mkdir -p "$VOLUME_DIR"
 
 PYTHON="$(resolve_python)"
-COMP_LIB="${NORNIR_COMPUTATIONAL_LIBRARY:-cupy}"
+COMP_LIB="${NORNIR_COMPUTATIONAL_LIBRARY:-$(default_computational_library "$PYTHON")}"
 export_nornir_tem_env
 
 echo "Import folder : $IMPORT_DIR"
