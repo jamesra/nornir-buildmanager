@@ -100,6 +100,7 @@ from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     BlankCrop,
     StitchJob,
+    TileExistenceMemo,
     count_column_bands,
     crop_image_filename,
     default_column_band,
@@ -857,7 +858,11 @@ def _prefetch_tiles(tileset: ResolvedTileset, requests: Iterable[tuple[int, Tile
         fetch(downsample, by_downsample[downsample])
 
 
-def _missing_tiles_for_plan(plan: PlannedCrop, tileset: ResolvedTileset) -> list[tuple[int, int]]:
+def _missing_tiles_for_plan(
+    plan: PlannedCrop,
+    tileset: ResolvedTileset,
+    known: TileExistenceMemo | None = None,
+) -> list[tuple[int, int]]:
     """Covering tiles for *plan* that are not in the tileset level directory."""
     window = plan.window
     return missing_tiles_for_window(
@@ -870,6 +875,7 @@ def _missing_tiles_for_plan(plan: PlannedCrop, tileset: ResolvedTileset) -> list
         level_dir=tileset.level_dirs.get(int(plan.downsample)),
         prefix=tileset.prefix,
         postfix=tileset.postfix,
+        known=known,
     )
 
 
@@ -895,8 +901,9 @@ def retain_plans_with_tiles(
             for plan in plans
         ),
     )
+    known: TileExistenceMemo = {}
     for plan in plans:
-        missing = _missing_tiles_for_plan(plan, tileset)
+        missing = _missing_tiles_for_plan(plan, tileset, known)
         if not missing:
             kept.append(plan)
             continue
@@ -957,6 +964,7 @@ def drop_recorded_crops_missing_tiles(
             if only_keys is None or mark.key in only_keys
         ),
     )
+    known: TileExistenceMemo = {}
     for mark in marks:
         if only_keys is not None and mark.key not in only_keys:
             kept.append(mark)
@@ -964,7 +972,7 @@ def drop_recorded_crops_missing_tiles(
         rect = _tiles_for_watermark_image(mark, tile_x, tile_y)
         level_dir = tileset.level_dirs.get(int(mark.downsample))
         missing = (
-            missing_covering_tiles(rect, level_dir, tileset.prefix, tileset.postfix)
+            missing_covering_tiles(rect, level_dir, tileset.prefix, tileset.postfix, known)
             if rect is not None
             else []
         )
@@ -1158,6 +1166,7 @@ def stitch_missing_crop_marks(
             for mark in marks
         ),
     )
+    known: TileExistenceMemo = {}
     for mark in marks:
         image_path = output / IMAGES_FOLDER / crop_image_filename(mark.key)
         job = _stitch_job_from_mark(mark, tile_shape, image_path)
@@ -1177,6 +1186,7 @@ def stitch_missing_crop_marks(
             level_dir=tileset.level_dirs.get(int(mark.downsample)),
             prefix=tileset.prefix,
             postfix=tileset.postfix,
+            known=known,
         )
         if missing:
             skipped += 1

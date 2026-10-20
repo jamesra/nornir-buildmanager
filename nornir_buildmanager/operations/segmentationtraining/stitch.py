@@ -226,11 +226,16 @@ class _TileLayout:
         return self.tile_x_dim > 0 and self.tile_y_dim > 0
 
 
+TileExistenceMemo = dict[tuple[str, int, int], bool]
+"""Per-call cache of tile file presence keyed by ``(level_dir, ix, iy)``."""
+
+
 def missing_covering_tiles(
     tiles: TileRect,
     level_dir: str | None,
     prefix: str,
     postfix: str,
+    known: TileExistenceMemo | None = None,
 ) -> list[tuple[int, int]]:
     """Tile coordinates in *tiles* that are not files in *level_dir*.
 
@@ -241,20 +246,30 @@ def missing_covering_tiles(
     The returned list stops at the first gap. Callers only need to know the
     window is incomplete, and a full stat of every tile in every crop is a
     separate CIFS round trip.
+
+    *known* remembers each stat result so overlapping crop windows stat a
+    shared tile once. The caller creates it for one pass over a section and
+    drops it afterwards, so a tile fetched later is never hidden.
     """
-    coords = [
+    coords = (
         (ix, iy)
         for iy in range(tiles.iy0, tiles.iy1)
         for ix in range(tiles.ix0, tiles.ix1)
         if ix >= 0 and iy >= 0
-    ]
-    if not coords:
-        return []
+    )
     if not level_dir or not os.path.isdir(level_dir):
-        return coords[:1]
+        first = next(coords, None)
+        return [] if first is None else [first]
     for ix, iy in coords:
-        path = os.path.join(level_dir, tile_filename(prefix, postfix, ix, iy))
-        if not os.path.isfile(path):
+        if known is None:
+            present = os.path.isfile(os.path.join(level_dir, tile_filename(prefix, postfix, ix, iy)))
+        else:
+            key = (level_dir, ix, iy)
+            present = known.get(key)
+            if present is None:
+                present = os.path.isfile(os.path.join(level_dir, tile_filename(prefix, postfix, ix, iy)))
+                known[key] = present
+        if not present:
             return [(ix, iy)]
     return []
 
@@ -270,12 +285,13 @@ def missing_tiles_for_window(
     level_dir: str | None,
     prefix: str,
     postfix: str,
+    known: TileExistenceMemo | None = None,
 ) -> list[tuple[int, int]]:
-    """Covering tiles for a pixel crop that are not on disk."""
+    """Covering tiles for a pixel crop that are not on disk (see :func:`missing_covering_tiles`)."""
     if width <= 0 or height <= 0 or tile_x_dim <= 0 or tile_y_dim <= 0:
         return []
     rect = CropWindow(origin_x, origin_y, width, height).covering_tiles(tile_x_dim, tile_y_dim)
-    return missing_covering_tiles(rect, level_dir, prefix, postfix)
+    return missing_covering_tiles(rect, level_dir, prefix, postfix, known)
 
 
 def log_missing_crop_tiles(
