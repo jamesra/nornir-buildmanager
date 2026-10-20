@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import sqlite3
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     _image_key_matches_z,
@@ -18,6 +21,8 @@ from nornir_buildmanager.operations.segmentationtraining.catalog import (
     record_crop_size,
 )
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    IGNORED_FOLDER,
+    MASKS_FOLDER,
     drop_product_index,
     get_product_index,
 )
@@ -108,6 +113,61 @@ def test_mask_relpath_ignored_folder_is_separate(output: Path) -> None:
     _touch(output, "ignored", ["frag_5.png"])
     assert _mask_relpath(output, "k", 5, ignored=True) == "ignored/frag_5.png"
     assert _mask_relpath(output, "k", 5, ignored=False) == "masks/k_5.png"
+
+
+def _relpath_by_scan(names: set[str], folder: str, image_key: str, location_id: int) -> str:
+    """Reference rule: exact name, else the one name ending ``_{id}.png``, else the exact name."""
+    exact = f"{image_key}_{location_id}.png"
+    if exact in names:
+        return f"{folder}/{exact}"
+    found = sorted(name for name in names if name.endswith(f"_{int(location_id)}.png"))
+    return f"{folder}/{found[0]}" if len(found) == 1 else f"{folder}/{exact}"
+
+
+_RELPATH_TOKENS = ["5", "15", "-5", "05", "x", "3_5", "0"]
+_relpath_names = st.builds(
+    "{}_{}{}".format,
+    st.sampled_from(["k", "a", "k_1", "frag", ""]),
+    st.sampled_from(_RELPATH_TOKENS),
+    st.sampled_from([".png", ".png", ".jpg"]),
+)
+_relpath_lookups = st.lists(
+    st.tuples(st.sampled_from(["k", "a", "z"]), st.sampled_from([0, 5, 15, -5, 3]), st.booleans()),
+    min_size=1,
+    max_size=12,
+)
+
+
+@settings(max_examples=150, deadline=None)
+@given(
+    masks=st.sets(_relpath_names, max_size=12),
+    ignored=st.sets(_relpath_names, max_size=6),
+    lookups=_relpath_lookups,
+)
+@example(
+    masks={"frag_5.png", "k_15.png", "k_-5.png", "k_05.png"},
+    ignored={"a_5.png"},
+    lookups=[("k", 5, False), ("k", -5, False), ("z", 15, False), ("k", 5, True), ("a", 0, False)],
+)
+def test_mask_relpath_shared_snapshot_matches_suffix_scan(
+    masks: set[str], ignored: set[str], lookups: list[tuple[str, int, bool]]
+) -> None:
+    """A *mask_names* cache shared across lookups returns what a fresh per-call suffix scan would."""
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "out"
+        drop_product_index(out)
+        products = get_product_index(out)
+        for name in masks:
+            products.note(MASKS_FOLDER, name, 0.0)
+        for name in ignored:
+            products.note(IGNORED_FOLDER, name, 0.0)
+        shared: dict[str, dict[str, list[str]]] = {}
+        for image_key, location_id, is_ignored in lookups:
+            folder, names = (IGNORED_FOLDER, ignored) if is_ignored else (MASKS_FOLDER, masks)
+            expected = _relpath_by_scan(names, folder, image_key, location_id)
+            assert _mask_relpath(out, image_key, location_id, ignored=is_ignored, mask_names=shared) == expected
+            assert _mask_relpath(out, image_key, location_id, ignored=is_ignored) == expected
+        drop_product_index(out)
 
 
 def test_image_relpath_png_then_jpeg_then_default_png_name(output: Path) -> None:

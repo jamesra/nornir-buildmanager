@@ -125,8 +125,8 @@ def test_apply_ignore_moves_matches_per_id_scan(masks: set[str], ignored: set[st
 @settings(max_examples=150, deadline=None)
 @given(masks=_masks, location_id=st.sampled_from(_IDS))
 @example(masks={"k_05.png", "k_5.png", "a_3_5.png", "_5.png", "k_5.json", "k_-5.png"}, location_id=5)
-def test_mask_names_by_id_token_matches_find_masks(masks: set[str], location_id: int) -> None:
-    """The one-pass grouping names the same files, sorted, as the per-id ``_find_masks`` scan."""
+def test_mask_names_by_id_token_matches_suffix_scan(masks: set[str], location_id: int) -> None:
+    """The one-pass grouping names the same files, sorted, as a per-id ``_{id}.png`` suffix scan."""
     with tempfile.TemporaryDirectory() as tmp:
         output = Path(tmp) / "out"
         drop_product_index(output)
@@ -134,6 +134,6 @@ def test_mask_names_by_id_token_matches_find_masks(masks: set[str], location_id:
         for name in masks:
             products.note(MASKS_FOLDER, name, 0.0)
         grouped = catalog._mask_names_by_id_token(output, MASKS_FOLDER)
-        expected = [path.name for path in catalog._find_masks(output, MASKS_FOLDER, location_id)]
+        expected = _expected_moves(set(products.iter_names(MASKS_FOLDER)), {location_id})
         assert sorted(grouped.get(str(int(location_id)), [])) == expected
         drop_product_index(output)

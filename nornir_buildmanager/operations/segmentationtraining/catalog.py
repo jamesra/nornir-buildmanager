@@ -526,21 +526,12 @@ def _relocate_indexed(
     products.note(dest_folder, destination.name)
 
 
-def _find_masks(output: Path, folder: str, location_id: int) -> list[Path]:
-    """Every mask file for *location_id* in the cached *folder*."""
-    products = get_product_index(output)
-    suffix = f"_{int(location_id)}.png"
-    root = product_folder_path(output, folder)
-    names = sorted(name for name in products.iter_names(folder) if name.endswith(suffix))
-    return [root / name for name in names]
-
-
 def _mask_names_by_id_token(output: Path, folder: str) -> dict[str, list[str]]:
     """Snapshot of the cached ``*.png`` names in *folder*, grouped by the text after the last ``_``.
 
     A name ends with ``_{id}.png`` exactly when that text is ``str(int(id))``, because an
-    int's string holds no ``_``. So ``sorted(result.get(str(int(id)), []))`` names the same
-    files as ``_find_masks(output, folder, id)``, and one pass serves many ids.
+    int's string holds no ``_``. So ``sorted(result.get(str(int(id)), []))`` names every
+    cached file in *folder* ending with ``_{id}.png``, and one pass serves many ids.
     """
     by_token: dict[str, list[str]] = {}
     for name in get_product_index(output).iter_names(folder):
@@ -634,6 +625,8 @@ def _collect_location_rows(
     """Catalog rows from crop JSON and indexed masks. *image_keys* limits the scan to one section."""
     rows: dict[tuple[int, str], dict[str, Any]] = {}
     products = get_product_index(output)
+    # Fragment-name lookups share one snapshot per folder; nothing here notes or forgets names.
+    mask_names: dict[str, dict[str, list[str]]] = {}
     for json_path in _iter_image_json_paths(output, products, z=z, image_keys=image_keys):
         image_key = json_path.stem
         payload = _read_json_object(json_path)
@@ -655,6 +648,7 @@ def _collect_location_rows(
                 area=None if area is None else float(area),
                 stored_radius=stored_radius,
                 ignored=location_id in ignored_ids,
+                mask_names=mask_names,
             )
     for folder, ignored_flag in ((MASKS_FOLDER, False), (IGNORED_FOLDER, True)):
         for location_id, image_key in _iter_indexed_masks(
@@ -673,6 +667,7 @@ def _collect_location_rows(
                 area=None,
                 stored_radius=record.radius if record is not None else None,
                 ignored=ignored_flag or location_id in ignored_ids,
+                mask_names=mask_names,
             )
     return rows.values()
 
@@ -688,9 +683,10 @@ def _row(
     area: float | None,
     stored_radius: float | None,
     ignored: bool,
+    mask_names: dict[str, dict[str, list[str]]],
 ) -> dict[str, Any]:
-    """One locations-table row for a location on one crop."""
-    mask_rel = _mask_relpath(output, image_key, location_id, ignored=ignored)
+    """One locations-table row for a location on one crop. *mask_names* is as in ``_mask_relpath``."""
+    mask_rel = _mask_relpath(output, image_key, location_id, ignored=ignored, mask_names=mask_names)
     structure_id = None
     structure_label = annotation.get("structure_label")
     type_id = annotation.get("category_id")
@@ -796,17 +792,34 @@ def _iter_indexed_masks(
         yield location_id, image_key
 
 
-def _mask_relpath(output: Path, image_key: str, location_id: int, *, ignored: bool) -> str:
-    """Relative mask path. A lone fragment name is used when the expected file is absent."""
+def _mask_relpath(
+    output: Path,
+    image_key: str,
+    location_id: int,
+    *,
+    ignored: bool,
+    mask_names: dict[str, dict[str, list[str]]] | None = None,
+) -> str:
+    """Relative mask path. A lone fragment name is used when the expected file is absent.
+
+    *mask_names* caches ``_mask_names_by_id_token`` per folder across calls; fill it only
+    while the product index is not changing.
+    """
     products = get_product_index(output)
     name = f"{image_key}_{location_id}.png"
     folder = IGNORED_FOLDER if ignored else MASKS_FOLDER
     relative = f"{folder}/{name}"
     if products.exists(folder, name):
         return relative
-    found = _find_masks(output, folder, location_id)
+    if mask_names is None:
+        mask_names = {}
+    by_token = mask_names.get(folder)
+    if by_token is None:
+        by_token = mask_names[folder] = _mask_names_by_id_token(output, folder)
+    found = by_token.get(str(int(location_id)), [])
     if len(found) == 1:
-        return str(found[0].relative_to(output)).replace("\\", "/")
+        path = product_folder_path(output, folder) / found[0]
+        return str(path.relative_to(output)).replace("\\", "/")
     return relative
 
 
