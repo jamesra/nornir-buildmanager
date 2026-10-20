@@ -151,7 +151,11 @@ def write_overlay(
     for index, mask_path in enumerate(mask_paths):
         if not Path(mask_path).is_file():
             continue
-        mask = np.array(Image.open(mask_path).convert("L").resize((width, height), Image.NEAREST)) > 0
+        mask_image = Image.open(mask_path).convert("L")
+        # Masks are written crop-sized, so resize (a full copy even at the same size) is usually skipped.
+        if mask_image.size != (width, height):
+            mask_image = mask_image.resize((width, height), Image.NEAREST)
+        mask = np.asarray(mask_image) > 0
         if not np.any(mask):
             continue
         hue, chroma, color_luma = rgb_to_hcl(_OVERLAY_COLORS[index % len(_OVERLAY_COLORS)])

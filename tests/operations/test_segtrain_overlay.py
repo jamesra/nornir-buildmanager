@@ -163,8 +163,13 @@ def test_hcl_to_rgb_matches_reference_small_sizes(count: int) -> None:
         )
 
 
-def _overlay_case(root: Path, seed: int, size: int, mask_count: int, tem_mode: str) -> tuple[list[str], Path | None]:
-    """Write a TEM image and *mask_count* random masks under *root*; return mask paths and TEM path."""
+def _overlay_case(
+    root: Path, seed: int, size: int, mask_count: int, tem_mode: str, mask_mode: str = "L"
+) -> tuple[list[str], Path | None]:
+    """Write a TEM image and *mask_count* random masks under *root*; return mask paths and TEM path.
+
+    *mask_mode* ``"1"`` saves bilevel PNGs, the format ``masks.rasterize_mask_job`` writes.
+    """
     rng = np.random.default_rng(seed)
     tem_path: Path | None = root / "tem.png"
     if tem_mode == "gray":
@@ -185,34 +190,45 @@ def _overlay_case(root: Path, seed: int, size: int, mask_count: int, tem_mode: s
             mask_paths.append(str(root / f"missing_{index}.png"))
             continue
         mask_size = size if kind else size // 2 + 1
-        mask = (rng.uniform(0.0, 1.0, (mask_size, mask_size)) < rng.uniform(0.05, 0.9)).astype(np.uint8) * 255
+        foreground = rng.uniform(0.0, 1.0, (mask_size, mask_size)) < rng.uniform(0.05, 0.9)
         if kind == 2 and index == 2:
-            mask[:] = 0
-        Image.fromarray(mask, mode="L").save(mask_path)
+            foreground[:] = False
+        if mask_mode == "1":
+            image = Image.fromarray(foreground)
+        else:
+            # Any nonzero gray level is foreground, including faint ones.
+            levels = rng.integers(1, 256, foreground.shape, dtype=np.uint8)
+            image = Image.fromarray(np.where(foreground, levels, 0).astype(np.uint8), mode="L")
+        image.save(mask_path)
         mask_paths.append(str(mask_path))
     return mask_paths, tem_path
 
 
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=60, deadline=None)
 @given(
     seed=st.integers(min_value=0, max_value=2**32 - 1),
     size=st.integers(min_value=1, max_value=64),
     mask_count=st.integers(min_value=0, max_value=9),
     tem_mode=st.sampled_from(("gray", "rgb", "resized", "missing", "none")),
+    mask_mode=st.sampled_from(("L", "1")),
 )
-@example(seed=1, size=48, mask_count=8, tem_mode="gray")
-@example(seed=2, size=1, mask_count=3, tem_mode="rgb")
-def test_write_overlay_matches_reference_bytes(seed: int, size: int, mask_count: int, tem_mode: str) -> None:
-    """PNG bytes equal the pre-optimization body (overlapping masks, color wrap, empty/missing masks, resize)."""
+@example(seed=1, size=48, mask_count=8, tem_mode="gray", mask_mode="L")
+@example(seed=2, size=1, mask_count=3, tem_mode="rgb", mask_mode="L")
+@example(seed=3, size=40, mask_count=5, tem_mode="gray", mask_mode="1")
+def test_write_overlay_matches_reference_bytes(
+    seed: int, size: int, mask_count: int, tem_mode: str, mask_mode: str
+) -> None:
+    """PNG bytes equal the pre-optimization body (overlapping, crop-sized and mismatched, empty/missing masks)."""
     with tempfile.TemporaryDirectory() as folder:
         root = Path(folder)
-        mask_paths, tem_path = _overlay_case(root, seed, size, mask_count, tem_mode)
+        mask_paths, tem_path = _overlay_case(root, seed, size, mask_count, tem_mode, mask_mode)
         write_overlay(root / "new" / "o.png", width=size, height=size, mask_paths=mask_paths, tem_path=tem_path)
         _write_overlay_reference(root / "old" / "o.png", width=size, height=size, mask_paths=mask_paths, tem_path=tem_path)
         assert (root / "new" / "o.png").read_bytes() == (root / "old" / "o.png").read_bytes()
 
 
-def test_write_overlay_matches_reference_bytes_full_crop(tmp_path: Path) -> None:
+@pytest.mark.parametrize("mask_mode", ["L", "1"])
+def test_write_overlay_matches_reference_bytes_full_crop(tmp_path: Path, mask_mode: str) -> None:
     """A 1024 px crop with textured TEM and four large overlapping masks writes identical PNG bytes."""
     rng = np.random.default_rng(7)
     size = 1024
@@ -222,7 +238,7 @@ def test_write_overlay_matches_reference_bytes_full_crop(tmp_path: Path) -> None
     mask_paths = []
     for index, (cx, cy, radius) in enumerate(((300, 300, 250), (700, 300, 200), (500, 700, 300), (800, 800, 150))):
         mask = (((xx - cx) ** 2 + (yy - cy) ** 2) <= radius**2).astype(np.uint8) * 255
-        Image.fromarray(mask, mode="L").save(tmp_path / f"m{index}.png")
+        Image.fromarray(mask, mode="L").convert(mask_mode).save(tmp_path / f"m{index}.png")
         mask_paths.append(str(tmp_path / f"m{index}.png"))
     write_overlay(tmp_path / "new.png", width=size, height=size, mask_paths=mask_paths, tem_path=tmp_path / "tem.png")
     _write_overlay_reference(
