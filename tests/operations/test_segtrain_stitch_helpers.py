@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hypothesis.extra.numpy as hnp
+import hypothesis.strategies as st
 import numpy as np
 import pytest
+from hypothesis import example, given, settings
 from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     StitchJob,
@@ -62,6 +65,42 @@ def test_as_uint8_gray_multichannel_takes_first_channel() -> None:
     out = _as_uint8_gray(tile)
     assert out.shape == (2, 3)
     assert np.all(out == 10)
+
+
+def _as_uint8_gray_reference(tile: NDArray) -> NDArray:
+    """The pre-optimization conversion (one temporary per arithmetic step)."""
+    if np.issubdtype(tile.dtype, np.floating):
+        return np.clip(tile * 255.0, 0, 255).astype(np.uint8)
+    info_max = np.iinfo(tile.dtype).max if np.issubdtype(tile.dtype, np.integer) else 255
+    return (tile.astype(np.float32) * (255.0 / max(int(info_max), 1))).astype(np.uint8)
+
+
+_FINITE_FLOATS = {"allow_nan": False, "allow_infinity": False, "min_value": -4.0, "max_value": 4.0}
+
+
+@st.composite
+def _non_uint8_tiles(draw: st.DrawFn) -> NDArray:
+    """2-D tiles of each non-uint8 dtype a loader can return, values over the full range."""
+    dtype = draw(st.sampled_from([np.uint16, np.int16, np.int32, np.float32, np.float64, np.bool_]))
+    shape = draw(hnp.array_shapes(min_dims=2, max_dims=2, min_side=1, max_side=12))
+    if np.issubdtype(dtype, np.floating):
+        width = 32 if dtype == np.float32 else 64
+        elements = st.floats(width=width, **_FINITE_FLOATS)
+        return draw(hnp.arrays(dtype, shape, elements=elements))
+    return draw(hnp.arrays(dtype, shape))
+
+
+@settings(max_examples=300, deadline=None)
+@given(tile=_non_uint8_tiles())
+@example(tile=np.array([[0, 65535], [32768, 257]], dtype=np.uint16))
+@example(tile=np.array([[-32768, 32767], [-1, 0]], dtype=np.int16))
+@example(tile=np.array([[0.0, 1.0], [0.5, 2.0], [-1.0, 0.2]], dtype=np.float64))
+def test_as_uint8_gray_matches_reference_and_leaves_input_unchanged(tile: NDArray) -> None:
+    before = tile.copy()
+    out = _as_uint8_gray(tile)
+    assert out.dtype == np.uint8
+    assert np.array_equal(out, _as_uint8_gray_reference(before))
+    assert np.array_equal(tile, before), "caller's array was modified"
 
 
 # --- _typical_size --------------------------------------------------------

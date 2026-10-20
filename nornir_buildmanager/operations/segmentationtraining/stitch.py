@@ -353,16 +353,23 @@ def finer_dirs_for_downsample(downsample: int, level_dirs: dict[int, str]) -> li
 
 
 def _as_uint8_gray(tile: NDArray) -> NDArray:
-    """Return a 2-D uint8 host array for PNG paste and encode."""
+    """Return a 2-D uint8 host array for PNG paste and encode.
+
+    Non-uint8 input is scaled in one scratch array (clipped or multiplied in place), so
+    the caller's array is never modified and only one full-size float temporary exists.
+    """
     tile = nornir_imageregistration.EnsureNumpyArray(tile)
     if tile.ndim > 2:
         tile = np.asarray(tile[..., 0])
     if tile.dtype != np.uint8:
         if np.issubdtype(tile.dtype, np.floating):
-            tile = np.clip(tile * 255.0, 0, 255).astype(np.uint8)
+            scaled = tile * 255.0
+            np.clip(scaled, 0, 255, out=scaled)
         else:
             info_max = np.iinfo(tile.dtype).max if np.issubdtype(tile.dtype, np.integer) else 255
-            tile = (tile.astype(np.float32) * (255.0 / max(int(info_max), 1))).astype(np.uint8)
+            scaled = tile.astype(np.float32)
+            scaled *= 255.0 / max(int(info_max), 1)
+        tile = scaled.astype(np.uint8)
     return tile
 
 
