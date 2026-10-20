@@ -1514,57 +1514,83 @@ def _resolve_tileset(
             fetch_tiles=fetch_tiles,
         )
     if filter_node is None or not hasattr(filter_node, "Tileset"):
-        message = "ExportTrainingData needs a Filter with a Tileset"
-        if fail_missing:
-            raise NornirUserException(message)
-        prettyoutput.Log(message)
-        return None
+        return _missing_tileset("ExportTrainingData needs a Filter with a Tileset", fail_missing)
     tileset = filter_node.Tileset
     if tileset is None:
-        message = f"No Tileset on filter {getattr(filter_node, 'FullPath', channel_name + '/' + filter_name)}"
-        if fail_missing:
-            raise NornirUserException(message)
-        prettyoutput.Log(message)
-        return None
-    levels = list(getattr(tileset, "Levels", []) or [])
-    available_levels = sorted({int(level.Downsample) for level in levels if int(level.Downsample) >= 1}) or [downsample]
-    dirs: dict[int, str] = {}
-    mtimes: list[float] = []
-    for level in levels:
-        d = int(level.Downsample)
-        dirs[d] = level.FullPath
-        stamp = _level_mtime(level)
-        if stamp is not None:
-            mtimes.append(stamp)
-    declared_x = int(tile_x_dim or tileset.TileXDim or 0)
-    declared_y = int(tile_y_dim or tileset.TileYDim or 0)
+        where = getattr(filter_node, "FullPath", channel_name + "/" + filter_name)
+        return _missing_tileset(f"No Tileset on filter {where}", fail_missing)
+    available_levels, dirs, level_mtime = _scan_levels(tileset, downsample)
     prefix = file_prefix if file_prefix is not None else (tileset.FilePrefix or "")
     postfix = file_postfix if file_postfix is not None else (tileset.FilePostfix or ".png")
-    resolved_mtime = tileset_mtime if tileset_mtime is not None else (max(mtimes) if mtimes else None)
-    finest = min(dirs) if dirs else int(downsample)
-    sample_dir = dirs.get(finest)
-    actual = probe_tile_pixel_size(sample_dir, postfix=str(postfix)) if sample_dir else None
-    resolved_x, resolved_y = declared_x, declared_y
-    save_node = None
-    if actual is not None:
-        resolved_x, resolved_y = actual
-        if resolved_x != declared_x or resolved_y != declared_y:
-            prettyoutput.Log(
-                f"ExportTrainingData: tileset PNG is {resolved_x}x{resolved_y} but "
-                f"TileXDim/TileYDim is {declared_x}x{declared_y}; updating VolumeData"
-            )
-            tileset.TileXDim = resolved_x
-            tileset.TileYDim = resolved_y
-            save_node = tileset
+    resolved_x, resolved_y, save_node = _reconcile_tile_size(
+        tileset,
+        dirs.get(min(dirs)) if dirs else None,
+        str(postfix),
+        int(tile_x_dim or tileset.TileXDim or 0),
+        int(tile_y_dim or tileset.TileYDim or 0),
+    )
     return ResolvedTileset(
         tile_shape=Shape.from_xy(x=resolved_x, y=resolved_y),
         available=available or available_levels,
         level_dirs=dirs,
         prefix=prefix,
         postfix=postfix,
-        mtime=resolved_mtime,
+        mtime=tileset_mtime if tileset_mtime is not None else level_mtime,
         save_node=save_node,
     )
+
+
+def _missing_tileset(message: str, fail_missing: bool) -> None:
+    """Raise ``message`` as ``NornirUserException`` when ``fail_missing``, else log it."""
+    if fail_missing:
+        raise NornirUserException(message)
+    prettyoutput.Log(message)
+
+
+def _scan_levels(tileset: Any, downsample: int) -> tuple[list[int], dict[int, str], float | None]:
+    """Available downsamples, ``{downsample: level dir}`` and newest level mtime of ``tileset``.
+
+    Available downsamples are those >= 1, else ``[downsample]``; ``level_dirs``
+    keeps every level. The mtime is ``None`` when no level has a timestamp.
+    """
+    levels = list(getattr(tileset, "Levels", []) or [])
+    available = sorted({int(level.Downsample) for level in levels if int(level.Downsample) >= 1}) or [downsample]
+    dirs: dict[int, str] = {}
+    mtimes: list[float] = []
+    for level in levels:
+        dirs[int(level.Downsample)] = level.FullPath
+        stamp = _level_mtime(level)
+        if stamp is not None:
+            mtimes.append(stamp)
+    return available, dirs, max(mtimes) if mtimes else None
+
+
+def _reconcile_tile_size(
+    tileset: Any,
+    sample_dir: str | None,
+    postfix: str,
+    declared_x: int,
+    declared_y: int,
+) -> tuple[int, int, Any]:
+    """Tile ``(x, y)`` from a sampled PNG in ``sample_dir``, else the declared size.
+
+    When the PNG disagrees with the declared size, ``tileset.TileXDim`` /
+    ``TileYDim`` are updated and ``tileset`` is returned as the node to save;
+    otherwise the third value is ``None``.
+    """
+    actual = probe_tile_pixel_size(sample_dir, postfix=postfix) if sample_dir else None
+    if actual is None:
+        return declared_x, declared_y, None
+    resolved_x, resolved_y = actual
+    if resolved_x == declared_x and resolved_y == declared_y:
+        return resolved_x, resolved_y, None
+    prettyoutput.Log(
+        f"ExportTrainingData: tileset PNG is {resolved_x}x{resolved_y} but "
+        f"TileXDim/TileYDim is {declared_x}x{declared_y}; updating VolumeData"
+    )
+    tileset.TileXDim = resolved_x
+    tileset.TileYDim = resolved_y
+    return resolved_x, resolved_y, tileset
 
 
 def _level_mtime(level: Any) -> float | None:
