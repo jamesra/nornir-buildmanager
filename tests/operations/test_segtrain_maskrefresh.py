@@ -148,6 +148,23 @@ def test_marks_from_crop_json_skips_unreadable_and_non_matching(tmp_path: Path) 
     assert [m.key for m in _marks_from_crop_json(tmp_path, 7)] == ["good"]
 
 
+def test_marks_from_crop_json_uses_first_matching_annotation(tmp_path: Path) -> None:
+    _crop_json(
+        tmp_path,
+        "a",
+        {
+            "annotations": [
+                "junk",
+                {"id": 8, "originX": 99},
+                {"id": "7", "originX": 1, "originY": 2, "last_modified": "first"},
+                {"id": 7, "originX": 3, "originY": 4, "last_modified": "second"},
+            ]
+        },
+    )
+    (mark,) = _marks_from_crop_json(tmp_path, 7)
+    assert (mark.origin_x, mark.origin_y, mark.max_last_modified) == (1, 2, "first")
+
+
 def test_mark_with_extent_none_when_image_missing(tmp_path: Path) -> None:
     (tmp_path / "images").mkdir()
     assert _mark_with_extent(tmp_path, _mark()) is None

@@ -88,13 +88,13 @@ def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark
         except (OSError, json.JSONDecodeError):
             continue
         annotations = payload.get("annotations") or []
-        if not any(int(item.get("id", -1)) == location_id for item in annotations if isinstance(item, dict)):
-            continue
-        image = payload.get("image") if isinstance(payload.get("image"), dict) else {}
         prior = next(
             (item for item in annotations if isinstance(item, dict) and int(item.get("id", -1)) == location_id),
-            {},
+            None,
         )
+        if prior is None:
+            continue
+        image = payload.get("image") if isinstance(payload.get("image"), dict) else {}
         marks.append(
             ImageWatermark(
                 key=path.stem,
