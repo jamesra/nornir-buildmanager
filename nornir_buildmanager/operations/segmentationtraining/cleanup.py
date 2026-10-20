@@ -91,32 +91,6 @@ def remove_member_files_not_in(
     return _unlink_member_files(output, key, keep_ids=keep_ids, products=products)
 
 
-def delete_location_member_files(
-    output: Path,
-    location_id: int,
-    *,
-    z: int | None = None,
-    products: CropProductIndex | None = None,
-) -> list[str]:
-    """Delete mask, ignored, and RLE files for one location id. Returns image keys touched."""
-    keys: list[str] = []
-    suffix_id = int(location_id)
-    index = products if products is not None else get_product_index(output)
-    for folder, suffix in _MEMBER_FOLDERS:
-        needle = f"_{suffix_id}{suffix}"
-        matches = [name for name in index.iter_names(folder) if name.endswith(needle)]
-        directory = product_folder_path(output, folder)
-        for name in matches:
-            key = name[: -len(needle)]
-            if z is not None and f"_{int(z)}_D" not in key:
-                continue
-            (directory / name).unlink(missing_ok=True)
-            index.forget(folder, name)
-            if key not in keys:
-                keys.append(key)
-    return keys
-
-
 def cleanup_annotation_crops(
     output_path: str | Path,
     *,
