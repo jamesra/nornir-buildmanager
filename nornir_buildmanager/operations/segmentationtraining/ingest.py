@@ -200,25 +200,9 @@ def load_export_source(output_path: str | os.PathLike[str]) -> dict[str, Any]:
     if payload:
         return payload
     meta = load_cache_meta(output_path)
-    source = meta.get("source") if isinstance(meta.get("source"), dict) else {}
-    if not meta and not source:
+    if not meta:
         return {}
-    reconstructed: dict[str, Any] = {
-        "kind": source.get("kind"),
-        "filter": meta.get("filter") or source.get("filter"),
-        "includeOffEdge": bool(meta.get("includeOffEdge")),
-        "ingestedAt": meta.get("ingestedAt"),
-    }
-    url = _stripped_text(source.get("url"))
-    if url and source.get("kind") != "sql":
-        reconstructed["odata"] = url
-    dump_path = source.get("path")
-    if dump_path and source.get("kind") != "sql":
-        reconstructed["path"] = str(dump_path)
-    exporter = _exporter_name(meta.get("exporter") or source.get("exporter"))
-    if exporter:
-        reconstructed["exporter"] = exporter
-    return {key: value for key, value in reconstructed.items() if value is not None}
+    return {key: value for key, value in _source_from_meta(meta).items() if value is not None}
 
 
 def odata_url_from_output(output_path: str | os.PathLike[str]) -> str | None:
