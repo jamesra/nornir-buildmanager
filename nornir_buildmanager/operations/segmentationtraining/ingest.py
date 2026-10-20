@@ -40,6 +40,10 @@ ODATA_PAGE_SIZE = 16384
 # ASP.NET EnableQueryAttribute default; $filter AST nodes above this return 400.
 ODATA_MAX_FILTER_NODES = 100
 ODATA_FILTER_NODE_MARGIN = 10
+# Socket timeout per blocking operation (connect, or a gap between reads), not a cap on the
+# whole page. Generous because the server may compute a full ODATA_PAGE_SIZE page before the
+# first byte; it exists so a stalled server fails the run instead of hanging it forever.
+ODATA_TIMEOUT_SECONDS = 300.0
 _ODATA_FILTER_TOKEN = re.compile(
     r"'(?:''|[^'])*'|[A-Za-z_][A-Za-z0-9_]*|[+-]?\d+(?:\.\d+)?"
 )
@@ -864,12 +868,16 @@ def _absolute_next_link(current: str, link: str) -> str:
 
 
 def http_get_json(url: str) -> dict[str, Any]:
-    """GET JSON from *url* with an OData Accept header."""
+    """GET JSON from *url* with an OData Accept header.
+
+    Raises NornirUserException on HTTP, connection, or timeout failures. A read stall raises
+    TimeoutError directly (urlopen wraps only connect failures in URLError), so it is caught too.
+    """
     request = Request(url, headers={"Accept": "application/json"})
     try:
-        with urlopen(request) as response:
+        with urlopen(request, timeout=ODATA_TIMEOUT_SECONDS) as response:
             payload = response.read().decode("utf-8")
-    except (HTTPError, URLError, ValueError) as exc:
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
         if isinstance(exc, ValueError) and not isinstance(exc, (HTTPError, URLError)):
             raise
         detail = str(exc)
