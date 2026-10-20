@@ -648,44 +648,6 @@ def section_visit_index(output_path: str, z: int) -> int:
     return order.setdefault(z, len(order))
 
 
-def _repair_marks_or_skip(output_path: str, z: int) -> list[ImageWatermark] | None:
-    """-Repair precheck: watermark crops with no image file, or None to skip the section.
-
-    Logs the skip reason (no watermark, or every recorded image present) and any
-    image keys that have no stored crop geometry.
-    """
-    products = _images_index_for_repair(Path(output_path))
-    prior = load_section_watermark(output_path, z)
-    if prior is None:
-        prettyoutput.Log(
-            f"ExportTrainingData -Repair: section {z} has no watermark, skipping"
-        )
-        return None
-    repair_marks = missing_crop_marks(prior, products)
-    _log_repair_keys_without_geometry(z, prior, products)
-    if not repair_marks:
-        recorded = len({mark.key for mark in (prior.images or [])})
-        prettyoutput.Log(
-            f"ExportTrainingData -Repair: section {z} — "
-            f"all {recorded} images present, skipping"
-        )
-        return None
-    return repair_marks
-
-
-def _load_export_records(
-    output_path: str, z: int, *, include_off_edge: bool
-) -> list[LocationRecord]:
-    """Section records to export; when none remain, log it and purge the section's outputs."""
-    records = load_section_records(output_path, z)
-    if not include_off_edge:
-        records = [record for record in records if not record.off_edge]
-    if not records:
-        prettyoutput.Log(f"ExportTrainingData: no geometries for section {z}")
-        _purge_empty_section(Path(output_path), z)
-    return records
-
-
 @contextmanager
 def _staged_section_work(stage_tiles: str | None) -> Iterator[None]:
     """Run one section's stitch work under NumPy.
@@ -732,15 +694,34 @@ def _export_section_crops_entry(
 ) -> Any:
     """Body of ExportSectionCrops after the sections progress track is opened."""
     repair_marks: list[ImageWatermark] | None = None
-    records: list[LocationRecord] = []
     if Repair:
-        repair_marks = _repair_marks_or_skip(OutputPath, z)
-        if repair_marks is None:
+        products = _images_index_for_repair(Path(OutputPath))
+        prior = load_section_watermark(OutputPath, z)
+        if prior is None:
+            prettyoutput.Log(
+                f"ExportTrainingData -Repair: section {z} has no watermark, skipping"
+            )
+            return None
+        repair_marks = missing_crop_marks(prior, products)
+        _log_repair_keys_without_geometry(z, prior, products)
+        if not repair_marks:
+            recorded = len({mark.key for mark in (prior.images or [])})
+            prettyoutput.Log(
+                f"ExportTrainingData -Repair: section {z} — "
+                f"all {recorded} images present, skipping"
+            )
+            return None
+
+    if repair_marks is None:
+        records = load_section_records(OutputPath, z)
+        if not IncludeOffEdge:
+            records = [record for record in records if not record.off_edge]
+        if not records:
+            prettyoutput.Log(f"ExportTrainingData: no geometries for section {z}")
+            _purge_empty_section(Path(OutputPath), z)
             return None
     else:
-        records = _load_export_records(OutputPath, z, include_off_edge=bool(IncludeOffEdge))
-        if not records:
-            return None
+        records = []
 
     tileset = _resolve_tileset(
         filter_node,
