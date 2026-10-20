@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Literal
 
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.product_index import CropProductIndex, IMAGES_FOLDER
@@ -32,6 +32,11 @@ EXPORTER_TILED = "tiled"
 EXPORTER_LEGACY = "legacy"
 GEOMETRY_TILED = "fixed-d-halfstep-v1"
 GEOMETRY_LEGACY = "coarsen-to-fit-v1"
+
+RebuildMode = Literal["skip", "mask_only", "full"]
+REBUILD_SKIP: RebuildMode = "skip"
+REBUILD_MASK_ONLY: RebuildMode = "mask_only"
+REBUILD_FULL: RebuildMode = "full"
 
 _GEOMETRY_BY_EXPORTER = {
     EXPORTER_TILED: GEOMETRY_TILED,
@@ -351,7 +356,7 @@ def image_rebuild_mode(
     force: bool,
     refresh_odata: bool = False,
     products: CropProductIndex | None = None,
-) -> str:
+) -> RebuildMode:
     """Return ``skip``, ``mask_only``, or ``full`` for one shared crop.
 
     ``section_is_fresh`` returns False for ``refresh_odata``, so this function
@@ -362,13 +367,13 @@ def image_rebuild_mode(
     """
     del refresh_odata  # handled at section level; per-crop uses LastModified
     if force or previous is None:
-        return "full"
+        return REBUILD_FULL
     if params_hash != (previous_params_hash or ""):
-        return "full"
+        return REBUILD_FULL
     if not _mtime_equal(tileset_mtime, previous_tileset_mtime):
-        return "full"
+        return REBUILD_FULL
     if not previous.same_tiles(current):
-        return "full"
+        return REBUILD_FULL
     image_present = (
         products.exists(IMAGES_FOLDER, image_path.name)
         if products is not None
@@ -380,9 +385,9 @@ def image_rebuild_mode(
         else json_path.is_file()
     )
     if not image_present:
-        return "full"
+        return REBUILD_FULL
     if previous.same_members(current) and json_present and image_output_fresh(
         image_path, tileset_mtime, products=products
     ):
-        return "skip"
-    return "mask_only"
+        return REBUILD_SKIP
+    return REBUILD_MASK_ONLY

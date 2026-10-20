@@ -35,6 +35,10 @@ from nornir_buildmanager.operations.segmentationtraining.freshness import (
     SectionWatermark,
     geometry_version_for,
     id_set,
+    REBUILD_FULL,
+    REBUILD_MASK_ONLY,
+    REBUILD_SKIP,
+    RebuildMode,
     image_rebuild_mode,
     load_section_watermark,
     max_last_modified,
@@ -1259,7 +1263,7 @@ def export_section_crops(
 
         mask_jobs: list[MaskJob] = []
         stitch_jobs: list[StitchJob] = []
-        join_specs: list[tuple[PlannedCrop, str]] = []
+        join_specs: list[tuple[PlannedCrop, RebuildMode]] = []
         manifest_rows: list[dict[str, Any]] = []
 
         for plan in plans:
@@ -1279,18 +1283,18 @@ def export_section_crops(
                 refresh_odata=refresh_odata,
                 products=products,
             )
-            if mode == "skip":
+            if mode == REBUILD_SKIP:
                 join_specs.append((plan, mode))
                 manifest_rows.append(_manifest_row(plan, z, params.volume))
                 continue
             width, height = plan.output_size()
             crop_x, crop_y = plan.window.crop_offset(tile_shape.x, tile_shape.y)
             mask_jobs.extend(mask_jobs_for_plan(output, plan, polygons_by_id))
-            if mode == "full":
+            if mode == REBUILD_FULL:
                 if not force and products.exists(IMAGES_FOLDER, image_path.name):
                     # PNG already on disk; skip restitch unless -Force was passed.
                     # Masks still run below since we may have no prior watermark.
-                    mode = "mask_only"
+                    mode = REBUILD_MASK_ONLY
                 else:
                     stitch_jobs.append(
                         StitchJob(
@@ -1344,7 +1348,7 @@ def export_section_crops(
         image_marks: list[ImageWatermark] = []
         for plan, mode in join_specs:
             image_marks.append(image_watermark(plan, by_id))
-            if mode == "skip":
+            if mode == REBUILD_SKIP:
                 # Crop/mask membership and OData LastModified already matched. Only
                 # ``stat`` overlay vs on-disk TEM/masks — never load pixels or restitch.
                 json_path = output / IMAGES_FOLDER / f"{plan.image_key}.json"
@@ -1741,7 +1745,7 @@ def _resolve_export_volume_name(explicit: str | None, declared: str | None, outp
     )
 
 
-def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, str]]) -> None:
+def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, RebuildMode]]) -> None:
     """Log how many annotations and crops are skipped vs regenerated for one Z."""
     left_alone: set[int] = set()
     regenerate: set[int] = set()
@@ -1750,10 +1754,10 @@ def _log_section_rebuild_plan(z: int, join_specs: list[tuple[PlannedCrop, str]])
     crops_full = 0
     for plan, mode in join_specs:
         members = set(plan.location_ids)
-        if mode == "skip":
+        if mode == REBUILD_SKIP:
             crops_skip += 1
             left_alone |= members
-        elif mode == "mask_only":
+        elif mode == REBUILD_MASK_ONLY:
             crops_mask_only += 1
             regenerate |= members
         else:
