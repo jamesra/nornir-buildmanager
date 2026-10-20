@@ -672,10 +672,11 @@ def _rebuild_watermarks(
             if not json_path.is_file():
                 continue
         prior = marks.get(plan.image_key)
-        extra = [i for i in plan.location_ids if prior is None or i not in prior.member_ids]
         if prior is None:
             marks[plan.image_key] = image_watermark(plan, by_id)
             continue
+        prior_ids = set(prior.member_ids)
+        extra = [i for i in plan.location_ids if i not in prior_ids]
         member_ids = list(prior.member_ids) + extra
         members = [by_id[i] for i in member_ids if i in by_id]
         marks[plan.image_key] = ImageWatermark(

@@ -200,3 +200,15 @@ def test_plan_merge_stamp_covers_prior_members_not_just_new_ones(tmp_path: Path)
     (mark,) = update._rebuild_watermarks(tmp_path, prev, by_id, [_plan("a", [2])], set())
     assert mark.member_ids == [1, 2]
     assert mark.max_last_modified == T2.isoformat()
+
+
+def test_new_members_match_list_scan_reference_including_duplicates_and_order(tmp_path: Path) -> None:
+    """Appended ids equal the old ``i not in prior.member_ids`` list scan (order and repeats kept)."""
+    _png(tmp_path, "a")
+    prior_ids = [5, 3, 9, 1]
+    planned = [9, 7, 2, 7, 5, 8, 2, 1]
+    by_id = {i: _record(i, T0) for i in set(prior_ids) | set(planned)}
+    prev = _section([_mark("a", prior_ids)])
+    (mark,) = update._rebuild_watermarks(tmp_path, prev, by_id, [_plan("a", planned)], set())
+    assert mark.member_ids == prior_ids + [i for i in planned if i not in prior_ids]
+    assert mark.member_ids == [5, 3, 9, 1, 7, 2, 7, 8, 2]
