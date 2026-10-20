@@ -489,27 +489,6 @@ def _set_ignored_flags(
         connection.close()
 
 
-def _set_ignored_flag(
-    output_path: str | os.PathLike[str],
-    location_id: int,
-    *,
-    ignored: bool,
-) -> None:
-    """Set ``ignored`` on every catalog row for one location id."""
-    path = sqlite_path(output_path)
-    if not path.is_file():
-        return
-    connection = connect(output_path)
-    try:
-        connection.execute(
-            "UPDATE locations SET ignored = ? WHERE location_id = ?",
-            [1 if ignored else 0, location_id],
-        )
-        connection.commit()
-    finally:
-        connection.close()
-
-
 def _relocate_indexed(
     products: CropProductIndex,
     source: Path,
