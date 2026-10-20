@@ -56,6 +56,6 @@ def test_product_index_finds_rle_sidecars_in_the_work_folder(tmp_path: Path) -> 
     later.write_text("{}", encoding="utf-8")
     index.note_path(later)
     assert index.exists(RLE_FOLDER, later.name)
-    index.forget_path(later)
+    index.forget(RLE_FOLDER, later.name)
     assert not index.exists(RLE_FOLDER, later.name)
     drop_product_index(output)

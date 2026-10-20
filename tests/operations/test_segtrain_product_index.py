@@ -146,7 +146,7 @@ def test_refresh_one_live_stat_and_forgets_missing(output: Path) -> None:
     assert index.members(MASKS_FOLDER, "k") == []
 
 
-def test_note_path_and_forget_path_route_by_location(output: Path) -> None:
+def test_note_path_routes_by_location_and_forget_drops_names(output: Path) -> None:
     index = CropProductIndex(output)
     in_masks = _touch(output / MASKS_FOLDER / "k_1.png", 5.0)
     in_rle = _touch(rle_dir(output) / "k_1.json", 6.0)
@@ -164,10 +164,8 @@ def test_note_path_and_forget_path_route_by_location(output: Path) -> None:
     assert not any(index.exists(f, "stray.png") for f in (MASKS_FOLDER, IMAGES_FOLDER, IGNORED_FOLDER))
     assert not index.exists(MASKS_FOLDER, "elsewhere")
 
-    index.forget_path(in_masks)
-    index.forget_path(in_rle)
-    index.forget_path(root_level)
-    index.forget_path(outside)
+    index.forget(MASKS_FOLDER, "k_1.png")
+    index.forget(RLE_FOLDER, "k_1.json")
     assert not index.exists(MASKS_FOLDER, "k_1.png")
     assert not index.exists(RLE_FOLDER, "k_1.json")
 

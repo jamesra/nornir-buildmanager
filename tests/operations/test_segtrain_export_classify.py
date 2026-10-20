@@ -31,6 +31,7 @@ from nornir_buildmanager.operations.segmentationtraining.pipeline import (
     export_section_crops,
 )
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
+    IMAGES_FOLDER,
     get_product_index,
 )
 from nornir_buildmanager.operations.segmentationtraining.records import (
@@ -217,7 +218,7 @@ def test_mixed_modes_split_into_stitch_mask_and_manifest_work(
     assert previous is not None
     missing = out / "images" / f"{keys[0]}.png"
     missing.unlink()
-    get_product_index(out).forget_path(missing)
+    get_product_index(out).forget(IMAGES_FOLDER, missing.name)
     modes = {
         keys[0]: REBUILD_FULL,
         keys[1]: REBUILD_SKIP,

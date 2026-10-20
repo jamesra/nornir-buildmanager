@@ -115,13 +115,6 @@ class CropProductIndex:
         self._by_folder.get(folder, {}).pop(name, None)
         self._unregister_member(folder, name)
 
-    def forget_path(self, path: str | Path) -> None:
-        """Drop an absolute product path after unlink."""
-        folder, name = self._split_path(Path(path))
-        if folder is None:
-            return
-        self.forget(folder, name)
-
     def refresh_one(self, folder: str, name: str) -> float | None:
         """Live stat for the exception path, then update the index."""
         path = self._folder_path(folder) / name
