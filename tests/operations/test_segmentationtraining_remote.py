@@ -433,6 +433,17 @@ def test_missing_remote_tile_drops_the_crop_without_failing(lab: dict) -> None:
     assert _images(out) == []
 
 
+def test_sections_filter_keeps_only_the_named_sections(lab: dict) -> None:
+    named, other, unfiltered = lab["tmp"] / "named", lab["tmp"] / "other", lab["tmp"] / "unfiltered"
+    for out, sections in ((named, "1"), (other, "2,5-7"), (unfiltered, None)):
+        ingest_to_section_files(output_path=out, odata=None, geometries=lab["dump"])
+        extra = {} if sections is None else {"Sections": sections}
+        ExportRemoteSections(OutputPath=str(out), VikingXML=lab["url"], **_export_args(**extra))
+    assert _images(unfiltered), "the unfiltered export wrote no crops"
+    assert _images(named) == _images(unfiltered)
+    assert _images(other) == []
+
+
 def test_no_viking_xml_is_a_no_op(tmp_path: Path) -> None:
     assert ExportRemoteSections(OutputPath=str(tmp_path / "x"), VikingXML=None) is None
     assert ExportRemoteSections(OutputPath=str(tmp_path / "x"), VikingXML="", Cleanup=True) is None

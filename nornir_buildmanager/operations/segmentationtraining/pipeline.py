@@ -496,7 +496,8 @@ def ExportRemoteSections(
     wanted = _as_int_list(Sections)
     candidates = ingested or volume.sections()
     if wanted is not None:
-        candidates = [z for z in candidates if z in set(wanted)]
+        wanted_set = set(wanted)
+        candidates = [z for z in candidates if z in wanted_set]
     channel_pattern, filter_pattern = re.compile(str(Channels)), re.compile(str(Filters))
     for z in sorted(set(candidates)):
         matches = [
