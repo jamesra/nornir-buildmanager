@@ -16,6 +16,7 @@ from PIL import Image
 
 import nornir_imageregistration
 import nornir_pools
+from nornir_imageregistration.type_info import Shape
 from nornir_buildmanager.operations.segmentationtraining.geometry import TileRect
 from nornir_buildmanager.operations.segmentationtraining.stitch import (
     StitchJob,
@@ -202,8 +203,7 @@ def _job(ix0: int, ix1: int, iy0: int, iy1: int, key: str, image_path: str = "")
         image_key=key,
         snap=TileRect(ix0, ix1, iy0, iy1),
         downsample=1,
-        tile_x_dim=_TILE,
-        tile_y_dim=_TILE,
+        tile_shape=Shape(y=_TILE, x=_TILE),
         image_path=image_path,
     )
 

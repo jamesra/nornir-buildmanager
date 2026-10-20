@@ -7,6 +7,13 @@ from datetime import datetime, timezone
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from nornir_imageregistration.type_info import Shape
+
+from nornir_buildmanager.operations.segmentationtraining.freshness import (
+    EXPORTER_LEGACY,
+    ExportParams,
+    ResolvedTileset,
+)
 from nornir_buildmanager.operations.segmentationtraining.geometry import (
     SnapPlan,
     TileRect,
@@ -46,18 +53,42 @@ def _record(location_id: int, wkt: str, z: int = 37) -> LocationRecord:
     )
 
 
+def _plan_inputs(
+    *,
+    tile: int = _TILE,
+    available: list[int] | None = None,
+    volume: str = "",
+) -> dict:
+    """Keyword arguments for plan_section_crops with the shared test settings.
+
+    These tests pin the legacy exporter, which coarsens D until the mask fits one crop.
+    """
+    params = ExportParams(
+        pad=_PAD,
+        downsample=1,
+        max_texture=_MAX,
+        min_process_pixels=16,
+        include_off_edge=False,
+        channel="",
+        filter_name="",
+        volume=volume,
+        tile_shape=Shape(y=tile, x=tile),
+    )
+    tileset = ResolvedTileset(
+        tile_shape=Shape(y=tile, x=tile),
+        available=_PYRAMID if available is None else available,
+        level_dirs={},
+        prefix="",
+        postfix="",
+        mtime=None,
+    )
+    return {"params": params, "tileset": tileset, "exporter": EXPORTER_LEGACY}
+
+
 def _plan(records: list[LocationRecord]):
     return plan_section_crops(
         records,
-        pad=_PAD,
-        finest=1,
-        available=_PYRAMID,
-        max_texture=_MAX,
-        min_process_pixels=16,
-        tile_x_dim=_TILE,
-        tile_y_dim=_TILE,
-        max_tiles_x=2,
-        max_tiles_y=2,
+        **_plan_inputs(),
     )
 
 
@@ -96,6 +127,9 @@ def test_odd_min_tile_2x2_starts_at_that_tile() -> None:
     assert len(plans) == 1
     assert plans[0].downsample == 1
     assert plans[0].snap == TileRect(4, 6, 7, 9)
+    window = plans[0].window
+    assert (window.origin_x, window.origin_y) == (4 * _TILE, 7 * _TILE)
+    assert (window.width, window.height) == (2 * _TILE, 2 * _TILE)
 
 
 def test_expand_snap_from_min_tile() -> None:
@@ -147,16 +181,7 @@ def test_image_key_is_prefixed_with_volume() -> None:
     records = [_record(1, _box_wkt(5200, 5200, 5300, 5300))]
     plans, _ = plan_section_crops(
         records,
-        pad=_PAD,
-        finest=1,
-        available=_PYRAMID,
-        max_texture=_MAX,
-        min_process_pixels=16,
-        tile_x_dim=_TILE,
-        tile_y_dim=_TILE,
-        max_tiles_x=2,
-        max_tiles_y=2,
-        volume="RC2",
+        **_plan_inputs(volume="RC2"),
     )
     assert len(plans) == 1
     assert plans[0].image_key.startswith("RC2_37_D")
@@ -245,15 +270,7 @@ def test_256_px_tiles_do_not_coarsen_past_bbox_fit() -> None:
     records = [_record(1, _box_wkt(32017.0, 48141.0, 37621.0, 53403.0))]
     plans, _ = plan_section_crops(
         records,
-        pad=_PAD,
-        finest=1,
-        available=[1, 2, 4, 8, 16, 32, 64, 128],
-        max_texture=_MAX,
-        min_process_pixels=16,
-        tile_x_dim=256,
-        tile_y_dim=256,
-        max_tiles_x=4,
-        max_tiles_y=4,
+        **_plan_inputs(tile=256, available=[1, 2, 4, 8, 16, 32, 64, 128]),
     )
     assert len(plans) == 1
     assert plans[0].downsample == 8
@@ -266,15 +283,7 @@ def test_1024_px_tiles_in_tile_cell_stays_one_by_one() -> None:
     records = [_record(1, _box_wkt(5200, 5200, 5300, 5300))]
     plans, _ = plan_section_crops(
         records,
-        pad=_PAD,
-        finest=1,
-        available=_PYRAMID,
-        max_texture=_MAX,
-        min_process_pixels=16,
-        tile_x_dim=1024,
-        tile_y_dim=1024,
-        max_tiles_x=1,
-        max_tiles_y=1,
+        **_plan_inputs(tile=1024),
     )
     assert len(plans) == 1
     assert plans[0].downsample == 1

@@ -7,6 +7,7 @@ from pathlib import Path
 
 import numpy as np
 from hypothesis import given, settings, strategies as st
+from nornir_imageregistration.type_info import Shape
 from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.curves import (
@@ -15,7 +16,7 @@ from nornir_buildmanager.operations.segmentationtraining.curves import (
     fit_curve,
     hydrate_polygons,
 )
-from nornir_buildmanager.operations.segmentationtraining.freshness import ExportParams
+from nornir_buildmanager.operations.segmentationtraining.freshness import ExportParams, ResolvedTileset
 from nornir_buildmanager.operations.segmentationtraining.geometry import pixel_rings_in_crop
 from nornir_buildmanager.operations.segmentationtraining.masks import MaskJob, rasterize_mask_job
 from nornir_buildmanager.operations.segmentationtraining.planning import plan_section_crops
@@ -178,18 +179,26 @@ def test_hole_rings_are_fitted_for_type_code_6() -> None:
 
 def test_plan_uses_fitted_rings_for_curved_polygons() -> None:
     record = _record(_diamond_wkt(), LocationType.CURVEPOLYGON)
-    _plans, polygons = plan_section_crops(
-        [record],
+    params = ExportParams(
         pad=0.0,
-        finest=1,
-        available=[1],
+        downsample=1,
         max_texture=4096,
         min_process_pixels=16,
-        tile_x_dim=256,
-        tile_y_dim=256,
-        max_tiles_x=16,
-        max_tiles_y=16,
+        include_off_edge=False,
+        channel="",
+        filter_name="",
+        volume="",
+        tile_shape=Shape(y=256, x=256),
     )
+    tileset = ResolvedTileset(
+        tile_shape=Shape(y=256, x=256),
+        available=[1],
+        level_dirs={},
+        prefix="",
+        postfix="",
+        mtime=None,
+    )
+    _plans, polygons = plan_section_crops([record], params=params, tileset=tileset)
     fitted = polygons[record.id][0][0]
     control = parse_wkt_polygons(record.wkt)[0][0]
     assert len(fitted) > len(control)
