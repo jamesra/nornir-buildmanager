@@ -299,3 +299,46 @@ def test_score_skips_rows_missing_either_file(tmp_path: Path, missing: str) -> N
     calls: list[object] = []
     ScoreAnnotationCrops(OutputPath=str(tmp_path), Predictor=lambda **kw: calls.append(kw) or {"sam2PredIou": 1.0})
     assert calls == []
+
+
+def test_score_without_predictor_logs_and_returns_when_stack_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A RuntimeError from load_predictor is logged, not raised, and no scores are written."""
+    from nornir_buildmanager.operations.segmentationtraining import score
+
+    _catalog(tmp_path)
+    requested: list[object] = []
+
+    def _unavailable(checkpoint: object) -> None:
+        requested.append(checkpoint)
+        raise RuntimeError("SAM2 is not installed")
+
+    monkeypatch.setattr(score, "load_predictor", _unavailable)
+    assert ScoreAnnotationCrops(OutputPath=str(tmp_path), Checkpoint="ck") is None
+    assert requested == ["ck"]
+    row = list_catalog_rows(tmp_path)[0]
+    assert row["sam2PredIou"] is None
+    assert row["sam2ScoredAt"] is None
+
+
+@pytest.mark.parametrize("mode,fill", [("1", 1), ("RGB", (255, 255, 255))])
+def test_mask_bbox_converts_non_grayscale_modes(tmp_path: Path, mode: str, fill: object) -> None:
+    path = tmp_path / f"mask_{mode}.png"
+    image = Image.new(mode, (12, 12), 0)
+    image.paste(fill, (2, 3, 6, 9))
+    image.save(path)
+    assert mask_bbox(path) == [2, 3, 4, 6]
+
+
+def test_score_scores_every_row_with_its_own_location_id(tmp_path: Path) -> None:
+    _catalog(tmp_path, location_id=5)
+    _catalog(tmp_path, location_id=9)
+    seen: list[int] = []
+
+    def predictor(**kwargs: Any) -> dict[str, Any]:
+        seen.append(kwargs["location_id"])
+        return {"sam2PredIou": float(kwargs["location_id"]) / 10}
+
+    ScoreAnnotationCrops(OutputPath=str(tmp_path), Predictor=predictor)
+    assert sorted(seen) == [5, 9]
+    scores = {row["location_id"]: row["sam2PredIou"] for row in list_catalog_rows(tmp_path)}
+    assert scores == {5: pytest.approx(0.5), 9: pytest.approx(0.9)}
