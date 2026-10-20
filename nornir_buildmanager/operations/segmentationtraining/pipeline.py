@@ -1632,7 +1632,8 @@ def _level_mtime(level: Any) -> float | None:
     if isinstance(validation, datetime) and validation != datetime.min:
         try:
             return validation.timestamp()
-        except Exception:
+        except (OSError, OverflowError, ValueError):
+            # Naive dates outside the platform's time_t range (e.g. year 1 or 9999 on Windows).
             pass
     path = getattr(level, "FullPath", None)
     if path and os.path.isdir(path):

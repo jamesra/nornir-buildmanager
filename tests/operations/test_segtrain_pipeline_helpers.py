@@ -114,6 +114,26 @@ def test_level_mtime_falls_back_to_directory(tmp_path: Path) -> None:
     assert _level_mtime(SimpleNamespace(FullPath=str(tmp_path))) == 1_000_000
 
 
+def test_level_mtime_out_of_range_validation_falls_back_to_directory(tmp_path: Path) -> None:
+    """Naive dates outside time_t range make ``timestamp()`` raise; the directory mtime is used."""
+    os.utime(tmp_path, (1_000_000, 1_000_000))
+    for validation in (datetime(1, 1, 2), datetime(9999, 12, 31)):
+        level = SimpleNamespace(ValidationTime=validation, FullPath=str(tmp_path))
+        assert _level_mtime(level) == 1_000_000
+
+
+def test_level_mtime_unexpected_error_propagates(tmp_path: Path) -> None:
+    """Only the documented ``timestamp()`` failures are swallowed."""
+
+    class _Broken(datetime):
+        def timestamp(self) -> float:
+            raise RuntimeError("boom")
+
+    level = SimpleNamespace(ValidationTime=_Broken(2024, 1, 1), FullPath=str(tmp_path))
+    with pytest.raises(RuntimeError):
+        _level_mtime(level)
+
+
 def test_level_mtime_none_without_directory(tmp_path: Path) -> None:
     assert _level_mtime(SimpleNamespace(ValidationTime=None, FullPath=str(tmp_path / "gone"))) is None
     assert _level_mtime(SimpleNamespace(ValidationTime=None, FullPath="")) is None
