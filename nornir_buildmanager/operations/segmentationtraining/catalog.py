@@ -701,7 +701,7 @@ def _collect_location_rows(
                 image_key=image_key,
                 area=None if area is None else float(area),
                 stored_radius=stored_radius,
-                ignored_ids=ignored_ids,
+                ignored=location_id in ignored_ids,
             )
     for folder, ignored_flag in ((MASKS_FOLDER, False), (IGNORED_FOLDER, True)):
         for location_id, image_key in _iter_indexed_masks(
@@ -719,7 +719,7 @@ def _collect_location_rows(
                 image_key=image_key,
                 area=None,
                 stored_radius=record.radius if record is not None else None,
-                ignored_ids=ignored_ids if not ignored_flag else ignored_ids | {location_id},
+                ignored=ignored_flag or location_id in ignored_ids,
             )
     return rows.values()
 
@@ -734,10 +734,9 @@ def _row(
     image_key: str,
     area: float | None,
     stored_radius: float | None,
-    ignored_ids: set[int],
+    ignored: bool,
 ) -> dict[str, Any]:
     """One locations-table row for a location on one crop."""
-    ignored = location_id in ignored_ids
     mask_rel = _mask_relpath(output, image_key, location_id, ignored=ignored)
     structure_id = None
     structure_label = annotation.get("structure_label")

@@ -16,6 +16,7 @@ from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.workdir import work_root
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
+    _collect_location_rows,
     _iter_indexed_masks,
     apply_ignore_moves,
     equivalent_radius,
@@ -357,3 +358,26 @@ def test_iter_indexed_masks_explicit_keys_apply_z_filter(tmp_path: Path) -> None
         assert got18 == {(6, "RC2_18_D1_X0_Y0")}
     finally:
         drop_product_index(output)
+
+
+def test_collect_location_rows_ignored_flag_matches_folder_or_id_set(tmp_path: Path) -> None:
+    """Rows from ignored/ are always ignored; others are ignored only when listed in ignored_ids."""
+    output = _mini_crops(tmp_path, location_id=42)
+    key = "RC2_17_D1_X0_Y0"
+    _touch_masks(output, "masks", [f"{key}_5.png", f"{key}_6.png"])
+    _touch_masks(output, "ignored", [f"{key}_9.png", f"{key}_6.png"])
+    drop_product_index(output)
+    try:
+        rows = {
+            row["location_id"]: row
+            for row in _collect_location_rows(output, {}, {42, 5, 1000})
+        }
+    finally:
+        drop_product_index(output)
+    assert {loc: row["ignored"] for loc, row in rows.items()} == {
+        42: 1,  # crop JSON annotation, listed in ignored_ids
+        5: 1,  # masks/ but listed in ignored_ids
+        6: 0,  # masks/ wins over the same id in ignored/ (first seen, not listed)
+        9: 1,  # ignored/ folder, not listed in ignored_ids
+    }
+    assert rows[9]["mask_relpath"] == f"ignored/{key}_9.png"
