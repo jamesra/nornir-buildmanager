@@ -700,16 +700,24 @@ def _publish_shared_tiles(
     Consumes *arrays*: each tile is popped as it is published, so a band never
     holds both a host and a shared copy of every tile. Callers must not keep other
     references to the host tiles. Output order matches the input insertion order.
+
+    If a publish fails partway (shared memory exhausted, interrupt), the segments
+    already published are unlinked before the error propagates; callers only take
+    ownership of the handles on success.
     """
     tiles: dict[tuple[int, int], Any] = {}
     handles: list[Any] = []
-    for coord in list(arrays):
-        host = nornir_imageregistration.EnsureNumpyArray(arrays.pop(coord))
-        meta, _view = nornir_imageregistration.npArrayToSharedArray(
-            np.ascontiguousarray(host), read_only=True
-        )
-        tiles[coord] = meta
-        handles.append(meta)
+    try:
+        for coord in list(arrays):
+            host = nornir_imageregistration.EnsureNumpyArray(arrays.pop(coord))
+            meta, _view = nornir_imageregistration.npArrayToSharedArray(
+                np.ascontiguousarray(host), read_only=True
+            )
+            tiles[coord] = meta
+            handles.append(meta)
+    except BaseException:
+        _unlink_handles(handles)
+        raise
     return tiles, handles
 
 

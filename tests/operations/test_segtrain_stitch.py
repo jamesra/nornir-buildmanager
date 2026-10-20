@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import hypothesis.extra.numpy as hnp
 import hypothesis.strategies as st
@@ -278,6 +279,41 @@ def test_publish_shared_tiles_preserves_content_and_order(
         assert arrays == {}
     finally:
         _unlink_handles(handles)
+
+
+def test_publish_shared_tiles_unlinks_published_tiles_when_a_later_publish_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed allocation mid-band releases the segments already published, then re-raises."""
+    real_publish = nornir_imageregistration.npArrayToSharedArray
+    published: list[Any] = []
+    unlinked: list[Any] = []
+
+    def publish_then_fail(array: NDArray, read_only: bool = True):
+        if published:
+            raise OSError("no space left for shared memory")
+        meta, view = real_publish(array, read_only=read_only)
+        published.append(meta)
+        return meta, view
+
+    real_unlink = nornir_imageregistration.unlink_shared_memory
+
+    def record_unlink(meta: Any) -> None:
+        unlinked.append(meta)
+        real_unlink(meta)
+
+    monkeypatch.setattr(nornir_imageregistration, "npArrayToSharedArray", publish_then_fail)
+    monkeypatch.setattr(nornir_imageregistration, "unlink_shared_memory", record_unlink)
+    arrays = {(0, 0): _constant_tile(1), (1, 0): _constant_tile(2), (2, 0): _constant_tile(3)}
+    try:
+        with pytest.raises(OSError, match="no space left"):
+            _publish_shared_tiles(arrays)
+        assert len(published) == 1
+        assert unlinked == published
+    finally:
+        for meta in published:
+            if meta not in unlinked:
+                real_unlink(meta)
 
 
 def test_sweep_stitch_jobs_writes_crops_across_columns(tmp_path: Path) -> None:
