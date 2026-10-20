@@ -31,9 +31,7 @@ from nornir_buildmanager.operations.segmentationtraining.records import (
 )
 from nornir_buildmanager.operations.segmentationtraining.wkt import (
     circle_from_odata_entity,
-    is_skippable_location,
     location_from_odata_entity,
-    mosaic_wkt_from_odata_shape,
 )
 
 _logger = logging.getLogger(__name__)

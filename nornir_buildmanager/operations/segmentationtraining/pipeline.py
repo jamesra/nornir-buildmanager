@@ -26,7 +26,6 @@ from nornir_shared.argparse_helpers import IntegerList
 
 from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
-    EXPORTER_LEGACY,
     EXPORTER_TILED,
     ExportParams,
     ImageWatermark,
