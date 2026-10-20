@@ -105,7 +105,8 @@ class _Spy:
     join_specs: list[tuple[str, str]]
     manifest_keys: list[str]
     reporters: list[tuple[tuple[Any, ...], dict[str, Any]]]
-    mask_stats: list[dict[tuple[str, int], dict[str, Any]]]
+    mask_results: list[dict[str, Any]]
+    annotation_stats: list[tuple[int, Any, int]]
 
     def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self.stitch_jobs = []
@@ -113,13 +114,14 @@ class _Spy:
         self.join_specs = []
         self.manifest_keys = []
         self.reporters = []
-        self.mask_stats = []
+        self.mask_results = []
+        self.annotation_stats = []
         real_stitch = pipeline_mod._run_stitch_jobs
         real_masks = pipeline_mod.run_mask_jobs
         real_log = pipeline_mod._log_section_rebuild_plan
         real_manifest = pipeline_mod.replace_manifest_rows
         real_reporter = pipeline_mod.prettyoutput.TaskProgressReporter
-        real_collect = pipeline_mod._collect_plan_annotations
+        real_annotation = pipeline_mod.sa1b_annotation
 
         def stitch(jobs: list[Any], **kwargs: Any) -> Any:
             self.stitch_jobs.extend(jobs)
@@ -127,7 +129,9 @@ class _Spy:
 
         def masks(jobs: list[Any], **kwargs: Any) -> Any:
             self.mask_calls.append((list(jobs), dict(kwargs)))
-            return real_masks(jobs, **kwargs)
+            results = real_masks(jobs, **kwargs)
+            self.mask_results.extend(results)
+            return results
 
         def log(z: int, specs: list[Any]) -> None:
             self.join_specs.extend((plan.image_key, mode) for plan, mode in specs)
@@ -141,12 +145,12 @@ class _Spy:
             self.reporters.append((args, kwargs))
             return real_reporter(*args, **kwargs)
 
-        def collect(output: Path, plan: Any, by_id: Any, mask_by_member: Any, products: Any) -> Any:
-            self.mask_stats.append(dict(mask_by_member))
-            return real_collect(output, plan, by_id, mask_by_member, products)
+        def annotation(record: Any, **kwargs: Any) -> Any:
+            self.annotation_stats.append((record.id, kwargs["bbox"], kwargs["area"]))
+            return real_annotation(record, **kwargs)
 
         monkeypatch.setattr(pipeline_mod, "_run_stitch_jobs", stitch)
-        monkeypatch.setattr(pipeline_mod, "_collect_plan_annotations", collect)
+        monkeypatch.setattr(pipeline_mod, "sa1b_annotation", annotation)
         monkeypatch.setattr(pipeline_mod, "run_mask_jobs", masks)
         monkeypatch.setattr(pipeline_mod, "_log_section_rebuild_plan", log)
         monkeypatch.setattr(pipeline_mod, "replace_manifest_rows", manifest)
@@ -204,9 +208,14 @@ def test_first_export_stitches_and_masks_every_plan(
     assert args[1] == len(keys)
     assert reporter_kwargs == {"name": pipeline_mod.MASKS_LABEL, "section": _Z}
     assert spy.manifest_keys == list(keys)
-    # Mask-job stats reach annotation assembly keyed by (image key, location id).
-    assert len(spy.mask_stats) == len(keys)
-    assert set(spy.mask_stats[0]) == {(job.image_key, job.location_id) for job in jobs}
+    # Each annotation takes its bbox and area from its own member's mask-job stats.
+    assert len(spy.annotation_stats) == len(keys)
+    by_member = {item["location_id"]: (item["bbox"], int(item["area"])) for item in spy.mask_results}
+    assert {(job.image_key, job.location_id) for job in jobs} == {
+        (item["image_key"], item["location_id"]) for item in spy.mask_results
+    }
+    for location_id, bbox, area in spy.annotation_stats:
+        assert (bbox, area) == by_member[location_id]
 
 
 def test_mixed_modes_split_into_stitch_mask_and_manifest_work(

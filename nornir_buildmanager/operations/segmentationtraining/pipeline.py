@@ -1341,9 +1341,41 @@ def export_section_crops(
                     _write_plan_overlay(output, plan, tile_shape.x, tile_shape.y, products)
                 continue
             width, height = plan.output_size()
-            annotations, mask_paths = _collect_plan_annotations(
-                output, plan, by_id, mask_by_member, products
-            )
+            annotations: list[dict[str, Any]] = []
+            mask_paths: list[str] = []
+            for location_id in plan.location_ids:
+                rle_name = f"{plan.image_key}_{location_id}.json"
+                mask_name = MaskName(plan.image_key, location_id).format()
+                rle_path = rle_dir(output) / rle_name
+                mask_path = output / MASKS_FOLDER / mask_name
+                if not products.exists(RLE_FOLDER, rle_name):
+                    continue
+                try:
+                    rle = json.loads(rle_path.read_text(encoding="utf-8"))
+                except OSError:
+                    products.refresh_one(RLE_FOLDER, rle_name)
+                    continue
+                record = by_id[location_id]
+                window_index, window_count = plan.window_of.get(location_id, (0, 1))
+                stats = mask_by_member.get((plan.image_key, location_id), {})
+                bbox = stats.get("bbox") or _bbox_area_from_rle(rle)[0]
+                area = stats.get("area")
+                if area is None:
+                    _, area = _bbox_area_from_rle(rle)
+                annotations.append(
+                    sa1b_annotation(
+                        record,
+                        rle=rle,
+                        bbox=bbox,
+                        area=int(area),
+                        window_index=window_index,
+                        window_count=window_count,
+                        origin_x=plan.window.origin_x,
+                        origin_y=plan.window.origin_y,
+                    )
+                )
+                if products.exists(MASKS_FOLDER, mask_name):
+                    mask_paths.append(str(mask_path))
             image_name = crop_image_filename(plan.image_key)
             json_path = output / IMAGES_FOLDER / f"{plan.image_key}.json"
             write_sa1b_json(
@@ -1397,54 +1429,6 @@ def export_section_crops(
         upsert_catalog(output, exported_ids, z=z, image_keys=image_keys)
         prune_catalog_section(output, z, exported_ids)
         return image_keys
-
-
-def _collect_plan_annotations(
-    output: Path,
-    plan: PlannedCrop,
-    by_id: dict[int, LocationRecord],
-    mask_by_member: dict[tuple[str, int], dict[str, Any]],
-    products: CropProductIndex,
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """SA-1B annotations and existing mask paths for one rebuilt crop.
-
-    Members without an indexed RLE file are skipped. An RLE that cannot be read
-    is re-stat'ed in *products* and skipped. Mask-job ``bbox``/``area`` stats win;
-    each falls back to the RLE when the member has no stats from this run.
-    """
-    annotations: list[dict[str, Any]] = []
-    mask_paths: list[str] = []
-    for location_id in plan.location_ids:
-        rle_name = f"{plan.image_key}_{location_id}.json"
-        mask_name = MaskName(plan.image_key, location_id).format()
-        if not products.exists(RLE_FOLDER, rle_name):
-            continue
-        try:
-            rle = json.loads((rle_dir(output) / rle_name).read_text(encoding="utf-8"))
-        except OSError:
-            products.refresh_one(RLE_FOLDER, rle_name)
-            continue
-        window_index, window_count = plan.window_of.get(location_id, (0, 1))
-        stats = mask_by_member.get((plan.image_key, location_id), {})
-        bbox = stats.get("bbox") or _bbox_area_from_rle(rle)[0]
-        area = stats.get("area")
-        if area is None:
-            _, area = _bbox_area_from_rle(rle)
-        annotations.append(
-            sa1b_annotation(
-                by_id[location_id],
-                rle=rle,
-                bbox=bbox,
-                area=int(area),
-                window_index=window_index,
-                window_count=window_count,
-                origin_x=plan.window.origin_x,
-                origin_y=plan.window.origin_y,
-            )
-        )
-        if products.exists(MASKS_FOLDER, mask_name):
-            mask_paths.append(str(output / MASKS_FOLDER / mask_name))
-    return annotations, mask_paths
 
 
 def resolve_max_texture(flag: int | None) -> int:
