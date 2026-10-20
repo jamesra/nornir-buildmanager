@@ -1,4 +1,8 @@
-"""Stitch jobs built from planned crops: full rebuilds in the pipeline and new crops on update."""
+"""Stitch jobs built from planned crops: full rebuilds in the pipeline and new crops on update.
+
+The pipeline's full-rebuild versus mask-only choice is pinned through
+``export_section_crops`` in ``test_segtrain_export_classify.py``.
+"""
 
 from __future__ import annotations
 
@@ -6,18 +10,11 @@ from pathlib import Path
 
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
-from nornir_buildmanager.operations.segmentationtraining.freshness import (
-    REBUILD_FULL,
-    REBUILD_MASK_ONLY,
-)
 from nornir_buildmanager.operations.segmentationtraining.geometry import (
     CropWindow,
     TileRect,
 )
 from nornir_buildmanager.operations.segmentationtraining.grouping import CropGroup
-from nornir_buildmanager.operations.segmentationtraining.pipeline import (
-    _queue_stitch_job,
-)
 from nornir_buildmanager.operations.segmentationtraining.planning import PlannedCrop
 from nornir_buildmanager.operations.segmentationtraining.product_index import (
     IMAGES_FOLDER,
@@ -34,19 +31,6 @@ OUTPUT = Path("export")
 _coord = st.integers(min_value=-(2**20), max_value=2**20)
 _extent = st.integers(min_value=1, max_value=8192)
 _tile = st.integers(min_value=1, max_value=4096)
-
-
-class _Products:
-    """Product index stub: only ``exists`` is consulted by ``_queue_stitch_job``."""
-
-    _names: set[str]
-
-    def __init__(self, names: set[str] | None = None) -> None:
-        self._names = names or set()
-
-    def exists(self, folder: str, name: str) -> bool:
-        """True when *name* is recorded under *folder*."""
-        return folder == IMAGES_FOLDER and name in self._names
 
 
 def _plan(ox: int, oy: int, w: int, h: int, snap: TileRect, downsample: int) -> PlannedCrop:
@@ -87,17 +71,14 @@ def _expected(plan: PlannedCrop, tile_shape: Shape, image_path: Path) -> StitchJ
 )
 @example(ox=1536, oy=512, w=1024, h=2048, tx=1024, ty=1024, downsample=1, snap=TileRect(1, 3, 0, 3))
 @example(ox=-300, oy=700, w=10, h=20, tx=512, ty=256, downsample=2, snap=TileRect(-1, 0, 2, 4))
-def test_queue_stitch_job_full_rebuild_builds_job_from_plan(
+def test_stitch_job_for_plan_keeps_group_snap(
     ox: int, oy: int, w: int, h: int, tx: int, ty: int, downsample: int, snap: TileRect
 ) -> None:
-    """A full rebuild without an indexed PNG queues the plan's window, snap and size."""
+    """The job takes the plan's own snap, window size and tile-local offset."""
     tile_shape = Shape.from_xy(x=tx, y=ty)
     plan = _plan(ox, oy, w, h, snap, downsample)
-    jobs: list[StitchJob] = []
-    mode = _queue_stitch_job(OUTPUT, plan, REBUILD_FULL, tile_shape, False, _Products(), jobs)  # type: ignore[arg-type]
-    assert mode == REBUILD_FULL
     image_path = OUTPUT / IMAGES_FOLDER / f"{plan.image_key}.png"
-    assert jobs == [_expected(plan, tile_shape, image_path)]
+    assert stitch_job_for_plan(plan, tile_shape, image_path) == _expected(plan, tile_shape, image_path)
 
 
 @settings(max_examples=200, deadline=None)
@@ -120,15 +101,3 @@ def test_stitch_job_for_plan_matches_reference(
     plan = _plan(ox, oy, w, h, snap, downsample)
     image_path = OUTPUT / IMAGES_FOLDER / "crop.png"
     assert stitch_job_for_plan(plan, tile_shape, image_path) == _expected(plan, tile_shape, image_path)
-
-
-def test_queue_stitch_job_existing_png_becomes_mask_only() -> None:
-    """An indexed crop PNG skips the restitch unless forced."""
-    tile_shape = Shape.from_xy(x=1024, y=1024)
-    plan = _plan(512, 0, 1024, 1024, TileRect(0, 2, 0, 1), 1)
-    products = _Products({f"{plan.image_key}.png"})
-    jobs: list[StitchJob] = []
-    assert _queue_stitch_job(OUTPUT, plan, REBUILD_FULL, tile_shape, False, products, jobs) == REBUILD_MASK_ONLY  # type: ignore[arg-type]
-    assert jobs == []
-    assert _queue_stitch_job(OUTPUT, plan, REBUILD_FULL, tile_shape, True, products, jobs) == REBUILD_FULL  # type: ignore[arg-type]
-    assert len(jobs) == 1
