@@ -16,7 +16,7 @@ from typing import Any
 
 from nornir_shared import prettyoutput
 
-from nornir_buildmanager.operations.segmentationtraining.atomic_io import atomic_write_text
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import MANIFEST_FILENAME, atomic_write_text
 from nornir_buildmanager.operations.segmentationtraining.catalog import (
     apply_ignore_moves,
     connect,
@@ -689,7 +689,7 @@ def _rewrite_manifest(
     removed: set[int],
 ) -> None:
     """Rewrite ``manifest.jsonl`` rows for one section from the updated watermarks."""
-    path = output / "manifest.jsonl"
+    path = output / MANIFEST_FILENAME
     rows: list[dict[str, Any]] = []
     by_key: dict[str, dict[str, Any]] = {}
     if path.is_file():

@@ -13,6 +13,9 @@ from typing import Any
 
 from PIL import Image
 
+MANIFEST_FILENAME = "manifest.jsonl"
+"""Name of the per-export manifest file; the trainer reads it by this name, so it must not change."""
+
 
 def atomic_write_text(path: Path, text: str) -> None:
     """Write ``text`` (utf-8, platform newlines) to ``path`` through ``<name>.tmp`` and ``os.replace``.
@@ -64,7 +67,7 @@ def read_manifest_rows(output: Path) -> list[dict[str, Any]]:
 
     A missing manifest gives ``[]``. A malformed line raises ``json.JSONDecodeError``.
     """
-    path = output / "manifest.jsonl"
+    path = output / MANIFEST_FILENAME
     rows: list[dict[str, Any]] = []
     if not path.is_file():
         return rows
@@ -79,6 +82,6 @@ def read_manifest_rows(output: Path) -> list[dict[str, Any]]:
 def write_manifest_rows(output: Path, rows: list[dict[str, Any]]) -> None:
     """Atomically replace ``<output>/manifest.jsonl`` with ``rows`` (compact JSON, one row per line)."""
     atomic_write_text(
-        output / "manifest.jsonl",
+        output / MANIFEST_FILENAME,
         "".join(json.dumps(row, separators=(",", ":")) + "\n" for row in rows),
     )

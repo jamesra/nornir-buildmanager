@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image
 
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    MANIFEST_FILENAME,
     atomic_write_text,
     read_manifest_rows,
     write_manifest_rows,
@@ -294,7 +295,7 @@ def write_gallery(output_path: str | Path, image_keys: list[str]) -> None:
 
 def append_manifest(output_path: str | Path, row: dict[str, Any]) -> None:
     """Append one JSONL manifest row."""
-    path = Path(output_path) / "manifest.jsonl"
+    path = Path(output_path) / MANIFEST_FILENAME
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(row, separators=(",", ":")) + "\n")
 

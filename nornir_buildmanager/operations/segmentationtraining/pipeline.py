@@ -25,7 +25,11 @@ from nornir_shared import prettyoutput
 from nornir_shared.argparse_helpers import IntegerList
 
 from nornir_buildmanager.exceptions import NornirUserException
-from nornir_buildmanager.operations.segmentationtraining.atomic_io import read_manifest_rows, write_manifest_rows
+from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    MANIFEST_FILENAME,
+    read_manifest_rows,
+    write_manifest_rows,
+)
 from nornir_buildmanager.operations.segmentationtraining.freshness import (
     EXPORTER_TILED,
     ExportParams,
@@ -1014,7 +1018,7 @@ def drop_recorded_crops_missing_tiles(
 
 def _strip_manifest_keys(output: Path, z: int, image_keys: set[str]) -> None:
     """Remove manifest rows for *image_keys* on section *z*."""
-    if not (output / "manifest.jsonl").is_file() or not image_keys:
+    if not (output / MANIFEST_FILENAME).is_file() or not image_keys:
         return
     write_manifest_rows(
         output,

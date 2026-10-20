@@ -40,6 +40,7 @@ from typing import Any
 import numpy as np
 
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
+    MANIFEST_FILENAME,
     atomic_write_text,
     read_json_object,
     read_manifest_rows,
@@ -377,7 +378,7 @@ def write_location_shapes(
             row["structureIds"] = [known[i][1] if i in known else None for i in ids]
             row["linkedIds"] = [links.get(i, []) for i in ids]
             decorated.append(json.dumps(row, separators=(",", ":")))
-        write_text_if_changed(output / "manifest.jsonl", "\n".join(decorated) + "\n")
+        write_text_if_changed(output / MANIFEST_FILENAME, "\n".join(decorated) + "\n")
     return path
 
 
