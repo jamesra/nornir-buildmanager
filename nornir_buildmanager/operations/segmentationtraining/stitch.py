@@ -456,9 +456,20 @@ def _note_blank_crop(
 
 
 def write_png(array: NDArray, path: str) -> None:
-    """Write 8-bit L PNG and drop a leftover JPEG of the same stem if present."""
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(array, mode="L").save(path, format="PNG")
+    """Write 8-bit L PNG atomically and drop a leftover JPEG of the same stem if present.
+
+    The bytes go to a pid/thread-unique ``.tmp`` beside *path*, then ``os.replace`` swaps them in, so a
+    crash mid-write never leaves a truncated PNG that later runs would treat as a finished tile.
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_name(f"{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    try:
+        Image.fromarray(array, mode="L").save(temp, format="PNG")
+        os.replace(temp, target)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
     leftover = Path(path).with_suffix(LEGACY_CROP_IMAGE_EXT)
     if leftover != Path(path) and leftover.is_file():
         leftover.unlink()

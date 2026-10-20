@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import io
+import os
+from pathlib import Path
+
 import hypothesis.extra.numpy as hnp
 import hypothesis.strategies as st
 import numpy as np
@@ -14,9 +18,11 @@ from nornir_buildmanager.operations.segmentationtraining.stitch import (
     _crop_canvas,
     _typical_size,
     stitch_from_loader,
+    write_png,
 )
 from nornir_imageregistration.type_info import Shape
 from numpy.typing import NDArray
+from PIL import Image
 
 _TILE = 4
 
@@ -257,3 +263,45 @@ def test_stitch_from_loader_non_square_tiles_use_x_for_columns_and_y_for_rows() 
     assert canvas.shape == (4, 12)
     expected = np.block([[np.full((2, 6), 1), np.full((2, 6), 2)], [np.full((2, 6), 3), np.full((2, 6), 4)]])
     assert np.array_equal(canvas, expected.astype(np.uint8))
+
+
+# --- write_png ------------------------------------------------------------
+
+
+def _direct_png_bytes(array: NDArray) -> bytes:
+    buffer = io.BytesIO()
+    Image.fromarray(array, mode="L").save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def test_write_png_bytes_match_direct_save_and_leave_no_tmp(tmp_path: Path) -> None:
+    array = (np.arange(48, dtype=np.uint8).reshape(6, 8) * 5).astype(np.uint8)
+    target = tmp_path / "sub" / "tile.png"
+    write_png(array, str(target))
+    assert target.read_bytes() == _direct_png_bytes(array)
+    assert [p.name for p in target.parent.iterdir()] == ["tile.png"]
+
+
+def test_write_png_removes_legacy_jpeg(tmp_path: Path) -> None:
+    legacy = tmp_path / "tile.jpg"
+    legacy.write_bytes(b"old")
+    write_png(np.zeros((2, 2), dtype=np.uint8), str(tmp_path / "tile.png"))
+    assert not legacy.exists()
+    assert (tmp_path / "tile.png").is_file()
+
+
+def test_write_png_failure_keeps_previous_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    target = tmp_path / "tile.png"
+    previous = np.full((3, 3), 9, dtype=np.uint8)
+    write_png(previous, str(target))
+    before = target.read_bytes()
+
+    def boom(self: Image.Image, fp: object, *args: object, **kwargs: object) -> None:
+        Path(os.fspath(fp)).write_bytes(b"partial")  # type: ignore[arg-type]
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Image.Image, "save", boom)
+    with pytest.raises(OSError):
+        write_png(np.zeros((3, 3), dtype=np.uint8), str(target))
+    assert target.read_bytes() == before
+    assert [p.name for p in tmp_path.iterdir()] == ["tile.png"]
