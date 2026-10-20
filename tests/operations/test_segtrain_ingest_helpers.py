@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import json
+import tempfile
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from nornir_buildmanager.operations.segmentationtraining.ingest import (
     ODATA_PAGE_SIZE,
     _consecutive_ranges,
     _entities_from_odata_document,
+    _exporter_name,
     _odata_count,
     _odata_locations_url,
     _parse_odata_dump,
     _source_from_meta,
     _stripped_text,
+    cache_meta_path,
     load_export_source,
     odata_filter_from_output,
     odata_url_for_export,
@@ -185,3 +191,94 @@ def test_load_export_source_reconstructs_from_cache_meta(tmp_path, kind: str, ex
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps({"source": {"kind": kind, "url": " http://c/ "}}))
     assert load_export_source(tmp_path).get("odata") == expected_odata
+
+
+def _old_reconstruct(meta: dict[str, Any]) -> dict[str, Any]:
+    """Copy of the reconstruction branch load_export_source had before it reused _source_from_meta."""
+    raw = meta.get("source")
+    source: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    if not meta and not source:
+        return {}
+    reconstructed: dict[str, Any] = {
+        "kind": source.get("kind"),
+        "filter": meta.get("filter") or source.get("filter"),
+        "includeOffEdge": bool(meta.get("includeOffEdge")),
+        "ingestedAt": meta.get("ingestedAt"),
+    }
+    url = _stripped_text(source.get("url"))
+    if url and source.get("kind") != "sql":
+        reconstructed["odata"] = url
+    dump_path = source.get("path")
+    if dump_path and source.get("kind") != "sql":
+        reconstructed["path"] = str(dump_path)
+    exporter = _exporter_name(meta.get("exporter") or source.get("exporter"))
+    if exporter:
+        reconstructed["exporter"] = exporter
+    return {key: value for key, value in reconstructed.items() if value is not None}
+
+
+def _reconstructed(meta: dict[str, Any]) -> dict[str, Any]:
+    """load_export_source for an output folder with no source.json and the given cache meta."""
+    with tempfile.TemporaryDirectory() as folder:
+        meta_path = cache_meta_path(folder)
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        meta_path.write_text(json.dumps(meta))
+        return load_export_source(folder)
+
+
+def test_load_export_source_reconstruction_examples() -> None:
+    assert _reconstructed({}) == {}
+    assert _reconstructed({"source": {"kind": "sql", "url": "http://s/", "path": "d.json", "exporter": "Tiled"}}) == {
+        "kind": "sql",
+        "includeOffEdge": False,
+        "exporter": "tiled",
+    }
+    assert _reconstructed(
+        {
+            "filter": "Z eq 1",
+            "includeOffEdge": 1,
+            "ingestedAt": "2026-01-01",
+            "exporter": " LEGACY ",
+            "source": {"kind": "odata", "url": " http://o/ ", "path": "dump.json", "filter": "ignored"},
+        }
+    ) == {
+        "kind": "odata",
+        "filter": "Z eq 1",
+        "includeOffEdge": True,
+        "ingestedAt": "2026-01-01",
+        "odata": "http://o/",
+        "path": "dump.json",
+        "exporter": "legacy",
+    }
+    # None values are dropped; a blank filter falls through to source's, and "" from there is kept.
+    assert _reconstructed({"filter": "", "source": {"url": "  "}}) == {"includeOffEdge": False}
+    assert _reconstructed({"filter": "", "source": {"filter": ""}}) == {"filter": "", "includeOffEdge": False}
+
+
+_text = st.one_of(st.none(), st.just(""), st.just("  "), st.sampled_from(["tiled", " Legacy ", "x", "Z eq 3"]), st.text(max_size=6))
+_source_values = st.fixed_dictionaries(
+    {},
+    optional={
+        "kind": st.sampled_from([None, "odata", "sql", "geometries", ""]),
+        "url": _text,
+        "path": _text,
+        "filter": _text,
+        "exporter": _text,
+    },
+)
+_metas = st.fixed_dictionaries(
+    {},
+    optional={
+        "source": st.one_of(_source_values, st.none(), st.just("not a dict")),
+        "filter": _text,
+        "includeOffEdge": st.one_of(st.booleans(), st.none(), st.integers(0, 2)),
+        "ingestedAt": _text,
+        "exporter": _text,
+    },
+)
+
+
+@settings(max_examples=300, deadline=None)
+@given(meta=_metas)
+def test_load_export_source_reconstruction_matches_old_body(meta: dict[str, Any]) -> None:
+    assert _reconstructed(meta) == _old_reconstruct(meta)
