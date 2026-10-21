@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
@@ -78,6 +79,22 @@ def _existing_marks_for_location(output: Path, record: LocationRecord) -> list[I
     return ready
 
 
+_IMAGE_KEY_WINDOW = re.compile(r"_D\d+_X(-?\d+)-(-?\d+)_Y(-?\d+)-(-?\d+)$")
+
+
+def _origin_from_image_key(image_key: str) -> tuple[int, int] | None:
+    """Pixel origin of a crop window from ``..._D{ds}_X{x0}-{x1}_Y{y0}-{y1}``, or None for any other key.
+
+    ``GroupWindows`` builds the key from the window's pixel extents at the crop's downsample, the same units as
+    ``ImageWatermark.origin_x`` and ``origin_y``.
+    """
+    match = _IMAGE_KEY_WINDOW.search(image_key)
+    if match is None:
+        return None
+    x0, _x1, y0, _y1 = (int(group) for group in match.groups())
+    return x0, y0
+
+
 def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark]:
     """Build windows from crop JSON when the section watermark has no membership."""
     images = output / IMAGES_FOLDER
@@ -97,6 +114,10 @@ def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark
         if prior is None:
             continue
         image = payload.get("image") if isinstance(payload.get("image"), dict) else {}
+        # The rows written by sa1b_annotation carry no origin. The window is named by its extents, so the key says
+        # where the crop is; without it every redraw places the polygon against a window at (0, 0) and draws nothing.
+        keyed_x, keyed_y = _origin_from_image_key(path.stem) or (0, 0)
+        origin_x, origin_y = prior.get("originX"), prior.get("originY")
         marks.append(
             ImageWatermark(
                 key=path.stem,
@@ -107,8 +128,8 @@ def _marks_from_crop_json(output: Path, location_id: int) -> list[ImageWatermark
                 iy1=0,
                 member_ids=[location_id],
                 max_last_modified=str(prior.get("last_modified") or ""),
-                origin_x=int(prior.get("originX") or 0),
-                origin_y=int(prior.get("originY") or 0),
+                origin_x=int(origin_x if origin_x is not None else keyed_x),
+                origin_y=int(origin_y if origin_y is not None else keyed_y),
                 width=int(image.get("width") or 0),
                 height=int(image.get("height") or 0),
             )

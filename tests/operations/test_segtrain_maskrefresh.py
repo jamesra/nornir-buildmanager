@@ -203,3 +203,54 @@ def test_crop_image_prefers_png_then_jpg_then_png_path(tmp_path: Path) -> None:
     assert _crop_image(tmp_path, "a") == tmp_path / "a.jpg"
     (tmp_path / "a.png").write_bytes(b"x")
     assert _crop_image(tmp_path, "a") == tmp_path / "a.png"
+
+
+# ---- a crop window's origin comes from its image key when the row has none ----------------------------------------
+
+KEY = "RC1_339_D1_X61440-62464_Y62976-64000"
+
+
+def test_origin_from_image_key_reads_the_window_origin_and_rejects_other_keys() -> None:
+    from nornir_buildmanager.operations.segmentationtraining.maskrefresh import _origin_from_image_key
+
+    assert _origin_from_image_key(KEY) == (61440, 62976)
+    assert _origin_from_image_key("RC1_5_D4_X-1024-0_Y0-1024") == (-1024, 0)
+    assert _origin_from_image_key("a") is None
+    assert _origin_from_image_key("RC1_339_D1_X61440-62464") is None
+
+
+def test_marks_from_crop_json_takes_the_origin_from_the_key_when_the_row_has_none(tmp_path: Path) -> None:
+    _crop_json(tmp_path, KEY, {"image": {"downsample": 1, "width": 1024, "height": 1024}, "annotations": [{"id": 7}]})
+    (mark,) = _marks_from_crop_json(tmp_path, 7)
+    assert (mark.origin_x, mark.origin_y) == (61440, 62976)
+
+
+def test_marks_from_crop_json_prefers_an_origin_stored_in_the_row(tmp_path: Path) -> None:
+    _crop_json(tmp_path, KEY, {"annotations": [{"id": 7, "originX": 5, "originY": 0}]})
+    (mark,) = _marks_from_crop_json(tmp_path, 7)
+    assert (mark.origin_x, mark.origin_y) == (5, 0), "a stored origin wins, including a stored 0"
+
+
+def test_a_polygon_far_from_the_mosaic_origin_gets_a_redraw_job_per_window_it_touches(tmp_path: Path) -> None:
+    """The gallery has no section watermark, so the crop JSON is the only source of each window's place.
+
+    Before the key supplied the origin, every window sat at (0, 0), the polygon landed in none of them, and a
+    refresh reported success while rewriting nothing.
+    """
+    from datetime import datetime
+
+    from nornir_buildmanager.operations.segmentationtraining.maskrefresh import mask_jobs_for_record
+    from nornir_buildmanager.operations.segmentationtraining.records import LocationRecord, LocationType
+
+    record = LocationRecord(
+        id=7, z=339, wkt="POLYGON((61600 63100,62000 63100,62000 63500,61600 63500,61600 63100))",
+        parent_id=10, off_edge=False, last_modified=datetime(2026, 10, 21), type_id=1, type_name="Cell",
+        structure_label=None, type_code=LocationType.POLYGON,
+    )
+    _crop_json(tmp_path, KEY, {"image": {"downsample": 1, "width": 1024, "height": 1024}, "annotations": [{"id": 7}]})
+    elsewhere = "RC1_339_D1_X0-1024_Y0-1024"  # a window the polygon does not touch
+    _crop_json(tmp_path, elsewhere, {"image": {"downsample": 1, "width": 1024, "height": 1024}, "annotations": [{"id": 7}]})
+
+    jobs = mask_jobs_for_record(tmp_path, record, _marks_from_crop_json(tmp_path, 7))
+
+    assert [job.image_key for job in jobs] == [KEY]
