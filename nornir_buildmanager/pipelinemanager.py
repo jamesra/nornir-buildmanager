@@ -20,6 +20,7 @@ from typing import Any, Protocol, TypeVar
 from xml.etree import ElementTree
 
 import nornir_pools
+from nornir_imageregistration.env_flags import env_is_truthy
 import nornir_shared.misc
 import nornir_shared.prettyoutput as prettyoutput
 import nornir_buildmanager.no_delete as _no_delete_mod
@@ -54,14 +55,9 @@ _NESTED_STAGE_STATUS_MIN_SEC = 1.0
 _PIPELINE_PROGRESS_ENV = "NORNIR_LOG_PIPELINE_PROGRESS"
 
 
-def _env_flag_enabled(name: str) -> bool:
-    """True when *name* is a conventional truthy environment flag."""
-    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
-
-
 def _should_log_pipeline_progress(argset: "ArgumentSet | None" = None) -> bool:
     """True when per-iterate pipeline progress should be written to the log."""
-    if _env_flag_enabled(_PIPELINE_PROGRESS_ENV):
+    if env_is_truthy(_PIPELINE_PROGRESS_ENV):
         return True
     if argset is None:
         return False

@@ -8,6 +8,7 @@ import os
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
 import nornir_imageregistration
+from nornir_imageregistration.env_flags import env_is_truthy
 import nornir_shared.files
 import nornir_shared.prettyoutput
 
@@ -214,7 +215,7 @@ def PlotMosaicOverlaps(ChannelNode, Transform: str, OutputFilename: str, Downsam
     if ir_headless.is_headless():
         return None
 
-    if os.environ.get("NORNIR_SKIP_MOSAIC_PLOTS", "").strip().lower() in ("1", "true", "yes", "on"):
+    if env_is_truthy("NORNIR_SKIP_MOSAIC_PLOTS"):
         return None
 
     TransformNode = None
