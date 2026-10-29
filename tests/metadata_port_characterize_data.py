@@ -249,7 +249,9 @@ def find_literals(relpath: str) -> set[str]:
 
     Parsed rather than grepped so calls split across lines or built by ``+`` are seen. An
     argument that is a bare variable is invisible here and belongs in ``INDIRECT_PATTERNS``.
-    The leading capital or ``*`` skips ``str.find`` calls.
+    Only arguments starting with a capital or ``*`` are kept, which drops most ``str.find``
+    calls; one whose literal also starts with a capital (``'CIRCULARSTRING'``) still passes and
+    is excluded through ``NON_VOLUME_FIND_LITERALS``.
     """
     found = set()
     for node in ast.walk(ast.parse((_PACKAGE_DIR / relpath).read_text(encoding='utf-8'))):
