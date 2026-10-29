@@ -8,9 +8,10 @@ over the same token table so the rule cannot drift at one of them.
 
 from __future__ import annotations
 
-import nornir_buildmanager.pipelinemanager as pm
 import nornir_imageregistration.headless as ir_headless
 import pytest
+
+import nornir_buildmanager.pipelinemanager as pm
 from nornir_buildmanager.metadata import feature_flags
 from nornir_buildmanager.operations import diagnostics
 
