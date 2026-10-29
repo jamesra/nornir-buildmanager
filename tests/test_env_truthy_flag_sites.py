@@ -1,9 +1,12 @@
 """Characterize the buildmanager environment flags that share the on/off truthy rule.
 
-``NORNIR_LOG_PIPELINE_PROGRESS``, ``NORNIR_SKIP_MOSAIC_PLOTS`` and the two metadata-port
-switches all accept ``1``/``true``/``yes``/``on`` after stripping whitespace and ignoring
-case; everything else, including unset, ``y`` and ``2``, is off. Each site is pinned here
-over the same token table so the rule cannot drift at one of them.
+``NORNIR_LOG_PIPELINE_PROGRESS``, ``NORNIR_SKIP_MOSAIC_PLOTS`` and the SQLite-read switch
+all accept ``1``/``true``/``yes``/``on`` after stripping whitespace and ignoring case;
+everything else, including unset, ``y`` and ``2``, is off. Each site is pinned here over
+the same token table so the rule cannot drift at one of them.
+
+The SQLite shadow-write switch is the exception: it defaults to on (metadata port stage 6,
+2026-10-29), and only ``0``/``false``/``no``/``off`` turn it off.
 """
 
 from __future__ import annotations
@@ -20,6 +23,14 @@ TOKENS: list[tuple[str | None, bool]] = [
     ('TRUE', True), (' Yes ', True), ('ON', True), ('\tOn\n', True),
     ('0', False), ('false', False), ('no', False), ('off', False),
     ('', False), (None, False), ('y', False), ('2', False), ('enabled', False),
+]
+
+# Shadow write: on unless switched off, so only the falsey tokens disable it.
+SHADOW_TOKENS: list[tuple[str | None, bool]] = [
+    ('0', False), ('false', False), ('no', False), ('off', False),
+    ('FALSE', False), (' No ', False), ('OFF', False), ('\tOff\n', False),
+    ('1', True), ('true', True), ('yes', True), ('on', True),
+    ('', True), (None, True), ('y', True), ('2', True), ('enabled', True),
 ]
 
 SKIP_MOSAIC_PLOTS_ENV = 'NORNIR_SKIP_MOSAIC_PLOTS'
@@ -39,7 +50,7 @@ def test_pipeline_progress_flag(monkeypatch: pytest.MonkeyPatch, value: str | No
     assert pm._should_log_pipeline_progress() is expected
 
 
-@pytest.mark.parametrize('value, expected', TOKENS)
+@pytest.mark.parametrize('value, expected', SHADOW_TOKENS)
 def test_shadow_sqlite_flag(monkeypatch: pytest.MonkeyPatch, value: str | None, expected: bool) -> None:
     _set_flag(monkeypatch, feature_flags.SHADOW_SQLITE_ENV, value)
     assert feature_flags.shadow_sqlite_enabled() is expected

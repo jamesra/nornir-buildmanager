@@ -1,4 +1,5 @@
-"""Opt-in SQLite shadow of ``VolumeData.xml`` container saves (metadata port stage 3).
+"""SQLite shadow of ``VolumeData.xml`` container saves (metadata port stage 3; on by default since
+stage 6, switched off with ``NORNIR_VOLUME_METADATA_SHADOW_SQLITE=0``).
 
 XML stays the source of truth. After a container's ``VolumeData.xml`` is replaced,
 the same container is upserted into ``VolumeData.db`` at the volume root and the
@@ -8,9 +9,12 @@ loaded from its own folder. A failure or mismatch is logged as a warning naming 
 container and never reaches the XML save.
 """
 
+import contextlib
 import logging
 import os
 import sqlite3
+import threading
+from collections.abc import Iterator
 from xml.etree import ElementTree
 
 from . import feature_flags
@@ -34,13 +38,51 @@ logger = logging.getLogger(__name__)
 _VOLUME_DATA_FILENAME = 'VolumeData.xml'
 _VOLUME_TAG = 'Volume'
 
+# Finding the volume root was 41% of the shadow cost: every container save walked up and re-parsed
+# each ancestor's VolumeData.xml. Each container folder's volume root is remembered and re-checked
+# alone, and root tags are cached by path, size and mtime, so a rewritten file is parsed again once.
+_root_tags: dict[str, tuple[tuple[int, int], str | None]] = {}
+_volume_roots: dict[str, str] = {}
+
+
+class _Session(threading.local):
+    """Per-thread state of :func:`save_session`: nesting depth and one open connection per database."""
+
+    depth: int = 0
+    connections: dict[str, sqlite3.Connection]
+
+    def __init__(self) -> None:
+        self.connections = {}
+
+
+_session = _Session()
+
+
+@contextlib.contextmanager
+def save_session() -> Iterator[None]:
+    """Reuse one SQLite connection per database for the container saves of one ``Save`` call.
+
+    Opening a connection and setting its journal mode for every container was 30% of the shadow
+    cost. Connections are opened lazily, used only by this thread, and closed when the outermost
+    session ends, so none stays open after the save. Nested sessions join the outer one.
+    """
+    _session.depth += 1
+    try:
+        yield
+    finally:
+        _session.depth -= 1
+        if _session.depth == 0:
+            connections, _session.connections = _session.connections, {}
+            for conn in connections.values():
+                conn.close()
+
 _CHILDREN_SQL = ("SELECT n.id, n.tag, a.value FROM nodes n "
                  "LEFT JOIN node_attribs a ON a.node_id = n.id AND a.key = 'Path' "
                  "WHERE n.parent_id = ? ORDER BY n.sort_order")
 
 
 def after_container_saved(container_dir: str) -> None:
-    """Mirror ``<container_dir>/VolumeData.xml`` into the volume's SQLite shadow when the flag is on.
+    """Mirror ``<container_dir>/VolumeData.xml`` into the volume's SQLite shadow unless the flag is off.
 
     Never raises: the XML save has already succeeded.
     """
@@ -54,9 +96,13 @@ def after_container_saved(container_dir: str) -> None:
 
 def find_volume_root(container_dir: str) -> str | None:
     """Return the nearest directory at or above *container_dir* whose VolumeData.xml root is a Volume."""
-    current = os.path.abspath(container_dir)
+    start = current = os.path.abspath(container_dir)
+    known = _volume_roots.get(start)
+    if known is not None and _root_tag(os.path.join(known, _VOLUME_DATA_FILENAME)) == _VOLUME_TAG:
+        return known
     while True:
         if _root_tag(os.path.join(current, _VOLUME_DATA_FILENAME)) == _VOLUME_TAG:
+            _volume_roots[start] = current
             return current
         parent = os.path.dirname(current)
         if parent == current:
@@ -65,13 +111,25 @@ def find_volume_root(container_dir: str) -> str | None:
 
 
 def _root_tag(xml_path: str) -> str | None:
+    """Return the root element tag of *xml_path*, or None when it is missing or unreadable."""
+    try:
+        stat = os.stat(xml_path)
+    except OSError:
+        return None
+    signature = (stat.st_size, stat.st_mtime_ns)
+    cached = _root_tags.get(xml_path)
+    if cached is not None and cached[0] == signature:
+        return cached[1]
+    tag = None
     try:
         with open(xml_path, 'rb') as handle:
             for _, element in ElementTree.iterparse(handle, events=('start',)):
-                return element.tag
+                tag = element.tag
+                break
     except (OSError, ElementTree.ParseError):
         pass
-    return None
+    _root_tags[xml_path] = (signature, tag)
+    return tag
 
 
 def _shadow_container(container_dir: str) -> None:
@@ -89,9 +147,17 @@ def _shadow_container(container_dir: str) -> None:
         if saved is None:
             raise ValueError("the saved VolumeData.xml could not be read back")
 
-        conn = backend._get_connection()
+        in_session = _session.depth > 0
+        conn = _session.connections.get(backend.db_path) if in_session else None
+        fresh = conn is None
+        if conn is None:
+            conn = backend._get_connection()
+            if in_session:
+                _session.connections[backend.db_path] = conn
+        failed = True
         try:
-            backend._maybe_migrate_schema(conn)
+            if fresh:
+                backend._maybe_migrate_schema(conn)
             if root_id(conn) is None:
                 _bootstrap(conn, volume_root)
 
@@ -103,13 +169,16 @@ def _shadow_container(container_dir: str) -> None:
             if node_id is None:
                 # Children save before their parent, so a new container is added by the parent's save.
                 logger.debug("%s is not linked into the SQLite shadow yet", container_dir)
-                return
-
-            for diff in compare_trees(saved, load_container_level(conn, node_id, saved)):
-                logger.warning("SQLite shadow parity difference (%s) in container %s at %s: XML=%r SQLite=%r",
-                               diff.kind.value, container_dir, diff.path, diff.expected, diff.actual)
+            else:
+                for diff in compare_trees(saved, load_container_level(conn, node_id, saved)):
+                    logger.warning("SQLite shadow parity difference (%s) in container %s at %s: XML=%r SQLite=%r",
+                                   diff.kind.value, container_dir, diff.path, diff.expected, diff.actual)
+            failed = False
         finally:
-            conn.close()
+            if failed or not in_session:
+                # A connection that raised is not reused; the next container opens a fresh one.
+                _session.connections.pop(backend.db_path, None)
+                conn.close()
 
 
 def root_id(conn: sqlite3.Connection) -> int | None:

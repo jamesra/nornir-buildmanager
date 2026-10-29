@@ -68,7 +68,8 @@ class XmlContainerStorage:
         A non-empty existing file is moved to ``<filename>.backup.xml`` first. Writes and
         replaces retry on the transient errors seen on CIFS/NFS shares. After a successful
         ``VolumeData.xml`` replace, :func:`shadow_write.after_container_saved` mirrors the
-        container into SQLite when ``NORNIR_VOLUME_METADATA_SHADOW_SQLITE`` is on; it never raises.
+        container into SQLite unless ``NORNIR_VOLUME_METADATA_SHADOW_SQLITE`` is off (it is on by
+        default); it never raises.
         """
         try:
             ElementTree.indent(element, space='  ')

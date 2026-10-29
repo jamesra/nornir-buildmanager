@@ -6,6 +6,7 @@ import sys
 from typing import ClassVar
 from xml.etree import ElementTree as ElementTree
 
+from nornir_buildmanager.metadata import shadow_write
 from nornir_buildmanager.volumemanager.container_storage import (
     VOLUME_DATA_FILENAME,
     XML_CONTAINER_STORAGE,
@@ -426,7 +427,9 @@ class XContainerElementWrapper(XResourceElementWrapper):
         """
 
         if self.SaveAsLinkedElement:
-            return self._Save(tabLevel=tabLevel, recurse=recurse)
+            # One SQLite shadow connection for every container this save writes.
+            with shadow_write.save_session():
+                return self._Save(tabLevel=tabLevel, recurse=recurse)
 
         elif self.Parent is not None:
             return self.Parent.Save(tabLevel=tabLevel, recurse=recurse)

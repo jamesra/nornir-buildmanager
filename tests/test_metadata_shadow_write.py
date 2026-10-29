@@ -94,7 +94,8 @@ def _no_shadow_warnings() -> Iterator[None]:
 
 
 @pytest.mark.parametrize('value, expected', [
-    (None, False), ('', False), ('0', False), ('false', False), ('no', False), ('off', False),
+    (None, True), ('', True),  # on by default (metadata port stage 6, 2026-10-29)
+    ('0', False), ('false', False), ('no', False), ('off', False), (' OFF ', False),
     ('1', True), ('true', True), (' TRUE ', True), ('yes', True), ('On', True),
 ])
 def test_flag_parsing(monkeypatch, value, expected):

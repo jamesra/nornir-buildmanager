@@ -118,6 +118,20 @@ def _time_noop_save(root: str) -> float:
     return _median_seconds(once)
 
 
+def _time_dirty_save(root: str) -> float:
+    """Median seconds to save after marking every loaded container changed (a full rewrite)."""
+    def once() -> None:
+        volume = vm.VolumeManager.Load(root, UseCache=False)
+        assert volume is not None
+        volume.LoadAllLinkedNodes()
+        for node in volume.iter():
+            if isinstance(node, vm.XContainerElementWrapper):
+                node.AttributesChanged = True
+        vm.VolumeManager.Save(volume)
+
+    return _median_seconds(once)
+
+
 @pytest.fixture(autouse=True)
 def _metadata_load_only(monkeypatch) -> None:
     """Keep linked loads from repairing tile pyramids or racing on missing pipeline links."""
@@ -217,7 +231,7 @@ def test_pmg_registered_timings_and_sqlite_read(monkeypatch, sources: dict[str, 
         'seconds': {},
     }
 
-    monkeypatch.delenv(SHADOW, raising=False)
+    monkeypatch.setenv(SHADOW, '0')  # the shadow is on by default; switch it off explicitly
     monkeypatch.delenv(READ, raising=False)
     timings['seconds']['flagsOff'] = {
         'path': root,
@@ -256,8 +270,16 @@ def test_pmg_registered_timings_and_sqlite_read(monkeypatch, sources: dict[str, 
         'noopSave': _time_noop_save(root),
     }
 
-    monkeypatch.delenv(SHADOW, raising=False)
     monkeypatch.delenv(READ, raising=False)
+    monkeypatch.delenv(SHADOW, raising=False)
+    timings['seconds']['shadowDefault'] = {
+        'path': root,
+        'noopSave': _time_noop_save(root),
+        'dirtySave': _time_dirty_save(root),
+    }
+
+    monkeypatch.setenv(SHADOW, '0')
     timings['seconds']['flagsOff']['noopSave'] = _time_noop_save(root)
+    timings['seconds']['flagsOff']['dirtySave'] = _time_dirty_save(root)
 
     print('TIMINGS ' + json.dumps(timings, sort_keys=True), flush=True)
