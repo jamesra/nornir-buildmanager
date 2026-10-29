@@ -55,11 +55,13 @@ _characterize = _load_characterize_data()
 FIXED_DATE = _characterize.FIXED_DATE
 GOLDEN_SHA = _characterize.GOLDEN_SHA
 INDIRECT_PATTERNS = _characterize.INDIRECT_PATTERNS
+NON_VOLUME_FIND_LITERALS = _characterize.NON_VOLUME_FIND_LITERALS
 ROOT_TOKEN = _characterize.ROOT_TOKEN
 XPATH_CASES = _characterize.XPATH_CASES
 ancestry_key = _characterize.ancestry_key
 build_volume = _characterize.build_volume
 canonical = _characterize.canonical
+find_literals = _characterize.find_literals
 merged_oracle = _characterize.merged_oracle
 normalized_sha = _characterize.normalized_sha
 pipeline_patterns = _characterize.pipeline_patterns
@@ -325,6 +327,21 @@ def test_every_inventoried_pattern_has_a_golden_case():
     inventoried = pipeline_patterns() | source_patterns() | set(INDIRECT_PATTERNS)
     assert sorted(inventoried - covered) == []
     assert sorted(covered - inventoried) == []
+
+
+def test_non_volume_find_literals_still_occur():
+    """Each NON_VOLUME_FIND_LITERALS entry is still a find literal in its file, so no exclusion goes stale."""
+    assert NON_VOLUME_FIND_LITERALS
+    stale = sorted(key for key in NON_VOLUME_FIND_LITERALS if key[1] not in find_literals(key[0]))
+    assert stale == []
+
+
+def test_non_volume_find_literals_exclude_only_their_file(monkeypatch):
+    """An exclusion hides its pattern in its own file only; 'Level' is also queried on VolumeData elsewhere."""
+    remote_tiles = 'operations/segmentationtraining/remote_tiles.py'
+    assert 'Level' in find_literals(remote_tiles)
+    monkeypatch.setitem(NON_VOLUME_FIND_LITERALS, (remote_tiles, 'Level'), 'test')
+    assert 'Level' in source_patterns()
 
 
 def test_report_columns_are_pinned_under_their_row_context():

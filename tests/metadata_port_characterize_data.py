@@ -165,6 +165,17 @@ INDIRECT_PATTERNS = {
     "Filter[@Name='#v']": 'pipelinemanager_iterate_filters.py literal lookup (GetChildByAttrib)',
 }
 
+# find() literals in operations/ that do not query the VolumeData tree: (path below the package,
+# pattern) -> why. Excluded only in that file, so the same pattern elsewhere is still inventoried;
+# test_non_volume_find_literals_still_occur fails once an entry no longer matches a call.
+# remote_tiles.py's findall('Section' / 'Tileset' / 'Level') also read VikingXML, but VolumeData
+# queries share those patterns, so they stay inventoried.
+NON_VOLUME_FIND_LITERALS = {
+    ('operations/segmentationtraining/circles.py', 'CIRCULARSTRING'): 'str.find on a WKT string, not an XPath',
+    ('operations/segmentationtraining/remote_tiles.py', 'Sections'):
+        'root.find on a remote Viking volume XML document, not VolumeData',
+}
+
 _PLACEHOLDER = re.compile(r"#\w+|%\(\w+\)[sdg]|%[sdg]|\{[^}]*\}")
 _PREDICATE = re.compile(r"\[[^\]]*\]")
 _FIND_METHODS = frozenset({'find', 'findall', 'iterfind'})
@@ -233,22 +244,30 @@ def _literal_xpath(node: ast.expr) -> str | None:
     return None
 
 
-def source_patterns() -> set[str]:
-    """XPaths passed to ``find``/``findall``/``iterfind`` in ``operations/`` and ``volumemanager/``.
+def find_literals(relpath: str) -> set[str]:
+    """Normalized XPaths passed to ``find``/``findall``/``iterfind`` in one file below the package.
 
     Parsed rather than grepped so calls split across lines or built by ``+`` are seen. An
     argument that is a bare variable is invisible here and belongs in ``INDIRECT_PATTERNS``.
     The leading capital or ``*`` skips ``str.find`` calls.
     """
     found = set()
+    for node in ast.walk(ast.parse((_PACKAGE_DIR / relpath).read_text(encoding='utf-8'))):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _FIND_METHODS and node.args):
+            xpath = _literal_xpath(node.args[0])
+            if xpath and (xpath[0].isupper() or xpath[0] == '*'):
+                found.add(normalize_pattern(xpath))
+    return found
+
+
+def source_patterns() -> set[str]:
+    """``find_literals`` of every file in ``operations/`` and ``volumemanager/``, less ``NON_VOLUME_FIND_LITERALS``."""
+    found = set()
     for subdir in ('operations', 'volumemanager'):
         for path in (_PACKAGE_DIR / subdir).rglob('*.py'):
-            for node in ast.walk(ast.parse(path.read_text(encoding='utf-8'))):
-                if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-                        and node.func.attr in _FIND_METHODS and node.args):
-                    xpath = _literal_xpath(node.args[0])
-                    if xpath and (xpath[0].isupper() or xpath[0] == '*'):
-                        found.add(normalize_pattern(xpath))
+            relpath = path.relative_to(_PACKAGE_DIR).as_posix()
+            found |= {p for p in find_literals(relpath) if (relpath, p) not in NON_VOLUME_FIND_LITERALS}
     return found
 
 
