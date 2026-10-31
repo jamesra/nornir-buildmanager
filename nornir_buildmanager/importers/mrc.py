@@ -25,6 +25,8 @@ import nornir_buildmanager.importers.serialem_utils as serialem_utils
 import nornir_buildmanager.importers.shared as shared
 from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
+from nornir_imageregistration import noise_crush
+from nornir_imageregistration.noise_crush import CrushParams
 from nornir_shared.files import RemoveOutdatedFile
 import nornir_shared.files as files
 from nornir_shared.histogram import *
@@ -47,6 +49,8 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
         raise ValueError(f"Import directory not found: {ImportPath}")
 
     CameraBpp = kwargs['CameraBpp'] if 'CameraBpp' in kwargs else None
+    NoCrush = bool(kwargs.get('NoCrush', False))
+    CrushK = kwargs.get('CrushK', None)
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
@@ -65,6 +69,8 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                                           FlipList=FlipList,
                                           CameraBpp=CameraBpp,
                                           ContrastMap=ContrastMap,
+                                          NoCrush=NoCrush,
+                                          CrushK=CrushK,
                                           )
 
     nornir_pools.ReleaseStagePools()
@@ -138,7 +144,15 @@ class MRCImport:
                  TileOverlap=None, TargetBpp: int | None = None, FlipList: list[int] | None = None,
                  ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
                  CameraBpp: int | None = None,
-                 debug: bool | None = None):
+                 debug: bool | None = None,
+                 NoCrush: bool = False,
+                 CrushK: float | None = None):
+        """Import one .mrc file as a section.
+
+        Tiles deeper than 8 bits are crushed by default (``nornir_imageregistration.noise_crush``)
+        into a ``Raw8`` filter of section-wide noise-step codes. ``NoCrush`` keeps the legacy
+        contrast-stretched ``Raw16`` filter, as does an existing uncrushed ``Raw16`` import.
+        """
 
         if OutputImageExt is None:
             OutputImageExt = '.png'
@@ -221,9 +235,39 @@ class MRCImport:
                                                max=np.around(contrast_settings.max),
                                                gamma=contrast_settings.gamma)
 
-        contrast_mismatch = channelObj.RemoveFilterOnContrastMismatch(FilterName, contrast_settings.min,
-                                                                      contrast_settings.max,
-                                                                      contrast_settings.gamma)
+        requested_crush = None
+        if not NoCrush and mrcfile.bytes_per_pixel > 1:
+            requested_crush = shared.SectionCrushParams(
+                shared.GetSectionNoise(histogram_cache_path, [mrc_fullpath], mrcfile.num_tiles,  # type: ignore[arg-type]
+                                       mrcfile.get_tile_as_numpy_memmap),
+                Histogram.Load(histogram_cache_path) if os.path.exists(histogram_cache_path) else None,
+                k=nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK))
+            crushed_filter_name = shared.CrushedFilterName(requested_crush)
+            legacy_filter = channelObj.GetFilter(FilterName)
+            if crushed_filter_name != FilterName and legacy_filter is not None and \
+                    CrushParams.from_attributes(legacy_filter.attrib) is None and \
+                    not channelObj.HasFilter(crushed_filter_name):
+                # Same rule as ResolveCrushMode: an existing uncrushed import is not replaced.
+                logger.info("Keeping existing uncrushed filter %s; remove it to crush this section",
+                            legacy_filter.FullPath)
+                requested_crush = None
+            else:
+                FilterName = crushed_filter_name
+
+        (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
+
+        if crush_params is not None:
+            # Crushed tiles do not depend on the contrast settings; they become hints in code units.
+            filter_contrast = shared.MinMaxGamma(min=shared.CountsToCrushCodes(contrast_settings.min, crush_params),
+                                                 max=shared.CountsToCrushCodes(contrast_settings.max, crush_params),
+                                                 gamma=contrast_settings.gamma)
+            contrast_mismatch = crush_removed
+            prettyoutput.Log(f"Crushing section {SectionNumber}: sigma {crush_params.sigma:.1f} counts, "
+                             f"step {crush_params.step}, offset {crush_params.offset}, {crush_params.bits}-bit codes")
+        else:
+            filter_contrast = contrast_settings
+            contrast_mismatch = crush_removed or channelObj.RemoveFilterOnContrastMismatch(
+                FilterName, contrast_settings.min, contrast_settings.max, contrast_settings.gamma)
         image_conversion_required = contrast_mismatch
 
         pool = nornir_pools.GetGlobalThreadPool()
@@ -236,8 +280,12 @@ class MRCImport:
                                                 contrast_settings.max, force_recreate=contrast_mismatch)
 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
-        filterObj.BitsPerPixel = bpp
-        filterObj.SetContrastValues(contrast_settings.min, contrast_settings.max, contrast_settings.gamma)
+        filterObj.SetContrastValues(filter_contrast.min, filter_contrast.max, filter_contrast.gamma)
+        if crush_params is not None:
+            filterObj.BitsPerPixel = crush_params.bits
+            shared.SetFilterCrushAttributes(filterObj, crush_params)
+        else:
+            filterObj.BitsPerPixel = bpp
         if added_filter:
             image_conversion_required = True
 
@@ -276,7 +324,8 @@ class MRCImport:
 
         cls.ExportImages(mrc_fullpath, LevelObj.FullPath, img_ext=OutputImageExt,
                          min_max_gamma=contrast_settings,
-                         flip_ud=flip_ud_for_section(SectionNumber, FlipList))
+                         flip_ud=flip_ud_for_section(SectionNumber, FlipList),
+                         crush_params=crush_params)
 
     def __init__(self):
         """
@@ -369,7 +418,8 @@ class MRCImport:
     @classmethod
     def ExportImages(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str,
                      min_max_gamma: shared.MinMaxGamma | None,
-                     flip_ud: bool = DEFAULT_FLIP_UD):
+                     flip_ud: bool = DEFAULT_FLIP_UD,
+                     crush_params: CrushParams | None = None):
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
@@ -384,7 +434,8 @@ class MRCImport:
                                img_ext,
                                iTile,
                                min_max_gamma,
-                               flip_ud)
+                               flip_ud,
+                               crush_params)
                  for iTile in range(0, mrc_obj.num_tiles)]  # type: ignore[arg-type]
 
         _wait_for_tile_tasks(tasks, 'export')
@@ -392,7 +443,9 @@ class MRCImport:
     @staticmethod
     def ExportImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
                     min_max_gamma: shared.MinMaxGamma | None = None,
-                    flip_ud: bool = DEFAULT_FLIP_UD) -> bool:
+                    flip_ud: bool = DEFAULT_FLIP_UD,
+                    crush_params: CrushParams | None = None) -> bool:
+        """Write one tile; crushed codes when *crush_params* is given, else the legacy contrast stretch."""
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
@@ -401,7 +454,14 @@ class MRCImport:
         if nornir_shared.images.IsValidImage(output_fullpath):
             return False
 
-        if min_max_gamma is None:
+        if crush_params is not None:
+            img = mrc_obj.get_tile_as_numpy_memmap(iTile)
+            if flip_ud:
+                img = np.flipud(img)
+
+            noise_crush.save_crushed_png(output_fullpath, noise_crush.crush(img, crush_params), crush_params)
+            del img
+        elif min_max_gamma is None:
             im = mrc_obj.get_tile_as_image(iTile)
             if flip_ud:
                 # Orientation must not depend on whether contrast values were

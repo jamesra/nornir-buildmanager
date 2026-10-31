@@ -28,11 +28,15 @@
             <Argument flag="-CameraBpp" dest="CameraBpp" type="int"
                       help="The actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data."
                       required="False"/>
+            <Argument flag="-NoCrush" action="store_true" dest="NoCrush" required="False"
+                      help="Store contrast-stretched 8-bit tiles instead of noise-crushed codes.  By default tiles deeper than 8 bits are quantized to a section-wide step of CrushK noise sigmas (about 86% smaller than raw 16-bit).  An existing uncrushed Raw8 filter is never replaced either way."/>
+            <Argument flag="-CrushK" dest="CrushK" type="float" default="2.5" required="False"
+                      help="Crush step in noise sigmas (default 2.5, about 35-40 levels on TEM).  Larger values give smaller files and coarser intensity steps."/>
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.idoc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension" Min="#MinValue" Max="#MaxValue"
-                    CameraBpp="#CameraBpp" Sections="#Sections"/>
+                    CameraBpp="#CameraBpp" Sections="#Sections" NoCrush="#NoCrush" CrushK="#CrushK"/>
     </Pipeline>
 
     <Pipeline Name="ImportPMG" Help="Import PMG file into a volume" Description="Imports PMG files named with section/channel metadata into a volume. Use -Scale to provide nanometers-per-pixel for downstream geometry and reporting." Epilog="Example: nornir-build ImportPMG /data/volume /data/pmg -Scale 4.0">
@@ -65,11 +69,15 @@
             <Argument flag="-CameraBpp" dest="CameraBpp" type="int"
                       help="The actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data."
                       required="False"/>
+            <Argument flag="-NoCrush" action="store_true" dest="NoCrush" required="False"
+                      help="Store the legacy contrast-stretched Raw16 tiles instead of noise-crushed codes in Raw8.  An existing uncrushed Raw16 import is never replaced either way."/>
+            <Argument flag="-CrushK" dest="CrushK" type="float" default="2.5" required="False"
+                      help="Crush step in noise sigmas (default 2.5).  Larger values give smaller files and coarser intensity steps."/>
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.mrc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension"
-                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp"/>
+                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK"/>
     </Pipeline>
 
     <Pipeline Name="ImportImages"

@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 import unittest
 
 import numpy as np
-from nornir_buildmanager.importers.mrc import MRCFile, flip_ud_for_section
+from nornir_buildmanager.importers import GetFileNameForTileNumber, shared
+from nornir_buildmanager.importers.mrc import MRCFile, MRCImport, flip_ud_for_section
+from nornir_imageregistration import noise_crush
 from PIL import Image
 
 _MRC_ROOT = os.path.join(os.environ.get('TESTINPUTPATH', ''), 'PlatformRaw', 'MRC')
@@ -156,6 +159,38 @@ class TestSmallMouseMatches2014Build(unittest.TestCase):
                         self.assertLess(np.corrcoef(np.flipud(oriented).ravel(), old.ravel())[0, 1], 0.2)
             finally:
                 mrc.mrc.close()
+
+
+@unittest.skipUnless(_have_raw() and os.path.isdir(_BUILD_2014),
+                     'SmallMouse .mrc files or SmallMouse_2014Build not under TESTINPUTPATH/PlatformRaw/MRC')
+class TestSmallMouseCrushedExport(unittest.TestCase):
+    """Crushed tiles, written as the MRC importer writes them, still match the 2014 build."""
+
+    def test_crushed_tiles_match_the_2014_downsample(self) -> None:
+        section = 1
+        folder = os.path.dirname(_SECTIONS[section][0])
+        mrc = MRCFile.Load(_path(section))
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                noise = shared.GetSectionNoise(os.path.join(tmp, 'Histogram-1.xml'), [_path(section)],
+                                               mrc.num_tiles, mrc.get_tile_as_numpy_memmap)
+                params = shared.SectionCrushParams(noise, None, k=noise_crush.DEFAULT_CRUSH_K)
+                self.assertEqual(params.bits, 8)
+                for i in (0, 5, 10, _NUM_TILES - 1):
+                    with self.subTest(tile=i):
+                        self.assertTrue(MRCImport.ExportImage(mrc, tmp, '.png', i, None,
+                                                              flip_ud_for_section(section, None), params))
+                        written = os.path.join(tmp, GetFileNameForTileNumber(i, '.png'))
+                        self.assertEqual(noise_crush.read_crush_params(written), params)
+                        codes = noise_crush.load_raw_tile(written)
+                        png = os.path.join(_BUILD_2014, folder, '8-bit', '016', f'{section}.{i:03d}.png')
+                        with Image.open(png) as image:
+                            old = np.asarray(image.convert('L'), dtype=np.float64)
+                        ours = _block_mean(noise_crush.uncrush(codes, params))
+                        self.assertGreater(np.corrcoef(ours.ravel(), old.ravel())[0, 1], 0.99)
+                        self.assertLess(os.path.getsize(written), 0.25 * mrc.image_length_in_bytes)
+        finally:
+            mrc.mrc.close()
 
 
 if __name__ == '__main__':

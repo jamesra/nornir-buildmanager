@@ -16,6 +16,8 @@ import nornir_buildmanager
 import nornir_buildmanager.importers.idoc as idoc
 import nornir_buildmanager.importers.serialemlog as serialemlog
 import nornir_imageregistration.files.stosfile as stosfile
+from nornir_imageregistration import noise_crush
+from nornir_imageregistration.noise_crush import CrushParams
 from . import setup_pipeline
 from nornir_buildmanager.volumemanager import VolumeNode, TransformNode, SectionNode, ChannelNode, FilterNode
 
@@ -405,6 +407,8 @@ class TestIDocSingleSectionImport(IDocTest):
         self.assertFalse(FilterObj.IsContrastMismatched(MinVal, MaxVal, Gamma))
 
     def test_i_doc_single_section_import_test(self):
+        # Contrast overrides only change pixels of legacy contrast-stretched tiles.
+        self.IDocImportExtraArgs = ['-NoCrush']
         self.RunImport()
         self.LoadMetaData()
 
@@ -475,6 +479,41 @@ class TestIDocSingleSectionImport(IDocTest):
 
         self.LoadMetaData()
         # self.assertFalse(self.RawFilterObj.Imageset.IsContrastMismatched(TargetMinIntensity, TargetMaxIntensity, TargetGamma))
+
+    def test_crushed_import_ignores_contrast_overrides(self):
+        """The default import crushes tiles; a contrast override changes the code-unit hints, never the tiles."""
+        self.RunImport()
+        self.LoadMetaData()
+
+        FilterObj = self._getRawDataFilterNode(self.SectionNumber)
+        params = CrushParams.from_attributes(FilterObj.attrib)
+        assert params is not None, "Raw8 has no crush attributes"
+        self.assertEqual(FilterObj.BitsPerPixel, params.bits)
+        self.EnsureTilePyramidIsFull(FilterObj, 25)
+
+        tiles = sorted(glob.glob(os.path.join(FilterObj.TilePyramid.GetLevel(1).FullPath, '*.png')))
+        self.assertEqual(noise_crush.read_crush_params(tiles[0]), params)
+        for tile in tiles:
+            self.assertLess(os.path.getsize(tile), 8 * 1024 * 1024)  # raw 4080x4080 uint16 is 33 MB
+        tile_mtimes = {tile: os.path.getmtime(tile) for tile in tiles}
+
+        TargetMinIntensity = 1500
+        TargetMaxIntensity = 6000
+        ContrastMap = self.CreateImportContrastOverrideMapping(self.SectionNumber, TargetMinIntensity,
+                                                               TargetMaxIntensity, Gamma=1.0)
+        nornir_buildmanager.importers.SaveHistogramCutoffs(self.HistogramFullPath, ContrastMap)
+
+        self.RunImport()
+        self.LoadMetaData()
+        FilterObj = self._getRawDataFilterNode(self.SectionNumber)
+        self.assertTrue(params.same_quantization(CrushParams.from_attributes(FilterObj.attrib)))
+        self.assertAlmostEqual(FilterObj.MinIntensityCutoff, TargetMinIntensity / params.step, delta=0.01)
+        self.assertAlmostEqual(FilterObj.MaxIntensityCutoff, TargetMaxIntensity / params.step, delta=0.01)
+        self.assertEqual({tile: os.path.getmtime(tile) for tile in tiles}, tile_mtimes)
+
+        self.RunHistogram(Transform='Stage')
+        self.RunAdjustContrast(Transform='Stage')
+        self.RunMosaic(Filter='Leveled', Transform='Stage')
 
     def tearDown(self):
         IDocTest.tearDown(self)

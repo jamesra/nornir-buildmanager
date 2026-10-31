@@ -159,6 +159,8 @@ def Import(VolumeElement: VolumeNode,
     MaxCutoff = float(kwargs.get('Max'))  # type: ignore[arg-type]
     ContrastCutoffs = (MinCutoff, MaxCutoff)
     CameraBpp = kwargs.get('CameraBpp', None)
+    NoCrush = bool(kwargs.get('NoCrush', False))
+    CrushK = kwargs.get('CrushK', None)
 
     _validate_contrast_cutoffs(ContrastCutoffs)
 
@@ -216,7 +218,9 @@ def Import(VolumeElement: VolumeNode,
                                                     OutputImageExt=None,
                                                     FlipList=FlipList,
                                                     CameraBpp=CameraBpp,
-                                                    ContrastMap=ContrastMap)
+                                                    ContrastMap=ContrastMap,
+                                                    NoCrush=NoCrush,
+                                                    CrushK=CrushK)
 
         completed_sections += 1
         if total_sections:
@@ -241,13 +245,19 @@ class SerialEMIDocImport:
                  TargetBpp: int | None = None, FlipList: list[int] | None = None,
                  ContrastMap: dict[int, nornir_buildmanager.importers.ContrastValue] | None = None,
                  CameraBpp: int | None = None,
-                 debug: bool | None = None) -> Generator[XElementWrapper, None, None]:
+                 debug: bool | None = None,
+                 NoCrush: bool = False,
+                 CrushK: float | None = None) -> Generator[XElementWrapper, None, None]:
         """
         Convert an idoc to a .mosaic and populate volume meta-data.
 
         Yields the owning container after each meta-data mutation so ``_SaveNodes``
         can write VolumeData.xml before long tile/histogram work (same pattern as
         MRC/DM4 importers — do not wait until the entire idoc finishes).
+
+        Tiles deeper than 8 bits are crushed by default (``nornir_imageregistration.noise_crush``):
+        stored as section-wide noise-step codes rather than contrast-stretched 8-bit.
+        ``NoCrush`` keeps the contrast stretch; ``CrushK`` sets the step in noise sigmas.
 
         :param ContrastCutoffs: (min, max) as 0-1 *fractions*, not percentages.
             Levelling uses ``AutoLevel(cutoffs[0], 1.0 - cutoffs[1])``, so (0.0, 1.0)
@@ -385,8 +395,30 @@ class SerialEMIDocImport:
         ActualMosaicMin = np.around(contrast_settings.min)
         Gamma = contrast_settings.gamma
 
-        contrast_mismatch = channelObj.RemoveFilterOnContrastMismatch(FilterName, ActualMosaicMin, ActualMosaicMax,
-                                                                      Gamma)
+        requested_crush = None
+        if not NoCrush and ImageBpp > 8:
+            requested_crush = shared.SectionCrushParams(
+                shared.GetSectionNoise(histogram_cache_path, source_tile_list + [idocFileFullPath],
+                                       len(source_tile_list),
+                                       lambda i: nornir_imageregistration.noise_crush.load_raw_tile(
+                                           source_tile_list[i])),
+                Histogram.Load(histogram_cache_path) if os.path.exists(histogram_cache_path) else None,
+                k=nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK))
+            FilterName = shared.CrushedFilterName(requested_crush)
+
+        (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
+
+        if crush_params is not None:
+            # Crushed tiles do not depend on the contrast settings; they become hints in code units.
+            FilterMin = shared.CountsToCrushCodes(ActualMosaicMin, crush_params)
+            FilterMax = shared.CountsToCrushCodes(ActualMosaicMax, crush_params)
+            contrast_mismatch = crush_removed
+            prettyoutput.Log(f"Crushing section {SectionNumber}: sigma {crush_params.sigma:.1f} counts, "
+                             f"step {crush_params.step}, {crush_params.bits}-bit codes")
+        else:
+            (FilterMin, FilterMax) = (ActualMosaicMin, ActualMosaicMax)
+            contrast_mismatch = crush_removed or channelObj.RemoveFilterOnContrastMismatch(
+                FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
 
         Pool = nornir_pools.GetGlobalThreadPool()
         # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
@@ -403,8 +435,12 @@ class SerialEMIDocImport:
             image_conversion_required = True
             yield channelObj
 
-        filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
-        filterObj.BitsPerPixel = TargetBpp
+        filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
+        if crush_params is not None:
+            filterObj.BitsPerPixel = crush_params.bits
+            shared.SetFilterCrushAttributes(filterObj, crush_params)
+        else:
+            filterObj.BitsPerPixel = TargetBpp
 
         SupertileName = 'Stage'
         SupertileTransform = SupertileName + '.mosaic'
@@ -449,20 +485,26 @@ class SerialEMIDocImport:
         # Figure out if we have to move or convert images
         if len(SourceToMissingTargetMap) == 0:
             image_conversion_required = False
+        elif crush_params is not None:
+            image_conversion_required = True
         else:
             image_conversion_required = (not ImageBpp == TargetBpp) or (
                     image_conversion_required or Tileset.ImageConversionRequired)
 
         if image_conversion_required:
             Invert = False
-            filterObj.SetContrastValues(ActualMosaicMin, ActualMosaicMax, Gamma)
+            filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
             # Use batched GPU convert under cupy; process-pool ConvertImagesInDict
             # stays on NumPy (forced in _ConvertSingleImage) to avoid VRAM thrash.
             tile_progress_name = f"Import tiles {os.path.basename(idocFileFullPath)}"
             tile_progress_key = "import_idoc:tiles"
-            if nornir_imageregistration.UsingCupy():
+            if crush_params is not None:
+                shared.CrushTiles(SourceToMissingTargetMap, crush_params, flip=Flip,
+                                  progress_name=tile_progress_name,
+                                  progress_task_key=tile_progress_key)
+            elif nornir_imageregistration.UsingCupy():
                 nornir_imageregistration.ConvertImagesInDictGpu(
                     SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
                     OutputBpp=TargetBpp, MinMax=[ActualMosaicMin, ActualMosaicMax],
@@ -527,8 +569,8 @@ class SerialEMIDocImport:
         # It has been a while, check if the histogram is done and try to add meta-data for it
         histogram_creation_task.wait()
         hist_added = shared.TryAddHistogram(filterObj, section_source_dir, image_ext=".png",
-                                            min_cutoff=ActualMosaicMin,
-                                            max_cutoff=ActualMosaicMax, gamma=Gamma)
+                                            min_cutoff=FilterMin,
+                                            max_cutoff=FilterMax, gamma=Gamma)
         if hist_added:
             yield filterObj
 

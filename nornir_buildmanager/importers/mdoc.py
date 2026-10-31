@@ -151,6 +151,8 @@ class SerialEMMDocImport(idoc.SerialEMIDocImport):
                 ContrastCutoffs=(0.0, 1.0),
                 OutputImageExt=OutputImageExt,
                 TargetBpp=TargetBpp,
+                NoCrush=bool(kwargs.get('NoCrush', False)),
+                CrushK=kwargs.get('CrushK', None),
             )
 
     @classmethod

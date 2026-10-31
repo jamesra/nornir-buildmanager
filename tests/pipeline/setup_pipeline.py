@@ -1086,9 +1086,13 @@ class PlatformTest(NornirBuildTestBase):
 
         raise NotImplementedError("Derived classes should point RunImport at a specific importer")
 
+    # Extra ImportIDoc flags for a test, e.g. ['-NoCrush'] for legacy contrast-stretched tiles.
+    IDocImportExtraArgs: list[str] = []
+
     def RunIDocImport(self):
         buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
         buildArgs.extend(['-CameraBpp', '14'])
+        buildArgs.extend(self.IDocImportExtraArgs)
         self.RunBuild(buildArgs)
 
     def RunPMGImport(self):

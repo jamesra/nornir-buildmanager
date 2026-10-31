@@ -9,6 +9,7 @@ import nornir_buildmanager
 from nornir_buildmanager.validation import transforms
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.image_stats import Prune
+from nornir_imageregistration.noise_crush import CrushParams
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import Histogram
 import nornir_shared.misc
@@ -305,6 +306,12 @@ class PruneObj:
             files.append(os.path.join(FullTilePath, f))
 
         TileToScore = Prune(files, Overlap)
+        assert isinstance(TileToScore, dict)  # A list of files always yields a dict of scores
+
+        score_scale = cls.CrushedScoreScale(FilterNode)
+        if score_scale is not None:
+            TileToScore = {tile: score * score_scale for (tile, score) in TileToScore.items()}
+            PruneMapElement.attrib['CrushScoreScale'] = f'{score_scale:g}'
 
         prune = PruneObj(TileToScore)
 
@@ -314,6 +321,25 @@ class PruneObj:
         PruneMapElement.NumImages = len(TileToScore)
 
         return FilterNode
+
+    @staticmethod
+    def CrushedScoreScale(FilterNode) -> float | None:
+        """Factor that puts prune scores of crushed tiles on the contrast-stretched 8-bit scale.
+
+        Scores are sums of raw pixel standard deviations. A crushed filter stores
+        noise-step codes and records its contrast cutoffs in the same units, so
+        stretching that span to 0-255 matches what a ``-NoCrush`` import would have
+        scored and keeps existing ``-DefaultThreshold`` values meaningful.
+        None for filters that are not crushed.
+        """
+        if CrushParams.from_attributes(FilterNode.attrib) is None:
+            return None
+
+        (min_cutoff, max_cutoff) = (FilterNode.MinIntensityCutoff, FilterNode.MaxIntensityCutoff)
+        if min_cutoff is None or max_cutoff is None or max_cutoff <= min_cutoff:
+            return 1.0
+
+        return 255.0 / (max_cutoff - min_cutoff)
 
     #
     def WritePruneMap(self, MapImageToScoreFile):

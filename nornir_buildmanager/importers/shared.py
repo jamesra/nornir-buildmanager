@@ -7,6 +7,7 @@ Created on Apr 18, 2019
 import glob
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -32,12 +33,22 @@ import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.histogram import Histogram
 import nornir_shared.plot as plot
+import nornir_pools
+from nornir_imageregistration import noise_crush
+from nornir_imageregistration.noise_crush import CrushParams
+import numpy as np
+from numpy.typing import NDArray
 
 
 # Bump when histogram cache semantics change (e.g. default stride).
 HISTOGRAM_CACHE_VERSION: int = 1
 # Sidecar next to Histogram.xml: Histogram.cache.json
 HISTOGRAM_CACHE_SIDECAR_SUFFIX: str = '.cache.json'
+# Noise estimate next to Histogram.xml: Histogram.noise.json
+NOISE_CACHE_VERSION: int = 1
+NOISE_CACHE_SUFFIX: str = '.noise.json'
+# Tiles sampled per section for the noise estimate; exposure is section-wide.
+NOISE_SAMPLE_TILES: int = 16
 
 _NOTES_SKIP_FILENAMES: frozenset[str] = frozenset({'ContrastOverrides.txt', 'Timing.txt'})
 _CAPTURE_NOTE_FALLBACK_EXTENSIONS: frozenset[str] = frozenset({'.idoc', '.mrc', '.dm4', '.pmg'})
@@ -698,6 +709,196 @@ def GetSectionContrastSettings(section_number: int,
     return MinMaxGamma(min=ActualMosaicMin,
                        max=ActualMosaicMax,
                        gamma=Gamma)
+
+
+class SectionNoise(NamedTuple):
+    sigma: float
+    sample_min: float
+    sample_max: float
+    source_dtype: str
+
+
+def _noise_cache_path(histogram_cache_path: str) -> str:
+    (base, _) = os.path.splitext(histogram_cache_path)
+    return f"{base}{NOISE_CACHE_SUFFIX}"
+
+
+def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str]) -> SectionNoise | None:
+    """Return the cached estimate if its version and inputs match and no input is newer."""
+    if not os.path.exists(noise_cache_path):
+        return None
+    try:
+        with open(noise_cache_path, 'r', encoding='utf-8') as f:
+            meta = json.load(f)
+        if meta.get('version') != NOISE_CACHE_VERSION or meta.get('method') != noise_crush.SIGMA_METHOD:
+            return None
+        if list(meta.get('inputs', [])) != _cache_input_basenames(cache_inputs):
+            return None
+        cache_mtime_ns = files.file_mtime_ns(noise_cache_path)
+        input_mtimes_ns = [files.file_mtime_ns(p) for p in cache_inputs if os.path.exists(p)]
+        if input_mtimes_ns and files.is_significantly_newer(max(input_mtimes_ns), cache_mtime_ns):
+            return None
+        return SectionNoise(float(meta['sigma']), float(meta['sample_min']), float(meta['sample_max']),
+                            str(meta['source_dtype']))
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return None
+
+
+def GetSectionNoise(histogram_cache_path: str,
+                    cache_inputs: Sequence[str],
+                    num_tiles: int,
+                    load_tile: Callable[[int], NDArray]) -> SectionNoise:
+    """Estimate the section's noise sigma (counts) from evenly sampled tiles, cached beside Histogram.xml.
+
+    The cache holds sigma rather than the step, so changing ``-CrushK`` re-reads no tiles.
+    A read-only import directory only costs the cache; the estimate is still returned.
+    """
+    noise_cache_path = _noise_cache_path(histogram_cache_path)
+    cached = _load_fresh_noise_cache(noise_cache_path, cache_inputs)
+    if cached is not None:
+        return cached
+
+    sigmas: list[float] = []
+    sample_min = math.inf
+    sample_max = -math.inf
+    source_dtype = ''
+    for iTile in noise_crush.sample_indices(num_tiles, NOISE_SAMPLE_TILES):
+        tile = load_tile(iTile)
+        source_dtype = tile.dtype.name
+        sigmas.append(noise_crush.estimate_noise_sigma(tile))
+        sample_min = min(sample_min, float(np.min(tile)))
+        sample_max = max(sample_max, float(np.max(tile)))
+        del tile
+
+    noise = SectionNoise(noise_crush.section_sigma(sigmas), sample_min, sample_max, source_dtype)
+    meta = {'version': NOISE_CACHE_VERSION, 'method': noise_crush.SIGMA_METHOD,
+            'inputs': _cache_input_basenames(cache_inputs), 'sigma': noise.sigma,
+            'sample_min': noise.sample_min, 'sample_max': noise.sample_max,
+            'source_dtype': source_dtype, 'tile_sigmas': sigmas}
+    try:
+        os.makedirs(os.path.dirname(noise_cache_path) or '.', exist_ok=True)
+        with open(noise_cache_path, 'w', encoding='utf-8') as f:
+            json.dump(meta, f, indent=0, sort_keys=True)
+    except OSError as e:
+        prettyoutput.Log(f"Could not cache the noise estimate at {noise_cache_path}: {e}")
+
+    return noise
+
+
+def SectionCrushParams(noise: SectionNoise, histogram: Histogram | None, k: float) -> CrushParams:
+    """Crush parameters for a section: the step from its sigma, storage depth from its intensity range.
+
+    The range is the wider of the sampled tiles and the section histogram, whose top
+    occupied bin also covers the tiles that were not sampled.
+    """
+    section_max = noise.sample_max
+    if histogram is not None:
+        top_bin = histogram.MaxNonEmptyBin()
+        if top_bin is not None:
+            section_max = max(section_max, histogram.BinValue(top_bin, 1.0))
+
+    return noise_crush.make_crush_params(noise.sigma, section_max, noise.source_dtype, k=k,
+                                         section_min=noise.sample_min)
+
+
+def CrushedFilterName(params: CrushParams) -> str:
+    """Filter that holds crushed tiles: Raw8 normally, Raw16 when the codes need more than 8 bits."""
+    return 'Raw8' if params.bits <= 8 else 'Raw16'
+
+
+def CountsToCrushCodes(value: float, params: CrushParams) -> float:
+    """Express a raw-count intensity (contrast cutoff, override) in crushed code units."""
+    return (float(value) - params.offset) / params.step
+
+
+def ResolveCrushMode(channel: ChannelNode, filter_name: str, requested: CrushParams | None,
+                     logger: logging.Logger) -> tuple[CrushParams | None, bool]:
+    """Decide whether *filter_name* is built crushed, and clean it when its tiles must change.
+
+    :return: (params to build with, or None for the legacy contrast-stretched tiles;
+              True if the existing filter was removed)
+
+    An existing filter the importer did not crush is left alone even when crushing is
+    requested: re-importing to add sections must not rewrite every imported section
+    and everything built from it. Remove the filter to crush an existing section.
+    A locked filter keeps whatever it holds.
+    """
+    filter_node = channel.GetFilter(filter_name)
+    if filter_node is None:
+        return requested, False
+
+    existing = CrushParams.from_attributes(filter_node.attrib)
+    if existing is None:
+        if requested is not None:
+            logger.info("Keeping existing uncrushed filter %s; remove it to crush this section",
+                        filter_node.FullPath)
+        return None, False
+
+    if requested is not None and requested.same_quantization(existing):
+        return existing, False
+
+    if filter_node.Locked:
+        logger.warning("Locked filter keeps its crush parameters (step %d): %s", existing.step,
+                       filter_node.FullPath)
+        return existing, False
+
+    reason = "crushing turned off" if requested is None else \
+        f"crush step {existing.step} -> {requested.step}, offset {existing.offset} -> {requested.offset}, bits {existing.bits} -> {requested.bits}"
+    filter_node.Clean(f"Crush mismatch: {reason}")
+    return requested, True
+
+
+def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams) -> None:
+    """Record *params* on the filter so later runs and readers know its tiles are crushed."""
+    for (key, value) in params.to_attributes().items():
+        filter_node.attrib[key] = value
+
+
+def CrushTiles(source_to_target: dict[str, str], params: CrushParams, flip: bool,
+               progress_name: str | None = None, progress_task_key: str | None = None) -> None:
+    """Crush source tile files into target PNGs on a process pool with a bounded number in flight.
+
+    A failed tile is logged and re-raised, as ``ConvertImagesInDict`` does under
+    ``__debug__``; otherwise the caller's ``RemoveInvalidMosaicImages`` drops it.
+    """
+    if not source_to_target:
+        return
+
+    num_threads = min(len(source_to_target), os.cpu_count() or 1)
+    pool = nornir_pools.GetMultithreadingPool("CrushTiles", num_threads=num_threads)
+    max_in_flight = num_threads * 2
+    reporter = prettyoutput.TaskProgressReporter(progress_task_key or 'CrushTiles', len(source_to_target),
+                                                 name=progress_name)
+    pending: list = []
+    completed = 0
+
+    def drain_one():
+        nonlocal completed
+        (task, source) = pending.pop(0)
+        try:
+            task.wait()
+        except Exception as e:
+            prettyoutput.LogErr(f"Failed to crush {source}\n{e}")
+            if __debug__:
+                raise
+        completed += 1
+        reporter.update(completed, element=os.path.basename(source), path=source)
+
+    try:
+        reporter.start()
+        for (source, target) in source_to_target.items():
+            task = pool.add_task(f"{source} -> {target}", noise_crush.crush_tile_to_file,
+                                 source, target, params, flip)
+            pending.append((task, source))
+            if len(pending) >= max_in_flight:
+                drain_one()
+
+        while pending:
+            drain_one()
+    finally:
+        reporter.complete()
+        pool.wait_completion()
+        pool.shutdown()
 
 
 if __name__ == "__main__":
