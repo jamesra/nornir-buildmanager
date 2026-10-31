@@ -374,11 +374,17 @@ def GridTransform(Parameters, TransformNode, FilterNode, RegistrationDownsample,
                     if diagnostics.average_displacement_per_iteration
                     else 0.0
                 )
+                last_max = (
+                    diagnostics.max_displacement_per_iteration[-1]
+                    if diagnostics.max_displacement_per_iteration
+                    else 0.0
+                )
                 Logger.info(
-                    "RefineGridMosaic completed %d pass(es), converged=%s, last max displacement=%g",
+                    "RefineGridMosaic completed %d pass(es), converged=%s, last mean displacement=%g, max=%g",
                     diagnostics.iterations_completed,
                     diagnostics.converged,
                     last_displacement,
+                    last_max,
                 )
 
             TransformNodeToZeroOrigin(OutputTransformNode)
