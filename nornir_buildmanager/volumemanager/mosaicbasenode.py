@@ -44,6 +44,16 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
 
         self._StoreChecksum(self._CalcChecksum())
 
+    def _MatchesLegacyChecksum(self, known_checksum: str) -> bool:
+        """True when a .mosaic matches a checksum stored in the pre-2026-08-10 format (C13-B012).
+
+        Only list checksums changed format (``ac6298a``), so .stos values never need this.
+        """
+        if os.path.splitext(self.Path)[1].lower() != '.mosaic':
+            return False
+        mosaic = mosaicfile.MosaicFile.Load(self.FullPath)
+        return mosaic is not None and mosaic.LegacyChecksum == known_checksum
+
     def _StoreChecksum(self, checksum: str | None) -> str:
         """Cache a computed checksum in the XML, skipping an unavailable one.
 
@@ -92,8 +102,11 @@ class MosaicBaseNode(xfileelementwrapper.XFileElementWrapper):
             if knownChecksum is not None:
                 try:
                     fileChecksum = self._CalcChecksum()
-    
-                    if not knownChecksum == fileChecksum:
+
+                    # A checksum stored before the 2026-08-10 format change still matches an
+                    # unchanged file. Keep the stored value: dependents recorded it as their
+                    # input checksum, so rewriting it would invalidate them.
+                    if knownChecksum != fileChecksum and not self._MatchesLegacyChecksum(knownChecksum):
                         return False, "File checksum does not match meta-data"
 
                     self.UpdateValidationTime() # Record the last time we checked the file
