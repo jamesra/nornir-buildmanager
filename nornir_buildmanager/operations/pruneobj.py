@@ -1,6 +1,7 @@
 import copy
 import logging
 import math
+import ntpath
 import os.path
 
 import numpy
@@ -163,11 +164,11 @@ class PruneObj:
             try:
                 PruneObjInstance.WritePruneMosaic(PruneNodeParent.FullPath, InputTransformNode.FullPath,
                                                   OutputMosaicFullPath, Tolerance=Threshold)
-            except (KeyError, ValueError):
-                os.remove(PruneDataNode.FullPath)
-                PruneNode.remove(PruneDataNode)
-                prettyoutput.LogErr("Remove prune data for section " + PruneDataNode.FullPath)
-                return PruneNodeParent
+            except ValueError as e:
+                # The threshold removed every tile. Keep the scores: deleting them (as this
+                # used to, on any mismatch) destroyed valid data and left no Prune mosaic
+                # for the next stage to fail on.
+                raise ValueError(f"Prune of {PruneDataNode.FullPath} at threshold {Threshold}: {e}") from e
 
         OutputTransformNode.Type = MangledName
         OutputTransformNode.Name = OutputTransformName
@@ -452,7 +453,7 @@ class PruneObj:
         '''
         Remove tiles from the source mosaic with scores less than Tolerance and
         write the new mosaic to TargetMosaic.
-        Raises a key error if image in prude scores does not exist in .mosaic file
+        A scored image missing from the .mosaic file is logged and skipped.
         Raises a value error if the threshold removes all tiles in the mosaic.
         :return: Number of tiles removed
         '''
@@ -478,9 +479,12 @@ class PruneObj:
             if score >= Tolerance:
                 keyVal = filename
                 if not keyVal in inputImageToTransforms:
-                    keyVal = os.path.basename(filename)
+                    # ntpath splits on both separators: score files written on Windows key
+                    # tiles by UNC path, which os.path.basename on Linux leaves whole (C13-B009).
+                    keyVal = ntpath.basename(filename)
                     if not keyVal in inputImageToTransforms:
-                        raise KeyError("PruneObj: Cannot locate image file in .mosaic " + keyVal)
+                        prettyoutput.LogErr(f"PruneObj: scored image {filename} is not in {SourceMosaicFullPath}; skipping it")
+                        continue
 
                 mosaic.ImageToTransformString[keyVal] = inputImageToTransforms[keyVal]
             else:
