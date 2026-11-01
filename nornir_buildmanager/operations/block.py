@@ -591,8 +591,12 @@ def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: FilterNo
     if ControlScale is None or MappedScale is None:
         return None
 
-    x_scale = ControlScale.X / MappedScale.X  # type: ignore[operator]
-    y_scale = ControlScale.Y / MappedScale.Y  # type: ignore[operator]
+    # Scale is units per pixel. Resizing the mapped image by Mapped/Control brings its pixels
+    # to the control's size (stos_brute's WarpedImageScaleFactors, as in test_SliceToSliceBrute).
+    # This was Control/Mapped: harmless until 4582206 (2026-07-11) began passing it, after which
+    # every mixed-resolution RC3 pair (2.143 vs 2.225 nm/px) was pre-scaled ~7.7% the wrong way.
+    x_scale = MappedScale.X / ControlScale.X  # type: ignore[operator]
+    y_scale = MappedScale.Y / ControlScale.Y  # type: ignore[operator]
 
     return x_scale, y_scale
 
