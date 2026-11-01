@@ -16,6 +16,11 @@
 #   ./TEMBuild-import.sh
 #   ./TEMBuild-import.sh /data/idoc /storage4/MyVolume
 #   IMPORT_DIR=/data/idoc VOLUME_DIR=/storage4/MyVolume ./TEMBuild-import.sh
+#   ./TEMBuild-import.sh /data/idoc /storage4/MyVolume -start-at 2
+#
+# Arguments after the import and volume folders are passed to nornir-build as global options,
+# e.g. -start-at / -stop-after to run part of the chain (step number, Name#k, or a
+# Name that occurs once).
 #
 # Environment (optional overrides; defaults match the launch config):
 #   NORNIR_HEADLESS, PYTHONUNBUFFERED, NORNIR_MQTT_* ,
@@ -27,8 +32,18 @@ set -euo pipefail
 # shellcheck source=_nornir_tem_common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_nornir_tem_common.sh"
 
-IMPORT_DIR="${1:-${IMPORT_DIR:-}}"
-VOLUME_DIR="${2:-${VOLUME_DIR:-}}"
+# First two arguments are the import and volume folders unless they are options;
+# the rest are global nornir-build options (e.g. -start-at 2).
+IMPORT_DIR="${IMPORT_DIR:-}"
+VOLUME_DIR="${VOLUME_DIR:-}"
+if [[ $# -gt 0 && "$1" != -* ]]; then
+  IMPORT_DIR="${1:-$IMPORT_DIR}"
+  shift
+fi
+if [[ $# -gt 0 && "$1" != -* ]]; then
+  VOLUME_DIR="${1:-$VOLUME_DIR}"
+  shift
+fi
 
 if [[ -z "$IMPORT_DIR" ]]; then
   IMPORT_DIR="$(prompt_path "Import folder (SerialEM .idoc root)")"
@@ -53,12 +68,13 @@ echo "Import folder : $IMPORT_DIR"
 echo "Volume folder : $VOLUME_DIR"
 echo "Python        : $PYTHON"
 echo "Compute lib   : $COMP_LIB"
+echo "Options       : ${*:-(none)}"
 echo
 
 # ImportDir is a positional argparse arg — pass the path alone (not ImportDir=...).
 # Use -m nornir_buildmanager (not .build) to avoid runpy RuntimeWarning from package __init__ importing build.
 exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
-  -debug -computational_library "$COMP_LIB" \
+  -debug -computational_library "$COMP_LIB" "$@" \
   "$VOLUME_DIR" \
   ImportIDoc "${IMPORT_DIR}" \
   --then Prune -InputFilter Raw8 -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \

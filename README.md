@@ -81,6 +81,8 @@ these stage-specific `track_id`s are emitted:
 | `mosaic_to_volume:sections` | MosaicToVolume (per matching channel) |
 | `assemble:rows` | Assemble pyramid row build (depth 1) |
 | `vikingxml:sections` / `vikingxml:channels` / `vikingxml:stos:*` | CreateVikingXML (section + nested channel + stos) |
+| `chain` / `pipeline:{Name}` | `--then` chain: the depth-0 `Pipelines` bar and one sticky track per finished step |
+| `pipeline:skipped:{k}` | `--then` step `k` skipped by `-start-at` / `-stop-after` (label `Name (k/N) skipped`, payload `state: skipped`) |
 
 ### TEMAlign expected bars (`TEMAlign.sh`)
 

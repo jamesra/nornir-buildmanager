@@ -92,6 +92,24 @@ def _AddParserRootArguments(parser: argparse.ArgumentParser):
                         help='Skip all destructive Clean() and file removals; log what would have been deleted instead.  Stages still run and missing outputs are still created.',
                         dest='no_delete')
 
+    parser.add_argument('-start-at',
+                        required=False,
+                        default=None,
+                        metavar='STEP',
+                        help='Start a --then chain at STEP; earlier steps are skipped. STEP is the 1-based step number '
+                             '(the k in "Name (k/N)" on the dashboard), Name#k for the k-th occurrence of pipeline Name '
+                             'in the chain, or a bare Name that occurs only once. Every step is still parsed and '
+                             'validated. Without --then only step 1 is valid.',
+                        dest='start_at')
+
+    parser.add_argument('-stop-after',
+                        required=False,
+                        default=None,
+                        metavar='STEP',
+                        help='Stop a --then chain after STEP; later steps are skipped. STEP uses the same forms as '
+                             '-start-at and must not come before it.',
+                        dest='stop_after')
+
 
 #     parser.add_argument('-recover',
 #                         action='store_true',
@@ -173,6 +191,8 @@ def BuildParserRoot() -> argparse.ArgumentParser:
                                      epilog='Examples:\n'
                                             '  nornir-build ImportIDoc /data/volume /data/idoc\n'
                                             '  nornir-build -debug -computational_library cupy Mosaic /data/volume -Sections 1-10\n'
+                                            '  nornir-build -start-at 2 -stop-after Mosaic Prune /data/volume <args> --then Histogram <args> '
+                                            '--then Mosaic <args> --then Assemble <args>\n'
                                             '  nornir-build help Mosaic')
     _AddParserRootArguments(parser)
 
@@ -505,7 +525,7 @@ def _GetValidCommands() -> list[str]:
 # [volumepath, <root flags...>, <command>, ...] test/harness argv and normalize to
 # [<root flags...>, <command>, volumepath, ...] before subparser dispatch.
 _ROOT_FLAGS_NO_VALUE = frozenset({'-debug', '-verbose', '-lowpriority', '-lp', '-no-delete'})
-_ROOT_FLAGS_WITH_VALUE = frozenset({'-computational_library'})
+_ROOT_FLAGS_WITH_VALUE = frozenset({'-computational_library', '-start-at', '-stop-after'})
 
 
 def _segment_is_root_only_flags(segment: list[str]) -> bool:
@@ -603,6 +623,95 @@ def _SplitChainSegments(buildArgs: list[str]) -> list[list[str]]:
     return segments
 
 
+def _format_step_choices(name: str, names: list[str]) -> str:
+    """List the ``Name#k (step n)`` selectors for every occurrence of *name*."""
+    occurrences = [i for i, n in enumerate(names) if n == name]
+    return ', '.join(f'{name}#{k} (step {i + 1})' for k, i in enumerate(occurrences, start=1))
+
+
+def _resolve_chain_step(selector: str, names: list[str], option: str) -> int:
+    """Return the 0-based chain index that *selector* names.
+
+    *selector* is a 1-based step number, ``Name#k`` (the k-th occurrence of pipeline
+    ``Name``), or a bare ``Name`` that occurs exactly once in *names*. *option* is the
+    flag being resolved, used in error messages. Raises ``ValueError`` when the
+    selector is out of range, unknown, or ambiguous.
+    """
+    total = len(names)
+    text = selector.strip()
+    if text.isdigit():
+        step = int(text)
+        if step < 1 or step > total:
+            raise ValueError(f'{option} {selector}: step out of range; the chain has {total} step(s) (1-{total})')
+        return step - 1
+
+    name, sep, occurrence_text = text.rpartition('#')
+    if not sep:
+        name, occurrence_text = text, ''
+
+    occurrences = [i for i, n in enumerate(names) if n == name]
+    if not occurrences:
+        listing = ', '.join(f'{i + 1}={n}' for i, n in enumerate(names))
+        raise ValueError(f'{option} {selector}: no pipeline named "{name}" in the chain ({listing})')
+
+    if sep:
+        if not occurrence_text.isdigit() or int(occurrence_text) < 1:
+            raise ValueError(f'{option} {selector}: expected Name#k with k >= 1; valid choices: '
+                             f'{_format_step_choices(name, names)}')
+        occurrence = int(occurrence_text)
+        if occurrence > len(occurrences):
+            raise ValueError(f'{option} {selector}: {name} occurs {len(occurrences)} time(s) in the chain; '
+                             f'valid choices: {_format_step_choices(name, names)}')
+        return occurrences[occurrence - 1]
+
+    if len(occurrences) > 1:
+        raise ValueError(f'{option} {selector}: {name} occurs {len(occurrences)} times in the chain; use one of '
+                         f'{_format_step_choices(name, names)}')
+    return occurrences[0]
+
+
+def _resolve_chain_range(names: list[str], start_at: str | None, stop_after: str | None) -> tuple[int, int]:
+    """Return the inclusive 0-based ``(first, last)`` steps to run from ``-start-at`` / ``-stop-after``.
+
+    Missing selectors default to the first and last step. Raises ``ValueError`` when
+    a selector does not resolve or ``-stop-after`` names a step before ``-start-at``.
+    """
+    first = 0 if start_at is None else _resolve_chain_step(start_at, names, '-start-at')
+    last = len(names) - 1 if stop_after is None else _resolve_chain_step(stop_after, names, '-stop-after')
+    if last < first:
+        raise ValueError(f'-stop-after {stop_after} (step {last + 1}) comes before '
+                         f'-start-at {start_at} (step {first + 1})')
+    return first, last
+
+
+def _publish_chain_segment_skipped(name: str, index: int, total: int) -> None:
+    """Publish a sticky depth-0 track marking chain step *index* as skipped.
+
+    The track id starts with ``pipeline:`` so the dashboard keeps it across stage
+    changes, like completed segments. ``state`` is informational: the dashboard
+    shows the label (``Name (k/N) skipped``) and does not yet style skipped tracks.
+    """
+    prettyoutput.publish_run_event(
+        "iterate_progress",
+        track_id=f"pipeline:skipped:{index + 1}",
+        label=f"{_chain_pipeline_display_name(name, index, total)} skipped",
+        current=0,
+        total=1,
+        fraction=0.0,
+        depth=0,
+        state="skipped",
+    )
+
+
+def _skip_chain_segments(names: list[str], indices: range, reason: str) -> None:
+    """Log and publish each chain step in *indices* as skipped because of *reason*."""
+    total = len(names)
+    for index in indices:
+        prettyoutput.Log(f'Skipping {index + 1}/{total} {names[index]} ({reason})')
+        if total > 1:
+            _publish_chain_segment_skipped(names[index], index, total)
+
+
 def _AppendTimingOutput(volumepath: str, timer: TaskTimer) -> None:
     """Append a timing record for one pipeline invocation to Timing.txt."""
     out_str = str(timer)
@@ -632,6 +741,32 @@ def ExecuteChain(buildArgs: list[str]) -> None:
     if not hasattr(first_args, 'volumepath') or not first_args.volumepath:
         parser.error("the following arguments are required: volumepath")
 
+    root_flags = first_segment[:_leading_root_flag_segment_length(first_segment)]
+    volumepath = first_args.volumepath
+    valid_commands = frozenset(_GetValidCommands())
+
+    # Parse and validate every segment before anything runs, so a typo in a late
+    # (or skipped) segment fails fast.
+    parsed_segments: list[argparse.Namespace] = []
+    for index, segment in enumerate(segments):
+        if index > 0 and segment[0] not in valid_commands:
+            parser.error(f"unknown pipeline in chain segment: {segment[0]}")
+
+        if index == 0:
+            segment_argv = first_segment
+        else:
+            segment_argv = _ReorderArgs(root_flags + [segment[0], volumepath] + segment[1:])
+
+        args = parser.parse_args(segment_argv)
+        _apply_default_output(args)
+        parsed_segments.append(args)
+
+    names: list[str] = [_pipeline_name_from_args(args) or '' for args in parsed_segments]
+    try:
+        first_step, last_step = _resolve_chain_range(names, first_args.start_at, first_args.stop_after)
+    except ValueError as e:
+        parser.error(str(e))
+
     if first_args.lowpriority:
         lowpriority()
         print("Warning, using low priority flag.  This can make builds much slower")
@@ -639,30 +774,20 @@ def ExecuteChain(buildArgs: list[str]) -> None:
     if hasattr(first_args, 'computational_library'):
         init_computational_library(first_args)
 
-    root_flags = first_segment[:_leading_root_flag_segment_length(first_segment)]
-    volumepath = first_args.volumepath
-    valid_commands = frozenset(_GetValidCommands())
-
     volume_tree = None
     succeeded = False
     num_segments = len(segments)
+    if first_step > 0 or last_step < num_segments - 1:
+        prettyoutput.Log(f'Running chain steps {first_step + 1}-{last_step + 1} of {num_segments}')
     try:
-        for index, segment in enumerate(segments):
-            if index > 0 and segment[0] not in valid_commands:
-                parser.error(f"unknown pipeline in chain segment: {segment[0]}")
-
-            if index == 0:
-                segment_argv = first_segment
-            else:
-                segment_argv = _ReorderArgs(root_flags + [segment[0], volumepath] + segment[1:])
-
-            args = parser.parse_args(segment_argv)
-            _apply_default_output(args)
-            cmd_name = _pipeline_name_from_args(args) or getattr(args, 'PipelineName', None)
+        for index in range(first_step, last_step + 1):
+            args = parsed_segments[index]
+            cmd_name = names[index]
             display_name = _chain_pipeline_display_name(cmd_name, index, num_segments)
 
-            if index == 0:
+            if index == first_step:
                 _publish_early_run_meta_from_args(args, pipeline=display_name)
+                _skip_chain_segments(names, range(first_step), f'start-at {first_step + 1}')
             else:
                 _publish_chain_segment_meta(args, index=index, total=num_segments)
 
@@ -679,6 +804,10 @@ def ExecuteChain(buildArgs: list[str]) -> None:
             finally:
                 timer.End(cmd_name)
                 _AppendTimingOutput(volumepath, timer)
+
+        if last_step < num_segments - 1:
+            _skip_chain_segments(names, range(last_step + 1, num_segments), f'stop-after {last_step + 1}')
+            _publish_chain_progress(num_segments, num_segments)
         succeeded = True
     finally:
         _publish_run_completion(succeeded)
@@ -728,6 +857,12 @@ def Execute(buildArgs=None):
     # For all other commands, require volumepath
     if not hasattr(args, 'volumepath') or not args.volumepath:
         parser.error("the following arguments are required: volumepath")
+
+    # A single pipeline is a chain of one step: -start-at 1 / -stop-after 1 are no-ops.
+    try:
+        _resolve_chain_range([_pipeline_name_from_args(args) or ''], args.start_at, args.stop_after)
+    except ValueError as e:
+        parser.error(str(e))
 
     if args.lowpriority:
         lowpriority()

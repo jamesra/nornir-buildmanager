@@ -10,6 +10,11 @@
 #   ./TEMAlign.sh
 #   ./TEMAlign.sh /storage4/MyVolume
 #   VOLUME_DIR=/storage4/MyVolume ./TEMAlign.sh
+#   ./TEMAlign.sh /storage4/MyVolume -start-at 2 -stop-after 9
+#
+# Arguments after the volume folder are passed to nornir-build as global options,
+# e.g. -start-at / -stop-after to run part of the chain (step number, Name#k, or a
+# Name that occurs once).
 #
 # Environment (optional overrides; defaults match the launch config):
 #   NORNIR_HEADLESS, PYTHONUNBUFFERED, NORNIR_MQTT_* ,
@@ -21,7 +26,14 @@ set -euo pipefail
 # shellcheck source=_nornir_tem_common.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_nornir_tem_common.sh"
 
-VOLUME_DIR="$(resolve_volume_dir "${1:-}")"
+# First argument is the volume folder unless it is an option; the rest are global
+# nornir-build options (e.g. -start-at 2 -stop-after 9).
+VOLUME_ARG=""
+if [[ $# -gt 0 && "$1" != -* ]]; then
+  VOLUME_ARG="$1"
+  shift
+fi
+VOLUME_DIR="$(resolve_volume_dir "$VOLUME_ARG")"
 PYTHON="$(resolve_python)"
 COMP_LIB="${NORNIR_COMPUTATIONAL_LIBRARY:-$(default_computational_library "$PYTHON")}"
 export_nornir_tem_env
@@ -29,13 +41,14 @@ export_nornir_tem_env
 echo "Volume folder : $VOLUME_DIR"
 echo "Python        : $PYTHON"
 echo "Compute lib   : $COMP_LIB"
+echo "Options       : ${*:-(none)}"
 echo
 
 # Same sequential chain as launch.json "TEM Full Alignment".
 # Volume path is first positional (legacy launch order); build reorders to subcommand-first.
 # Use -m nornir_buildmanager (not .build) to avoid runpy RuntimeWarning from package __init__ importing build.
 exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
-  -debug -computational_library "$COMP_LIB" \
+  -debug -computational_library "$COMP_LIB" "$@" \
   "$VOLUME_DIR" \
   CreateBlobFilter -Channels TEM -InputFilter Leveled -Levels 16,32,64 -OutputFilter Blob -Radius 9 -Median 7 -Max 3 \
   --then AlignSections -NumAdjacentSections 1 -Filters Blob -UseMasks -Downsample 64 -Channels TEM \
