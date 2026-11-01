@@ -413,30 +413,57 @@ def test_loop_interrupt_discards_staging_and_saves(tmp_path: Path) -> None:
 
 
 def test_parse_gpu_workers() -> None:
-    """Unset / empty pipeline attribute means one pair at a time in process."""
-    assert block_mod._parse_gpu_workers(None) == 1
-    assert block_mod._parse_gpu_workers('') == 1
+    """Unset / empty / non-positive pipeline attribute means automatic (0)."""
+    assert block_mod._parse_gpu_workers(None) == 0
+    assert block_mod._parse_gpu_workers('') == 0
+    assert block_mod._parse_gpu_workers('0') == 0
+    assert block_mod._parse_gpu_workers('-3') == 0
+    assert block_mod._parse_gpu_workers('1') == 1
     assert block_mod._parse_gpu_workers('4') == 4
 
 
+def test_auto_gpu_worker_count_is_cores_capped_by_gpu_memory() -> None:
+    """One worker per core, but never more than the GPU's free memory holds."""
+    gib = 2 ** 30
+    per = stos_brute_pairs.GPU_WORKER_DEVICE_BYTES
+    reserve = stos_brute_pairs.GPU_WORKER_RESERVE_BYTES
+    # srv: 128 cores, ~22.9 GB free on a 24 GB card with production running -> memory bound.
+    assert stos_brute_pairs.auto_gpu_worker_count(128, int(22.9 * gib)) == (int(22.9 * gib) - reserve) // per
+    # Few cores, plenty of memory -> core bound.
+    assert stos_brute_pairs.auto_gpu_worker_count(6, 80 * gib) == 6
+    # Almost no free memory still gives one worker.
+    assert stos_brute_pairs.auto_gpu_worker_count(32, gib) == 1
+    assert stos_brute_pairs.gpu_worker_memory_limit(reserve + 3 * per) == 3
+
+
 def test_create_executor_policy(monkeypatch: pytest.MonkeyPatch) -> None:
-    """GPU workers only for N > 1 on CuPy with more than one pair; capped at the pair count."""
+    """GPU workers for 0 (auto) or N > 1 on CuPy with more than one pair; capped at the pair count."""
     logger = mock.Mock()
     created: list[int] = []
     monkeypatch.setattr(block_mod.stos_brute_pairs, 'GpuWorkerPairExecutor',
                         lambda workers: created.append(workers) or mock.sentinel.gpu)
+    monkeypatch.setattr(block_mod.stos_brute_pairs, 'gpu_worker_memory_limit', lambda free_bytes=None: 6)
+    monkeypatch.setattr(block_mod.stos_brute_pairs, 'auto_gpu_worker_count', lambda: 6)
 
     monkeypatch.setattr(block_mod.nornir_imageregistration, 'UsingCupy', lambda: True)
     assert isinstance(block_mod._create_stos_brute_executor(1, 10, logger), stos_brute_pairs.InProcessPairExecutor)
     assert isinstance(block_mod._create_stos_brute_executor(4, 1, logger), stos_brute_pairs.InProcessPairExecutor)
     assert block_mod._create_stos_brute_executor(4, 10, logger) is mock.sentinel.gpu
     assert block_mod._create_stos_brute_executor(8, 3, logger) is mock.sentinel.gpu
-    assert created == [4, 3]
+    assert block_mod._create_stos_brute_executor(0, 10, logger) is mock.sentinel.gpu  # auto -> 6
+    assert block_mod._create_stos_brute_executor(0, 2, logger) is mock.sentinel.gpu   # auto capped at pairs
+    assert created == [4, 3, 6, 2]
+    logger.warning.assert_not_called()
+    assert block_mod._create_stos_brute_executor(16, 20, logger) is mock.sentinel.gpu  # over the memory fit
+    logger.warning.assert_called_once()
+    assert created[-1] == 16
 
+    logger.reset_mock()
     monkeypatch.setattr(block_mod.nornir_imageregistration, 'UsingCupy', lambda: False)
     assert isinstance(block_mod._create_stos_brute_executor(4, 10, logger), stos_brute_pairs.InProcessPairExecutor)
     logger.warning.assert_called_once()
-    assert created == [4, 3]
+    assert isinstance(block_mod._create_stos_brute_executor(0, 10, logger), stos_brute_pairs.InProcessPairExecutor)
+    logger.warning.assert_called_once()  # automatic on NumPy is quiet
 
 
 def test_stos_brute_all_passes_gpu_workers_to_executor_choice() -> None:

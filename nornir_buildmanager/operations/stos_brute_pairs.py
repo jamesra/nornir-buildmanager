@@ -223,6 +223,37 @@ class InProcessPairExecutor:
 #: main process preparing or publishing the next pair.
 GPU_WORKER_JOBS_PER_WORKER: int = 2
 
+#: Device memory one GPU worker needs: its CUDA context plus its CuPy pool after a pair.
+#: Measured 1.2-1.3 GB per worker on srv (RTX 4500 Ada, RC3 ds64 pairs), rounded up.
+GPU_WORKER_DEVICE_BYTES: int = int(1.5 * 2 ** 30)
+
+#: Device memory left free when sizing the automatic worker count (main process, others).
+GPU_WORKER_RESERVE_BYTES: int = 2 ** 30
+
+
+def gpu_worker_memory_limit(free_bytes: int | None = None) -> int | None:
+    """How many GPU workers fit in the device's free memory, or None if it can't be read.
+
+    *free_bytes* defaults to the current device's free memory (needs CuPy).
+    """
+    if free_bytes is None:
+        try:
+            free_bytes = int(nornir_imageregistration.cp.cuda.runtime.memGetInfo()[0])  # pyright: ignore[reportAttributeAccessIssue]
+        except (AttributeError, RuntimeError, ImportError):
+            return None
+    return max(1, (free_bytes - GPU_WORKER_RESERVE_BYTES) // GPU_WORKER_DEVICE_BYTES)
+
+
+def auto_gpu_worker_count(cpu_count: int | None = None, free_bytes: int | None = None) -> int:
+    """Default GPU worker count: one per core, capped by what the GPU's free memory holds.
+
+    Each worker does its pair's host-side work on its own core, so cores set the useful
+    ceiling; device memory (``GPU_WORKER_DEVICE_BYTES`` each) sets the hard one.
+    """
+    cores = cpu_count if cpu_count is not None else (os.cpu_count() or 1)
+    limit = gpu_worker_memory_limit(free_bytes)
+    return max(1, min(cores, limit) if limit is not None else cores)
+
 
 def _init_gpu_pair_worker(log_queue: Any, log_level: int) -> None:
     """Spawned worker initializer: queue logging, then CuPy through the child opt-in."""

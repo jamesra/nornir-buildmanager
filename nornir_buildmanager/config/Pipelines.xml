@@ -1796,8 +1796,8 @@
             <Argument flag="-Method" dest="Method" help="Method to use for intitial registration"
                       type="nornir_imageregistration.settings.SliceToSliceMethod"
                       required="False" default="LogPolar"/>
-            <Argument flag="-GpuWorkers" dest="StosBruteGpuWorkers" type="int" default="1"
-                      help="Section pairs to register at once on the GPU.  1 (default) registers one pair at a time in this process on the active backend.  N greater than 1 runs N worker processes that each use CuPy on the shared GPU, so each pair's CPU-side work gets its own core; needs -computational_library cupy (falls back to 1 on NumPy).  Each worker holds its own CUDA context and memory pool on the GPU."
+            <Argument flag="-GpuWorkers" dest="StosBruteGpuWorkers" type="int" default="0"
+                      help="Section pairs to register at once on the GPU.  0 (default) is automatic: one worker per CPU core, capped by how many fit in the GPU's free memory (about 1.5 GB each).  1 registers one pair at a time in this process on the active backend.  N greater than 1 runs N worker processes that each use CuPy on the shared GPU, so each pair's CPU-side work gets its own core.  Workers need -computational_library cupy; on NumPy every setting registers one pair at a time."
                       required="False"/>
         </Arguments>
 

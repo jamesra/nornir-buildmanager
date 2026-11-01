@@ -1028,12 +1028,14 @@ def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: Block
     Called once per block (AlignSections). Every pair goes through prepare, compute and
     finish (:func:`_stos_brute_pairs`). Prepare and finish always run in this process.
 
-    ``GpuWorkers`` (``-GpuWorkers``): 1 (default) computes each pair here on the active
-    backend (``-computational_library``), one at a time. N > 1 computes up to N pairs at
-    once in spawned worker processes that each use CuPy on the shared GPU
-    (:class:`stos_brute_pairs.GpuWorkerPairExecutor`); it needs the CuPy backend and
-    falls back to 1 otherwise. Other keyword arguments match StosBrute (OutputGroup,
-    Type, AngleSearchRange, NoFlipCheck).
+    ``GpuWorkers`` (``-GpuWorkers``): 0 or unset (default) is automatic: one worker per
+    core, capped by how many fit in the GPU's free memory
+    (:func:`stos_brute_pairs.auto_gpu_worker_count`). 1 computes each pair here on the
+    active backend (``-computational_library``), one at a time. N > 1 computes up to N
+    pairs at once in spawned worker processes that each use CuPy on the shared GPU
+    (:class:`stos_brute_pairs.GpuWorkerPairExecutor`). Workers need the CuPy backend; on
+    NumPy every setting runs in this process. Other keyword arguments match StosBrute
+    (OutputGroup, Type, AngleSearchRange, NoFlipCheck).
     """
     no_flip_check = _resolve_no_flip_check(Parameters, kwargs)
     kwargs['NoFlipCheck'] = no_flip_check
@@ -1058,22 +1060,32 @@ def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: Block
 
 
 def _parse_gpu_workers(gpu_workers: typing.Any) -> int:
-    """Pipeline ``GpuWorkers`` attribute -> int; unset or empty is 1 (in process)."""
+    """Pipeline ``GpuWorkers`` attribute -> int; unset, empty or <= 0 is 0 (automatic)."""
     if gpu_workers is None or gpu_workers == '':
-        return 1
-    return int(gpu_workers)
+        return 0
+    return max(0, int(gpu_workers))
 
 
 def _create_stos_brute_executor(gpu_workers: int, total_pairs: int,
                                 Logger: logging.Logger) -> stos_brute_pairs.StosBrutePairExecutor:
     """Pick the pair executor: GPU worker processes when asked for and useful, else in process."""
-    if gpu_workers <= 1:
+    if gpu_workers == 1:
         return stos_brute_pairs.InProcessPairExecutor()
     if not nornir_imageregistration.UsingCupy():
-        Logger.warning("StosBruteAll: -GpuWorkers %d needs the CuPy backend; the active backend is "
-                       "NumPy, so pairs register one at a time in this process", gpu_workers)
+        if gpu_workers > 1:
+            Logger.warning("StosBruteAll: -GpuWorkers %d needs the CuPy backend; the active backend is "
+                           "NumPy, so pairs register one at a time in this process", gpu_workers)
         return stos_brute_pairs.InProcessPairExecutor()
+    memory_limit = stos_brute_pairs.gpu_worker_memory_limit()
+    if gpu_workers == 0:
+        gpu_workers = stos_brute_pairs.auto_gpu_worker_count()
+        Logger.info("StosBruteAll: automatic -GpuWorkers = %d (%d cores, GPU memory fits %s)",
+                    gpu_workers, os.cpu_count() or 1, memory_limit if memory_limit is not None else "?")
     workers = min(gpu_workers, total_pairs)
+    if memory_limit is not None and workers > memory_limit:
+        Logger.warning("StosBruteAll: %d GPU workers exceed the %d the GPU's free memory fits "
+                       "(~%.1f GB each); workers may fail with out-of-memory errors",
+                       workers, memory_limit, stos_brute_pairs.GPU_WORKER_DEVICE_BYTES / 2 ** 30)
     if workers <= 1:
         return stos_brute_pairs.InProcessPairExecutor()
     return stos_brute_pairs.GpuWorkerPairExecutor(workers)
