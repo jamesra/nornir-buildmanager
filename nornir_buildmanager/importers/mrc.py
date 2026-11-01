@@ -60,20 +60,21 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
 
     matches = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[],
                                                    ExcludedDownsampleLevels=[])
-    for m in matches:
-        (path, foundfiles) = m
-        foundfiles = [os.path.join(path, f) for f in (foundfiles or [])]
-        prettyoutput.CurseString("MRCImport", "Importing *.{0} from {1}".format(extension, path))
-        for file_fullpath in foundfiles:
-            yield from MRCImport.ToMosaic(VolumeElement,
-                                          mrc_fullpath=file_fullpath,
-                                          ContrastCutoffs=ContrastCutoffs,
-                                          FlipList=FlipList,
-                                          CameraBpp=CameraBpp,
-                                          ContrastMap=ContrastMap,
-                                          NoCrush=NoCrush,
-                                          CrushK=CrushK,
-                                          )
+    # Two MRCs that parse to one section number would both write into that section and leave it
+    # mixing acquisitions (RC1: "0347.mrc" and "0347 2.mrc"), so keep one per section. A list of
+    # paths, not of images.
+    found_paths = [os.path.join(path, f) for (path, foundfiles) in matches for f in (foundfiles or [])]
+    for file_fullpath in shared.SelectOneFilePerSection(found_paths):
+        prettyoutput.CurseString("MRCImport", f"Importing {file_fullpath}")
+        yield from MRCImport.ToMosaic(VolumeElement,
+                                      mrc_fullpath=file_fullpath,
+                                      ContrastCutoffs=ContrastCutoffs,
+                                      FlipList=FlipList,
+                                      CameraBpp=CameraBpp,
+                                      ContrastMap=ContrastMap,
+                                      NoCrush=NoCrush,
+                                      CrushK=CrushK,
+                                      )
 
     nornir_pools.ReleaseStagePools()
 

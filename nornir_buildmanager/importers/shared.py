@@ -96,6 +96,45 @@ def GetSectionInfo(fullpath) -> FilenameMetadata:
     return FilenameMetadata(fullpath, d['Number'], d['Version'], d['Name'], d['Downsample'], d['Extension'])  # type: ignore[arg-type]
 
 
+def _creation_time(path: str) -> float:
+    """File creation time where the platform records it, otherwise its modification time."""
+    st = os.stat(path)
+    birth = getattr(st, 'st_birthtime', None)
+    return float(birth) if birth else float(st.st_mtime)
+
+
+def SelectOneFilePerSection(paths: Iterable[str]) -> list[str]:
+    """Keep one input file per section number, in path order.
+
+    The highest version wins: recaptures are versioned upward and no version sorts first. Files
+    that tie on version (e.g. ``0347.mrc`` copied twice under other names) are decided by the later
+    creation date. Each file left out is logged. Files whose names do not parse are kept, so the
+    importer reports them as before.
+    """
+    by_number: dict[int, list[tuple[FilenameMetadata, str]]] = {}
+    unparsed: list[str] = []
+    for path in paths:
+        try:
+            info = GetSectionInfo(path)
+        except NornirUserException:
+            unparsed.append(path)
+            continue
+        by_number.setdefault(int(info.number), []).append((info, path))
+
+    chosen = list(unparsed)
+    for number, candidates in sorted(by_number.items()):
+        if len(candidates) == 1:
+            chosen.append(candidates[0][1])
+            continue
+        best = max(candidates, key=lambda c: (str(c[0].version), _creation_time(c[1])))
+        chosen.append(best[1])
+        for info, path in candidates:
+            if path != best[1]:
+                prettyoutput.Log(f"Section {number}: importing {os.path.basename(best[1])}, skipping "
+                                 f"{os.path.basename(path)} (higher version wins, then later creation date)")
+    return sorted(chosen)
+
+
 def FileMetaDataStrHeader():
     output = "{0:<22}\t{1:<6}{2:<5}{3:<16}{4:<5}{5}\n".format("Path", "#", "Ver", "Name", "Ds", "ext")
     return output
