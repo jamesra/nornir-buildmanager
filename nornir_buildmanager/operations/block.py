@@ -3,6 +3,7 @@ Created on Jun 22, 2012
 
 @author: Jamesan
 """
+import collections
 import contextlib
 import copy
 import math
@@ -13,7 +14,9 @@ import shutil
 from dataclasses import dataclass
 import numpy as np
 import subprocess
+import time
 import typing
+from enum import Enum
 
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.no_delete as _no_delete_mod
@@ -21,6 +24,7 @@ from nornir_buildmanager.metadatautils import *
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
 import nornir_buildmanager.operations.stosgroup_workers as stosgroup_workers
+from nornir_buildmanager.operations import stos_brute_pairs
 from nornir_buildmanager.operations.stos_scan import (
     iter_stos_group_transforms,
     report_stos_work_progress,
@@ -31,7 +35,6 @@ from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
 from nornir_imageregistration import assemble, local_distortion_correction, mosaic
 from nornir_imageregistration.files import stosfile
-import nornir_imageregistration.stos_brute as stos_brute
 import nornir_imageregistration.stos_quality as stos_quality
 from nornir_imageregistration.transforms import *
 from nornir_imageregistration.views import TransformWarpView
@@ -474,52 +477,27 @@ def __CallNornirStosBrute(stosNode: TransformNode, Downsample: int,
                           WarpedImageScaleFactors=None,
                           method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
                           argstring=None, Logger=None):
-    """Call the stos-brute version from nornir-imageregistration"""
+    """Call the stos-brute version from nornir-imageregistration.
 
+    Thin wrapper over :func:`stos_brute_pairs.run_stos_brute_pair`, the function
+    StosBruteAll's pool workers run, so both paths share one implementation.
+    """
     if method is None:
         method = nornir_imageregistration.settings.SliceToSliceMethod.BruteForce
 
-    if method == nornir_imageregistration.settings.SliceToSliceMethod.BruteForce:
-        alignment = stos_brute.SliceToSliceRigidRegistration(target_image=target_image_fullpath,
-                                                             source_image=source_image_fullpath,
-                                                             target_mask=target_mask_fullpath,
-                                                             source_mask=source_mask_fullpath,
-                                                             AngleSearchRange=AngleSearchRange,
-                                                             TestFlip=TestForFlip,
-                                                             WarpedImageScaleFactors=WarpedImageScaleFactors,
-                                                             method=method)
-
-    elif method == nornir_imageregistration.settings.SliceToSliceMethod.LogPolar:
-        # Match Pyre Operations→Log Polar (Fast): overlap 0.75 and max dim 818.
-        # Independent of computation backend (NumPy or CuPy).
-        alignment = stos_brute.SliceToSliceRigidRegistration(
-            target_image=target_image_fullpath,
-            source_image=source_image_fullpath,
-            target_mask=target_mask_fullpath,
-            source_mask=source_mask_fullpath,
-            AngleSearchRange=AngleSearchRange,
-            TestFlip=TestForFlip,
-            WarpedImageScaleFactors=WarpedImageScaleFactors,
-            method=method,
-            MinOverlap=stos_brute.LOGPOLAR_PIPELINE_MIN_OVERLAP,
-            LargestDimension=stos_brute.LOGPOLAR_PIPELINE_LARGEST_DIMENSION,
-        )
-    else:
-        raise ValueError("Unknown method " + str(method))
-
-    # Close thread pools to prevent workers from sticking around and slowing the rest of the run.
-    # Process pools stay warm; all tasks must finish before continuing (ReleaseStagePools waits first).
-    nornir_pools.ReleaseStagePools()
-
-    stos = alignment.ToStos(target_image_fullpath,
-                            source_image_fullpath,
-                            target_mask_fullpath,
-                            source_mask_fullpath,
-                            PixelSpacing=Downsample)
-
-    stos.Save(stosNode.FullPath)
-
-    return
+    stos_brute_pairs.run_stos_brute_pair(stos_brute_pairs.StosBrutePairJob(
+        pair_name=os.path.basename(stosNode.FullPath),
+        output_stos_path=stosNode.FullPath,
+        target_image_path=target_image_fullpath,
+        source_image_path=source_image_fullpath,
+        target_mask_path=target_mask_fullpath,
+        source_mask_path=source_mask_fullpath,
+        downsample=Downsample,
+        method=method,
+        angle_search_range=AngleSearchRange,
+        test_for_flip=TestForFlip,
+        warped_scale=WarpedImageScaleFactors,
+    ))
 
 
 def __CallIrToolsStosBrute(stosNode, ControlImageNode: ImageNode, MappedImageNode: ImageNode,
@@ -677,21 +655,48 @@ def brute_stos_needs_replacement(
     return output_path is None or not os.path.exists(output_path)
 
 
-def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
-                                    control_filter: nornir_buildmanager.volumemanager.FilterNode,
-                                    mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
-                                    output_type: str,
-                                    output_path: str,
-                                    use_masks: bool,
-                                    angle_search_range: AngleSearchRange | None = None,
-                                    test_for_flip: bool = True,
-                                    method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
-                                    logger: logging.Logger | None = None,
-                                    argstring=None) -> TransformNode | None:
-    """Create a transform node, populate, and generate the transform"""
-    CmdRan = False
-    ManualFileExists = False
+class BrutePairAction(Enum):
+    """What :func:`prepare_filter_to_filter_brute_registration` decided for one pair."""
 
+    CURRENT = 'current'  # Output .stos exists and is valid; nothing to do
+    MANUAL = 'manual'  # Manual override copied to the output; needs finish only
+    COMPUTE = 'compute'  # Run ``job``, then finish
+
+
+@dataclass
+class BrutePairPrepared:
+    """Outcome of preparing one StosBrute pair in the main process."""
+
+    stos_node: TransformNode
+    action: BrutePairAction
+    job: stos_brute_pairs.StosBrutePairJob | None = None
+
+
+def prepare_filter_to_filter_brute_registration(
+        stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
+        control_filter: nornir_buildmanager.volumemanager.FilterNode,
+        mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
+        output_type: str,
+        output_path: str,
+        use_masks: bool,
+        angle_search_range: AngleSearchRange | None = None,
+        test_for_flip: bool = True,
+        method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
+        logger: logging.Logger | None = None,
+        *,
+        computation_lib: str | None = None,
+        single_thread: bool = False,
+        staging_suffix: str | None = None) -> BrutePairPrepared | None:
+    """Validate a pair, create its image and transform nodes, and decide what must run.
+
+    Main process only: touches the volume tree and may create downsampled images or
+    masks. Copies a Manual override straight to the output (action MANUAL). Returns None
+    when the input images are unavailable, matching FilterToFilterBruteRegistration.
+
+    ``computation_lib``, ``single_thread`` and ``staging_suffix`` go into the compute job;
+    StosBruteAll's pool workers write ``output + staging_suffix`` and the main process
+    renames it in :func:`finish_filter_to_filter_brute_registration`.
+    """
     if logger is None:
         logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
 
@@ -701,7 +706,7 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
             stosNode.Clean("Input Images are Outdated")
             stosNode = None
         else:
-            # Check if the manual stos file exists and is different than the output file        
+            # Check if the manual stos file exists and is different than the output file
             ManualStosFileFullPath = stos_group.PathToManualTransform(stosNode.FullPath)
             ManualFileExists = ManualStosFileFullPath is not None
             manual_input_checksum = None
@@ -758,60 +763,102 @@ def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanage
 
     # print OutputFileFullPath
 
-    if not os.path.exists(stosNode.FullPath):
-        ManualStosFileFullPath = stos_group.PathToManualTransform(stosNode.FullPath)
-        if ManualStosFileFullPath:
-            prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
-            shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
-            # Relative image lines from Manual/ are wrong under the group root — rebase.
-            RebaseCopiedStosPaths(
-                stosNode.FullPath,
-                control_filter,
-                mapped_filter,
-                stos_group.Downsample,  # type: ignore[arg-type]
-                use_masks,
-                StosTransformNode=stosNode,
-            )
-            manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
+    if os.path.exists(stosNode.FullPath):
+        return BrutePairPrepared(stos_node=stosNode, action=BrutePairAction.CURRENT)
 
-            stosNode.InputTransformChecksum = manual_input_checksum
-        else:
-            warped_scale = _IsotropicWarpedImageScaleFactor(control_filter, mapped_filter)
-            if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
-                control_mask_path = ControlMaskImageNode.FullPath if ControlMaskImageNode is not None else None
-                mapped_mask_path = MappedMaskImageNode.FullPath if MappedMaskImageNode is not None else None
-                __CallNornirStosBrute(stosNode, stos_group.Downsample,  # type: ignore[arg-type]
-                                      ControlImageNode.FullPath, MappedImageNode.FullPath,  # type: ignore[union-attr]
-                                      control_mask_path, mapped_mask_path,
-                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,  # type: ignore[arg-type]
-                                      WarpedImageScaleFactors=warped_scale,
-                                      method=method)
-            else:
-                __CallNornirStosBrute(stosNode, stos_group.Downsample,  # type: ignore[arg-type]
-                                      ControlImageNode.FullPath, MappedImageNode.FullPath,  # type: ignore[union-attr]
-                                      AngleSearchRange=angle_search_range, TestForFlip=test_for_flip,  # type: ignore[arg-type]
-                                      WarpedImageScaleFactors=warped_scale,
-                                      method=method)
+    ManualStosFileFullPath = stos_group.PathToManualTransform(stosNode.FullPath)
+    if ManualStosFileFullPath:
+        prettyoutput.Log("Copy manual override stos file to output: " + os.path.basename(ManualStosFileFullPath))
+        shutil.copy(ManualStosFileFullPath, stosNode.FullPath)
+        # Relative image lines from Manual/ are wrong under the group root — rebase.
+        RebaseCopiedStosPaths(
+            stosNode.FullPath,
+            control_filter,
+            mapped_filter,
+            stos_group.Downsample,  # type: ignore[arg-type]
+            use_masks,
+            StosTransformNode=stosNode,
+        )
+        manual_input_checksum = stosfile.StosFile.LoadChecksum(ManualStosFileFullPath)
 
-        CmdRan = True
-        # __CallIrToolsStosBrute(stosNode, ControlImageNode, MappedImageNode, ControlMaskImageNode, MappedMaskImageNode, argstring, Logger)
+        stosNode.InputTransformChecksum = manual_input_checksum
+        return BrutePairPrepared(stos_node=stosNode, action=BrutePairAction.MANUAL)
 
-        # Rescale stos file to full-res
-        # stosFile = stosfile.StosFile.Load(stosNode.FullPath)
-        # stosFile.Scale(StosGroup.Downsample)
-        # stosFile.Save(stosNode.FullPath)
+    if method is None:
+        method = nornir_imageregistration.settings.SliceToSliceMethod.BruteForce
 
-        # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
-        # have identical values but different checksums from the Python stos file objects %g representation
+    warped_scale = _IsotropicWarpedImageScaleFactor(control_filter, mapped_filter)
+    control_mask_path = None
+    mapped_mask_path = None
+    if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
+        control_mask_path = ControlMaskImageNode.FullPath if ControlMaskImageNode is not None else None
+        mapped_mask_path = MappedMaskImageNode.FullPath if MappedMaskImageNode is not None else None
 
-        # stosNode.Checksum = stosfile.StosFile.LoadChecksum(stosNode.FullPath)
-        stosNode.ResetChecksum()
-        stos_group.AddChecksumsToStos(stosNode, control_filter, mapped_filter)
+    job = stos_brute_pairs.StosBrutePairJob(
+        pair_name=os.path.basename(stosNode.FullPath),
+        output_stos_path=stosNode.FullPath,
+        target_image_path=ControlImageNode.FullPath,  # type: ignore[union-attr]
+        source_image_path=MappedImageNode.FullPath,  # type: ignore[union-attr]
+        target_mask_path=control_mask_path,
+        source_mask_path=mapped_mask_path,
+        downsample=stos_group.Downsample,  # type: ignore[arg-type]
+        method=method,
+        angle_search_range=angle_search_range,
+        test_for_flip=test_for_flip,
+        warped_scale=warped_scale,
+        computation_lib=computation_lib,
+        single_thread=single_thread,
+        staging_path=stosNode.FullPath + staging_suffix if staging_suffix else None,
+    )
+    return BrutePairPrepared(stos_node=stosNode, action=BrutePairAction.COMPUTE, job=job)
 
-    if CmdRan:
-        return stosNode
 
-    return
+def finish_filter_to_filter_brute_registration(
+        stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
+        prepared: BrutePairPrepared,
+        control_filter: nornir_buildmanager.volumemanager.FilterNode,
+        mapped_filter: nornir_buildmanager.volumemanager.FilterNode) -> TransformNode:
+    """Publish a computed or manual-copied pair: move a staged .stos into place, record checksums."""
+    stosNode = prepared.stos_node
+    job = prepared.job
+    if job is not None and job.staging_path is not None:
+        os.replace(job.staging_path, stosNode.FullPath)
+
+    # Load and save the stos file to ensure the transform doesn't have the original Ir-Tools floating point string representation which
+    # have identical values but different checksums from the Python stos file objects %g representation
+    stosNode.ResetChecksum()
+    stos_group.AddChecksumsToStos(stosNode, control_filter, mapped_filter)
+    return stosNode
+
+
+def FilterToFilterBruteRegistration(stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
+                                    control_filter: nornir_buildmanager.volumemanager.FilterNode,
+                                    mapped_filter: nornir_buildmanager.volumemanager.FilterNode,
+                                    output_type: str,
+                                    output_path: str,
+                                    use_masks: bool,
+                                    angle_search_range: AngleSearchRange | None = None,
+                                    test_for_flip: bool = True,
+                                    method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
+                                    logger: logging.Logger | None = None,
+                                    argstring=None) -> TransformNode | None:
+    """Create a transform node, populate, and generate the transform.
+
+    Serial composition of prepare, compute (in this process, on the active backend) and
+    finish. Returns the transform node when a manual copy or a registration ran, else None.
+    """
+    prepared = prepare_filter_to_filter_brute_registration(stos_group, control_filter, mapped_filter,
+                                                           output_type, output_path, use_masks,
+                                                           angle_search_range=angle_search_range,
+                                                           test_for_flip=test_for_flip,
+                                                           method=method, logger=logger)
+    if prepared is None or prepared.action == BrutePairAction.CURRENT:
+        return None
+
+    if prepared.job is not None:
+        stos_brute_pairs.run_stos_brute_pair(prepared.job)
+
+    return finish_filter_to_filter_brute_registration(stos_group, prepared, control_filter, mapped_filter)
 
 
 def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode, ChannelsRegEx: str, FiltersRegEx: str,
@@ -909,6 +956,279 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
             (yield stosNode.Parent)
 
     return
+
+
+#: StosBruteAll rewrites the StosGroup VolumeData.xml at most this often (plus once at the
+#: end and before raising), instead of once per pair. A crash loses at most this much
+#: metadata; those pairs are recomputed on the next run because their .stos files are
+#: published (renamed from staging) only alongside the metadata update.
+STOS_BRUTE_SAVE_INTERVAL_SECONDS: float = 15.0
+
+#: Pool workers write here first; the main process renames it to the output .stos.
+_STOS_BRUTE_STAGING_SUFFIX: str = '.partial'
+
+
+@dataclass(frozen=True)
+class _BrutePairTask:
+    """One mapped×control filter pair of a StosMap mapping, enumerated before any work."""
+
+    mapping_index: int
+    mapped_section: int
+    mapped_filter: typing.Any
+    control_filter: typing.Any
+    needs_work: bool
+
+
+def _parse_stos_brute_workers(workers: typing.Any) -> int | None:
+    """Pipeline ``Workers`` attribute -> int, None (auto) when unset or empty."""
+    if workers is None or workers == '':
+        return None
+    return int(workers)
+
+
+def _resolve_no_flip_check(Parameters: dict, kwargs: dict) -> bool:
+    """AlignSections passes NoFlipCheck as a <Parameters> entry; older callers as an attribute."""
+    if 'NoFlipCheck' in Parameters:
+        return bool(Parameters['NoFlipCheck'])
+    return bool(kwargs.get('NoFlipCheck', False))
+
+
+def _enumerate_brute_pair_tasks(mappings: list[MappingNode], block_node: BlockNode, ChannelsRegEx: str,
+                                FiltersRegEx: str, stos_group_node: StosGroupNode, use_masks: bool,
+                                Logger: logging.Logger) -> list[_BrutePairTask]:
+    """List every pair StosBrute would visit, in the serial path's order.
+
+    Metadata only (one entry per section pair and filter), so a list is fine; it gives
+    the progress totals before any registration starts.
+    """
+    tasks: list[_BrutePairTask] = []
+    for mapping_index, mapping_node in enumerate(mappings):
+        ControlNumber = mapping_node.Control
+        ControlSectionNode = block_node.GetSection(ControlNumber)  # type: ignore[arg-type]
+        if ControlSectionNode is None:
+            Logger.error("Missing control section node for # " + str(ControlNumber))
+            continue
+        for MappedSection in mapping_node.Mapped:
+            mapped_section_node = block_node.GetSection(MappedSection)
+            if mapped_section_node is None:
+                prettyoutput.LogErr("Could not find expected section for StosBrute: " + str(MappedSection))
+                continue
+            MappedFilterList = list(mapped_section_node.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))
+            ControlFilterList = list(ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))
+            for MappedFilter in MappedFilterList:
+                for ControlFilter in ControlFilterList:
+                    tasks.append(_BrutePairTask(
+                        mapping_index=mapping_index,
+                        mapped_section=MappedSection,
+                        mapped_filter=MappedFilter,
+                        control_filter=ControlFilter,
+                        needs_work=brute_stos_needs_replacement(
+                            stos_group_node, ControlFilter, MappedFilter, use_masks)))
+    return tasks
+
+
+def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: BlockNode, ChannelsRegEx: str,
+                 FiltersRegEx: str, Method: nornir_imageregistration.settings.SliceToSliceMethod,
+                 Logger: logging.Logger, Workers: int | str | None = None, **kwargs):
+    """Run StosBrute for every mapping of a StosMap, registering independent pairs concurrently.
+
+    Called once per block (AlignSections), so the pool spans all mappings; with
+    ``-NumAdjacentSections 1`` each mapping holds only one or two pairs.
+
+    ``Workers``: 1 runs each mapping through :func:`StosBrute` in this process, in order,
+    on the active backend (the pre-StosBruteAll behaviour). N > 1 prepares pairs here,
+    registers them in N NumPy worker processes and publishes each result here. None or
+    <= 0 is auto (:func:`stos_brute_pairs.resolve_stos_brute_workers`: NumPy -> cores - 2,
+    CuPy -> 1). Other keyword arguments match StosBrute (OutputGroup, Type,
+    AngleSearchRange, NoFlipCheck).
+    """
+    requested = _parse_stos_brute_workers(Workers)
+    workers = stos_brute_pairs.resolve_stos_brute_workers(requested)
+    no_flip_check = _resolve_no_flip_check(Parameters, kwargs)
+    kwargs['NoFlipCheck'] = no_flip_check
+
+    # One entry per mapped section of the block: metadata, small.
+    mappings = list(stos_map_node.Mappings)
+
+    if workers > 1:
+        Downsample = int(Parameters.get('Downsample', 32))
+        OutputStosGroupName = kwargs.get('OutputGroup', 'Brute')
+        (added, stos_group_node) = block_node.GetOrCreateStosGroup(OutputStosGroupName, downsample=Downsample)
+        stos_group_node.CreateDirectories()
+        if added:
+            (yield block_node)
+        os.makedirs(stos_group_node.FullPath, exist_ok=True)
+
+        pair_tasks = _enumerate_brute_pair_tasks(mappings, block_node, ChannelsRegEx, FiltersRegEx,
+                                                 stos_group_node, Parameters.get("UseMasks", False), Logger)
+        total_pairs = sum(1 for t in pair_tasks if t.needs_work)
+        if total_pairs > 1:
+            yield from _stos_brute_all_parallel(Parameters, pair_tasks, len(mappings), stos_group_node,
+                                                Method, Logger, min(workers, total_pairs), **kwargs)
+            return
+        Logger.info("StosBruteAll: %d pair(s) need registration; running serially", total_pairs)
+    elif requested is None or requested <= 0:
+        if nornir_imageregistration.UsingCupy():
+            Logger.info("StosBruteAll: CuPy backend, auto workers = 1 (serial on the GPU). "
+                        "Pass -Workers N to register N pairs at once in NumPy worker processes.")
+
+    mapping_track_id = "stos_brute:mappings"
+    mapping_label = f"StosBrute mappings ({len(mappings)})"
+    if mappings:
+        report_stos_work_progress(mapping_track_id, 0, len(mappings), mapping_label, depth=0)
+    for index, mapping_node in enumerate(mappings):
+        # StosBrute consumes Parameters['Downsample']; give each mapping a fresh copy, as
+        # the per-mapping <Iterate> did by re-reading <Parameters>.
+        yield from StosBrute(dict(Parameters), mapping_node, block_node, ChannelsRegEx, FiltersRegEx,
+                             Method, Logger, **kwargs)
+        report_stos_work_progress(mapping_track_id, index + 1, len(mappings), mapping_label, depth=0)
+
+
+def _stos_brute_all_parallel(Parameters: dict, pair_tasks: list[_BrutePairTask], mapping_count: int,
+                             stos_group_node: StosGroupNode,
+                             Method: nornir_imageregistration.settings.SliceToSliceMethod,
+                             Logger: logging.Logger, workers: int,
+                             save_interval_seconds: float = STOS_BRUTE_SAVE_INTERVAL_SECONDS, **kwargs):
+    """Prepare pairs here, register them in a bounded NumPy process pool, publish results here.
+
+    Prepare and finish touch the volume tree, so they stay in this process and run in the
+    serial path's order; only :func:`stos_brute_pairs.run_stos_brute_pair` crosses to a
+    worker. At most ``2 * workers`` jobs are queued. A failed pair stops new submissions;
+    in-flight pairs still finish and are saved, then :class:`StosBrutePairError` names
+    every failed pair (the serial path also stops at the first failure).
+    """
+    OutputStosType = kwargs.get('Type', 'Brute')
+    AngleSearchRange = kwargs.get('AngleSearchRange', None)
+    if AngleSearchRange == "None":
+        AngleSearchRange = None
+    TestForFlip = not bool(kwargs.get('NoFlipCheck', False))
+    UseMasks = Parameters.get("UseMasks", False)
+
+    total_pairs = sum(1 for t in pair_tasks if t.needs_work)
+    remaining_per_mapping = collections.Counter(t.mapping_index for t in pair_tasks if t.needs_work)
+    mappings_with_work = len(remaining_per_mapping)
+    completed_pairs = 0
+    completed_mappings = 0
+
+    pair_track_id = "stos_brute:pairs"
+    pair_label = f"StosBrute {stos_group_node.Name} ({workers} workers)"
+    mapping_track_id = "stos_brute:mappings"
+    mapping_label = f"StosBrute mappings ({mapping_count})"
+    report_stos_work_progress(mapping_track_id, 0, mappings_with_work, mapping_label, depth=0)
+    report_stos_work_progress(pair_track_id, 0, total_pairs, pair_label, depth=1)
+    Logger.info("StosBruteAll: %d pairs to register with %d NumPy worker processes", total_pairs, workers)
+
+    def _publish(task: _BrutePairTask, prepared: BrutePairPrepared) -> None:
+        nonlocal completed_pairs, completed_mappings
+        finish_filter_to_filter_brute_registration(stos_group_node, prepared,
+                                                   task.control_filter, task.mapped_filter)
+        completed_pairs += 1
+        report_stos_work_progress(pair_track_id, min(completed_pairs, total_pairs), total_pairs,
+                                  pair_label, depth=1)
+        if remaining_per_mapping[task.mapping_index] > 0:
+            remaining_per_mapping[task.mapping_index] -= 1
+            if remaining_per_mapping[task.mapping_index] == 0:
+                completed_mappings += 1
+                report_stos_work_progress(mapping_track_id, completed_mappings, mappings_with_work,
+                                          mapping_label, depth=0)
+
+    def _discard_staging(prepared: BrutePairPrepared) -> None:
+        staging = prepared.job.staging_path if prepared.job is not None else None
+        if staging is not None:
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(staging)
+
+    pool = nornir_pools.GetMultithreadingPool(f"StosBruteAll{stos_group_node.Name}", num_threads=workers)
+    max_in_flight = stos_brute_pairs.default_stos_brute_max_in_flight(workers)
+    in_flight: collections.deque[tuple[_BrutePairTask, BrutePairPrepared, typing.Any]] = collections.deque()
+    failures: list[tuple[str, BaseException]] = []
+    pending = iter(pair_tasks)
+    unsaved = False
+    last_save = time.monotonic()
+    try:
+        while True:
+            while not failures and len(in_flight) < max_in_flight:
+                task = next(pending, None)
+                if task is None:
+                    break
+                print("\tMap - " + task.mapped_filter.FullPath)
+                print("\tCtrl - " + task.control_filter.FullPath)
+                OutputFile = nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode.GenerateStosFilename(
+                    task.control_filter, task.mapped_filter)  # type: ignore[arg-type]
+                try:
+                    (added, _stos_mapping_node) = stos_group_node.GetOrCreateSectionMapping(task.mapped_section)
+                    unsaved = unsaved or added
+                    prepared = prepare_filter_to_filter_brute_registration(
+                        stos_group=stos_group_node,
+                        control_filter=task.control_filter,
+                        mapped_filter=task.mapped_filter,
+                        output_type=OutputStosType,
+                        output_path=OutputFile,
+                        use_masks=UseMasks,
+                        angle_search_range=AngleSearchRange,
+                        test_for_flip=TestForFlip,
+                        method=Method,
+                        logger=Logger,
+                        computation_lib='numpy',
+                        single_thread=True,
+                        staging_suffix=_STOS_BRUTE_STAGING_SUFFIX)
+                    if prepared is None or prepared.action == BrutePairAction.CURRENT:
+                        continue
+                    unsaved = True
+                    if prepared.job is None:
+                        _publish(task, prepared)
+                        continue
+                    _discard_staging(prepared)
+                    pool_task = pool.add_task(prepared.job.pair_name, stos_brute_pairs.run_stos_brute_pair,
+                                              prepared.job)
+                except Exception as e:  # noqa: BLE001 - any failure stops submissions; reported with the pair
+                    Logger.error("StosBrute could not prepare pair %s: %s", OutputFile, e)
+                    failures.append((OutputFile, e))
+                    break
+                in_flight.append((task, prepared, pool_task))
+
+            if not in_flight:
+                break
+
+            task, prepared, pool_task = in_flight.popleft()
+            pair_name = prepared.job.pair_name if prepared.job is not None else str(task)
+            try:
+                result = pool_task.wait_return()
+                _publish(task, prepared)
+            except Exception as e:  # noqa: BLE001 - worker errors are arbitrary; reported with the pair
+                Logger.error("StosBrute failed for pair %s: %s", pair_name, e)
+                prettyoutput.LogErr(f"StosBrute failed for pair {pair_name}: {e}")
+                failures.append((pair_name, e))
+                _discard_staging(prepared)
+                continue
+
+            Logger.debug("StosBrute %s: %.1f s in worker %d", result.pair_name, result.elapsed_seconds, result.pid)
+            if time.monotonic() - last_save >= save_interval_seconds:
+                unsaved = False
+                last_save = time.monotonic()
+                (yield stos_group_node)
+    except BaseException as e:
+        # Interrupted, or a bug in this loop: do not wait for queued registrations, but
+        # save the pairs already published before the exception propagates.
+        pool.terminate_workers()
+        for _task, queued, _pool_task in in_flight:
+            _discard_staging(queued)
+        pool.shutdown()
+        if unsaved and not isinstance(e, GeneratorExit):
+            (yield stos_group_node)
+        raise
+
+    pool.shutdown()
+
+    if unsaved:
+        (yield stos_group_node)
+
+    if failures:
+        names = ", ".join(name for name, _ in failures)
+        raise stos_brute_pairs.StosBrutePairError(
+            f"StosBrute failed for {len(failures)} pair(s): {names}. "
+            f"{completed_pairs} pair(s) completed and were saved.",
+            [name for name, _ in failures]) from failures[0][1]
 
 
 def GetImage(block_node: BlockNode, SectionNumber: int, Channel: str, Filter: str, Downsample: int) \

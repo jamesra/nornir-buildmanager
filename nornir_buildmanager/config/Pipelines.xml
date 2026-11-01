@@ -1796,6 +1796,9 @@
             <Argument flag="-Method" dest="Method" help="Method to use for intitial registration"
                       type="nornir_imageregistration.settings.SliceToSliceMethod"
                       required="False" default="LogPolar"/>
+            <Argument flag="-Workers" dest="StosBruteWorkers" type="int" default="0"
+                      help="Section pairs to register at once.  0 (default) picks automatically: NumPy backend, all cores but two (capped by MAX_PYTHON_THREADS); CuPy backend, 1.  1 registers one pair at a time in this process on the active backend.  N greater than 1 runs N NumPy worker processes, also under -computational_library cupy, since CuPy cannot run in worker processes."
+                      required="False"/>
         </Arguments>
 
         <Select VariableName="block_node" XPath="Block"/>
@@ -1810,20 +1813,20 @@
 
         <Select Root="block_node" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#OutputStosMap']"/>
-        <Iterate Root="StosMapNodeObj" VariableName="mapping_node"
-                 XPath="Mapping">
-            <PythonCall Function="block.StosBrute" Root="BlockNode"
-                        OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx"
-                        FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange" Method="#Method">
-                <Parameters>
-                    <Entry Name="Downsample" Value="#StosBruteDownsample"/>
-                    <Entry Name="refine"/>
-                    <Entry Name="regularize"/>
-                    <Entry Name="UseMasks" Value="#UseMasks"/>
-                    <Entry Name="NoFlipCheck" Value="#NoFlipCheck"/>
-                </Parameters>
-            </PythonCall>
-        </Iterate>
+        <!-- One call per block: StosBruteAll registers the pairs of every mapping, across
+             -Workers processes, instead of an Iterate over Mapping calling block.StosBrute. -->
+        <PythonCall Function="block.StosBruteAll" Root="BlockNode" stos_map_node="#StosMapNodeObj"
+                    OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx"
+                    FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange" Method="#Method"
+                    Workers="#StosBruteWorkers">
+            <Parameters>
+                <Entry Name="Downsample" Value="#StosBruteDownsample"/>
+                <Entry Name="refine"/>
+                <Entry Name="regularize"/>
+                <Entry Name="UseMasks" Value="#UseMasks"/>
+                <Entry Name="NoFlipCheck" Value="#NoFlipCheck"/>
+            </Parameters>
+        </PythonCall>
     </Pipeline>
 
     <Pipeline Name="AssembleStosOverlays"
