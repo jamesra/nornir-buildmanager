@@ -1202,8 +1202,8 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
 
             gpu_pool = (f", GPU pool {result.gpu_pool_bytes / 2 ** 20:.0f} MB"
                         if result.gpu_pool_bytes is not None else "")
-            Logger.info("StosBrute %s: %.1f s in process %d%s", result.pair_name, result.elapsed_seconds,
-                        result.pid, gpu_pool)
+            Logger.info("StosBrute %s: %s; %.1f s in process %d%s", result.pair_name, result.describe(),
+                        result.elapsed_seconds, result.pid, gpu_pool)
             if time.monotonic() - last_save >= save_interval_seconds:
                 unsaved = False
                 last_save = time.monotonic()

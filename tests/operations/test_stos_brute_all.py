@@ -87,6 +87,11 @@ def test_job_round_trip_recovers_rotation(image_pair: dict[str, str], tmp_path: 
     params = str(stos.Transform).split()
     angle_degrees = np.degrees(float(params[4]))
     assert abs(abs(angle_degrees) - 5) < 1.5, stos.Transform
+    # The result carries the registration for the per-pair log line.
+    assert result.angle is not None and abs(abs(result.angle) - 5) < 1.5
+    assert result.weight is not None and result.weight > 0
+    assert result.scale is not None and result.offset_yx is not None
+    assert result.pair_name in f"StosBrute {result.pair_name}" and 'weight' in result.describe()
 
 
 def test_job_writes_staging_path(image_pair: dict[str, str], tmp_path: Path, numpy_backend) -> None:
@@ -259,6 +264,7 @@ def test_loop_registers_every_pair_in_process(image_pair: dict[str, str], tmp_pa
     with patches[0] as prepare, patches[1], patches[2], patches[3] as report:
         out = list(block_mod._stos_brute_pairs({'UseMasks': True}, tasks, 3, group, _LOG_POLAR, mock.Mock(),
                                                stos_brute_pairs.InProcessPairExecutor(),
+                                               save_interval_seconds=1e9,  # 3 real pairs can pass 15 s under load
                                                OutputGroup='StosBrute64', NoFlipCheck=True))
     assert published == ['p0', 'p1', 'p2']
     assert out == [group], "one save at the end when the save interval has not elapsed"

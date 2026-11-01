@@ -75,6 +75,24 @@ class StosBrutePairResult:
     pid: int
     #: Bytes held by the process's CuPy memory pool after the pair; None on NumPy.
     gpu_pool_bytes: int | None = None
+    #: The registration the .stos records, for the per-pair log line (weak pairs show a
+    #: low weight; peak_ratio is None when the method did not measure it).
+    angle: float | None = None
+    offset_yx: tuple[float, float] | None = None
+    scale: float | None = None
+    flipped_ud: bool | None = None
+    weight: float | None = None
+    peak_ratio: float | None = None
+
+    def describe(self) -> str:
+        """One-line summary of the registration for the build log."""
+        if self.angle is None:
+            return ""
+        offset = (f"({self.offset_yx[1]:.1f}x, {self.offset_yx[0]:.1f}y)"
+                  if self.offset_yx is not None else "(?)")
+        ratio = f", peak ratio {self.peak_ratio:.2f}" if self.peak_ratio is not None else ""
+        return (f"angle {self.angle:.2f}, offset {offset}, scale {self.scale:.4f}, "
+                f"flipped {self.flipped_ud}, weight {self.weight:.3f}{ratio}")
 
 
 def run_stos_brute_pair(job: StosBrutePairJob) -> StosBrutePairResult:
@@ -138,7 +156,27 @@ def run_stos_brute_pair(job: StosBrutePairJob) -> StosBrutePairResult:
                                output_stos_path=write_path,
                                elapsed_seconds=time.perf_counter() - started,
                                pid=os.getpid(),
-                               gpu_pool_bytes=gpu_pool_bytes)
+                               gpu_pool_bytes=gpu_pool_bytes,
+                               **_alignment_summary(alignment))
+
+
+def _alignment_summary(alignment: Any) -> dict[str, Any]:
+    """The registration fields of a StosBrutePairResult; empty if *alignment* lacks them.
+
+    Only feeds the log line, so an alignment record without the usual attributes must
+    not fail a pair that has already been saved.
+    """
+    try:
+        peak = [float(v) for v in alignment.peak]
+        ratio = alignment.peak_ratio
+        return {'angle': float(alignment.angle),
+                'offset_yx': (peak[0], peak[1]),
+                'scale': float(alignment.scale),
+                'flipped_ud': bool(alignment.flippedud),
+                'weight': float(alignment.weight),
+                'peak_ratio': float(ratio) if ratio is not None else None}
+    except (AttributeError, TypeError, ValueError, IndexError):
+        return {}
 
 
 class StosBrutePairExecutor(Protocol):
