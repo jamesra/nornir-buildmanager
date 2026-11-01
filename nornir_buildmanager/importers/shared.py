@@ -564,16 +564,24 @@ def PlotHistogram(histogramFullPath: str, sectionNumber: int, minCutoff: float, 
     :return:
     """
     HistogramImageFullPath = replace_extension(histogramFullPath, "png")
-    ImageRemoved = files.RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
+    if not os.path.exists(histogramFullPath):
+        # The cache could not be written (read-only import directory); there is nothing to plot.
+        return
 
-    if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath) or files.IsOlderThan(
-            HistogramImageFullPath, datetime.date(year=2022, month=10, day=25)):
-        #        pool = nornir_pools.GetGlobalMultithreadingPool()
-        # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d\nRaw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
-        os.makedirs(os.path.dirname(HistogramImageFullPath), exist_ok=True)
-        plot.Histogram(histogramFullPath, HistogramImageFullPath,
-                       Title=f"Section {sectionNumber}\nRaw Data Pixel Intensity", LinePosList=[minCutoff, maxCutoff],
-                       range_is_power_of_two=True)
+    try:
+        ImageRemoved = files.RemoveOutdatedFile(histogramFullPath, HistogramImageFullPath)
+
+        if ImageRemoved or force_recreate or not os.path.exists(HistogramImageFullPath) or files.IsOlderThan(
+                HistogramImageFullPath, datetime.date(year=2022, month=10, day=25)):
+            #        pool = nornir_pools.GetGlobalMultithreadingPool()
+            # pool.add_task(HistogramImageFullPath, plot.Histogram, histogramFullPath, HistogramImageFullPath, Title="Section %d\nRaw Data Pixel Intensity" % (sectionNumber), LinePosList=[minCutoff, maxCutoff])
+            os.makedirs(os.path.dirname(HistogramImageFullPath), exist_ok=True)
+            plot.Histogram(histogramFullPath, HistogramImageFullPath,
+                           Title=f"Section {sectionNumber}\nRaw Data Pixel Intensity", LinePosList=[minCutoff, maxCutoff],
+                           range_is_power_of_two=True)
+    except OSError as e:
+        # The plot is a convenience; a read-only import directory must not fail the import.
+        prettyoutput.Log(f"Could not plot the histogram at {HistogramImageFullPath}: {e}")
 
 
 def histogram_cache_sidecar_path(histogram_cache_path: str) -> str:
@@ -638,25 +646,63 @@ def _write_histogram_cache_sidecar(histogram_cache_path: str,
         json.dump(meta, f, indent=0, sort_keys=True)
 
 
+def _is_legacy_histogram_current(histogram_path: str, cache_inputs: Sequence[str]) -> bool:
+    """True for a Histogram.xml written before cache sidecars existed that is still newer than its inputs."""
+    if not os.path.exists(histogram_path) or os.path.exists(histogram_cache_sidecar_path(histogram_path)):
+        return False
+    try:
+        xml_mtime_ns = files.file_mtime_ns(histogram_path)
+        input_mtimes_ns = [files.file_mtime_ns(p) for p in cache_inputs]
+    except OSError:
+        return False
+    return bool(input_mtimes_ns) and not files.is_significantly_newer(max(input_mtimes_ns), xml_mtime_ns)
+
+
+def _save_histogram_cache(histogram_obj: Histogram, histogram_cache_path: str, cache_inputs: Sequence[str],
+                          stride: int, write_xml: bool = True) -> None:
+    """Write the cache XML and sidecar; a read-only or unwritable location only costs the cache."""
+    try:
+        os.makedirs(os.path.dirname(histogram_cache_path) or '.', exist_ok=True)
+        if write_xml:
+            histogram_obj.Save(histogram_cache_path)
+        _write_histogram_cache_sidecar(histogram_cache_path, cache_inputs, stride)
+    except OSError as e:
+        prettyoutput.Log(f"Could not cache the histogram at {histogram_cache_path}: {e}")
+
+
 def ensure_histogram_cache(histogram_cache_path: str,
                            calculate_histogram: Callable[[], Histogram],
                            cache_inputs: Sequence[str],
-                           stride: int = 1) -> Histogram:
+                           stride: int = 1,
+                           legacy_cache_path: str | None = None) -> Histogram:
     """Load a fresh histogram cache or recompute, clean, and save XML + sidecar.
 
     Freshness requires matching cache version/stride, matching input basenames,
     and XML mtime at least as new as every existing path in *cache_inputs*.
+
+    :param legacy_cache_path: A Histogram.xml from before cache sidecars existed. Used instead of
+        recomputing when it has no sidecar and is not older than every input; recomputing a
+        section histogram can mean reading tens of GB.
     """
     if _is_histogram_cache_fresh(histogram_cache_path, cache_inputs, stride):
         histogram_obj = Histogram.Load(histogram_cache_path)
         if histogram_obj is not None:
             return histogram_obj
 
+    if legacy_cache_path is not None and _is_legacy_histogram_current(legacy_cache_path, cache_inputs):
+        histogram_obj = Histogram.Load(legacy_cache_path)
+        if histogram_obj is not None:
+            prettyoutput.Log(f"Using histogram {legacy_cache_path}: written before cache sidecars, newer than "
+                             f"its input")
+            same_file = os.path.normcase(os.path.abspath(legacy_cache_path)) == \
+                os.path.normcase(os.path.abspath(histogram_cache_path))
+            _save_histogram_cache(histogram_obj, histogram_cache_path, cache_inputs, stride,
+                                  write_xml=not same_file)
+            return histogram_obj
+
     histogram_obj = calculate_histogram()
     histogram_obj = CleanOutliersFromHistogram(histogram_obj)
-    os.makedirs(os.path.dirname(histogram_cache_path) or '.', exist_ok=True)
-    histogram_obj.Save(histogram_cache_path)
-    _write_histogram_cache_sidecar(histogram_cache_path, cache_inputs, stride)
+    _save_histogram_cache(histogram_obj, histogram_cache_path, cache_inputs, stride)
     return histogram_obj
 
 
@@ -666,11 +712,14 @@ def GetSectionContrastSettings(section_number: int,
                                calculate_histogram: Callable[[], Histogram],
                                histogram_cache_path: str,
                                cache_inputs: Sequence[str] | None = None,
-                               histogram_stride: int = 1) -> MinMaxGamma:
+                               histogram_stride: int = 1,
+                               legacy_histogram_cache_path: str | None = None) -> MinMaxGamma:
     """Resolve section Min/Max/Gamma from overrides and/or AutoLevel on a cached hist.
 
     Always ensures ``Histogram.xml`` is fresh for plotting. When both Min and Max
     are overridden, AutoLevel is not used for contrast values.
+
+    :param legacy_histogram_cache_path: See ensure_histogram_cache's legacy_cache_path.
     """
     if cache_inputs is None:
         cache_inputs = []
@@ -679,7 +728,8 @@ def GetSectionContrastSettings(section_number: int,
         histogram_cache_path=histogram_cache_path,
         calculate_histogram=calculate_histogram,
         cache_inputs=cache_inputs,
-        stride=histogram_stride)
+        stride=histogram_stride,
+        legacy_cache_path=legacy_histogram_cache_path)
 
     Gamma = 1.0
     override = contrast_map.get(section_number)

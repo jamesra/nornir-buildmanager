@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import collections
 import enum
+import errno
 import struct
 import sys
 import tempfile
@@ -54,7 +55,8 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
-    ContrastMap = nornir_buildmanager.importers.LoadOrCreateHistogramCutoffs(histogramFilename)
+    ContrastMap = nornir_buildmanager.importers.LoadOrCreateHistogramCutoffs(
+        histogramFilename, tolerated_errnos=(errno.EROFS, errno.EACCES))
 
     matches = files.RecurseSubdirectoriesGenerator(ImportPath, RequiredFiles="*." + extension, ExcludeNames=[],
                                                    ExcludedDownsampleLevels=[])
@@ -219,7 +221,11 @@ class MRCImport:
         if TargetBpp is None:
             FilterName = 'Raw'
 
-        histogram_cache_path = os.path.join(source_dir, f'Histogram-{SectionNumber}.xml')
+        # Cache files follow NORNIR_IMPORT_CACHE_PATH, as for IDoc imports, so a read-only source works.
+        # A Histogram-N.xml already beside the MRC, from an import made before cache sidecars, is
+        # reused when it is newer than the MRC: computing one reads the whole file (~32 GB on RC1).
+        histogram_filename = f'Histogram-{SectionNumber}.xml'
+        histogram_cache_path = os.path.join(serialem_utils.get_import_cache_path(source_dir), histogram_filename)
 
         contrast_settings = shared.GetSectionContrastSettings(
             section_number=SectionNumber,
@@ -229,7 +235,8 @@ class MRCImport:
                 mrc_obj=mrcfile, bpp=bpp),
             histogram_cache_path=histogram_cache_path,
             cache_inputs=[mrc_fullpath],
-            histogram_stride=1)
+            histogram_stride=1,
+            legacy_histogram_cache_path=os.path.join(source_dir, histogram_filename))
 
         contrast_settings = shared.MinMaxGamma(min=np.around(contrast_settings.min),
                                                max=np.around(contrast_settings.max),

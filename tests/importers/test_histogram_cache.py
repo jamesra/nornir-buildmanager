@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import tempfile
 import time
@@ -147,6 +148,100 @@ class TestEnsureHistogramCache(_PoolCleanupTestCase):
             shared.ensure_histogram_cache(xml_path, calc, [tile], stride=4)
             shared.ensure_histogram_cache(xml_path, calc, [tile], stride=1)
             self.assertEqual(calls['n'], 2)
+
+
+class TestReadOnlyAndLegacyHistogramCache(_PoolCleanupTestCase):
+    """RC1's MRCs sit on a read-only share beside Histogram-N.xml files from a 2024 import, with no
+    cache sidecars. Saving the cache there raised EROFS, and every section was re-histogrammed
+    (~32 GB read each) because a cache without a sidecar counted as stale."""
+
+    def _make_hist(self) -> Histogram:
+        arr = np.arange(256, dtype=np.uint8).reshape(16, 16)
+        return HistogramOfArray(arr, bpp=8, num_bins=256, min_val=0, max_val=255)
+
+    def _input(self, tmp: str) -> str:
+        path = os.path.join(tmp, '0022_redo.mrc')
+        with open(path, 'wb') as f:
+            f.write(b'mrc')
+        return path
+
+    def test_an_unwritable_cache_is_logged_not_raised(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mrc = self._input(tmp)
+            xml_path = os.path.join(tmp, 'Histogram-22.xml')
+            with mock.patch.object(Histogram, 'Save', side_effect=OSError(errno.EROFS, 'Read-only file system')), \
+                    mock.patch.object(shared.prettyoutput, 'Log') as logged:
+                histogram = shared.ensure_histogram_cache(xml_path, self._make_hist, [mrc])
+            self.assertEqual(256, histogram.NumBins)
+            self.assertIn('Could not cache the histogram', str(logged.call_args))
+
+    def test_a_legacy_histogram_newer_than_its_input_is_reused_and_cached_elsewhere(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mrc = self._input(tmp)
+            legacy = os.path.join(tmp, 'Histogram-22.xml')
+            self._make_hist().Save(legacy)
+            os.utime(mrc, (os.path.getmtime(legacy) - 100,) * 2)
+            cache = os.path.join(tmp, 'cache', 'Histogram-22.xml')
+            calls = {'n': 0}
+
+            def calc() -> Histogram:
+                calls['n'] += 1
+                return self._make_hist()
+
+            shared.ensure_histogram_cache(cache, calc, [mrc], legacy_cache_path=legacy)
+            self.assertEqual(0, calls['n'])
+            self.assertTrue(os.path.exists(cache))
+            self.assertTrue(os.path.exists(shared.histogram_cache_sidecar_path(cache)))
+            self.assertFalse(os.path.exists(shared.histogram_cache_sidecar_path(legacy)),
+                             'the source directory is left untouched')
+
+            shared.ensure_histogram_cache(cache, calc, [mrc], legacy_cache_path=legacy)
+            self.assertEqual(0, calls['n'], 'the second import uses the new cache')
+
+    def test_a_legacy_histogram_in_place_gets_a_sidecar(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mrc = self._input(tmp)
+            legacy = os.path.join(tmp, 'Histogram-22.xml')
+            self._make_hist().Save(legacy)
+            os.utime(mrc, (os.path.getmtime(legacy) - 100,) * 2)
+            shared.ensure_histogram_cache(legacy, self._make_hist, [mrc], legacy_cache_path=legacy)
+            self.assertTrue(os.path.exists(shared.histogram_cache_sidecar_path(legacy)))
+
+    def test_a_legacy_histogram_older_than_its_input_is_recomputed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            legacy = os.path.join(tmp, 'Histogram-22.xml')
+            self._make_hist().Save(legacy)
+            mrc = self._input(tmp)
+            os.utime(mrc, (os.path.getmtime(legacy) + 100,) * 2)
+            calls = {'n': 0}
+
+            def calc() -> Histogram:
+                calls['n'] += 1
+                return self._make_hist()
+
+            shared.ensure_histogram_cache(os.path.join(tmp, 'cache', 'Histogram-22.xml'), calc, [mrc],
+                                          legacy_cache_path=legacy)
+            self.assertEqual(1, calls['n'])
+
+    def test_without_a_legacy_path_a_sidecarless_cache_is_still_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mrc = self._input(tmp)
+            xml_path = os.path.join(tmp, 'Histogram-22.xml')
+            self._make_hist().Save(xml_path)
+            os.utime(mrc, (os.path.getmtime(xml_path) - 100,) * 2)
+            calls = {'n': 0}
+
+            def calc() -> Histogram:
+                calls['n'] += 1
+                return self._make_hist()
+
+            shared.ensure_histogram_cache(xml_path, calc, [mrc])
+            self.assertEqual(1, calls['n'], 'IDoc imports keep the stricter rule')
+
+    def test_plotting_a_missing_cache_does_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            shared.PlotHistogram(os.path.join(tmp, 'Histogram-22.xml'), 22, 0, 255, force_recreate=True)
+            self.assertEqual([], os.listdir(tmp))
 
 
 class TestGetSectionContrastSettings(_PoolCleanupTestCase):

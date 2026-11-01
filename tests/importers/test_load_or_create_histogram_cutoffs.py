@@ -80,13 +80,13 @@ class _Stop(Exception):
     ("module_name", "kwargs", "expected_tolerated"),
     [
         ("dm4", {}, None),
-        ("mrc", {"Min": 0.1, "Max": 0.9}, None),
+        ("mrc", {"Min": 0.1, "Max": 0.9}, (errno.EROFS, errno.EACCES)),
         ("idoc", {"Min": 0.1, "Max": 0.9}, (errno.EROFS, errno.EACCES)),
     ],
 )
 def test_importers_route_through_helper(tmp_path: Path, module_name: str, kwargs: dict,
                                         expected_tolerated: tuple[int, ...] | None) -> None:
-    """Each importer loads overrides from ImportPath via the helper; only idoc also tolerates EACCES."""
+    """Each importer loads overrides from ImportPath via the helper; idoc and mrc also tolerate EACCES."""
     if module_name == "dm4":
         pytest.importorskip("dm4", reason="dm4 package is not installed")
     module = importlib.import_module(f"nornir_buildmanager.importers.{module_name}")
