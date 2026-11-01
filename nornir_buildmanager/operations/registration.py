@@ -104,12 +104,25 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
 
     settings = nornir_imageregistration.settings.GetOrSaveTranslateSettings(settings, settings_data_node.FullPath)
 
+    TranslateReportPath = nornir_buildmanager.volumemanager.mosaicbasenode.MosaicBaseNode.GetFilename(
+        OutputTransformName, "_TranslateReport", Ext=".json")
+    translate_report_full_path = os.path.join(TransformParentNode.FullPath, TranslateReportPath)
+
     # Now that the settings file exists, check if we have offsets to load
+    if not os.path.exists(manual_offsets_data_node.FullPath) and \
+            not _RestoreManualOffsets(manual_offsets_data_node.FullPath, translate_report_full_path,
+                                      OutputTransformNode, Logger):
+        # The mosaic was built with manual offsets that are now gone and cannot be restored.
+        # Rebuilding would silently drop them, so leave the existing mosaic alone.
+        return None
+
     if os.path.exists(manual_offsets_data_node.FullPath):
         mosaic_offsets = nornir_imageregistration.settings.LoadMosaicOffsets(manual_offsets_data_node.FullPath)
         settings.known_offsets = mosaic_offsets
     else:
         nornir_imageregistration.settings.SaveMosaicOffsets(None, manual_offsets_data_node.FullPath)
+
+    manual_offsets_checksum = nornir_imageregistration.settings.MosaicOffsetsChecksum(settings.known_offsets)
 
     if OutputTransformNode is not None:
         if OutputTransformNode.Locked:
@@ -117,10 +130,20 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
                 Logger.info("Skipping locked transform %s" % OutputTransformNode.FullPath)
             return None
         else:
-            if files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):  # type: ignore[union-attr]
+            recorded_offsets_checksum = OutputTransformNode.attrib.get('ManualOffsetsChecksum')
+            if recorded_offsets_checksum is not None:
+                # Compare content, not timestamps: a restored or copied offsets file is newer
+                # than the mosaic without being different from what built it.
+                if recorded_offsets_checksum != manual_offsets_checksum:
+                    OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} manual offsets changed")
+                    OutputTransformNode = None
+            elif files.RemoveOutdatedFile(manual_offsets_data_node.FullPath, OutputTransformNode.FullPath):  # type: ignore[union-attr]
+                # Mosaics built before the checksum was recorded fall back to the timestamp test.
                 OutputTransformNode.Clean(f"{manual_offsets_data_node.FullPath} settings file was updated")
                 OutputTransformNode = None
-            elif files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):  # type: ignore[union-attr]
+
+            if OutputTransformNode is not None and \
+                    files.RemoveOutdatedFile(settings_data_node.FullPath, OutputTransformNode.FullPath):  # type: ignore[union-attr]
                 OutputTransformNode.Clean(f"{settings_data_node.FullPath} settings file was updated")
                 OutputTransformNode = None
 
@@ -157,17 +180,24 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
             tileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaicObj,
                                                                                image_folder=LevelNode.FullPath,
                                                                                image_to_source_space_scale=LevelNode.Downsample)
-            firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(settings)
+            translate_report = nornir_imageregistration.TranslateReport()
+            firstpass_translated_mosaicObj_tileset = tileset.ArrangeTilesWithTranslate(settings,
+                                                                                       report=translate_report)
 
             firstpass_translated_mosaicObj_tileset.SaveMosaic(OutputTransformNode.FullPath)
 
             SaveRequired = SaveRequired or os.path.exists(OutputTransformNode.FullPath)
 
-            # Staleness of settings/offsets is handled by RemoveOutdatedFile above.
-            # Do not write path-string DataChecksums as TranslateSettingsChecksum /
-            # ManualMosaicOffsetsChecksum — nothing reads them, and they never change
-            # when file contents change (#219).
+            # Settings staleness is handled by RemoveOutdatedFile above, manual offsets by this
+            # content checksum. Do not write path-string DataChecksums as
+            # TranslateSettingsChecksum / ManualMosaicOffsetsChecksum: they never change when
+            # file contents change (#219).
+            OutputTransformNode.attrib['ManualOffsetsChecksum'] = manual_offsets_checksum
+            OutputTransformNode.attrib['ManualOffsetsCount'] = str(len(settings.known_offsets))
             OutputTransformNode.ResetChecksum()
+
+            _SaveTranslateReport(translate_report, translate_report_full_path, TranslateReportPath,
+                                 TransformParentNode, OutputTransformNode, Logger)
 
             print("%s -> %s" % (OutputTransformNode.FullPath,
                                 nornir_imageregistration.MosaicFile.LoadChecksum(OutputTransformNode.FullPath)))
@@ -186,6 +216,58 @@ def TranslateTransform(Parameters, TransformNode, FilterNode,
         return TransformParentNode
     else:
         return None
+
+
+def _RestoreManualOffsets(offsets_path: str, report_path: str, output_transform_node, Logger) -> bool:
+    """Recreate a missing manual offsets file from the last translate report.
+
+    :return: False when the existing mosaic was built with manual offsets that cannot be
+        restored, so the caller must not rebuild it; True otherwise.
+    """
+    if os.path.exists(report_path):
+        restored = nornir_imageregistration.translate_report.load_known_offsets(report_path)
+        if restored:
+            nornir_imageregistration.settings.SaveMosaicOffsets(restored, offsets_path)
+            message = (f"Manual offsets file {offsets_path} was missing; restored {len(restored)} offsets "
+                       f"from {report_path}")
+            prettyoutput.LogErr(message)
+            if Logger is not None:
+                Logger.warning(message)
+            return True
+
+    if output_transform_node is None:
+        return True
+
+    built_with = int(output_transform_node.attrib.get('ManualOffsetsCount', '0'))
+    if built_with == 0:
+        return True
+
+    message = (f"Manual offsets file {offsets_path} is missing, and {output_transform_node.FullPath} was built "
+               f"with {built_with} manual offsets that cannot be restored. Not rebuilding it; restore the "
+               f"offsets file, or delete the mosaic to rebuild without them.")
+    prettyoutput.LogErr(message)
+    if Logger is not None:
+        Logger.error(message)
+    return False
+
+
+def _SaveTranslateReport(report, report_full_path: str, report_path: str, transform_parent_node,
+                         output_transform_node, Logger) -> None:
+    """Write the translate report beside the mosaic and surface a join that needs review."""
+    report.save(report_full_path)
+    report_node = nornir_buildmanager.volumemanager.datanode.DataNode.Create(Name="Translate Report",
+                                                                             Path=report_path)
+    transform_parent_node.UpdateOrAddChildByAttrib(report_node, 'Name')
+
+    if report.needs_review:
+        output_transform_node.attrib['NeedsReview'] = '1'
+        for reason in report.review_reasons:
+            message = f"{output_transform_node.FullPath} needs review: {reason}"
+            prettyoutput.LogErr(message)
+            if Logger is not None:
+                Logger.warning(message)
+    elif 'NeedsReview' in output_transform_node.attrib:
+        del output_transform_node.attrib['NeedsReview']
 
 
 #
