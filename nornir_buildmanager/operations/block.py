@@ -4,6 +4,7 @@ Created on Jun 22, 2012
 @author: Jamesan
 """
 import collections
+import concurrent.futures
 import contextlib
 import copy
 import math
@@ -684,8 +685,6 @@ def prepare_filter_to_filter_brute_registration(
         method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
         logger: logging.Logger | None = None,
         *,
-        computation_lib: str | None = None,
-        single_thread: bool = False,
         staging_suffix: str | None = None) -> BrutePairPrepared | None:
     """Validate a pair, create its image and transform nodes, and decide what must run.
 
@@ -693,9 +692,8 @@ def prepare_filter_to_filter_brute_registration(
     masks. Copies a Manual override straight to the output (action MANUAL). Returns None
     when the input images are unavailable, matching FilterToFilterBruteRegistration.
 
-    ``computation_lib``, ``single_thread`` and ``staging_suffix`` go into the compute job;
-    StosBruteAll's pool workers write ``output + staging_suffix`` and the main process
-    renames it in :func:`finish_filter_to_filter_brute_registration`.
+    With ``staging_suffix`` the compute job writes ``output + staging_suffix`` and
+    :func:`finish_filter_to_filter_brute_registration` renames it into place.
     """
     if logger is None:
         logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
@@ -806,8 +804,6 @@ def prepare_filter_to_filter_brute_registration(
         angle_search_range=angle_search_range,
         test_for_flip=test_for_flip,
         warped_scale=warped_scale,
-        computation_lib=computation_lib,
-        single_thread=single_thread,
         staging_path=stosNode.FullPath + staging_suffix if staging_suffix else None,
     )
     return BrutePairPrepared(stos_node=stosNode, action=BrutePairAction.COMPUTE, job=job)
@@ -964,7 +960,7 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
 #: published (renamed from staging) only alongside the metadata update.
 STOS_BRUTE_SAVE_INTERVAL_SECONDS: float = 15.0
 
-#: Pool workers write here first; the main process renames it to the output .stos.
+#: Pair jobs write here first; the main process renames it to the output .stos.
 _STOS_BRUTE_STAGING_SUFFIX: str = '.partial'
 
 
@@ -977,13 +973,6 @@ class _BrutePairTask:
     mapped_filter: typing.Any
     control_filter: typing.Any
     needs_work: bool
-
-
-def _parse_stos_brute_workers(workers: typing.Any) -> int | None:
-    """Pipeline ``Workers`` attribute -> int, None (auto) when unset or empty."""
-    if workers is None or workers == '':
-        return None
-    return int(workers)
 
 
 def _resolve_no_flip_check(Parameters: dict, kwargs: dict) -> bool:
@@ -1029,73 +1018,48 @@ def _enumerate_brute_pair_tasks(mappings: list[MappingNode], block_node: BlockNo
 
 def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: BlockNode, ChannelsRegEx: str,
                  FiltersRegEx: str, Method: nornir_imageregistration.settings.SliceToSliceMethod,
-                 Logger: logging.Logger, Workers: int | str | None = None, **kwargs):
-    """Run StosBrute for every mapping of a StosMap, registering independent pairs concurrently.
+                 Logger: logging.Logger, **kwargs):
+    """Run StosBrute for every mapping of a StosMap, saving the StosGroup in batches.
 
-    Called once per block (AlignSections), so the pool spans all mappings; with
-    ``-NumAdjacentSections 1`` each mapping holds only one or two pairs.
-
-    ``Workers``: 1 runs each mapping through :func:`StosBrute` in this process, in order,
-    on the active backend (the pre-StosBruteAll behaviour). N > 1 prepares pairs here,
-    registers them in N NumPy worker processes and publishes each result here. None or
-    <= 0 is auto (:func:`stos_brute_pairs.resolve_stos_brute_workers`: NumPy -> cores - 2,
-    CuPy -> 1). Other keyword arguments match StosBrute (OutputGroup, Type,
-    AngleSearchRange, NoFlipCheck).
+    Called once per block (AlignSections). Every pair goes through prepare, compute and
+    finish (:func:`_stos_brute_pairs`); compute runs in this process on the active backend
+    (``-computational_library``), one pair at a time. Other keyword arguments match
+    StosBrute (OutputGroup, Type, AngleSearchRange, NoFlipCheck).
     """
-    requested = _parse_stos_brute_workers(Workers)
-    workers = stos_brute_pairs.resolve_stos_brute_workers(requested)
     no_flip_check = _resolve_no_flip_check(Parameters, kwargs)
     kwargs['NoFlipCheck'] = no_flip_check
 
     # One entry per mapped section of the block: metadata, small.
     mappings = list(stos_map_node.Mappings)
 
-    if workers > 1:
-        Downsample = int(Parameters.get('Downsample', 32))
-        OutputStosGroupName = kwargs.get('OutputGroup', 'Brute')
-        (added, stos_group_node) = block_node.GetOrCreateStosGroup(OutputStosGroupName, downsample=Downsample)
-        stos_group_node.CreateDirectories()
-        if added:
-            (yield block_node)
-        os.makedirs(stos_group_node.FullPath, exist_ok=True)
+    Downsample = int(Parameters.get('Downsample', 32))
+    OutputStosGroupName = kwargs.get('OutputGroup', 'Brute')
+    (added, stos_group_node) = block_node.GetOrCreateStosGroup(OutputStosGroupName, downsample=Downsample)
+    stos_group_node.CreateDirectories()
+    if added:
+        (yield block_node)
+    os.makedirs(stos_group_node.FullPath, exist_ok=True)
 
-        pair_tasks = _enumerate_brute_pair_tasks(mappings, block_node, ChannelsRegEx, FiltersRegEx,
-                                                 stos_group_node, Parameters.get("UseMasks", False), Logger)
-        total_pairs = sum(1 for t in pair_tasks if t.needs_work)
-        if total_pairs > 1:
-            yield from _stos_brute_all_parallel(Parameters, pair_tasks, len(mappings), stos_group_node,
-                                                Method, Logger, min(workers, total_pairs), **kwargs)
-            return
-        Logger.info("StosBruteAll: %d pair(s) need registration; running serially", total_pairs)
-    elif requested is None or requested <= 0:
-        if nornir_imageregistration.UsingCupy():
-            Logger.info("StosBruteAll: CuPy backend, auto workers = 1 (serial on the GPU). "
-                        "Pass -Workers N to register N pairs at once in NumPy worker processes.")
-
-    mapping_track_id = "stos_brute:mappings"
-    mapping_label = f"StosBrute mappings ({len(mappings)})"
-    if mappings:
-        report_stos_work_progress(mapping_track_id, 0, len(mappings), mapping_label, depth=0)
-    for index, mapping_node in enumerate(mappings):
-        # StosBrute consumes Parameters['Downsample']; give each mapping a fresh copy, as
-        # the per-mapping <Iterate> did by re-reading <Parameters>.
-        yield from StosBrute(dict(Parameters), mapping_node, block_node, ChannelsRegEx, FiltersRegEx,
-                             Method, Logger, **kwargs)
-        report_stos_work_progress(mapping_track_id, index + 1, len(mappings), mapping_label, depth=0)
+    pair_tasks = _enumerate_brute_pair_tasks(mappings, block_node, ChannelsRegEx, FiltersRegEx,
+                                             stos_group_node, Parameters.get("UseMasks", False), Logger)
+    yield from _stos_brute_pairs(Parameters, pair_tasks, len(mappings), stos_group_node, Method, Logger,
+                                 stos_brute_pairs.InProcessPairExecutor(), **kwargs)
 
 
-def _stos_brute_all_parallel(Parameters: dict, pair_tasks: list[_BrutePairTask], mapping_count: int,
-                             stos_group_node: StosGroupNode,
-                             Method: nornir_imageregistration.settings.SliceToSliceMethod,
-                             Logger: logging.Logger, workers: int,
-                             save_interval_seconds: float = STOS_BRUTE_SAVE_INTERVAL_SECONDS, **kwargs):
-    """Prepare pairs here, register them in a bounded NumPy process pool, publish results here.
+def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mapping_count: int,
+                      stos_group_node: StosGroupNode,
+                      Method: nornir_imageregistration.settings.SliceToSliceMethod,
+                      Logger: logging.Logger, executor: stos_brute_pairs.StosBrutePairExecutor,
+                      save_interval_seconds: float = STOS_BRUTE_SAVE_INTERVAL_SECONDS, **kwargs):
+    """Prepare each pair here, compute it on *executor*, publish it here; save in batches.
 
-    Prepare and finish touch the volume tree, so they stay in this process and run in the
-    serial path's order; only :func:`stos_brute_pairs.run_stos_brute_pair` crosses to a
-    worker. At most ``2 * workers`` jobs are queued. A failed pair stops new submissions;
-    in-flight pairs still finish and are saved, then :class:`StosBrutePairError` names
-    every failed pair (the serial path also stops at the first failure).
+    Prepare and finish touch the volume tree, so they stay in this process and run in
+    ``pair_tasks`` order; only :func:`stos_brute_pairs.run_stos_brute_pair` goes to the
+    executor, with at most ``executor.max_in_flight`` jobs submitted. Yields the StosGroup
+    for saving at most every ``save_interval_seconds``, at the end and before raising.
+    A failed pair stops new submissions; submitted pairs still finish and are saved, then
+    :class:`stos_brute_pairs.StosBrutePairError` names every failed pair. Shuts the
+    executor down.
     """
     OutputStosType = kwargs.get('Type', 'Brute')
     AngleSearchRange = kwargs.get('AngleSearchRange', None)
@@ -1111,20 +1075,22 @@ def _stos_brute_all_parallel(Parameters: dict, pair_tasks: list[_BrutePairTask],
     completed_mappings = 0
 
     pair_track_id = "stos_brute:pairs"
-    pair_label = f"StosBrute {stos_group_node.Name} ({workers} workers)"
+    pair_label = f"StosBrute {stos_group_node.Name} ({executor.description})"
     mapping_track_id = "stos_brute:mappings"
     mapping_label = f"StosBrute mappings ({mapping_count})"
-    report_stos_work_progress(mapping_track_id, 0, mappings_with_work, mapping_label, depth=0)
-    report_stos_work_progress(pair_track_id, 0, total_pairs, pair_label, depth=1)
-    Logger.info("StosBruteAll: %d pairs to register with %d NumPy worker processes", total_pairs, workers)
+    if total_pairs:
+        report_stos_work_progress(mapping_track_id, 0, mappings_with_work, mapping_label, depth=0)
+        report_stos_work_progress(pair_track_id, 0, total_pairs, pair_label, depth=1)
+    Logger.info("StosBruteAll: %d pair(s) to register (%s)", total_pairs, executor.description)
 
     def _publish(task: _BrutePairTask, prepared: BrutePairPrepared) -> None:
         nonlocal completed_pairs, completed_mappings
         finish_filter_to_filter_brute_registration(stos_group_node, prepared,
                                                    task.control_filter, task.mapped_filter)
         completed_pairs += 1
-        report_stos_work_progress(pair_track_id, min(completed_pairs, total_pairs), total_pairs,
-                                  pair_label, depth=1)
+        if total_pairs:
+            report_stos_work_progress(pair_track_id, min(completed_pairs, total_pairs), total_pairs,
+                                      pair_label, depth=1)
         if remaining_per_mapping[task.mapping_index] > 0:
             remaining_per_mapping[task.mapping_index] -= 1
             if remaining_per_mapping[task.mapping_index] == 0:
@@ -1138,9 +1104,10 @@ def _stos_brute_all_parallel(Parameters: dict, pair_tasks: list[_BrutePairTask],
             with contextlib.suppress(FileNotFoundError):
                 os.remove(staging)
 
-    pool = nornir_pools.GetMultithreadingPool(f"StosBruteAll{stos_group_node.Name}", num_threads=workers)
-    max_in_flight = stos_brute_pairs.default_stos_brute_max_in_flight(workers)
-    in_flight: collections.deque[tuple[_BrutePairTask, BrutePairPrepared, typing.Any]] = collections.deque()
+    max_in_flight = max(1, int(executor.max_in_flight))
+    in_flight: collections.deque[tuple[_BrutePairTask, BrutePairPrepared,
+                                       concurrent.futures.Future[stos_brute_pairs.StosBrutePairResult]]] = \
+        collections.deque()
     failures: list[tuple[str, BaseException]] = []
     pending = iter(pair_tasks)
     unsaved = False
@@ -1169,8 +1136,6 @@ def _stos_brute_all_parallel(Parameters: dict, pair_tasks: list[_BrutePairTask],
                         test_for_flip=TestForFlip,
                         method=Method,
                         logger=Logger,
-                        computation_lib='numpy',
-                        single_thread=True,
                         staging_suffix=_STOS_BRUTE_STAGING_SUFFIX)
                     if prepared is None or prepared.action == BrutePairAction.CURRENT:
                         continue
@@ -1179,46 +1144,49 @@ def _stos_brute_all_parallel(Parameters: dict, pair_tasks: list[_BrutePairTask],
                         _publish(task, prepared)
                         continue
                     _discard_staging(prepared)
-                    pool_task = pool.add_task(prepared.job.pair_name, stos_brute_pairs.run_stos_brute_pair,
-                                              prepared.job)
+                    try:
+                        # The in-process executor computes the pair here.
+                        future = executor.submit(prepared.job)
+                    except BaseException:
+                        _discard_staging(prepared)
+                        raise
                 except Exception as e:  # noqa: BLE001 - any failure stops submissions; reported with the pair
                     Logger.error("StosBrute could not prepare pair %s: %s", OutputFile, e)
                     failures.append((OutputFile, e))
                     break
-                in_flight.append((task, prepared, pool_task))
+                in_flight.append((task, prepared, future))
 
             if not in_flight:
                 break
 
-            task, prepared, pool_task = in_flight.popleft()
+            task, prepared, future = in_flight.popleft()
             pair_name = prepared.job.pair_name if prepared.job is not None else str(task)
             try:
-                result = pool_task.wait_return()
+                result = future.result()
                 _publish(task, prepared)
-            except Exception as e:  # noqa: BLE001 - worker errors are arbitrary; reported with the pair
+            except Exception as e:  # noqa: BLE001 - registration errors are arbitrary; reported with the pair
                 Logger.error("StosBrute failed for pair %s: %s", pair_name, e)
                 prettyoutput.LogErr(f"StosBrute failed for pair {pair_name}: {e}")
                 failures.append((pair_name, e))
                 _discard_staging(prepared)
                 continue
 
-            Logger.debug("StosBrute %s: %.1f s in worker %d", result.pair_name, result.elapsed_seconds, result.pid)
+            Logger.debug("StosBrute %s: %.1f s in process %d", result.pair_name, result.elapsed_seconds, result.pid)
             if time.monotonic() - last_save >= save_interval_seconds:
                 unsaved = False
                 last_save = time.monotonic()
                 (yield stos_group_node)
     except BaseException as e:
-        # Interrupted, or a bug in this loop: do not wait for queued registrations, but
+        # Interrupted, or a bug in this loop: do not wait for submitted registrations, but
         # save the pairs already published before the exception propagates.
-        pool.terminate_workers()
-        for _task, queued, _pool_task in in_flight:
+        executor.shutdown(cancel_pending=True)
+        for _task, queued, _future in in_flight:
             _discard_staging(queued)
-        pool.shutdown()
         if unsaved and not isinstance(e, GeneratorExit):
             (yield stos_group_node)
         raise
 
-    pool.shutdown()
+    executor.shutdown()
 
     if unsaved:
         (yield stos_group_node)

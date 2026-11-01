@@ -1,7 +1,8 @@
-"""Tests for pair-level parallel StosBrute: worker, prepare/finish split, StosBruteAll dispatch."""
+"""Tests for StosBruteAll: pair job, prepare/finish split, the pair loop, staging and batched saves."""
 
 from __future__ import annotations
 
+import concurrent.futures
 import dataclasses
 import os
 from pathlib import Path
@@ -10,7 +11,6 @@ from unittest import mock
 import nornir_buildmanager.operations.block as block_mod
 import nornir_imageregistration
 import nornir_imageregistration.settings
-import nornir_pools
 import numpy as np
 import pytest
 from nornir_buildmanager.operations import stos_brute_pairs
@@ -19,6 +19,7 @@ from PIL import Image
 _REAL_IMAGE = '0017_TEM_Leveled_image__feabinary_Cel64_Mes8_sp4_Mes8.png'
 _REAL_MASK = '0017_TEM_Leveled_mask__feabinary_Cel64_Mes8_sp4_Mes8.png'
 _SIZE = 290
+_LOG_POLAR = nornir_imageregistration.settings.SliceToSliceMethod.LogPolar
 
 
 def _target_image() -> tuple[Image.Image, Image.Image]:
@@ -52,7 +53,7 @@ def image_pair(tmp_path_factory: pytest.TempPathFactory) -> dict[str, str]:
 
 
 def _job(image_pair: dict[str, str], output: Path, name: str = 'pair', **overrides) -> stos_brute_pairs.StosBrutePairJob:
-    """A pool-worker style job (NumPy, single thread) for the test image pair."""
+    """A job for the test image pair."""
     job = stos_brute_pairs.StosBrutePairJob(pair_name=name,
                                             output_stos_path=str(output),
                                             target_image_path=image_pair['target'],
@@ -60,10 +61,8 @@ def _job(image_pair: dict[str, str], output: Path, name: str = 'pair', **overrid
                                             target_mask_path=image_pair['mask'],
                                             source_mask_path=image_pair['mask'],
                                             downsample=1,
-                                            method=nornir_imageregistration.settings.SliceToSliceMethod.LogPolar,
-                                            test_for_flip=False,
-                                            computation_lib='numpy',
-                                            single_thread=True)
+                                            method=_LOG_POLAR,
+                                            test_for_flip=False)
     return dataclasses.replace(job, **overrides)
 
 
@@ -76,11 +75,12 @@ def numpy_backend():
     nornir_imageregistration.SetActiveComputationLib(previous)
 
 
-def test_worker_round_trip_recovers_rotation(image_pair: dict[str, str], tmp_path: Path, numpy_backend) -> None:
-    """The worker writes a .stos whose rigid transform undoes the ~5 degree rotation."""
+def test_job_round_trip_recovers_rotation(image_pair: dict[str, str], tmp_path: Path, numpy_backend) -> None:
+    """run_stos_brute_pair writes a .stos whose rigid transform undoes the ~5 degree rotation."""
     output = tmp_path / 'pair.stos'
     result = stos_brute_pairs.run_stos_brute_pair(_job(image_pair, output))
     assert result.output_stos_path == str(output)
+    assert result.pid == os.getpid()
     assert output.exists()
     stos = nornir_imageregistration.files.stosfile.StosFile.Load(str(output))
     params = str(stos.Transform).split()
@@ -88,7 +88,7 @@ def test_worker_round_trip_recovers_rotation(image_pair: dict[str, str], tmp_pat
     assert abs(abs(angle_degrees) - 5) < 1.5, stos.Transform
 
 
-def test_worker_writes_staging_path(image_pair: dict[str, str], tmp_path: Path, numpy_backend) -> None:
+def test_job_writes_staging_path(image_pair: dict[str, str], tmp_path: Path, numpy_backend) -> None:
     """With staging_path set the output .stos is not written; the staging file is."""
     output = tmp_path / 'pair.stos'
     staging = tmp_path / 'pair.stos.partial'
@@ -98,52 +98,35 @@ def test_worker_writes_staging_path(image_pair: dict[str, str], tmp_path: Path, 
     assert not output.exists()
 
 
-def test_parallel_matches_in_process_and_is_order_independent(image_pair: dict[str, str], tmp_path: Path,
-                                                              numpy_backend) -> None:
-    """Worker-process outputs equal the in-process result byte for byte, whatever ran first.
-
-    The per-pair seed makes each pair's noise independent of earlier pairs in the process;
-    the warm-up job below consumes the generator before the measured one in-process.
-    """
-    reference = tmp_path / 'reference.stos'
-    stos_brute_pairs.run_stos_brute_pair(_job(image_pair, tmp_path / 'warmup.stos', name='warmup',
-                                              test_for_flip=True))
-    stos_brute_pairs.run_stos_brute_pair(_job(image_pair, reference))
-
-    pool = nornir_pools.GetMultithreadingPool('test_stos_brute_all_parity', num_threads=2)
-    try:
-        tasks = [pool.add_task(f'p{i}', stos_brute_pairs.run_stos_brute_pair,
-                               _job(image_pair, tmp_path / f'parallel{i}.stos', name=f'p{i}'))
-                 for i in range(3)]
-        pids = {task.wait_return().pid for task in tasks}
-    finally:
-        pool.shutdown()
-
-    expected = reference.read_bytes()
-    for i in range(3):
-        assert (tmp_path / f'parallel{i}.stos').read_bytes() == expected
-    assert os.getpid() not in pids
+def test_job_reseeds_before_registering(tmp_path: Path) -> None:
+    """Each pair reseeds the noise generator with its job's seed before registering."""
+    calls: list[str] = []
+    with mock.patch.object(stos_brute_pairs.nornir_imageregistration, 'seed_random_data',
+                           side_effect=lambda seed: calls.append(f'seed {seed}')), \
+            mock.patch.object(stos_brute_pairs.stos_brute, 'SliceToSliceRigidRegistration',
+                              side_effect=lambda **kw: calls.append('register') or mock.Mock()):
+        stos_brute_pairs.run_stos_brute_pair(_job({'target': 't', 'source': 's', 'mask': 'm'},
+                                                  tmp_path / 'p.stos', random_seed=123))
+    assert calls == ['seed 123', 'register']
 
 
-def test_resolve_workers_auto_numpy(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Auto on NumPy uses all cores but two, capped by MAX_PYTHON_THREADS."""
-    monkeypatch.setattr(stos_brute_pairs.nornir_imageregistration, 'UsingCupy', lambda: False)
-    monkeypatch.setattr(stos_brute_pairs.os, 'cpu_count', lambda: 16)
-    monkeypatch.delenv('MAX_PYTHON_THREADS', raising=False)
-    assert stos_brute_pairs.resolve_stos_brute_workers(None) == 14
-    assert stos_brute_pairs.resolve_stos_brute_workers(0) == 14
-    monkeypatch.setenv('MAX_PYTHON_THREADS', '6')
-    assert stos_brute_pairs.resolve_stos_brute_workers(0) == 6
-    assert stos_brute_pairs.resolve_stos_brute_workers(12) == 6
+def test_in_process_executor_runs_on_submit_and_captures_errors() -> None:
+    """InProcessPairExecutor computes during submit; an Exception lands in the future."""
+    executor = stos_brute_pairs.InProcessPairExecutor()
+    assert executor.max_in_flight == 1
+    done = mock.Mock()
+    with mock.patch.object(stos_brute_pairs, 'run_stos_brute_pair', return_value=done) as run:
+        future = executor.submit(mock.sentinel.job)
+        run.assert_called_once_with(mock.sentinel.job)
+    assert future.done() and future.result() is done
 
+    with mock.patch.object(stos_brute_pairs, 'run_stos_brute_pair', side_effect=OSError('boom')):
+        future = executor.submit(mock.sentinel.job)
+    assert isinstance(future.exception(), OSError)
 
-def test_resolve_workers_auto_cupy_is_serial(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Auto on CuPy stays serial on the GPU; an explicit count still gets NumPy workers."""
-    monkeypatch.setattr(stos_brute_pairs.nornir_imageregistration, 'UsingCupy', lambda: True)
-    monkeypatch.delenv('MAX_PYTHON_THREADS', raising=False)
-    assert stos_brute_pairs.resolve_stos_brute_workers(0) == 1
-    assert stos_brute_pairs.resolve_stos_brute_workers(1) == 1
-    assert stos_brute_pairs.resolve_stos_brute_workers(4) == 4
+    with mock.patch.object(stos_brute_pairs, 'run_stos_brute_pair', side_effect=KeyboardInterrupt), \
+            pytest.raises(KeyboardInterrupt):
+        executor.submit(mock.sentinel.job)
 
 
 def test_filter_to_filter_composes_prepare_compute_finish(tmp_path: Path) -> None:
@@ -195,31 +178,39 @@ def _mapping(control: int, mapped: list[int]) -> mock.Mock:
     return mapping
 
 
-def test_workers_one_runs_stos_brute_per_mapping_in_order() -> None:
-    """-Workers 1 calls StosBrute per mapping, in map order, with fresh Parameters and NoFlipCheck."""
+def test_stos_brute_all_runs_pairs_in_process_with_no_flip_check() -> None:
+    """StosBruteAll enumerates every mapping's pairs and runs them on an in-process executor.
+
+    NoFlipCheck arrives as a <Parameters> entry (AlignSections) and must reach the loop.
+    """
     mappings = [_mapping(5, [4]), _mapping(5, [6]), _mapping(4, [3])]
     stos_map = mock.Mock()
     stos_map.Mappings = iter(mappings)
-    seen: list[tuple[object, dict, bool]] = []
+    block_node = mock.Mock()
+    group = mock.Mock()
+    block_node.GetOrCreateStosGroup.return_value = (False, group)
+    seen: dict[str, object] = {}
 
-    def _fake_stos_brute(Parameters, mapping_node, *args, **kwargs):
-        seen.append((mapping_node, dict(Parameters), kwargs['NoFlipCheck']))
-        del Parameters['Downsample']
-        yield mapping_node
+    def _fake_pairs(Parameters, pair_tasks, mapping_count, stos_group_node, Method, Logger, executor, **kwargs):
+        seen.update(tasks=pair_tasks, mapping_count=mapping_count, executor=executor,
+                    no_flip=kwargs['NoFlipCheck'], group=stos_group_node)
+        yield stos_group_node
 
-    with mock.patch.object(block_mod, 'StosBrute', side_effect=_fake_stos_brute), \
-            mock.patch.object(block_mod, 'report_stos_work_progress'):
-        out = list(block_mod.StosBruteAll({'Downsample': 64, 'NoFlipCheck': True}, stos_map, mock.Mock(),
-                                          'TEM', 'Blob', mock.Mock(), mock.Mock(), Workers=1,
-                                          OutputGroup='StosBrute64'))
-    assert out == mappings
-    assert [s[0] for s in seen] == mappings
-    assert all(s[1]['Downsample'] == 64 for s in seen)
-    assert all(s[2] is True for s in seen)
+    with mock.patch.object(block_mod, '_enumerate_brute_pair_tasks', return_value=['t']) as enumerate_tasks, \
+            mock.patch.object(block_mod, '_stos_brute_pairs', side_effect=_fake_pairs), \
+            mock.patch.object(block_mod.os, 'makedirs'):
+        out = list(block_mod.StosBruteAll({'Downsample': 64, 'NoFlipCheck': True}, stos_map, block_node,
+                                          'TEM', 'Blob', _LOG_POLAR, mock.Mock(), OutputGroup='StosBrute64'))
+    assert out == [group]
+    block_node.GetOrCreateStosGroup.assert_called_once_with('StosBrute64', downsample=64)
+    assert enumerate_tasks.call_args.args[0] == mappings
+    assert seen['tasks'] == ['t'] and seen['mapping_count'] == 3 and seen['group'] is group
+    assert isinstance(seen['executor'], stos_brute_pairs.InProcessPairExecutor)
+    assert seen['no_flip'] is True
 
 
-def _parallel_fixture(tmp_path: Path, jobs: list[stos_brute_pairs.StosBrutePairJob]):
-    """Pair tasks, prepared results and a stos group mock for _stos_brute_all_parallel."""
+def _loop_fixture(jobs: list[stos_brute_pairs.StosBrutePairJob]):
+    """Pair tasks, prepared results and a stos group mock for _stos_brute_pairs."""
     tasks = [block_mod._BrutePairTask(mapping_index=i, mapped_section=i, mapped_filter=mock.Mock(FullPath=f'm{i}'),
                                       control_filter=mock.Mock(FullPath=f'c{i}'), needs_work=True)
              for i in range(len(jobs))]
@@ -235,72 +226,179 @@ def _parallel_fixture(tmp_path: Path, jobs: list[stos_brute_pairs.StosBrutePairJ
     return tasks, prepared, group
 
 
-def test_parallel_failure_names_pair_and_keeps_completed(image_pair: dict[str, str], tmp_path: Path,
-                                                         numpy_backend) -> None:
-    """One failing worker: the others are published and saved, then the error names the pair."""
-    bad = _job(image_pair, tmp_path / 'bad.stos', name='0007-0006_bad.stos',
-               source_image_path=str(tmp_path / 'missing.png'),
-               staging_path=str(tmp_path / 'bad.stos.partial'))
-    good = [_job(image_pair, tmp_path / f'good{i}.stos', name=f'good{i}',
-                 staging_path=str(tmp_path / f'good{i}.stos.partial')) for i in range(2)]
-    tasks, prepared, group = _parallel_fixture(tmp_path, [good[0], bad, good[1]])
+def _finish_recording(record: list[str]):
+    """A finish stand-in that renames the staged file and records the pair."""
+
+    def _finish(stos_group, prep, control, mapped):
+        os.replace(prep.job.staging_path, prep.stos_node.FullPath)
+        record.append(prep.job.pair_name)
+        return prep.stos_node
+
+    return _finish
+
+
+def _patched_loop(prepared, finish, **extra):
+    """Patch prepare/finish/progress/filenames around a _stos_brute_pairs run."""
+    stack = [mock.patch.object(block_mod, 'prepare_filter_to_filter_brute_registration', side_effect=prepared),
+             mock.patch.object(block_mod, 'finish_filter_to_filter_brute_registration', side_effect=finish),
+             mock.patch.object(block_mod.nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode,
+                               'GenerateStosFilename', side_effect=lambda c, m: f'{m.FullPath}.stos')]
+    stack.append(mock.patch.object(block_mod, 'report_stos_work_progress', **extra))
+    return stack
+
+
+def test_loop_registers_every_pair_in_process(image_pair: dict[str, str], tmp_path: Path, numpy_backend) -> None:
+    """Every pair is registered in this process, staged, published in order and saved."""
+    jobs = [_job(image_pair, tmp_path / f'p{i}.stos', name=f'p{i}', staging_path=str(tmp_path / f'p{i}.partial'))
+            for i in range(3)]
+    tasks, prepared, group = _loop_fixture(jobs)
+    published: list[str] = []
+    patches = _patched_loop(prepared, _finish_recording(published))
+    with patches[0] as prepare, patches[1], patches[2], patches[3] as report:
+        out = list(block_mod._stos_brute_pairs({'UseMasks': True}, tasks, 3, group, _LOG_POLAR, mock.Mock(),
+                                               stos_brute_pairs.InProcessPairExecutor(),
+                                               OutputGroup='StosBrute64', NoFlipCheck=True))
+    assert published == ['p0', 'p1', 'p2']
+    assert out == [group], "one save at the end when the save interval has not elapsed"
+    assert all(c.kwargs['test_for_flip'] is False for c in prepare.call_args_list)
+    assert all(c.kwargs['staging_suffix'] == '.partial' for c in prepare.call_args_list)
+    # Per-pair reseeding: identical inputs give byte-identical outputs whatever ran before.
+    reference = (tmp_path / 'p0.stos').read_bytes()
+    assert (tmp_path / 'p1.stos').read_bytes() == reference == (tmp_path / 'p2.stos').read_bytes()
+    assert not any(tmp_path.glob('*.partial'))
+    pair_reports = [c.args[1] for c in report.call_args_list if c.args[0] == 'stos_brute:pairs']
+    mapping_reports = [c.args[1] for c in report.call_args_list if c.args[0] == 'stos_brute:mappings']
+    assert pair_reports == [0, 1, 2, 3]
+    assert mapping_reports == [0, 1, 2, 3]
+
+
+class _RecordingExecutor:
+    """In-process stand-in that writes a fake staged .stos and records the call order."""
+
+    max_in_flight: int = 1
+    description: str = 'recording'
+
+    def __init__(self, events: list[str], fail: set[str] | None = None) -> None:
+        self.events = events
+        self.fail = fail or set()
+        self.shutdowns: list[bool] = []
+
+    def submit(self, job: stos_brute_pairs.StosBrutePairJob) -> concurrent.futures.Future:
+        """Write the staging file (or fail) immediately."""
+        self.events.append(f'compute {job.pair_name}')
+        future: concurrent.futures.Future = concurrent.futures.Future()
+        staging = job.staging_path
+        assert staging is not None
+        if job.pair_name in self.fail:
+            Path(staging).write_text('half written')
+            future.set_exception(RuntimeError(f'cannot register {job.pair_name}'))
+        else:
+            Path(staging).write_text(job.pair_name)
+            future.set_result(stos_brute_pairs.StosBrutePairResult(job.pair_name, staging, 0.0, os.getpid()))
+        return future
+
+    def shutdown(self, cancel_pending: bool = False) -> None:
+        """Record the shutdown."""
+        self.shutdowns.append(cancel_pending)
+
+
+def _fake_jobs(tmp_path: Path, names: list[str]) -> list[stos_brute_pairs.StosBrutePairJob]:
+    return [_job({'target': 't', 'source': 's', 'mask': 'm'}, tmp_path / f'{n}.stos', name=n,
+                 staging_path=str(tmp_path / f'{n}.stos.partial')) for n in names]
+
+
+def test_loop_order_is_prepare_compute_finish_per_pair(tmp_path: Path) -> None:
+    """With one job in flight each pair is prepared, computed and published before the next."""
+    events: list[str] = []
+    tasks, prepared, group = _loop_fixture(_fake_jobs(tmp_path, ['a', 'b']))
+    prepared_iter = iter(prepared)
+
+    def _prepare(**kwargs):
+        prep = next(prepared_iter)
+        events.append(f'prepare {prep.job.pair_name}')
+        return prep
 
     finished: list[str] = []
 
     def _finish(stos_group, prep, control, mapped):
-        os.replace(prep.job.staging_path, prep.stos_node.FullPath)
-        finished.append(prep.job.pair_name)
-        return prep.stos_node
+        events.append(f'finish {prep.job.pair_name}')
+        return _finish_recording(finished)(stos_group, prep, control, mapped)
 
-    yielded = []
-    with mock.patch.object(block_mod, 'prepare_filter_to_filter_brute_registration', side_effect=prepared), \
-            mock.patch.object(block_mod, 'finish_filter_to_filter_brute_registration', side_effect=_finish), \
-            mock.patch.object(block_mod, 'report_stos_work_progress'), \
-            mock.patch.object(block_mod.nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode,
-                              'GenerateStosFilename', side_effect=lambda c, m: f'{m.FullPath}.stos'):
-        gen = block_mod._stos_brute_all_parallel({'UseMasks': True}, tasks, 3, group,
-                                                 nornir_imageregistration.settings.SliceToSliceMethod.LogPolar,
-                                                 mock.Mock(), 2, OutputGroup='StosBrute64', Type='Brute',
-                                                 NoFlipCheck=True)
+    executor = _RecordingExecutor(events)
+    patches = _patched_loop(_prepare, _finish)
+    with patches[0], patches[1], patches[2], patches[3]:
+        list(block_mod._stos_brute_pairs({}, tasks, 2, group, _LOG_POLAR, mock.Mock(), executor))
+    assert events == ['prepare a', 'compute a', 'finish a', 'prepare b', 'compute b', 'finish b']
+    assert executor.shutdowns == [False]
+    assert (tmp_path / 'a.stos').read_text() == 'a'
+
+
+def test_loop_saves_in_batches(tmp_path: Path) -> None:
+    """The StosGroup is yielded when the save interval has elapsed and at the end, not per pair.
+
+    The fake clock advances 10 s per reading: start 0; pair a 10 (no save); b 20 (save,
+    reset at 30); c 40 (no); d 50 (save, reset at 60); nothing unsaved at the end.
+    """
+    names = ['a', 'b', 'c', 'd']
+    for interval, expected_saves in ((1e9, 1), (15.0, 2)):
+        folder = tmp_path / str(int(min(interval, 99)))
+        folder.mkdir()
+        tasks, prepared, group = _loop_fixture(_fake_jobs(folder, names))
+        published: list[str] = []
+        patches = _patched_loop(prepared, _finish_recording(published))
+        ticks = iter(range(0, 1000, 10))
+        with patches[0], patches[1], patches[2], patches[3], \
+                mock.patch.object(block_mod.time, 'monotonic', side_effect=lambda _ticks=ticks: float(next(_ticks))):
+            out = list(block_mod._stos_brute_pairs({}, tasks, 4, group, _LOG_POLAR, mock.Mock(),
+                                                   _RecordingExecutor([]), save_interval_seconds=interval))
+        assert published == names
+        assert all(item is group for item in out)
+        assert len(out) == expected_saves, (interval, len(out))
+
+
+def test_loop_failure_names_pair_and_keeps_completed(tmp_path: Path) -> None:
+    """A failing pair stops new submissions; completed pairs are saved, then the error names it."""
+    events: list[str] = []
+    tasks, prepared, group = _loop_fixture(_fake_jobs(tmp_path, ['good0', '0007-0006_bad.stos', 'good1']))
+    finished: list[str] = []
+    executor = _RecordingExecutor(events, fail={'0007-0006_bad.stos'})
+    yielded: list[object] = []
+    patches = _patched_loop(prepared, _finish_recording(finished))
+    with patches[0], patches[1], patches[2], patches[3]:
+        gen = block_mod._stos_brute_pairs({}, tasks, 3, group, _LOG_POLAR, mock.Mock(), executor)
         with pytest.raises(stos_brute_pairs.StosBrutePairError) as err:
             yielded.extend(gen)  # items saved before the raise stay in the list
 
     assert '0007-0006_bad.stos' in str(err.value)
     assert err.value.pair_names == ['0007-0006_bad.stos']
-    # The first good pair was submitted before the failure, so it finishes. The third pair
-    # is submitted alongside (2 workers -> 4 in flight) and also completes.
-    assert sorted(finished) == ['good0', 'good1']
-    assert (tmp_path / 'good0.stos').exists() and (tmp_path / 'good1.stos').exists()
-    assert not (tmp_path / 'bad.stos').exists() and not (tmp_path / 'bad.stos.partial').exists()
+    assert isinstance(err.value.__cause__, RuntimeError)
+    assert finished == ['good0']
+    assert events == ['compute good0', 'compute 0007-0006_bad.stos'], "no submissions after a failure"
+    assert not (tmp_path / '0007-0006_bad.stos.partial').exists(), "a failed pair's staging file is removed"
+    assert not (tmp_path / '0007-0006_bad.stos').exists()
     assert yielded and yielded[-1] is group, "completed pairs must be saved before the error propagates"
 
 
-def test_stos_brute_all_parallel_runs_all_mappings(image_pair: dict[str, str], tmp_path: Path,
-                                                   numpy_backend) -> None:
-    """Every pair of every mapping is registered once and published in the main process."""
-    jobs = [_job(image_pair, tmp_path / f'p{i}.stos', name=f'p{i}', staging_path=str(tmp_path / f'p{i}.partial'))
-            for i in range(3)]
-    tasks, prepared, group = _parallel_fixture(tmp_path, jobs)
-    published: list[str] = []
+def test_loop_interrupt_discards_staging_and_saves(tmp_path: Path) -> None:
+    """An interrupt during compute removes that pair's staging file, saves, cancels the executor."""
+    tasks, prepared, group = _loop_fixture(_fake_jobs(tmp_path, ['a', 'b']))
+    finished: list[str] = []
 
-    def _finish(stos_group, prep, control, mapped):
-        os.replace(prep.job.staging_path, prep.stos_node.FullPath)
-        published.append(prep.job.pair_name)
-        return prep.stos_node
+    class _Interrupting(_RecordingExecutor):
+        def submit(self, job):
+            if job.pair_name == 'b':
+                Path(str(job.staging_path)).write_text('partial')
+                raise KeyboardInterrupt
+            return super().submit(job)
 
-    with mock.patch.object(block_mod, 'prepare_filter_to_filter_brute_registration', side_effect=prepared), \
-            mock.patch.object(block_mod, 'finish_filter_to_filter_brute_registration', side_effect=_finish), \
-            mock.patch.object(block_mod, 'report_stos_work_progress') as report, \
-            mock.patch.object(block_mod.nornir_buildmanager.volumemanager.stosgroupnode.StosGroupNode,
-                              'GenerateStosFilename', side_effect=lambda c, m: f'{m.FullPath}.stos'):
-        out = list(block_mod._stos_brute_all_parallel({'UseMasks': True}, tasks, 3, group,
-                                                      nornir_imageregistration.settings.SliceToSliceMethod.LogPolar,
-                                                      mock.Mock(), 2, OutputGroup='StosBrute64'))
-    assert published == ['p0', 'p1', 'p2']
-    assert out[-1] is group
-    reference = (tmp_path / 'p0.stos').read_bytes()
-    assert (tmp_path / 'p1.stos').read_bytes() == reference == (tmp_path / 'p2.stos').read_bytes()
-    pair_reports = [c.args[1] for c in report.call_args_list if c.args[0] == 'stos_brute:pairs']
-    mapping_reports = [c.args[1] for c in report.call_args_list if c.args[0] == 'stos_brute:mappings']
-    assert pair_reports == [0, 1, 2, 3]
-    assert mapping_reports == [0, 1, 2, 3]
+    executor = _Interrupting([])
+    yielded: list[object] = []
+    patches = _patched_loop(prepared, _finish_recording(finished))
+    with patches[0], patches[1], patches[2], patches[3]:
+        gen = block_mod._stos_brute_pairs({}, tasks, 2, group, _LOG_POLAR, mock.Mock(), executor)
+        with pytest.raises(KeyboardInterrupt):
+            yielded.extend(gen)
+    assert finished == ['a']
+    assert yielded == [group]
+    assert executor.shutdowns == [True]
+    assert not (tmp_path / 'b.stos.partial').exists()
