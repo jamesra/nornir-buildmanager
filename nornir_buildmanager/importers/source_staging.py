@@ -11,6 +11,11 @@ path. Staging is skipped when the source is already on the staging filesystem or
 and can be turned off with ``NORNIR_IMPORT_STAGE=0``. ``NORNIR_IMPORT_STAGE_DIR`` chooses the folder (default: a
 ``nornir_import_stage`` folder in the system temp directory). Local disk use is at most the current file plus
 ``ahead`` prefetched files.
+
+Safeguards (Build2 RC1 review, 2026-11-01): an optional ``validate`` callback keeps unhealthy sources (a truncated
+MRC) from being copied; a copy that writes nothing for NO_PROGRESS_SECONDS is abandoned and the source is read in
+place; a finished copy must match the source size and carries its mtime; copies are written as ``.partial`` and
+renamed, and leftovers of killed runs are removed at start; each staged file logs its size, time and MB/s.
 """
 
 from __future__ import annotations
@@ -20,7 +25,8 @@ import os
 import shutil
 import tempfile
 import threading
-from collections.abc import Sequence
+import time
+from collections.abc import Callable, Sequence
 from typing import Self
 
 from nornir_imageregistration.env_flags import env_flag, is_falsey
@@ -36,6 +42,16 @@ DEFAULT_AHEAD = 2
 RESERVE_BYTES = 2 * 1024 ** 3
 
 COPY_BUFFER_BYTES = 16 * 1024 ** 2
+
+# acquire() gives up on a copy that has written nothing for this long and reads the source in place. storage3
+# (2026-11-01) left reads hanging for 30+ minutes; a thread stuck in a kernel read cannot be interrupted, but the
+# import need not wait on it.
+NO_PROGRESS_SECONDS = 300.0
+PROGRESS_POLL_SECONDS = 10.0
+
+# Leftovers from a killed run are removed at start when older than this (where the owning process cannot be
+# checked) or when their process is gone.
+STALE_SECONDS = 24 * 3600
 
 
 def staging_enabled() -> bool:
@@ -55,8 +71,15 @@ class SourcePrefetcher:
     """
 
     def __init__(self, paths: Sequence[str], stage_dir: str | None = None, ahead: int = DEFAULT_AHEAD,
-                 only_remote: bool = True, enabled: bool | None = None):
+                 only_remote: bool = True, enabled: bool | None = None,
+                 validate: Callable[[str], str | None] | None = None):
+        """
+        :param validate: Returns why a source should not be staged (e.g. a truncated MRC), or None; such a
+            source is left in place and the caller decides what to do with it.
+        """
         self._paths = list(paths)
+        self._validate = validate
+        self._progress: dict[str, float] = {}  # time of the last chunk written per path
         self._stage_dir = stage_dir or default_stage_dir()
         self._ahead = max(0, ahead)
         self._only_remote = only_remote
@@ -72,6 +95,7 @@ class SourcePrefetcher:
     def __enter__(self) -> Self:
         if self._enabled and self._paths:
             os.makedirs(self._stage_dir, exist_ok=True)
+            _remove_stale(self._stage_dir)
             self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._ahead + 1,
                                                                    thread_name_prefix='ImportStage')
             self._schedule(self._ahead + 1)
@@ -93,11 +117,23 @@ class SourcePrefetcher:
             future = self._futures.get(path)
         if future is None:
             return path
-        try:
-            return future.result()
-        except Exception as e:  # noqa: BLE001 - any copy failure falls back to reading the source
-            prettyoutput.Log(f"Staging {path} failed ({e}); reading it in place")
-            return path
+        while True:
+            try:
+                return future.result(timeout=PROGRESS_POLL_SECONDS)
+            except concurrent.futures.TimeoutError:
+                with self._lock:
+                    last = self._progress.get(path)
+                if last is not None and time.monotonic() - last > NO_PROGRESS_SECONDS:
+                    prettyoutput.LogErr(f"Staging {path} made no progress for {NO_PROGRESS_SECONDS:.0f} s; "
+                                        f"reading it in place")
+                    with self._lock:
+                        stop = self._stops.get(path)
+                    if stop is not None:
+                        stop.set()
+                    return path
+            except Exception as e:  # noqa: BLE001 - any copy failure falls back to reading the source
+                prettyoutput.Log(f"Staging {path} failed ({e}); reading it in place")
+                return path
 
     def release(self, path: str) -> None:
         """Stop or delete the local copy of ``path`` and start the next copy.
@@ -129,6 +165,11 @@ class SourcePrefetcher:
     def _copy(self, path: str, stop: threading.Event) -> str:
         if self._only_remote and _same_filesystem(path, self._stage_dir):
             return path
+        if self._validate is not None:
+            problem = self._validate(path)
+            if problem is not None:
+                prettyoutput.Log(f"Not staging {path}: {problem}")
+                return path
         size = os.path.getsize(path)
         with self._lock:
             needed = size + self._bytes_in_flight + RESERVE_BYTES
@@ -138,17 +179,30 @@ class SourcePrefetcher:
             self._bytes_in_flight += size
         local = os.path.join(self._stage_dir, f'{os.getpid()}_{self._paths.index(path)}_{os.path.basename(path)}')
         partial = local + '.partial'
+        start = time.monotonic()
         try:
+            with self._lock:
+                self._progress[path] = start
             with open(path, 'rb') as source, open(partial, 'wb') as target:
                 while not stop.is_set():
                     chunk = source.read(COPY_BUFFER_BYTES)
                     if not chunk:
                         break
                     target.write(chunk)
+                    with self._lock:
+                        self._progress[path] = time.monotonic()
             if stop.is_set():
                 os.remove(partial)
                 return path
+            copied = os.path.getsize(partial)
+            if copied != size:
+                raise OSError(f"copy is {copied:,} bytes, source {size:,}")
+            source_stat = os.stat(path)
+            os.utime(partial, ns=(source_stat.st_atime_ns, source_stat.st_mtime_ns))
             os.replace(partial, local)
+            seconds = max(time.monotonic() - start, 1e-6)
+            prettyoutput.Log(f"Staged {os.path.basename(path)}: {size / 1024 ** 3:.1f} GB in {seconds:.0f} s "
+                             f"({size / 1024 ** 2 / seconds:.0f} MB/s)")
         except BaseException:
             try:
                 os.remove(partial)
@@ -158,6 +212,7 @@ class SourcePrefetcher:
         finally:
             with self._lock:
                 self._bytes_in_flight -= size
+                self._progress.pop(path, None)
         return local
 
 
@@ -170,6 +225,38 @@ def _delete_copy(future: concurrent.futures.Future[str], path: str) -> None:
             os.remove(local)
         except OSError as e:
             prettyoutput.Log(f"Could not delete staged copy {local}: {e}")
+
+
+def _remove_stale(stage_dir: str) -> None:
+    """Delete copies and partial copies left by import runs that are no longer running.
+
+    Staged names start with the owning process id. On POSIX a file whose process is gone is removed; where that
+    cannot be checked (Windows) only files older than STALE_SECONDS are.
+    """
+    now = time.time()
+    for name in os.listdir(stage_dir):
+        pid_text = name.split('_', 1)[0]
+        if not pid_text.isdigit() or int(pid_text) == os.getpid():
+            continue
+        full = os.path.join(stage_dir, name)
+        try:
+            stale = (not _pid_alive(int(pid_text))) if os.name == 'posix' else \
+                now - os.path.getmtime(full) > STALE_SECONDS
+            if stale:
+                os.remove(full)
+                prettyoutput.Log(f"Removed stale staged file {full}")
+        except OSError as e:
+            prettyoutput.Log(f"Could not remove stale staged file {full}: {e}")
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)  # POSIX only: signal 0 checks for existence
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _same_filesystem(path: str, directory: str) -> bool:

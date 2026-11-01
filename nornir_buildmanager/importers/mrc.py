@@ -67,9 +67,15 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     found_paths = [os.path.join(path, f) for (path, foundfiles) in matches for f in (foundfiles or [])]
     selected_paths = shared.SelectOneFilePerSection(found_paths)
     # Copy the next MRCs to local disk while the current one exports (source_staging); pixel reads use the copy.
-    with source_staging.SourcePrefetcher(selected_paths) as staging:
+    with source_staging.SourcePrefetcher(selected_paths, validate=MRCFile.HealthProblem) as staging:
         for file_fullpath in selected_paths:
             prettyoutput.CurseString("MRCImport", f"Importing {file_fullpath}")
+            problem = MRCFile.HealthProblem(file_fullpath)
+            if problem is not None:
+                # Skip it rather than fail mid-export and leave a partial section.
+                prettyoutput.LogErr(f"UNHEALTHY {file_fullpath}: {problem}; section skipped")
+                staging.release(file_fullpath)
+                continue
             try:
                 yield from MRCImport.ToMosaic(VolumeElement,
                                               mrc_fullpath=file_fullpath,
@@ -613,6 +619,28 @@ class MRCFile:
         else:
             Warning('ENDIAN Value in MRC header incorrect, defaulting to Little Endian')
             return False
+
+    @staticmethod
+    def HealthProblem(filename: str) -> str | None:
+        """Why ``filename`` is not a complete MRC, or None when its header parses and its size covers every tile.
+
+        Cheap (one 1 KB header read): checked before staging and exporting a section, so a truncated file is
+        reported up front instead of after a full copy and a partial export.
+        """
+        try:
+            mrc_obj = MRCFile.Load(filename)
+        except Exception as e:  # noqa: BLE001 - any header failure is the reason reported
+            return f"header does not parse ({e})"
+        try:
+            expected = (MRCFile.HeaderLength + int(mrc_obj.extended_header_size or 0) +
+                        int(mrc_obj.num_tiles) * int(mrc_obj.img_XDim) * int(mrc_obj.img_YDim) *  # type: ignore[arg-type]
+                        mrc_obj.bytes_per_pixel)
+            actual = os.path.getsize(filename)
+        finally:
+            mrc_obj.mrc.close()
+        if actual < expected:
+            return f"truncated: {actual:,} bytes, header implies {expected:,}"
+        return None
 
     @staticmethod
     def Load(filename: str) -> MRCFile:
