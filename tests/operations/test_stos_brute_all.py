@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import os
+import time
 from pathlib import Path
 from unittest import mock
 
@@ -86,6 +87,11 @@ def test_job_round_trip_recovers_rotation(image_pair: dict[str, str], tmp_path: 
     params = str(stos.Transform).split()
     angle_degrees = np.degrees(float(params[4]))
     assert abs(abs(angle_degrees) - 5) < 1.5, stos.Transform
+    # The result carries the registration for the per-pair log line.
+    assert result.angle is not None and abs(abs(result.angle) - 5) < 1.5
+    assert result.weight is not None and result.weight > 0
+    assert result.scale is not None and result.offset_yx is not None
+    assert result.pair_name in f"StosBrute {result.pair_name}" and 'weight' in result.describe()
 
 
 def test_job_writes_staging_path(image_pair: dict[str, str], tmp_path: Path, numpy_backend) -> None:
@@ -190,13 +196,14 @@ def test_stos_brute_all_runs_pairs_in_process_with_no_flip_check() -> None:
     group = mock.Mock()
     block_node.GetOrCreateStosGroup.return_value = (False, group)
     seen: dict[str, object] = {}
+    task = mock.Mock(needs_work=True)
 
     def _fake_pairs(Parameters, pair_tasks, mapping_count, stos_group_node, Method, Logger, executor, **kwargs):
         seen.update(tasks=pair_tasks, mapping_count=mapping_count, executor=executor,
                     no_flip=kwargs['NoFlipCheck'], group=stos_group_node)
         yield stos_group_node
 
-    with mock.patch.object(block_mod, '_enumerate_brute_pair_tasks', return_value=['t']) as enumerate_tasks, \
+    with mock.patch.object(block_mod, '_enumerate_brute_pair_tasks', return_value=[task]) as enumerate_tasks, \
             mock.patch.object(block_mod, '_stos_brute_pairs', side_effect=_fake_pairs), \
             mock.patch.object(block_mod.os, 'makedirs'):
         out = list(block_mod.StosBruteAll({'Downsample': 64, 'NoFlipCheck': True}, stos_map, block_node,
@@ -204,7 +211,7 @@ def test_stos_brute_all_runs_pairs_in_process_with_no_flip_check() -> None:
     assert out == [group]
     block_node.GetOrCreateStosGroup.assert_called_once_with('StosBrute64', downsample=64)
     assert enumerate_tasks.call_args.args[0] == mappings
-    assert seen['tasks'] == ['t'] and seen['mapping_count'] == 3 and seen['group'] is group
+    assert seen['tasks'] == [task] and seen['mapping_count'] == 3 and seen['group'] is group
     assert isinstance(seen['executor'], stos_brute_pairs.InProcessPairExecutor)
     assert seen['no_flip'] is True
 
@@ -257,6 +264,7 @@ def test_loop_registers_every_pair_in_process(image_pair: dict[str, str], tmp_pa
     with patches[0] as prepare, patches[1], patches[2], patches[3] as report:
         out = list(block_mod._stos_brute_pairs({'UseMasks': True}, tasks, 3, group, _LOG_POLAR, mock.Mock(),
                                                stos_brute_pairs.InProcessPairExecutor(),
+                                               save_interval_seconds=1e9,  # 3 real pairs can pass 15 s under load
                                                OutputGroup='StosBrute64', NoFlipCheck=True))
     assert published == ['p0', 'p1', 'p2']
     assert out == [group], "one save at the end when the save interval has not elapsed"
@@ -402,3 +410,101 @@ def test_loop_interrupt_discards_staging_and_saves(tmp_path: Path) -> None:
     assert yielded == [group]
     assert executor.shutdowns == [True]
     assert not (tmp_path / 'b.stos.partial').exists()
+
+
+def test_parse_gpu_workers() -> None:
+    """Unset / empty pipeline attribute means one pair at a time in process."""
+    assert block_mod._parse_gpu_workers(None) == 1
+    assert block_mod._parse_gpu_workers('') == 1
+    assert block_mod._parse_gpu_workers('4') == 4
+
+
+def test_create_executor_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GPU workers only for N > 1 on CuPy with more than one pair; capped at the pair count."""
+    logger = mock.Mock()
+    created: list[int] = []
+    monkeypatch.setattr(block_mod.stos_brute_pairs, 'GpuWorkerPairExecutor',
+                        lambda workers: created.append(workers) or mock.sentinel.gpu)
+
+    monkeypatch.setattr(block_mod.nornir_imageregistration, 'UsingCupy', lambda: True)
+    assert isinstance(block_mod._create_stos_brute_executor(1, 10, logger), stos_brute_pairs.InProcessPairExecutor)
+    assert isinstance(block_mod._create_stos_brute_executor(4, 1, logger), stos_brute_pairs.InProcessPairExecutor)
+    assert block_mod._create_stos_brute_executor(4, 10, logger) is mock.sentinel.gpu
+    assert block_mod._create_stos_brute_executor(8, 3, logger) is mock.sentinel.gpu
+    assert created == [4, 3]
+
+    monkeypatch.setattr(block_mod.nornir_imageregistration, 'UsingCupy', lambda: False)
+    assert isinstance(block_mod._create_stos_brute_executor(4, 10, logger), stos_brute_pairs.InProcessPairExecutor)
+    logger.warning.assert_called_once()
+    assert created == [4, 3]
+
+
+def test_stos_brute_all_passes_gpu_workers_to_executor_choice() -> None:
+    """The pipeline's GpuWorkers attribute and the count of pairs needing work pick the executor."""
+    stos_map = mock.Mock()
+    stos_map.Mappings = iter([_mapping(5, [4])])
+    block_node = mock.Mock()
+    block_node.GetOrCreateStosGroup.return_value = (False, mock.Mock())
+    tasks = [mock.Mock(needs_work=True), mock.Mock(needs_work=False), mock.Mock(needs_work=True)]
+    with mock.patch.object(block_mod, '_enumerate_brute_pair_tasks', return_value=tasks), \
+            mock.patch.object(block_mod, '_create_stos_brute_executor', return_value=mock.sentinel.executor) as create, \
+            mock.patch.object(block_mod, '_stos_brute_pairs', return_value=iter(())) as loop, \
+            mock.patch.object(block_mod.os, 'makedirs'):
+        list(block_mod.StosBruteAll({'Downsample': 16}, stos_map, block_node, 'TEM', 'Blob', _LOG_POLAR,
+                                    mock.Mock(), GpuWorkers='3', OutputGroup='StosBrute16'))
+    assert create.call_args.args[:2] == (3, 2)
+    assert loop.call_args.args[6] is mock.sentinel.executor
+
+
+def test_gpu_worker_entry_refuses_numpy(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A GPU worker that ended up on NumPy fails the pair instead of silently running on the CPU."""
+    monkeypatch.setattr(stos_brute_pairs.nornir_imageregistration, 'UsingCupy', lambda: False)
+    with mock.patch.object(stos_brute_pairs, 'run_stos_brute_pair') as run, \
+            pytest.raises(RuntimeError, match='not on CuPy'):
+        stos_brute_pairs.run_stos_brute_pair_on_gpu_worker(_fake_jobs(tmp_path, ['x'])[0])
+    run.assert_not_called()
+
+
+@pytest.fixture
+def cupy_backend():
+    """Run with the CuPy backend (skip without a usable GPU) and restore the previous one."""
+    if not nornir_imageregistration.HasCupy():
+        pytest.skip('CuPy not installed')
+    previous = nornir_imageregistration.GetActiveComputationLib()
+    nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.cupy)
+    if not nornir_imageregistration.UsingCupy():
+        nornir_imageregistration.SetActiveComputationLib(previous)
+        pytest.skip('CuPy runtime probe failed (no usable GPU)')
+    yield
+    nornir_imageregistration.SetActiveComputationLib(previous)
+
+
+@pytest.mark.gpu
+def test_gpu_workers_match_in_process_cupy(image_pair: dict[str, str], tmp_path: Path, cupy_backend) -> None:
+    """Spawned CuPy workers write the same .stos bytes as an in-process CuPy registration."""
+    reference = tmp_path / 'reference.stos'
+    stos_brute_pairs.InProcessPairExecutor().submit(_job(image_pair, reference)).result()
+
+    executor = stos_brute_pairs.GpuWorkerPairExecutor(2)
+    try:
+        futures = [executor.submit(_job(image_pair, tmp_path / f'w{i}.stos', name=f'w{i}')) for i in range(3)]
+        results = [f.result(timeout=600) for f in futures]
+    finally:
+        executor.shutdown()
+
+    assert all(r.pid != os.getpid() for r in results)
+    assert all(r.gpu_pool_bytes is not None for r in results), 'workers must have run on CuPy'
+    expected = reference.read_bytes()
+    for i in range(3):
+        assert (tmp_path / f'w{i}.stos').read_bytes() == expected
+
+
+@pytest.mark.gpu
+def test_gpu_worker_executor_cancel_stops_workers(image_pair: dict[str, str], tmp_path: Path, cupy_backend) -> None:
+    """shutdown(cancel_pending=True) returns without waiting for queued registrations."""
+    executor = stos_brute_pairs.GpuWorkerPairExecutor(1)
+    futures = [executor.submit(_job(image_pair, tmp_path / f'c{i}.stos', name=f'c{i}')) for i in range(4)]
+    started = time.perf_counter()
+    executor.shutdown(cancel_pending=True)
+    assert time.perf_counter() - started < 60
+    assert not all(f.done() and not f.cancelled() and f.exception() is None for f in futures)

@@ -6,13 +6,16 @@ implementation. A job holds only paths and parameters, never volume-tree nodes, 
 executor may run it in another process.
 
 ``StosBruteAll`` hands jobs to a :class:`StosBrutePairExecutor`; :class:`InProcessPairExecutor`
-registers each pair in the calling process on the active backend, one at a time.
+registers each pair in the calling process on the active backend, one at a time, and
+:class:`GpuWorkerPairExecutor` registers pairs in N spawned worker processes that all use
+CuPy on the shared GPU, so each pair's host-side work runs on its own core.
 """
 
 from __future__ import annotations
 
 import concurrent.futures
 import logging
+import multiprocessing
 import os
 import time
 from dataclasses import dataclass
@@ -21,6 +24,7 @@ from typing import Any, Protocol
 import nornir_imageregistration
 import nornir_imageregistration.settings
 import nornir_pools
+import nornir_shared.misc
 from nornir_imageregistration import stos_brute
 
 _logger = logging.getLogger(__name__)
@@ -69,6 +73,26 @@ class StosBrutePairResult:
     output_stos_path: str
     elapsed_seconds: float
     pid: int
+    #: Bytes held by the process's CuPy memory pool after the pair; None on NumPy.
+    gpu_pool_bytes: int | None = None
+    #: The registration the .stos records, for the per-pair log line (weak pairs show a
+    #: low weight; peak_ratio is None when the method did not measure it).
+    angle: float | None = None
+    offset_yx: tuple[float, float] | None = None
+    scale: float | None = None
+    flipped_ud: bool | None = None
+    weight: float | None = None
+    peak_ratio: float | None = None
+
+    def describe(self) -> str:
+        """One-line summary of the registration for the build log."""
+        if self.angle is None:
+            return ""
+        offset = (f"({self.offset_yx[1]:.1f}x, {self.offset_yx[0]:.1f}y)"
+                  if self.offset_yx is not None else "(?)")
+        ratio = f", peak ratio {self.peak_ratio:.2f}" if self.peak_ratio is not None else ""
+        return (f"angle {self.angle:.2f}, offset {offset}, scale {self.scale:.4f}, "
+                f"flipped {self.flipped_ud}, weight {self.weight:.3f}{ratio}")
 
 
 def run_stos_brute_pair(job: StosBrutePairJob) -> StosBrutePairResult:
@@ -123,10 +147,36 @@ def run_stos_brute_pair(job: StosBrutePairJob) -> StosBrutePairResult:
     write_path = job.staging_path if job.staging_path is not None else job.output_stos_path
     stos.Save(write_path)
 
+    gpu_pool_bytes = None
+    if nornir_imageregistration.UsingCupy():
+        memory_pool = nornir_imageregistration.cp.get_default_memory_pool()  # pyright: ignore[reportAttributeAccessIssue]
+        gpu_pool_bytes = int(memory_pool.total_bytes())
+
     return StosBrutePairResult(pair_name=job.pair_name,
                                output_stos_path=write_path,
                                elapsed_seconds=time.perf_counter() - started,
-                               pid=os.getpid())
+                               pid=os.getpid(),
+                               gpu_pool_bytes=gpu_pool_bytes,
+                               **_alignment_summary(alignment))
+
+
+def _alignment_summary(alignment: Any) -> dict[str, Any]:
+    """The registration fields of a StosBrutePairResult; empty if *alignment* lacks them.
+
+    Only feeds the log line, so an alignment record without the usual attributes must
+    not fail a pair that has already been saved.
+    """
+    try:
+        peak = [float(v) for v in alignment.peak]
+        ratio = alignment.peak_ratio
+        return {'angle': float(alignment.angle),
+                'offset_yx': (peak[0], peak[1]),
+                'scale': float(alignment.scale),
+                'flipped_ud': bool(alignment.flippedud),
+                'weight': float(alignment.weight),
+                'peak_ratio': float(ratio) if ratio is not None else None}
+    except (AttributeError, TypeError, ValueError, IndexError):
+        return {}
 
 
 class StosBrutePairExecutor(Protocol):
@@ -167,3 +217,78 @@ class InProcessPairExecutor:
 
     def shutdown(self, cancel_pending: bool = False) -> None:
         """Nothing to release."""
+
+
+#: Jobs submitted per GPU worker: one running, one queued so a worker never waits on the
+#: main process preparing or publishing the next pair.
+GPU_WORKER_JOBS_PER_WORKER: int = 2
+
+
+def _init_gpu_pair_worker(log_queue: Any, log_level: int) -> None:
+    """Spawned worker initializer: queue logging, then CuPy through the child opt-in."""
+    if log_queue is not None:
+        nornir_shared.misc.ConfigureWorkerQueueLogging(log_queue=log_queue, level=log_level)
+    try:
+        nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.cupy,
+                                                         allow_in_child=True)
+    except (RuntimeError, ModuleNotFoundError) as e:
+        # Reported per pair by run_stos_brute_pair_on_gpu_worker, which names the pair.
+        _logger.error("StosBrute GPU worker %d could not activate CuPy: %s", os.getpid(), e)
+
+
+def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob) -> StosBrutePairResult:
+    """GPU worker entry point: refuse to fall back to NumPy silently, then register the pair."""
+    if not nornir_imageregistration.UsingCupy():
+        raise RuntimeError(f"StosBrute GPU worker {os.getpid()} is not on CuPy (activation or runtime "
+                           f"probe failed); pair {job.pair_name} not registered")
+    return run_stos_brute_pair(job)
+
+
+class GpuWorkerPairExecutor:
+    """Registers pairs in ``workers`` spawned processes, each on CuPy, sharing the GPU.
+
+    About three quarters of a CuPy pair is host NumPy work (log-polar scale search) with
+    the GPU mostly idle, so several CuPy processes interleave their GPU work while each
+    does its host work on its own core. Workers are spawned (fresh interpreters, never
+    forked, so no inherited CUDA state) and opt in with
+    ``SetActiveComputationLib(cupy, allow_in_child=True)``. Each worker keeps its own CUDA
+    context and CuPy memory pool on the device.
+    """
+
+    max_in_flight: int
+    description: str
+    workers: int
+    _pool: concurrent.futures.ProcessPoolExecutor
+
+    def __init__(self, workers: int) -> None:
+        if workers < 1:
+            raise ValueError(f"workers must be >= 1, got {workers}")
+        self.workers = int(workers)
+        self.max_in_flight = GPU_WORKER_JOBS_PER_WORKER * self.workers
+        self.description = f"{self.workers} GPU worker processes"
+        log_level = logging.getLogger().getEffectiveLevel()
+        log_queue = nornir_shared.misc.StartMultiprocessLoggingListener(level=log_level)
+        self._pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.workers,
+                                                            mp_context=multiprocessing.get_context('spawn'),
+                                                            initializer=_init_gpu_pair_worker,
+                                                            initargs=(log_queue, log_level))
+
+    def submit(self, job: StosBrutePairJob) -> concurrent.futures.Future[StosBrutePairResult]:
+        """Queue *job* on a worker."""
+        return self._pool.submit(run_stos_brute_pair_on_gpu_worker, job)
+
+    def shutdown(self, cancel_pending: bool = False) -> None:
+        """Wait for the workers to exit; with *cancel_pending*, drop queued jobs and stop running ones."""
+        if not cancel_pending:
+            self._pool.shutdown(wait=True)
+            return
+        terminate = getattr(self._pool, 'terminate_workers', None)  # Python 3.14+
+        if terminate is not None:
+            terminate()
+            return
+        processes = list((getattr(self._pool, '_processes', None) or {}).values())  # Python 3.13
+        self._pool.shutdown(wait=False, cancel_futures=True)
+        for process in processes:
+            process.terminate()
+        for process in processes:
+            process.join()
