@@ -334,6 +334,7 @@ class PipelineManager:
     _description: str | None = None
     _help: str | None = None
     _epilog: str | None = None
+    _last_meta_path: str | None = None  # last "Meta" path published to the dashboard
 
     def __init__(self, pipelinesRoot: ElementTree.ElementTree, pipelineData):
         self.VolumeTree = None
@@ -344,6 +345,7 @@ class PipelineManager:
         self._PipelineName: str | None = None
         self._VolumePath: str | None = None
         self._iterate_depth: int = 0
+        self._last_meta_path: str | None = None
 
         self._description = pipelineData.attrib['Description'] if 'Description' in pipelineData.attrib else None
         self._help = pipelineData.attrib['Help'] if 'Help' in pipelineData.attrib else None
@@ -753,7 +755,11 @@ class PipelineManager:
         # dargs = copy.copy(dargs)
 
         if isinstance(VolumeElem, XResourceElementWrapper):
-            prettyoutput.CurseString("Meta", VolumeElem.FullPath)
+            # Called once per pipeline child element, so the same path arrives several times in a
+            # row (2-3x per section in CreateBlobFilter). Publish to the dashboard only on change.
+            meta_path = VolumeElem.FullPath
+            prettyoutput.CurseString("Meta", meta_path, publish_status=meta_path != self._last_meta_path)
+            self._last_meta_path = meta_path
 
         if PipelineNode.tag == 'Select':
             self.ProcessSelectNode(ArgSet, VolumeElem, PipelineNode)
