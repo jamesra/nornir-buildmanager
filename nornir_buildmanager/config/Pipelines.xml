@@ -1796,6 +1796,9 @@
             <Argument flag="-Method" dest="Method" help="Method to use for intitial registration"
                       type="nornir_imageregistration.settings.SliceToSliceMethod"
                       required="False" default="LogPolar"/>
+            <Argument flag="-GpuWorkers" dest="StosBruteGpuWorkers" type="int" default="1"
+                      help="Section pairs to register at once on the GPU.  1 (default) registers one pair at a time in this process on the active backend.  N greater than 1 runs N worker processes that each use CuPy on the shared GPU, so each pair's CPU-side work gets its own core; needs -computational_library cupy (falls back to 1 on NumPy).  Each worker holds its own CUDA context and memory pool on the GPU."
+                      required="False"/>
         </Arguments>
 
         <Select VariableName="block_node" XPath="Block"/>
@@ -1814,7 +1817,8 @@
              StosGroup in batches, instead of an Iterate over Mapping calling block.StosBrute. -->
         <PythonCall Function="block.StosBruteAll" Root="BlockNode" stos_map_node="#StosMapNodeObj"
                     OutputGroup="StosBrute#StosBruteDownsample" ChannelsRegEx="#ChannelsRegEx"
-                    FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange" Method="#Method">
+                    FiltersRegEx="#FiltersRegEx" AngleSearchRange="#AngleSearchRange" Method="#Method"
+                    GpuWorkers="#StosBruteGpuWorkers">
             <Parameters>
                 <Entry Name="Downsample" Value="#StosBruteDownsample"/>
                 <Entry Name="refine"/>

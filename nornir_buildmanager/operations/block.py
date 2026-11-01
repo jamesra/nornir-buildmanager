@@ -1018,13 +1018,18 @@ def _enumerate_brute_pair_tasks(mappings: list[MappingNode], block_node: BlockNo
 
 def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: BlockNode, ChannelsRegEx: str,
                  FiltersRegEx: str, Method: nornir_imageregistration.settings.SliceToSliceMethod,
-                 Logger: logging.Logger, **kwargs):
+                 Logger: logging.Logger, GpuWorkers: int | str | None = None, **kwargs):
     """Run StosBrute for every mapping of a StosMap, saving the StosGroup in batches.
 
     Called once per block (AlignSections). Every pair goes through prepare, compute and
-    finish (:func:`_stos_brute_pairs`); compute runs in this process on the active backend
-    (``-computational_library``), one pair at a time. Other keyword arguments match
-    StosBrute (OutputGroup, Type, AngleSearchRange, NoFlipCheck).
+    finish (:func:`_stos_brute_pairs`). Prepare and finish always run in this process.
+
+    ``GpuWorkers`` (``-GpuWorkers``): 1 (default) computes each pair here on the active
+    backend (``-computational_library``), one at a time. N > 1 computes up to N pairs at
+    once in spawned worker processes that each use CuPy on the shared GPU
+    (:class:`stos_brute_pairs.GpuWorkerPairExecutor`); it needs the CuPy backend and
+    falls back to 1 otherwise. Other keyword arguments match StosBrute (OutputGroup,
+    Type, AngleSearchRange, NoFlipCheck).
     """
     no_flip_check = _resolve_no_flip_check(Parameters, kwargs)
     kwargs['NoFlipCheck'] = no_flip_check
@@ -1042,8 +1047,32 @@ def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: Block
 
     pair_tasks = _enumerate_brute_pair_tasks(mappings, block_node, ChannelsRegEx, FiltersRegEx,
                                              stos_group_node, Parameters.get("UseMasks", False), Logger)
+    total_pairs = sum(1 for t in pair_tasks if t.needs_work)
+    executor = _create_stos_brute_executor(_parse_gpu_workers(GpuWorkers), total_pairs, Logger)
     yield from _stos_brute_pairs(Parameters, pair_tasks, len(mappings), stos_group_node, Method, Logger,
-                                 stos_brute_pairs.InProcessPairExecutor(), **kwargs)
+                                 executor, **kwargs)
+
+
+def _parse_gpu_workers(gpu_workers: typing.Any) -> int:
+    """Pipeline ``GpuWorkers`` attribute -> int; unset or empty is 1 (in process)."""
+    if gpu_workers is None or gpu_workers == '':
+        return 1
+    return int(gpu_workers)
+
+
+def _create_stos_brute_executor(gpu_workers: int, total_pairs: int,
+                                Logger: logging.Logger) -> stos_brute_pairs.StosBrutePairExecutor:
+    """Pick the pair executor: GPU worker processes when asked for and useful, else in process."""
+    if gpu_workers <= 1:
+        return stos_brute_pairs.InProcessPairExecutor()
+    if not nornir_imageregistration.UsingCupy():
+        Logger.warning("StosBruteAll: -GpuWorkers %d needs the CuPy backend; the active backend is "
+                       "NumPy, so pairs register one at a time in this process", gpu_workers)
+        return stos_brute_pairs.InProcessPairExecutor()
+    workers = min(gpu_workers, total_pairs)
+    if workers <= 1:
+        return stos_brute_pairs.InProcessPairExecutor()
+    return stos_brute_pairs.GpuWorkerPairExecutor(workers)
 
 
 def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mapping_count: int,
@@ -1171,7 +1200,10 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
                 _discard_staging(prepared)
                 continue
 
-            Logger.debug("StosBrute %s: %.1f s in process %d", result.pair_name, result.elapsed_seconds, result.pid)
+            gpu_pool = (f", GPU pool {result.gpu_pool_bytes / 2 ** 20:.0f} MB"
+                        if result.gpu_pool_bytes is not None else "")
+            Logger.info("StosBrute %s: %.1f s in process %d%s", result.pair_name, result.elapsed_seconds,
+                        result.pid, gpu_pool)
             if time.monotonic() - last_save >= save_interval_seconds:
                 unsaved = False
                 last_save = time.monotonic()
