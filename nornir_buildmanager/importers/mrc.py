@@ -11,7 +11,7 @@ import errno
 import struct
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from PIL import Image
 import PIL.Image
@@ -24,6 +24,7 @@ from numpy.typing import DTypeLike, NDArray
 import nornir_pools
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 import nornir_buildmanager.importers.shared as shared
+from nornir_buildmanager.importers import source_staging
 from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
 from nornir_imageregistration import noise_crush
@@ -64,17 +65,24 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     # mixing acquisitions (RC1: "0347.mrc" and "0347 2.mrc"), so keep one per section. A list of
     # paths, not of images.
     found_paths = [os.path.join(path, f) for (path, foundfiles) in matches for f in (foundfiles or [])]
-    for file_fullpath in shared.SelectOneFilePerSection(found_paths):
-        prettyoutput.CurseString("MRCImport", f"Importing {file_fullpath}")
-        yield from MRCImport.ToMosaic(VolumeElement,
-                                      mrc_fullpath=file_fullpath,
-                                      ContrastCutoffs=ContrastCutoffs,
-                                      FlipList=FlipList,
-                                      CameraBpp=CameraBpp,
-                                      ContrastMap=ContrastMap,
-                                      NoCrush=NoCrush,
-                                      CrushK=CrushK,
-                                      )
+    selected_paths = shared.SelectOneFilePerSection(found_paths)
+    # Copy the next MRCs to local disk while the current one exports (source_staging); pixel reads use the copy.
+    with source_staging.SourcePrefetcher(selected_paths) as staging:
+        for file_fullpath in selected_paths:
+            prettyoutput.CurseString("MRCImport", f"Importing {file_fullpath}")
+            try:
+                yield from MRCImport.ToMosaic(VolumeElement,
+                                              mrc_fullpath=file_fullpath,
+                                              ContrastCutoffs=ContrastCutoffs,
+                                              FlipList=FlipList,
+                                              CameraBpp=CameraBpp,
+                                              ContrastMap=ContrastMap,
+                                              NoCrush=NoCrush,
+                                              CrushK=CrushK,
+                                              read_path=lambda p=file_fullpath: staging.acquire(p),
+                                              )
+            finally:
+                staging.release(file_fullpath)
 
     nornir_pools.ReleaseStagePools()
 
@@ -149,12 +157,17 @@ class MRCImport:
                  CameraBpp: int | None = None,
                  debug: bool | None = None,
                  NoCrush: bool = False,
-                 CrushK: float | None = None):
+                 CrushK: float | None = None,
+                 read_path: Callable[[], str] | None = None):
         """Import one .mrc file as a section.
 
         Tiles deeper than 8 bits are crushed by default (``nornir_imageregistration.noise_crush``)
         into a ``Raw8`` filter of section-wide noise-step codes. ``NoCrush`` keeps the legacy
         contrast-stretched ``Raw16`` filter, as does an existing uncrushed ``Raw16`` import.
+
+        :param read_path: Returns the path to export tiles from, typically a staged local copy of
+            ``mrc_fullpath`` (source_staging); called only when tiles are missing. Names, notes, logs,
+            caches, freshness checks and the noise sample always use ``mrc_fullpath``.
         """
 
         if OutputImageExt is None:
@@ -330,7 +343,15 @@ class MRCImport:
             mosaicObj.SaveToMosaicFile(transformObj.FullPath)
             (yield channelObj)
 
-        cls.ExportImages(mrc_fullpath, LevelObj.FullPath, img_ext=OutputImageExt,
+        # Wait for the staged local copy only when tiles are missing: a restarted import walks
+        # finished sections too, and must not copy a 33 GB MRC to skip one.
+        pixel_path = mrc_fullpath
+        if read_path is not None and any(
+                not os.path.exists(os.path.join(LevelObj.FullPath, GetFileNameForTileNumber(tile_number=i, ext=OutputImageExt)))
+                for i in range(mrcfile.num_tiles)):  # type: ignore[arg-type]
+            pixel_path = read_path()
+
+        cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
                          min_max_gamma=contrast_settings,
                          flip_ud=flip_ud_for_section(SectionNumber, FlipList),
                          crush_params=crush_params)
