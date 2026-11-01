@@ -98,7 +98,8 @@ def _AddParserRootArguments(parser: argparse.ArgumentParser):
                         metavar='STEP',
                         help='Start a --then chain at STEP; earlier steps are skipped. STEP is the 1-based step number '
                              '(the k in "Name (k/N)" on the dashboard), Name#k for the k-th occurrence of pipeline Name '
-                             'in the chain, or a bare Name that occurs only once. Every step is still parsed and '
+                             'in the chain, or a bare Name that occurs only once (names ignore case). Every step is '
+                             'still parsed and '
                              'validated. Without --then only step 1 is valid.',
                         dest='start_at')
 
@@ -624,8 +625,8 @@ def _SplitChainSegments(buildArgs: list[str]) -> list[list[str]]:
 
 
 def _format_step_choices(name: str, names: list[str]) -> str:
-    """List the ``Name#k (step n)`` selectors for every occurrence of *name*."""
-    occurrences = [i for i, n in enumerate(names) if n == name]
+    """List the ``Name#k (step n)`` selectors for every occurrence of *name* (case-insensitive)."""
+    occurrences = [i for i, n in enumerate(names) if n.casefold() == name.casefold()]
     return ', '.join(f'{name}#{k} (step {i + 1})' for k, i in enumerate(occurrences, start=1))
 
 
@@ -633,7 +634,8 @@ def _resolve_chain_step(selector: str, names: list[str], option: str) -> int:
     """Return the 0-based chain index that *selector* names.
 
     *selector* is a 1-based step number, ``Name#k`` (the k-th occurrence of pipeline
-    ``Name``), or a bare ``Name`` that occurs exactly once in *names*. *option* is the
+    ``Name``), or a bare ``Name`` that occurs exactly once in *names*. Names match
+    case-insensitively (``alignsections`` selects ``AlignSections``). *option* is the
     flag being resolved, used in error messages. Raises ``ValueError`` when the
     selector is out of range, unknown, or ambiguous.
     """
@@ -649,10 +651,11 @@ def _resolve_chain_step(selector: str, names: list[str], option: str) -> int:
     if not sep:
         name, occurrence_text = text, ''
 
-    occurrences = [i for i, n in enumerate(names) if n == name]
+    occurrences = [i for i, n in enumerate(names) if n.casefold() == name.casefold()]
     if not occurrences:
         listing = ', '.join(f'{i + 1}={n}' for i, n in enumerate(names))
         raise ValueError(f'{option} {selector}: no pipeline named "{name}" in the chain ({listing})')
+    name = names[occurrences[0]]  # the chain's spelling, for messages
 
     if sep:
         if not occurrence_text.isdigit() or int(occurrence_text) < 1:

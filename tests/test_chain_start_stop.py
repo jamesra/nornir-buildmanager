@@ -33,6 +33,13 @@ class TestResolveChainStep(unittest.TestCase):
         # Name#1 is valid for a name that occurs once.
         self.assertEqual(build._resolve_chain_step('SliceToVolume#1', TEMALIGN_NAMES, '-start-at'), 8)
 
+    def test_names_ignore_case(self) -> None:
+        self.assertEqual(build._resolve_chain_step('createvikingxml#2', TEMALIGN_NAMES, '-start-at'), 11)
+        self.assertEqual(build._resolve_chain_step('SELECTBESTREGISTRATIONCHAIN', TEMALIGN_NAMES, '-stop-after'), 3)
+        with self.assertRaises(ValueError) as ctx:
+            build._resolve_chain_step('refinesectionalignment', TEMALIGN_NAMES, '-start-at')
+        self.assertIn('RefineSectionAlignment#1', str(ctx.exception), 'choices use the chain spelling')
+
     def test_unique_bare_name(self) -> None:
         self.assertEqual(build._resolve_chain_step('SelectBestRegistrationChain', TEMALIGN_NAMES, '-stop-after'), 3)
         self.assertEqual(build._resolve_chain_step('CreateBlobFilter', TEMALIGN_NAMES, '-start-at'), 0)
@@ -60,7 +67,7 @@ class TestResolveChainStep(unittest.TestCase):
                 build._resolve_chain_step(selector, TEMALIGN_NAMES, '-start-at')
 
     def test_unknown_name(self) -> None:
-        for selector in ('Mosaic', 'Mosaic#1', 'createblobfilter'):
+        for selector in ('Mosaic', 'Mosaic#1', 'createblob'):  # names ignore case but must be whole
             with self.subTest(selector=selector), self.assertRaises(ValueError) as ctx:
                 build._resolve_chain_step(selector, TEMALIGN_NAMES, '-start-at')
             self.assertIn('no pipeline named', str(ctx.exception))
