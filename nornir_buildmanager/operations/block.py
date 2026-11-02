@@ -35,6 +35,7 @@ from nornir_buildmanager.validation import transforms
 from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
 from nornir_imageregistration import assemble, local_distortion_correction, mosaic
+from nornir_imageregistration.background_file_writer import BackgroundFileWriter
 from nornir_imageregistration.files import stosfile
 from nornir_imageregistration.refine_shared import image_prefetch
 import nornir_imageregistration.stos_quality as stos_quality
@@ -1516,6 +1517,10 @@ def AssembleStosOverlays(Parameters,
     Uses ``assemble.WriteStosPreviewImages`` (mapped→control warp plus Pyre
     ChannelDodge overlay and absolute-difference images). Does not call ir-stom
     or ImageMagick.
+
+    The PNGs are written on background threads while the next pair warps: on the
+    NAS, writing a pair's ~45 MB of previews took longer than producing them
+    (srv, RC3 Grid32, 2026-11-02). Every write finishes before this returns.
     """
 
     SectionMappingSaveRequired = False
@@ -1542,6 +1547,7 @@ def AssembleStosOverlays(Parameters,
     if total_overlay_jobs:
         report_stos_work_progress(overlay_track_id, 0, total_overlay_jobs, overlay_label, depth=0)
 
+    preview_writer = BackgroundFileWriter()
     try:
         for mapping_node, MappedSection, StosTransformNode in overlay_jobs:
             SectionMappingNode = StosTransformNode.FindParent('SectionMappings')
@@ -1620,9 +1626,10 @@ def AssembleStosOverlays(Parameters,
                     warped_path=WarpedImageNode.FullPath,
                     fixedImage=stosImages.ControlImageNode.FullPath,
                     warpedImage=stosImages.MappedImageNode.FullPath,
+                    writer=preview_writer,
                 )
                 prettyoutput.Log(
-                    f"Wrote STOS previews for {StosTransformNode.Path}: "
+                    f"Queued STOS previews for {StosTransformNode.Path}: "
                     f"overlay/diff/warped under {group_node.FullPath}")
 
                 SectionMappingSaveRequired = True
@@ -1636,7 +1643,12 @@ def AssembleStosOverlays(Parameters,
                 report_stos_work_progress(
                     overlay_track_id, completed_overlay_jobs, total_overlay_jobs, overlay_label, depth=0
                 )
+        # Raises the first write error, so a failed write fails the stage as before.
+        preview_writer.close()
     finally:
+        # No-op after a clean close; on an error, still finish the queued writes.
+        with contextlib.suppress(Exception):
+            preview_writer.close()
         nornir_pools.ReleaseStagePools()
 
     if SectionMappingSaveRequired:
