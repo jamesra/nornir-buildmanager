@@ -36,6 +36,7 @@ from nornir_buildmanager.volumemanager import *
 import nornir_imageregistration
 from nornir_imageregistration import assemble, local_distortion_correction, mosaic
 from nornir_imageregistration.files import stosfile
+from nornir_imageregistration.refine_shared import image_prefetch
 import nornir_imageregistration.stos_quality as stos_quality
 from nornir_imageregistration.transforms import *
 from nornir_imageregistration.views import TransformWarpView
@@ -2545,6 +2546,7 @@ def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, Ignore
         MappedSections = frozenset(MappedSections)
 
     return RefineInvoker(__RunPythonGridRefinementCmd,
+                         PrefetchFunc=image_prefetch.prefetch_stos_images,
                          mapping_node=mapping_node,
                          InputGroupNode=InputGroupNode,
                          UseMasks=not IgnoreMasks,
@@ -2743,8 +2745,17 @@ def _publish_refine_stos_progress(
 def _run_refine_or_manual_copy(
         context: _RefineStosJobContext,
         RefineFunc,
-        refine_kwargs: dict) -> tuple[TransformNode | None, bool]:
-    """Run refine or manual copy for one pair; return (stos node or None, refined_by_func)."""
+        refine_kwargs: dict,
+        prefetch_func: typing.Callable[[str], None] | None = None,
+        next_input_stos_path: str | None = None) -> tuple[TransformNode | None, bool]:
+    """Run refine or manual copy for one pair; return (stos node or None, refined_by_func).
+
+    When *prefetch_func* is given, it is first called with *next_input_stos_path*, the
+    next pair that will be refined, so its images load while this pair computes.
+    """
+    if prefetch_func is not None and next_input_stos_path is not None:
+        prefetch_func(next_input_stos_path)
+
     progress = refine_kwargs.get("_refine_progress")
     _publish_refine_stos_progress(progress, context)
 
@@ -2819,11 +2830,28 @@ def _run_refine_or_manual_copy(
     return stos_node, True
 
 
+def _next_refine_inputs(jobs: typing.Sequence[_RefineStosJobContext]) -> list[str | None]:
+    """For each job, the input stos of the next job that RefineFunc will refine.
+
+    Manual copies read no images, so they are skipped. The last refine has None.
+    Each job prefetches this path so its images load while the job computes.
+    """
+    next_inputs: list[str | None] = []
+    upcoming: str | None = None
+    for context in reversed(jobs):
+        next_inputs.append(upcoming)
+        if context.decision != stosgroup_workers.RefineScanDecision.MANUAL_COPY:
+            upcoming = context.input_stos_path
+    next_inputs.reverse()
+    return next_inputs
+
+
 def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGroupNode,
                   UseMasks: bool, Downsample: int = 32,
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
                   OutputStosGroup: str | None = None, Type: str | None = None,
                   MappedSections: None | frozenset[int] = None,
+                  PrefetchFunc: typing.Callable[[str], None] | None = None,
                   **kwargs) -> typing.Generator[XElementWrapper, None, None]:
     """
     Enumerate STOS pairs needing grid refine, decide in parallel, then refine serially.
@@ -2837,6 +2865,8 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
     :param OutputStosGroup:
     :param Type:
     :param func RefineFunc: Function to invoke when we have identified a stos file needing refinement
+    :param PrefetchFunc: Called with the next pair's input stos path as each pair starts,
+        so RefineFunc's inputs for that pair can load in the background
     """
 
     Logger = logging.getLogger(__name__ + '.StosGrid')
@@ -2929,12 +2959,12 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
             "stos_refine:files", 0, total_refine_jobs, refine_files_label, depth=0)
 
     pool_jobs: list[stosgroup_workers.StosGroupPoolJob] = []
-    for context in pending_jobs:
+    for context, next_input in zip(pending_jobs, _next_refine_inputs(pending_jobs)):
         pool_jobs.append(stosgroup_workers.StosGroupPoolJob(
             name=os.path.basename(context.output_stos_path),
             func=_run_refine_or_manual_copy,
             args=(context, RefineFunc, refine_kwargs),
-            kwargs={},
+            kwargs={"prefetch_func": PrefetchFunc, "next_input_stos_path": next_input},
             context=context,
         ))
 
