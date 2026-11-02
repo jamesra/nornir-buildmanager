@@ -52,6 +52,9 @@ class MatchPattern:
     literal: str | None = None
     regex: re.Pattern[str] | None = None
     original: str = ''
+    # LITERAL only: True for an anchored ``^X$`` (equality); False for a bare literal,
+    # which is a prefix match like the ``re.match`` RequireMatch has always used.
+    exact: bool = False
 
 
 @dataclass(frozen=True)
@@ -109,7 +112,7 @@ def compile_match_pattern(regex_str: str) -> MatchPattern:
     if anchored is not None:
         inner = anchored.group(1)
         if not _has_regex_metacharacters(inner):
-            return MatchPattern(kind=MatchPatternKind.LITERAL, literal=inner, original=regex_str)
+            return MatchPattern(kind=MatchPatternKind.LITERAL, literal=inner, original=regex_str, exact=True)
 
     if not _has_regex_metacharacters(regex_str):
         return MatchPattern(kind=MatchPatternKind.LITERAL, literal=regex_str, original=regex_str)
@@ -182,7 +185,12 @@ def element_passes_require_match(
     attribute_text = str(attribute_value)
     if pattern.kind is MatchPatternKind.LITERAL:
         assert pattern.literal is not None
-        return attribute_text == pattern.literal
+        # A bare literal keeps re.match semantics (prefix): -Channels Registered selects
+        # the Registered_TEM channel. Equality here made ExportImages export nothing (RC3,
+        # 2026-11-02).
+        if pattern.exact:
+            return attribute_text == pattern.literal
+        return attribute_text.startswith(pattern.literal)
 
     assert pattern.regex is not None
     return pattern.regex.match(attribute_text) is not None
@@ -417,13 +425,24 @@ def _try_point_lookup_candidates(
         literal_filter = _literal_match_filter_for_attribute(filters, attribute_name)
         if literal_filter is None:
             return None
-        assert literal_filter.pattern.literal is not None
-        element = root_for_search.GetChildByAttrib(element_name, attribute_name, literal_filter.pattern.literal)
-        if element is None:
-            return []
-        if element_passes_iterate_filters(element, filters):
-            return [element]
-        return []
+        literal = literal_filter.pattern.literal
+        assert literal is not None
+        if literal_filter.pattern.exact:
+            names = [literal]
+        else:
+            # Prefix literal: pick matching names from the children and their *_Link stubs
+            # without loading anything, then load only those.
+            names = sorted({
+                str(child.attrib.get(attribute_name))
+                for child in list(root_for_search)
+                if child.tag in (element_name, element_name + '_Link')
+                and str(child.attrib.get(attribute_name, '')).startswith(literal)})
+        candidates = []
+        for name in names:
+            element = root_for_search.GetChildByAttrib(element_name, attribute_name, name)
+            if element is not None and element_passes_iterate_filters(element, filters):
+                candidates.append(element)
+        return candidates
 
     if base_xpath == _STOS_TRANSFORM_XPATH:
         for attribute in ('ControlSectionNumber', 'MappedSectionNumber'):

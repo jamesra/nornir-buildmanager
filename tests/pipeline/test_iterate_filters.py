@@ -22,11 +22,13 @@ class CompileMatchPatternTests(unittest.TestCase):
         pattern = iterate_filters.compile_match_pattern('TEM')
         self.assertEqual(pattern.kind, iterate_filters.MatchPatternKind.LITERAL)
         self.assertEqual(pattern.literal, 'TEM')
+        self.assertFalse(pattern.exact, 'a bare literal keeps re.match prefix semantics')
 
     def test_anchored_literal(self) -> None:
         pattern = iterate_filters.compile_match_pattern('^TEM$')
         self.assertEqual(pattern.kind, iterate_filters.MatchPatternKind.LITERAL)
         self.assertEqual(pattern.literal, 'TEM')
+        self.assertTrue(pattern.exact)
 
     def test_regex(self) -> None:
         pattern = iterate_filters.compile_match_pattern('(?![M|m]ask)')
@@ -146,32 +148,52 @@ class ResolveIterateCandidatesTests(unittest.TestCase):
 
         self.assertEqual(candidates, sections)
 
-    def test_literal_channel_match_uses_get_child_by_attrib(self) -> None:
-        channel = XElementWrapper(tag='Channel')
-        channel.attrib['Name'] = 'TEM'
-
-        root = mock.Mock()
-        root.GetChildByAttrib.return_value = channel
-        root.findall = mock.Mock(side_effect=AssertionError('findall should not be called'))
-
+    def _channel_candidates(self, regex: str) -> list[str]:
+        """Resolve Iterate XPath='Channel' under a section with three channels."""
+        section = XElementWrapper(tag='Section')
+        for name in ('TEM', 'TEM2', 'Registered_TEM'):
+            channel = XElementWrapper(tag='Channel')
+            channel.attrib['Name'] = name
+            section.append(channel)
         iterate_node = etree.Element('Iterate', XPath='Channel', VariableName='ChannelNode')
-        etree.SubElement(iterate_node, 'RequireMatch', {'Attribute': 'Name', 'RegEx': 'TEM'})
-
+        etree.SubElement(iterate_node, 'RequireMatch', {'Attribute': 'Name', 'RegEx': regex})
         arg_set = mock.Mock()
         arg_set.SubstituteStringVariables = lambda value: value
         arg_set.TryGetSubstituteObject = lambda value: (False, None)
+        candidates = iterate_filters.resolve_iterate_candidates(
+            section, 'Channel', iterate_node, arg_set, section, lambda *args, **kwargs: section)
+        return sorted(c.attrib['Name'] for c in candidates)
 
-        candidates = list(iterate_filters.resolve_iterate_candidates(
-            root,
-            'Channel',
-            iterate_node,
-            arg_set,
-            root,
-            lambda *args, **kwargs: root,
-        ))
+    def test_bare_literal_is_a_prefix_match_like_re_match(self) -> None:
+        """-Channels Registered must select Registered_TEM (ExportImages exported nothing, RC3 2026-11-02)."""
+        self.assertEqual(self._channel_candidates('Registered'), ['Registered_TEM'])
+        self.assertEqual(self._channel_candidates('TEM'), ['TEM', 'TEM2'])
 
-        self.assertEqual(candidates, [channel])
-        root.GetChildByAttrib.assert_called_once_with('Channel', 'Name', 'TEM')
+    def test_anchored_literal_is_exact(self) -> None:
+        self.assertEqual(self._channel_candidates('^TEM$'), ['TEM'])
+
+    def test_prefix_lookup_loads_only_matching_children(self) -> None:
+        section = XElementWrapper(tag='Section')
+        for name in ('TEM', 'Registered_TEM'):
+            link = XElementWrapper(tag='Channel_Link')
+            link.attrib['Name'] = name
+            section.append(link)
+        looked_up: list[str] = []
+
+        def lookup(element_name, attribute, value):
+            looked_up.append(value)
+            return None
+
+        section.GetChildByAttrib = lookup  # type: ignore[method-assign]
+        iterate_node = etree.Element('Iterate', XPath='Channel', VariableName='ChannelNode')
+        etree.SubElement(iterate_node, 'RequireMatch', {'Attribute': 'Name', 'RegEx': 'Registered'})
+        arg_set = mock.Mock()
+        arg_set.SubstituteStringVariables = lambda value: value
+        arg_set.TryGetSubstituteObject = lambda value: (False, None)
+        list(iterate_filters.resolve_iterate_candidates(
+            section, 'Channel', iterate_node, arg_set, section, lambda *args, **kwargs: section))
+
+        self.assertEqual(looked_up, ['Registered_TEM'])
 
     def test_empty_section_list_yields_no_candidates(self) -> None:
         block = mock.Mock()
