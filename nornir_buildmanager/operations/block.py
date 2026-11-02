@@ -4694,7 +4694,13 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
                                                 SToV.ControlMaskFullPath,
                                                 SToV.MappedMaskFullPath,
                                                 create_copy=False)
-        StoVTransform = factory.LoadTransform(SToV.Transform)  # type: ignore[arg-type]
+        # Host copy: under CuPy LoadTransform builds a *_GPUComponent, and every pool task
+        # pickles this transform into a worker, where unpickling its CuPy arrays opens a
+        # CUDA context. On srv (RC3 0001, 2026-11-02) ~130 workers did that and 114 of
+        # 900 tiles failed with CUDA_ERROR_OUT_OF_MEMORY at 3.7 of 24.5 GB used. The
+        # workers compute on NumPy anyway, so the composed tiles are unchanged.
+        StoVTransform = assemble.transform_for_host_assembly(
+            factory.LoadTransform(SToV.Transform))  # type: ignore[arg-type]
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
         if not MosaicTransform.IsOriginAtZero():
