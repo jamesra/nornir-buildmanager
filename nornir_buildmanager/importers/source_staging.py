@@ -72,13 +72,18 @@ class SourcePrefetcher:
 
     def __init__(self, paths: Sequence[str], stage_dir: str | None = None, ahead: int = DEFAULT_AHEAD,
                  only_remote: bool = True, enabled: bool | None = None,
-                 validate: Callable[[str], str | None] | None = None):
+                 validate: Callable[[str], str | None] | None = None,
+                 already_done: Callable[[str], bool] | None = None):
         """
         :param validate: Returns why a source should not be staged (e.g. a truncated MRC), or None; such a
             source is left in place and the caller decides what to do with it.
+        :param already_done: True when the source's output is already complete, so it needs no copy. Checked
+            before any data is read: a restarted import otherwise pulled a few GB of every finished section
+            from storage3 before the import reached and skipped it (RC1, 2026-11-02).
         """
         self._paths = list(paths)
         self._validate = validate
+        self._already_done = already_done
         self._progress: dict[str, float] = {}  # time of the last chunk written per path
         self._stage_dir = stage_dir or default_stage_dir()
         self._ahead = max(0, ahead)
@@ -164,6 +169,8 @@ class SourcePrefetcher:
 
     def _copy(self, path: str, stop: threading.Event) -> str:
         if self._only_remote and _same_filesystem(path, self._stage_dir):
+            return path
+        if self._already_done is not None and self._already_done(path):
             return path
         if self._validate is not None:
             problem = self._validate(path)

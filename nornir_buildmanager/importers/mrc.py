@@ -67,7 +67,8 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     found_paths = [os.path.join(path, f) for (path, foundfiles) in matches for f in (foundfiles or [])]
     selected_paths = shared.SelectOneFilePerSection(found_paths)
     # Copy the next MRCs to local disk while the current one exports (source_staging); pixel reads use the copy.
-    with source_staging.SourcePrefetcher(selected_paths, validate=MRCFile.HealthProblem) as staging:
+    with source_staging.SourcePrefetcher(selected_paths, validate=MRCFile.HealthProblem,
+                                         already_done=lambda p: _SectionTilesExported(VolumeElement.FullPath, p)) as staging:
         for file_fullpath in selected_paths:
             prettyoutput.CurseString("MRCImport", f"Importing {file_fullpath}")
             problem = MRCFile.HealthProblem(file_fullpath)
@@ -91,6 +92,34 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                 staging.release(file_fullpath)
 
     nornir_pools.ReleaseStagePools()
+
+
+def _SectionTilesExported(volume_path: str, mrc_fullpath: str) -> bool:
+    """True when some filter of the MRC's section already holds a level-1 tile for every tile in the MRC.
+
+    Reads only the MRC header and checks file names on disk (``<volume>/TEM/<section>/TEM/<filter>/TilePyramid/001``),
+    so the import's staging can skip a finished section without copying it. Any doubt (unparsable name or header,
+    no filter yet) answers False and the import proceeds as usual.
+    """
+    try:
+        section_number = shared.GetSectionInfo(mrc_fullpath).number
+        mrc_obj = MRCFile.Load(mrc_fullpath)
+        num_tiles = int(mrc_obj.num_tiles)  # type: ignore[arg-type]
+        mrc_obj.mrc.close()
+    except Exception:  # noqa: BLE001 - not knowing means not done
+        return False
+
+    section_dir = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % section_number
+    channel_dir = os.path.join(volume_path, 'TEM', section_dir, 'TEM')
+    if not os.path.isdir(channel_dir):
+        return False
+    tile_names = [GetFileNameForTileNumber(tile_number=i, ext='.png') for i in range(num_tiles)]
+    for filter_name in os.listdir(channel_dir):
+        level_dir = os.path.join(channel_dir, filter_name, TilePyramidNode.DefaultPath,
+                                 nornir_buildmanager.templates.Current.LevelFormat % 1)
+        if os.path.isdir(level_dir) and all(os.path.exists(os.path.join(level_dir, n)) for n in tile_names):
+            return True
+    return False
 
 
 # SerialEM writes tiles with the image origin in the lower-left corner, so the

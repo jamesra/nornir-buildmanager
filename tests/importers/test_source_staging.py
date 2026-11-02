@@ -233,7 +233,7 @@ class TestImportMRCWiring(_Files):
         unhealthy = self.paths[2]
         with mock.patch.object(mrc.MRCImport, 'ToMosaic', side_effect=fake_to_mosaic), \
                 mock.patch.object(mrc.source_staging, 'SourcePrefetcher',
-                                  side_effect=lambda paths, validate: real_prefetcher(
+                                  side_effect=lambda paths, validate, already_done: real_prefetcher(
                                       paths, stage_dir=self.stage, only_remote=False, enabled=True,
                                       validate=validate)), \
                 mock.patch.object(mrc.MRCFile, 'HealthProblem',
@@ -246,6 +246,54 @@ class TestImportMRCWiring(_Files):
         self.assertTrue(all(d == self.stage for _, d in exported_from))
         self.assertIn('UNHEALTHY', str(logged.call_args))
         self.assertEqual([], self.staged_files())
+
+
+class TestFinishedSectionsAreNotCopied(_Files):
+    """A restarted import pulled a few GB of every finished section before skipping it (RC1, 2026-11-02)."""
+
+    def test_a_finished_source_is_never_opened_for_copying(self):
+        opened = []
+        real_open = open
+
+        def spy_open(path, mode='r', *args, **kwargs):
+            if 'r' in mode and path in self.paths:
+                opened.append(path)
+            return real_open(path, mode, *args, **kwargs)
+
+        with mock.patch.object(source_staging, 'open', spy_open, create=True),                 self.prefetcher(already_done=lambda p: p != self.paths[4]) as staging:
+            for path in self.paths[:4]:
+                self.assertEqual(path, staging.acquire(path))
+                staging.release(path)
+            self.assertNotEqual(self.paths[4], staging.acquire(self.paths[4]))
+        self.assertEqual([self.paths[4]], opened)
+
+    def _volume(self, tiles_present: int, filter_name: str = 'Raw8') -> str:
+        from nornir_buildmanager.importers import GetFileNameForTileNumber
+        volume = os.path.join(self.tmp, 'volume')
+        level = os.path.join(volume, 'TEM', '0002', 'TEM', filter_name, 'TilePyramid', '001')
+        os.makedirs(level)
+        for i in range(tiles_present):
+            with open(os.path.join(level, GetFileNameForTileNumber(tile_number=i, ext='.png')), 'wb') as f:
+                f.write(b'png')
+        return volume
+
+    def _exported(self, volume: str) -> bool:
+        from nornir_buildmanager.importers import mrc
+        header = mock.Mock(num_tiles=3, mrc=mock.Mock())
+        with mock.patch.object(mrc.MRCFile, 'Load', return_value=header):
+            return mrc._SectionTilesExported(volume, self.paths[2])  # 0002.mrc
+
+    def test_a_section_with_every_tile_counts_as_done(self):
+        self.assertTrue(self._exported(self._volume(3)))
+
+    def test_a_legacy_raw16_filter_also_counts(self):
+        self.assertTrue(self._exported(self._volume(3, 'Raw16')))
+
+    def test_a_partly_exported_section_is_not_done(self):
+        self.assertFalse(self._exported(self._volume(2)))
+
+    def test_a_section_not_imported_yet_is_not_done(self):
+        self.assertFalse(self._exported(os.path.join(self.tmp, 'empty_volume')))
 
 
 if __name__ == '__main__':
