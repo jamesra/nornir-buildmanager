@@ -3681,6 +3681,10 @@ def BuildSliceToVolumeTransforms(stos_map_node: nornir_buildmanager.volumemanage
 
     (AddedGroupNode, OutputGroupNode) = block_node.GetOrCreateStosGroup(OutputGroupFullname,  # type: ignore[union-attr]
                                                                         InputStosGroupNode.Downsample)
+    # One save per transform rewrote this group's VolumeData.xml (and its SQLite shadow)
+    # every time; on srv that was the whole of LinearizeVolume (2026-11-02). Save on the
+    # checkpoint instead; the pipeline flushes when the block Iterate ends.
+    save_throttle.throttle_saves(OutputGroupNode)
     if AddedGroupNode:
         (yield block_node)
 
@@ -4327,6 +4331,10 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
     (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)  # type: ignore[union-attr]
 
     os.makedirs(OutputGroupNode.FullPath, exist_ok=True)
+    # One save per transform rewrote this group's VolumeData.xml (and its SQLite shadow)
+    # every time; on srv that was the whole of LinearizeVolume (2026-11-02). Save on the
+    # checkpoint instead; the pipeline flushes when the block Iterate ends.
+    save_throttle.throttle_saves(OutputGroupNode)
 
     if SaveBlockNode:
         (yield GroupParent)
@@ -4469,6 +4477,10 @@ def LinearBlendStosGroup(InputStosGroupNode: StosGroupNode, OutputGroupName: str
     (SaveBlockNode, OutputGroupNode) = GroupParent.UpdateOrAddChildByAttrib(OutputGroupNode)  # type: ignore[union-attr]
 
     os.makedirs(OutputGroupNode.FullPath, exist_ok=True)
+    # One save per transform rewrote this group's VolumeData.xml (and its SQLite shadow)
+    # every time; on srv that was the whole of LinearizeVolume (2026-11-02). Save on the
+    # checkpoint instead; the pipeline flushes when the block Iterate ends.
+    save_throttle.throttle_saves(OutputGroupNode)
 
     if SaveBlockNode:
         (yield GroupParent)
