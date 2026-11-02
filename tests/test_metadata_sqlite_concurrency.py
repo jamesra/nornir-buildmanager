@@ -56,10 +56,10 @@ _WRITER = (
     "logging.getLogger(shadow_write.__name__).addHandler(handler)\n"
     "xml_turn = contextlib.ExitStack()\n"
     "shadow = shadow_write.after_container_saved\n"
-    "def concurrent_shadow(container_dir):\n"
+    "def concurrent_shadow(container_dir, *args):\n"
     "    xml_turn.close()\n"
     "    try:\n"
-    "        shadow(container_dir)\n"
+    "        shadow(container_dir, *args)\n"
     "    finally:\n"
     "        xml_turn.enter_context(sqlite_write_lock.write_lock(xml_lock, 120))\n"
     "shadow_write.after_container_saved = concurrent_shadow\n"
@@ -108,7 +108,7 @@ def _run_writers(root: str, writers: dict[str, str], saves: int) -> int:
     backend = SQLiteMetadataBackend(root)
     known = _present(backend.load())
     xml_lock = os.path.join(root, 'xml-turn.lock')
-    env = {**os.environ, feature_flags.SHADOW_SQLITE_ENV: '1'}
+    env = {**os.environ, feature_flags.SHADOW_SQLITE_ENV: '1', feature_flags.SHADOW_VERIFY_ENV: '1'}
     procs = [subprocess.Popen([sys.executable, '-c', _WRITER, root, xpath, name, str(saves), xml_lock],
                               stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, env=env)
              for name, xpath in writers.items()]

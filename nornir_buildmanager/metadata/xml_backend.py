@@ -74,6 +74,10 @@ class XMLMetadataBackend(VolumeMetadataBackend):
         else:
             return self._element_to_node_with_links(root_elem, self._volume_path)
 
+    def node_from_element(self, elem: ElementTree.Element) -> MetadataNode:
+        """Convert an already parsed container element as :meth:`load` does with ``single_file``."""
+        return self._element_to_node(elem)
+
     def save(self, root: MetadataNode) -> None:
         os.makedirs(self._volume_path, exist_ok=True)
         filename = self._xml_filename or 'VolumeData.xml'

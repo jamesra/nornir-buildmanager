@@ -37,6 +37,7 @@ from nornir_buildmanager.pipelinemanager_iterate_filters import (
     resolve_iterate_candidates,
     sort_iterate_candidates,
 )
+from nornir_buildmanager.volumemanager import save_throttle
 from nornir_buildmanager.volumemanager import (
     XElementWrapper,
     XResourceElementWrapper,
@@ -640,6 +641,7 @@ class PipelineManager:
         try:
             self.ExecuteChildPipelines(ArgSet, self.VolumeTree, PipelineElement)
         finally:
+            PipelineManager._FlushThrottledSaves()
             _no_delete_mod.set_no_delete(False)
             self._WriteStageTimings()
             nornir_pools.ReleaseStagePools()
@@ -970,6 +972,8 @@ class PipelineManager:
                     **tele)
         finally:
             self._iterate_depth -= 1
+            # Saves deferred by a stage's checkpoint land when its Iterate ends, error or not.
+            PipelineManager._FlushThrottledSaves()
             publish_run_event(
                 "iterate_progress_complete",
                 track_id=track_id,
@@ -998,7 +1002,7 @@ class PipelineManager:
         # ElementTree.Element (and XElementWrapper) are Iterable over children.
         # Saving must target the returned node itself, not walk its children.
         if isinstance(NodesToSave, ElementTree.Element):
-            VolumeManager.Save(NodesToSave)
+            cls._SaveNode(NodesToSave)
             return
 
         if isinstance(NodesToSave, collections.abc.Iterable) or isgenerator(NodesToSave):
@@ -1006,10 +1010,23 @@ class PipelineManager:
                 if node is None:
                     continue
 
-                VolumeManager.Save(node)
+                cls._SaveNode(node)
             return
 
-        VolumeManager.Save(NodesToSave)
+        cls._SaveNode(NodesToSave)
+
+    @staticmethod
+    def _SaveNode(node) -> None:
+        """Save *node*'s container now, unless a stage put it on a save checkpoint that is not due."""
+        if not save_throttle.save_due(node):
+            return
+        VolumeManager.Save(node)
+        save_throttle.mark_saved(node)
+
+    @staticmethod
+    def _FlushThrottledSaves() -> None:
+        """Save containers whose checkpointed saves are still pending."""
+        save_throttle.flush(VolumeManager.Save)
 
     def ProcessPythonCall(self, ArgSet, VolumeElem: XElementWrapper, PipelineNode):
         # Try to find a stage for the element we encounter in the pipeline.

@@ -33,6 +33,7 @@ from nornir_buildmanager.operations.stos_scan import (
 from nornir_buildmanager.operations.transform_refine_orchestrator import TransformRefineOrchestrator
 from nornir_buildmanager.validation import transforms
 from nornir_buildmanager.volumemanager import *
+from nornir_buildmanager.volumemanager import link_prefetch, save_throttle
 import nornir_imageregistration
 from nornir_imageregistration import assemble, local_distortion_correction, mosaic
 from nornir_imageregistration.background_file_writer import BackgroundFileWriter
@@ -1278,6 +1279,28 @@ def GetImage(block_node: BlockNode, SectionNumber: int, Channel: str, Filter: st
         return None, None
 
 
+def _preload_stos_transform_images(block_node: BlockNode, transform_nodes: typing.Iterable[TransformNode]) -> None:
+    """Load in parallel the section metadata ``StosImageNodes`` will look up for *transform_nodes*.
+
+    Each lookup otherwise reads its Section, Channel, Filter, mask Filter and ImageSet
+    ``VolumeData.xml`` files one at a time: 58% of the Grid32 overlay stage on the NAS
+    (srv, RC3, 2026-11-02).
+    """
+    wanted: list[tuple[int, str, str]] = []
+    for transform in transform_nodes:
+        for number, channel, filter_name in (
+                (transform.ControlSectionNumber, transform.ControlChannelName, transform.ControlFilterName),
+                (transform.MappedSectionNumber, transform.MappedChannelName, transform.MappedFilterName)):
+            if number is None or not isinstance(channel, str) or not isinstance(filter_name, str):
+                continue
+            try:
+                section_number = int(number)
+            except (TypeError, ValueError):
+                continue
+            wanted.append((section_number, channel, filter_name))
+    link_prefetch.preload_section_images(block_node, wanted)
+
+
 class StosImageNodesOutput(typing.NamedTuple):
     ControlImageNode: ImageNode | None
     ControlImageMaskNode: ImageNode | None
@@ -1539,6 +1562,10 @@ def AssembleStosOverlays(Parameters,
                         "Skipping AssembleStosOverlays; transform file missing: " + StosTransformNode.FullPath)
                     continue
                 overlay_jobs.append((mapping_node, MappedSection, StosTransformNode))
+
+    block_for_preload = group_node.FindParent('Block')
+    if block_for_preload is not None:
+        _preload_stos_transform_images(block_for_preload, (transform for _, _, transform in overlay_jobs))
 
     total_overlay_jobs = len(overlay_jobs)
     completed_overlay_jobs = 0
@@ -2858,6 +2885,31 @@ def _next_refine_inputs(jobs: typing.Sequence[_RefineStosJobContext]) -> list[st
     return next_inputs
 
 
+# (id(block), id(input group)) already preloaded by RefineInvoker in this process.
+_refine_inputs_preloaded: set[tuple[int, int]] = set()
+
+
+def _preload_refine_inputs_once(mapping_node: MappingNode, InputGroupNode: StosGroupNode, block_node) -> None:
+    """On the first refine call for an input group, load every mapping's section metadata in parallel.
+
+    The pipeline calls RefineInvoker once per mapping, so preloading only that mapping's
+    two or three sections would still read the volume serially, a few files at a time.
+    """
+    key = (id(block_node), id(InputGroupNode))
+    if key in _refine_inputs_preloaded:
+        return
+    _refine_inputs_preloaded.add(key)
+    stos_map = getattr(mapping_node, 'Parent', None)
+    mappings = list(getattr(stos_map, 'Mappings', None) or [mapping_node])
+    transforms: list[TransformNode] = []
+    for mapping in mappings:
+        for mapped in mapping.Mapped:
+            found = InputGroupNode.TransformsForMapping(mapped, mapping.Control)  # type: ignore[arg-type]
+            if found:
+                transforms.extend(found)
+    _preload_stos_transform_images(block_node, transforms)
+
+
 def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGroupNode,
                   UseMasks: bool, Downsample: int = 32,
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
@@ -2895,6 +2947,10 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
 
     (added, OutputStosGroupNode) = block_node.GetOrCreateStosGroup(OutputStosGroupName, Downsample)  # type: ignore[union-attr]
     OutputStosGroupNode.CreateDirectories()
+    # The pipeline calls this once per mapping and saves the group after each pair. That file
+    # grows with every pair, so save it on a checkpoint instead; the pipeline flushes the rest.
+    save_throttle.throttle_saves(OutputStosGroupNode)
+    _preload_refine_inputs_once(mapping_node, InputGroupNode, block_node)
 
     if added:
         yield block_node  # type: ignore[misc]

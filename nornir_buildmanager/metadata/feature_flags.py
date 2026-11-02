@@ -16,12 +16,23 @@ from nornir_imageregistration.env_flags import env_flag, env_is_truthy, is_false
 SHADOW_SQLITE_ENV = 'NORNIR_VOLUME_METADATA_SHADOW_SQLITE'
 READ_SQLITE_ENV = 'NORNIR_VOLUME_METADATA_READ_SQLITE'
 TIMINGS_VOLUME_ENV = 'NORNIR_VOLUME_METADATA_TIMINGS_VOLUME_PATH'
+SHADOW_VERIFY_ENV = 'NORNIR_VOLUME_METADATA_SHADOW_VERIFY'
 
 
 def shadow_sqlite_enabled() -> bool:
     """Return True unless the shadow is switched off: each VolumeData.xml container save also updates
     the volume's SQLite shadow."""
     return not is_falsey(env_flag(SHADOW_SQLITE_ENV))
+
+
+def shadow_verify_enabled() -> bool:
+    """Return True when each shadow write is reloaded from SQLite and compared with the saved XML.
+
+    Off by default since 2026-11-02: the reload and tree comparison ran on every container save,
+    about a quarter of a Grid32 refine pair on srv, and the comparison only reports. Tests and
+    port checks turn it on.
+    """
+    return env_is_truthy(SHADOW_VERIFY_ENV)
 
 
 def read_sqlite_enabled() -> bool:

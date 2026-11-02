@@ -2,8 +2,9 @@
 stage 6, switched off with ``NORNIR_VOLUME_METADATA_SHADOW_SQLITE=0``).
 
 XML stays the source of truth. After a container's ``VolumeData.xml`` is replaced,
-the same container is upserted into ``VolumeData.db`` at the volume root and the
-rows just written are compared with the saved file. Child containers, which the
+the same container is upserted into ``VolumeData.db`` at the volume root. With
+``NORNIR_VOLUME_METADATA_SHADOW_VERIFY`` on, the rows just written are also reloaded
+and compared with the saved file. Child containers, which the
 XML holds as ``*_Link`` stubs, keep their existing rows; a link with no rows yet is
 loaded from its own folder. A failure or mismatch is logged as a warning naming the
 container and never reaches the XML save.
@@ -81,15 +82,33 @@ _CHILDREN_SQL = ("SELECT n.id, n.tag, a.value FROM nodes n "
                  "WHERE n.parent_id = ? ORDER BY n.sort_order")
 
 
-def after_container_saved(container_dir: str) -> None:
+FileSignature = tuple[int, int]
+
+
+def file_signature(path: str) -> FileSignature | None:
+    """``(size, mtime_ns)`` of *path*, or None when it cannot be stat'ed."""
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return stat.st_size, stat.st_mtime_ns
+
+
+def after_container_saved(container_dir: str,
+                          saved_xml: bytes | None = None,
+                          written_signature: FileSignature | None = None) -> None:
     """Mirror ``<container_dir>/VolumeData.xml`` into the volume's SQLite shadow unless the flag is off.
+
+    *saved_xml* is the exact bytes just written and *written_signature* the file's
+    signature right after the write. When the file still has that signature under the
+    shadow lock, those bytes are parsed instead of reading the file back.
 
     Never raises: the XML save has already succeeded.
     """
     if not feature_flags.shadow_sqlite_enabled():
         return
     try:
-        _shadow_container(os.path.abspath(container_dir))
+        _shadow_container(os.path.abspath(container_dir), saved_xml, written_signature)
     except Exception as e:
         logger.warning("SQLite shadow write failed for container %s: %s", container_dir, e, exc_info=True)
 
@@ -132,7 +151,9 @@ def _root_tag(xml_path: str) -> str | None:
     return tag
 
 
-def _shadow_container(container_dir: str) -> None:
+def _shadow_container(container_dir: str,
+                      saved_xml: bytes | None = None,
+                      written_signature: FileSignature | None = None) -> None:
     volume_root = find_volume_root(container_dir)
     if volume_root is None:
         logger.debug("No Volume at or above %s yet; SQLite shadow skipped", container_dir)
@@ -142,8 +163,15 @@ def _shadow_container(container_dir: str) -> None:
     # Held through the parity read so no other writer changes the container between upsert and compare.
     with backend.write_lock():
         # Read under the lock: a copy read before it could predate another process's later save of this
-        # container, whose shadow may then run first and be overwritten with the older content.
-        saved = XMLMetadataBackend(container_dir, single_file=True, xml_filename=_VOLUME_DATA_FILENAME).load()
+        # container, whose shadow may then run first and be overwritten with the older content. The
+        # bytes this process just wrote are that same content as long as the file is unchanged, so
+        # they stand in for reading the file back over the share when the signature still matches.
+        xml_backend = XMLMetadataBackend(container_dir, single_file=True, xml_filename=_VOLUME_DATA_FILENAME)
+        if (saved_xml is not None and written_signature is not None
+                and file_signature(os.path.join(container_dir, _VOLUME_DATA_FILENAME)) == written_signature):
+            saved = xml_backend.node_from_element(ElementTree.fromstring(saved_xml))
+        else:
+            saved = xml_backend.load()
         if saved is None:
             raise ValueError("the saved VolumeData.xml could not be read back")
 
@@ -169,7 +197,7 @@ def _shadow_container(container_dir: str) -> None:
             if node_id is None:
                 # Children save before their parent, so a new container is added by the parent's save.
                 logger.debug("%s is not linked into the SQLite shadow yet", container_dir)
-            else:
+            elif feature_flags.shadow_verify_enabled():
                 for diff in compare_trees(saved, load_container_level(conn, node_id, saved)):
                     logger.warning("SQLite shadow parity difference (%s) in container %s at %s: XML=%r SQLite=%r",
                                    diff.kind.value, container_dir, diff.path, diff.expected, diff.actual)

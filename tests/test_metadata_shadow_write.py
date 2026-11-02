@@ -61,6 +61,12 @@ def _force_save(root: str, flag: str) -> None:
     vm.VolumeManager.Save(volume)
 
 
+@pytest.fixture(autouse=True)
+def _verify_parity(monkeypatch):
+    """Parity is opt-in in builds; these tests rely on it to report a wrong shadow."""
+    monkeypatch.setenv(feature_flags.SHADOW_VERIFY_ENV, '1')
+
+
 def _differences(root: str) -> list:
     return compare_trees(_present(XMLMetadataBackend(root).load()), _present(SQLiteMetadataBackend(root).load()))
 
@@ -289,3 +295,77 @@ def test_find_volume_root_walks_up_to_the_volume(monkeypatch, tmp_path):
     build_volume(root)
     assert shadow_write.find_volume_root(os.path.join(root, 'TEM', '0001', 'TEM')) == os.path.abspath(root)
     assert shadow_write.find_volume_root(str(tmp_path)) is None
+
+
+def _edit_block_notes(root: str, value: str) -> None:
+    volume = _load(root)
+    block = _find(volume, 'Block')
+    block.attrib['Notes'] = value
+    block.AttributesChanged = True
+    vm.VolumeManager.Save(volume)
+
+
+def test_parity_reload_is_skipped_unless_verify_is_on(monkeypatch, tmp_path):
+    """The reload and comparison cost a quarter of a refine pair on srv; builds skip them."""
+    monkeypatch.setenv(FLAG, '1')
+    monkeypatch.delenv(feature_flags.SHADOW_VERIFY_ENV, raising=False)
+    root = os.path.join(str(tmp_path), 'vol')
+    build_volume(root)
+    reloads: list[int] = []
+    real_reload = shadow_write.load_container_level
+    monkeypatch.setattr(shadow_write, 'load_container_level',
+                        lambda *args: reloads.append(1) or real_reload(*args))
+
+    _edit_block_notes(root, 'unverified')
+
+    assert reloads == []
+    assert _differences(root) == [], 'the shadow is still written without the check'
+
+    monkeypatch.setenv(feature_flags.SHADOW_VERIFY_ENV, '1')
+    _edit_block_notes(root, 'verified')
+    assert reloads
+
+
+def test_shadow_uses_the_written_bytes_instead_of_reading_the_file(monkeypatch, tmp_path):
+    monkeypatch.setenv(FLAG, '1')
+    root = os.path.join(str(tmp_path), 'vol')
+    build_volume(root)
+    file_reads: list[str] = []
+    real_load = XMLMetadataBackend.load
+
+    def counting_load(self):
+        file_reads.append(self._volume_path)
+        return real_load(self)
+
+    monkeypatch.setattr(XMLMetadataBackend, 'load', counting_load)
+    with _no_shadow_warnings():
+        _edit_block_notes(root, 'from bytes')
+
+    assert file_reads == []
+    assert _differences(root) == []
+
+
+def test_shadow_rereads_the_file_when_it_changed_after_the_write(monkeypatch, tmp_path):
+    """Another process's later save must not be overwritten by this process's older bytes."""
+    monkeypatch.setenv(FLAG, '1')
+    root = os.path.join(str(tmp_path), 'vol')
+    build_volume(root)
+    file_reads: list[str] = []
+    real_load = XMLMetadataBackend.load
+
+    def counting_load(self):
+        file_reads.append(self._volume_path)
+        return real_load(self)
+
+    monkeypatch.setattr(XMLMetadataBackend, 'load', counting_load)
+    real_shadow = shadow_write._shadow_container
+
+    def stale_signature(container_dir, saved_xml=None, written_signature=None):
+        return real_shadow(container_dir, saved_xml, (-1, -1) if saved_xml is not None else written_signature)
+
+    monkeypatch.setattr(shadow_write, '_shadow_container', stale_signature)
+    with _no_shadow_warnings():
+        _edit_block_notes(root, 'changed since')
+
+    assert file_reads, 'a changed file must be read back'
+    assert _differences(root) == []

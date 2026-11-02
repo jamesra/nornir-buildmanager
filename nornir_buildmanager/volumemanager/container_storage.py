@@ -9,7 +9,9 @@ opt-in SQLite read (stage 5) only replaces a loaded tree with an equal one.
 from __future__ import annotations
 
 import errno
+import io
 import os
+import threading
 import time
 from typing import Protocol
 from xml.etree import ElementTree
@@ -20,6 +22,25 @@ from nornir_shared.files import ensure_directory
 from nornir_buildmanager.metadata import shadow_write, sqlite_read
 
 VOLUME_DATA_FILENAME = 'VolumeData.xml'
+
+# Container directories this process has already passed through ensure_directory. On CIFS that
+# call lists every ancestor directory and writes a probe file, and per-pair stages save the same
+# StosGroup container hundreds of times. A directory removed by someone else later still recovers:
+# the write and replace retries below call ensure_directory again on FileNotFoundError.
+_verified_container_dirs: set[str] = set()
+_verified_container_dirs_lock = threading.Lock()
+
+
+def _ensure_container_directory(container_dir: str) -> str:
+    """``ensure_directory`` the first time a process saves into *container_dir*; afterwards return it as is."""
+    key = os.path.normcase(os.path.abspath(container_dir))
+    with _verified_container_dirs_lock:
+        if key in _verified_container_dirs:
+            return container_dir
+    container_dir = ensure_directory(container_dir)
+    with _verified_container_dirs_lock:
+        _verified_container_dirs.add(key)
+    return container_dir
 
 
 class ContainerStorage(Protocol):
@@ -77,22 +98,32 @@ class XmlContainerStorage:
             prettyoutput.Log(f"Cannot encode output XML:\n{e}")
             raise
 
-        container_dir = ensure_directory(container_dir)
+        container_dir = _ensure_container_directory(container_dir)
 
         BackupXMLFilename = f"{os.path.basename(self.filename)}.backup.xml"
         BackupXMLFullPath = os.path.join(container_dir, BackupXMLFilename)
         XMLFilename = os.path.join(container_dir, self.filename)
         TmpFilename = XMLFilename + ".tmp"
 
+        # Serialized once: the same bytes go to the file and to the SQLite shadow, which parses
+        # them instead of reading the file back over the share.
+        buffer = io.BytesIO()
+        try:
+            ElementTree.ElementTree(element).write(
+                buffer,
+                encoding='utf-8',
+                xml_declaration=False,
+                short_empty_elements=True,
+            )
+        except Exception as e:
+            prettyoutput.Log(f"Cannot encode output XML:\n{e}")
+            raise
+        payload = buffer.getvalue()
+
         def write_temp_file() -> None:
             try:
                 with open(TmpFilename, 'wb') as hFile:
-                    ElementTree.ElementTree(element).write(
-                        hFile,
-                        encoding='utf-8',
-                        xml_declaration=False,
-                        short_empty_elements=True,
-                    )
+                    hFile.write(payload)
             except Exception as e:
                 try:
                     os.remove(TmpFilename)
@@ -209,7 +240,8 @@ class XmlContainerStorage:
                 raise
             else:
                 if self.filename == VOLUME_DATA_FILENAME:
-                    shadow_write.after_container_saved(container_dir)
+                    shadow_write.after_container_saved(
+                        container_dir, payload, shadow_write.file_signature(XMLFilename))
                 return
 
         if last_open_error is not None:
