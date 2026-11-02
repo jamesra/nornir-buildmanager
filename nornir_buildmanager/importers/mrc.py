@@ -8,6 +8,7 @@ from __future__ import annotations
 import collections
 import enum
 import errno
+import json
 import struct
 import sys
 import tempfile
@@ -111,15 +112,51 @@ def _SectionTilesExported(volume_path: str, mrc_fullpath: str) -> bool:
 
     section_dir = ('%' + nornir_buildmanager.templates.Current.SectionFormat) % section_number
     channel_dir = os.path.join(volume_path, 'TEM', section_dir, 'TEM')
-    if not os.path.isdir(channel_dir):
+    try:
+        filter_names = os.listdir(channel_dir)
+    except OSError:
         return False
-    tile_names = [GetFileNameForTileNumber(tile_number=i, ext='.png') for i in range(num_tiles)]
-    for filter_name in os.listdir(channel_dir):
+    for filter_name in filter_names:
         level_dir = os.path.join(channel_dir, filter_name, TilePyramidNode.DefaultPath,
                                  nornir_buildmanager.templates.Current.LevelFormat % 1)
-        if os.path.isdir(level_dir) and all(os.path.exists(os.path.join(level_dir, n)) for n in tile_names):
+        if _all_tiles_present(level_dir, num_tiles, '.png'):
             return True
     return False
+
+
+# Written into a level directory after every tile of the section exported without error. Its presence lets a
+# restarted import skip the section without opening each tile (IsValidImage on ~900 PNGs over CIFS took ~16 s
+# per finished section on RC1, 2026-11-02). Tile writes are not atomic, so existence alone cannot vouch for a
+# tile: a run killed mid-section leaves no marker and re-validates every tile. Dot-named, so level scans skip it.
+EXPORT_COMPLETE_MARKER = '.mrc_export_complete.json'
+
+
+def _all_tiles_present(level_dir: str, num_tiles: int, ext: str) -> bool:
+    """True when every tile of the section is in *level_dir* with a non-zero size (one directory listing)."""
+    try:
+        with os.scandir(level_dir) as entries:
+            sizes = {entry.name: entry.stat().st_size for entry in entries if entry.is_file()}
+    except OSError:
+        return False
+    return all(sizes.get(GetFileNameForTileNumber(tile_number=i, ext=ext), 0) > 0 for i in range(num_tiles))
+
+
+def _export_marked_complete(level_dir: str, num_tiles: int) -> bool:
+    """True when *level_dir* holds a completion marker for *num_tiles* tiles."""
+    try:
+        with open(os.path.join(level_dir, EXPORT_COMPLETE_MARKER), encoding='utf-8') as f:
+            return int(json.load(f).get('num_tiles', -1)) == num_tiles
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
+def _mark_export_complete(level_dir: str, num_tiles: int, mrc_fullpath: str) -> None:
+    """Record that every tile in *level_dir* was exported (or validated) from *mrc_fullpath*."""
+    try:
+        with open(os.path.join(level_dir, EXPORT_COMPLETE_MARKER), 'w', encoding='utf-8') as f:
+            json.dump({'num_tiles': num_tiles, 'source': os.path.basename(mrc_fullpath)}, f)
+    except OSError as e:
+        prettyoutput.Log(f"Could not write export marker in {level_dir}: {e}")
 
 
 # SerialEM writes tiles with the image origin in the lower-left corner, so the
@@ -378,18 +415,23 @@ class MRCImport:
             mosaicObj.SaveToMosaicFile(transformObj.FullPath)
             (yield channelObj)
 
+        num_tiles = int(mrcfile.num_tiles)  # type: ignore[arg-type]
+        tiles_present = _all_tiles_present(LevelObj.FullPath, num_tiles, OutputImageExt)
+        if tiles_present and _export_marked_complete(LevelObj.FullPath, num_tiles):
+            prettyoutput.Log(f"Section {SectionNumber}: all {num_tiles} tiles already exported")
+            return
+
         # Wait for the staged local copy only when tiles are missing: a restarted import walks
         # finished sections too, and must not copy a 33 GB MRC to skip one.
         pixel_path = mrc_fullpath
-        if read_path is not None and any(
-                not os.path.exists(os.path.join(LevelObj.FullPath, GetFileNameForTileNumber(tile_number=i, ext=OutputImageExt)))
-                for i in range(mrcfile.num_tiles)):  # type: ignore[arg-type]
+        if read_path is not None and not tiles_present:
             pixel_path = read_path()
 
         cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
                          min_max_gamma=contrast_settings,
                          flip_ud=flip_ud_for_section(SectionNumber, FlipList),
                          crush_params=crush_params)
+        _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath)
 
     def __init__(self):
         """

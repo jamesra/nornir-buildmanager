@@ -295,6 +295,23 @@ class TestFinishedSectionsAreNotCopied(_Files):
     def test_a_section_not_imported_yet_is_not_done(self):
         self.assertFalse(self._exported(os.path.join(self.tmp, 'empty_volume')))
 
+    def test_an_empty_tile_file_is_not_done(self):
+        from nornir_buildmanager.importers import GetFileNameForTileNumber
+        volume = self._volume(3)
+        level = os.path.join(volume, 'TEM', '0002', 'TEM', 'Raw8', 'TilePyramid', '001')
+        open(os.path.join(level, GetFileNameForTileNumber(tile_number=1, ext='.png')), 'wb').close()
+        self.assertFalse(self._exported(volume))
+
+    def test_export_marker_vouches_only_for_its_tile_count(self):
+        from nornir_buildmanager.importers import mrc
+        level = os.path.join(self._volume(3), 'TEM', '0002', 'TEM', 'Raw8', 'TilePyramid', '001')
+        self.assertFalse(mrc._export_marked_complete(level, 3))  # tiles alone, e.g. a run killed mid-write
+        mrc._mark_export_complete(level, 3, self.paths[2])
+        self.assertTrue(mrc._export_marked_complete(level, 3))
+        self.assertFalse(mrc._export_marked_complete(level, 4))
+        # Dot-named so level scans that list tiles skip it.
+        self.assertTrue(mrc.EXPORT_COMPLETE_MARKER.startswith('.'))
+
 
 if __name__ == '__main__':
     unittest.main()
