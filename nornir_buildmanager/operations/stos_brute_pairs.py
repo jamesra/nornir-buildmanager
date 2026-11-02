@@ -17,7 +17,10 @@ import concurrent.futures
 import logging
 import multiprocessing
 import os
+import threading
 import time
+from collections.abc import Callable
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -255,8 +258,60 @@ def auto_gpu_worker_count(cpu_count: int | None = None, free_bytes: int | None =
     return max(1, min(cores, limit) if limit is not None else cores)
 
 
-def _init_gpu_pair_worker(log_queue: Any, log_level: int) -> None:
-    """Spawned worker initializer: queue logging, then CuPy through the child opt-in."""
+#: Device memory a worker's CUDA context takes outside its CuPy pool, subtracted from its
+#: share of free memory to get the pool cap. Estimate: srv workers held 1.2-1.3 GB in
+#: total after a ds64 pair (``GPU_WORKER_DEVICE_BYTES``), of which a context is a few
+#: hundred MB.
+GPU_WORKER_CONTEXT_BYTES: int = 512 * 2 ** 20
+
+#: Smallest pool cap a worker gets; below it pairs would fail with out-of-memory anyway.
+GPU_WORKER_MIN_POOL_BYTES: int = 512 * 2 ** 20
+
+#: Times the pair that poisoned a worker's CUDA context is retried on a fresh worker.
+GPU_WORKER_POISON_RETRIES: int = 1
+
+#: Set in a GPU worker once its CUDA context fails the health probe; later jobs are refused.
+_worker_poisoned: str | None = None
+
+
+class GpuWorkerPoisonedError(RuntimeError):
+    """A GPU worker's CUDA context is unusable (a sticky error such as cudaErrorIllegalAddress).
+
+    ``caused_here`` is True for the job whose failure poisoned the worker and False for
+    jobs the worker refused afterwards. The executor replaces the worker and resubmits.
+    """
+
+    pair_name: str
+    caused_here: bool
+
+    def __init__(self, message: str, pair_name: str, caused_here: bool) -> None:
+        super().__init__(message)
+        self.pair_name = pair_name
+        self.caused_here = caused_here
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (GpuWorkerPoisonedError, (str(self), self.pair_name, self.caused_here))
+
+
+def gpu_worker_pool_limit(workers: int, free_bytes: int | None = None) -> int | None:
+    """CuPy pool cap for each of *workers*: an equal share of free device memory.
+
+    The share is free memory less ``GPU_WORKER_RESERVE_BYTES``, split evenly, less one
+    CUDA context. A capped pool makes a worker that needs more fail its pair with an
+    out-of-memory error instead of oversubscribing a GPU that may also drive a display.
+    None if free memory can't be read.
+    """
+    if free_bytes is None:
+        try:
+            free_bytes = int(nornir_imageregistration.cp.cuda.runtime.memGetInfo()[0])  # pyright: ignore[reportAttributeAccessIssue]
+        except (AttributeError, RuntimeError, ImportError):
+            return None
+    share = (free_bytes - GPU_WORKER_RESERVE_BYTES) // max(1, workers) - GPU_WORKER_CONTEXT_BYTES
+    return max(GPU_WORKER_MIN_POOL_BYTES, share)
+
+
+def _init_gpu_pair_worker(log_queue: Any, log_level: int, pool_limit: int | None = None) -> None:
+    """Spawned worker initializer: queue logging, CuPy through the child opt-in, pool cap."""
     if log_queue is not None:
         nornir_shared.misc.ConfigureWorkerQueueLogging(log_queue=log_queue, level=log_level)
     try:
@@ -265,14 +320,57 @@ def _init_gpu_pair_worker(log_queue: Any, log_level: int) -> None:
     except (RuntimeError, ModuleNotFoundError) as e:
         # Reported per pair by run_stos_brute_pair_on_gpu_worker, which names the pair.
         _logger.error("StosBrute GPU worker %d could not activate CuPy: %s", os.getpid(), e)
+        return
+    if pool_limit is not None and nornir_imageregistration.UsingCupy():
+        nornir_imageregistration.cp.get_default_memory_pool().set_limit(size=int(pool_limit))  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def _cuda_context_usable() -> bool:
+    """True if this process's CUDA context still runs work (a sticky error fails every call)."""
+    try:
+        cp = nornir_imageregistration.cp
+        cp.cuda.runtime.deviceSynchronize()  # pyright: ignore[reportAttributeAccessIssue]
+        probe = cp.arange(4, dtype=cp.float32)  # pyright: ignore[reportAttributeAccessIssue]
+        return float(probe.sum()) == 6.0
+    except Exception:  # noqa: BLE001 - any failure means the context can't be trusted
+        return False
 
 
 def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob) -> StosBrutePairResult:
-    """GPU worker entry point: refuse to fall back to NumPy silently, then register the pair."""
+    """GPU worker entry point: refuse NumPy fallback and poisoned contexts, then register the pair.
+
+    After a failure the worker probes its CUDA context. A sticky CUDA error leaves every
+    later call failing, so the worker marks itself poisoned, raises
+    :class:`GpuWorkerPoisonedError` and refuses further jobs until the executor replaces it.
+    """
+    global _worker_poisoned
+    if _worker_poisoned is not None:
+        raise GpuWorkerPoisonedError(f"StosBrute GPU worker {os.getpid()} has an unusable CUDA context "
+                                     f"({_worker_poisoned}); pair {job.pair_name} not registered",
+                                     job.pair_name, caused_here=False)
     if not nornir_imageregistration.UsingCupy():
         raise RuntimeError(f"StosBrute GPU worker {os.getpid()} is not on CuPy (activation or runtime "
                            f"probe failed); pair {job.pair_name} not registered")
-    return run_stos_brute_pair(job)
+    try:
+        return run_stos_brute_pair(job)
+    except Exception as e:
+        if _cuda_context_usable():
+            raise
+        _worker_poisoned = f"{type(e).__name__}: {e}"
+        _logger.error("StosBrute GPU worker %d: CUDA context unusable after pair %s: %s",
+                      os.getpid(), job.pair_name, _worker_poisoned)
+        raise GpuWorkerPoisonedError(f"StosBrute GPU worker {os.getpid()} lost its CUDA context on pair "
+                                     f"{job.pair_name}: {_worker_poisoned}", job.pair_name,
+                                     caused_here=True) from e
+
+
+@dataclass
+class _LaneJob:
+    """A job submitted to a GPU worker lane, with the future handed to the caller."""
+
+    job: StosBrutePairJob
+    future: concurrent.futures.Future[StosBrutePairResult]
+    poison_retries: int = 0
 
 
 class GpuWorkerPairExecutor:
@@ -283,45 +381,151 @@ class GpuWorkerPairExecutor:
     does its host work on its own core. Workers are spawned (fresh interpreters, never
     forked, so no inherited CUDA state) and opt in with
     ``SetActiveComputationLib(cupy, allow_in_child=True)``. Each worker keeps its own CUDA
-    context and CuPy memory pool on the device.
+    context and a CuPy memory pool capped at ``pool_limit`` bytes.
+
+    Each worker is a one-process pool (a lane), so a worker whose CUDA context is poisoned
+    by a sticky error is replaced alone: its lane restarts, the jobs queued on it are
+    resubmitted, and the job that poisoned it is retried ``GPU_WORKER_POISON_RETRIES``
+    times before its error is reported. RC2 (2026-11-02) lost 259 pairs to one poisoned
+    worker before this.
     """
 
     max_in_flight: int
     description: str
     workers: int
-    _pool: concurrent.futures.ProcessPoolExecutor
+    pool_limit: int | None
+    _lane_factory: Callable[[], concurrent.futures.ProcessPoolExecutor]
+    _lanes: list[concurrent.futures.ProcessPoolExecutor]
+    _lane_jobs: list[list[_LaneJob]]
+    _lock: threading.RLock
+    _closed: bool
+    _log_queue: Any = None
+    _log_level: int = logging.INFO
 
-    def __init__(self, workers: int) -> None:
+    def __init__(self, workers: int, pool_limit: int | None = None,
+                 lane_factory: Callable[[], concurrent.futures.ProcessPoolExecutor] | None = None) -> None:
         if workers < 1:
             raise ValueError(f"workers must be >= 1, got {workers}")
         self.workers = int(workers)
         self.max_in_flight = GPU_WORKER_JOBS_PER_WORKER * self.workers
-        self.description = f"{self.workers} GPU worker processes"
-        log_level = logging.getLogger().getEffectiveLevel()
-        log_queue = nornir_shared.misc.StartMultiprocessLoggingListener(level=log_level)
-        # Built through nornir_pools so worker settings (BLAS threads per worker) match every
-        # other pool.
-        self._pool = nornir_pools.CreateProcessPoolExecutor(self.workers,
-                                                            mp_context=multiprocessing.get_context('spawn'),
-                                                            initializer=_init_gpu_pair_worker,
-                                                            initargs=(log_queue, log_level))
+        self.pool_limit = pool_limit if pool_limit is not None else gpu_worker_pool_limit(self.workers)
+        limit_text = (f", {self.pool_limit / 2 ** 30:.1f} GB GPU pool cap each"
+                      if self.pool_limit is not None else "")
+        self.description = f"{self.workers} GPU worker processes{limit_text}"
+        self._lane_factory = lane_factory if lane_factory is not None else self._spawn_lane
+        self._lock = threading.RLock()
+        self._closed = False
+        self._lanes = [self._lane_factory() for _ in range(self.workers)]
+        self._lane_jobs = [[] for _ in range(self.workers)]
+
+    def _spawn_lane(self) -> concurrent.futures.ProcessPoolExecutor:
+        """One spawned CuPy worker, built through nornir_pools so its settings match other pools."""
+        if self._log_queue is None:
+            self._log_level = logging.getLogger().getEffectiveLevel()
+            self._log_queue = nornir_shared.misc.StartMultiprocessLoggingListener(level=self._log_level)
+        return nornir_pools.CreateProcessPoolExecutor(1,
+                                                      mp_context=multiprocessing.get_context('spawn'),
+                                                      initializer=_init_gpu_pair_worker,
+                                                      initargs=(self._log_queue, self._log_level,
+                                                                self.pool_limit))
 
     def submit(self, job: StosBrutePairJob) -> concurrent.futures.Future[StosBrutePairResult]:
-        """Queue *job* on a worker."""
-        return self._pool.submit(run_stos_brute_pair_on_gpu_worker, job)
+        """Queue *job* on the worker with the fewest outstanding jobs."""
+        lane_job = _LaneJob(job=job, future=concurrent.futures.Future())
+        with self._lock:
+            lane = min(range(self.workers), key=lambda i: len(self._lane_jobs[i]))
+            self._submit_to_lane(lane, lane_job)
+        return lane_job.future
+
+    def _submit_to_lane(self, lane: int, lane_job: _LaneJob) -> None:
+        """Send *lane_job* to *lane*'s worker; the caller holds ``_lock``."""
+        self._lane_jobs[lane].append(lane_job)
+        pool = self._lanes[lane]
+        try:
+            inner = pool.submit(run_stos_brute_pair_on_gpu_worker, lane_job.job)
+        except BrokenProcessPool as e:
+            # The worker died between jobs; report it through the same path as a running job.
+            inner = concurrent.futures.Future()
+            inner.set_exception(e)
+        inner.add_done_callback(lambda f: self._on_done(lane, pool, lane_job, f))
+
+    def _retire_lane(self, lane: int, pool: concurrent.futures.ProcessPoolExecutor, reason: object) -> None:
+        """Replace *lane*'s worker if it is still *pool*; the caller holds ``_lock``."""
+        if self._lanes[lane] is not pool:
+            return
+        _logger.warning("StosBrute GPU worker lane %d is unusable (%s); starting a new worker", lane, reason)
+        self._lanes[lane] = self._lane_factory()
+        # Off this callback thread: the old pool's shutdown joins the thread running us.
+        threading.Thread(target=_terminate_pool, args=(pool,), daemon=True,
+                         name='stos-brute-retire-gpu-worker').start()
+
+    def _on_done(self, lane: int, pool: concurrent.futures.ProcessPoolExecutor, lane_job: _LaneJob,
+                 inner: concurrent.futures.Future[StosBrutePairResult]) -> None:
+        """Done callback: settle the caller's future, which must never be left pending."""
+        try:
+            self._settle(lane, pool, lane_job, inner)
+        except Exception as e:  # noqa: BLE001 - e.g. a replacement worker failed to start
+            _logger.error("StosBrute could not settle pair %s: %s", lane_job.job.pair_name, e)
+            if not lane_job.future.done():
+                lane_job.future.set_exception(e)
+
+    def _settle(self, lane: int, pool: concurrent.futures.ProcessPoolExecutor, lane_job: _LaneJob,
+                inner: concurrent.futures.Future[StosBrutePairResult]) -> None:
+        """Pass a lane's result on, or replace a poisoned worker and resubmit its jobs."""
+        error = None if inner.cancelled() else inner.exception()
+        with self._lock:
+            if lane_job in self._lane_jobs[lane]:
+                self._lane_jobs[lane].remove(lane_job)
+            retired = self._lanes[lane] is not pool
+            if self._closed:
+                retry = False
+            elif isinstance(error, GpuWorkerPoisonedError) and error.caused_here:
+                self._retire_lane(lane, pool, error)
+                retry = lane_job.poison_retries < GPU_WORKER_POISON_RETRIES
+                lane_job.poison_retries += 1
+            elif isinstance(error, (GpuWorkerPoisonedError, BrokenProcessPool)) \
+                    or (inner.cancelled() and retired):
+                # Refused by, or lost with, a poisoned worker: not this pair's fault.
+                self._retire_lane(lane, pool, error)
+                retry = True
+            else:
+                retry = False
+            if retry:
+                self._submit_to_lane(lane, lane_job)
+                return
+        if error is not None:
+            lane_job.future.set_exception(error)
+        elif inner.cancelled():
+            lane_job.future.cancel()
+        else:
+            lane_job.future.set_result(inner.result())
 
     def shutdown(self, cancel_pending: bool = False) -> None:
         """Wait for the workers to exit; with *cancel_pending*, drop queued jobs and stop running ones."""
-        if not cancel_pending:
-            self._pool.shutdown(wait=True)
-            return
-        terminate = getattr(self._pool, 'terminate_workers', None)  # Python 3.14+
-        if terminate is not None:
-            terminate()
-            return
-        processes = list((getattr(self._pool, '_processes', None) or {}).values())  # Python 3.13
-        self._pool.shutdown(wait=False, cancel_futures=True)
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.join()
+        with self._lock:
+            self._closed = True
+            lanes = list(self._lanes)
+        for pool in lanes:
+            if cancel_pending:
+                _terminate_pool(pool)
+            else:
+                pool.shutdown(wait=True)
+        if cancel_pending:
+            with self._lock:
+                abandoned = [lane_job for jobs in self._lane_jobs for lane_job in jobs]
+            for lane_job in abandoned:
+                lane_job.future.cancel()
+
+
+def _terminate_pool(pool: concurrent.futures.ProcessPoolExecutor) -> None:
+    """Stop *pool*'s workers without waiting for their jobs."""
+    terminate = getattr(pool, 'terminate_workers', None)  # Python 3.14+
+    if terminate is not None:
+        terminate()
+        return
+    processes = list((getattr(pool, '_processes', None) or {}).values())  # Python 3.13
+    pool.shutdown(wait=False, cancel_futures=True)
+    for process in processes:
+        process.terminate()
+    for process in processes:
+        process.join()
