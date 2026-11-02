@@ -2910,6 +2910,60 @@ def _preload_refine_inputs_once(mapping_node: MappingNode, InputGroupNode: StosG
     _preload_stos_transform_images(block_node, transforms)
 
 
+def _registration_image_requests(block_node, transform: TransformNode, downsample: int,
+                                 use_masks: bool) -> list[tuple[str, typing.Any]]:
+    """The image and mask files refine will load for *transform*'s pair, without creating anything."""
+    image_dtype = image_prefetch.refine_image_dtype()
+    requests: list[tuple[str, typing.Any]] = []
+    for number, channel, filter_name in (
+            (transform.ControlSectionNumber, transform.ControlChannelName, transform.ControlFilterName),
+            (transform.MappedSectionNumber, transform.MappedChannelName, transform.MappedFilterName)):
+        try:
+            section = block_node.GetSection(int(number))
+        except (TypeError, ValueError):
+            continue
+        channel_node = section.GetChannel(channel) if section is not None else None
+        filter_node = channel_node.GetFilter(filter_name) if channel_node is not None else None
+        if filter_node is None:
+            continue
+        image = filter_node.GetImage(downsample)
+        if image is not None:
+            requests.append((image.FullPath, image_dtype))
+        if use_masks:
+            # Refine falls back to the default mask filter when the filter names none.
+            mask_filter = filter_node.GetMaskFilter(filter_node.MaskName or filter_node.DefaultMaskName)
+            mask = mask_filter.GetImage(downsample) if mask_filter is not None else None
+            if mask is not None:
+                requests.append((mask.FullPath, bool))
+    return requests
+
+
+def _prefetch_next_mapping_images(mapping_node: MappingNode, InputGroupNode: StosGroupNode, block_node,
+                                  downsample: int, use_masks: bool) -> None:
+    """Start loading the next mapping's refine images while this mapping's pairs refine.
+
+    The pipeline calls RefineInvoker once per mapping, in document order, so the
+    within-call next-pair prefetch never reached the next call's pair: on srv
+    (2026-11-02, RC3 Grid16) image loading was still about 60% of a pair. The next
+    mapping's input stos is only written when its call starts, so its image files
+    are looked up from the metadata instead. Never raises.
+    """
+    try:
+        stos_map = mapping_node.Parent
+        mappings = list(stos_map.Mappings)
+        index = next(i for i, m in enumerate(mappings) if m is mapping_node)
+        # Only the next call's first pair: a mapping's later pairs prefetch each other.
+        for following in mappings[index + 1:]:
+            for mapped in following.Mapped:
+                for transform in InputGroupNode.TransformsForMapping(mapped, following.Control) or []:  # type: ignore[arg-type]
+                    requests = _registration_image_requests(block_node, transform, downsample, use_masks)
+                    if requests:
+                        image_prefetch.prefetch_image_files(requests)
+                        return
+    except Exception as e:  # noqa: BLE001 - a prefetch must never fail the stage
+        logging.getLogger(__name__ + '.StosGrid').debug("Next-mapping image prefetch skipped: %s", e)
+
+
 def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGroupNode,
                   UseMasks: bool, Downsample: int = 32,
                   ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
@@ -2951,6 +3005,8 @@ def RefineInvoker(RefineFunc, mapping_node: MappingNode, InputGroupNode: StosGro
     # grows with every pair, so save it on a checkpoint instead; the pipeline flushes the rest.
     save_throttle.throttle_saves(OutputStosGroupNode)
     _preload_refine_inputs_once(mapping_node, InputGroupNode, block_node)
+    if PrefetchFunc is not None:
+        _prefetch_next_mapping_images(mapping_node, InputGroupNode, block_node, Downsample, UseMasks)
 
     if added:
         yield block_node  # type: ignore[misc]
