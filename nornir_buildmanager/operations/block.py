@@ -1574,7 +1574,10 @@ def AssembleStosOverlays(Parameters,
     if total_overlay_jobs:
         report_stos_work_progress(overlay_track_id, 0, total_overlay_jobs, overlay_label, depth=0)
 
-    preview_writer = BackgroundFileWriter()
+    # Previews are diagnostics the next run regenerates when a file is missing, so a failed
+    # write is logged rather than failing the stage (RC2, 2026-11-02: one CIFS connection
+    # abort after six hours of overlays lost the stage's metadata and its downstream steps).
+    preview_writer = BackgroundFileWriter(raise_errors=False)
     try:
         for mapping_node, MappedSection, StosTransformNode in overlay_jobs:
             SectionMappingNode = StosTransformNode.FindParent('SectionMappings')
@@ -1670,8 +1673,11 @@ def AssembleStosOverlays(Parameters,
                 report_stos_work_progress(
                     overlay_track_id, completed_overlay_jobs, total_overlay_jobs, overlay_label, depth=0
                 )
-        # Raises the first write error, so a failed write fails the stage as before.
         preview_writer.close()
+        if preview_writer.failed_paths:
+            prettyoutput.LogErr(
+                f"{len(preview_writer.failed_paths)} STOS preview(s) could not be written and will be "
+                f"regenerated on the next run, e.g. {preview_writer.failed_paths[0]}")
     finally:
         # No-op after a clean close; on an error, still finish the queued writes.
         with contextlib.suppress(Exception):
@@ -4701,6 +4707,8 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
         # workers compute on NumPy anyway, so the composed tiles are unchanged.
         StoVTransform = assemble.transform_for_host_assembly(
             factory.LoadTransform(SToV.Transform))  # type: ignore[arg-type]
+        # Solve the RBF fallback once here; otherwise every tile task re-solves it.
+        assemble.precompute_forward_fallback(StoVTransform)
 
         MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
         if not MosaicTransform.IsOriginAtZero():

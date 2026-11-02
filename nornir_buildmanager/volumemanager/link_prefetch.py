@@ -26,6 +26,7 @@ from nornir_shared import prettyoutput
 from .elementwrapping import SetElementParent
 from .xcontainerelementwrapper import XContainerElementWrapper
 from .xelementwrapper import MissingElementError, XElementWrapper
+import nornir_pools
 
 DEFAULT_MAX_WORKERS = 16
 
@@ -60,7 +61,7 @@ def preload_links(requests: Iterable[tuple[XContainerElementWrapper, str]],
 
     loaded: list[XElementWrapper] = []
     workers = max(1, min(max_workers, len(jobs)))
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers,
+    with nornir_pools.InstrumentedThreadPoolExecutor('metadata-preload', max_workers=workers,
                                                thread_name_prefix='metadata-preload') as pool:
         futures = [pool.submit(XContainerElementWrapper._load_wrap_link_element, path) for _, _, path in jobs]
         validations: list[tuple[XElementWrapper, concurrent.futures.Future]] = []

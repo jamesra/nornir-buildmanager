@@ -19,6 +19,7 @@ from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceElementWrapper
 from nornir_shared import prettyoutput as prettyoutput
 from nornir_shared.files import ensure_directory
+import nornir_pools
 
 
 def _save_link_element(tag: str, attrib: dict) -> ElementTree.Element:
@@ -233,7 +234,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
         loaded_elements = []
 
         # Use a different threadpool so that if callars are already on a thread we don't create deadlocks where they are waiting for load tasks to be returned from the Queue
-        with concurrent.futures.ThreadPoolExecutor() as pool:
+        with nornir_pools.InstrumentedThreadPoolExecutor('metadata-links') as pool:
             # pool = nornir_pools.GetThreadPool('ReplaceLinks')
 
             tasks = []

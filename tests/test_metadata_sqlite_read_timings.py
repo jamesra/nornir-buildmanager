@@ -19,9 +19,9 @@ from collections.abc import Callable
 from typing import Any, cast
 from xml.etree import ElementTree
 
-import pytest
-
 import nornir_buildmanager.volumemanager as vm
+import nornir_pools
+import pytest
 from nornir_buildmanager.metadata import feature_flags, sqlite_read
 from nornir_buildmanager.metadata.migrate import migrate_volume, verify_migration
 from nornir_buildmanager.metadata.sqlite_backend import DEFAULT_DB_FILENAME
@@ -142,13 +142,13 @@ def _metadata_load_only(monkeypatch) -> None:
         return True, ''
 
     monkeypatch.setattr(LevelNode, 'IsValid', _level_valid)
-    real_executor = concurrent.futures.ThreadPoolExecutor
+    real_executor = nornir_pools.InstrumentedThreadPoolExecutor
 
-    def _sequential_executor(*args: Any, **kwargs: Any) -> concurrent.futures.ThreadPoolExecutor:
+    def _sequential_executor(name: str, *args: Any, **kwargs: Any) -> concurrent.futures.ThreadPoolExecutor:
         kwargs['max_workers'] = 1
-        return real_executor(*args, **kwargs)
+        return real_executor(name, *args, **kwargs)
 
-    monkeypatch.setattr(concurrent.futures, 'ThreadPoolExecutor', _sequential_executor)
+    monkeypatch.setattr(nornir_pools, 'InstrumentedThreadPoolExecutor', _sequential_executor)
 
 
 @pytest.fixture

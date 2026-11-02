@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +67,7 @@ from nornir_buildmanager.operations.segmentationtraining.stitch import (
     stitch_job_for_plan,
     sweep_stitch_jobs,
 )
+import nornir_pools
 
 
 def update_section_crops(
@@ -293,7 +294,7 @@ def _drop_annotations_parallel(
     if worker_count == 1:
         _drop_annotations(output, image_keys[0], removed, products)
         return
-    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+    with nornir_pools.InstrumentedThreadPoolExecutor('training-update', max_workers=worker_count) as pool:
         futures = {pool.submit(_drop_annotations, output, key, removed, products): key for key in image_keys}
         for future in as_completed(futures):
             future.result()  # re-raise any exception from the worker

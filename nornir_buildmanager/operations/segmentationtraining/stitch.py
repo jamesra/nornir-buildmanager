@@ -107,7 +107,7 @@ def _stage_cleanup_executor() -> ThreadPoolExecutor:
     global _stage_cleanup_pool
     with _stage_cleanup_lock:
         if _stage_cleanup_pool is None:
-            _stage_cleanup_pool = ThreadPoolExecutor(
+            _stage_cleanup_pool = nornir_pools.InstrumentedThreadPoolExecutor('training-stage-cleanup', 
                 max_workers=1, thread_name_prefix="segtrain-stage-rm"
             )
         return _stage_cleanup_pool

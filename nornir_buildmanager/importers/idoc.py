@@ -33,7 +33,6 @@ Example:
 from __future__ import annotations
 
 import collections
-import concurrent.futures
 import errno
 import sys
 import shutil
@@ -716,7 +715,7 @@ class NornirTileset:
     def GetSourceToMissingTargetMap(self):
         """:return: A dictionary mapping source image paths to missing target image paths"""
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with nornir_pools.InstrumentedThreadPoolExecutor('idoc-tiles') as executor:
             results = executor.map(lambda t: (t, not os.path.exists(t.TargetImageFullPath)), self.Tiles, chunksize=5)
 
         SourceToTargetMap = {t.SourceImageFullPath: t.TargetImageFullPath for (t, _) in filter(lambda r: r[1], results)}
@@ -740,7 +739,7 @@ class NornirTileset:
 
     def RemoveStaleTilesFromOutputDir(self, SupertilePath):
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with nornir_pools.InstrumentedThreadPoolExecutor('idoc-tiles') as executor:
             results = executor.map(lambda tile: NornirTileset.RemoveStaleTileFromOutputDir(tile, SupertilePath),
                                    self.Tiles, chunksize=5)
 
@@ -1009,7 +1008,7 @@ class IDoc:
 
     def RemoveMissingTiles(self, path: str):
         # existingTiles = []
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with nornir_pools.InstrumentedThreadPoolExecutor('idoc-tiles') as executor:
             results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles,
                                    chunksize=5)
 

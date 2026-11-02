@@ -31,6 +31,7 @@ from typing import Self
 
 from nornir_imageregistration.env_flags import env_flag, is_falsey
 from nornir_shared import prettyoutput
+import nornir_pools
 
 STAGE_ENV = 'NORNIR_IMPORT_STAGE'
 STAGE_DIR_ENV = 'NORNIR_IMPORT_STAGE_DIR'
@@ -101,7 +102,7 @@ class SourcePrefetcher:
         if self._enabled and self._paths:
             os.makedirs(self._stage_dir, exist_ok=True)
             _remove_stale(self._stage_dir)
-            self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=self._ahead + 1,
+            self._executor = nornir_pools.InstrumentedThreadPoolExecutor('mrc-staging', max_workers=self._ahead + 1,
                                                                    thread_name_prefix='ImportStage')
             self._schedule(self._ahead + 1)
         return self

@@ -7,7 +7,6 @@ import logging
 import os
 import shutil
 from collections.abc import Callable, Iterator, Sequence
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -22,6 +21,7 @@ from nornir_buildmanager.validation.stos_image_check import (
     ImageCheckSnapshot,
     is_stos_input_image_outdated,
 )
+import nornir_pools
 
 _logger = logging.getLogger(__name__)
 
@@ -380,7 +380,7 @@ def decide_stos_grid_refine_needs(
 
     workers = max_workers if max_workers is not None else default_refine_scan_workers()
     workers = max(1, min(workers, len(snapshots)))
-    with ThreadPoolExecutor(max_workers=workers) as executor:
+    with nornir_pools.InstrumentedThreadPoolExecutor('stos-refine-scan', max_workers=workers) as executor:
         return list(executor.map(decide_stos_grid_refine_need, snapshots))
 
 

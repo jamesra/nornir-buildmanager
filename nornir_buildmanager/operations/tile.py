@@ -1870,8 +1870,8 @@ class _TwoStageTileSavePipeline:
         self._copy_queue: queue.Queue[_TileCopyJob | None] = queue.Queue(
             maxsize=copy_workers * 2,
         )
-        self._encode_executor = ThreadPoolExecutor(max_workers=encode_workers)
-        self._copy_executor = ThreadPoolExecutor(max_workers=copy_workers)
+        self._encode_executor = nornir_pools.InstrumentedThreadPoolExecutor('tile-encode', max_workers=encode_workers)
+        self._copy_executor = nornir_pools.InstrumentedThreadPoolExecutor('tile-copy', max_workers=copy_workers)
         self._active_encode: list[concurrent.futures.Future[None]] = []
         self._copy_futures = [
             self._copy_executor.submit(self._copy_consumer)
@@ -2769,7 +2769,7 @@ def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
         DestNeedsReplacmentTasks = []
         DestFileIsValid = []
 
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with nornir_pools.InstrumentedThreadPoolExecutor('tile-pyramid') as executor:
             tasks = []
             for filename in ExistingDestFiles:
                 outputFile = os.path.join(OutputTileDir, filename)
@@ -3143,12 +3143,12 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             output_level_temp_dir=temp_output_dir,
             executor=executor)
 
-    with ThreadPoolExecutor(
+    with nornir_pools.InstrumentedThreadPoolExecutor('tile-rows', 
         max_workers=tile_workers,
         initializer=pin_directory_for_worker,
         initargs=(dest_path_abs,),
     ) as executor:
-        with ThreadPoolExecutor(max_workers=tile_workers) as tile_executor:
+        with nornir_pools.InstrumentedThreadPoolExecutor('tile-tiles', max_workers=tile_workers) as tile_executor:
             # Create a new function with executor pre-bound
             process_tile_with_executor = partial(process_tile, executor=tile_executor)
 

@@ -49,7 +49,7 @@ class TestPillowTilesetRowPipeline(unittest.TestCase):
                 return outer
             return inner
 
-        with patch.object(tile_ops, 'ThreadPoolExecutor', side_effect=fake_thread_pool), \
+        with patch.object(tile_ops.nornir_pools, 'InstrumentedThreadPoolExecutor', side_effect=fake_thread_pool), \
                 patch.object(tile_ops, 'pin_directory_for_worker'), \
                 patch.object(tile_ops, '_tile_io_worker_count', return_value=2), \
                 patch.object(tile_ops, 'ensure_directory'), \

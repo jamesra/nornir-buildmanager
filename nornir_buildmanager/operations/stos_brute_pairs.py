@@ -299,7 +299,9 @@ class GpuWorkerPairExecutor:
         self.description = f"{self.workers} GPU worker processes"
         log_level = logging.getLogger().getEffectiveLevel()
         log_queue = nornir_shared.misc.StartMultiprocessLoggingListener(level=log_level)
-        self._pool = concurrent.futures.ProcessPoolExecutor(max_workers=self.workers,
+        # Built through nornir_pools so worker settings (BLAS threads per worker) match every
+        # other pool.
+        self._pool = nornir_pools.CreateProcessPoolExecutor(self.workers,
                                                             mp_context=multiprocessing.get_context('spawn'),
                                                             initializer=_init_gpu_pair_worker,
                                                             initargs=(log_queue, log_level))

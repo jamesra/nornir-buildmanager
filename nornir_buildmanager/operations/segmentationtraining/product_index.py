@@ -9,10 +9,11 @@ from __future__ import annotations
 import os
 import threading
 from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from pathlib import Path
 
 from nornir_buildmanager.operations.segmentationtraining.workdir import RLE_FOLDER, rle_dir
+import nornir_pools
 
 # On-disk folder names under an AnnotationCrops output tree. Sam2SegmentationTrainer reads this layout,
 # so the values must not change.
@@ -136,7 +137,7 @@ class CropProductIndex:
 
     def _build(self) -> None:
         """Fill folder maps from one parallel scan."""
-        with ThreadPoolExecutor(max_workers=len(PRODUCT_FOLDERS)) as pool:
+        with nornir_pools.InstrumentedThreadPoolExecutor('training-index', max_workers=len(PRODUCT_FOLDERS)) as pool:
             futures = {
                 pool.submit(_scan_folder, self._folder_path(folder)): folder
                 for folder in PRODUCT_FOLDERS

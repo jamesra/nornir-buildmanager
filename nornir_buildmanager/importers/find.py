@@ -1,4 +1,3 @@
-import concurrent.futures
 import os
 import re
 from typing import Generator
@@ -7,6 +6,7 @@ import nornir_buildmanager
 import nornir_buildmanager.importers.shared as shared
 import nornir_shared
 from nornir_shared import prettyoutput
+import nornir_pools
 
 
 def find_section_candidates(ImportPath: str, DesiredSectionList: list[int] | None) -> dict[
@@ -93,6 +93,6 @@ def section_directory_metadata_generator(match_names: list[shared.FilenameMetada
     :return: yields the FileMetadata and .idoc file that should be imported for any given section number
     """
 
-    with concurrent.futures.ThreadPoolExecutor() as executor:
+    with nornir_pools.InstrumentedThreadPoolExecutor('import-find') as executor:
         yield from executor.map(
             lambda section_meta_data: find_section_directory_metadata(section_meta_data, matching_pattern), match_names)
