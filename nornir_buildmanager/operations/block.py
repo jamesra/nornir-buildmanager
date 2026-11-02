@@ -892,7 +892,8 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
     # Find the nodes for the control and mapped sections
     ControlSectionNode = block_node.GetSection(ControlNumber)  # type: ignore[arg-type]
     if ControlSectionNode is None:
-        Logger.error("Missing control section node for # " + str(ControlNumber))
+        Logger.debug(f"StosBrute skips mappings to control section {ControlNumber}: "
+                     "it is not in the block (stale mapping)")
         return
 
     (added, stos_group_node) = block_node.GetOrCreateStosGroup(OutputStosGroupName, downsample=Downsample)
@@ -907,7 +908,8 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
     for MappedSection in AdjacentSections:
         mapped_section_node = block_node.GetSection(MappedSection)
         if mapped_section_node is None:
-            prettyoutput.LogErr("Could not find expected section for StosBrute: " + str(MappedSection))
+            Logger.debug(f"StosBrute skips mapping {ControlNumber} <- {MappedSection}: "
+                         f"section {MappedSection} is not in the block (stale mapping)")
             continue
         MappedFilterList = list(mapped_section_node.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))
         ControlFilterList = list(ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))
@@ -1002,12 +1004,14 @@ def _enumerate_brute_pair_tasks(mappings: list[MappingNode], block_node: BlockNo
         ControlNumber = mapping_node.Control
         ControlSectionNode = block_node.GetSection(ControlNumber)  # type: ignore[arg-type]
         if ControlSectionNode is None:
-            Logger.error("Missing control section node for # " + str(ControlNumber))
+            Logger.debug(f"StosBrute skips mappings to control section {ControlNumber}: "
+                         "it is not in the block (stale mapping)")
             continue
         for MappedSection in mapping_node.Mapped:
             mapped_section_node = block_node.GetSection(MappedSection)
             if mapped_section_node is None:
-                prettyoutput.LogErr("Could not find expected section for StosBrute: " + str(MappedSection))
+                Logger.debug(f"StosBrute skips mapping {ControlNumber} <- {MappedSection}: "
+                             f"section {MappedSection} is not in the block (stale mapping)")
                 continue
             MappedFilterList = list(mapped_section_node.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))
             ControlFilterList = list(ControlSectionNode.MatchChannelFilterPattern(ChannelsRegEx, FiltersRegEx))

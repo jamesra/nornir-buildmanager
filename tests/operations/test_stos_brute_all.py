@@ -216,6 +216,26 @@ def test_stos_brute_all_runs_pairs_in_process_with_no_flip_check() -> None:
     assert seen['no_flip'] is True
 
 
+def test_enumerate_skips_stale_mappings_quietly() -> None:
+    """Mappings to sections not in the block (RC2: a 2019 Control=1 Mapped=0) are skipped at debug level."""
+    sections = {5: mock.Mock(), 4: mock.Mock()}
+    for section in sections.values():
+        section.MatchChannelFilterPattern.return_value = [mock.Mock()]
+    block_node = mock.Mock()
+    block_node.GetSection.side_effect = sections.get
+    mappings = [_mapping(5, [4, 0]), _mapping(1, [0])]
+    logger = mock.Mock()
+
+    with mock.patch.object(block_mod, 'brute_stos_needs_replacement', return_value=True), \
+            mock.patch.object(block_mod.prettyoutput, 'LogErr') as log_err:
+        tasks = block_mod._enumerate_brute_pair_tasks(mappings, block_node, 'TEM', 'Blob', mock.Mock(), False, logger)
+
+    assert [(t.mapping_index, t.mapped_section) for t in tasks] == [(0, 4)]
+    log_err.assert_not_called()
+    logger.error.assert_not_called()
+    assert logger.debug.call_count == 2
+
+
 def _loop_fixture(jobs: list[stos_brute_pairs.StosBrutePairJob]):
     """Pair tasks, prepared results and a stos group mock for _stos_brute_pairs."""
     tasks = [block_mod._BrutePairTask(mapping_index=i, mapped_section=i, mapped_filter=mock.Mock(FullPath=f'm{i}'),
