@@ -75,3 +75,27 @@ def test_build_tile_pyramids_pipeline_calls_the_stage_on_each_filter_pyramid() -
            ('PyramidNode', 'filter_node', 'TilePyramid')
     call = next(pipeline.iter('PythonCall'))
     assert (call.get('Function'), call.get('Levels')) == ('tile.BuildTilePyramids', '#Levels')
+
+
+def _tileset_with_box(min_x: float, min_y: float, max_x: float, max_y: float) -> mock.Mock:
+    tileset = mock.Mock()
+    tileset.TargetBoundingBox = mock.Mock(MinX=min_x, MinY=min_y, MaxX=max_x, MaxY=max_y)
+    return tileset
+
+
+def test_centred_mosaic_reports_the_crop() -> None:
+    """RC1 RABBIT 0198: an ir-tools mosaic centred on the origin assembled as its positive quadrant."""
+    logger = mock.Mock()
+    with mock.patch.object(tile.prettyoutput, 'LogErr') as log_err:
+        tile._warn_if_mosaic_origin_is_negative(
+            _tileset_with_box(-60318.6, -61026.8, 56688.8, 56996.4), 'Grid.mosaic', logger)
+    message = logger.error.call_args.args[0]
+    assert 'negative origin' in message and '23%' in message and 'TransformNodeToZeroOrigin' in message
+    log_err.assert_called_once()
+
+
+def test_zero_origin_and_small_refine_offsets_stay_quiet() -> None:
+    logger = mock.Mock()
+    for box in ((0, 0, 1000, 1000), (-3.5, -10.0, 1000, 1000)):
+        tile._warn_if_mosaic_origin_is_negative(_tileset_with_box(*box), 'Grid.mosaic', logger)
+    logger.error.assert_not_called()

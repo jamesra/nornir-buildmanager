@@ -1274,6 +1274,33 @@ def VerifyAssembledImagePathIsCorrect(Parameters: dict, Logger: logging.Logger, 
             yield imageSet
 
 
+#: Negative origin, in full-resolution pixels, beyond which Assemble reports that it is cropping.
+#: Refined Grid mosaics can sit slightly below zero; ir-tools mosaics are centred (RABBIT:
+#: about -60,000 px), and Assemble keeps only the part at non-negative coordinates.
+_NEGATIVE_ORIGIN_WARN_PX: float = 64.0
+
+
+def _warn_if_mosaic_origin_is_negative(mosaic_tileset: Any, mosaic_path: str, logger: logging.Logger) -> None:
+    """Report when Assemble will crop a mosaic whose bounding box starts below the origin.
+
+    Assemble draws the canvas from (0, 0), the convention for nornir mosaics, which the
+    pipeline translates to a zero origin. A centred mosaic (e.g. ir-tools, RC1 RABBIT copies
+    in 2026-11) silently came out as its positive quadrant. Translating it first with
+    ``registration.TransformNodeToZeroOrigin`` reproduces the ir-tools image frame.
+    """
+    bbox = mosaic_tileset.TargetBoundingBox
+    if min(float(bbox.MinX), float(bbox.MinY)) >= -_NEGATIVE_ORIGIN_WARN_PX:
+        return
+    width = float(bbox.MaxX) - float(bbox.MinX)
+    height = float(bbox.MaxY) - float(bbox.MinY)
+    kept = (max(0.0, float(bbox.MaxX)) * max(0.0, float(bbox.MaxY))) / max(1.0, width * height)
+    msg = (f"{mosaic_path} has a negative origin (MinX {float(bbox.MinX):.1f}, MinY {float(bbox.MinY):.1f}); "
+           f"Assemble draws from (0, 0) and keeps only {kept:.0%} of the mosaic. Translate it to a zero "
+           f"origin first (registration.TransformNodeToZeroOrigin).")
+    logger.error(msg)
+    prettyoutput.LogErr(msg)
+
+
 def _ensure_tile_level_on_disk(tile_pyramid: Any, level: int, logger: logging.Logger) -> None:
     """Build a missing tile-pyramid level from the existing pyramid before assembling it.
 
@@ -1464,6 +1491,8 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
         mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, ImageDir,
                                                                                  image_to_source_space_scale=thisLevel)
+        if RequestedBoundingBox is None:
+            _warn_if_mosaic_origin_is_negative(mosaicTileset, transform_node.FullPath, Logger)
 
         (mosaicImage, maskImage) = mosaicTileset.AssembleImage(FixedRegion=RequestedBoundingBox,
                                                                target_space_scale=1.0 / thisLevel)
