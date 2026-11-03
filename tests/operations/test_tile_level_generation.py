@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import logging
 import os
-import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 from unittest import mock
+from xml.etree import ElementTree
 
 import pytest
+
 from nornir_buildmanager.operations import tile
 from nornir_buildmanager.volumemanager import TilePyramidNode
 
