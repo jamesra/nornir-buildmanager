@@ -1314,13 +1314,30 @@ def _ensure_tile_level_on_disk(tile_pyramid: Any, level: int, logger: logging.Lo
     image_ext = tile_pyramid.attrib.get('ImageFormatExt', DefaultImageExtension)
     level_format = tile_pyramid.attrib.get('LevelFormat', nornir_buildmanager.templates.Current.LevelFormat)
     level_dir = os.path.join(tile_pyramid.FullPath, level_format % level)
-    if _newest_tile_image_path(level_dir, image_ext) is not None:
+    source = tile_pyramid.MoreDetailedLevel(level) if tile_pyramid.HasLevels else None
+    expected = _count_tile_images(source.FullPath, image_ext) if source is not None else 0
+    found = _count_tile_images(level_dir, image_ext)
+    # A level with fewer tiles than its source is partial (e.g. another process still building
+    # it, or an interrupted build); BuildTilePyramids fills in only the missing tiles.
+    if found > 0 and found >= expected:
         return
-    logger.info("Tile pyramid level %s has no tiles; building it from the existing levels", level_dir)
+    logger.info("Tile pyramid level %s has %d of %d tiles; building it from the existing levels",
+                level_dir, found, expected)
     tile_pyramid.GenerateLevels([level])
-    if _newest_tile_image_path(level_dir, image_ext) is None:
+    if _count_tile_images(level_dir, image_ext) == 0:
         raise ValueError(f"Tile pyramid level {level_dir} has no tiles and could not be built from "
                          f"the existing levels of {tile_pyramid.FullPath}")
+
+
+def _count_tile_images(level_dir: str, image_ext: str) -> int:
+    """Number of tile images in a pyramid level directory, ignoring assemble temp files; 0 if missing."""
+    ext_lower = (image_ext if image_ext.startswith('.') else '.' + image_ext).lower()
+    try:
+        with os.scandir(level_dir) as entries:
+            return sum(1 for e in entries
+                       if e.name.lower().endswith(ext_lower) and not e.name.lower().startswith('temp'))
+    except OSError:
+        return 0
 
 
 def _newest_tile_image_path(level_dir: str, image_ext: str) -> str | None:

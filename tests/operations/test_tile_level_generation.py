@@ -34,15 +34,16 @@ def _pyramid(tmp_path: Path) -> TilePyramidNode:
     return pyramid
 
 
-def _write_tiles(pyramid: TilePyramidNode, level: int) -> None:
+def _write_tiles(pyramid: TilePyramidNode, level: int, names: tuple[str, ...] = ('000.png',)) -> None:
     level_dir = Path(pyramid.FullPath) / (pyramid.attrib['LevelFormat'] % level)
     level_dir.mkdir(parents=True, exist_ok=True)
-    (level_dir / '000.png').write_bytes(b'png')
+    for name in names:
+        (level_dir / name).write_bytes(b'png')
 
 
 def test_missing_level_is_built_before_assembly(tmp_path: Path) -> None:
     pyramid = _pyramid(tmp_path)
-    with mock.patch.object(pyramid, 'GenerateLevels', side_effect=lambda levels: _write_tiles(pyramid, 16)) as gen:
+    with mock.patch.object(pyramid, 'GenerateLevels', side_effect=lambda levels: _write_tiles(pyramid, 16, ('000.png', '001.png'))) as gen:
         tile._ensure_tile_level_on_disk(pyramid, 16, logging.getLogger(__name__))
     gen.assert_called_once_with([16])
 
@@ -50,11 +51,20 @@ def test_missing_level_is_built_before_assembly(tmp_path: Path) -> None:
 def test_level_with_tiles_on_disk_is_never_rebuilt(tmp_path: Path) -> None:
     """The 19817b8 case: tiles exist but the Level metadata does not."""
     pyramid = _pyramid(tmp_path)
-    _write_tiles(pyramid, 16)
+    _write_tiles(pyramid, 16, ('000.png', '001.png'))
     with mock.patch.object(pyramid, 'GenerateLevels') as gen:
         tile._ensure_tile_level_on_disk(pyramid, 16, logging.getLogger(__name__))
     gen.assert_not_called()
     assert pyramid.GetLevel(16) is None
+
+
+def test_partial_level_is_completed(tmp_path: Path) -> None:
+    """A level with fewer tiles than its source (still being built elsewhere, or interrupted) is not trusted."""
+    pyramid = _pyramid(tmp_path)
+    _write_tiles(pyramid, 16)  # 1 of the 2 tiles level 001 has
+    with mock.patch.object(pyramid, 'GenerateLevels') as gen:
+        tile._ensure_tile_level_on_disk(pyramid, 16, logging.getLogger(__name__))
+    gen.assert_called_once_with([16])
 
 
 def test_level_that_cannot_be_built_fails_clearly_without_an_empty_level_node(tmp_path: Path) -> None:
