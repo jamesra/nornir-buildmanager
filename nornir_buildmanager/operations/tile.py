@@ -1274,6 +1274,28 @@ def VerifyAssembledImagePathIsCorrect(Parameters: dict, Logger: logging.Logger, 
             yield imageSet
 
 
+def _ensure_tile_level_on_disk(tile_pyramid: Any, level: int, logger: logging.Logger) -> None:
+    """Build a missing tile-pyramid level from the existing pyramid before assembling it.
+
+    19817b8 made Assemble look the level up with ``GenerateData=False`` so that a level whose
+    tiles are on disk but whose metadata is missing is not rebuilt. That also meant a level
+    with no tiles at all was never built (RC1_Crush, 2026-11: only ``001`` existed, so every
+    ``016`` tile was reported missing and assembly failed with "No transforms in
+    MosaicTileset"). Tiles on disk are still never rebuilt here. Raises ``ValueError``
+    before any Level node is added when the level cannot be produced.
+    """
+    image_ext = tile_pyramid.attrib.get('ImageFormatExt', DefaultImageExtension)
+    level_format = tile_pyramid.attrib.get('LevelFormat', nornir_buildmanager.templates.Current.LevelFormat)
+    level_dir = os.path.join(tile_pyramid.FullPath, level_format % level)
+    if _newest_tile_image_path(level_dir, image_ext) is not None:
+        return
+    logger.info("Tile pyramid level %s has no tiles; building it from the existing levels", level_dir)
+    tile_pyramid.GenerateLevels([level])
+    if _newest_tile_image_path(level_dir, image_ext) is None:
+        raise ValueError(f"Tile pyramid level {level_dir} has no tiles and could not be built from "
+                         f"the existing levels of {tile_pyramid.FullPath}")
+
+
 def _newest_tile_image_path(level_dir: str, image_ext: str) -> str | None:
     """Return the newest tile image in a pyramid level, ignoring assemble temp files."""
     if not image_ext.startswith('.'):
@@ -1399,8 +1421,9 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
                                         nornir_imageregistration.GetImageSize(image_node.FullPath))
 
     # LevelFormatStr = LevelFormatTemplate % thisLevel
-    # Do not GenerateData: missing Level meta-data must not run BuildTilePyramids.
-    # Assemble reads tiles from the level directory and writes the ImageSet PNG first.
+    # Build the level only when its directory has no tiles; never from missing metadata alone,
+    # so Assemble does not rebuild tiles that exist (see _ensure_tile_level_on_disk).
+    _ensure_tile_level_on_disk(filter_node.TilePyramid, thisLevel, Logger)
     [added_input_level, InputLevelNode] = filter_node.TilePyramid.GetOrCreateLevel(thisLevel, GenerateData=False)
     assert InputLevelNode is not None
     if added_input_level:
