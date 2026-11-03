@@ -172,7 +172,9 @@ def test_signature_newer_than_this_process_cache_is_read_not_rewritten(monkeypat
     _load_all(root)  # caches the table
     section = _section_dir(root)
     key = shadow_write.container_key(os.path.abspath(root), os.path.abspath(section))
-    shadow_write._known_signatures[os.path.abspath(root)][key] = (-1, -1)
+    cached = shadow_write._known_signatures[os.path.abspath(root)]
+    assert cached is not None
+    cached[key] = (-1, -1)
     synced = _count_syncs(monkeypatch)
 
     _load_all(root)
