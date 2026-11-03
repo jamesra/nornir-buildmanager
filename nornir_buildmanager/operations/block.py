@@ -11,6 +11,7 @@ import math
 import logging
 import os
 import re
+import filecmp
 import shutil
 from dataclasses import dataclass
 import numpy as np
@@ -4805,11 +4806,17 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
     """Given a set of transforms, ensure they are all translated so that none have a negative coordinate for the origin.
        :param list StosMosaicTransforms: [StosTransformNode]
        :param list OutputStosMosaicTransformName: list of names for output nodes
+
+       Every run recomputes the shift from all sections' untranslated mosaics, since one
+       changed section can move the volume origin. Outputs whose content would not change
+       are not rewritten: on srv (RC3, 2026-11-02) rewriting all 1598 sections took ~105
+       minutes when only section 0001 had changed.
        """
 
-    output_transform_list = []
+    input_transform_nodes = list(StosMosaicTransforms)
+    output_for_input: dict[int, TransformNode] = {}
 
-    for input_transform_node in StosMosaicTransforms:
+    for input_transform_node in input_transform_nodes:
         channel_node = input_transform_node.Parent
         output_transform_node = channel_node.GetTransform(OutputStosMosaicTransformName)  # type: ignore[reportAttributeAccessIssue]
         if output_transform_node is None:
@@ -4823,20 +4830,27 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
                 if os.path.exists(output_transform_node.FullPath):
                     os.remove(output_transform_node.FullPath)
 
-        output_transform_list.append(output_transform_node)
+        output_for_input[id(input_transform_node)] = typing.cast(TransformNode, output_transform_node)
 
-        # Always copy so our offset calculation is based on untranslated transforms
         output_transform_node.Type = "MosaicToVolume"
         output_transform_node.SetTransform(input_transform_node)
-        shutil.copy(input_transform_node.FullPath, output_transform_node.FullPath)
 
-    mosaicToVolume = mosaicvolume.MosaicVolume.Load(output_transform_list)
+    # Read the untranslated inputs directly (the offset is computed from them), then let
+    # each section's mosaic save to its output node.
+    mosaicToVolume = mosaicvolume.MosaicVolume.Load(input_transform_nodes)
+    for mosaic_obj in mosaicToVolume.SectionToVolumeTransforms.values():
+        mosaic_obj.transformNode = output_for_input[id(mosaic_obj.transformNode)]
 
     # Translate needs to accound for the fact that the mosaics need an origin of 0,0 for assemble to work.  We also need to figure out the largest image dimension
     # and set the CropBox property so each image is the same size after assemble is used.
     translation_to_zero = mosaicToVolume.TranslateToZeroOrigin()
 
-    if translation_to_zero[0] == 0 and translation_to_zero[1] == 0:  # type: ignore[index]
+    if translation_to_zero is None or (translation_to_zero[0] == 0 and translation_to_zero[1] == 0):  # type: ignore[index]
+        # Already at the origin: each output is a copy of its input.
+        for input_transform_node in input_transform_nodes:
+            output_path = output_for_input[id(input_transform_node)].FullPath
+            if not (os.path.exists(output_path) and filecmp.cmp(input_transform_node.FullPath, output_path, shallow=False)):
+                shutil.copy(input_transform_node.FullPath, output_path)
         return None
 
     new_bbox = mosaicToVolume.VolumeBounds
@@ -4847,9 +4861,8 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
     maxY = int(math.ceil(maxY))
 
     if minX < 0 or minY < 0:
-        # TranslateToZeroOrigin may not perfectly zero out all sections when composed transforms
-        # extrapolate outside the declared bounding box (e.g. rigid fallback sections).
-        # Apply a corrective second-pass shift using the measured residual.
+        # TranslateToZeroOrigin moves every section by the volume's origin, so a residual
+        # means a section's bounds changed under the translation; shift by it.
         Logger = logging.getLogger(__name__)
         Logger.warning(
             "__MoveMosaicsToZeroOrigin: bounding box still has negative origin after first "
@@ -4862,12 +4875,10 @@ def __MoveMosaicsToZeroOrigin(StosMosaicTransforms: Iterable[TransformNode], Out
         maxX = int(math.ceil(maxX))
         maxY = int(math.ceil(maxY))
 
-    for transform in output_transform_list:
-        transform.CropBox = (maxX, maxY)
+    for mosaic_obj in mosaicToVolume.SectionToVolumeTransforms.values():
+        mosaic_obj.transformNode.CropBox = (maxX, maxY)
 
-    # Create a new node for the translated mosaic if needed and save it
-
-    mosaicToVolume.Save()
+    mosaicToVolume.Save(skip_unchanged=True)
 
     return
 

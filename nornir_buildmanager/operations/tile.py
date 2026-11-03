@@ -43,6 +43,7 @@ import nornir_buildmanager
 from nornir_buildmanager.volumemanager import *
 from nornir_buildmanager.exceptions import NornirUserException
 import nornir_buildmanager.templates
+from nornir_buildmanager.operations import histogram_cleanup
 from nornir_buildmanager.validation import transforms, image
 from nornir_shared.files import RemoveOutdatedFile, OutdatedFile, RemoveInvalidImageFile, ensure_directory, pin_directory_for_worker
 from nornir_shared.histogram import Histogram
@@ -1017,6 +1018,13 @@ def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, 
         HistogramElement = nornir_buildmanager.volumemanager.HistogramNode.Create(transform_node, Type=MangledName,
                                                                                   attrib=Parameters)
         [HistogramElementCreated, HistogramElement] = filter_node.UpdateOrAddChildByAttrib(HistogramElement, "Type")
+
+    # Histograms for other input-transform types (an earlier prune threshold) stay unless
+    # both their files are gone; then the element is dead metadata and is dropped.
+    stale = histogram_cleanup.stale_histograms(filter_node, keep_type=MangledName, transform_derived_only=True)
+    if stale:
+        histogram_cleanup.remove_histograms(filter_node, stale, logging.getLogger(__name__ + '.HistogramFilter'))
+        yield filter_node
 
     data_node = nornir_buildmanager.volumemanager.DataNode.Create(OutputHistogramXmlFilename)
     [DataElementCreated, data_node] = HistogramElement.UpdateOrAddChild(data_node)

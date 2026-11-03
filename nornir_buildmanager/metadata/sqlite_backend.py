@@ -58,7 +58,20 @@ CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_tag ON nodes(tag);
 CREATE INDEX IF NOT EXISTS idx_attribs_node ON node_attribs(node_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_attribs_node_key ON node_attribs(node_id, key);
+
+CREATE TABLE IF NOT EXISTS container_signatures (
+    path     TEXT PRIMARY KEY,
+    size     INTEGER NOT NULL,
+    mtime_ns INTEGER NOT NULL
+);
 """
+
+# (size, mtime_ns) of each container's VolumeData.xml when its rows were last synced, keyed by
+# the container folder relative to the volume root ('.' for the root, '/' separators). Added
+# without a schema version bump: older code ignores the table, and an existing database gets it
+# on its next synced save (shadow_write creates it IF NOT EXISTS).
+SIGNATURES_TABLE_SQL = ("CREATE TABLE IF NOT EXISTS container_signatures "
+                        "(path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTEGER NOT NULL)")
 
 
 @contextlib.contextmanager

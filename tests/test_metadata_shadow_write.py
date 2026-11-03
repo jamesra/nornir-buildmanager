@@ -274,8 +274,9 @@ def test_parity_mismatch_warns_with_container_path(monkeypatch, tmp_path, caplog
     real_upsert = shadow_write._upsert_container
 
     def drop_attributes(conn, node_id, saved, container_dir):
-        real_upsert(conn, node_id, saved, container_dir)
+        signatures = real_upsert(conn, node_id, saved, container_dir)
         conn.execute("DELETE FROM node_attribs WHERE node_id = ? AND key = 'Notes'", (node_id,))
+        return signatures
 
     monkeypatch.setattr(shadow_write, '_upsert_container', drop_attributes)
     volume = _load(root)

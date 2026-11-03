@@ -27,15 +27,29 @@ class XMLMetadataBackend(VolumeMetadataBackend):
     _XML_FILENAMES = ['VolumeData.xml', 'Volume.xml']
 
     def __init__(self, volume_path: str, single_file: bool = False,
-                 xml_filename: Optional[str] = None):
+                 xml_filename: Optional[str] = None,
+                 signatures: Optional[dict[str, tuple[int, int]]] = None):
         """
         :param volume_path: Path to the volume root directory.
         :param single_file: If True, load/save as a monolithic XML file instead of sharded.
         :param xml_filename: Override the XML filename (default: auto-detect).
+        :param signatures: When given, a sharded :meth:`load` records the ``(size, mtime_ns)``
+            of each container file it reads here, keyed by the container's absolute folder and
+            taken before the file is parsed (the SQLite shadow stores them beside the rows).
         """
         self._volume_path = volume_path
         self._single_file = single_file
         self._xml_filename = xml_filename
+        self._signatures = signatures
+
+    def _record_signature(self, container_dir: str, xml_path: str) -> None:
+        if self._signatures is None:
+            return
+        try:
+            stat = os.stat(xml_path)
+        except OSError:
+            return
+        self._signatures[os.path.abspath(container_dir)] = (stat.st_size, stat.st_mtime_ns)
 
     def _find_xml_path(self) -> Optional[str]:
         if self._xml_filename:
@@ -61,6 +75,8 @@ class XMLMetadataBackend(VolumeMetadataBackend):
         if xml_path is None:
             return None
 
+        if not self._single_file:
+            self._record_signature(self._volume_path, xml_path)
         try:
             tree = ElementTree.parse(xml_path)
         except ElementTree.ParseError as e:
@@ -117,6 +133,7 @@ class XMLMetadataBackend(VolumeMetadataBackend):
                 sub_dir = os.path.join(container_path, child_path)
                 sub_xml = os.path.join(sub_dir, 'VolumeData.xml')
                 if os.path.isfile(sub_xml):
+                    self._record_signature(sub_dir, sub_xml)
                     try:
                         sub_tree = ElementTree.parse(sub_xml)
                         sub_root = sub_tree.getroot()

@@ -4,6 +4,8 @@ Created on Jan 30, 2014
 @author: u0490822
 '''
 
+import os
+
 import nornir_buildmanager.operations.block
 import nornir_imageregistration.mosaic as mosaic
 import nornir_imageregistration.volume as volume
@@ -65,12 +67,27 @@ class MosaicVolume(volume.Volume):
 
         return vol
 
-    def Save(self):
+    def Save(self, skip_unchanged: bool = False):
+        """Write each section's mosaic to its transform node's file.
 
+        With *skip_unchanged*, a file that already holds exactly the new content is left
+        alone, so a volume where few sections changed costs reads, not writes.
+        """
         for key, mosaicObj in list(self.SectionToVolumeTransforms.items()):
             transformNode = mosaicObj.transformNode
 
-            mosaicObj.SaveToMosaicFile(transformNode.FullPath)
+            mfile = mosaicObj.ToMosaicFile()
+            if not (skip_unchanged and _file_holds(transformNode.FullPath, mfile.MosaicStr())):
+                mfile.Save(transformNode.FullPath)
 
             transformNode.ResetChecksum()
             # transformNode.Checksum = mosaicfile.MosaicFile.LoadChecksum(transformNode.FullPath)
+
+
+def _file_holds(path: str, text: str) -> bool:
+    """True if *path* exists and holds *text* as ``MosaicFile.Save`` would write it (text mode)."""
+    try:
+        with open(path, 'r', newline='') as f:
+            return f.read() == text.replace('\n', os.linesep)
+    except FileNotFoundError:
+        return False

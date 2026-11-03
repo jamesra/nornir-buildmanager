@@ -70,16 +70,22 @@ class XmlContainerStorage:
         when it is not well-formed XML. For ``VolumeData.xml`` with
         ``NORNIR_VOLUME_METADATA_READ_SQLITE`` on, :func:`sqlite_read.load_container_element`
         returns an equal tree built from the volume's SQLite rows instead, or the parsed
-        file when the database cannot stand in for it.
+        file when the database cannot stand in for it. With the SQLite shadow on, a file that
+        changed since its rows were last synced (a hand edit) is re-synced first
+        (:func:`shadow_write.after_container_loaded`).
         """
         # I could use ElementTree.parse here.  However, there was a rare
         # bug where saving the file would encounter a permissions error
         # loading the file and closing it myself seems to have solved
         # the problem
         with open(os.path.join(container_dir, self.filename), 'rb') as hFile:
+            # Taken from the open handle, before the read: no extra round trip on a share, and a
+            # file replaced mid-read looks changed on its next load rather than unchanged.
+            stat = os.fstat(hFile.fileno())
             RawXML = hFile.read()
         element = ElementTree.fromstring(RawXML)
         if self.filename == VOLUME_DATA_FILENAME:
+            shadow_write.after_container_loaded(container_dir, RawXML, (stat.st_size, stat.st_mtime_ns))
             return sqlite_read.load_container_element(container_dir, element)
         return element
 

@@ -27,7 +27,7 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 import nornir_buildmanager.volumemanager as vm
-from nornir_buildmanager.metadata import feature_flags, sqlite_read
+from nornir_buildmanager.metadata import feature_flags, shadow_write, sqlite_read
 from nornir_buildmanager.metadata.migrate import migrate_volume, verify_migration
 from nornir_buildmanager.metadata.sqlite_backend import (
     DEFAULT_DB_FILENAME,
@@ -215,7 +215,8 @@ def _set_schema_version(root: str, version: str | None) -> None:
         conn.commit()
 
 
-def _stale_section(root: str) -> None:
+def _save_section_without_shadow(root: str) -> str:
+    """Change section 1's Notes in a save the shadow does not see; return the section folder."""
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv(SHADOW, '0')
         mp.setenv(READ, '0')
@@ -226,6 +227,38 @@ def _stale_section(root: str) -> None:
         section.attrib['Notes'] = 'saved without the shadow'
         section.AttributesChanged = True
         vm.VolumeManager.Save(volume)
+    return os.path.join(os.path.abspath(root), 'TEM', '0001')
+
+
+def _stale_section(root: str) -> None:
+    """Rows that differ from the file although the stored signature says they were synced from it.
+
+    A file whose signature changed is re-synced when it loads (``shadow_write.after_container_loaded``),
+    so recording the new signature is what keeps these rows stale for the read's parity check.
+    """
+    section_dir = _save_section_without_shadow(root)
+    key = shadow_write.container_key(os.path.abspath(root), section_dir)
+    signature = shadow_write.file_signature(os.path.join(section_dir, 'VolumeData.xml'))
+    assert signature is not None
+    with _db(root) as conn:
+        conn.execute("INSERT OR REPLACE INTO container_signatures (path, size, mtime_ns) VALUES (?, ?, ?)",
+                     (key, *signature))
+        conn.commit()
+    shadow_write._known_signatures.clear()
+
+
+def test_section_saved_without_the_shadow_is_resynced_then_read_from_sqlite(monkeypatch, tmp_path, sources):
+    """The load check brings a container saved outside the shadow back into step before the read compares it."""
+    root = _shadowed_volume(os.path.join(str(tmp_path), 'vol'))
+    section_dir = _save_section_without_shadow(root)
+    monkeypatch.setenv(SHADOW, '1')
+    monkeypatch.setenv(READ, '1')
+    with _read_log() as log:
+        volume = _load_all(root)
+    assert sources[section_dir] is True
+    assert log.warnings() == []
+    section = volume.find('Block/Section')
+    assert section is not None and section.attrib['Notes'] == 'saved without the shadow'
 
 
 def _drop_section_rows(root: str) -> None:
