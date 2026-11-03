@@ -1162,6 +1162,7 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
                                        concurrent.futures.Future[stos_brute_pairs.StosBrutePairResult]]] = \
         collections.deque()
     failures: list[tuple[str, BaseException]] = []
+    ambiguous: list[str] = []
     pending = iter(pair_tasks)
     unsaved = False
     last_save = time.monotonic()
@@ -1228,6 +1229,11 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
                         if result.gpu_pool_bytes is not None else "")
             Logger.info("StosBrute %s: %s; %.1f s in process %d%s", result.pair_name, result.describe(),
                         result.elapsed_seconds, result.pid, gpu_pool)
+            if result.ambiguous:
+                ambiguous.append(result.pair_name)
+                Logger.warning("StosBrute %s: ambiguous pose (weight %.2f < %.1f); it may differ between "
+                               "runs or platforms, check it before trusting it", result.pair_name,
+                               result.weight, stos_brute_pairs.STOS_BRUTE_AMBIGUOUS_WEIGHT)
             if time.monotonic() - last_save >= save_interval_seconds:
                 unsaved = False
                 last_save = time.monotonic()
@@ -1243,6 +1249,10 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
         raise
 
     executor.shutdown()
+
+    if ambiguous:
+        prettyoutput.LogErr(f"StosBrute: {len(ambiguous)} ambiguous pose(s) (weight < "
+                            f"{stos_brute_pairs.STOS_BRUTE_AMBIGUOUS_WEIGHT}): {', '.join(ambiguous)}")
 
     if unsaved:
         (yield stos_group_node)

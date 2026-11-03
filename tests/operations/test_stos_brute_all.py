@@ -361,6 +361,41 @@ def test_loop_order_is_prepare_compute_finish_per_pair(tmp_path: Path) -> None:
     assert (tmp_path / 'a.stos').read_text() == 'a'
 
 
+class _WeightedExecutor(_RecordingExecutor):
+    """Reports a registration weight per pair, like a real LogPolar result."""
+
+    def __init__(self, events: list[str], weights: dict[str, float]) -> None:
+        super().__init__(events)
+        self.weights = weights
+
+    def submit(self, job: stos_brute_pairs.StosBrutePairJob) -> concurrent.futures.Future:
+        future = super().submit(job)
+        result = dataclasses.replace(future.result(), angle=0.0, offset_yx=(0.0, 0.0), scale=1.0,
+                                     flipped_ud=False, weight=self.weights[job.pair_name])
+        done: concurrent.futures.Future = concurrent.futures.Future()
+        done.set_result(result)
+        return done
+
+
+def test_loop_flags_ambiguous_poses(tmp_path: Path) -> None:
+    """A pose whose weight barely clears noise is warned about and listed once at the end (RC2 691-690)."""
+    events: list[str] = []
+    tasks, prepared, group = _loop_fixture(_fake_jobs(tmp_path, ['weak', 'strong']))
+    prepared_iter = iter(prepared)
+    logger = mock.Mock()
+    executor = _WeightedExecutor(events, {'weak': 2.77, 'strong': 8.1})
+    patches = _patched_loop(lambda **kwargs: next(prepared_iter), _finish_recording([]))
+    with patches[0], patches[1], patches[2], patches[3], \
+            mock.patch.object(block_mod.prettyoutput, 'LogErr') as log_err:
+        list(block_mod._stos_brute_pairs({}, tasks, 2, group, _LOG_POLAR, logger, executor))
+
+    warned = [c.args[1] for c in logger.warning.call_args_list]
+    assert warned == ['weak']
+    log_err.assert_called_once()
+    assert 'weak' in log_err.call_args.args[0] and 'strong' not in log_err.call_args.args[0]
+    assert not stos_brute_pairs.StosBrutePairResult('p', 'p.stos', 0.0, 1, weight=None).ambiguous
+
+
 def test_loop_saves_in_batches(tmp_path: Path) -> None:
     """The StosGroup is yielded when the save interval has elapsed and at the end, not per pair.
 

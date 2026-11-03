@@ -68,6 +68,14 @@ class StosBrutePairError(RuntimeError):
         self.pair_names = list(pair_names)
 
 
+#: Weight below which a StosBrute pose is reported as ambiguous. On RC3 the weight at random
+#: poses tops out near 1.9-2.1 and real matches score 3-4 or more. Windows vs Linux reruns of
+#: 410 RC2 pairs (2026-11) differed by a median 1.98 px (max 25 px) at weight >= 4, but by up
+#: to 75.6 px (691-690, weight 2.77) below 3: there the winner barely beats other poses, so
+#: small numeric differences between platforms pick a different one.
+STOS_BRUTE_AMBIGUOUS_WEIGHT: float = 3.0
+
+
 @dataclass(frozen=True)
 class StosBrutePairResult:
     """What a finished pair reports back to the main process."""
@@ -86,6 +94,11 @@ class StosBrutePairResult:
     flipped_ud: bool | None = None
     weight: float | None = None
     peak_ratio: float | None = None
+
+    @property
+    def ambiguous(self) -> bool:
+        """True when the pose's weight is too low to beat other poses reliably."""
+        return self.weight is not None and self.weight < STOS_BRUTE_AMBIGUOUS_WEIGHT
 
     def describe(self) -> str:
         """One-line summary of the registration for the build log."""
