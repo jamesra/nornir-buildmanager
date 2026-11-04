@@ -137,3 +137,21 @@ def test_missing_sections_are_skipped(tmp_path, monkeypatch):
 
     assert block.GetSection(99) is None
     _lookups(block, (1,))
+
+
+def test_preload_descendants_loads_each_level(tmp_path, monkeypatch):
+    """CreateVikingXML walks every section, channel, filter and pyramid; after the preload it reads nothing."""
+    root = os.path.join(str(tmp_path), 'vol')
+    build_volume(root, sections=(1, 2, 3))
+    volume = cast(vm.XContainerElementWrapper, vm.VolumeManager.Load(root))
+    storage = _install(monkeypatch, _CountingStorage())
+
+    link_prefetch.preload_descendants(volume, (('Block',), ('Section',), ('Channel',), ('Filter',),
+                                               ('TilePyramid', 'Tileset')))
+    loaded = len(storage.loads)
+    pyramids = list(volume.findall('Block/Section/Channel/Filter/TilePyramid'))
+    tilesets = list(volume.findall('Block/Section/Channel/Filter/Tileset'))
+
+    assert len(pyramids) == len(tilesets) == 3 * 2
+    assert len(storage.loads) == loaded, 'the walk found everything already loaded'
+    assert not volume.ElementHasChangesToSave

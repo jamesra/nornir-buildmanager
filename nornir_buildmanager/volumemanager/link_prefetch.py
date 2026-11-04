@@ -101,6 +101,22 @@ def preload_links(requests: Iterable[tuple[XContainerElementWrapper, str]],
     return loaded
 
 
+def preload_descendants(root: XElementWrapper, levels: Sequence[Sequence[str]],
+                        max_workers: int = DEFAULT_MAX_WORKERS) -> None:
+    """Load every linked container along *levels* below *root*, one level at a time.
+
+    *levels* names the tags of each level, e.g. ``[('Block',), ('Section',), ('Channel',)]``.
+    Each level loads the matching ``<tag>_Link`` stubs under every container of the level
+    above, including containers that were already loaded.
+    """
+    parents: list[XElementWrapper] = [root]
+    for tags in levels:
+        containers = [p for p in parents if isinstance(p, XContainerElementWrapper)]
+        preload_links(((p, f'{tag}_Link') for p in containers for tag in tags), max_workers)
+        parents = [child for p in containers for tag in tags
+                   for child in ElementTree.Element.findall(p, tag) if isinstance(child, XElementWrapper)]
+
+
 def _loaded_child(parent: XElementWrapper, tag: str, attrib: str, value: str) -> XElementWrapper | None:
     """An already loaded child, found without triggering a load."""
     for child in ElementTree.Element.findall(parent, f"{tag}[@{attrib}='{value}']"):

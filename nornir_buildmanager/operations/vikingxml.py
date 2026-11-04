@@ -9,7 +9,9 @@ import os
 import zipfile
 
 import nornir_buildmanager.volumemanager
+import nornir_pools
 from nornir_buildmanager.progress import report_iterate, report_iterate_complete
+from nornir_buildmanager.volumemanager import link_prefetch
 from nornir_imageregistration.files import *
 import nornir_shared.files
 from nornir_shared.files import RecurseSubdirectoriesGenerator
@@ -17,6 +19,13 @@ import nornir_shared.prettyoutput as prettyoutput
 import xml.etree.ElementTree as ETree
 
 ECLIPSE = 'ECLIPSE' in os.environ
+
+# Linked containers the export reads. Loading them one lookup at a time made CreateVikingXML
+# latency bound on the NAS: 9m38s at 1.2% CPU for RC3 Grid32 (srv, 2026-11-04).
+_VIKINGXML_LINK_LEVELS = (('Block',), ('Section',), ('Channel',), ('Filter',), ('TilePyramid', 'Tileset'))
+
+# (number of images, first tile file name) of a .mosaic file
+MosaicSummary = tuple[int, str | None]
 
 
 def _normalize_stos_group_names(stos_group_name: str | list[str] | None) -> list[str]:
@@ -150,6 +159,8 @@ def CreateVikingXML(StosMapName=None, StosGroupName: str | list[str] | None = No
                                                 'num_stos': '0',
                                                 'num_sections': '0',
                                                 'InputChecksum': InputVolumeNode.Checksum})
+
+    link_prefetch.preload_descendants(InputVolumeNode, _VIKINGXML_LINK_LEVELS)
 
     (units_of_measure, units_per_pixel) = DetermineVolumeScale(InputVolumeNode)
     if units_of_measure is not None:
@@ -386,6 +397,8 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
             prettyoutput.Log('Queue %g' % SectionNode.Number)
             section_jobs.append((BlockNode.Path, SectionNode))
 
+    mosaic_summaries = _load_mosaic_summaries(SectionNode for _, SectionNode in section_jobs)
+
     total_sections = len(section_jobs)
     completed_sections = 0
     sections_label = "Sections"
@@ -407,7 +420,7 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
                 element=section_id,
             )
 
-            OutputSectionNode = ParseSection(BlockPath, SectionNode)
+            OutputSectionNode = ParseSection(BlockPath, SectionNode, mosaic_summaries)
             sections_parent.append(OutputSectionNode)
 
             completed_sections += 1
@@ -428,13 +441,34 @@ def ParseSections(InputVolumeNode, OutputVolumeNode):
     OutputVolumeNode.attrib['num_sections'] = str(len(AllSectionNodes))
 
 
-def ParseSection(BlockPath, SectionNode):
+def _mosaic_summary(path: str) -> MosaicSummary | None:
+    """Image count and first tile name of a .mosaic file, or None when it cannot be loaded."""
+    mFile = mosaicfile.MosaicFile.Load(path)
+    if mFile is None:
+        return None
+
+    return mFile.NumberOfImages, next(iter(mFile.ImageToTransformString), None)
+
+
+def _load_mosaic_summaries(sections, max_workers: int = link_prefetch.DEFAULT_MAX_WORKERS) -> dict[str, MosaicSummary | None]:
+    """Summaries of every section transform's .mosaic file, read on a bounded thread pool."""
+    paths = sorted({transform.FullPath for section in sections for channel in section.Channels
+                    for transform in channel.findall('Transform')})
+    if not paths:
+        return {}
+
+    with nornir_pools.InstrumentedThreadPoolExecutor('vikingxml-mosaics', max_workers=min(max_workers, len(paths)),
+                                                     thread_name_prefix='vikingxml-mosaics') as pool:
+        return dict(zip(paths, pool.map(_mosaic_summary, paths)))
+
+
+def ParseSection(BlockPath, SectionNode, mosaic_summaries: dict[str, MosaicSummary | None] | None = None):
     # Create a section node, or create on if it doesn't exist
     OutputSectionNode = ETree.Element('Section', {'Number': str(SectionNode.Number),
                                                   'Path': os.path.join(BlockPath, SectionNode.Path),
                                                   'Name': SectionNode.Name})
 
-    ParseChannels(SectionNode, OutputSectionNode)
+    ParseChannels(SectionNode, OutputSectionNode, mosaic_summaries)
 
     NotesNodes = SectionNode.findall('Notes')
     for NoteNode in NotesNodes:
@@ -444,7 +478,7 @@ def ParseSection(BlockPath, SectionNode):
     return OutputSectionNode
 
 
-def ParseChannels(SectionNode, OutputSectionNode):
+def ParseChannels(SectionNode, OutputSectionNode, mosaic_summaries: dict[str, MosaicSummary | None] | None = None):
     """Parse channels for a section; publishes nested ``vikingxml:channels`` progress."""
     channels = list(SectionNode.Channels)
     total_channels = len(channels)
@@ -478,7 +512,7 @@ def ParseChannels(SectionNode, OutputSectionNode):
             ScaleNode = ChannelNode.find('Scale')
 
             for TransformNode in ChannelNode.findall('Transform'):
-                OutputTransformNode = ParseTransform(TransformNode, OutputSectionNode)
+                OutputTransformNode = ParseTransform(TransformNode, OutputSectionNode, mosaic_summaries)
                 if not OutputTransformNode is None:
                     OutputTransformNode.attrib['Path'] = os.path.join(ChannelNode.Path, OutputTransformNode.attrib['Path'])
 
@@ -517,23 +551,22 @@ def ParseChannels(SectionNode, OutputSectionNode):
             report_iterate_complete(channels_track_id, total_channels)
 
 
-def ParseTransform(TransformNode, OutputSectionNode):
-    mFile = mosaicfile.MosaicFile.Load(TransformNode.FullPath)
+def ParseTransform(TransformNode, OutputSectionNode, mosaic_summaries: dict[str, MosaicSummary | None] | None = None):
+    if mosaic_summaries is not None and TransformNode.FullPath in mosaic_summaries:
+        summary = mosaic_summaries[TransformNode.FullPath]
+    else:
+        summary = _mosaic_summary(TransformNode.FullPath)
 
-    if (mFile is None):
+    if (summary is None):
         prettyoutput.LogErr("Unable to load transform: " + TransformNode.FullPath)
         return
 
-    if (mFile.NumberOfImages < 1):
+    (number_of_images, TileFileName) = summary
+    if (number_of_images < 1):
         prettyoutput.LogErr("Not including empty .mosaic file")
         return
 
     # Figure out what the tile prefix and postfix are for this mosaic file by extrapolating from the first tile filename
-    for k in list(mFile.ImageToTransformString.keys()):
-        TileFileName = k
-        break
-
-    # TileFileName = mFile.ImageToTransformString.keys()[0]
 
     # Figure out prefix and postfix parts of filenames
     parts = TileFileName.split('.')
