@@ -19,7 +19,8 @@
 # Environment (optional overrides; defaults match the launch config):
 #   NORNIR_HEADLESS, PYTHONUNBUFFERED, NORNIR_MQTT_* ,
 #   NORNIR_COMPUTATIONAL_LIBRARY (default: cupy when a GPU is usable, else numpy),
-#   NORNIR_BUILD_PYTHON (python executable; default: python3 then python)
+#   NORNIR_BUILD_PYTHON (python executable; default: python3 then python),
+#   NORNIR_PIXEL_SPACING_OVERRIDES (file passed to AlignSections -PixelSpacingOverrides)
 
 set -euo pipefail
 
@@ -42,6 +43,11 @@ echo "Volume folder : $VOLUME_DIR"
 echo "Python        : $PYTHON"
 echo "Compute lib   : $COMP_LIB"
 echo "Options       : ${*:-(none)}"
+ALIGN_EXTRA=()
+if [[ -n "${NORNIR_PIXEL_SPACING_OVERRIDES:-}" ]]; then
+  ALIGN_EXTRA=(-PixelSpacingOverrides "$NORNIR_PIXEL_SPACING_OVERRIDES")
+  echo "Pixel spacing : $NORNIR_PIXEL_SPACING_OVERRIDES"
+fi
 echo
 
 # Same sequential chain as launch.json "TEM Full Alignment".
@@ -51,7 +57,7 @@ exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   -debug -computational_library "$COMP_LIB" "$@" \
   "$VOLUME_DIR" \
   CreateBlobFilter -Channels TEM -InputFilter Leveled -Levels 16,32,64 -OutputFilter Blob -Radius 9 -Median 7 -Max 3 \
-  --then AlignSections -NumAdjacentSections 1 -Filters Blob -UseMasks -Downsample 64 -Channels TEM \
+  --then AlignSections -NumAdjacentSections 1 -Filters Blob -UseMasks -Downsample 64 -Channels TEM ${ALIGN_EXTRA[@]+"${ALIGN_EXTRA[@]}"} \
   --then AssembleStosOverlays -StosGroup StosBrute -Downsample 64 -StosMap PotentialRegistrationChain \
   --then SelectBestRegistrationChain -StosGroup StosBrute -Downsample 64 -InputStosMap PotentialRegistrationChain -OutputStosMap FinalStosMap \
   --then RefineSectionAlignment -InputGroup StosBrute -InputDownsample 64 -OutputGroup Grid -OutputDownsample 32 -Filter Leveled \

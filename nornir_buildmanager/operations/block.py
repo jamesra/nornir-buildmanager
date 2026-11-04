@@ -27,6 +27,8 @@ import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
 import nornir_buildmanager.operations.helpers.stosgroupvolume as stosgroupvolume
 import nornir_buildmanager.operations.stosgroup_workers as stosgroup_workers
 from nornir_buildmanager.operations import stos_brute_pairs
+from nornir_buildmanager.operations.pixel_spacing_overrides import (
+    PixelSpacingOverride, PixelSpacingOverrides, load_pixel_spacing_overrides)
 from nornir_buildmanager.operations.stos_scan import (
     iter_stos_group_transforms,
     report_stos_work_progress,
@@ -606,17 +608,59 @@ def _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter: FilterNo
 
 
 def _IsotropicWarpedImageScaleFactor(ControlFilter: FilterNode,
-                                     MappedFilter: FilterNode) -> float | None:
+                                     MappedFilter: FilterNode,
+                                     pixel_spacing_overrides: PixelSpacingOverrides | None = None,
+                                     logger: logging.Logger | None = None) -> float | None:
     """Return one isotropic scale factor for stos brute, or None if unavailable.
 
     Collapses per-axis VolumeData Scale ratios via geometric mean so registration
-    never receives an anisotropic (sx, sy) pair.
+    never receives an anisotropic (sx, sy) pair. ``pixel_spacing_overrides``
+    (``-PixelSpacingOverrides``) corrects either section's pixel size for this
+    estimate only; the metadata is unchanged.
     """
     scale_result = _CalculateFilterToFilterBruteRegistrationScaleFactor(ControlFilter, MappedFilter)
     if scale_result is None:
         return None
     x_scale, y_scale = scale_result
-    return float(np.sqrt(float(x_scale) * float(y_scale)))
+    factor = float(np.sqrt(float(x_scale) * float(y_scale)))
+    if pixel_spacing_overrides is None:
+        return factor
+
+    control_override = _section_pixel_spacing_override(ControlFilter, pixel_spacing_overrides)
+    mapped_override = _section_pixel_spacing_override(MappedFilter, pixel_spacing_overrides)
+    if control_override is None and mapped_override is None:
+        return factor
+
+    control_x, control_y = _overridden_units_per_pixel(ControlFilter, control_override)
+    mapped_x, mapped_y = _overridden_units_per_pixel(MappedFilter, mapped_override)
+    corrected = float(np.sqrt((mapped_x / control_x) * (mapped_y / control_y)))
+    if logger is not None:
+        logger.info("StosBrute pixel spacing override: control %s, mapped %s; warped scale %.5f "
+                    "(metadata %.5f) from %s",
+                    control_override.describe() if control_override else 'metadata',
+                    mapped_override.describe() if mapped_override else 'metadata',
+                    corrected, factor, pixel_spacing_overrides.source)
+    return corrected
+
+
+def _section_pixel_spacing_override(filter_node: FilterNode,
+                                    overrides: PixelSpacingOverrides) -> PixelSpacingOverride | None:
+    """The override entry for the section holding *filter_node*, if any."""
+    section_node = filter_node.FindParent('Section')
+    if section_node is None:
+        return None
+    return overrides.lookup(int(section_node.Number))
+
+
+def _overridden_units_per_pixel(filter_node: FilterNode,
+                                override: PixelSpacingOverride | None) -> tuple[float, float]:
+    """Metadata (X, Y) units per pixel of *filter_node*, corrected by *override*."""
+    scale = filter_node.Scale
+    x = float(getattr(scale.X, 'UnitsPerPixel', scale.X))  # type: ignore[union-attr]
+    y = float(getattr(scale.Y, 'UnitsPerPixel', scale.Y))  # type: ignore[union-attr]
+    if override is None:
+        return x, y
+    return override.apply(x), override.apply(y)
 
 
 def brute_stos_needs_replacement(
@@ -693,7 +737,8 @@ def prepare_filter_to_filter_brute_registration(
         method: nornir_imageregistration.settings.SliceToSliceMethod | None = None,
         logger: logging.Logger | None = None,
         *,
-        staging_suffix: str | None = None) -> BrutePairPrepared | None:
+        staging_suffix: str | None = None,
+        pixel_spacing_overrides: PixelSpacingOverrides | None = None) -> BrutePairPrepared | None:
     """Validate a pair, create its image and transform nodes, and decide what must run.
 
     Main process only: touches the volume tree and may create downsampled images or
@@ -702,6 +747,7 @@ def prepare_filter_to_filter_brute_registration(
 
     With ``staging_suffix`` the compute job writes ``output + staging_suffix`` and
     :func:`finish_filter_to_filter_brute_registration` renames it into place.
+    ``pixel_spacing_overrides`` corrects section pixel sizes for the brute's scale estimate.
     """
     if logger is None:
         logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
@@ -793,7 +839,8 @@ def prepare_filter_to_filter_brute_registration(
     if method is None:
         method = nornir_imageregistration.settings.SliceToSliceMethod.BruteForce
 
-    warped_scale = _IsotropicWarpedImageScaleFactor(control_filter, mapped_filter)
+    warped_scale = _IsotropicWarpedImageScaleFactor(control_filter, mapped_filter,
+                                                    pixel_spacing_overrides, logger)
     control_mask_path = None
     mapped_mask_path = None
     if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
@@ -1030,7 +1077,8 @@ def _enumerate_brute_pair_tasks(mappings: list[MappingNode], block_node: BlockNo
 
 def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: BlockNode, ChannelsRegEx: str,
                  FiltersRegEx: str, Method: nornir_imageregistration.settings.SliceToSliceMethod,
-                 Logger: logging.Logger, GpuWorkers: int | str | None = None, **kwargs):
+                 Logger: logging.Logger, GpuWorkers: int | str | None = None,
+                 PixelSpacingOverrides: str | None = None, **kwargs):
     """Run StosBrute for every mapping of a StosMap, saving the StosGroup in batches.
 
     Called once per block (AlignSections). Every pair goes through prepare, compute and
@@ -1044,9 +1092,19 @@ def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: Block
     (:class:`stos_brute_pairs.GpuWorkerPairExecutor`). Workers need the CuPy backend; on
     NumPy every setting runs in this process. Other keyword arguments match StosBrute
     (OutputGroup, Type, AngleSearchRange, NoFlipCheck).
+
+    ``PixelSpacingOverrides`` (``-PixelSpacingOverrides``) is an optional file of per-section
+    pixel sizes or factors (:mod:`pixel_spacing_overrides`) used for the brute's scale
+    estimate only. Pairs whose StosBrute files are already current are not recomputed.
     """
     no_flip_check = _resolve_no_flip_check(Parameters, kwargs)
     kwargs['NoFlipCheck'] = no_flip_check
+    overrides = load_pixel_spacing_overrides(PixelSpacingOverrides)
+    kwargs['PixelSpacingOverrides'] = overrides
+    if overrides is not None:
+        Logger.info("StosBruteAll: %d pixel spacing override(s) from %s; they apply to pairs "
+                    "registered in this run, not to existing StosBrute files",
+                    len(overrides), overrides.source)
 
     # One entry per mapped section of the block: metadata, small.
     mappings = list(stos_map_node.Mappings)
@@ -1120,6 +1178,7 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
         AngleSearchRange = None
     TestForFlip = not bool(kwargs.get('NoFlipCheck', False))
     UseMasks = Parameters.get("UseMasks", False)
+    pixel_spacing_overrides = kwargs.get('PixelSpacingOverrides', None)
 
     total_pairs = sum(1 for t in pair_tasks if t.needs_work)
     remaining_per_mapping = collections.Counter(t.mapping_index for t in pair_tasks if t.needs_work)
@@ -1190,7 +1249,8 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
                         test_for_flip=TestForFlip,
                         method=Method,
                         logger=Logger,
-                        staging_suffix=_STOS_BRUTE_STAGING_SUFFIX)
+                        staging_suffix=_STOS_BRUTE_STAGING_SUFFIX,
+                        pixel_spacing_overrides=pixel_spacing_overrides)
                     if prepared is None or prepared.action == BrutePairAction.CURRENT:
                         continue
                     unsaved = True
