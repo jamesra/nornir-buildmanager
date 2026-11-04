@@ -3497,34 +3497,6 @@ def _message_reports_nonfinite(text: str) -> bool:
     return _NONFINITE_TOKEN_RE.search(text) is not None
 
 
-def _submit_tile_compositions(
-        pool: typing.Any,
-        stov_transform: typing.Any,
-        image_to_transform: typing.Iterable[tuple[str, typing.Any]],
-        *,
-        max_in_flight: int) -> typing.Iterator[typing.Any]:
-    """Compose each tile into volume space, yielding tasks as the window slides.
-
-    Every task pickles ``stov_transform`` -- a whole dense-grid slice-to-volume
-    transform -- as an argument. Submitting one task per tile up front therefore
-    kept one pickled copy per tile of the section alive at once, which for a dense
-    grid runs to hundreds of MiB on a large section and grows with tile count.
-    Bounding the window keeps that to ``max_in_flight`` copies regardless of
-    section size, at no cost to throughput while the pool stays fed. The window
-    is ``nornir_pools.submit_bounded`` (same helper as tile.py / poolutil).
-    """
-
-    def submit(item: tuple[str, typing.Any]) -> typing.Any:
-        imagename, mosaic_to_section_transform = item
-        task = pool.add_task(imagename, nornir_imageregistration.transforms.AddTransforms,
-                             stov_transform, mosaic_to_section_transform)
-        # imagename is the only task attribute _gather_volume_space_tiles reads.
-        task.imagename = imagename  # type: ignore[attr-defined]
-        return task
-
-    yield from nornir_pools.submit_bounded(submit, image_to_transform, max_in_flight=max_in_flight)
-
-
 def _gather_volume_space_tiles(mosaic_transform, tasks, *, mosaic_path: str, Logger) -> None:
     """Replace each tile's transform with its composed volume-space result.
 
@@ -4715,14 +4687,98 @@ def _GetOrCreateStosToMosaicTransform(StosTransformNode, transform_node: Transfo
     return added, OutputTransformNode
 
 
-def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transform_node: TransformNode,
-                                OutputTransformName: str, Logger, **kwargs):
-    """
-    return: Transform node if there was an create/update.  None if no change
-    """
+@dataclass(frozen=True)
+class _MosaicToVolumeJob:
+    """One section mosaic to compose with its slice-to-volume transform in a worker process."""
+    stos_transform_node: TransformNode
+    transform_node: TransformNode
+    output_transform_node: TransformNode
 
-    MappedFilterNode = transform_node.FindParent('Filter')
 
+@dataclass(frozen=True)
+class _MosaicToVolumeResult:
+    """A worker's report. User errors travel as text: NornirUserException does not survive pickling."""
+    tiles_written: int
+    user_error: str | None = None
+
+
+class _InProcessTileComposition:
+    """A tile composed when collected, shaped like the pool tasks ``_gather_volume_space_tiles`` reads."""
+
+    imagename: str
+
+    def __init__(self, imagename: str, stov_transform, mosaic_to_section_transform) -> None:
+        self.imagename = imagename
+        self._stov_transform = stov_transform
+        self._mosaic_to_section_transform = mosaic_to_section_transform
+
+    def wait_return(self):
+        return nornir_imageregistration.transforms.AddTransforms(self._stov_transform,
+                                                                 self._mosaic_to_section_transform)
+
+
+def _compose_mosaic_to_volume(stos_path: str, stos_downsample: float, mosaic_path: str,
+                              output_path: str) -> _MosaicToVolumeResult:
+    """Compose a section's mosaic with its slice-to-volume transform and write the output .mosaic.
+
+    A pool task. Parsing the .stos and the section's grid .mosaic and composing its tiles
+    ran on the main process one section at a time, with only the tile composition farmed
+    out, so ~130 workers idled: 4.7% of 128 cores and about 2 h for 1600 sections (RC3,
+    srv, 2026-11-04). ``init_pool_process`` puts workers on NumPy, so these are host
+    transforms, as the tile tasks were before.
+    """
+    Logger = logging.getLogger(__name__ + '.MosaicToVolume')
+
+    SToV = stosfile.StosFile.Load(stos_path)
+    if stosfile.transform_text_contains_nonfinite(SToV.Transform):
+        return _MosaicToVolumeResult(0, str(_stos_nonfinite_user_error(f"SliceToVolume STOS: {stos_path}",
+                                                                       [stos_path])))
+    # Make sure we are not using a downsampled transform
+    SToV = SToV.ChangeTransformPixelSpacing(stos_downsample, 1.0,  # type: ignore[union-attr, arg-type]
+                                            SToV.ControlImageFullPath,
+                                            SToV.MappedImageFullPath,
+                                            SToV.ControlMaskFullPath,
+                                            SToV.MappedMaskFullPath,
+                                            create_copy=False)
+    StoVTransform = assemble.transform_for_host_assembly(
+        factory.LoadTransform(SToV.Transform))  # type: ignore[arg-type]
+    # Solve the RBF fallback once here; otherwise every tile re-solves it.
+    assemble.precompute_forward_fallback(StoVTransform)
+
+    MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(mosaic_path)
+    if not MosaicTransform.IsOriginAtZero():
+        MosaicTransform.TranslateToZeroOrigin()
+
+    try:
+        _gather_volume_space_tiles(
+            MosaicTransform,
+            (_InProcessTileComposition(imagename, StoVTransform, MosaicToSectionTransform)
+             for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items())),
+            mosaic_path=mosaic_path,
+            Logger=Logger)
+    except NornirUserException as e:
+        return _MosaicToVolumeResult(0, str(e))
+
+    if len(MosaicTransform.ImageToTransform) == 0:
+        return _MosaicToVolumeResult(0)
+
+    MosaicTransform.ToMosaicFile().Save(output_path)
+    return _MosaicToVolumeResult(len(MosaicTransform.ImageToTransform))
+
+
+def _mosaic_to_volume_task_args(job: _MosaicToVolumeJob) -> tuple[str, float, str, str]:
+    """Picklable arguments of ``_compose_mosaic_to_volume`` for *job*."""
+    stos_group_node = job.stos_transform_node.FindParent('StosGroup')
+    return (job.stos_transform_node.FullPath, stos_group_node.Downsample,  # type: ignore[union-attr, return-value]
+            job.transform_node.FullPath, job.output_transform_node.FullPath)
+
+
+def _prepare_stos_to_mosaic_output(StosTransformNode: TransformNode | None, transform_node: TransformNode,
+                                   OutputTransformName: str) -> tuple[TransformNode, bool]:
+    """Get or create the output node and remove its .mosaic when the inputs changed.
+
+    :return: the output node, and True when its .mosaic must be built
+    """
     (added_output_transform, OutputTransformNode) = _GetOrCreateStosToMosaicTransform(StosTransformNode, transform_node,
                                                                                       OutputTransformName)
 
@@ -4746,78 +4802,18 @@ def _ApplyStosToMosaicTransform(StosTransformNode: TransformNode | None, transfo
             except FileNotFoundError:
                 pass
 
-    if os.path.exists(OutputTransformNode.FullPath):
-        return OutputTransformNode
+    return OutputTransformNode, not os.path.exists(OutputTransformNode.FullPath)
 
-    if StosTransformNode is None:
-        # No transform, copy transform directly
 
-        # Create transform node for the output
-        shutil.copyfile(transform_node.FullPath, OutputTransformNode.FullPath)
-        # OutputTransformNode.SetTransform(StosTransformNode)
-        OutputTransformNode.InputMosaicTransformChecksum = transform_node.Checksum
-        # OutputTransformNode.Checksum = TransformNode.Checksum
+def _finish_mosaic_to_volume(job: _MosaicToVolumeJob, result: _MosaicToVolumeResult) -> None:
+    """Record a worker's output on its node, or raise the user error it reported."""
+    if result.user_error is not None:
+        raise NornirUserException(result.user_error)
 
-    else:
-        # files.RemoveOutdatedFile(StosTransformNode.FullPath, OutputTransformNode.FullPath)
-
-        stos_group_node = StosTransformNode.FindParent('StosGroup')
-
-        SToV = stosfile.StosFile.Load(StosTransformNode.FullPath)
-        if stosfile.transform_text_contains_nonfinite(SToV.Transform):
-            raise _stos_nonfinite_user_error(
-                f"SliceToVolume STOS: {StosTransformNode.FullPath}",
-                [StosTransformNode.FullPath])
-        # Make sure we are not using a downsampled transform
-        SToV = SToV.ChangeTransformPixelSpacing(stos_group_node.Downsample, 1.0,  # type: ignore[union-attr, arg-type]
-                                                SToV.ControlImageFullPath,
-                                                SToV.MappedImageFullPath,
-                                                SToV.ControlMaskFullPath,
-                                                SToV.MappedMaskFullPath,
-                                                create_copy=False)
-        # Host copy: under CuPy LoadTransform builds a *_GPUComponent, and every pool task
-        # pickles this transform into a worker, where unpickling its CuPy arrays opens a
-        # CUDA context. On srv (RC3 0001, 2026-11-02) ~130 workers did that and 114 of
-        # 900 tiles failed with CUDA_ERROR_OUT_OF_MEMORY at 3.7 of 24.5 GB used. The
-        # workers compute on NumPy anyway, so the composed tiles are unchanged.
-        StoVTransform = assemble.transform_for_host_assembly(
-            factory.LoadTransform(SToV.Transform))  # type: ignore[arg-type]
-        # Solve the RBF fallback once here; otherwise every tile task re-solves it.
-        assemble.precompute_forward_fallback(StoVTransform)
-
-        MosaicTransform = mosaic.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
-        if not MosaicTransform.IsOriginAtZero():
-            MosaicTransform.TranslateToZeroOrigin()
-        UsePool = True
-        if UsePool:
-            # This is a parallel operation, but the Python GIL is so slow using threads is slower.
-            Pool = nornir_pools.GetLocalMachinePool()
-
-            # Twice the worker count keeps every worker fed while the oldest task is
-            # being collected, without going back to one live copy per tile.
-            max_in_flight = max(1, (getattr(Pool, 'max_workers', None) or os.cpu_count() or 4) * 2)
-
-            _gather_volume_space_tiles(
-                MosaicTransform,
-                _submit_tile_compositions(Pool, StoVTransform,
-                                          list(MosaicTransform.ImageToTransform.items()),
-                                          max_in_flight=max_in_flight),
-                mosaic_path=transform_node.FullPath,
-                Logger=Logger)
-        else:
-            for imagename, MosaicToSectionTransform in list(MosaicTransform.ImageToTransform.items()):
-                MosaicToVolume = StoVTransform.AddTransform(MosaicToSectionTransform)  # type: ignore[attr-defined]
-                MosaicTransform.ImageToTransform[imagename] = MosaicToVolume
-
-        if len(MosaicTransform.ImageToTransform) > 0:
-            OutputMosaicFile = MosaicTransform.ToMosaicFile()
-            OutputMosaicFile.Save(OutputTransformNode.FullPath)
-
-            OutputTransformNode.ResetChecksum()
-            OutputTransformNode.SetTransform(StosTransformNode)
-            OutputTransformNode.InputMosaicTransformChecksum = transform_node.Checksum
-
-    return OutputTransformNode
+    if result.tiles_written > 0:
+        job.output_transform_node.ResetChecksum()
+        job.output_transform_node.SetTransform(job.stos_transform_node)
+        job.output_transform_node.InputMosaicTransformChecksum = job.transform_node.Checksum
 
 
 def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: StosGroupNode, block_node: BlockNode,
@@ -4825,6 +4821,9 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
                                   **kwargs):
     """Create a .mosaic file that translates a section directly into the volume.  Two .mosaics are created, a _untraslated version which may have a negative origin
        and a version with the requested OutputTransformName which will have an origin at zero
+
+       Sections are composed in pool workers, one task per section. A section that fails is
+       reported once every other section is done; its error does not stop the others.
     """
     Channels = block_node.findall('Section/Channel')
 
@@ -4842,27 +4841,67 @@ def BuildMosaicToVolumeTransforms(stos_map_node: StosMapNode, stos_group_node: S
     if total_channels:
         report_iterate(mtv_track_id, 0, total_channels, mtv_label, depth=0)
 
+    compose_jobs: list[_MosaicToVolumeJob] = []
+    jobs_left: dict[int, int] = {}  # id(transform parent) -> jobs not yet finished
     for channelNode in MatchingChannelNodes:
         transform_node = channelNode.GetTransform(InputTransformName)  # type: ignore[reportAttributeAccessIssue]
 
-        if transform_node is None:
-            completed_channels += 1
-            if total_channels:
-                report_iterate(mtv_track_id, completed_channels, total_channels, mtv_label, depth=0)
+        jobs = None if transform_node is None else \
+            BuildChannelMosaicToVolumeTransform(stos_map_node, stos_group_node, transform_node,
+                                                UntranslatedOutputTransformName, Logger, **kwargs)
+        if jobs:
+            compose_jobs.extend(jobs)
+            jobs_left[id(transform_node.Parent)] = len(jobs)  # type: ignore[union-attr]
             continue
 
-        node_to_save = BuildChannelMosaicToVolumeTransform(stos_map_node, stos_group_node, transform_node,
-                                                           UntranslatedOutputTransformName, Logger, **kwargs)
-        if node_to_save is not None:
-            yield node_to_save
-
-        output_transform_node = channelNode.GetChildByAttrib('Transform', 'Name', UntranslatedOutputTransformName)  # type: ignore[reportAttributeAccessIssue]
-        if output_transform_node is not None:
-            StosMosaicTransforms.append(output_transform_node)  # type: ignore[arg-type]
+        if jobs is not None:
+            yield transform_node.Parent  # type: ignore[union-attr]
 
         completed_channels += 1
         if total_channels:
             report_iterate(mtv_track_id, completed_channels, total_channels, mtv_label, depth=0)
+
+    errors: list[str] = []
+    if compose_jobs:
+        # Processes, not threads: parsing and composing grid transforms holds the GIL.
+        pool = nornir_pools.GetLocalMachinePool()
+        # One section per worker. Each holds a section's mosaic and its slice-to-volume
+        # transform, so a deeper queue would only add memory.
+        max_in_flight = max(1, getattr(pool, 'max_workers', None) or os.cpu_count() or 4)
+
+        def submit(job: _MosaicToVolumeJob):
+            task = pool.add_task(job.transform_node.FullPath, _compose_mosaic_to_volume,
+                                 *_mosaic_to_volume_task_args(job))
+            task.job = job  # type: ignore[attr-defined]
+            return task
+
+        for task in nornir_pools.submit_bounded(submit, compose_jobs, max_in_flight=max_in_flight):
+            job = task.job
+            try:
+                _finish_mosaic_to_volume(job, task.wait_return())
+            except Exception as e:
+                Logger.error("MosaicToVolume failed for %s: %s", job.transform_node.FullPath, e,
+                             exc_info=not isinstance(e, NornirUserException))
+                errors.append(f"{job.output_transform_node.FullPath}:\n{e}")
+
+            parent = job.transform_node.Parent
+            jobs_left[id(parent)] -= 1
+            if jobs_left[id(parent)] == 0:
+                # Saved even after a failure: the output node then has no file, so the next run rebuilds it.
+                yield parent
+                completed_channels += 1
+                if total_channels:
+                    report_iterate(mtv_track_id, completed_channels, total_channels, mtv_label, depth=0)
+
+    if errors:
+        raise NornirUserException(
+            f"{len(errors)} of {len(compose_jobs)} section mosaics could not be moved into volume space. "
+            "The other sections were built.\n\n" + "\n\n".join(errors))
+
+    for channelNode in MatchingChannelNodes:
+        output_transform_node = channelNode.GetChildByAttrib('Transform', 'Name', UntranslatedOutputTransformName)  # type: ignore[reportAttributeAccessIssue]
+        if output_transform_node is not None:
+            StosMosaicTransforms.append(output_transform_node)  # type: ignore[arg-type]
 
     if len(StosMosaicTransforms) == 0:
         return
@@ -4990,12 +5029,14 @@ def BuildChannelMosaicToVolumeTransform(stos_map_node: StosMapNode,
                                         stos_group_node: StosGroupNode,
                                         transform_node: TransformNode,
                                         OutputTransformName: str,
-                                        Logger, **kwargs):
-    """Build a slice-to-volume transform for each section referenced in the StosMap"""
+                                        Logger, **kwargs) -> list[_MosaicToVolumeJob] | None:
+    """Prepare the slice-to-volume mosaic outputs of one section referenced in the StosMap.
 
-    MosaicTransformParent = transform_node.Parent
+    Outputs that need no slice-to-volume transform are copied here. The others come back as
+    jobs for ``_compose_mosaic_to_volume``.
 
-    SaveTransformParent = False
+    :return: None when nothing changed, otherwise the jobs still to run (possibly none)
+    """
 
     MappedChannelNode = transform_node.FindParent('Channel')
 
@@ -5013,44 +5054,33 @@ def BuildChannelMosaicToVolumeTransform(stos_map_node: StosMapNode,
 
     Logger.info("%d -> %s" % (MappedSectionNumber, str(ControlSectionNumbers)))
 
+    stos_transforms: list[TransformNode | None]
     SectionMappingNode = stos_group_node.GetSectionMapping(MappedSectionNumber)
     if SectionMappingNode is None:
-        stosMosaicTransform = _ApplyStosToMosaicTransform(None, transform_node, OutputTransformName, Logger, **kwargs)
-        if stosMosaicTransform is not None:
-            SaveTransformParent = True
-
+        stos_transforms = [None]
     else:
-        for stostransform in SectionMappingNode.Transforms:
-            if not stostransform.MappedChannelName == MappedChannelNode.Name:  # type: ignore[union-attr]
-                continue
+        stos_transforms = [stostransform for stostransform in SectionMappingNode.Transforms
+                           if stostransform.MappedChannelName == MappedChannelNode.Name  # type: ignore[union-attr]
+                           and int(stostransform.ControlSectionNumber) in ControlSectionNumbers]  # type: ignore[arg-type]
 
-            if not int(stostransform.ControlSectionNumber) in ControlSectionNumbers:  # type: ignore[arg-type]
-                continue
+    if len(stos_transforms) == 0:
+        return None
 
-            stosMosaicTransform = _ApplyStosToMosaicTransform(stostransform, transform_node, OutputTransformName,
-                                                              Logger,
-                                                              **kwargs)
-            if stosMosaicTransform is not None:
-                SaveTransformParent = True
+    jobs: list[_MosaicToVolumeJob] = []
+    for stostransform in stos_transforms:
+        (OutputTransformNode, needs_build) = _prepare_stos_to_mosaic_output(stostransform, transform_node,
+                                                                            OutputTransformName)
+        if not needs_build:
+            continue
 
-    #         mosaicToVolume = mosaicvolume.MosaicVolume.Load(StosMosaicTransforms)
-    #         mosaicToVolume.TranslateToZeroOrigin()
-    #         mosaicToVolume.Save()
+        if stostransform is None:
+            # No transform, copy transform directly
+            shutil.copyfile(transform_node.FullPath, OutputTransformNode.FullPath)
+            OutputTransformNode.InputMosaicTransformChecksum = transform_node.Checksum
+        else:
+            jobs.append(_MosaicToVolumeJob(stostransform, transform_node, OutputTransformNode))
 
-    #
-    #     SliceToVolumeTransform = FindTransformForMapping(StosGroupNode, ControlSectionNumber, MappedSectionNumber)
-    #     if SliceToVolumeTransform is None:
-    #         Logger.error("No SliceToVolumeTransform found for: " + str(MappedSectionNumber) + " -> " + ControlSectionNumber.Control)
-    #         return
-    #
-    #     files.RemoveOutdatedFile(SliceToVolumeTransform.FullPath, OutputTransformNode.FullPath)
-    #
-    #     if os.path.exists(OutputTransformNode.FullPath):
-    #         return
-    if SaveTransformParent:
-        return MosaicTransformParent
-
-    return None
+    return jobs
 
 
 if __name__ == '__main__':
