@@ -1187,8 +1187,8 @@
             <Argument flag="-Filters" dest="FilterRegEx" default="*"
                       help="Regular expression describing filters to process"
                       required="False"/>
-            <Argument flag="-Downsample" dest="Levels" required="True"
-                      help="Comma separated tile pyramid levels to build, e.g. 2,4,8,16,32. Existing levels with tiles are kept."/>
+            <Argument flag="-Downsample" dest="Levels" default="1,2,4,8,16,32,64,128,256" required="False"
+                      help="Comma separated tile pyramid levels to build, e.g. 2,4,8,16,32. Defaults to the standard pyramid AdjustContrast builds. Existing levels with tiles are kept."/>
         </Arguments>
         <Iterate VariableName="section_node" XPath="Block/Section">
             <RequireSetMembership Attribute="Number" List="#Sections"/>

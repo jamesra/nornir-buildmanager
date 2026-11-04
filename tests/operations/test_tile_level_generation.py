@@ -79,7 +79,8 @@ def test_build_tile_pyramids_pipeline_calls_the_stage_on_each_filter_pyramid() -
     pipeline = next(p for p in root.iter('Pipeline') if p.get('Name') == 'BuildTilePyramids')
     args = {a.get('flag'): a for a in pipeline.iter('Argument')}
     assert {'-Sections', '-Channels', '-Filters', '-Downsample'} <= set(args)
-    assert args['-Downsample'].get('required') == 'True'
+    assert args['-Downsample'].get('required') == 'False'
+    assert args['-Downsample'].get('default') == '1,2,4,8,16,32,64,128,256'  # AdjustContrast's standard pyramid
     select = next(pipeline.iter('Select'))
     assert (select.get('VariableName'), select.get('Root'), select.get('XPath')) == \
            ('PyramidNode', 'filter_node', 'TilePyramid')
