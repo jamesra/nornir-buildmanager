@@ -36,6 +36,7 @@ import nornir_shared.plot
 import nornir_shared.files
 
 import nornir_imageregistration
+from nornir_imageregistration import noise_crush
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.transforms import *
 from nornir_imageregistration.transforms.base import IDiscreteTransform, ITransformScaling
@@ -1405,6 +1406,14 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     if added_output_mask_filter:
         OutputMaskFilterNode.BitsPerPixel = 1
 
+    # Crushed filters assemble to crushed images; an output filter in another channel
+    # (-ChannelPrefix) records the same parameters.
+    crush_params = noise_crush.CrushParams.from_attributes(filter_node.attrib)
+    if crush_params is not None:
+        for name, value in crush_params.to_attributes().items():
+            if OutputFilterNode.attrib.get(name) != value:
+                OutputFilterNode.attrib[name] = value
+
     PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
 
     OutputImageNameTemplate = filter_node.DefaultImageName(image_ext)
@@ -1487,6 +1496,12 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
     except FileNotFoundError:
         pass
 
+    if crush_params is not None and os.path.exists(image_node.FullPath) and \
+            noise_crush.read_crush_params(image_node.FullPath) is None:
+        # Assembled before crushed filters kept their codes: contrast-stretched and unlabelled.
+        Logger.warning("Replacing %s: assembled from a crushed filter without crush metadata", image_node.FullPath)
+        os.remove(image_node.FullPath)
+
     assemble_outputs_current = (
             os.path.exists(image_node.FullPath)
             and os.path.exists(MaskImageNode.FullPath)
@@ -1506,8 +1521,11 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
 
         Logger.info("Assembling " + transform_node.FullPath)
         mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(transform_node.FullPath)
-        mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic, ImageDir,
-                                                                                 image_to_source_space_scale=thisLevel)
+        # Crushed tiles share one code unit per section: load them on that fixed scale, not each
+        # tile's own maximum, so the assembled image keeps the codes (RC1_Crush, 2026-11).
+        mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(
+            mosaic, ImageDir, image_to_source_space_scale=thisLevel,
+            tile_value_scale=crush_params.max_code if crush_params is not None else None)
         if RequestedBoundingBox is None:
             _warn_if_mosaic_origin_is_negative(mosaicTileset, transform_node.FullPath, Logger)
 
@@ -1527,7 +1545,11 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
             mosaicImage = nornir_imageregistration.CropImage(mosaicImage, Xo, Yo, Width, Height)
             maskImage = nornir_imageregistration.CropImage(maskImage, Xo, Yo, Width, Height)
 
-        nornir_imageregistration.SaveImage(tempOutputFullPath, mosaicImage, bpp=OutputFilterNode.BitsPerPixel)  # type: ignore[arg-type]
+        if crush_params is not None:
+            noise_crush.save_crushed_png(tempOutputFullPath,
+                                         noise_crush.codes_from_unit_image(mosaicImage, crush_params), crush_params)
+        else:
+            nornir_imageregistration.SaveImage(tempOutputFullPath, mosaicImage, bpp=OutputFilterNode.BitsPerPixel)  # type: ignore[arg-type]
         nornir_imageregistration.SaveImage(tempMaskOutputFullPath, maskImage)  # type: ignore[arg-type]
 
         # Run convert on the output to make sure it is interlaced
@@ -2756,6 +2778,29 @@ def _image_basenames_in_dir(directory: str, image_ext: str) -> frozenset[str]:
             if entry.is_file(follow_symlinks=False) and entry.name.endswith(image_ext):
                 names.append(entry.name)
     return frozenset(names)
+
+
+#: Concurrent file rewrites in StampCrushMetadata; each reads and rewrites one tile over the NAS.
+_STAMP_CRUSH_WORKERS: int = 16
+
+
+def StampCrushMetadata(filter_node: FilterNode, Logger: logging.Logger, **kwargs):
+    """Add the ``nornir_crush`` PNG chunk to a crushed filter's tile-pyramid tiles that lack it.
+
+    Pixels are not decoded or changed. Repairs levels built before Shrink carried the chunk
+    (RC1_Crush 002-256, 2026-11). Assembled images are not stamped: ones made before Assemble
+    kept crushed codes are contrast-stretched, and Assemble replaces them.
+    """
+    crush_params = noise_crush.CrushParams.from_attributes(filter_node.attrib)
+    if crush_params is None or not filter_node.HasTilePyramid:
+        return
+
+    tile_paths = sorted(glob.glob(os.path.join(filter_node.TilePyramid.FullPath, '*', '*.png')))
+    with ThreadPoolExecutor(max_workers=_STAMP_CRUSH_WORKERS) as executor:
+        stamped = sum(executor.map(lambda path: noise_crush.stamp_crush_png(path, crush_params), tile_paths))
+    message = f"StampCrushMetadata {filter_node.FullPath}: stamped {stamped} of {len(tile_paths)} tiles"
+    Logger.info(message)
+    prettyoutput.Log(message)
 
 
 def BuildTilePyramids(PyramidNode=None, Levels=None, **kwargs):
