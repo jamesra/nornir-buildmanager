@@ -31,13 +31,17 @@ from nornir_imageregistration.headless import is_headless
 # imports nornir_buildmanager made the entire run GUI-backed, and a later plotting test
 # hung with no output. The same files passed individually because nothing had pulled the
 # GUI backend in.
-if is_headless():
-    matplotlib.use('Agg')
-elif 'DEBUG' not in os.environ:
+#
+# nornir-build is a batch tool: it always uses Agg, whatever nornir_imageregistration picked on import. QtAgg on a
+# desktop crashed builds whenever a stage plotted from a worker thread (ImportIDoc's histogram, 2026-11-05).  Set
+# NORNIR_GUI_PLOTS=1 to get the old interactive backend for debugging.
+if os.environ.get('NORNIR_GUI_PLOTS', '').strip().lower() in ('1', 'true', 'yes', 'on') and not is_headless():
     try:
         matplotlib.use('QtAgg')
     except ImportError:
         matplotlib.use('Agg')  # Fallback to non-interactive backend
+else:
+    matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
 
