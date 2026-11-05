@@ -1523,6 +1523,10 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
         # Assembled before crushed filters kept their codes: contrast-stretched and unlabelled.
         Logger.warning("Replacing %s: assembled from a crushed filter without crush metadata", image_node.FullPath)
         os.remove(image_node.FullPath)
+    elif crush_params is not None and os.path.exists(image_node.FullPath) and             image_node.attrib.get('TileGainsChecksum') != filter_node.attrib.get('TileGainsChecksum'):
+        # Crushed tiles are gain-corrected while assembling (see Tile value_scale).
+        Logger.warning("Replacing %s: assembled with other tile gains", image_node.FullPath)
+        os.remove(image_node.FullPath)
 
     assemble_outputs_current = (
             os.path.exists(image_node.FullPath)
@@ -1585,6 +1589,11 @@ def AssembleTransformScipy(Parameters, Logger, filter_node: FilterNode, transfor
 
         image_node.SetTransform(transform_node)
         MaskImageNode.SetTransform(transform_node)
+        gains_checksum = filter_node.attrib.get('TileGainsChecksum') if crush_params is not None else None
+        if gains_checksum is None:
+            image_node.attrib.pop('TileGainsChecksum', None)
+        else:
+            image_node.attrib['TileGainsChecksum'] = gains_checksum
 
         # ImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(ImageNode.FullPath)
         # MaskImageNode.Checksum = nornir_shared.Checksum.FilesizeChecksum(MaskImageNode.FullPath)
@@ -2000,8 +2009,13 @@ def _encode_tile_to_temp(
     bpp: int | None,
     *,
     optimize: bool = True,
+    crush_params: noise_crush.CrushParams | None = None,
 ) -> None:
-    """PNG-encode a tile to a local temp path."""
+    """PNG-encode a tile to a local temp path; crushed tiles as codes of ``crush_params`` with its chunk."""
+    if crush_params is not None:
+        noise_crush.save_crushed_png(temp_output_tile_fullpath,
+                                     noise_crush.codes_from_unit_image(tile_image, crush_params), crush_params)
+        return
     nornir_imageregistration.SaveImage(
         ImageFullPath=temp_output_tile_fullpath,
         image=tile_image,
@@ -2026,10 +2040,12 @@ class _TwoStageTileSavePipeline:
         bpp: int | None,
         optimize: bool = True,
         collect_thread_timings: bool = False,
+        crush_params: noise_crush.CrushParams | None = None,
     ) -> None:
         self._encode_workers = encode_workers
         self._copy_workers = copy_workers
         self._bpp = bpp
+        self._crush_params = crush_params
         self._optimize = optimize
         self._max_encode_active = encode_workers * 2
         self._copy_queue: queue.Queue[_TileCopyJob | None] = queue.Queue(
@@ -2074,7 +2090,8 @@ class _TwoStageTileSavePipeline:
         tile_image: NDArray,
     ) -> None:
         t0 = time.perf_counter()
-        _encode_tile_to_temp(temp_path, tile_image, self._bpp, optimize=self._optimize)
+        _encode_tile_to_temp(temp_path, tile_image, self._bpp, optimize=self._optimize,
+                             crush_params=self._crush_params)
         if self._timing_lock is not None:
             with self._timing_lock:
                 self.sum_encode_thread_s += time.perf_counter() - t0
@@ -2240,6 +2257,34 @@ def _SaveImageAndCopy(ImageFullPath: str, temp_output_tile_fullpath: str, tile_i
     return
 
 
+def _crushed_tileset_stale_reason(tile_set_node, filter_node: FilterNode,
+                                  crush_params: noise_crush.CrushParams | None) -> str | None:
+    """Why a crushed filter's optimized tileset must be rebuilt, or None when it is current.
+
+    Tilesets built before crushed filters kept their codes were stretched by each tile's own maximum and carry no
+    ``Crush*`` attributes. Tiles are gain-corrected while assembling, so new gains (``TileGainsChecksum``) also
+    make the tileset stale.
+    """
+    if crush_params is None:
+        return None
+    if not crush_params.same_quantization(noise_crush.CrushParams.from_attributes(tile_set_node.attrib)):
+        return "Optimized tileset was not built from the filter's crushed codes"
+    if tile_set_node.attrib.get('TileGainsChecksum') != filter_node.attrib.get('TileGainsChecksum'):
+        return "Optimized tileset was built with other tile gains"
+    return None
+
+
+def _record_crushed_tileset(tile_set_node, filter_node: FilterNode, crush_params: noise_crush.CrushParams) -> None:
+    """Record the section quanta (gain 1) and the tile gains the tileset was built with, for Viking and staleness."""
+    for name, value in crush_params.to_attributes().items():
+        tile_set_node.attrib[name] = value
+    gains_checksum = filter_node.attrib.get('TileGainsChecksum')
+    if gains_checksum is None:
+        tile_set_node.attrib.pop('TileGainsChecksum', None)
+    else:
+        tile_set_node.attrib['TileGainsChecksum'] = gains_checksum
+
+
 def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node: TilePyramidNode,
                          transform_node: TransformNode, TileShape, TileSetName=None,
                          max_temp_image_area=None, ignore_stale=False, Logger: logging.Logger | None = None, **kwargs):
@@ -2262,6 +2307,9 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
     InputTransformNode = transform_node
     filter_node = cast(FilterNode, pyramid_node.FindParent('Filter'))
     section_node = filter_node.FindParent('Section') if filter_node is not None else None
+    # Crushed tiles are assembled on the section's code unit with their gains applied and saved as codes of the same
+    # quanta (gain 1): no inflate to counts, no per-tile stretch.
+    crush_params = noise_crush.CrushParams.from_attributes(filter_node.attrib)
 
     if TileSetName is None:
         TileSetName = 'Tileset'
@@ -2287,6 +2335,10 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
             [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
         elif tile_set_node.InputTransformChecksum is not None and tile_set_node.InputTransformChecksum != InputTransformNode.Checksum:
             tile_set_node.Clean("Input Transform checksum does not match the existing optimized tileset")
+            [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
+        elif (crushed_stale_reason := _crushed_tileset_stale_reason(tile_set_node, filter_node,
+                                                                     crush_params)) is not None:
+            tile_set_node.Clean(crushed_stale_reason)
             [added, tile_set_node] = GetOrCreateTilesetNode(tile_set_node)
         elif tile_set_node.TileXDim != TileWidth or tile_set_node.TileYDim != TileHeight:
             Logger.warning(
@@ -2342,9 +2394,9 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
             mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
             expected_scale = 1.0 / LevelOne.Downsample
 
-            mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(mosaic,
-                                                                                     image_folder=InputLevelNode.FullPath,
-                                                                                     image_to_source_space_scale=expected_scale)
+            mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(
+                mosaic, image_folder=InputLevelNode.FullPath, image_to_source_space_scale=expected_scale,
+                tile_value_scale=crush_params.max_code if crush_params is not None else None)
 
             scaled_fixed_bounding_box_shape = numpy.ceil(
                 mosaicTileset.TargetBoundingBox.shape / (1.0 / expected_scale)).astype(numpy.int64)
@@ -2399,6 +2451,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                 bpp=bpp,
                 optimize=True,
                 collect_thread_timings=True,
+                crush_params=crush_params,
             )
 
             def _submit_tile_save(
@@ -2469,6 +2522,8 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
             # Info = nornir_buildmanager.metadata.tilesetinfo.TilesetInfo.Load(OutputXML, Logger=Logger)
             LevelOne.GridDimX = expected_grid_dims[1]
             LevelOne.GridDimY = expected_grid_dims[0]
+            if crush_params is not None:
+                _record_crushed_tileset(tile_set_node, filter_node, crush_params)
 
         finally:
             # Stage pools must not leak when assemble raises (#142).
