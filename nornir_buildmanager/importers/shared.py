@@ -805,6 +805,14 @@ class SectionNoise(NamedTuple):
     sample_min: float
     sample_max: float
     source_dtype: str
+    #: Robust minimum of the sampled tiles (the ``SIGNED_OFFSET_QUANTILE`` quantile), signed sources only. The crush offset
+    #: follows it, so one stray negative pixel no longer drags the offset (RC2 139, int32 TIFs: a -15951 outlier made
+    #: CrushOffset -15951 and 9-bit codes where 8 bits fit). None in caches written before it existed.
+    sample_low: float | None = None
+
+
+#: Quantile of the sampled pixels used as the minimum of a signed section (1 in 10,000 pixels may be clipped to code 0).
+SIGNED_OFFSET_QUANTILE: float = 1e-4
 
 
 def _noise_cache_path(histogram_cache_path: str) -> str:
@@ -827,8 +835,12 @@ def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str]) 
         input_mtimes_ns = [files.file_mtime_ns(p) for p in cache_inputs if os.path.exists(p)]
         if input_mtimes_ns and files.is_significantly_newer(max(input_mtimes_ns), cache_mtime_ns):
             return None
+        source_dtype = str(meta['source_dtype'])
+        sample_low = meta.get('sample_low')
+        if sample_low is None and np.issubdtype(np.dtype(source_dtype), np.signedinteger):
+            return None  # signed caches from before sample_low: re-estimate, their offset may be an outlier's
         return SectionNoise(float(meta['sigma']), float(meta['sample_min']), float(meta['sample_max']),
-                            str(meta['source_dtype']))
+                            source_dtype, None if sample_low is None else float(sample_low))
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
         return None
 
@@ -850,6 +862,7 @@ def GetSectionNoise(histogram_cache_path: str,
     sigmas: list[float] = []
     sample_min = math.inf
     sample_max = -math.inf
+    sample_low = math.inf
     source_dtype = ''
     for iTile in noise_crush.sample_indices(num_tiles, NOISE_SAMPLE_TILES):
         tile = load_tile(iTile)
@@ -857,12 +870,15 @@ def GetSectionNoise(histogram_cache_path: str,
         sigmas.append(noise_crush.estimate_noise_sigma(tile))
         sample_min = min(sample_min, float(np.min(tile)))
         sample_max = max(sample_max, float(np.max(tile)))
+        if np.issubdtype(tile.dtype, np.signedinteger):
+            sample_low = min(sample_low, float(np.quantile(np.asarray(tile)[::4, ::4], SIGNED_OFFSET_QUANTILE)))
         del tile
 
-    noise = SectionNoise(noise_crush.section_sigma(sigmas), sample_min, sample_max, source_dtype)
+    noise = SectionNoise(noise_crush.section_sigma(sigmas), sample_min, sample_max, source_dtype,
+                         sample_low if math.isfinite(sample_low) else None)
     meta = {'version': NOISE_CACHE_VERSION, 'method': noise_crush.SIGMA_METHOD,
             'inputs': _cache_input_basenames(cache_inputs), 'sigma': noise.sigma,
-            'sample_min': noise.sample_min, 'sample_max': noise.sample_max,
+            'sample_min': noise.sample_min, 'sample_max': noise.sample_max, 'sample_low': noise.sample_low,
             'source_dtype': source_dtype, 'tile_sigmas': sigmas}
     try:
         os.makedirs(os.path.dirname(noise_cache_path) or '.', exist_ok=True)
@@ -899,7 +915,10 @@ def SectionCrushParams(noise: SectionNoise, histogram: Histogram | None, k: floa
     """Crush parameters for a section: the step from its sigma, storage depth from its intensity range.
 
     The range is the wider of the sampled tiles and the section histogram, whose top
-    occupied bin also covers the tiles that were not sampled.
+    occupied bin also covers the tiles that were not sampled. Crushed imports no longer build a
+    histogram before converting (``histogram`` None): the sample sets the depth, and ``CrushTiles``
+    reports any value the codes had to clip. A signed section's offset follows its robust minimum
+    (``SectionNoise.sample_low``), not the single lowest sampled pixel.
     """
     section_max = noise.sample_max
     if histogram is not None:
@@ -907,8 +926,9 @@ def SectionCrushParams(noise: SectionNoise, histogram: Histogram | None, k: floa
         if top_bin is not None:
             section_max = max(section_max, histogram.BinValue(top_bin, 1.0))
 
+    section_min = noise.sample_min if noise.sample_low is None else noise.sample_low
     return noise_crush.make_crush_params(noise.sigma, section_max, noise.source_dtype, k=k,
-                                         section_min=noise.sample_min)
+                                         section_min=section_min)
 
 
 def CrushedFilterName(params: CrushParams) -> str:
@@ -964,15 +984,28 @@ def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams) 
         filter_node.attrib[key] = value
 
 
+class CrushSectionStats(NamedTuple):
+    """Code histogram and clip counts summed over the tiles one ``CrushTiles`` call converted."""
+    code_histogram: NDArray
+    clipped_high: int
+    clipped_low: int
+    tiles: int
+
+
 def CrushTiles(source_to_target: dict[str, str], params: CrushParams, flip: bool,
-               progress_name: str | None = None, progress_task_key: str | None = None) -> None:
+               progress_name: str | None = None, progress_task_key: str | None = None) -> CrushSectionStats | None:
     """Crush source tile files into target PNGs on a process pool with a bounded number in flight.
+
+    Returns the code histogram and clip counts of the converted tiles, accumulated as each tile is
+    written (James, 2026-11-05: no separate histogram pass for crushed sections), or None when there
+    was nothing to convert. Clipped values are logged: they mean the sampled tiles under-estimated the
+    section's range.
 
     A failed tile is logged and re-raised, as ``ConvertImagesInDict`` does under
     ``__debug__``; otherwise the caller's ``RemoveInvalidMosaicImages`` drops it.
     """
     if not source_to_target:
-        return
+        return None
 
     num_threads = min(len(source_to_target), os.cpu_count() or 1)
     pool = nornir_pools.GetMultithreadingPool("CrushTiles", num_threads=num_threads)
@@ -981,12 +1014,21 @@ def CrushTiles(source_to_target: dict[str, str], params: CrushParams, flip: bool
                                                  name=progress_name)
     pending: list = []
     completed = 0
+    histogram = np.zeros(params.max_code + 1, dtype=np.int64)
+    clipped_high = 0
+    clipped_low = 0
+    tiles = 0
 
     def drain_one():
-        nonlocal completed
+        nonlocal completed, histogram, clipped_high, clipped_low, tiles
         (task, source) = pending.pop(0)
         try:
-            task.wait()
+            stats = task.wait_return()
+            if stats is not None:
+                histogram += stats.code_histogram
+                clipped_high += stats.clipped_high
+                clipped_low += stats.clipped_low
+                tiles += 1
         except Exception as e:
             prettyoutput.LogErr(f"Failed to crush {source}\n{e}")
             if __debug__:
@@ -1009,6 +1051,45 @@ def CrushTiles(source_to_target: dict[str, str], params: CrushParams, flip: bool
         reporter.complete()
         pool.wait_completion()
         pool.shutdown()
+
+    if clipped_high or clipped_low:
+        prettyoutput.LogErr(f"Crush clipped {clipped_high} pixels above code {params.max_code} and {clipped_low} below "
+                            f"offset {params.offset} in {tiles} tiles: the sampled tiles under-estimated the range")
+    return CrushSectionStats(histogram, clipped_high, clipped_low, tiles)
+
+
+#: Filter attribute: the crushed section's intensity span in code units, measured from the converted tiles' code
+#: histogram at the import's contrast cutoff fractions. Only Prune reads it, to put crushed scores on the legacy
+#: 8-bit scale (``PruneObj.CrushedScoreScale``); no image is contrast-mapped with it.
+CRUSH_SPAN_ATTRIBUTE = 'CrushCodeSpan'
+
+
+def CrushCodeSpan(code_histogram: NDArray, cutoffs: tuple[float, float]) -> float | None:
+    """Span in codes between the ``cutoffs`` fractions of a code histogram (as AutoLevel trims a raw histogram)."""
+    counts = np.asarray(code_histogram, dtype=np.float64)
+    total = counts.sum()
+    if total <= 0:
+        return None
+    cumulative = np.cumsum(counts) / total
+    low = int(np.searchsorted(cumulative, cutoffs[0], side='right'))  # first code past the low fraction
+    high = int(np.searchsorted(cumulative, 1.0 - cutoffs[1], side='left'))
+    return float(max(1, high - low + 1))
+
+
+def ClearCrushedFilterContrast(filter_node: XElementWrapper) -> None:
+    """Remove contrast values from a crushed filter (no contrast mapping is applied to crushed codes).
+
+    A filter written before this rule (RC1_Crush, 2026-11) keeps its Prune scale: its cutoff span is
+    moved to ``CrushCodeSpan`` first when no span is recorded.
+    """
+    attrib = filter_node.attrib
+    if CRUSH_SPAN_ATTRIBUTE not in attrib and 'MinIntensityCutoff' in attrib and 'MaxIntensityCutoff' in attrib:
+        span = float(attrib['MaxIntensityCutoff']) - float(attrib['MinIntensityCutoff'])
+        if span > 0:
+            attrib[CRUSH_SPAN_ATTRIBUTE] = f'{round(span, 3):g}'
+    for key in ('MinIntensityCutoff', 'MaxIntensityCutoff', 'Gamma'):
+        if key in attrib:
+            del attrib[key]
 
 
 if __name__ == "__main__":

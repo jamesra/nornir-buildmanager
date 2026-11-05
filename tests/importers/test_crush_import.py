@@ -174,6 +174,8 @@ class _FakeTask:
         self._pool.outstanding -= 1
         return self._fn(*self._args)
 
+    wait_return = wait
+
 
 class _FakePool:
     def __init__(self):

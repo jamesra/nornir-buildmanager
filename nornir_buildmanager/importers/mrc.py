@@ -364,21 +364,28 @@ class MRCImport:
                 FilterName, contrast_settings.min, contrast_settings.max, contrast_settings.gamma)
         image_conversion_required = contrast_mismatch
 
-        pool = nornir_pools.GetGlobalThreadPool()
-        # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-        histogram_creation_task = pool.add_task(histogram_cache_path,
-                                                shared.PlotHistogram,
-                                                histogram_cache_path,
-                                                SectionNumber,
-                                                contrast_settings.min,
-                                                contrast_settings.max, force_recreate=contrast_mismatch)
+        if crush_params is None:
+            pool = nornir_pools.GetGlobalThreadPool()
+            # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+            histogram_creation_task = pool.add_task(histogram_cache_path,
+                                                    shared.PlotHistogram,
+                                                    histogram_cache_path,
+                                                    SectionNumber,
+                                                    contrast_settings.min,
+                                                    contrast_settings.max, force_recreate=contrast_mismatch)
 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
-        filterObj.SetContrastValues(filter_contrast.min, filter_contrast.max, filter_contrast.gamma)
         if crush_params is not None:
+            # No contrast is recorded or applied for crushed codes (James, 2026-11-05). Prune still needs the
+            # section's span in code units to keep its score scale, so that is all that is kept.
+            shared.ClearCrushedFilterContrast(filterObj)
+            span = filter_contrast.max - filter_contrast.min
+            if span > 0:
+                filterObj.attrib[shared.CRUSH_SPAN_ATTRIBUTE] = f'{round(span, 3):g}'
             filterObj.BitsPerPixel = crush_params.bits
             shared.SetFilterCrushAttributes(filterObj, crush_params)
         else:
+            filterObj.SetContrastValues(filter_contrast.min, filter_contrast.max, filter_contrast.gamma)
             filterObj.BitsPerPixel = bpp
         if added_filter:
             image_conversion_required = True

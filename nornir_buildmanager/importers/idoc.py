@@ -378,23 +378,8 @@ class SerialEMIDocImport:
 
         source_tile_list = [os.path.join(section_source_dir, t.Image) for t in IDocData.tiles]
 
-        import_hist_stride = 4
-        contrast_settings = shared.GetSectionContrastSettings(
-            section_number=SectionNumber,
-            contrast_map=ContrastMap,
-            contrast_cutoffs=ContrastCutoffs,
-            calculate_histogram=lambda: SerialEMIDocImport.CalculateHistogram(
-                IDocData, source_tile_list, stride=import_hist_stride,
-                progress_task_key="import_idoc:histogram",
-                progress_name=f"Import histogram {SectionNumber}"),
-            histogram_cache_path=histogram_cache_path,
-            cache_inputs=source_tile_list + [idocFileFullPath],
-            histogram_stride=import_hist_stride)
-
-        ActualMosaicMax = np.around(contrast_settings.max)
-        ActualMosaicMin = np.around(contrast_settings.min)
-        Gamma = contrast_settings.gamma
-
+        # Crushed imports read no histogram first (James, 2026-11-05): the noise sample sets the step and depth,
+        # the code histogram is accumulated while the tiles are converted, and no contrast is recorded or applied.
         requested_crush = None
         if not NoCrush and ImageBpp > 8:
             requested_crush = shared.SectionCrushParams(
@@ -402,30 +387,47 @@ class SerialEMIDocImport:
                                        len(source_tile_list),
                                        lambda i: nornir_imageregistration.noise_crush.load_raw_tile(
                                            source_tile_list[i])),
-                Histogram.Load(histogram_cache_path) if os.path.exists(histogram_cache_path) else None,
+                None,
                 k=nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK))
             FilterName = shared.CrushedFilterName(requested_crush)
 
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
 
+        histogram_creation_task = None
         if crush_params is not None:
-            # Crushed tiles do not depend on the contrast settings; they become hints in code units.
-            FilterMin = shared.CountsToCrushCodes(ActualMosaicMin, crush_params)
-            FilterMax = shared.CountsToCrushCodes(ActualMosaicMax, crush_params)
+            (FilterMin, FilterMax, Gamma) = (None, None, None)
+            (ActualMosaicMin, ActualMosaicMax) = (None, None)
             contrast_mismatch = crush_removed
             prettyoutput.Log(f"Crushing section {SectionNumber}: sigma {crush_params.sigma:.1f} counts, "
-                             f"step {crush_params.step}, {crush_params.bits}-bit codes")
+                             f"step {crush_params.step}, offset {crush_params.offset}, {crush_params.bits}-bit codes")
         else:
+            import_hist_stride = 4
+            contrast_settings = shared.GetSectionContrastSettings(
+                section_number=SectionNumber,
+                contrast_map=ContrastMap,
+                contrast_cutoffs=ContrastCutoffs,
+                calculate_histogram=lambda: SerialEMIDocImport.CalculateHistogram(
+                    IDocData, source_tile_list, stride=import_hist_stride,
+                    progress_task_key="import_idoc:histogram",
+                    progress_name=f"Import histogram {SectionNumber}"),
+                histogram_cache_path=histogram_cache_path,
+                cache_inputs=source_tile_list + [idocFileFullPath],
+                histogram_stride=import_hist_stride)
+
+            ActualMosaicMax = np.around(contrast_settings.max)
+            ActualMosaicMin = np.around(contrast_settings.min)
+            Gamma = contrast_settings.gamma
+
             (FilterMin, FilterMax) = (ActualMosaicMin, ActualMosaicMax)
             contrast_mismatch = crush_removed or channelObj.RemoveFilterOnContrastMismatch(
                 FilterName, ActualMosaicMin, ActualMosaicMax, Gamma)
 
-        Pool = nornir_pools.GetGlobalThreadPool()
-        # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
-        histogram_creation_task = Pool.add_task(histogram_cache_path, shared.PlotHistogram, histogram_cache_path,
-                                                SectionNumber,
-                                                ActualMosaicMin,
-                                                ActualMosaicMax, force_recreate=contrast_mismatch)
+            Pool = nornir_pools.GetGlobalThreadPool()
+            # _PlotHistogram(histogramFullPath, SectionNumber, ActualMosaicMin, ActualMosaicMax)
+            histogram_creation_task = Pool.add_task(histogram_cache_path, shared.PlotHistogram, histogram_cache_path,
+                                                    SectionNumber,
+                                                    ActualMosaicMin,
+                                                    ActualMosaicMax, force_recreate=contrast_mismatch)
 
         image_conversion_required = contrast_mismatch
 
@@ -435,11 +437,12 @@ class SerialEMIDocImport:
             image_conversion_required = True
             yield channelObj
 
-        filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
         if crush_params is not None:
+            shared.ClearCrushedFilterContrast(filterObj)
             filterObj.BitsPerPixel = crush_params.bits
             shared.SetFilterCrushAttributes(filterObj, crush_params)
         else:
+            filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
             filterObj.BitsPerPixel = TargetBpp
 
         SupertileName = 'Stage'
@@ -493,7 +496,8 @@ class SerialEMIDocImport:
 
         if image_conversion_required:
             Invert = False
-            filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
+            if crush_params is None:
+                filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
             filterObj.TilePyramid.NumberOfTiles = IDocData.NumTiles
             # andValue = cls.GetBitmask(ActualMosaicMin, ActualMosaicMax, TargetBpp)
             # Use batched GPU convert under cupy; process-pool ConvertImagesInDict
@@ -501,9 +505,13 @@ class SerialEMIDocImport:
             tile_progress_name = f"Import tiles {os.path.basename(idocFileFullPath)}"
             tile_progress_key = "import_idoc:tiles"
             if crush_params is not None:
-                shared.CrushTiles(SourceToMissingTargetMap, crush_params, flip=Flip,
-                                  progress_name=tile_progress_name,
-                                  progress_task_key=tile_progress_key)
+                crush_stats = shared.CrushTiles(SourceToMissingTargetMap, crush_params, flip=Flip,
+                                                progress_name=tile_progress_name,
+                                                progress_task_key=tile_progress_key)
+                span = None if crush_stats is None else shared.CrushCodeSpan(crush_stats.code_histogram,
+                                                                             ContrastCutoffs)
+                if span is not None:
+                    filterObj.attrib[shared.CRUSH_SPAN_ATTRIBUTE] = f'{round(span, 3):g}'
             elif nornir_imageregistration.UsingCupy():
                 nornir_imageregistration.ConvertImagesInDictGpu(
                     SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
@@ -567,12 +575,13 @@ class SerialEMIDocImport:
             yield channelObj
 
         # It has been a while, check if the histogram is done and try to add meta-data for it
-        histogram_creation_task.wait()
-        hist_added = shared.TryAddHistogram(filterObj, section_source_dir, image_ext=".png",
-                                            min_cutoff=FilterMin,
-                                            max_cutoff=FilterMax, gamma=Gamma)
-        if hist_added:
-            yield filterObj
+        if histogram_creation_task is not None:  # crushed sections have no import histogram
+            histogram_creation_task.wait()
+            hist_added = shared.TryAddHistogram(filterObj, section_source_dir, image_ext=".png",
+                                                min_cutoff=FilterMin,
+                                                max_cutoff=FilterMax, gamma=Gamma)
+            if hist_added:
+                yield filterObj
 
     @staticmethod
     def GetImageBpp(IDocData, sectionDir):

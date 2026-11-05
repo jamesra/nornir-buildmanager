@@ -720,7 +720,10 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
 
 def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: TransformNode, Downsample: float = 1,
                    OutputFilterName: str | None = None, **kwargs):
-    """Create a new filter using the histogram of the input filter"""
+    """Create a new filter using the histogram of the input filter. Crushed input filters are skipped."""
+
+    if SkipContrastStageForCrushedFilter(InputFilter, "AdjustContrast"):
+        return
 
     [added_level, InputLevelNode] = InputFilter.TilePyramid.GetOrCreateLevel(Downsample)
     assert InputLevelNode is not None, "InputLevelNode must exist for AutolevelTiles"
@@ -979,13 +982,32 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
     return
 
 
+def IsCrushedFilter(filter_node) -> bool:
+    """True when the filter holds noise-crushed codes (it carries the Crush* attributes, e.g. ``CrushVersion``)."""
+    return filter_node is not None and noise_crush.CrushParams.from_attributes(filter_node.attrib) is not None
+
+
+def SkipContrastStageForCrushedFilter(filter_node, stage: str) -> bool:
+    """Log and return True when a contrast stage is asked to run on a crushed filter.
+
+    No contrast mapping is applied to crushed codes anywhere (James, 2026-11-05): their histogram, the
+    contrast cutoffs and the Leveled filter built from them do not exist for crushed sections.
+    """
+    if not IsCrushedFilter(filter_node):
+        return False
+    prettyoutput.Log(f"{stage}: skipping crushed filter {filter_node.FullPath}; contrast is never applied to crushed codes")
+    return True
+
+
 def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, transform_node: TransformNode,
                     **kwargs):
     """Construct the intensity histogram for a filter.
 
     When no input tile can be read, publish an MQTT error and return so the
-    pipeline continues with the next element.
+    pipeline continues with the next element. Crushed filters are skipped (no contrast for crushed codes).
     """
+    if SkipContrastStageForCrushedFilter(filter_node, "Histogram"):
+        return
     NodeToSave = None
 
     [added_level, level_node] = filter_node.TilePyramid.GetOrCreateLevel(Downsample)

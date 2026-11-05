@@ -328,13 +328,20 @@ class PruneObj:
         """Factor that puts prune scores of crushed tiles on the contrast-stretched 8-bit scale.
 
         Scores are sums of raw pixel standard deviations. A crushed filter stores
-        noise-step codes and records its contrast cutoffs in the same units, so
-        stretching that span to 0-255 matches what a ``-NoCrush`` import would have
+        noise-step codes and records its intensity span in the same units (``CrushCodeSpan``,
+        or the contrast cutoffs on older filters), so stretching that span to 0-255 matches
+        what a ``-NoCrush`` import would have
         scored and keeps existing ``-DefaultThreshold`` values meaningful.
         None for filters that are not crushed.
         """
         if CrushParams.from_attributes(FilterNode.attrib) is None:
             return None
+
+        # Crushed filters carry no contrast values any more (no contrast mapping of crushed codes); the import
+        # records the span it measured from the converted tiles instead. Older crushed filters still have cutoffs.
+        span = FilterNode.attrib.get('CrushCodeSpan')
+        if span is not None and float(span) > 0:
+            return 255.0 / float(span)
 
         (min_cutoff, max_cutoff) = (FilterNode.MinIntensityCutoff, FilterNode.MaxIntensityCutoff)
         if min_cutoff is None or max_cutoff is None or max_cutoff <= min_cutoff:
