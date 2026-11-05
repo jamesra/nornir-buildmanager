@@ -37,6 +37,17 @@
         <PythonCall Module="nornir_buildmanager.importers.idoc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension" Min="#MinValue" Max="#MaxValue"
                     CameraBpp="#CameraBpp" Sections="#Sections" NoCrush="#NoCrush" CrushK="#CrushK"/>
+        <!-- Per-tile brightness gains (beam drift, white stripe) on Stage, for crushed filters only; skipped when
+             the filter's gains are already current. Level 1: the only level an import writes. -->
+        <Iterate VariableName="section_node" XPath="Block/Section">
+            <RequireSetMembership Attribute="Number" List="#Sections"/>
+            <Iterate VariableName="ChannelNode" XPath="Channel">
+                <Select VariableName="TransformNode" XPath="Transform[@Name='Stage']"/>
+                <Iterate VariableName="FilterNode" XPath="Filter">
+                    <PythonCall Function="tilegains.TileGains" Downsample="1" CrushedOnly="True" SkipIfCurrent="True"/>
+                </Iterate>
+            </Iterate>
+        </Iterate>
     </Pipeline>
 
     <Pipeline Name="ImportPMG" Help="Import PMG file into a volume" Description="Imports PMG files named with section/channel metadata into a volume. Use -Scale to provide nanometers-per-pixel for downstream geometry and reporting." Epilog="Example: nornir-build ImportPMG /data/volume /data/pmg -Scale 4.0">
@@ -78,6 +89,16 @@
         <PythonCall Module="nornir_buildmanager.importers.mrc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension"
                     Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK"/>
+        <!-- Per-tile brightness gains (beam drift, white stripe) on Stage, for crushed filters only; skipped when
+             the filter's gains are already current. Level 1: the only level an import writes. -->
+        <Iterate VariableName="section_node" XPath="Block/Section">
+            <Iterate VariableName="ChannelNode" XPath="Channel">
+                <Select VariableName="TransformNode" XPath="Transform[@Name='Stage']"/>
+                <Iterate VariableName="FilterNode" XPath="Filter">
+                    <PythonCall Function="tilegains.TileGains" Downsample="1" CrushedOnly="True" SkipIfCurrent="True"/>
+                </Iterate>
+            </Iterate>
+        </Iterate>
     </Pipeline>
 
     <Pipeline Name="ImportImages"

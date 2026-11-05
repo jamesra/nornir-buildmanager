@@ -81,15 +81,35 @@ def _previous_gains(path: str) -> dict[int, float] | None:
         return None
 
 
-def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Logger | None = None, **kwargs):
+def _as_bool(value) -> bool:
+    """Pipeline XML passes literal attribute values as strings."""
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes')
+    return bool(value)
+
+
+def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Logger | None = None,
+              CrushedOnly: bool | str = False, SkipIfCurrent: bool | str = False, **kwargs):
     """
     Compute per-tile gains for ``FilterNode`` from the overlaps of ``TransformNode``'s mosaic and record them.
 
     ``Downsample`` picks the pyramid level read (gains at downsample 8 matched level 1 on RC3; RC2 at 4: ~5 s per
-    813-tile section). Returns the filter node when its metadata changed, so the pipeline saves it.
+    813-tile section). ``CrushedOnly`` skips legacy (uncrushed) filters; ``SkipIfCurrent`` skips a filter whose
+    gains were already computed from this transform at its current checksum. ImportIDoc and ImportMRC call it with
+    both, on ``Stage`` at level 1 (the only level an import writes; its tiles are still in the OS cache). Returns the
+    filter node when its metadata changed, so the pipeline saves it.
     """
     if Logger is None:
         Logger = logging.getLogger(__name__)
+    Downsample = int(Downsample)
+    if TransformNode is None or FilterNode is None:
+        return None
+    if _as_bool(CrushedOnly) and noise_crush.CrushParams.from_attributes(FilterNode.attrib) is None:
+        return None
+    source = f"{TransformNode.Name}:{TransformNode.attrib.get('Checksum', '')}"
+    if _as_bool(SkipIfCurrent) and FilterNode.attrib.get('TileGainsSource') == source and \
+            os.path.exists(os.path.join(FilterNode.FullPath, f"TileGains_{TransformNode.Name}.json")):
+        return None
     if not FilterNode.HasTilePyramid:
         Logger.warning(f"TileGains: {FilterNode.FullPath} has no tile pyramid")
         return None
@@ -117,8 +137,10 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
     placements = {t: p for t, p in _placements(mosaic, tile_height, tile_width).items() if t in names}
 
     start = time.perf_counter()
+    # Full-resolution tiles are 16x the pixels of level 4: fewer readers in flight keep memory near 1 GB.
+    workers = _GAIN_IO_WORKERS if Downsample >= 2 else _GAIN_IO_WORKERS // 2
     result = tile_gains.compute_tile_gains(placements, _counts_reader(level_path, names, crush, cutoffs),
-                                           Downsample, low=0.5, high=float('inf'), max_workers=_GAIN_IO_WORKERS)
+                                           Downsample, low=0.5, high=float('inf'), max_workers=workers)
     elapsed = time.perf_counter() - start
 
     gains_path = os.path.join(FilterNode.FullPath, f"TileGains_{TransformNode.Name}.json")
@@ -141,7 +163,12 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
     prettyoutput.Log(message)
 
     if not changed:
-        return None
+        if FilterNode.attrib.get('TileGainsSource') == source:
+            return None
+        # Same gains from a transform with a new checksum: record the new source so SkipIfCurrent sees it, but leave
+        # the JSON, the chunks and the gain checksum as they are.
+        FilterNode.TileGainsSource = source
+        return FilterNode
 
     with open(gains_path, 'w', encoding='utf-8') as f:
         json.dump(summary, f, indent=1)
@@ -158,6 +185,6 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
         Logger.info(f"TileGains: wrote gains into {stamped} of {len(jobs)} tile chunks")
 
     # Attribute assignment (not .attrib[...]) marks the node changed, so the pipeline's save writes it.
-    FilterNode.TileGainsSource = f"{TransformNode.Name}:{TransformNode.attrib.get('Checksum', '')}"
+    FilterNode.TileGainsSource = source
     FilterNode.TileGainsChecksum = result.checksum()
     return FilterNode
