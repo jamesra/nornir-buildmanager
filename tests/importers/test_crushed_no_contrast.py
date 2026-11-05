@@ -188,3 +188,26 @@ class TestNoContrastOnCrushedFilters:
         with caplog.at_level(logging.WARNING):
             assert setters.SetContrastRange(_Histogram(), 1.0, 2.0, 1.0) is None
         assert any('crushed' in r.getMessage() for r in caplog.records)
+
+
+class TestCrushSpanWherePruneReadsIt:
+    """2026-11-05 reimports: Prune read the Raw8 <Filter>, which lacked CrushCodeSpan (only the Filter_Link had it)."""
+
+    def test_reader_falls_back_to_the_filter_link(self):
+        link = types.SimpleNamespace(attrib={'Name': 'Raw8', 'CrushCodeSpan': '47'})
+
+        class _Channel:
+            def find(self, xpath):
+                return link if xpath == "Filter_Link[@Name='Raw8']" else None
+
+        node = types.SimpleNamespace(attrib={**PARAMS.to_attributes(), 'Name': 'Raw8'}, Parent=_Channel(),
+                                     MinIntensityCutoff=None, MaxIntensityCutoff=None)
+        assert abs(PruneObj.CrushedScoreScale(node) - 255.0 / 47) < 1e-9
+
+    def test_contrast_override_sets_the_legacy_span(self):
+        # RC2 1226: legacy Raw8 cutoffs 4500-9000 counts, crush step 259 -> 17.4 codes (legacy prune scale)
+        params = CrushParams(k=2.5, step=259, sigma=103.8, offset=0, bits=8, source_dtype='uint16')
+        override = shared.ContrastValue(1226, 4500, 9000, 1.0)
+        assert abs(shared.CrushCodeSpanFromContrastOverride(override, params) - 4500 / 259) < 1e-9
+        assert shared.CrushCodeSpanFromContrastOverride(None, params) is None
+        assert shared.CrushCodeSpanFromContrastOverride(shared.ContrastValue(1226, 0, 0, 1.0), params) is None

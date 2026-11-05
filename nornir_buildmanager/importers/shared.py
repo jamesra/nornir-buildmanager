@@ -1082,6 +1082,19 @@ def CrushCodeSpan(code_histogram: NDArray, cutoffs: tuple[float, float]) -> floa
     return float(max(1, high - low + 1))
 
 
+def CrushCodeSpanFromContrastOverride(override: ContrastValue | None, params: CrushParams) -> float | None:
+    """Span in codes from a section's contrast override (ContrastOverrides / histogram cutoffs file), or None.
+
+    A legacy import stretched [Min, Max] counts to 0-255, so the prune scores of that import (and the thresholds tuned
+    on them) scale with 255 / (Max - Min). Using the same counts for a crushed section reproduces that scale: on four
+    RC2 reimports the legacy-cutoff span put crushed scores at 221-231x the 2015 scores (legacy: about 217x), where the
+    0.0001/0.9999 code-histogram span gave 98-209x (2026-11-05). No contrast is applied; only Prune reads the span.
+    """
+    if override is None or override.Max is None or override.Min is None or override.Max <= override.Min:
+        return None
+    return (float(override.Max) - float(override.Min)) / float(params.step)
+
+
 def ClearCrushedFilterContrast(filter_node: XElementWrapper) -> None:
     """Remove contrast values from a crushed filter (no contrast mapping is applied to crushed codes).
 

@@ -324,6 +324,18 @@ class PruneObj:
         return FilterNode
 
     @staticmethod
+    def _FilterLink(FilterNode):
+        """The channel's ``Filter_Link`` element for this filter, or None."""
+        parent = getattr(FilterNode, 'Parent', None)
+        name = FilterNode.attrib.get('Name') if hasattr(FilterNode, 'attrib') else None
+        if parent is None or name is None or not hasattr(parent, 'find'):
+            return None
+        try:
+            return parent.find(f"Filter_Link[@Name='{name}']")
+        except Exception:  # noqa: BLE001 - a lookup failure only means no fallback
+            return None
+
+    @staticmethod
     def CrushedScoreScale(FilterNode) -> float | None:
         """Factor that puts prune scores of crushed tiles on the contrast-stretched 8-bit scale.
 
@@ -340,6 +352,10 @@ class PruneObj:
         # Crushed filters carry no contrast values any more (no contrast mapping of crushed codes); the import
         # records the span it measured from the converted tiles instead. Older crushed filters still have cutoffs.
         span = FilterNode.attrib.get('CrushCodeSpan')
+        if span is None:
+            # Imports before 2026-11-05 could leave the span only on the channel's Filter_Link copy.
+            link = PruneObj._FilterLink(FilterNode)
+            span = link.attrib.get('CrushCodeSpan') if link is not None else None
         if span is not None and float(span) > 0:
             return 255.0 / float(span)
 

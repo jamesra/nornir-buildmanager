@@ -394,6 +394,7 @@ class SerialEMIDocImport:
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
 
         histogram_creation_task = None
+        override_span = None
         if crush_params is not None:
             (FilterMin, FilterMax, Gamma) = (None, None, None)
             (ActualMosaicMin, ActualMosaicMax) = (None, None)
@@ -441,6 +442,12 @@ class SerialEMIDocImport:
             shared.ClearCrushedFilterContrast(filterObj)
             filterObj.BitsPerPixel = crush_params.bits
             shared.SetFilterCrushAttributes(filterObj, crush_params)
+            override_span = shared.CrushCodeSpanFromContrastOverride(ContrastMap.get(SectionNumber), crush_params)
+            if override_span is not None:
+                filterObj.attrib[shared.CRUSH_SPAN_ATTRIBUTE] = f'{round(override_span, 3):g}'
+            # The filter is its own file (Raw8/VolumeData.xml); the channel only holds a Filter_Link copy. Save the
+            # filter itself, or a re-import's changes never reach the node Prune reads.
+            yield filterObj
         else:
             filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
             filterObj.BitsPerPixel = TargetBpp
@@ -510,8 +517,13 @@ class SerialEMIDocImport:
                                                 progress_task_key=tile_progress_key)
                 span = None if crush_stats is None else shared.CrushCodeSpan(crush_stats.code_histogram,
                                                                              ContrastCutoffs)
+                if override_span is not None:
+                    span = None  # the section's contrast override sets the span (legacy prune scale)
                 if span is not None:
                     filterObj.attrib[shared.CRUSH_SPAN_ATTRIBUTE] = f'{round(span, 3):g}'
+                    # Save the filter node itself: Prune reads CrushCodeSpan from Raw8/VolumeData.xml, and RC2 139
+                    # had it only in memory / on the channel's Filter_Link (2026-11-05).
+                    yield filterObj
             elif nornir_imageregistration.UsingCupy():
                 nornir_imageregistration.ConvertImagesInDictGpu(
                     SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
