@@ -1842,6 +1842,11 @@ _TILE_IO_WORKERS_DEFAULT = os.cpu_count() or 1
 _TILE_ENCODE_WORKERS_ENV = "NORNIR_TILE_ENCODE_WORKERS"
 _TILE_COPY_WORKERS_ENV = "NORNIR_TILE_COPY_WORKERS"
 _TILE_COPY_WORKERS_DEFAULT = 3
+# Copy workers when the tileset is on a network share. Benchmark 2026-11-05 (2,000 RC2 1240 tiles of 145 KB, Windows
+# to the Synology share, nornir_shared.files.copy_file): 3 threads 42 files/s, 8 92-94, 16 104, 32 96-102, 64 92-99.
+# Throughput flattens at 16 and dips beyond it, so a fixed 16 beats growing the pool.
+_TILE_COPY_WORKERS_NETWORK_DEFAULT = 16
+_NETWORK_FILESYSTEMS = frozenset({'cifs', 'smb3', 'smbfs', 'nfs', 'nfs4', '9p', 'fuse.sshfs'})
 _TILE_TWO_STAGE_SAVE_ENV = "NORNIR_TILE_TWO_STAGE_SAVE"
 _TILESET_MAX_IN_FLIGHT_ENV = "NORNIR_TILESET_MAX_IN_FLIGHT"
 # Each in-flight task is a `magick montage | magick convert` pipeline, so this bounds
@@ -1917,11 +1922,45 @@ def _tile_encode_worker_count() -> int:
     )
 
 
-def _tile_copy_worker_count() -> int:
-    """Copy-stage workers for two-stage save (defaults to 2; 815 CIFS io-sweep favored 2 over 3–4)."""
+def _is_network_path(path: str) -> bool:
+    """True when *path* is on a network share: a UNC path, a Windows mapped network drive, or a CIFS/NFS mount."""
+    path = os.path.abspath(path)
+    if path.startswith(('\\\\', '//')):
+        return True
+    if os.name == 'nt':
+        import ctypes
+        drive = os.path.splitdrive(path)[0]
+        if not drive:
+            return False
+        drive_remote = 4
+        return ctypes.windll.kernel32.GetDriveTypeW(drive + '\\') == drive_remote  # type: ignore[attr-defined]
+    try:
+        with open('/proc/mounts', encoding='utf-8') as mounts:
+            entries = [line.split()[1:3] for line in mounts if len(line.split()) >= 3]
+    except OSError:
+        return False
+    best_mount, best_type = '', ''
+    for mount_point, fs_type in entries:
+        mount_point = mount_point.replace('\\040', ' ')
+        inside = path == mount_point or path.startswith(mount_point.rstrip('/') + '/')
+        if inside and len(mount_point) > len(best_mount):
+            best_mount, best_type = mount_point, fs_type
+    return best_type in _NETWORK_FILESYSTEMS
+
+
+def _tile_copy_worker_count(dest_dir: str | None = None) -> int:
+    """Copy-stage workers for two-stage save.
+
+    ``NORNIR_TILE_COPY_WORKERS`` overrides. Otherwise 16 for a network destination (see
+    ``_TILE_COPY_WORKERS_NETWORK_DEFAULT``) and 3 for local disks or an unknown destination (815 CIFS io-sweep
+    on Linux favoured 2-3).
+    """
+    default = _TILE_COPY_WORKERS_DEFAULT
+    if dest_dir is not None and _is_network_path(dest_dir):
+        default = _TILE_COPY_WORKERS_NETWORK_DEFAULT
     return _positive_int_from_env(
         _TILE_COPY_WORKERS_ENV,
-        _TILE_COPY_WORKERS_DEFAULT,
+        default,
         label="tile copy workers",
     )
 
@@ -1972,7 +2011,12 @@ def _encode_tile_to_temp(
 
 
 class _TwoStageTileSavePipeline:
-    """Encode tiles to local temp, then copy to dest via a bounded queue."""
+    """Encode tiles to local temp, then copy to dest via a bounded queue.
+
+    Memory and local disk stay bounded when the destination is slow: the copy queue holds at most
+    ``2 * copy_workers`` encoded files, encoders block on it, and the caller waits in ``wait_one_encode``
+    once ``2 * encode_workers`` tiles are in flight, so assembly stops instead of piling up tiles.
+    """
 
     def __init__(
         self,
@@ -2335,7 +2379,7 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
             _warn_deprecated_two_stage_save_opt_out(Logger)
 
             encode_workers = _tile_encode_worker_count()
-            copy_workers = _tile_copy_worker_count()
+            copy_workers = _tile_copy_worker_count(LevelOne.FullPath)
             max_active_tasks = encode_workers * 2
             prettyoutput.Log(
                 f"Two-stage tile save: encode_workers={encode_workers}, "
