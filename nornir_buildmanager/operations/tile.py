@@ -2086,6 +2086,23 @@ class _TwoStageTileSavePipeline:
         self._copy_executor.shutdown(wait=True)
         return remaining
 
+    def abort(self) -> None:
+        """Stop after an error: drop queued encodes, let running ones and their copies finish, stop the threads.
+
+        Without this the copy consumers stay blocked on the queue and the process cannot exit (RC2 1240, 2026-11-05:
+        an allocation failure in assembly left nornir-build hung in interpreter shutdown).
+        """
+        for task in self._active_encode:
+            task.cancel()
+        wait(self._active_encode)
+        self._active_encode.clear()
+        self._copy_queue.join()
+        for _ in range(self._copy_workers):
+            self._copy_queue.put(None)
+        wait(self._copy_futures)
+        self._encode_executor.shutdown(wait=True)
+        self._copy_executor.shutdown(wait=True)
+
 
 @dataclass(frozen=True)
 class Level001SaveTimeline:
@@ -2355,16 +2372,20 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                     two_stage_pipeline.wait_one_encode()
                     output_io_wait_backpressure_s += time.perf_counter() - t_wait
 
-            for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
-                    target_space_scale=1.0 / InputLevelNode.Downsample,
-                    tile_dims=tile_dims,
-                    max_temp_image_area=max_temp_image_area):
-                tilename = nornir_buildmanager.templates.Current.GridTileName(
-                    tile_set_node.FilePrefix, iCol, iRow, tile_set_node.FilePostfix)
-                temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename)
-                output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
-                _submit_tile_save(
-                    output_tile_fullpath, temp_output_tile_fullpath, tile_image)
+            try:
+                for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
+                        target_space_scale=1.0 / InputLevelNode.Downsample,
+                        tile_dims=tile_dims,
+                        max_temp_image_area=max_temp_image_area):
+                    tilename = nornir_buildmanager.templates.Current.GridTileName(
+                        tile_set_node.FilePrefix, iCol, iRow, tile_set_node.FilePostfix)
+                    temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename)
+                    output_tile_fullpath = os.path.join(LevelOne.FullPath, tilename)
+                    _submit_tile_save(
+                        output_tile_fullpath, temp_output_tile_fullpath, tile_image)
+            except BaseException:
+                two_stage_pipeline.abort()
+                raise
 
             t_drain = time.perf_counter()
             remaining_output_tasks = two_stage_pipeline.finish()
