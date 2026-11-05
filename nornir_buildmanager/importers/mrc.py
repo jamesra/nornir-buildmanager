@@ -53,6 +53,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
 
     CameraBpp = kwargs['CameraBpp'] if 'CameraBpp' in kwargs else None
     NoCrush = bool(kwargs.get('NoCrush', False))
+    CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)

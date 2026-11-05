@@ -159,6 +159,7 @@ def Import(VolumeElement: VolumeNode,
     ContrastCutoffs = (MinCutoff, MaxCutoff)
     CameraBpp = kwargs.get('CameraBpp', None)
     NoCrush = bool(kwargs.get('NoCrush', False))
+    CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
 
     _validate_contrast_cutoffs(ContrastCutoffs)
