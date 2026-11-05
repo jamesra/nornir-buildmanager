@@ -1229,6 +1229,40 @@
         </Iterate>
     </Pipeline>
 
+    <Pipeline Name="TileGains"
+              Help="Per-tile brightness gains from the overlaps of a mosaic (beam drift, the white stripe of a resumed capture pass)."
+              Description="Solves one gain per tile from the brightness ratios of overlapping tile strips (robust least squares with edge-shading constants and a weak capture-order prior). Writes TileGains_&lt;transform&gt;.json in the filter folder and TileGainsSource / TileGainsChecksum on the filter; for crushed filters also writes gain, effective_step and effective_offset into every tile's nornir_crush chunk at every pyramid level, without changing pixels. Legacy filters' tiles are not changed. Run on Stage after import, or on a translated or grid mosaic after alignment."
+              Epilog="Example: nornir-build /data/volume TileGains -Channels TEM -Filters Raw8 -InputTransform Stage -Downsample 4 -Sections 1140">
+        <Arguments>
+            <Argument flag="-Sections" dest="Sections" type="IntegerList"
+                      help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
+                      required="False"/>
+            <Argument flag="-Channels" dest="ChannelRegEx" default="*"
+                      help="Regular expression describing channels to process"
+                      required="False"/>
+            <Argument flag="-Filters" dest="FilterRegEx" default="Raw8"
+                      help="Regular expression describing filters to compute gains for"
+                      required="False"/>
+            <Argument flag="-InputTransform" dest="InputTransform" default="Stage"
+                      help="Mosaic transform whose tile placements define the overlaps (Stage, Translated_*, Grid_*)"
+                      required="False"/>
+            <Argument flag="-Downsample" dest="Downsample" type="int" default="4"
+                      help="Pyramid level the tiles are read at"
+                      required="False"/>
+        </Arguments>
+        <Iterate VariableName="section_node" XPath="Block/Section">
+            <RequireSetMembership Attribute="Number" List="#Sections"/>
+            <Iterate VariableName="ChannelNode" XPath="Channel">
+                <RequireMatch Attribute="Name" RegEx="#ChannelRegEx"/>
+                <Select VariableName="TransformNode" XPath="Transform[@Name='#InputTransform']"/>
+                <Iterate VariableName="FilterNode" XPath="Filter">
+                    <RequireMatch Attribute="Name" RegEx="#FilterRegEx"/>
+                    <PythonCall Function="tilegains.TileGains" Downsample="#Downsample"/>
+                </Iterate>
+            </Iterate>
+        </Iterate>
+    </Pipeline>
+
     <Pipeline Name="AssembleTiles"
               Help="Build small full-resolution tiles, usually 256x256, that allow regions of the mosaic to be rapidly loaded">
         <Arguments>
