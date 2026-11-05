@@ -577,7 +577,9 @@ class SerialEMIDocImport:
         # It has been a while, check if the histogram is done and try to add meta-data for it
         if histogram_creation_task is not None:  # crushed sections have no import histogram
             histogram_creation_task.wait()
-            hist_added = shared.TryAddHistogram(filterObj, section_source_dir, image_ext=".png",
+            # The histogram and its plot live beside Histogram.xml: the import cache dir (the source dir unless
+            # NORNIR_IMPORT_CACHE_PATH is set).
+            hist_added = shared.TryAddHistogram(filterObj, os.path.dirname(histogram_cache_path), image_ext=".png",
                                                 min_cutoff=FilterMin,
                                                 max_cutoff=FilterMax, gamma=Gamma)
             if hist_added:

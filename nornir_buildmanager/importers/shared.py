@@ -239,9 +239,11 @@ def TryAddHistogram(containerObj: XElementWrapper,
         image_node = DataNode.Create(Path='RawDataHistogram.xml',
                                     attrib={'Name': 'RawDataHistogram'})
         [data_added, image_node] = histogram_node.UpdateOrAddChildByAttrib(image_node, 'Name')
-        existing_removed = files.RemoveOutdatedFile(histogram_image_path, image_node.FullPath)
+        # Copy the XML, not the image: the image branch above handles that (this copied the PNG under the XML's name
+        # and failed when only Histogram.xml existed).
+        existing_removed = files.RemoveOutdatedFile(histogram_xml_path, image_node.FullPath)
         if data_added or existing_removed:
-            shutil.copyfile(histogram_image_path, image_node.FullPath)
+            shutil.copyfile(histogram_xml_path, image_node.FullPath)
 
     autolevel_hint = histogram_node.GetOrCreateAutoLevelHint()
     autolevel_hint.UserRequestedGamma = gamma  # type: ignore[assignment]
