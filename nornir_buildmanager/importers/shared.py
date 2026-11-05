@@ -1065,14 +1065,18 @@ CRUSH_SPAN_ATTRIBUTE = 'CrushCodeSpan'
 
 
 def CrushCodeSpan(code_histogram: NDArray, cutoffs: tuple[float, float]) -> float | None:
-    """Span in codes between the ``cutoffs`` fractions of a code histogram (as AutoLevel trims a raw histogram)."""
+    """Span in codes between the ``cutoffs`` of a code histogram, as the import levels a raw histogram.
+
+    ``cutoffs`` are the import's ``ContrastCutoffs`` (-Min, -Max): both are cumulative fractions, (0.0001, 0.9999) by
+    default, so -Max is the fraction *below* the high cutoff (levelling trims ``1 - cutoffs[1]`` from the top).
+    """
     counts = np.asarray(code_histogram, dtype=np.float64)
     total = counts.sum()
     if total <= 0:
         return None
     cumulative = np.cumsum(counts) / total
     low = int(np.searchsorted(cumulative, cutoffs[0], side='right'))  # first code past the low fraction
-    high = int(np.searchsorted(cumulative, 1.0 - cutoffs[1], side='left'))
+    high = int(np.searchsorted(cumulative, cutoffs[1], side='left'))  # first code reaching the high fraction
     return float(max(1, high - low + 1))
 
 

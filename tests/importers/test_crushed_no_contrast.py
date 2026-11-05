@@ -120,8 +120,30 @@ class TestCrushStatsDuringConversion:
     def test_code_span_matches_cutoffs(self):
         histogram = np.zeros(256, np.int64)
         histogram[20:61] = 100  # codes 20..60
-        assert shared.CrushCodeSpan(histogram, (0.0, 0.0)) == 41
-        assert shared.CrushCodeSpan(np.zeros(256), (0.0001, 0.0001)) is None
+        # Cutoffs are the import's ContrastCutoffs: (min fraction, max fraction), not two trim amounts.
+        assert shared.CrushCodeSpan(histogram, (0.0, 1.0)) == 41
+        assert shared.CrushCodeSpan(histogram, (0.0001, 0.9999)) == 41
+        assert shared.CrushCodeSpan(np.zeros(256), (0.0001, 0.9999)) is None
+
+    def test_rc2_139_span_from_crushed_section(self):
+        """Build2, 2026-11-05: RC2 139 (codes about 5-52) got CrushCodeSpan 1 because -Max was read as a trim."""
+        rng = np.random.default_rng(139)
+        params = CrushParams(k=2.5, step=120, sigma=47.8, offset=0, bits=8, source_dtype='int32')
+        with tempfile.TemporaryDirectory() as tmp:
+            mapping = {}
+            for i in range(4):
+                codes = rng.integers(5, 53, (64, 64))  # codes 5..52, as Build2 saw
+                raw = (codes * params.step + rng.integers(0, params.step, codes.shape)).astype(np.int32)
+                source = os.path.join(tmp, f'{i}.tif')
+                Image.fromarray(raw).save(source)
+                mapping[source] = os.path.join(tmp, 'out', f'{i}.png')
+            stats = shared.CrushTiles(mapping, params, flip=False)
+        assert stats is not None and stats.code_histogram[5:53].sum() == 4 * 64 * 64
+        span = shared.CrushCodeSpan(stats.code_histogram, (0.0001, 0.9999))
+        assert 46 <= span <= 48
+        node = types.SimpleNamespace(attrib={**params.to_attributes(), 'CrushCodeSpan': str(span)},
+                                     MinIntensityCutoff=None, MaxIntensityCutoff=None)
+        assert 5.0 < PruneObj.CrushedScoreScale(node) < 6.0
 
 
 class _Filter:
