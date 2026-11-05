@@ -28,6 +28,7 @@ from nornir_buildmanager.volumemanager import (
     VolumeNode,
     SectionNode,
     ChannelNode,
+    CodeHistogramNode,
 )
 import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
@@ -38,6 +39,7 @@ from nornir_imageregistration import noise_crush
 from nornir_imageregistration.noise_crush import CrushParams
 import numpy as np
 from numpy.typing import NDArray
+from PIL import Image
 
 
 # Bump when histogram cache semantics change (e.g. default stride).
@@ -1072,6 +1074,19 @@ def CrushCodeSpan(code_histogram: NDArray, cutoffs: tuple[float, float]) -> floa
     ``cutoffs`` are the import's ``ContrastCutoffs`` (-Min, -Max): both are cumulative fractions, (0.0001, 0.9999) by
     default, so -Max is the fraction *below* the high cutoff (levelling trims ``1 - cutoffs[1]`` from the top).
     """
+    codes = CrushCodeCutoffs(code_histogram, cutoffs)
+    if codes is None:
+        return None
+    (low, high) = codes
+    return float(max(1, high - low + 1))
+
+
+def CrushCodeCutoffs(code_histogram: NDArray, cutoffs: tuple[float, float]) -> tuple[int, int] | None:
+    """(low, high) codes of a code histogram at the import's cumulative ``cutoffs`` fractions, or None when empty.
+
+    low is the first code past the low fraction, high the first code reaching the high fraction (see
+    ``CrushCodeSpan``, which is ``high - low + 1``).
+    """
     counts = np.asarray(code_histogram, dtype=np.float64)
     total = counts.sum()
     if total <= 0:
@@ -1079,7 +1094,144 @@ def CrushCodeSpan(code_histogram: NDArray, cutoffs: tuple[float, float]) -> floa
     cumulative = np.cumsum(counts) / total
     low = int(np.searchsorted(cumulative, cutoffs[0], side='right'))  # first code past the low fraction
     high = int(np.searchsorted(cumulative, cutoffs[1], side='left'))  # first code reaching the high fraction
-    return float(max(1, high - low + 1))
+    return low, high
+
+
+#: Display-only metadata on a crushed <Filter> for viewers (Viking expands the codes in its shader and windows them).
+#: No nornir stage reads these as contrast: crushed filters never get Min/MaxIntensityCutoff or Gamma.
+CRUSH_DISPLAY_MIN_ATTRIBUTE = 'CrushDisplayMin'
+CRUSH_DISPLAY_MAX_ATTRIBUTE = 'CrushDisplayMax'
+
+#: The import's default -Min/-Max cumulative fractions, used when display metadata is computed outside an import.
+DEFAULT_CONTRAST_CUTOFFS = (0.0001, 0.9999)
+
+
+def CrushDisplayRange(code_histogram: NDArray, cutoffs: tuple[float, float]) -> tuple[float, float] | None:
+    """Display window (min, max) in codes at the ``cutoffs`` fractions; max > min. None for an empty histogram."""
+    codes = CrushCodeCutoffs(code_histogram, cutoffs)
+    if codes is None:
+        return None
+    (low, high) = codes
+    return float(low), float(max(high, low + 1))
+
+
+def GetFilterCodeHistogram(filter_node: XElementWrapper, params: CrushParams) -> NDArray | None:
+    """The filter's stored code histogram, or None when missing or not sized for ``params`` (max_code + 1 bins)."""
+    node = filter_node.find(CodeHistogramNode.TAG)
+    if node is None:
+        return None
+    counts = cast(CodeHistogramNode, node).Counts
+    if counts is None or len(counts) != params.max_code + 1:
+        return None
+    return counts
+
+
+def SetFilterCodeHistogram(filter_node: XElementWrapper, code_histogram: NDArray,
+                           cutoffs: tuple[float, float]) -> bool:
+    """Store the code histogram as the filter's ``<CodeHistogram>`` child and the display range from it.
+
+    Returns True when the filter changed; the caller must save (yield) the filter node itself, which is its own
+    VolumeData.xml (cd0a081: the span once reached only memory).
+    """
+    counts = np.asarray(code_histogram, dtype=np.int64)
+    changed = False
+    existing = filter_node.find(CodeHistogramNode.TAG)
+    existing_counts = None if existing is None else cast(CodeHistogramNode, existing).Counts
+    if existing_counts is None or not np.array_equal(existing_counts, counts):
+        if existing is not None:
+            filter_node.remove(existing)
+        filter_node.append(CodeHistogramNode.Create(counts))
+        changed = True
+
+    display = CrushDisplayRange(counts, cutoffs)
+    attrib = filter_node.attrib
+    for (key, value) in zip((CRUSH_DISPLAY_MIN_ATTRIBUTE, CRUSH_DISPLAY_MAX_ATTRIBUTE),
+                            (None, None) if display is None else display):
+        text = None if value is None else f'{round(value, 3):g}'
+        if attrib.get(key) == text:
+            continue
+        if text is None:
+            del attrib[key]
+        else:
+            attrib[key] = text
+        changed = True
+
+    if changed:
+        filter_node.AttributesChanged = True
+    return changed
+
+
+def _tile_code_histogram(path: str, bins: int) -> NDArray:
+    """Code histogram of one crushed tile; codes above the top bin (none expected) count in the top bin."""
+    with Image.open(path) as im:
+        counts = np.bincount(np.asarray(im).ravel(), minlength=bins)
+    if len(counts) > bins:
+        counts[bins - 1] += counts[bins:].sum()
+        counts = counts[:bins]
+    return counts.astype(np.int64)
+
+
+def CodeHistogramFromTiles(tile_dir: str, params: CrushParams, image_ext: str = '.png') -> NDArray | None:
+    """Sum the code histogram of the crushed tiles in ``tile_dir`` (level 1), or None when there are none.
+
+    For sections whose tiles exist but were not converted by this import (nothing to convert, or only some tiles),
+    so the histogram cannot come from the conversion. Tiles are decoded on a thread pool with a bounded number in
+    flight, so memory holds a few tiles at a time. Cost: one decode of every level-1 tile.
+    """
+    if not os.path.isdir(tile_dir):
+        return None
+    suffix = ('' if image_ext.startswith('.') else '.') + image_ext.lower()
+    paths = [entry.path for entry in os.scandir(tile_dir)
+             if entry.is_file() and entry.name.lower().endswith(suffix)]
+    if not paths:
+        return None
+
+    bins = params.max_code + 1
+    num_threads = min(len(paths), os.cpu_count() or 1)
+    pool = nornir_pools.GetThreadPool("CodeHistogram", num_threads=num_threads)  # PNG decode releases the GIL
+    max_in_flight = num_threads * 2
+    histogram = np.zeros(bins, dtype=np.int64)
+    pending: list = []
+
+    def drain_one() -> None:
+        nonlocal histogram
+        (task, path) = pending.pop(0)
+        try:
+            histogram += task.wait_return()
+        except (OSError, ValueError) as e:  # an unreadable tile is the import's to report; leave it out of the histogram
+            prettyoutput.LogErr(f"Code histogram: could not read {path}\n{e}")
+
+    try:
+        for path in paths:
+            pending.append((pool.add_task(path, _tile_code_histogram, path, bins), path))
+            if len(pending) >= max_in_flight:
+                drain_one()
+        while pending:
+            drain_one()
+    finally:
+        pool.wait_completion()
+        pool.shutdown()
+    return histogram
+
+
+def UpdateFilterCodeHistogram(filter_node: XElementWrapper, params: CrushParams, cutoffs: tuple[float, float],
+                              tile_dir: str, converted: CrushSectionStats | None, total_tiles: int,
+                              image_ext: str = '.png') -> bool:
+    """Keep a crushed filter's ``<CodeHistogram>`` and ``CrushDisplayMin/Max`` current; True when it changed.
+
+    - Every tile converted now: the conversion's histogram (no extra pass).
+    - Nothing converted and a histogram of the right size stored: kept; only the display range is refreshed.
+    - Otherwise (no histogram yet, or only some tiles converted): read from the level-1 tiles.
+    """
+    if converted is not None and converted.tiles >= total_tiles > 0:
+        histogram = converted.code_histogram
+    else:
+        histogram = GetFilterCodeHistogram(filter_node, params) if converted is None else None
+        if histogram is None:
+            histogram = CodeHistogramFromTiles(tile_dir, params, image_ext=image_ext)
+    if histogram is None:
+        return False
+    return SetFilterCodeHistogram(filter_node, histogram, cutoffs)
 
 
 def CrushCodeSpanFromContrastOverride(override: ContrastValue | None, params: CrushParams) -> float | None:

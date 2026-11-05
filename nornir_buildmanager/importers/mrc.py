@@ -428,6 +428,11 @@ class MRCImport:
         tiles_present = _all_tiles_present(LevelObj.FullPath, num_tiles, OutputImageExt)
         if tiles_present and _export_marked_complete(LevelObj.FullPath, num_tiles):
             prettyoutput.Log(f"Section {SectionNumber}: all {num_tiles} tiles already exported")
+            # Display metadata for viewers: computed from the existing tiles only when the filter has none yet.
+            if crush_params is not None and shared.UpdateFilterCodeHistogram(
+                    filterObj, crush_params, ContrastCutoffs, LevelObj.FullPath, None, num_tiles,
+                    image_ext=OutputImageExt):
+                (yield filterObj)
             return
 
         # Wait for the staged local copy only when tiles are missing: a restarted import walks
@@ -436,11 +441,18 @@ class MRCImport:
         if read_path is not None and not tiles_present:
             pixel_path = read_path()
 
-        cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
-                         min_max_gamma=contrast_settings,
-                         flip_ud=flip_ud_for_section(SectionNumber, FlipList),
-                         crush_params=crush_params)
+        crush_stats = cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
+                                       min_max_gamma=contrast_settings,
+                                       flip_ud=flip_ud_for_section(SectionNumber, FlipList),
+                                       crush_params=crush_params)
         _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath)
+
+        # CodeHistogram and CrushDisplayMin/Max: from the export when it wrote every tile, else from the level-1 tiles.
+        if crush_params is not None and shared.UpdateFilterCodeHistogram(
+                filterObj, crush_params, ContrastCutoffs, LevelObj.FullPath,
+                crush_stats if crush_stats is not None and crush_stats.tiles > 0 else None, num_tiles,
+                image_ext=OutputImageExt):
+            (yield filterObj)
 
     def __init__(self):
         """
@@ -534,13 +546,35 @@ class MRCImport:
     def ExportImages(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str,
                      min_max_gamma: shared.MinMaxGamma | None,
                      flip_ud: bool = DEFAULT_FLIP_UD,
-                     crush_params: CrushParams | None = None):
+                     crush_params: CrushParams | None = None) -> shared.CrushSectionStats | None:
+        """Export every tile not already written.
+
+        :return: for crushed exports, the code histogram of the tiles written by this call (no separate histogram
+                 pass); None for legacy exports.
+        """
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
         pool = nornir_pools.GetGlobalThreadPool()
         #pool = nornir_pools.GetThreadPool("Import", num_threads=os.cpu_count() * 2)
         #pool = nornir_pools.GetGlobalSerialPool()
+
+        if crush_params is not None:
+            crush_tasks = [pool.add_task(str(iTile), cls.ExportCrushedImage, mrc_obj, output_dir, img_ext, iTile,
+                                         crush_params, flip_ud)
+                           for iTile in range(mrc_obj.num_tiles)]  # type: ignore[arg-type]
+            histogram = np.zeros(crush_params.max_code + 1, dtype=np.int64)
+            tiles = 0
+            for task in crush_tasks:
+                try:
+                    tile_histogram = task.wait_return()
+                except Exception as e:
+                    prettyoutput.LogErr(f"Failed to export tile #{task.name}\n{e}")
+                    raise
+                if tile_histogram is not None:
+                    histogram += tile_histogram
+                    tiles += 1
+            return shared.CrushSectionStats(histogram, 0, 0, tiles)
 
         tasks = [pool.add_task(str(iTile),
                                cls.ExportImage,
@@ -554,6 +588,27 @@ class MRCImport:
                  for iTile in range(0, mrc_obj.num_tiles)]  # type: ignore[arg-type]
 
         _wait_for_tile_tasks(tasks, 'export')
+        return None
+
+    @staticmethod
+    def ExportCrushedImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
+                           crush_params: CrushParams, flip_ud: bool = DEFAULT_FLIP_UD) -> NDArray | None:
+        """Write one crushed tile; its code histogram, or None when the tile already existed."""
+        if isinstance(mrc_obj, str):
+            mrc_obj = MRCFile.Load(mrc_obj)
+
+        output_fullpath = os.path.join(output_dir, GetFileNameForTileNumber(tile_number=iTile, ext=img_ext))
+        if nornir_shared.images.IsValidImage(output_fullpath):
+            return None
+
+        img = mrc_obj.get_tile_as_numpy_memmap(iTile)
+        if flip_ud:
+            img = np.flipud(img)
+
+        codes = noise_crush.crush(img, crush_params)
+        del img
+        noise_crush.save_crushed_png(output_fullpath, codes, crush_params)
+        return np.bincount(codes.ravel(), minlength=crush_params.max_code + 1)
 
     @staticmethod
     def ExportImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
@@ -570,12 +625,7 @@ class MRCImport:
             return False
 
         if crush_params is not None:
-            img = mrc_obj.get_tile_as_numpy_memmap(iTile)
-            if flip_ud:
-                img = np.flipud(img)
-
-            noise_crush.save_crushed_png(output_fullpath, noise_crush.crush(img, crush_params), crush_params)
-            del img
+            return MRCImport.ExportCrushedImage(mrc_obj, output_dir, img_ext, iTile, crush_params, flip_ud) is not None
         elif min_max_gamma is None:
             im = mrc_obj.get_tile_as_image(iTile)
             if flip_ud:

@@ -12,6 +12,8 @@ import nornir_buildmanager.volumemanager
 import nornir_pools
 from nornir_buildmanager.progress import report_iterate, report_iterate_complete
 from nornir_buildmanager.volumemanager import link_prefetch
+from nornir_buildmanager.volumemanager.codehistogramnode import CodeHistogramNode
+from nornir_imageregistration.noise_crush import CrushParams
 from nornir_imageregistration.files import *
 import nornir_shared.files
 from nornir_shared.files import RecurseSubdirectoriesGenerator
@@ -604,6 +606,7 @@ def ParsePyramidNode(FilterNode, InputPyramidNode, OutputSectionNode):
         ETree.SubElement(OutputPyramidNode, 'Level', {'Path': LevelNode.Path,
                                                       'Downsample': '%g' % LevelNode.Downsample})
 
+    AddCrushDisplayData(OutputPyramidNode, FilterNode, FilterNode.attrib)
     return OutputPyramidNode
 
 
@@ -623,7 +626,48 @@ def ParseTilesetNode(FilterNode, InputTilesetNode, OutputSectionNode):
                                                       'GridDimX': str(LevelNode.GridDimX),
                                                       'GridDimY': str(LevelNode.GridDimY)})
 
+    # The tileset's own Crush* attributes say its tiles hold codes (AssembleTiles records them); a crushed filter's
+    # tileset without them was assembled before codes were kept (stretched per tile) and is exported as before.
+    if (CrushParams.from_attributes(FilterNode.attrib) is not None
+            and CrushParams.from_attributes(InputTilesetNode.attrib) is None):
+        prettyoutput.LogErr(f"Tileset {InputTilesetNode.FullPath} of crushed filter {FilterNode.Name} holds no codes; "
+                            "rebuild it with AssembleTiles to display it as crushed")
+    else:
+        AddCrushDisplayData(OutputTilesetNode, FilterNode, InputTilesetNode.attrib)
     return OutputTilesetNode
+
+
+#: Crush attributes copied to a crushed <Pyramid>/<Tileset> so Viking can expand the codes in its shader.
+_VIKING_CRUSH_ATTRIBUTES = ('CrushVersion', 'CrushStep', 'CrushOffset', 'CrushBits')
+_VIKING_CRUSH_DISPLAY_ATTRIBUTES = ('CrushDisplayMin', 'CrushDisplayMax')
+
+
+def AddCrushDisplayData(OutputNode: ETree.Element, FilterNode, crush_attrib) -> bool:
+    """Add crush and display metadata to a VikingXML <Pyramid>/<Tileset> whose tiles hold crushed codes.
+
+    ``crush_attrib`` holds the node's crush parameters (the filter's for a pyramid, the tileset's own for a tileset).
+    Adds ``CrushVersion``, ``CrushStep``, ``CrushOffset``, ``CrushBits``, the filter's ``CrushDisplayMin/Max`` and a
+    ``<CodeHistogram Bins="N">`` child with the filter's code histogram. Returns False, adding nothing, for
+    uncrushed (legacy) data.
+    """
+    params = CrushParams.from_attributes(crush_attrib)
+    if params is None:
+        return False
+
+    params_attrib = params.to_attributes()
+    for name in _VIKING_CRUSH_ATTRIBUTES:
+        OutputNode.attrib[name] = params_attrib[name]
+    for name in _VIKING_CRUSH_DISPLAY_ATTRIBUTES:
+        value = FilterNode.attrib.get(name)
+        if value is not None:
+            OutputNode.attrib[name] = value
+
+    histogram_node = FilterNode.find(CodeHistogramNode.TAG)
+    counts = None if histogram_node is None else histogram_node.Counts
+    if counts is not None and len(counts) == params.max_code + 1:
+        output_histogram = ETree.SubElement(OutputNode, CodeHistogramNode.TAG, {'Bins': str(len(counts))})
+        output_histogram.text = CodeHistogramNode.FormatCounts(counts)
+    return True
 
 
 # Merge the created VolumeXML with the general definitions in about.XML

@@ -44,6 +44,9 @@ from nornir_buildmanager.volumemanager.elementwrapping import *
 import nornir_buildmanager.volumemanager.autolevelhintnode as autolevelhintnode
 from nornir_buildmanager.volumemanager.autolevelhintnode import AutoLevelHintNode
 
+import nornir_buildmanager.volumemanager.codehistogramnode as codehistogramnode
+from nornir_buildmanager.volumemanager.codehistogramnode import CodeHistogramNode
+
 import nornir_buildmanager.volumemanager.volumemanager as volumemanager
 from nornir_buildmanager.volumemanager.volumemanager import VolumeManager
 

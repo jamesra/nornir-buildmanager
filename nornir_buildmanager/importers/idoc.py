@@ -492,6 +492,8 @@ class SerialEMIDocImport:
 
         SourceToMissingTargetMap = Tileset.GetSourceToMissingTargetMap()
 
+        crush_stats = None
+
         # Figure out if we have to move or convert images
         if len(SourceToMissingTargetMap) == 0:
             image_conversion_required = False
@@ -550,6 +552,13 @@ class SerialEMIDocImport:
                 shutil.copy(f, SourceToMissingTargetMap[f])
                 tile_reporter.update(i, element=os.path.basename(f), path=f)
             tile_reporter.complete()
+
+        # Display metadata for viewers (CodeHistogram, CrushDisplayMin/Max): from the conversion when every tile was
+        # converted now, else from the existing level-1 tiles when the filter has none yet. Saved on the filter itself.
+        if crush_params is not None and shared.UpdateFilterCodeHistogram(
+                filterObj, crush_params, ContrastCutoffs, LevelObj.FullPath, crush_stats, len(Tileset.Tiles),
+                image_ext=OutputImageExt):
+            yield filterObj
 
         # A one-time migration used to live here: for volumes whose path contained the
         # substring 'RC3', a stage.mosaic created before 2022-07-18 was deleted to force a
