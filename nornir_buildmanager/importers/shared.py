@@ -1137,12 +1137,16 @@ def _tile_code_histogram(path: str, bins: int) -> NDArray:
     return counts.astype(np.int64)
 
 
-def CodeHistogramFromTiles(tile_dir: str, params: CrushParams, image_ext: str = '.png') -> NDArray | None:
+def CodeHistogramFromTiles(tile_dir: str, params: CrushParams, image_ext: str = '.png',
+                           sample_every: int = 1) -> NDArray | None:
     """Sum the code histogram of the crushed tiles in ``tile_dir`` (level 1), or None when there are none.
 
     For sections whose tiles exist but were not converted by this import (nothing to convert, or only some tiles),
     so the histogram cannot come from the conversion. Tiles are decoded on a thread pool with a bounded number in
     flight, so memory holds a few tiles at a time. Cost: one decode of every level-1 tile.
+
+    ``sample_every`` N > 1 reads every Nth tile in name order, for a histogram that is close to the full one (cutoffs at
+    0.0001/0.9999 move by a code or two) for 1/N of the reading.
     """
     if not os.path.isdir(tile_dir):
         return None
@@ -1151,6 +1155,8 @@ def CodeHistogramFromTiles(tile_dir: str, params: CrushParams, image_ext: str = 
              if entry.is_file() and entry.name.lower().endswith(suffix)]
     if not paths:
         return None
+    if sample_every > 1:
+        paths = sorted(paths)[::sample_every]
 
     bins = params.max_code + 1
     num_threads = min(len(paths), os.cpu_count() or 1)

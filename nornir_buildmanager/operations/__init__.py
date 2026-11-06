@@ -1,5 +1,5 @@
 __all__ = ['block', 'channel', 'filter', 'diagnostics', 'general', 'migration', 'pruneobj', 'registration', 'reporting',
-           'setters', 'stosmap', 'tile', 'vikingxml', 'stosgroup', 'segmentationtraining', 'tilegains']
+           'setters', 'stosmap', 'tile', 'vikingxml', 'stosgroup', 'segmentationtraining', 'tilegains', 'codehistogram']
 
 import nornir_buildmanager.operations.tile as tile
 import nornir_buildmanager.operations.block as block
@@ -17,3 +17,4 @@ import nornir_buildmanager.operations.stosmap as stosmap
 import nornir_buildmanager.operations.vikingxml as vikingxml
 import nornir_buildmanager.operations.segmentationtraining as segmentationtraining
 import nornir_buildmanager.operations.tilegains as tilegains
+import nornir_buildmanager.operations.codehistogram as codehistogram
