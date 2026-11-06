@@ -2104,7 +2104,7 @@ class _TwoStageTileSavePipeline:
                 if job is None:
                     return
                 t0 = time.perf_counter()
-                nornir_shared.files.copy_file(job.temp_path, job.dest_path, atomic=nornir_shared.files.tile_copy_atomic())
+                nornir_shared.files.copy_file(job.temp_path, job.dest_path)
                 if self._timing_lock is not None:
                     with self._timing_lock:
                         self.sum_copy_thread_s += time.perf_counter() - t0
