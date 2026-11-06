@@ -2409,6 +2409,9 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                                                                                               section_node.Number if section_node is not None else '?'))
 
             temp_level_dir = get_temp_dir_for_tileset_level(LevelOne)
+            # The pyramid reads level 1 from this directory without comparing it to the share, so it must hold only
+            # the tiles this build writes: not leftovers of an earlier build of this section.
+            nornir_shared.files.rmtree(temp_level_dir, ignore_errors=True)
             ensure_directory(temp_level_dir)
 
             if max_temp_image_area is None:
@@ -3427,6 +3430,7 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     tile_workers = _tile_io_worker_count()
 
     mover = _TileMover(_tile_copy_worker_count(dest_path_abs), dest_path_abs)
+    source_tile_names = frozenset(tileset_functions.list_directory_names(SourcePath))
 
     def process_tile(coords: tuple[int, int], executor: ThreadPoolExecutor):
         """Process a single tile with the given parameters"""
@@ -3458,7 +3462,8 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             OutputFileFullPath=OutputFileFullPath,
             output_level_temp_dir=temp_output_dir,
             executor=executor,
-            move_to_destination=mover.submit)
+            move_to_destination=mover.submit,
+            source_tile_names=source_tile_names)
 
     try:
         with nornir_pools.InstrumentedThreadPoolExecutor('tile-rows', 
