@@ -657,13 +657,12 @@ def AddCrushDisplayData(OutputNode: ETree.Element, FilterNode, crush_attrib) -> 
     params_attrib = params.to_attributes()
     for name in _VIKING_CRUSH_ATTRIBUTES:
         OutputNode.attrib[name] = params_attrib[name]
-    for name in _VIKING_CRUSH_DISPLAY_ATTRIBUTES:
-        value = FilterNode.attrib.get(name)
-        if value is not None:
-            OutputNode.attrib[name] = value
+    display = FilterNode.CrushDisplayRange
+    if display is not None:
+        for (name, value) in zip(_VIKING_CRUSH_DISPLAY_ATTRIBUTES, display):
+            OutputNode.attrib[name] = f'{value:g}'
 
-    histogram_node = FilterNode.find(CodeHistogramNode.TAG)
-    counts = None if histogram_node is None else histogram_node.Counts
+    counts = FilterNode.CodeHistogram
     if counts is not None and len(counts) == params.max_code + 1:
         output_histogram = ETree.SubElement(OutputNode, CodeHistogramNode.TAG, {'Bins': str(len(counts))})
         output_histogram.text = CodeHistogramNode.FormatCounts(counts)

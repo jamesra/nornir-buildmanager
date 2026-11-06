@@ -175,11 +175,6 @@ NON_VOLUME_FIND_LITERALS = {
     ('operations/segmentationtraining/circles.py', 'CIRCULARSTRING'): 'str.find on a WKT string, not an XPath',
     ('operations/segmentationtraining/remote_tiles.py', 'Sections'):
         'root.find on a remote Viking volume XML document, not VolumeData',
-    # Not pinnable as a case: the wrapper's find asserts on an unloaded *_Link stub ("Cannot wrap a link
-    # element that has not been loaded") and the merged tree has no *_Link elements. pruneobj catches the
-    # error and returns None, so its CrushCodeSpan fallback to the link copy does not read the link.
-    ('operations/pruneobj.py', "Filter_Link[@Name='#v']"):
-        'parent.find on the raw *_Link stub (unsupported by the wrapper; see comment above)',
 }
 
 _PLACEHOLDER = re.compile(r"#\w+|%\(\w+\)[sdg]|%[sdg]|\{[^}]*\}")

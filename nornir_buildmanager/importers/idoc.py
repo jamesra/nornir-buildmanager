@@ -444,9 +444,7 @@ class SerialEMIDocImport:
             shared.SetFilterCrushAttributes(filterObj, crush_params)
             override_span = shared.CrushCodeSpanFromContrastOverride(ContrastMap.get(SectionNumber), crush_params)
             if override_span is not None:
-                filterObj.attrib[shared.CRUSH_SPAN_ATTRIBUTE] = f'{round(override_span, 3):g}'
-            # The filter is its own file (Raw8/VolumeData.xml); the channel only holds a Filter_Link copy. Save the
-            # filter itself, or a re-import's changes never reach the node Prune reads.
+                filterObj.CrushCodeSpan = override_span
             yield filterObj
         else:
             filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
@@ -522,9 +520,7 @@ class SerialEMIDocImport:
                 if override_span is not None:
                     span = None  # the section's contrast override sets the span (legacy prune scale)
                 if span is not None:
-                    filterObj.attrib[shared.CRUSH_SPAN_ATTRIBUTE] = f'{round(span, 3):g}'
-                    # Save the filter node itself: Prune reads CrushCodeSpan from Raw8/VolumeData.xml, and RC2 139
-                    # had it only in memory / on the channel's Filter_Link (2026-11-05).
+                    filterObj.CrushCodeSpan = span
                     yield filterObj
             elif nornir_imageregistration.UsingCupy():
                 nornir_imageregistration.ConvertImagesInDictGpu(

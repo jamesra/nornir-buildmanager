@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import numpy as np
+from numpy.typing import NDArray
+
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
-from nornir_buildmanager.volumemanager import ContrastHandler, HistogramNode, ImageNode, ImageSetNode, Scale, \
-    TilePyramidNode, TilesetNode, XNamedContainerElementWrapped
+from nornir_buildmanager.volumemanager import CodeHistogramNode, ContrastHandler, HistogramNode, ImageNode, \
+    ImageSetNode, Scale, TilePyramidNode, TilesetNode, XNamedContainerElementWrapped
 
 
 class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
@@ -55,6 +58,59 @@ class FilterNode(XNamedContainerElementWrapped, ContrastHandler):
                 del self.attrib['BitsPerPixel']
         else:
             self.attrib['BitsPerPixel'] = '%d' % val
+
+    @property
+    def CrushCodeSpan(self) -> float | None:
+        """Intensity span of a crushed filter in codes, measured at import at the contrast cutoff fractions.
+
+        Only Prune reads it, to put crushed scores on the legacy 8-bit scale; no image is contrast-mapped with it.
+        """
+        val = self.attrib.get('CrushCodeSpan', None)
+        return None if val is None else float(val)
+
+    @CrushCodeSpan.setter
+    def CrushCodeSpan(self, val: float | None):
+        if val is None:
+            if 'CrushCodeSpan' in self.attrib:
+                del self.attrib['CrushCodeSpan']
+        else:
+            self.attrib['CrushCodeSpan'] = f'{round(val, 3):g}'
+
+    @property
+    def CrushDisplayRange(self) -> tuple[float, float] | None:
+        """Display window (min, max) in codes of a crushed filter, for viewers; no nornir stage reads it."""
+        low = self.attrib.get('CrushDisplayMin', None)
+        high = self.attrib.get('CrushDisplayMax', None)
+        if low is None or high is None:
+            return None
+        return float(low), float(high)
+
+    @CrushDisplayRange.setter
+    def CrushDisplayRange(self, val: tuple[float, float] | None):
+        for (key, value) in zip(('CrushDisplayMin', 'CrushDisplayMax'), (None, None) if val is None else val):
+            if value is None:
+                if key in self.attrib:
+                    del self.attrib[key]
+            else:
+                self.attrib[key] = f'{round(value, 3):g}'
+
+    @property
+    def CodeHistogram(self) -> NDArray | None:
+        """Counts of the ``<CodeHistogram>`` child (one per code), or None when missing or malformed."""
+        node = self.find(CodeHistogramNode.TAG)  # type: CodeHistogramNode | None # type: ignore
+        return None if node is None else node.Counts
+
+    def SetCodeHistogram(self, counts: NDArray) -> bool:
+        """Store ``counts`` as the ``<CodeHistogram>`` child; True when it changed (the filter is then dirty)."""
+        counts = np.asarray(counts, dtype=np.int64)
+        existing = self.find(CodeHistogramNode.TAG)
+        if existing is not None:
+            existing_counts = existing.Counts  # type: ignore[attr-defined]
+            if existing_counts is not None and np.array_equal(existing_counts, counts):
+                return False
+            self.remove(existing)
+        self.append(CodeHistogramNode.Create(counts))
+        return True
 
     def GetOrCreateTilePyramid(self) -> tuple[bool, TilePyramidNode]:
         # pyramid = self.GetChildByAttrib('TilePyramid', "Name", TilePyramidNode.Name)

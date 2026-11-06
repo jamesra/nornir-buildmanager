@@ -16,6 +16,7 @@ from nornir_buildmanager.build import BuildParserRoot
 from nornir_buildmanager.importers import shared
 from nornir_buildmanager.importers.mrc import MRCImport
 from nornir_buildmanager.operations.pruneobj import PruneObj
+from nornir_buildmanager.volumemanager import FilterNode
 from nornir_imageregistration import noise_crush
 from nornir_imageregistration.noise_crush import CrushParams
 from nornir_shared.histogram import Histogram
@@ -108,15 +109,18 @@ class TestCrushHelpers(unittest.TestCase):
         self.assertGreater(shared.SectionCrushParams(noise, histogram, k=2.5).bits, 8)
 
     def test_set_filter_attributes_round_trip(self) -> None:
-        node = cast(Any, types.SimpleNamespace(attrib={}))
+        node = FilterNode.Create('Raw8')
+        node.AttributesChanged = False
         shared.SetFilterCrushAttributes(node, PARAMS)
         self.assertEqual(CrushParams.from_attributes(node.attrib), PARAMS)
+        self.assertTrue(node.AttributesChanged)  # so the pipeline saves the filter
 
     def test_prune_score_scale(self) -> None:
-        crushed = types.SimpleNamespace(attrib=PARAMS.to_attributes(), MinIntensityCutoff=5.0,
-                                        MaxIntensityCutoff=56.0)
+        crushed = FilterNode.Create('Raw8', **PARAMS.to_attributes())
+        crushed.SetContrastValues(5.0, 56.0, None)
         self.assertEqual(PruneObj.CrushedScoreScale(crushed), 5.0)
-        legacy = types.SimpleNamespace(attrib={}, MinIntensityCutoff=5.0, MaxIntensityCutoff=56.0)
+        legacy = FilterNode.Create('Raw8')
+        legacy.SetContrastValues(5.0, 56.0, None)
         self.assertIsNone(PruneObj.CrushedScoreScale(legacy))
 
 

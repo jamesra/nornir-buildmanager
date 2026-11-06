@@ -28,7 +28,7 @@ from nornir_buildmanager.volumemanager import (
     VolumeNode,
     SectionNode,
     ChannelNode,
-    CodeHistogramNode,
+    FilterNode,
 )
 import nornir_shared.files as files
 import nornir_shared.prettyoutput as prettyoutput
@@ -985,7 +985,7 @@ def ResolveCrushMode(channel: ChannelNode, filter_name: str, requested: CrushPar
 def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams) -> None:
     """Record *params* on the filter so later runs and readers know its tiles are crushed."""
     for (key, value) in params.to_attributes().items():
-        filter_node.attrib[key] = value
+        setattr(filter_node, key, value)  # the wrapper marks the node changed, so the pipeline saves it
 
 
 class CrushSectionStats(NamedTuple):
@@ -1062,12 +1062,6 @@ def CrushTiles(source_to_target: dict[str, str], params: CrushParams, flip: bool
     return CrushSectionStats(histogram, clipped_high, clipped_low, tiles)
 
 
-#: Filter attribute: the crushed section's intensity span in code units, measured from the converted tiles' code
-#: histogram at the import's contrast cutoff fractions. Only Prune reads it, to put crushed scores on the legacy
-#: 8-bit scale (``PruneObj.CrushedScoreScale``); no image is contrast-mapped with it.
-CRUSH_SPAN_ATTRIBUTE = 'CrushCodeSpan'
-
-
 def CrushCodeSpan(code_histogram: NDArray, cutoffs: tuple[float, float]) -> float | None:
     """Span in codes between the ``cutoffs`` of a code histogram, as the import levels a raw histogram.
 
@@ -1097,11 +1091,6 @@ def CrushCodeCutoffs(code_histogram: NDArray, cutoffs: tuple[float, float]) -> t
     return low, high
 
 
-#: Display-only metadata on a crushed <Filter> for viewers (Viking expands the codes in its shader and windows them).
-#: No nornir stage reads these as contrast: crushed filters never get Min/MaxIntensityCutoff or Gamma.
-CRUSH_DISPLAY_MIN_ATTRIBUTE = 'CrushDisplayMin'
-CRUSH_DISPLAY_MAX_ATTRIBUTE = 'CrushDisplayMax'
-
 #: The import's default -Min/-Max cumulative fractions, used when display metadata is computed outside an import.
 DEFAULT_CONTRAST_CUTOFFS = (0.0001, 0.9999)
 
@@ -1115,49 +1104,26 @@ def CrushDisplayRange(code_histogram: NDArray, cutoffs: tuple[float, float]) -> 
     return float(low), float(max(high, low + 1))
 
 
-def GetFilterCodeHistogram(filter_node: XElementWrapper, params: CrushParams) -> NDArray | None:
+def GetFilterCodeHistogram(filter_node: FilterNode, params: CrushParams) -> NDArray | None:
     """The filter's stored code histogram, or None when missing or not sized for ``params`` (max_code + 1 bins)."""
-    node = filter_node.find(CodeHistogramNode.TAG)
-    if node is None:
-        return None
-    counts = cast(CodeHistogramNode, node).Counts
+    counts = filter_node.CodeHistogram
     if counts is None or len(counts) != params.max_code + 1:
         return None
     return counts
 
 
-def SetFilterCodeHistogram(filter_node: XElementWrapper, code_histogram: NDArray,
-                           cutoffs: tuple[float, float]) -> bool:
-    """Store the code histogram as the filter's ``<CodeHistogram>`` child and the display range from it.
+def SetFilterCodeHistogram(filter_node: FilterNode, code_histogram: NDArray, cutoffs: tuple[float, float]) -> bool:
+    """Store the code histogram on the filter and the display range from it; True when the filter changed.
 
-    Returns True when the filter changed; the caller must save (yield) the filter node itself, which is its own
-    VolumeData.xml (cd0a081: the span once reached only memory).
+    The caller yields the filter so the pipeline saves it.
     """
-    counts = np.asarray(code_histogram, dtype=np.int64)
-    changed = False
-    existing = filter_node.find(CodeHistogramNode.TAG)
-    existing_counts = None if existing is None else cast(CodeHistogramNode, existing).Counts
-    if existing_counts is None or not np.array_equal(existing_counts, counts):
-        if existing is not None:
-            filter_node.remove(existing)
-        filter_node.append(CodeHistogramNode.Create(counts))
+    changed = filter_node.SetCodeHistogram(code_histogram)
+    display = CrushDisplayRange(np.asarray(code_histogram), cutoffs)
+    if display is not None:
+        display = (round(display[0], 3), round(display[1], 3))
+    if filter_node.CrushDisplayRange != display:
+        filter_node.CrushDisplayRange = display
         changed = True
-
-    display = CrushDisplayRange(counts, cutoffs)
-    attrib = filter_node.attrib
-    for (key, value) in zip((CRUSH_DISPLAY_MIN_ATTRIBUTE, CRUSH_DISPLAY_MAX_ATTRIBUTE),
-                            (None, None) if display is None else display):
-        text = None if value is None else f'{round(value, 3):g}'
-        if attrib.get(key) == text:
-            continue
-        if text is None:
-            del attrib[key]
-        else:
-            attrib[key] = text
-        changed = True
-
-    if changed:
-        filter_node.AttributesChanged = True
     return changed
 
 
@@ -1214,7 +1180,7 @@ def CodeHistogramFromTiles(tile_dir: str, params: CrushParams, image_ext: str = 
     return histogram
 
 
-def UpdateFilterCodeHistogram(filter_node: XElementWrapper, params: CrushParams, cutoffs: tuple[float, float],
+def UpdateFilterCodeHistogram(filter_node: FilterNode, params: CrushParams, cutoffs: tuple[float, float],
                               tile_dir: str, converted: CrushSectionStats | None, total_tiles: int,
                               image_ext: str = '.png') -> bool:
     """Keep a crushed filter's ``<CodeHistogram>`` and ``CrushDisplayMin/Max`` current; True when it changed.
@@ -1247,20 +1213,19 @@ def CrushCodeSpanFromContrastOverride(override: ContrastValue | None, params: Cr
     return (float(override.Max) - float(override.Min)) / float(params.step)
 
 
-def ClearCrushedFilterContrast(filter_node: XElementWrapper) -> None:
+def ClearCrushedFilterContrast(filter_node: FilterNode) -> None:
     """Remove contrast values from a crushed filter (no contrast mapping is applied to crushed codes).
 
     A filter written before this rule (RC1_Crush, 2026-11) keeps its Prune scale: its cutoff span is
     moved to ``CrushCodeSpan`` first when no span is recorded.
     """
-    attrib = filter_node.attrib
-    if CRUSH_SPAN_ATTRIBUTE not in attrib and 'MinIntensityCutoff' in attrib and 'MaxIntensityCutoff' in attrib:
-        span = float(attrib['MaxIntensityCutoff']) - float(attrib['MinIntensityCutoff'])
-        if span > 0:
-            attrib[CRUSH_SPAN_ATTRIBUTE] = f'{round(span, 3):g}'
-    for key in ('MinIntensityCutoff', 'MaxIntensityCutoff', 'Gamma'):
-        if key in attrib:
-            del attrib[key]
+    (min_cutoff, max_cutoff) = (filter_node.MinIntensityCutoff, filter_node.MaxIntensityCutoff)
+    if filter_node.CrushCodeSpan is None and min_cutoff is not None and max_cutoff is not None \
+            and max_cutoff > min_cutoff:
+        filter_node.CrushCodeSpan = max_cutoff - min_cutoff
+    filter_node.MinIntensityCutoff = None
+    filter_node.MaxIntensityCutoff = None
+    filter_node.Gamma = None
 
 
 if __name__ == "__main__":

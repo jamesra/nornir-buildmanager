@@ -10,7 +10,6 @@ import json
 import logging
 import os
 import tempfile
-import types
 from typing import Any, cast
 
 import nornir_pools
@@ -18,6 +17,7 @@ import numpy as np
 from nornir_buildmanager.importers import shared
 from nornir_buildmanager.operations import setters, tile
 from nornir_buildmanager.operations.pruneobj import PruneObj
+from nornir_buildmanager.volumemanager import FilterNode
 from nornir_imageregistration import noise_crush
 from nornir_imageregistration.noise_crush import CrushParams
 from PIL import Image
@@ -141,8 +141,7 @@ class TestCrushStatsDuringConversion:
         assert stats is not None and stats.code_histogram[5:53].sum() == 4 * 64 * 64
         span = shared.CrushCodeSpan(stats.code_histogram, (0.0001, 0.9999))
         assert 46 <= span <= 48
-        node = types.SimpleNamespace(attrib={**params.to_attributes(), 'CrushCodeSpan': str(span)},
-                                     MinIntensityCutoff=None, MaxIntensityCutoff=None)
+        node = _filter_node(params.to_attributes(), CrushCodeSpan=span)
         assert 5.0 < PruneObj.CrushedScoreScale(node) < 6.0
 
 
@@ -152,19 +151,34 @@ class _Filter:
         self.FullPath = '/vol/TEM/0139/TEM/Raw8'
 
 
+def _filter_node(attrib: dict[str, str], **properties) -> FilterNode:
+    """A real FilterNode (so the wrapper's change tracking runs), loaded clean with *attrib*, then *properties* set."""
+    node = FilterNode.Create('Raw8', **attrib)
+    node.AttributesChanged = False
+    for (name, value) in properties.items():
+        setattr(node, name, value)
+    return node
+
+
 class TestNoContrastOnCrushedFilters:
     def test_clear_moves_old_cutoffs_into_the_span(self):
-        node = _Filter({**PARAMS.to_attributes(), 'MinIntensityCutoff': '1.22', 'MaxIntensityCutoff': '40.965',
-                        'Gamma': '1'})
-        shared.ClearCrushedFilterContrast(cast(Any, node))
+        node = _filter_node({**PARAMS.to_attributes(), 'MinIntensityCutoff': '1.22', 'MaxIntensityCutoff': '40.965',
+                             'Gamma': '1'})
+        shared.ClearCrushedFilterContrast(node)
         assert not {'MinIntensityCutoff', 'MaxIntensityCutoff', 'Gamma'} & set(node.attrib)
-        assert float(node.attrib['CrushCodeSpan']) == round(40.965 - 1.22, 3)
+        assert node.CrushCodeSpan == round(40.965 - 1.22, 3)
+        assert node.AttributesChanged  # so the pipeline saves the filter
+
+    def test_clear_marks_the_filter_changed_without_a_span_move(self):
+        # The deletions alone must reach the saved file (raw attrib deletes did not mark the node changed).
+        node = _filter_node({**PARAMS.to_attributes(), 'CrushCodeSpan': '51', 'Gamma': '1'})
+        shared.ClearCrushedFilterContrast(node)
+        assert 'Gamma' not in node.attrib and node.AttributesChanged
 
     def test_prune_scale_uses_the_span(self):
-        node = types.SimpleNamespace(attrib={**PARAMS.to_attributes(), 'CrushCodeSpan': '51'},
-                                     MinIntensityCutoff=None, MaxIntensityCutoff=None)
+        node = _filter_node(PARAMS.to_attributes(), CrushCodeSpan=51)
         assert PruneObj.CrushedScoreScale(node) == 5.0
-        older = types.SimpleNamespace(attrib=PARAMS.to_attributes(), MinIntensityCutoff=5.0, MaxIntensityCutoff=56.0)
+        older = _filter_node(PARAMS.to_attributes(), MinIntensityCutoff=5.0, MaxIntensityCutoff=56.0)
         assert PruneObj.CrushedScoreScale(older) == 5.0
 
     def test_contrast_stages_skip_crushed_filters(self):
@@ -191,17 +205,11 @@ class TestNoContrastOnCrushedFilters:
 
 
 class TestCrushSpanWherePruneReadsIt:
-    """2026-11-05 reimports: Prune read the Raw8 <Filter>, which lacked CrushCodeSpan (only the Filter_Link had it)."""
+    """2026-11-05 reimports: Prune read the Raw8 <Filter>, which lacked CrushCodeSpan because it was never saved."""
 
-    def test_reader_falls_back_to_the_filter_link(self):
-        link = types.SimpleNamespace(attrib={'Name': 'Raw8', 'CrushCodeSpan': '47'})
-
-        class _Channel:
-            def find(self, xpath):
-                return link if xpath == "Filter_Link[@Name='Raw8']" else None
-
-        node = types.SimpleNamespace(attrib={**PARAMS.to_attributes(), 'Name': 'Raw8'}, Parent=_Channel(),
-                                     MinIntensityCutoff=None, MaxIntensityCutoff=None)
+    def test_setting_the_span_marks_the_filter_changed(self):
+        node = _filter_node(PARAMS.to_attributes(), CrushCodeSpan=47.0004)
+        assert node.AttributesChanged and node.attrib['CrushCodeSpan'] == '47'
         assert abs(PruneObj.CrushedScoreScale(node) - 255.0 / 47) < 1e-9
 
     def test_contrast_override_sets_the_legacy_span(self):

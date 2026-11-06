@@ -381,10 +381,10 @@ class MRCImport:
             shared.ClearCrushedFilterContrast(filterObj)
             span = filter_contrast.max - filter_contrast.min
             if span > 0:
-                filterObj.attrib[shared.CRUSH_SPAN_ATTRIBUTE] = f'{round(span, 3):g}'
+                filterObj.CrushCodeSpan = span
             filterObj.BitsPerPixel = crush_params.bits
             shared.SetFilterCrushAttributes(filterObj, crush_params)
-            (yield filterObj)  # save the filter's own file, where Prune reads CrushCodeSpan
+            (yield filterObj)
         else:
             filterObj.SetContrastValues(filter_contrast.min, filter_contrast.max, filter_contrast.gamma)
             filterObj.BitsPerPixel = bpp
