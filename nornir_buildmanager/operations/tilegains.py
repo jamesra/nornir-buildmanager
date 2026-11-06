@@ -34,6 +34,15 @@ _GAIN_IO_WORKERS = 16
 _LEGACY_CLIP_LOW, _LEGACY_CLIP_HIGH = 2, 253
 
 
+def _existing_names(folder: str) -> set[str]:
+    """File names in ``folder`` from one directory listing (one round trip, not one stat per tile over the NAS)."""
+    try:
+        with os.scandir(folder) as entries:
+            return {entry.name for entry in entries}
+    except OSError:
+        return set()
+
+
 def _placements(mosaic: nornir_imageregistration.Mosaic, tile_height: float,
                 tile_width: float) -> dict[int, tile_gains.TilePlacement]:
     """Tile number to its mosaic-space box: the transform's bounding box when it has one, else origin plus tile size."""
@@ -128,7 +137,8 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
 
     mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(TransformNode.FullPath)
     names = {int(os.path.splitext(n)[0]): n for n in mosaic.ImageToTransform}
-    names = {t: n for t, n in names.items() if os.path.exists(os.path.join(level_path, n))}
+    present = _existing_names(level_path)
+    names = {t: n for t, n in names.items() if n in present}
     if not names:
         Logger.warning(f"TileGains: no tiles of {TransformNode.FullPath} found in {level_path}")
         return None
@@ -176,10 +186,10 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
     if crush is not None:
         jobs = []
         for pyramid_level in pyramid.Levels:
+            present = _existing_names(pyramid_level.FullPath)
             for tile, name in names.items():
-                path = os.path.join(pyramid_level.FullPath, name)
-                if os.path.exists(path):
-                    jobs.append((path, result.gains[tile]))
+                if name in present:
+                    jobs.append((os.path.join(pyramid_level.FullPath, name), result.gains[tile]))
         with ThreadPoolExecutor(max_workers=_GAIN_IO_WORKERS) as executor:
             stamped = sum(executor.map(lambda job: tile_gains.stamp_gain_png(*job), jobs))
         Logger.info(f"TileGains: wrote gains into {stamped} of {len(jobs)} tile chunks")
