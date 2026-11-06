@@ -3473,6 +3473,9 @@ def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, Logger
 
 def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=None, Logger: logging.Logger | None = None,
                                   **kwargs):
+    if Logger is None:
+        Logger = logging.getLogger(__name__)
+
     MinResolutionLevel = tile_set_node.MaxResLevel
 
     input_temp_dir = get_temp_dir_for_tileset_level(MinResolutionLevel)
@@ -3546,6 +3549,15 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
 
         # Check to make sure the level hasn't already been generated and we've just missed the
         [Valid, Reason] = NextLevelNode.IsValid()
+        if Valid:
+            # IsValid spot-checks one tile of the last column, so a run killed mid-level looks complete. Every parent
+            # tile with a source tile in the finer level must exist (RC1_Crush 194: levels 2+ about half built).
+            missing_parents = tileset_functions.find_missing_lineage_parent_tiles(
+                MinResolutionLevel.FullPath, NextLevelNode.FullPath, tile_set_node.FilePrefix, tile_set_node.FilePostfix)
+            if missing_parents:
+                Valid = False
+                Logger.warning("Tileset level %s is missing %d of its tiles; rebuilding it: %s",
+                               NextLevelNode.Downsample, len(missing_parents), NextLevelNode.FullPath)
         if not Valid:
             temp_level_paths.append(output_temp_dir)
 
