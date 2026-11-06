@@ -1864,14 +1864,6 @@ _TILESET_MAX_IN_FLIGHT_ENV = "NORNIR_TILESET_MAX_IN_FLIGHT"
 _TILESET_MAX_IN_FLIGHT_DEFAULT = (os.cpu_count() or 1) * 4
 
 
-_TILE_COPY_ATOMIC_ENV = "NORNIR_TILE_COPY_ATOMIC"
-
-
-def _tile_copy_atomic() -> bool:
-    """False when ``NORNIR_TILE_COPY_ATOMIC`` is 0/false/no: tiles are written straight to the share, skipping the temp file and rename."""
-    return os.environ.get(_TILE_COPY_ATOMIC_ENV, '1').strip().lower() not in ('0', 'false', 'no')
-
-
 def _positive_int_from_env(
     env_name: str,
     default: int,
@@ -2112,7 +2104,7 @@ class _TwoStageTileSavePipeline:
                 if job is None:
                     return
                 t0 = time.perf_counter()
-                nornir_shared.files.copy_file(job.temp_path, job.dest_path, atomic=_tile_copy_atomic())
+                nornir_shared.files.copy_file(job.temp_path, job.dest_path, atomic=nornir_shared.files.tile_copy_atomic())
                 if self._timing_lock is not None:
                     with self._timing_lock:
                         self.sum_copy_thread_s += time.perf_counter() - t0
