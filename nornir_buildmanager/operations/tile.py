@@ -3353,6 +3353,56 @@ def BuildTilesetLevel(SourcePath: str, DestPath: str, DestGridDimensions: tuple[
         pool.wait_completion()
 
 
+class _TileMover:
+    """Moves locally built pyramid tiles to their final path on copy threads, so building the next tile does not wait
+    on the share.  ``submit`` blocks once ``2 * workers`` tiles are queued; ``close`` waits for every move and raises the
+    first failure, so a level is only complete after ``close`` returns.
+    """
+
+    _queue: queue.Queue
+    _threads: list[threading.Thread]
+    _error: BaseException | None
+
+    def __init__(self, workers: int, destination_dir: str) -> None:
+        self._queue = queue.Queue(maxsize=2 * workers)
+        self._error = None
+        self._destination_dir = destination_dir
+        self._threads = [threading.Thread(target=self._run, name=f'tile-mover-{i}', daemon=True)
+                         for i in range(workers)]
+        for thread in self._threads:
+            thread.start()
+
+    def _run(self) -> None:
+        pin_directory_for_worker(self._destination_dir)
+        while True:
+            job = self._queue.get()
+            try:
+                if job is None:
+                    return
+                if self._error is None:
+                    tileset_functions.copy_tile_to_destination(*job)
+            except BaseException as e:
+                if self._error is None:
+                    self._error = e
+            finally:
+                self._queue.task_done()
+
+    def submit(self, local_tile: str, destination: str) -> None:
+        """Queue a tile move; raises an earlier move's failure instead of queueing more work behind it."""
+        if self._error is not None:
+            raise self._error
+        self._queue.put((local_tile, destination))
+
+    def close(self) -> None:
+        """Wait for the queued moves, stop the threads and raise the first failure."""
+        for _ in self._threads:
+            self._queue.put(None)
+        for thread in self._threads:
+            thread.join()
+        if self._error is not None:
+            raise self._error
+
+
 def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensions: tuple[int, int], TileDim: tuple[int, int],
                                 FilePrefix: str, FilePostfix: str, temp_input_dir: str | None, temp_output_dir: str, pool=None,
                                 **kwargs) -> list[tuple[int, int]]:
@@ -3375,6 +3425,8 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     temp_input_dir = None if (temp_input_dir is None or not os.path.exists(temp_input_dir)) else temp_input_dir
 
     tile_workers = _tile_io_worker_count()
+
+    mover = _TileMover(_tile_copy_worker_count(dest_path_abs), dest_path_abs)
 
     def process_tile(coords: tuple[int, int], executor: ThreadPoolExecutor):
         """Process a single tile with the given parameters"""
@@ -3405,30 +3457,39 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             temp_input_dir=temp_input_dir,
             OutputFileFullPath=OutputFileFullPath,
             output_level_temp_dir=temp_output_dir,
-            executor=executor)
+            executor=executor,
+            move_to_destination=mover.submit)
 
-    with nornir_pools.InstrumentedThreadPoolExecutor('tile-rows', 
-        max_workers=tile_workers,
-        initializer=pin_directory_for_worker,
-        initargs=(dest_path_abs,),
-    ) as executor:
-        with nornir_pools.InstrumentedThreadPoolExecutor('tile-tiles', max_workers=tile_workers) as tile_executor:
-            # Create a new function with executor pre-bound
-            process_tile_with_executor = partial(process_tile, executor=tile_executor)
+    try:
+        with nornir_pools.InstrumentedThreadPoolExecutor('tile-rows', 
+            max_workers=tile_workers,
+            initializer=pin_directory_for_worker,
+            initargs=(dest_path_abs,),
+        ) as executor:
+            with nornir_pools.InstrumentedThreadPoolExecutor('tile-tiles', max_workers=tile_workers) as tile_executor:
+                # Create a new function with executor pre-bound
+                process_tile_with_executor = partial(process_tile, executor=tile_executor)
 
-            # Pipeline one destination row while draining the previous so peak
-            # result buffering stays near two rows, not the whole level (#147).
-            # (Comment historically said "column"; the outer index is row Y.)
-            this_row_tasks: typing.Iterable = ()
-            for iY in range(DestGridDimensions[0]):
-                last_row_tasks = this_row_tasks
-                tile_coords = [(iY, iX) for iX in range(DestGridDimensions[1])]
-                this_row_tasks = executor.map(process_tile_with_executor, tile_coords)
-                for _ in last_row_tasks:
+                # Pipeline one destination row while draining the previous so peak
+                # result buffering stays near two rows, not the whole level (#147).
+                # (Comment historically said "column"; the outer index is row Y.)
+                this_row_tasks: typing.Iterable = ()
+                for iY in range(DestGridDimensions[0]):
+                    last_row_tasks = this_row_tasks
+                    tile_coords = [(iY, iX) for iX in range(DestGridDimensions[1])]
+                    this_row_tasks = executor.map(process_tile_with_executor, tile_coords)
+                    for _ in last_row_tasks:
+                        pass
+
+                for _ in this_row_tasks:
                     pass
-
-            for _ in this_row_tasks:
-                pass
+        mover.close()
+    except BaseException:
+        try:
+            mover.close()
+        except BaseException:
+            pass
+        raise
 
     missing_parents = tileset_functions.find_missing_lineage_parent_tiles(
         SourcePath, DestPath, FilePrefix, FilePostfix)
