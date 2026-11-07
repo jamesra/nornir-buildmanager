@@ -29,6 +29,7 @@ class _Level:
 
     def __init__(self, root: str, downsample: int, grid: tuple[int, int]) -> None:
         self.Downsample = downsample
+        self.attrib: dict[str, str] = {}
         self.FullPath = os.path.join(root, f'{downsample:03d}')
         self.GridDimX, self.GridDimY = grid
         os.makedirs(self.FullPath, exist_ok=True)
@@ -112,6 +113,29 @@ class TestTilesetPyramidResume(unittest.TestCase):
                 list(tile_ops._build_tileset_pyramid_levels(tile_set))
 
             build.assert_not_called()
+
+    def test_a_level_that_passed_the_lineage_check_is_not_listed_again(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            finest = _Level(root, 1, (4, 4))
+            finest.write((x, y) for x in range(4) for y in range(4))
+            tile_set = _TileSet(root, finest)
+            level2 = _Level(root, 2, (2, 2))
+            level2.write((x, y) for x in range(2) for y in range(2))
+            tile_set.levels[2] = level2
+
+            with mock.patch.object(tile_ops, 'BuildTilesetLevelWithPillow') as build, \
+                    mock.patch.object(tile_ops, 'get_temp_dir_for_tileset_level', return_value=os.path.join(root, 'tmp')), \
+                    mock.patch.object(tile_ops.tileset_functions, 'ClearTempDirectories'), \
+                    mock.patch.object(tile_ops.tileset_functions, 'find_missing_lineage_parent_tiles',
+                                      return_value=[]) as lineage, \
+                    mock.patch.object(tile_ops.nornir_buildmanager.volumemanager.LevelNode, 'Create',
+                                      side_effect=lambda downsample: SimpleNamespace(Downsample=downsample)):
+                list(tile_ops._build_tileset_pyramid_levels(tile_set))
+                list(tile_ops._build_tileset_pyramid_levels(tile_set))
+
+            build.assert_not_called()
+            self.assertEqual(lineage.call_count, 1)
+            self.assertEqual(level2.attrib.get(tile_ops.LINEAGE_COMPLETE_ATTRIB), '1')
 
 
 if __name__ == '__main__':

@@ -3407,6 +3407,8 @@ class _TileMover:
             raise self._error
 
 
+# Level attribute set once every parent tile with a child in the finer level was seen on disk
+LINEAGE_COMPLETE_ATTRIB = 'LineageComplete'
 PYRAMID_IN_MEMORY_ENV = 'NORNIR_PYRAMID_IN_MEMORY'
 PYRAMID_MEMORY_FRACTION_ENV = 'NORNIR_PYRAMID_MEMORY_FRACTION'
 _DEFAULT_PYRAMID_MEMORY_FRACTION = 0.25
@@ -3690,15 +3692,20 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
 
         # Check to make sure the level hasn't already been generated and we've just missed the
         [Valid, Reason] = NextLevelNode.IsValid()
-        if Valid:
+        if Valid and NextLevelNode.attrib.get(LINEAGE_COMPLETE_ATTRIB) != '1':
             # IsValid spot-checks one tile of the last column, so a run killed mid-level looks complete. Every parent
             # tile with a source tile in the finer level must exist (RC1_Crush 194: levels 2+ about half built).
+            # Listing both levels on the share costs about 10 s per section, so a level that passed is marked and
+            # not listed again (the mark goes with the level node when the level is cleaned or rebuilt).
             missing_parents = tileset_functions.find_missing_lineage_parent_tiles(
                 MinResolutionLevel.FullPath, NextLevelNode.FullPath, tile_set_node.FilePrefix, tile_set_node.FilePostfix)
             if missing_parents:
                 Valid = False
                 Logger.warning("Tileset level %s is missing %d of its tiles; rebuilding it: %s",
                                NextLevelNode.Downsample, len(missing_parents), NextLevelNode.FullPath)
+            else:
+                NextLevelNode.attrib[LINEAGE_COMPLETE_ATTRIB] = '1'
+                yield tile_set_node
         if not Valid:
             temp_level_paths.append(output_temp_dir)
 
@@ -3713,7 +3720,8 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
                 memory_outputs = tileset_functions.TileMemoryCache()
 
             # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
-            BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
+            NextLevelNode.attrib.pop(LINEAGE_COMPLETE_ATTRIB, None)
+            missing_after_build = BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
                                         DestGridDimensions=(newYDim, newXDim),
                                         TileDim=(tile_set_node.TileYDim, tile_set_node.TileXDim),
                                         FilePrefix=tile_set_node.FilePrefix,
@@ -3726,6 +3734,8 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
             if memory_inputs is not None:
                 memory_inputs.clear()  # Whatever the level did not consume is not needed again
             memory_inputs = memory_outputs
+            if not missing_after_build:
+                NextLevelNode.attrib[LINEAGE_COMPLETE_ATTRIB] = '1'
 
             # This was a lot of work, make sure it is saved before queueing the next level
             yield tile_set_node
