@@ -26,6 +26,7 @@ from functools import partial
 from dataclasses import dataclass
 
 from numpy.typing import NDArray
+from collections.abc import Set as AbstractSet
 from typing import Any, Iterable, Sequence, cast
 
 from nornir_imageregistration.pillow_helpers import load_image_array
@@ -3406,8 +3407,75 @@ class _TileMover:
             raise self._error
 
 
+PYRAMID_IN_MEMORY_ENV = 'NORNIR_PYRAMID_IN_MEMORY'
+PYRAMID_MEMORY_FRACTION_ENV = 'NORNIR_PYRAMID_MEMORY_FRACTION'
+_DEFAULT_PYRAMID_MEMORY_FRACTION = 0.25
+_PYRAMID_TILE_SIZE_MARGIN = 1.25
+_PYRAMID_TILE_SIZE_SAMPLES = 8
+
+
+def pyramid_level_memory_estimate(sample_tile_bytes: Sequence[int], output_tile_count: int) -> int:
+    """Bytes needed to hold a pyramid level's encoded tiles, extrapolated from the sizes of a few of its tiles.
+
+    Tiles of a tileset share a dimension and (crushed) a bit depth, so their encoded sizes are close; the mean of the
+    sample times the count, plus a margin, is the estimate.  A downsampled tile compresses to about the size of the tiles
+    it came from, so the finer level's sizes stand in for the level being built.
+    """
+    if not sample_tile_bytes:
+        return 0
+    mean_bytes = sum(sample_tile_bytes) / len(sample_tile_bytes)
+    return int(mean_bytes * output_tile_count * _PYRAMID_TILE_SIZE_MARGIN)
+
+
+def pyramid_memory_budget_bytes() -> int:
+    """Bytes of RAM a pyramid level may hold: a fraction of what is available now (``NORNIR_PYRAMID_MEMORY_FRACTION``,
+    default 0.25, so four concurrent builds cannot take more than the machine has).  0 when ``NORNIR_PYRAMID_IN_MEMORY``
+    turns the feature off or psutil is not installed."""
+    if os.environ.get(PYRAMID_IN_MEMORY_ENV, '1').strip().lower() in ('0', 'false', 'no', 'off'):
+        return 0
+    try:
+        import psutil  # type: ignore[reportMissingModuleSource]
+    except ImportError:
+        return 0
+    try:
+        fraction = float(os.environ.get(PYRAMID_MEMORY_FRACTION_ENV, _DEFAULT_PYRAMID_MEMORY_FRACTION))
+    except ValueError:
+        fraction = _DEFAULT_PYRAMID_MEMORY_FRACTION
+    return int(psutil.virtual_memory().available * max(0.0, min(fraction, 1.0)))
+
+
+def pyramid_level_fits_in_memory(source_dir: str, source_names: AbstractSet[str],
+                                 memory_inputs: tileset_functions.TileMemoryCache | None,
+                                 output_tile_count: int, logger: logging.Logger) -> bool:
+    """Whether the next pyramid level's encoded tiles fit in RAM, so it can skip the local temp directory.
+
+    The tile size comes from the held finer level when there is one, otherwise from a few tiles of the source level on
+    the share.  The finer level held in memory is already counted out of the available memory.
+    """
+    budget = pyramid_memory_budget_bytes()
+    if budget <= 0:
+        return False
+
+    if memory_inputs is not None and len(memory_inputs) > 0:
+        sample = [memory_inputs.nbytes // len(memory_inputs)]
+    else:
+        sample = []
+        for name in sorted(source_names)[:_PYRAMID_TILE_SIZE_SAMPLES]:
+            try:
+                sample.append(os.path.getsize(os.path.join(source_dir, name)))
+            except OSError:
+                continue
+    estimate = pyramid_level_memory_estimate(sample, output_tile_count)
+    fits = 0 < estimate <= budget
+    logger.info("Pyramid level of %d tiles needs about %.2f GB and %.2f GB may be held: %s", output_tile_count,
+                estimate / 1e9, budget / 1e9, "building it in memory" if fits else "building it in the temp directory")
+    return fits
+
+
 def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensions: tuple[int, int], TileDim: tuple[int, int],
                                 FilePrefix: str, FilePostfix: str, temp_input_dir: str | None, temp_output_dir: str, pool=None,
+                                memory_inputs: tileset_functions.TileMemoryCache | None = None,
+                                memory_outputs: tileset_functions.TileMemoryCache | None = None,
                                 **kwargs) -> list[tuple[int, int]]:
     """
     :param SourcePath:
@@ -3418,11 +3486,15 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
     :param FilePrefix:
     :param FilePostfix:
     :param pool:
+    :param memory_inputs: Tiles of the finer level held in RAM; read in preference to the temp directory
+    :param memory_outputs: When given, this level's tiles are kept here for the next level and not written to
+        ``temp_output_dir``
     :return: Parent tile coordinates missing from DestPath after the build.
     """
 
     ensure_directory(DestPath)
-    ensure_directory(temp_output_dir)
+    if memory_outputs is None:
+        ensure_directory(temp_output_dir)
     dest_path_abs = os.path.abspath(DestPath)
 
     temp_input_dir = None if (temp_input_dir is None or not os.path.exists(temp_input_dir)) else temp_input_dir
@@ -3463,7 +3535,9 @@ def BuildTilesetLevelWithPillow(SourcePath: str, DestPath: str, DestGridDimensio
             output_level_temp_dir=temp_output_dir,
             executor=executor,
             move_to_destination=mover.submit,
-            source_tile_names=source_tile_names)
+            source_tile_names=source_tile_names,
+            memory_inputs=memory_inputs,
+            memory_outputs=memory_outputs)
 
     try:
         with nornir_pools.InstrumentedThreadPoolExecutor('tile-rows', 
@@ -3546,6 +3620,7 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
 
     input_temp_dir = get_temp_dir_for_tileset_level(MinResolutionLevel)
     temp_level_paths = [input_temp_dir]  # Paths to levels we generate to ensure temp directories are cleaned later
+    memory_inputs: tileset_functions.TileMemoryCache | None = None  # The finer level, when it was built in memory
 
     TileWidth = tile_set_node.TileXDim
     TileHeight = tile_set_node.TileYDim
@@ -3627,6 +3702,16 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
         if not Valid:
             temp_level_paths.append(output_temp_dir)
 
+            # Keep this level's tiles in RAM for the next level whenever they all fit, otherwise stage them in the
+            # temp directory.  The share only ever receives the final copy (the mover).
+            memory_outputs: tileset_functions.TileMemoryCache | None = None
+            if pyramid_level_fits_in_memory(
+                    MinResolutionLevel.FullPath,
+                    frozenset(tileset_functions.list_directory_names(MinResolutionLevel.FullPath))
+                    if memory_inputs is None else frozenset(),
+                    memory_inputs, newXDim * newYDim, Logger):
+                memory_outputs = tileset_functions.TileMemoryCache()
+
             # XMLOutput = os.path.join(NextLevelNode, os.path.basename(XmlFilePath))
             BuildTilesetLevelWithPillow(MinResolutionLevel.FullPath, NextLevelNode.FullPath,
                                         DestGridDimensions=(newYDim, newXDim),
@@ -3635,13 +3720,21 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
                                         FilePostfix=tile_set_node.FilePostfix,
                                         temp_input_dir=input_temp_dir,
                                         temp_output_dir=output_temp_dir,
-                                        pool=pool)
+                                        pool=pool,
+                                        memory_inputs=memory_inputs,
+                                        memory_outputs=memory_outputs)
+            if memory_inputs is not None:
+                memory_inputs.clear()  # Whatever the level did not consume is not needed again
+            memory_inputs = memory_outputs
 
             # This was a lot of work, make sure it is saved before queueing the next level
             yield tile_set_node
             prettyoutput.Log("\nTileset level %d completed" % NextLevelNode.Downsample)
         else:
             logging.info("Level was already generated " + str(tile_set_node))
+            if memory_inputs is not None:
+                memory_inputs.clear()
+            memory_inputs = None  # The next level reads this one from the share
 
         input_temp_dir = output_temp_dir
         MinResolutionLevel = NextLevelNode
