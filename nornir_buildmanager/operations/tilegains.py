@@ -3,18 +3,19 @@ TileGains: per-tile brightness gains for a channel's filter from the overlaps of
 stripe). Design: ``.cursor/plans/crush_optimized_pipeline.plan.md`` (brightness-drift); the solve is
 ``nornir_imageregistration.tile_gains``.
 
-Runs against any ``.mosaic`` (``Stage`` after import, ``Translated_*`` / ``Grid_*`` after alignment). Writes:
+Runs against any ``.mosaic`` (``Stage`` after import, ``Translated_*`` / ``Grid_*`` after alignment). A tile's gain
+lives in its own image metadata, next to the crush step:
 
-- ``TileGains_<transform>.json`` in the filter folder: gains, provenance and solve diagnostics;
-- for crushed filters, each tile's ``nornir_crush`` chunk at every pyramid level (``gain``, ``effective_step``,
-  ``effective_offset``), rewritten without decoding pixels and only when some gain moved by more than the tolerance;
-- ``TileGainsSource`` (transform name and checksum) and ``TileGainsChecksum`` on the filter node.
+- each crushed tile's ``nornir_crush`` chunk at every pyramid level (``gain``, ``effective_step``,
+  ``effective_offset``), rewritten without decoding pixels; a rerun keeps the stored gains unless some gain moved by
+  more than the tolerance;
+- ``TileGainsSource`` (transform name and checksum) and ``TileGainsChecksum`` (digest of the stamped gains) on the
+  filter node, set only after every tile is stamped, so derived images can tell when the gains change.
 
-Legacy (uncrushed) filters get the JSON and attributes only; their tiles are not changed.
+Legacy (uncrushed) tiles have no chunk to hold a gain: the solve is logged and nothing is recorded.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
 import time
@@ -82,12 +83,14 @@ def _counts_reader(level_path: str, names: dict[int, str], crush: noise_crush.Cr
     return read
 
 
-def _previous_gains(path: str) -> dict[int, float] | None:
-    try:
-        with open(path, encoding='utf-8') as f:
-            return {int(k): float(v) for k, v in json.load(f)['gains'].items()}
-    except (OSError, ValueError, KeyError):
+def _stored_gains(level_path: str, names: dict[int, str]) -> dict[int, float] | None:
+    """The gains already in the tiles' ``nornir_crush`` chunks at one level, or None when any tile has none."""
+    with ThreadPoolExecutor(max_workers=_GAIN_IO_WORKERS) as executor:
+        stored = dict(zip(names, executor.map(
+            lambda name: tile_gains.read_gain_png(os.path.join(level_path, name)), names.values())))
+    if any(gain is None for gain in stored.values()):
         return None
+    return stored  # type: ignore[return-value]
 
 
 def _as_bool(value) -> bool:
@@ -117,7 +120,7 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
         return None
     source = f"{TransformNode.Name}:{TransformNode.attrib.get('Checksum', '')}"
     if _as_bool(SkipIfCurrent) and FilterNode.attrib.get('TileGainsSource') == source and \
-            os.path.exists(os.path.join(FilterNode.FullPath, f"TileGains_{TransformNode.Name}.json")):
+            'TileGainsChecksum' in FilterNode.attrib:
         return None
     if not FilterNode.HasTilePyramid:
         Logger.warning(f"TileGains: {FilterNode.FullPath} has no tile pyramid")
@@ -153,48 +156,43 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
                                            Downsample, low=0.5, high=float('inf'), max_workers=workers)
     elapsed = time.perf_counter() - start
 
-    gains_path = os.path.join(FilterNode.FullPath, f"TileGains_{TransformNode.Name}.json")
-    previous = _previous_gains(gains_path)
-    changed = previous is None or set(previous) != set(result.gains) or any(
-        abs(result.gains[t] / previous[t] - 1.0) > GAIN_REWRITE_TOLERANCE for t in result.gains)
     values = np.array(list(result.gains.values()))
-    summary = {
-        'transform': TransformNode.Name, 'transform_checksum': TransformNode.attrib.get('Checksum', ''),
-        'filter': FilterNode.Name, 'downsample': Downsample, 'crushed': crush is not None,
-        'pairs_used': result.pairs_used, 'pairs_rejected': result.pairs_rejected,
-        'pairs_skipped': result.pairs_skipped, 'residual_mad': result.residual_mad,
-        'shading': result.shading, 'tiles_without_pairs': result.tiles_without_pairs,
-        'gain_p5_p50_p95': [float(np.percentile(values, q)) for q in (5, 50, 95)], 'seconds': round(elapsed, 1),
-        'checksum': result.checksum(), 'gains': {str(t): g for t, g in sorted(result.gains.items())}}
+    p5, p95 = (float(np.percentile(values, q)) for q in (5, 95))
     message = (f"TileGains {FilterNode.FullPath} on {TransformNode.Name}: {len(values)} tiles, "
                f"{result.pairs_used} overlaps ({result.pairs_rejected} rejected, {result.pairs_skipped} without tissue), "
-               f"gain p5-p95 {summary['gain_p5_p50_p95'][0]:.3f}-{summary['gain_p5_p50_p95'][2]:.3f}, {elapsed:.1f} s")
+               f"residual MAD {result.residual_mad:.4f}, {len(result.tiles_without_pairs)} tiles without pairs, "
+               f"gain p5-p95 {p5:.3f}-{p95:.3f}, {elapsed:.1f} s")
     Logger.info(message)
     prettyoutput.Log(message)
 
-    if not changed:
-        if FilterNode.attrib.get('TileGainsSource') == source:
-            return None
-        # Same gains from a transform with a new checksum: record the new source so SkipIfCurrent sees it, but leave
-        # the JSON, the chunks and the gain checksum as they are.
-        FilterNode.TileGainsSource = source
-        return FilterNode
+    if crush is None:
+        return None  # legacy tiles have no chunk to hold a gain
 
-    with open(gains_path, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=1)
+    # Keep the gains the tiles already carry when none moved by more than the tolerance (no rewrite of every PNG).
+    stored = _stored_gains(level_path, names)
+    keep_stored = stored is not None and set(stored) == set(result.gains) and all(
+        abs(result.gains[t] / stored[t] - 1.0) <= GAIN_REWRITE_TOLERANCE for t in result.gains)
+    gains = stored if keep_stored and stored is not None else result.gains
+    # Kept gains keep the recorded checksum: the chunks hold them rounded to 1e-6, and a digest of the rounded values
+    # could differ from the one recorded when they were stamped, which would make every derived tileset stale.
+    previous_checksum = FilterNode.attrib.get('TileGainsChecksum')
+    checksum = previous_checksum if keep_stored and previous_checksum else tile_gains.gains_checksum(gains)
 
-    if crush is not None:
-        jobs = []
-        for pyramid_level in pyramid.Levels:
-            present = _existing_names(pyramid_level.FullPath)
-            for tile, name in names.items():
-                if name in present:
-                    jobs.append((os.path.join(pyramid_level.FullPath, name), result.gains[tile]))
-        with ThreadPoolExecutor(max_workers=_GAIN_IO_WORKERS) as executor:
-            stamped = sum(executor.map(lambda job: tile_gains.stamp_gain_png(*job), jobs))
-        Logger.info(f"TileGains: wrote gains into {stamped} of {len(jobs)} tile chunks")
+    # Stamp every level, also when the gains are kept: an interrupted run may have stamped only some levels. Tiles
+    # that already carry their gain cost a header read (RC1: about 5 s a section).
+    jobs = []
+    for pyramid_level in pyramid.Levels:
+        present = _existing_names(pyramid_level.FullPath)
+        for tile, name in names.items():
+            if name in present:
+                jobs.append((os.path.join(pyramid_level.FullPath, name), gains[tile]))
+    with ThreadPoolExecutor(max_workers=_GAIN_IO_WORKERS) as executor:
+        stamped = sum(executor.map(lambda job: tile_gains.stamp_gain_png(*job), jobs))
+    Logger.info(f"TileGains: wrote gains into {stamped} of {len(jobs)} tile chunks")
+    if previous_checksum == checksum and FilterNode.attrib.get('TileGainsSource') == source:
+        return None
 
     # Attribute assignment (not .attrib[...]) marks the node changed, so the pipeline's save writes it.
     FilterNode.TileGainsSource = source
-    FilterNode.TileGainsChecksum = result.checksum()
+    FilterNode.TileGainsChecksum = checksum
     return FilterNode

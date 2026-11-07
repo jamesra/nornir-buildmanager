@@ -1252,7 +1252,7 @@
 
     <Pipeline Name="TileGains"
               Help="Per-tile brightness gains from the overlaps of a mosaic (beam drift, the white stripe of a resumed capture pass)."
-              Description="Solves one gain per tile from the brightness ratios of overlapping tile strips (robust least squares with edge-shading constants and a weak capture-order prior). Writes TileGains_&lt;transform&gt;.json in the filter folder and TileGainsSource / TileGainsChecksum on the filter; for crushed filters also writes gain, effective_step and effective_offset into every tile's nornir_crush chunk at every pyramid level, without changing pixels. Legacy filters' tiles are not changed. Run on Stage after import, or on a translated or grid mosaic after alignment."
+              Description="Solves one gain per tile from the brightness ratios of overlapping tile strips (robust least squares with edge-shading constants and a weak capture-order prior). Each crushed tile carries its gain in its own nornir_crush chunk (gain, effective_step and effective_offset, next to the crush step) at every pyramid level, written without changing pixels; the filter records TileGainsSource / TileGainsChecksum. Legacy filters' tiles have no chunk: their gains are only logged. Run on Stage after import, or on a translated or grid mosaic after alignment."
               Epilog="Example: nornir-build /data/volume TileGains -Channels TEM -Filters Raw8 -InputTransform Stage -Downsample 4 -Sections 1140">
         <Arguments>
             <Argument flag="-Sections" dest="Sections" type="IntegerList"
