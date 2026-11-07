@@ -63,8 +63,12 @@ def _force_save(root: str, flag: str) -> None:
 
 @pytest.fixture(autouse=True)
 def _verify_parity(monkeypatch):
-    """Parity is opt-in in builds; these tests rely on it to report a wrong shadow."""
+    """Parity is opt-in in builds; these tests rely on it to report a wrong shadow.
+
+    Reads stay on XML: the SQLite read path also reloads container rows, which would be counted as parity reloads.
+    """
     monkeypatch.setenv(feature_flags.SHADOW_VERIFY_ENV, '1')
+    monkeypatch.delenv(feature_flags.READ_SQLITE_ENV, raising=False)
 
 
 def _differences(root: str) -> list:
