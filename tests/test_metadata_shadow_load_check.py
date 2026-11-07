@@ -29,13 +29,12 @@ FLAG = feature_flags.SHADOW_SQLITE_ENV
 
 @pytest.fixture(autouse=True)
 def _fresh_process_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Shadow on, parity checks on, reads on XML, and an empty signature cache, as in a newly started process.
+    """Shadow on, parity checks on, and an empty signature cache, as in a newly started process.
 
-    The SQLite read path opens a connection per container, so it would break the connection counts below.
+    The read flag is inherited from the environment so the module also runs with SQLite reads switched on.
     """
     monkeypatch.setenv(FLAG, '1')
     monkeypatch.setenv(feature_flags.SHADOW_VERIFY_ENV, '1')
-    monkeypatch.delenv(feature_flags.READ_SQLITE_ENV, raising=False)
     monkeypatch.setattr(shadow_write, '_known_signatures', {})
 
 
@@ -121,13 +120,14 @@ def test_unchanged_files_cause_no_database_write(monkeypatch, tmp_path) -> None:
     root = _volume(tmp_path)
     synced = _count_syncs(monkeypatch)
     connections: list[str] = []
-    real_connect = SQLiteMetadataBackend._get_connection
 
-    def counting_connect(self):
-        connections.append(self.db_path)
-        return real_connect(self)
+    # Patched on shadow_write only: the SQLite read path opens its own connection per container load.
+    class CountingBackend(SQLiteMetadataBackend):
+        def _get_connection(self):
+            connections.append(self.db_path)
+            return super()._get_connection()
 
-    monkeypatch.setattr(SQLiteMetadataBackend, '_get_connection', counting_connect)
+    monkeypatch.setattr(shadow_write, 'SQLiteMetadataBackend', CountingBackend)
 
     _load_all(root)
     _load_all(root)
