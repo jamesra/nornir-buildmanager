@@ -55,6 +55,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     NoCrush = bool(kwargs.get('NoCrush', False))
     CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
+    CropBorder = shared.CropBorderForImport(kwargs.get('CropBorder', None))
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
@@ -88,6 +89,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                                               ContrastMap=ContrastMap,
                                               NoCrush=NoCrush,
                                               CrushK=CrushK,
+                                              CropBorder=CropBorder,
                                               read_path=lambda p=file_fullpath: staging.acquire(p),
                                               )
             finally:
@@ -142,6 +144,24 @@ def _all_tiles_present(level_dir: str, num_tiles: int, ext: str) -> bool:
     return all(sizes.get(GetFileNameForTileNumber(tile_number=i, ext=ext), 0) > 0 for i in range(num_tiles))
 
 
+def _exported_crop_border(level_dir: str) -> int:
+    """The border cropped from the tiles in *level_dir* according to its completion marker (0 when not recorded)."""
+    try:
+        with open(os.path.join(level_dir, EXPORT_COMPLETE_MARKER), encoding='utf-8') as f:
+            return int(json.load(f).get('crop_border', 0))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return 0
+
+
+def crop_tile(img, border: int):
+    """Remove *border* pixels from every edge of a tile (an array, or a PIL image)."""
+    if border <= 0:
+        return img
+    if isinstance(img, Image.Image):
+        return img.crop((border, border, img.size[0] - border, img.size[1] - border))
+    return img[border:-border, border:-border]
+
+
 def _export_marked_complete(level_dir: str, num_tiles: int) -> bool:
     """True when *level_dir* holds a completion marker for *num_tiles* tiles."""
     try:
@@ -151,11 +171,13 @@ def _export_marked_complete(level_dir: str, num_tiles: int) -> bool:
         return False
 
 
-def _mark_export_complete(level_dir: str, num_tiles: int, mrc_fullpath: str) -> None:
-    """Record that every tile in *level_dir* was exported (or validated) from *mrc_fullpath*."""
+def _mark_export_complete(level_dir: str, num_tiles: int, mrc_fullpath: str, crop_border: int = 0) -> None:
+    """Record that every tile in *level_dir* was exported (or validated) from *mrc_fullpath*, cropped by
+    *crop_border*."""
     try:
         with open(os.path.join(level_dir, EXPORT_COMPLETE_MARKER), 'w', encoding='utf-8') as f:
-            json.dump({'num_tiles': num_tiles, 'source': os.path.basename(mrc_fullpath)}, f)
+            json.dump({'num_tiles': num_tiles, 'source': os.path.basename(mrc_fullpath),
+                       'crop_border': crop_border}, f)
     except OSError as e:
         prettyoutput.Log(f"Could not write export marker in {level_dir}: {e}")
 
@@ -231,6 +253,7 @@ class MRCImport:
                  debug: bool | None = None,
                  NoCrush: bool = False,
                  CrushK: float | None = None,
+                 CropBorder: int = 0,
                  read_path: Callable[[], str] | None = None):
         """Import one .mrc file as a section.
 
@@ -238,6 +261,9 @@ class MRCImport:
         into a ``Raw8`` filter of section-wide noise-step codes. ``NoCrush`` keeps the legacy
         contrast-stretched ``Raw16`` filter, as does an existing uncrushed ``Raw16`` import.
 
+        :param CropBorder: Pixels removed from every edge of each tile, for MRC frames with an artefact border.  The
+            Stage transforms place the cropped tile, so its offset moves by the border.  Applies to tiles this call
+            writes: tiles already exported keep the crop they were written with.
         :param read_path: Returns the path to export tiles from, typically a staged local copy of
             ``mrc_fullpath`` (source_staging); called only when tiles are missing. Names, notes, logs,
             caches, freshness checks and the noise sample always use ``mrc_fullpath``.
@@ -333,7 +359,7 @@ class MRCImport:
         if not NoCrush and mrcfile.bytes_per_pixel > 1:
             requested_crush = shared.SectionCrushParams(
                 shared.GetSectionNoise(histogram_cache_path, [mrc_fullpath], mrcfile.num_tiles,  # type: ignore[arg-type]
-                                       mrcfile.get_tile_as_numpy_memmap),
+                                       lambda i: crop_tile(mrcfile.get_tile_as_numpy_memmap(i), CropBorder)),
                 Histogram.Load(histogram_cache_path) if os.path.exists(histogram_cache_path) else None,
                 k=nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK))
             crushed_filter_name = shared.CrushedFilterName(requested_crush)
@@ -420,13 +446,17 @@ class MRCImport:
         os.makedirs(LevelObj.FullPath, exist_ok=True)
 
         if not os.path.exists(transformObj.FullPath):
-            mosaicObj = cls.CreateMosaic(mrcfile, img_ext=OutputImageExt)
+            mosaicObj = cls.CreateMosaic(mrcfile, img_ext=OutputImageExt, crop_border=CropBorder)
             mosaicObj.SaveToMosaicFile(transformObj.FullPath)
             (yield channelObj)
 
         num_tiles = int(mrcfile.num_tiles)  # type: ignore[arg-type]
         tiles_present = _all_tiles_present(LevelObj.FullPath, num_tiles, OutputImageExt)
         if tiles_present and _export_marked_complete(LevelObj.FullPath, num_tiles):
+            exported_border = _exported_crop_border(LevelObj.FullPath)
+            if exported_border != CropBorder:
+                prettyoutput.LogErr(f"Section {SectionNumber}: tiles were exported with a crop border of "
+                                    f"{exported_border}, not {CropBorder}; they are kept as they are")
             prettyoutput.Log(f"Section {SectionNumber}: all {num_tiles} tiles already exported")
             # Display metadata for viewers: computed from the existing tiles only when the filter has none yet.
             if crush_params is not None and shared.UpdateFilterCodeHistogram(
@@ -444,8 +474,9 @@ class MRCImport:
         crush_stats = cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
                                        min_max_gamma=contrast_settings,
                                        flip_ud=flip_ud_for_section(SectionNumber, FlipList),
-                                       crush_params=crush_params)
-        _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath)
+                                       crush_params=crush_params,
+                                       crop_border=CropBorder)
+        _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath, CropBorder)
 
         # CodeHistogram and CrushDisplayMin/Max: from the export when it wrote every tile, else from the level-1 tiles.
         if crush_params is not None and shared.UpdateFilterCodeHistogram(
@@ -546,7 +577,8 @@ class MRCImport:
     def ExportImages(cls, mrc_obj: str | MRCFile, output_dir: str, img_ext: str,
                      min_max_gamma: shared.MinMaxGamma | None,
                      flip_ud: bool = DEFAULT_FLIP_UD,
-                     crush_params: CrushParams | None = None) -> shared.CrushSectionStats | None:
+                     crush_params: CrushParams | None = None,
+                     crop_border: int = 0) -> shared.CrushSectionStats | None:
         """Export every tile not already written.
 
         :return: for crushed exports, the code histogram of the tiles written by this call (no separate histogram
@@ -561,7 +593,7 @@ class MRCImport:
 
         if crush_params is not None:
             crush_tasks = [pool.add_task(str(iTile), cls.ExportCrushedImage, mrc_obj, output_dir, img_ext, iTile,
-                                         crush_params, flip_ud)
+                                         crush_params, flip_ud, crop_border)
                            for iTile in range(mrc_obj.num_tiles)]  # type: ignore[arg-type]
             histogram = np.zeros(crush_params.max_code + 1, dtype=np.int64)
             tiles = 0
@@ -584,7 +616,8 @@ class MRCImport:
                                iTile,
                                min_max_gamma,
                                flip_ud,
-                               crush_params)
+                               crush_params,
+                               crop_border)
                  for iTile in range(0, mrc_obj.num_tiles)]  # type: ignore[arg-type]
 
         _wait_for_tile_tasks(tasks, 'export')
@@ -592,7 +625,8 @@ class MRCImport:
 
     @staticmethod
     def ExportCrushedImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
-                           crush_params: CrushParams, flip_ud: bool = DEFAULT_FLIP_UD) -> NDArray | None:
+                           crush_params: CrushParams, flip_ud: bool = DEFAULT_FLIP_UD,
+                           crop_border: int = 0) -> NDArray | None:
         """Write one crushed tile; its code histogram, or None when the tile already existed."""
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
@@ -601,7 +635,7 @@ class MRCImport:
         if nornir_shared.images.IsValidImage(output_fullpath):
             return None
 
-        img = mrc_obj.get_tile_as_numpy_memmap(iTile)
+        img = crop_tile(mrc_obj.get_tile_as_numpy_memmap(iTile), crop_border)
         if flip_ud:
             img = np.flipud(img)
 
@@ -614,7 +648,8 @@ class MRCImport:
     def ExportImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
                     min_max_gamma: shared.MinMaxGamma | None = None,
                     flip_ud: bool = DEFAULT_FLIP_UD,
-                    crush_params: CrushParams | None = None) -> bool:
+                    crush_params: CrushParams | None = None,
+                    crop_border: int = 0) -> bool:
         """Write one tile; crushed codes when *crush_params* is given, else the legacy contrast stretch."""
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
@@ -625,9 +660,10 @@ class MRCImport:
             return False
 
         if crush_params is not None:
-            return MRCImport.ExportCrushedImage(mrc_obj, output_dir, img_ext, iTile, crush_params, flip_ud) is not None
+            return MRCImport.ExportCrushedImage(mrc_obj, output_dir, img_ext, iTile, crush_params, flip_ud,
+                                                crop_border) is not None
         elif min_max_gamma is None:
-            im = mrc_obj.get_tile_as_image(iTile)
+            im = crop_tile(mrc_obj.get_tile_as_image(iTile), crop_border)
             if flip_ud:
                 # Orientation must not depend on whether contrast values were
                 # supplied; the contrast branch below flips the same way.
@@ -636,7 +672,7 @@ class MRCImport:
         else:
             # This mess is here because we can't really trust the min/max pixel values reported in the MRC file for a lot of our old data
             # t = mrcfile._repair_out_of_bounds_pixels(iTile, 14)
-            img = mrc_obj.get_tile_as_numpy_memmap(iTile)
+            img = crop_tile(mrc_obj.get_tile_as_numpy_memmap(iTile), crop_border)
             dt = img.dtype
             if flip_ud:
                 # This was required to make the images match the orientation of the RC1 original dataset.
@@ -684,12 +720,13 @@ class MRCImport:
         return shared.MinMaxGamma(minval, maxval, Gamma)  # type: ignore[arg-type]
 
     @staticmethod
-    def CreateMosaic(mrcfile, img_ext: str) -> nornir_imageregistration.Mosaic:
+    def CreateMosaic(mrcfile, img_ext: str, crop_border: int = 0) -> nornir_imageregistration.Mosaic:
+        """Stage mosaic of the MRC's tiles; with *crop_border* the transforms place the tiles as cropped."""
         mosaic = nornir_imageregistration.Mosaic()
 
         for (i, t) in enumerate(mrcfile.tile_meta):
-            image_shape = mrcfile.img_shape
-            pixel_position = t.pixel_coords
+            image_shape = mrcfile.img_shape - 2 * crop_border
+            pixel_position = t.pixel_coords + crop_border  # the cropped tile's origin is the border inside the frame
             tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform(
                 target_image_shape=image_shape,
                 source_image_shape=image_shape,

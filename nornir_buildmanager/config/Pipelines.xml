@@ -84,11 +84,13 @@
                       help="Store the legacy contrast-stretched Raw16 tiles instead of noise-crushed codes in Raw8.  An existing uncrushed Raw16 import is never replaced either way."/>
             <Argument flag="-CrushK" dest="CrushK" type="float" default="2.5" required="False"
                       help="Crush step in noise sigmas (default 2.5).  Larger values give smaller files and coarser intensity steps."/>
+            <Argument flag="-CropBorder" dest="CropBorder" type="int" default="0" required="False"
+                      help="Pixels to remove from every edge of each tile, for MRC frames with an artefact border (RC1: 4096 frames whose outer 8 pixels are replicated rows and columns).  The Stage mosaic places the cropped tile.  Applies to tiles the import writes; tiles already exported keep their crop."/>
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.mrc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension"
-                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK"/>
+                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK" CropBorder="#CropBorder"/>
         <!-- Per-tile brightness gains (beam drift, white stripe) on Stage, for crushed filters only; skipped when
              the filter's gains are already current. Level 1: the only level an import writes. -->
         <Iterate VariableName="section_node" XPath="Block/Section">

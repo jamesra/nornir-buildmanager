@@ -899,6 +899,19 @@ CAMERA_BPP_IGNORED_WHEN_CRUSHING = (
     "measured noise and the raw counts, so a camera bit depth is unnecessary when crushing.")
 
 
+def CropBorderForImport(crop_border: int | str | None) -> int:
+    """The -CropBorder value of an import: pixels removed from every tile edge, 0 for none.
+
+    :raises ValueError: when the value is negative or not a whole number.
+    """
+    if crop_border is None or crop_border == '':
+        return 0
+    border = int(crop_border)
+    if border < 0:
+        raise ValueError(f"-CropBorder must not be negative: {border}")
+    return border
+
+
 def CameraBppForImport(camera_bpp: int | None, no_crush: bool,
                        logger: logging.Logger | None = None) -> int | None:
     """The -CameraBpp value an import should use: unchanged for -NoCrush, None (with a warning) otherwise.
