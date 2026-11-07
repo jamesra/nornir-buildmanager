@@ -13,6 +13,7 @@ import re
 import shutil
 import sys
 import datetime
+from collections.abc import Mapping
 from typing import Iterable, NamedTuple, Callable, Sequence, cast
 from xml.sax.saxutils import escape
 
@@ -35,7 +36,7 @@ import nornir_shared.prettyoutput as prettyoutput
 from nornir_shared.histogram import Histogram
 import nornir_shared.plot as plot
 import nornir_pools
-from nornir_imageregistration import noise_crush
+from nornir_imageregistration import noise_crush, tile_gains
 from nornir_imageregistration.noise_crush import CrushParams
 import numpy as np
 from numpy.typing import NDArray
@@ -51,6 +52,12 @@ NOISE_CACHE_VERSION: int = 1
 NOISE_CACHE_SUFFIX: str = '.noise.json'
 # Tiles sampled per section for the noise estimate; exposure is section-wide.
 NOISE_SAMPLE_TILES: int = 16
+# Per-tile brightness gains solved before the crush, next to Histogram.xml: Histogram.gains.json
+GAINS_CACHE_VERSION: int = 1
+GAINS_CACHE_SUFFIX: str = '.gains.json'
+# Overlap statistics are measured on tiles reduced by this factor: the strips hold tens of thousands of pixels, and
+# stage error of hundreds of pixels barely moves a strip's median (RC3: gains at 8 matched level 1).
+IMPORT_GAIN_DOWNSAMPLE: int = 8
 
 _NOTES_SKIP_FILENAMES: frozenset[str] = frozenset({'ContrastOverrides.txt', 'Timing.txt'})
 _CAPTURE_NOTE_FALLBACK_EXTENSIONS: frozenset[str] = frozenset({'.idoc', '.mrc', '.dm4', '.pmg'})
@@ -824,8 +831,9 @@ def _noise_cache_path(histogram_cache_path: str) -> str:
     return f"{base}{NOISE_CACHE_SUFFIX}"
 
 
-def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str]) -> SectionNoise | None:
-    """Return the cached estimate if its version and inputs match and no input is newer."""
+def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str],
+                            gains_checksum: str | None = None) -> SectionNoise | None:
+    """Return the cached estimate if its version, inputs and gains match and no input is newer."""
     if not os.path.exists(noise_cache_path):
         return None
     try:
@@ -835,6 +843,8 @@ def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str]) 
             return None
         if list(meta.get('inputs', [])) != _cache_input_basenames(cache_inputs):
             return None
+        if meta.get('gains') != gains_checksum:
+            return None  # estimated on tiles divided by other gains (or by none)
         cache_mtime_ns = files.file_mtime_ns(noise_cache_path)
         input_mtimes_ns = [files.file_mtime_ns(p) for p in cache_inputs if os.path.exists(p)]
         if input_mtimes_ns and files.is_significantly_newer(max(input_mtimes_ns), cache_mtime_ns):
@@ -852,14 +862,19 @@ def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str]) 
 def GetSectionNoise(histogram_cache_path: str,
                     cache_inputs: Sequence[str],
                     num_tiles: int,
-                    load_tile: Callable[[int], NDArray]) -> SectionNoise:
+                    load_tile: Callable[[int], NDArray],
+                    tile_gains_applied: Mapping[int, float] | None = None,
+                    gains_checksum: str | None = None) -> SectionNoise:
     """Estimate the section's noise sigma (counts) from evenly sampled tiles, cached beside Histogram.xml.
 
     The cache holds sigma rather than the step, so changing ``-CrushK`` re-reads no tiles.
     A read-only import directory only costs the cache; the estimate is still returned.
+
+    With ``tile_gains_applied`` (gain-first imports) each sampled tile is measured as it will be quantized, divided by
+    its gain: sigma, minimum and maximum are in gain-corrected counts.  ``gains_checksum`` keys the cache to those gains.
     """
     noise_cache_path = _noise_cache_path(histogram_cache_path)
-    cached = _load_fresh_noise_cache(noise_cache_path, cache_inputs)
+    cached = _load_fresh_noise_cache(noise_cache_path, cache_inputs, gains_checksum)
     if cached is not None:
         return cached
 
@@ -871,11 +886,13 @@ def GetSectionNoise(histogram_cache_path: str,
     for iTile in noise_crush.sample_indices(num_tiles, NOISE_SAMPLE_TILES):
         tile = load_tile(iTile)
         source_dtype = tile.dtype.name
-        sigmas.append(noise_crush.estimate_noise_sigma(tile))
-        sample_min = min(sample_min, float(np.min(tile)))
-        sample_max = max(sample_max, float(np.max(tile)))
+        gain = 1.0 if tile_gains_applied is None else tile_gains_applied.get(iTile, 1.0)
+        sigmas.append(noise_crush.estimate_noise_sigma(tile) / gain)  # the estimate scales with the counts
+        sample_min = min(sample_min, float(np.min(tile)) / gain)
+        sample_max = max(sample_max, float(np.max(tile)) / gain)
         if np.issubdtype(tile.dtype, np.signedinteger):
-            sample_low = min(sample_low, float(np.quantile(np.asarray(tile)[::4, ::4], SIGNED_OFFSET_QUANTILE)))
+            sample_low = min(sample_low,
+                             float(np.quantile(np.asarray(tile)[::4, ::4], SIGNED_OFFSET_QUANTILE)) / gain)
         del tile
 
     noise = SectionNoise(noise_crush.section_sigma(sigmas), sample_min, sample_max, source_dtype,
@@ -883,7 +900,7 @@ def GetSectionNoise(histogram_cache_path: str,
     meta = {'version': NOISE_CACHE_VERSION, 'method': noise_crush.SIGMA_METHOD,
             'inputs': _cache_input_basenames(cache_inputs), 'sigma': noise.sigma,
             'sample_min': noise.sample_min, 'sample_max': noise.sample_max, 'sample_low': noise.sample_low,
-            'source_dtype': source_dtype, 'tile_sigmas': sigmas}
+            'source_dtype': source_dtype, 'tile_sigmas': sigmas, 'gains': gains_checksum}
     try:
         os.makedirs(os.path.dirname(noise_cache_path) or '.', exist_ok=True)
         with open(noise_cache_path, 'w', encoding='utf-8') as f:
@@ -995,10 +1012,146 @@ def ResolveCrushMode(channel: ChannelNode, filter_name: str, requested: CrushPar
     return requested, True
 
 
-def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams) -> None:
-    """Record *params* on the filter so later runs and readers know its tiles are crushed."""
+def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams, gain_first: bool = False) -> None:
+    """Record *params* on the filter so later runs and readers know its tiles are crushed.
+
+    *gain_first* marks tiles divided by their brightness gain before quantizing: their gains are diagnostic, and
+    TileGains leaves the filter alone (its correction would be applied twice).
+    """
     for (key, value) in params.to_attributes().items():
         setattr(filter_node, key, value)  # the wrapper marks the node changed, so the pipeline saves it
+    if gain_first:
+        setattr(filter_node, noise_crush.GAIN_FIRST_ATTRIB, '1')
+
+
+def IsGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
+    """True when the filter's crushed tiles were gain-corrected before they were quantized."""
+    return filter_node is not None and filter_node.attrib.get(noise_crush.GAIN_FIRST_ATTRIB) == '1'
+
+
+def GainFirstAllowed(channel: ChannelNode, requested: bool = True) -> bool:
+    """Whether a new crushed import of this channel should correct gains first.
+
+    A channel that already holds a crushed filter imported without it keeps the old kind: re-importing to add sections
+    must not make the crush parameters of the finished ones differ (``ResolveCrushMode`` would clean them).
+    """
+    if not requested:
+        return False
+    for name in ('Raw8', 'Raw16'):
+        existing = channel.GetFilter(name)
+        if existing is not None and CrushParams.from_attributes(existing.attrib) is not None \
+                and not IsGainFirstFilter(existing):
+            return False
+    return True
+
+
+def ExistingGainFirstParams(channel: ChannelNode, k: float | None) -> CrushParams | None:
+    """The crush parameters of this channel's gain-first filter when they were made with the same ``k``, else None.
+
+    A restarted import then needs neither the tile gains nor the noise estimate to know its parameters: the gains are
+    solved only if tiles still have to be written.
+    """
+    wanted = noise_crush.DEFAULT_CRUSH_K if k is None else float(k)
+    for name in ('Raw8', 'Raw16'):
+        existing = channel.GetFilter(name)
+        if IsGainFirstFilter(existing):
+            params = CrushParams.from_attributes(existing.attrib)
+            if params is not None and params.k == wanted:
+                return params
+    return None
+
+
+class ImportTileGains(NamedTuple):
+    """Brightness gain of each tile of a section, solved from the Stage overlaps before the crush."""
+    solved: dict[int, float]
+    checksum: str
+    residual_mad: float
+    pairs_used: int
+
+    def applied(self, tile: int) -> float:
+        """The divisor used for *tile*: its solved gain, or 1 for a tile too dim to amplify."""
+        gain = self.solved.get(tile, 1.0)
+        return gain if gain >= noise_crush.MIN_CORRECTABLE_GAIN else 1.0
+
+    def solved_gain(self, tile: int) -> float:
+        """The gain measured for *tile* (1 for a tile that was not measured)."""
+        return self.solved.get(tile, 1.0)
+
+    @property
+    def applied_gains(self) -> dict[int, float]:
+        return {tile: self.applied(tile) for tile in self.solved}
+
+    @property
+    def flagged(self) -> list[int]:
+        """Tiles with essentially no beam, quantized as captured."""
+        return sorted(t for t, g in self.solved.items() if g < noise_crush.MIN_CORRECTABLE_GAIN)
+
+
+def _gains_cache_path(histogram_cache_path: str) -> str:
+    (base, _) = os.path.splitext(histogram_cache_path)
+    return f"{base}{GAINS_CACHE_SUFFIX}"
+
+
+def _load_fresh_gains_cache(gains_cache_path: str, cache_inputs: Sequence[str], variant: str,
+                            downsample: int) -> ImportTileGains | None:
+    """The cached gains if their inputs, tile geometry (``variant``) and reduction match and no input is newer."""
+    try:
+        with open(gains_cache_path, 'r', encoding='utf-8') as f:
+            meta = json.load(f)
+        if meta.get('version') != GAINS_CACHE_VERSION or meta.get('variant') != variant or \
+                meta.get('downsample') != downsample or \
+                list(meta.get('inputs', [])) != _cache_input_basenames(cache_inputs):
+            return None
+        cache_mtime_ns = files.file_mtime_ns(gains_cache_path)
+        input_mtimes_ns = [files.file_mtime_ns(p) for p in cache_inputs if os.path.exists(p)]
+        if input_mtimes_ns and files.is_significantly_newer(max(input_mtimes_ns), cache_mtime_ns):
+            return None
+        solved = {int(t): float(g) for t, g in meta['gains'].items()}
+        return ImportTileGains(solved, tile_gains.gains_checksum(solved), float(meta['residual_mad']),
+                               int(meta['pairs_used']))
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError):
+        return None
+
+
+def SolveImportTileGains(histogram_cache_path: str,
+                         cache_inputs: Sequence[str],
+                         placements: Mapping[int, tile_gains.TilePlacement],
+                         read_tile: Callable[[int], NDArray],
+                         variant: str,
+                         downsample: int = IMPORT_GAIN_DOWNSAMPLE,
+                         section_number: int | None = None) -> ImportTileGains:
+    """Solve a section's tile gains from the overlaps of its stage placements, cached beside Histogram.xml.
+
+    ``read_tile(id)`` returns the tile exactly as it will be quantized (cropped and flipped), reduced by ``downsample``
+    and in raw counts.  The importer reads every tile of the section anyway to convert it; this is one pass over the
+    section before the first tile is quantized, because each tile's codes depend on a gain that needs all the overlaps.
+    ``variant`` names whatever else decides the geometry (crop border, flip) so a changed option re-solves.
+    """
+    gains_cache_path = _gains_cache_path(histogram_cache_path)
+    cached = _load_fresh_gains_cache(gains_cache_path, cache_inputs, variant, downsample)
+    if cached is not None:
+        return cached
+
+    result = tile_gains.compute_tile_gains(placements, read_tile, downsample, low=0.5, high=float('inf'))
+    solved = {int(t): round(float(g), 6) for t, g in result.gains.items()}
+    gains = ImportTileGains(solved, tile_gains.gains_checksum(solved), float(result.residual_mad),
+                            int(result.pairs_used))
+    values = np.array(list(solved.values())) if solved else np.ones(1)
+    label = '' if section_number is None else f"section {section_number}: "
+    dim = f", {len(gains.flagged)} tiles too dim to correct" if gains.flagged else ''
+    prettyoutput.Log(f"Tile gains {label}{len(solved)} tiles, {result.pairs_used} overlaps "
+                     f"({result.pairs_rejected} rejected, {result.pairs_skipped} without tissue), "
+                     f"residual MAD {result.residual_mad:.4f}, gain {values.min():.3f}-{values.max():.3f}{dim}")
+    meta = {'version': GAINS_CACHE_VERSION, 'variant': variant, 'downsample': downsample,
+            'inputs': _cache_input_basenames(cache_inputs), 'gains': {str(t): g for t, g in solved.items()},
+            'residual_mad': gains.residual_mad, 'pairs_used': gains.pairs_used}
+    try:
+        os.makedirs(os.path.dirname(gains_cache_path) or '.', exist_ok=True)
+        with open(gains_cache_path, 'w', encoding='utf-8') as f:
+            json.dump(meta, f, indent=0, sort_keys=True)
+    except OSError as e:
+        prettyoutput.Log(f"Could not cache the tile gains at {gains_cache_path}: {e}")
+    return gains
 
 
 class CrushSectionStats(NamedTuple):
@@ -1010,13 +1163,17 @@ class CrushSectionStats(NamedTuple):
 
 
 def CrushTiles(source_to_target: dict[str, str], params: CrushParams, flip: bool,
-               progress_name: str | None = None, progress_task_key: str | None = None) -> CrushSectionStats | None:
+               progress_name: str | None = None, progress_task_key: str | None = None,
+               source_gains: Mapping[str, tuple[float, float]] | None = None) -> CrushSectionStats | None:
     """Crush source tile files into target PNGs on a process pool with a bounded number in flight.
 
     Returns the code histogram and clip counts of the converted tiles, accumulated as each tile is
     written (James, 2026-11-05: no separate histogram pass for crushed sections), or None when there
     was nothing to convert. Clipped values are logged: they mean the sampled tiles under-estimated the
     section's range.
+
+    ``source_gains`` (gain-first imports) maps a source path to its (applied, solved) gain: the tile is divided by the
+    applied gain before it is quantized and records the solved gain in its chunk.
 
     A failed tile is logged and re-raised, as ``ConvertImagesInDict`` does under
     ``__debug__``; otherwise the caller's ``RemoveInvalidMosaicImages`` drops it.
@@ -1056,8 +1213,9 @@ def CrushTiles(source_to_target: dict[str, str], params: CrushParams, flip: bool
     try:
         reporter.start()
         for (source, target) in source_to_target.items():
+            gain_args = () if source_gains is None else source_gains.get(source, (1.0, 1.0))
             task = pool.add_task(f"{source} -> {target}", noise_crush.crush_tile_to_file,
-                                 source, target, params, flip)
+                                 source, target, params, flip, *gain_args)
             pending.append((task, source))
             if len(pending) >= max_in_flight:
                 drain_one()

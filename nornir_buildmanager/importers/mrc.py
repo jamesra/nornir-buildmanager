@@ -36,6 +36,7 @@ from nornir_shared.histogram import *
 from nornir_shared.images import *
 from . import GetFileNameForTileNumber
 from nornir_buildmanager import NornirUserException
+from nornir_buildmanager.operations import tilegains
 
 
 def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = None, *args, **kwargs):
@@ -56,6 +57,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
     CropBorder = shared.CropBorderForImport(kwargs.get('CropBorder', None))
+    NoGainFirst = bool(kwargs.get('NoGainFirst', False))
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
@@ -90,6 +92,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                                               NoCrush=NoCrush,
                                               CrushK=CrushK,
                                               CropBorder=CropBorder,
+                                              NoGainFirst=NoGainFirst,
                                               read_path=lambda p=file_fullpath: staging.acquire(p),
                                               )
             finally:
@@ -254,6 +257,7 @@ class MRCImport:
                  NoCrush: bool = False,
                  CrushK: float | None = None,
                  CropBorder: int = 0,
+                 NoGainFirst: bool = False,
                  read_path: Callable[[], str] | None = None):
         """Import one .mrc file as a section.
 
@@ -264,6 +268,9 @@ class MRCImport:
         :param CropBorder: Pixels removed from every edge of each tile, for MRC frames with an artefact border.  The
             Stage transforms place the cropped tile, so its offset moves by the border.  Applies to tiles this call
             writes: tiles already exported keep the crop they were written with.
+        :param NoGainFirst: Quantize tiles as captured.  By default crushed tiles are divided by their brightness gain,
+            solved from the Stage overlaps, before they are quantized (the gain is recorded in the tile as a diagnostic;
+            nothing downstream corrects with it).  A section whose crushed filter already exists keeps its kind.
         :param read_path: Returns the path to export tiles from, typically a staged local copy of
             ``mrc_fullpath`` (source_staging); called only when tiles are missing. Names, notes, logs,
             caches, freshness checks and the noise sample always use ``mrc_fullpath``.
@@ -355,13 +362,38 @@ class MRCImport:
                                                max=np.around(contrast_settings.max),
                                                gamma=contrast_settings.gamma)
 
+        flip_ud = flip_ud_for_section(SectionNumber, FlipList)
+        staged: list[str] = []
+
+        def pixel_source() -> str:
+            """The path to read pixels from: the staged local copy when there is one (waits for the copy once)."""
+            if not staged:
+                staged.append(mrc_fullpath if read_path is None else read_path())
+            return staged[0]
+
+        gain_first = False
+        import_gains: shared.ImportTileGains | None = None
         requested_crush = None
         if not NoCrush and mrcfile.bytes_per_pixel > 1:
-            requested_crush = shared.SectionCrushParams(
-                shared.GetSectionNoise(histogram_cache_path, [mrc_fullpath], mrcfile.num_tiles,  # type: ignore[arg-type]
-                                       lambda i: crop_tile(mrcfile.get_tile_as_numpy_memmap(i), CropBorder)),
-                Histogram.Load(histogram_cache_path) if os.path.exists(histogram_cache_path) else None,
-                k=nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK))
+            crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
+            gain_first = shared.GainFirstAllowed(channelObj, not NoGainFirst)
+            reused = shared.ExistingGainFirstParams(channelObj, CrushK) if gain_first else None
+            if reused is not None:
+                requested_crush = reused  # a restart: the gains are solved only if tiles are still to be written
+            elif gain_first:
+                import_gains = cls.SolveGains(pixel_source(), mrc_fullpath, histogram_cache_path, SectionNumber, CropBorder, flip_ud)
+                requested_crush = shared.SectionCrushParams(
+                    shared.GetSectionNoise(histogram_cache_path, [mrc_fullpath], mrcfile.num_tiles,  # type: ignore[arg-type]
+                                           lambda i: crop_tile(mrcfile.get_tile_as_numpy_memmap(i), CropBorder),
+                                           tile_gains_applied=import_gains.applied_gains,
+                                           gains_checksum=import_gains.checksum),
+                    None, k=crush_k)
+            else:
+                requested_crush = shared.SectionCrushParams(
+                    shared.GetSectionNoise(histogram_cache_path, [mrc_fullpath], mrcfile.num_tiles,  # type: ignore[arg-type]
+                                           lambda i: crop_tile(mrcfile.get_tile_as_numpy_memmap(i), CropBorder)),
+                    Histogram.Load(histogram_cache_path) if os.path.exists(histogram_cache_path) else None,
+                    k=crush_k)
             crushed_filter_name = shared.CrushedFilterName(requested_crush)
             legacy_filter = channelObj.GetFilter(FilterName)
             if crushed_filter_name != FilterName and legacy_filter is not None and \
@@ -409,7 +441,7 @@ class MRCImport:
             if span > 0:
                 filterObj.CrushCodeSpan = span
             filterObj.BitsPerPixel = crush_params.bits
-            shared.SetFilterCrushAttributes(filterObj, crush_params)
+            shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first)
             (yield filterObj)
         else:
             filterObj.SetContrastValues(filter_contrast.min, filter_contrast.max, filter_contrast.gamma)
@@ -468,14 +500,17 @@ class MRCImport:
         # Wait for the staged local copy only when tiles are missing: a restarted import walks
         # finished sections too, and must not copy a 33 GB MRC to skip one.
         pixel_path = mrc_fullpath
-        if read_path is not None and not tiles_present:
-            pixel_path = read_path()
+        if (read_path is not None and not tiles_present) or staged:
+            pixel_path = pixel_source()
 
+        if gain_first and crush_params is not None and import_gains is None:
+            import_gains = cls.SolveGains(pixel_path, mrc_fullpath, histogram_cache_path, SectionNumber, CropBorder, flip_ud)
         crush_stats = cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
                                        min_max_gamma=contrast_settings,
-                                       flip_ud=flip_ud_for_section(SectionNumber, FlipList),
+                                       flip_ud=flip_ud,
                                        crush_params=crush_params,
-                                       crop_border=CropBorder)
+                                       crop_border=CropBorder,
+                                       import_gains=import_gains if crush_params is not None else None)
         _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath, CropBorder)
 
         # CodeHistogram and CrushDisplayMin/Max: from the export when it wrote every tile, else from the level-1 tiles.
@@ -484,6 +519,29 @@ class MRCImport:
                 crush_stats if crush_stats is not None and crush_stats.tiles > 0 else None, num_tiles,
                 image_ext=OutputImageExt):
             (yield filterObj)
+
+    @staticmethod
+    def SolveGains(mrc_path: str, source_path: str, histogram_cache_path: str, section_number: int, crop_border: int,
+                   flip_ud: bool) -> shared.ImportTileGains:
+        """Brightness gain of each tile from the overlaps of the Stage placements, before any tile is quantized.
+
+        Tiles are read as the export will write them (cropped, flipped) and reduced by
+        ``shared.IMPORT_GAIN_DOWNSAMPLE`` for the strip statistics.
+        """
+        mrc_obj = MRCFile.Load(mrc_path)
+        stride = shared.IMPORT_GAIN_DOWNSAMPLE
+        mosaic = MRCImport.CreateMosaic(mrc_obj, '.png', crop_border=crop_border)
+        shape = mrc_obj.img_shape - 2 * crop_border
+        placements = tilegains.mosaic_placements(mosaic, float(shape[0]), float(shape[1]))
+
+        def read_tile(iTile: int) -> NDArray:
+            img = crop_tile(mrc_obj.get_tile_as_numpy_memmap(iTile), crop_border)
+            if flip_ud:
+                img = np.flipud(img)
+            return np.array(img[::stride, ::stride])
+
+        return shared.SolveImportTileGains(histogram_cache_path, [source_path], placements, read_tile,
+                                           f"crop{crop_border}-flip{int(flip_ud)}", section_number=section_number)
 
     def __init__(self):
         """
@@ -578,7 +636,8 @@ class MRCImport:
                      min_max_gamma: shared.MinMaxGamma | None,
                      flip_ud: bool = DEFAULT_FLIP_UD,
                      crush_params: CrushParams | None = None,
-                     crop_border: int = 0) -> shared.CrushSectionStats | None:
+                     crop_border: int = 0,
+                     import_gains: shared.ImportTileGains | None = None) -> shared.CrushSectionStats | None:
         """Export every tile not already written.
 
         :return: for crushed exports, the code histogram of the tiles written by this call (no separate histogram
@@ -593,7 +652,8 @@ class MRCImport:
 
         if crush_params is not None:
             crush_tasks = [pool.add_task(str(iTile), cls.ExportCrushedImage, mrc_obj, output_dir, img_ext, iTile,
-                                         crush_params, flip_ud, crop_border)
+                                         crush_params, flip_ud, crop_border,
+                                         *cls._tile_gain_args(import_gains, iTile))
                            for iTile in range(mrc_obj.num_tiles)]  # type: ignore[arg-type]
             histogram = np.zeros(crush_params.max_code + 1, dtype=np.int64)
             tiles = 0
@@ -624,10 +684,20 @@ class MRCImport:
         return None
 
     @staticmethod
+    def _tile_gain_args(import_gains: shared.ImportTileGains | None, iTile: int) -> tuple[float, ...]:
+        """(applied, solved) gain arguments of a tile's export; empty when the section is not gain-first."""
+        if import_gains is None:
+            return ()
+        return import_gains.applied(iTile), import_gains.solved_gain(iTile)
+
+    @staticmethod
     def ExportCrushedImage(mrc_obj: str | MRCFile, output_dir: str, img_ext: str, iTile: int,
                            crush_params: CrushParams, flip_ud: bool = DEFAULT_FLIP_UD,
-                           crop_border: int = 0) -> NDArray | None:
-        """Write one crushed tile; its code histogram, or None when the tile already existed."""
+                           crop_border: int = 0, gain: float = 1.0, solved_gain: float | None = None) -> NDArray | None:
+        """Write one crushed tile; its code histogram, or None when the tile already existed.
+
+        A gain-first export divides the tile by ``gain`` before quantizing and records ``solved_gain`` in its chunk.
+        """
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
@@ -639,9 +709,11 @@ class MRCImport:
         if flip_ud:
             img = np.flipud(img)
 
-        codes = noise_crush.crush(img, crush_params)
+        codes = noise_crush.crush(img, crush_params, gain)
         del img
-        noise_crush.save_crushed_png(output_fullpath, codes, crush_params)
+        noise_crush.save_crushed_png(
+            output_fullpath, codes, crush_params,
+            None if solved_gain is None else noise_crush.crush_chunk_text(crush_params, solved_gain, gain == solved_gain))
         return np.bincount(codes.ravel(), minlength=crush_params.max_code + 1)
 
     @staticmethod

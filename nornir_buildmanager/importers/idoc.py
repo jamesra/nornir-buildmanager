@@ -37,6 +37,7 @@ import errno
 import sys
 import shutil
 import math
+import tempfile
 from typing import Any, Callable, Generator, Sequence
 
 import matplotlib
@@ -61,6 +62,7 @@ import nornir_buildmanager.importers.find as find
 import nornir_buildmanager.importers.serialem_utils as serialem_utils
 from nornir_buildmanager.importers.serialemlog import SerialEMLog
 import nornir_buildmanager.importers.shared as shared
+from nornir_buildmanager.operations import tilegains
 from nornir_buildmanager.progress import report_iterate
 from nornir_buildmanager.volumemanager import *
 
@@ -161,6 +163,7 @@ def Import(VolumeElement: VolumeNode,
     NoCrush = bool(kwargs.get('NoCrush', False))
     CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
+    NoGainFirst = bool(kwargs.get('NoGainFirst', False))
 
     _validate_contrast_cutoffs(ContrastCutoffs)
 
@@ -220,7 +223,8 @@ def Import(VolumeElement: VolumeNode,
                                                     CameraBpp=CameraBpp,
                                                     ContrastMap=ContrastMap,
                                                     NoCrush=NoCrush,
-                                                    CrushK=CrushK)
+                                                    CrushK=CrushK,
+                                                    NoGainFirst=NoGainFirst)
 
         completed_sections += 1
         if total_sections:
@@ -239,6 +243,42 @@ def Import(VolumeElement: VolumeNode,
 
 class SerialEMIDocImport:
 
+    @staticmethod
+    def TileNumbers(tiles) -> list[int]:
+        """The tile number of each idoc tile: the file name an import gives it (``CreateTilesFromIDocTileData``)."""
+        return [tile.TileIndex if tile.TileIndex is not None else fallback for fallback, tile in enumerate(tiles)]
+
+    @staticmethod
+    def SolveGains(IDocData, tile_numbers: Sequence[int], source_tile_list: Sequence[str],
+                   cache_inputs: Sequence[str], flip: bool, histogram_cache_path: str,
+                   section_number: int) -> shared.ImportTileGains:
+        """Brightness gain of each tile from the overlaps of its Stage placement, before any tile is quantized.
+
+        The placements are those the Stage mosaic will have (a scratch mosaic is written with the same flip); tiles are
+        read as the import will convert them and reduced by ``shared.IMPORT_GAIN_DOWNSAMPLE`` for the strip statistics.
+        """
+        entries = {f"{nornir_buildmanager.templates.Current.TileCoordFormat % number}.png": tile.PieceCoordinates[0:2]
+                   for number, tile in zip(tile_numbers, IDocData.tiles)}
+        with tempfile.TemporaryDirectory() as scratch:
+            mosaic_path = os.path.join(scratch, 'stage.mosaic')
+            mosaicfile.MosaicFile.Write(mosaic_path, Entries=entries, Flip=not flip,
+                                        ImageSize=IDocData.ImageSize, Downsample=1)
+            mosaic = Mosaic.LoadFromMosaicFile(mosaic_path)
+        first = nornir_imageregistration.noise_crush.load_raw_tile(source_tile_list[0])
+        placements = tilegains.mosaic_placements(mosaic, float(first.shape[0]), float(first.shape[1]))
+        del first
+        source_by_number = dict(zip(tile_numbers, source_tile_list))
+        stride = shared.IMPORT_GAIN_DOWNSAMPLE
+
+        def read_tile(number: int):
+            image = nornir_imageregistration.noise_crush.load_raw_tile(source_by_number[number])
+            if flip:
+                image = np.flip(image, 0)
+            return np.array(image[::stride, ::stride])
+
+        return shared.SolveImportTileGains(histogram_cache_path, cache_inputs, placements, read_tile,
+                                           f"flip{int(flip)}", section_number=section_number)
+
     @classmethod
     def ToMosaic(cls, VolumeObj: VolumeNode, idocFileFullPath: str, ContrastCutoffs: tuple[float, float],
                  OutputImageExt: str | None = None,
@@ -247,7 +287,8 @@ class SerialEMIDocImport:
                  CameraBpp: int | None = None,
                  debug: bool | None = None,
                  NoCrush: bool = False,
-                 CrushK: float | None = None) -> Generator[XElementWrapper, None, None]:
+                 CrushK: float | None = None,
+                 NoGainFirst: bool = False) -> Generator[XElementWrapper, None, None]:
         """
         Convert an idoc to a .mosaic and populate volume meta-data.
 
@@ -257,7 +298,9 @@ class SerialEMIDocImport:
 
         Tiles deeper than 8 bits are crushed by default (``nornir_imageregistration.noise_crush``):
         stored as section-wide noise-step codes rather than contrast-stretched 8-bit.
-        ``NoCrush`` keeps the contrast stretch; ``CrushK`` sets the step in noise sigmas.
+        ``NoCrush`` keeps the contrast stretch; ``CrushK`` sets the step in noise sigmas.  Crushed tiles are divided
+        by their brightness gain, solved from the Stage overlaps, before they are quantized (``NoGainFirst`` keeps them
+        as captured); the gain is recorded in the tile as a diagnostic that nothing downstream applies.
 
         :param ContrastCutoffs: (min, max) as 0-1 *fractions*, not percentages.
             Levelling uses ``AutoLevel(cutoffs[0], 1.0 - cutoffs[1])``, so (0.0, 1.0)
@@ -380,15 +423,31 @@ class SerialEMIDocImport:
 
         # Crushed imports read no histogram first (James, 2026-11-05): the noise sample sets the step and depth,
         # the code histogram is accumulated while the tiles are converted, and no contrast is recorded or applied.
+        gain_first = False
+        import_gains: shared.ImportTileGains | None = None
+        tile_numbers = cls.TileNumbers(IDocData.tiles)
         requested_crush = None
         if not NoCrush and ImageBpp > 8:
-            requested_crush = shared.SectionCrushParams(
-                shared.GetSectionNoise(histogram_cache_path, source_tile_list + [idocFileFullPath],
-                                       len(source_tile_list),
-                                       lambda i: nornir_imageregistration.noise_crush.load_raw_tile(
-                                           source_tile_list[i])),
-                None,
-                k=nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK))
+            crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
+            gain_first = shared.GainFirstAllowed(channelObj, not NoGainFirst)
+            reused = shared.ExistingGainFirstParams(channelObj, CrushK) if gain_first else None
+            noise_cache_inputs = source_tile_list + [idocFileFullPath]
+            load_tile = lambda i: nornir_imageregistration.noise_crush.load_raw_tile(source_tile_list[i])
+            if reused is not None:
+                requested_crush = reused  # a restart: the gains are solved only if tiles are still to be written
+            elif gain_first:
+                import_gains = cls.SolveGains(IDocData, tile_numbers, source_tile_list, noise_cache_inputs, Flip,
+                                              histogram_cache_path, SectionNumber)
+                requested_crush = shared.SectionCrushParams(
+                    shared.GetSectionNoise(histogram_cache_path, noise_cache_inputs, len(source_tile_list), load_tile,
+                                           tile_gains_applied={i: import_gains.applied(n)
+                                                               for i, n in enumerate(tile_numbers)},
+                                           gains_checksum=import_gains.checksum),
+                    None, k=crush_k)
+            else:
+                requested_crush = shared.SectionCrushParams(
+                    shared.GetSectionNoise(histogram_cache_path, noise_cache_inputs, len(source_tile_list), load_tile),
+                    None, k=crush_k)
             FilterName = shared.CrushedFilterName(requested_crush)
 
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
@@ -441,7 +500,7 @@ class SerialEMIDocImport:
         if crush_params is not None:
             shared.ClearCrushedFilterContrast(filterObj)
             filterObj.BitsPerPixel = crush_params.bits
-            shared.SetFilterCrushAttributes(filterObj, crush_params)
+            shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first)
             override_span = shared.CrushCodeSpanFromContrastOverride(ContrastMap.get(SectionNumber), crush_params)
             if override_span is not None:
                 filterObj.CrushCodeSpan = override_span
@@ -512,9 +571,18 @@ class SerialEMIDocImport:
             tile_progress_name = f"Import tiles {os.path.basename(idocFileFullPath)}"
             tile_progress_key = "import_idoc:tiles"
             if crush_params is not None:
+                source_gains = None
+                if gain_first:
+                    if import_gains is None:
+                        import_gains = cls.SolveGains(IDocData, tile_numbers, source_tile_list,
+                                                      source_tile_list + [idocFileFullPath], Flip,
+                                                      histogram_cache_path, SectionNumber)
+                    source_gains = {source: (import_gains.applied(n), import_gains.solved_gain(n))
+                                    for source, n in zip(source_tile_list, tile_numbers)}
                 crush_stats = shared.CrushTiles(SourceToMissingTargetMap, crush_params, flip=Flip,
                                                 progress_name=tile_progress_name,
-                                                progress_task_key=tile_progress_key)
+                                                progress_task_key=tile_progress_key,
+                                                source_gains=source_gains)
                 span = None if crush_stats is None else shared.CrushCodeSpan(crush_stats.code_histogram,
                                                                              ContrastCutoffs)
                 if override_span is not None:

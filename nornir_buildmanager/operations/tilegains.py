@@ -63,6 +63,12 @@ def _placements(mosaic: nornir_imageregistration.Mosaic, tile_height: float,
     return out
 
 
+def mosaic_placements(mosaic: nornir_imageregistration.Mosaic, tile_height: float,
+                      tile_width: float) -> dict[int, tile_gains.TilePlacement]:
+    """Tile number to its mosaic-space box (see :func:`_placements`); used by importers solving gains before the crush."""
+    return _placements(mosaic, tile_height, tile_width)
+
+
 def _counts_reader(level_path: str, names: dict[int, str], crush: noise_crush.CrushParams | None,
                    cutoffs: tuple[float, float] | None):
     """Reader returning a tile in counts (clipped pixels 0). Crushed: inflate codes; legacy: undo the contrast stretch."""
@@ -117,6 +123,10 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
     if TransformNode is None or FilterNode is None:
         return None
     if _as_bool(CrushedOnly) and noise_crush.CrushParams.from_attributes(FilterNode.attrib) is None:
+        return None
+    if FilterNode.attrib.get(noise_crush.GAIN_FIRST_ATTRIB) == '1':
+        Logger.info(f"TileGains: {FilterNode.FullPath} was gain-corrected before it was crushed; its gains are "
+                    f"diagnostic and are not applied again")
         return None
     source = f"{TransformNode.Name}:{TransformNode.attrib.get('Checksum', '')}"
     if _as_bool(SkipIfCurrent) and FilterNode.attrib.get('TileGainsSource') == source and \
