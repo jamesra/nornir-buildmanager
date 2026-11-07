@@ -451,16 +451,6 @@ def _tile_task_max_in_flight(pool) -> int:
     return max(1, getattr(pool, 'max_workers', None) or (os.cpu_count() or 1))
 
 
-def _submit_bounded(submit, items, *, max_in_flight: int):
-    """Submit one task per item, yielding each task once the window is full.
-
-    Globbing a level and queueing every tile up front makes both queue depth and the
-    retained task list scale with tile count. The shared window is
-    ``nornir_pools.submit_bounded``. The caller must exhaust the generator.
-    """
-    return nornir_pools.submit_bounded(submit, items, max_in_flight=max_in_flight)
-
-
 def _CorrectTilesDeprecated(Parameters, filter_node=None, image_node=None, OutputFilterName=None, InvertSource=False,
                             ComposeOperator=None, **kwargs):
     """Create a corrected version of a filter by applying the operation/image to all tiles"""
@@ -539,8 +529,8 @@ def _CorrectTilesDeprecated(Parameters, filter_node=None, image_node=None, Outpu
 
     # Same unbounded-queue shape as InvertFilter, but each task is a `convert` subprocess.
     # (#149)
-    for t in _submit_bounded(submit_correction, tiles_needing_correction(),
-                             max_in_flight=_tile_task_max_in_flight(pool)):
+    for t in nornir_pools.submit_bounded(submit_correction, tiles_needing_correction(),
+                                         max_in_flight=_tile_task_max_in_flight(pool)):
         t.wait()
 
     pool.wait_completion()
@@ -965,8 +955,8 @@ def InvertFilter(Parameters: dict, InputFilterNode: FilterNode, OutputFilterName
     # A level's worth of tiles used to be queued before the first wait, holding one task
     # per tile as well as that much pool queue depth. The window bounds both. (#149)
     tilesConverted = len(InputTiles) > 0
-    for t in _submit_bounded(submit_invert, InputTiles,
-                             max_in_flight=_tile_task_max_in_flight(pool)):
+    for t in nornir_pools.submit_bounded(submit_invert, InputTiles,
+                                         max_in_flight=_tile_task_max_in_flight(pool)):
         try:
             t.wait()
         except OSError as e:

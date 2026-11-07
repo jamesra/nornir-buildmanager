@@ -15,6 +15,8 @@ import os
 import unittest
 from unittest.mock import patch
 
+import nornir_pools
+
 from nornir_buildmanager.operations import tile as tile_ops
 
 
@@ -65,12 +67,12 @@ class _Pool:
 
 
 class TestTheBoundedWindow(unittest.TestCase):
-    """Properties of the shared `_submit_bounded` helper."""
+    """Properties of the shared `nornir_pools.submit_bounded` window the tile stages call."""
 
     def _run(self, count: int, cap: int) -> _Pool:
         pool = _Pool()
-        for task in tile_ops._submit_bounded(lambda i: pool.add_task(str(i), None),
-                                            range(count), max_in_flight=cap):
+        for task in nornir_pools.submit_bounded(lambda i: pool.add_task(str(i), None),
+                                                range(count), max_in_flight=cap):
             task.wait()
         return pool
 
@@ -113,8 +115,8 @@ class TestTheBoundedWindow(unittest.TestCase):
     def test_submission_is_lazy(self) -> None:
         """Nothing is submitted until the caller starts consuming."""
         pool = _Pool()
-        gen = tile_ops._submit_bounded(lambda i: pool.add_task(str(i), None),
-                                       range(100), max_in_flight=4)
+        gen = nornir_pools.submit_bounded(lambda i: pool.add_task(str(i), None),
+                                          range(100), max_in_flight=4)
         self.assertEqual([], pool.submitted)
         next(gen)
         self.assertEqual(4, len(pool.submitted))
@@ -240,7 +242,10 @@ class TestTheOldShapeIsGone(unittest.TestCase):
         import inspect
         for func in (tile_ops.InvertFilter, tile_ops._CorrectTilesDeprecated):
             with self.subTest(func=func.__name__):
-                self.assertIn('_submit_bounded', inspect.getsource(func))
+                self.assertIn('nornir_pools.submit_bounded', inspect.getsource(func))
+
+    def test_no_private_wrapper_around_the_shared_window_remains(self) -> None:
+        self.assertFalse(hasattr(tile_ops, '_submit_bounded'))
 
 
 if __name__ == '__main__':
