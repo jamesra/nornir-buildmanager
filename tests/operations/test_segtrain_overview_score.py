@@ -145,6 +145,19 @@ def test_overview_png_falls_back_to_the_ignored_folder(tmp_path: Path) -> None:
         assert canvas.convert("RGB").getpixel((10, 2)) == (0, 255, 0)  # part 1 colour
 
 
+def test_overview_png_part_colours_follow_the_palette_and_wrap(tmp_path: Path) -> None:
+    palette = [(255, 0, 0), (0, 255, 0), (0, 128, 255), (255, 255, 0), (255, 0, 255), (0, 255, 255)]
+    marks = [_mark(f"p{index}", [3], index * 8, 0) for index in range(len(palette) + 1)]
+    (tmp_path / "masks").mkdir()
+    for mark in marks:
+        Image.new("L", (8, 8), 255).save(tmp_path / "masks" / f"{mark.key}_3.png")
+    assert write_split_mask_overviews(tmp_path, marks, {3}, max_edge=8, png=True) == 1
+    with Image.open(_parts(tmp_path, 3).with_suffix(".png")) as canvas:
+        rgb = canvas.convert("RGB")
+        painted = [rgb.getpixel((index * 8 + 2, 2)) for index in range(len(marks))]
+    assert painted == [*palette, palette[0]]
+
+
 # ---------------------------------------------------------------- mask_bbox
 
 

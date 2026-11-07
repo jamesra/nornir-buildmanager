@@ -19,15 +19,7 @@ from nornir_buildmanager.operations.segmentationtraining.product_index import (
     MASKS_FOLDER,
     OVERLAYS_FOLDER,
 )
-
-_PART_COLORS = (
-    (255, 0, 0),
-    (0, 255, 0),
-    (0, 128, 255),
-    (255, 255, 0),
-    (255, 0, 255),
-    (0, 255, 255),
-)
+from nornir_buildmanager.operations.segmentationtraining.sam2.write import OVERLAY_COLORS
 
 
 def write_split_mask_overviews(
@@ -147,5 +139,5 @@ def _paste_mask(
         return
     with Image.open(mask_path) as handle:
         mask = handle.convert("L").resize((width, height), Image.Resampling.NEAREST)
-    color = Image.new("RGB", (width, height), _PART_COLORS[index % len(_PART_COLORS)])
+    color = Image.new("RGB", (width, height), OVERLAY_COLORS[index % len(OVERLAY_COLORS)])
     canvas.paste(color, (x, y), mask)

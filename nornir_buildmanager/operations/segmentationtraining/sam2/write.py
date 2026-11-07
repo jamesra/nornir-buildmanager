@@ -123,8 +123,9 @@ _COMPONENT_LUMA_WEIGHTS = (
     (0.11, 0.30, 0.59),
     (0.30, 0.11, 0.59),
 )
-# Distinct annotation tints; hue/chroma are applied, TEM luma is kept.
-_OVERLAY_COLORS = (
+# Distinct annotation tints; hue/chroma are applied, TEM luma is kept. The split-mask
+# overview PNG (overview.py) paints its parts with the same palette, in the same order.
+OVERLAY_COLORS = (
     (255, 0, 0),
     (0, 255, 0),
     (0, 128, 255),
@@ -159,7 +160,7 @@ def write_overlay(
         mask = np.asarray(mask_image) > 0
         if not np.any(mask):
             continue
-        hue, chroma, color_luma = rgb_to_hcl(_OVERLAY_COLORS[index % len(_OVERLAY_COLORS)])
+        hue, chroma, color_luma = rgb_to_hcl(OVERLAY_COLORS[index % len(OVERLAY_COLORS)])
         luma = (1.0 - _INPUT_LUMA_ALPHA) * tem_luma[mask] + _INPUT_LUMA_ALPHA * color_luma
         limited = np.minimum(chroma, max_chroma_at_luma(hue, luma))
         tinted = hcl_to_rgb(hue, limited, luma)

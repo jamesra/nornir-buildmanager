@@ -98,7 +98,7 @@ from nornir_buildmanager.operations.segmentationtraining.update import (
 )
 from nornir_buildmanager.operations.segmentationtraining.sam2.write import (
     _OVERLAY_COLOR_ALPHA,
-    _OVERLAY_COLORS,
+    OVERLAY_COLORS,
     ensure_sa1b_odata,
     hcl_to_rgb,
     max_chroma_at_luma,
@@ -1464,7 +1464,7 @@ def test_write_overlay_red_is_quarter_transparent(tmp_path: Path) -> None:
     overlay = np.asarray(Image.open(out).convert("RGB"))
     assert np.array_equal(overlay[0, 0], (128, 128, 128))
     tem_rgb = np.full((4, 4, 3), 128 / 255.0)
-    hue, chroma, _color_luma = rgb_to_hcl(_OVERLAY_COLORS[0])
+    hue, chroma, _color_luma = rgb_to_hcl(OVERLAY_COLORS[0])
     luma = perceptual_luma(tem_rgb)[1, 1]
     limited = np.minimum(chroma, max_chroma_at_luma(hue, luma))
     full = hcl_to_rgb(hue, limited, luma)

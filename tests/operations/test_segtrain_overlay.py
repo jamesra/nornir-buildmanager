@@ -84,7 +84,7 @@ def _write_overlay_reference(
     """Pre-optimization ``write_overlay`` body."""
     canvas = _load_tem_rgb_reference(tem_path, width, height)
     tem_luma = perceptual_luma(canvas)
-    colors = write_module._OVERLAY_COLORS
+    colors = write_module.OVERLAY_COLORS
     input_alpha = write_module._INPUT_LUMA_ALPHA
     color_alpha = write_module._OVERLAY_COLOR_ALPHA
     for index, mask_path in enumerate(mask_paths):
