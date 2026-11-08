@@ -8,6 +8,8 @@ import xml.etree.ElementTree as etree
 from unittest import mock
 
 import nornir_buildmanager.pipelinemanager_iterate_filters as iterate_filters
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 from nornir_buildmanager.volumemanager import XElementWrapper
 
 
@@ -257,6 +259,61 @@ class ResolveIterateCandidatesTests(unittest.TestCase):
 
         self.assertEqual(len(legacy), 3)
         self.assertEqual([candidate.attrib['Number'] for candidate in optimized], ['691'])
+
+
+_STOS_XPATH = 'Block/StosGroup/SectionMappings/Transform'
+_STOS_MAPPED_SECTIONS = range(1, 51)
+
+
+def _build_stos_volume() -> XElementWrapper:
+    """Volume with two StosGroups, each mapping section n onto n - 1 for n in 1..50."""
+    volume = XElementWrapper(tag='Volume')
+    block = XElementWrapper(tag='Block', attrib={'Name': 'TEM'})
+    volume.append(block)
+    for group_name in ('Grid16', 'Grid8'):
+        group = XElementWrapper(tag='StosGroup', attrib={'Name': group_name})
+        block.append(group)
+        for mapped in _STOS_MAPPED_SECTIONS:
+            mappings = XElementWrapper(tag='SectionMappings', attrib={'MappedSectionNumber': str(mapped)})
+            group.append(mappings)
+            mappings.append(XElementWrapper(tag='Transform', attrib={
+                'Name': f'{group_name}:{mapped}-{mapped - 1}',
+                'ControlSectionNumber': str(mapped - 1),
+                'MappedSectionNumber': str(mapped),
+            }))
+    return volume
+
+
+class StosTransformIterateTests(unittest.TestCase):
+    """Cleanup iterates Block/StosGroup/SectionMappings/Transform with RequireSetMembership on -Sections."""
+
+    @given(
+        attribute=st.sampled_from(['ControlSectionNumber', 'MappedSectionNumber']),
+        sections=st.sets(st.integers(min_value=-1, max_value=52),
+                         max_size=iterate_filters.POINT_LOOKUP_MAX + 8),
+    )
+    @example(attribute='ControlSectionNumber', sections={2, 3})
+    @example(attribute='MappedSectionNumber', sections={2, 3})
+    @settings(max_examples=60, deadline=None)
+    def test_candidates_are_every_transform_whose_section_is_listed(
+            self, attribute: str, sections: set[int]) -> None:
+        """Short -Sections lists found no StosGroup transforms, so Cleanup -Sections skipped their validation."""
+        volume = _build_stos_volume()
+        iterate_node = etree.Element('Iterate', XPath=_STOS_XPATH, VariableName='TransformNode')
+        etree.SubElement(iterate_node, 'RequireSetMembership', {'Attribute': attribute, 'List': '#Sections'})
+        arg_set = mock.Mock()
+        arg_set.SubstituteStringVariables = lambda value: value
+        arg_set.TryGetSubstituteObject = (
+            lambda value: (True, sorted(sections)) if value == '#Sections' else (False, None))
+
+        candidates = iterate_filters.resolve_iterate_candidates(
+            volume, _STOS_XPATH, iterate_node, arg_set, volume, lambda *args, **kwargs: volume)
+
+        expected = [
+            transform.attrib['Name'] for transform in volume.findall(_STOS_XPATH)
+            if int(transform.attrib[attribute]) in sections
+        ]
+        self.assertEqual([candidate.attrib['Name'] for candidate in candidates], expected)
 
 
 class SortIterateCandidatesTests(unittest.TestCase):

@@ -444,21 +444,9 @@ def _try_point_lookup_candidates(
                 candidates.append(element)
         return candidates
 
-    if base_xpath == _STOS_TRANSFORM_XPATH:
-        for attribute in ('ControlSectionNumber', 'MappedSectionNumber'):
-            membership = _membership_filter_for_attribute(filters, attribute)
-            if membership is None or not membership.list_resolved or membership.allowed is None:
-                continue
-            if len(membership.allowed) == 0:
-                return []
-            if len(membership.allowed) <= POINT_LOOKUP_MAX:
-                candidates = []
-                for value in membership.allowed:
-                    element = root_for_search.find(f"Transform[@{attribute}='{value}']")
-                    if element is not None and element_passes_iterate_filters(element, filters):
-                        candidates.append(element)
-                return candidates
-
+    # Block/StosGroup/SectionMappings/Transform has no point lookup: its transforms sit three
+    # levels below the search root and every StosGroup holds one per section, so a single
+    # find per section number cannot serve it; the caller's filtered findall does.
     return None
 
 
