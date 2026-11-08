@@ -12,6 +12,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import datetime
 from collections.abc import Mapping
 from typing import Iterable, NamedTuple, Callable, Sequence, cast
@@ -1132,19 +1133,23 @@ def SolveImportTileGains(histogram_cache_path: str,
     if cached is not None:
         return cached
 
+    started = time.perf_counter()
     result = tile_gains.compute_tile_gains(placements, read_tile, downsample, low=0.5, high=float('inf'))
+    elapsed = time.perf_counter() - started
     solved = {int(t): round(float(g), 6) for t, g in result.gains.items()}
     gains = ImportTileGains(solved, tile_gains.gains_checksum(solved), float(result.residual_mad),
                             int(result.pairs_used))
     values = np.array(list(solved.values())) if solved else np.ones(1)
     label = '' if section_number is None else f"section {section_number}: "
     dim = f", {len(gains.flagged)} tiles too dim to correct" if gains.flagged else ''
+    unpaired = f", {len(result.tiles_without_pairs)} without usable overlaps (gain from capture-order ties)"         if result.tiles_without_pairs else ''
     prettyoutput.Log(f"Tile gains {label}{len(solved)} tiles, {result.pairs_used} overlaps "
                      f"({result.pairs_rejected} rejected, {result.pairs_skipped} without tissue), "
-                     f"residual MAD {result.residual_mad:.4f}, gain {values.min():.3f}-{values.max():.3f}{dim}")
+                     f"residual MAD {result.residual_mad:.4f}, gain {values.min():.3f}-{values.max():.3f}{dim}{unpaired}, solved in {elapsed:.0f} s")
     meta = {'version': GAINS_CACHE_VERSION, 'variant': variant, 'downsample': downsample,
             'inputs': _cache_input_basenames(cache_inputs), 'gains': {str(t): g for t, g in solved.items()},
-            'residual_mad': gains.residual_mad, 'pairs_used': gains.pairs_used}
+            'residual_mad': gains.residual_mad, 'pairs_used': gains.pairs_used,
+            'solve_seconds': round(elapsed, 1), 'tiles_without_pairs': sorted(int(t) for t in result.tiles_without_pairs)}
     try:
         os.makedirs(os.path.dirname(gains_cache_path) or '.', exist_ok=True)
         with open(gains_cache_path, 'w', encoding='utf-8') as f:
