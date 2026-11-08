@@ -7,9 +7,10 @@ import unittest
 import xml.etree.ElementTree as etree
 from unittest import mock
 
-import nornir_buildmanager.pipelinemanager_iterate_filters as iterate_filters
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
+
+import nornir_buildmanager.pipelinemanager_iterate_filters as iterate_filters
 from nornir_buildmanager.volumemanager import XElementWrapper
 
 
