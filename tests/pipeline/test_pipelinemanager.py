@@ -3,12 +3,16 @@ Created on Jan 6, 2014
 
 @author: u0490822
 '''
+import argparse
 import json
 import os
 import tempfile
 import unittest
 import xml.etree.ElementTree as etree
 from unittest import mock
+
+from hypothesis import example, given, settings
+from hypothesis import strategies as st
 
 import nornir_buildmanager.argparsexml as argparsexml
 import nornir_buildmanager.pipelinemanager as pm
@@ -226,6 +230,38 @@ class TestProcessPythonCallElementArgs(unittest.TestCase):
         self.assertEqual(captured["Parameters"], {"MinCutoff": 7, "Gamma": 2.5})
         self.assertEqual(argset.Attribs, {})
         self.assertEqual(argset.Parameters, {})
+
+
+class TestFatalSetupExitCodes(unittest.TestCase):
+    """Fatal setup errors must exit non-zero so wrappers checking the exit code see the failure (nornir-review#266)."""
+
+    def assertExitsNonZero(self, func, *args) -> None:
+        with mock.patch("nornir_buildmanager.pipelinemanager.prettyoutput.LogErr"), \
+                self.assertRaises(SystemExit) as raised:
+            func(*args)
+        self.assertNotIn(raised.exception.code, (None, 0))
+
+    @settings(max_examples=25, deadline=None)
+    @given(name=st.from_regex(r"[H-Z][A-Za-z]{0,11}", fullmatch=True))
+    @example(name="InputFilter")
+    def test_undefined_xpath_variable_exits_nonzero(self, name: str) -> None:
+        # Names cannot start with 'G', so no prefix of the variable matches the defined 'Gamma'.
+        argset = pm.ArgumentSet()
+        argset.AddArguments({"Gamma": 1.0})
+        self.assertExitsNonZero(argset.SubstituteStringVariables, f"Filter[@Name='#{name}']")
+
+    def test_missing_pipeline_xml_exits_nonzero(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            missing = os.path.join(temp_dir, "Pipelines.xml")
+            self.assertExitsNonZero(pm.PipelineManager.LoadPipelineXML, missing)
+
+    def test_volume_load_failure_exits_nonzero(self) -> None:
+        manager = pm.PipelineManager(pipelinesRoot=etree.ElementTree(etree.Element("Root")),
+                                     pipelineData=etree.Element("Pipeline"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            args = argparse.Namespace(volumepath=temp_dir)
+            with mock.patch.object(pm.VolumeManager, "Load", return_value=None):
+                self.assertExitsNonZero(manager.Execute, args)
 
 
 if __name__ == "__main__":

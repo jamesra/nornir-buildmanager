@@ -147,7 +147,7 @@ class ArgumentSet:
         # logger = logging.getLogger(__name__ + ".ReplaceVariable")
         # logger.error("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
         prettyoutput.LogErr("nornir_buildmanager XPath variable not defined.\nXPath: " + xpath)
-        sys.exit()
+        sys.exit(2)
 
     def TryGetSubstituteObject(self, val: str):
         """Place an object directly into a dictionary.
@@ -466,7 +466,7 @@ class PipelineManager:
             except FileNotFoundError:
                 PipelineManager.logger.critical("Provided pipeline filename does not exist: " + PipelineXML)
                 prettyoutput.LogErr("Provided pipeline filename does not exist: " + PipelineXML)
-                sys.exit()
+                sys.exit(2)
         elif isinstance(PipelineXML, bytes):
             str_xml = PipelineXML.decode('utf-8')
             return ElementTree.ElementTree(ElementTree.fromstring(str_xml))  # type: ignore[return-value]
@@ -600,9 +600,9 @@ class PipelineManager:
             self.VolumeTree = VolumeManager.Load(args.volumepath, Create=True)
 
         if self.VolumeTree is None:
-            PipelineManager.logger.critical("Could not load or create volume.xml " + args.outputpath)
-            prettyoutput.LogErr("Could not load or create volume.xml " + args.outputpath)
-            sys.exit()
+            PipelineManager.logger.critical("Could not load or create volume.xml " + args.volumepath)
+            prettyoutput.LogErr("Could not load or create volume.xml " + args.volumepath)
+            sys.exit(2)
 
         self._StageTimer = TaskTimer()
         self._PipelineName = getattr(args, 'PipelineName', None) or self.PipelineData.get('Name', 'unknown')
