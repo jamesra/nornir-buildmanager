@@ -90,11 +90,13 @@
                       help="Quantize tiles as captured.  By default each tile is divided by its brightness gain, solved from the Stage overlaps, before it is quantized, so a tile dimmed by the beam keeps its texture instead of collapsing into a few codes.  The gains are recorded in the tiles as diagnostics only.  A section that already holds a crushed filter keeps its kind either way."/>
             <Argument flag="-CropBorder" dest="CropBorder" type="int" default="0" required="False"
                       help="Pixels to remove from every edge of each tile, for MRC frames with an artefact border (RC1: 4096 frames whose outer 8 pixels are replicated rows and columns).  The Stage mosaic places the cropped tile.  Applies to tiles the import writes; tiles already exported keep their crop."/>
+            <Argument flag="-CropTo" dest="CropTo" type="int" default="0" required="False"
+                      help="Crop every frame symmetrically to this many pixels square, in place of -CropBorder.  The border is worked out per MRC, so a volume that mixes frame sizes needs one setting (RC1: -CropTo 4080 crops the 4096 frames and leaves the 4080 frames alone).  A frame already this size is not cropped.  Cannot be combined with -CropBorder."/>
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.mrc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension"
-                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK" CropBorder="#CropBorder" NoGainFirst="#NoGainFirst"/>
+                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK" CropBorder="#CropBorder" CropTo="#CropTo" NoGainFirst="#NoGainFirst"/>
         <!-- Per-tile brightness gains (beam drift, white stripe) on Stage, for crushed filters only; skipped when
              the filter's gains are already current. Level 1: the only level an import writes. -->
         <Iterate VariableName="section_node" XPath="Block/Section">

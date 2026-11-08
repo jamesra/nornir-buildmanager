@@ -930,6 +930,29 @@ def CropBorderForImport(crop_border: int | str | None) -> int:
     return border
 
 
+def CropBorderForFrame(frame_shape: Sequence[int], crop_to: int) -> int:
+    """The border that crops a frame of *frame_shape* to ``crop_to`` pixels square, 0 for a frame already that size.
+
+    Backs ``-CropTo`` for MRC imports, whose frame size varies within a volume (RC1: 4096 frames with an 8 pixel
+    artefact border beside 4080 frames that have none).  A frame smaller than the target is left as it is.
+
+    :raises ValueError: when the target is negative, or the frame is not square or differs from the target by an odd
+        number of pixels, so no symmetric border exists.
+    """
+    if crop_to < 0:
+        raise ValueError(f"-CropTo must not be negative: {crop_to}")
+    if crop_to == 0:
+        return 0
+    if len(set(int(n) for n in frame_shape)) != 1:
+        raise ValueError(f"-CropTo needs a square frame, not {tuple(int(n) for n in frame_shape)}")
+    excess = int(frame_shape[0]) - crop_to
+    if excess <= 0:
+        return 0
+    if excess % 2:
+        raise ValueError(f"-CropTo {crop_to} cannot be reached symmetrically from a {int(frame_shape[0])} pixel frame")
+    return excess // 2
+
+
 def CameraBppForImport(camera_bpp: int | None, no_crush: bool,
                        logger: logging.Logger | None = None) -> int | None:
     """The -CameraBpp value an import should use: unchanged for -NoCrush, None (with a warning) otherwise.

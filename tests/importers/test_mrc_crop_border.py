@@ -110,6 +110,25 @@ class TestCropBorderMarkerAndArgument(unittest.TestCase):
         with self.assertRaises(ValueError):
             shared.CropBorderForImport(-1)
 
+    def test_crop_to_works_out_the_border_per_frame(self) -> None:
+        self.assertEqual(shared.CropBorderForFrame((4096, 4096), 4080), 8)
+        self.assertEqual(shared.CropBorderForFrame((4080, 4080), 4080), 0)
+        self.assertEqual(shared.CropBorderForFrame((4064, 4064), 4080), 0)
+        self.assertEqual(shared.CropBorderForFrame((4096, 4096), 0), 0)
+
+    def test_crop_to_rejects_frames_it_cannot_crop_symmetrically(self) -> None:
+        with self.assertRaises(ValueError):
+            shared.CropBorderForFrame((4096, 4096), 4081)
+        with self.assertRaises(ValueError):
+            shared.CropBorderForFrame((4096, 4080), 4064)
+        with self.assertRaises(ValueError):
+            shared.CropBorderForFrame((4096, 4096), -1)
+
+    def test_import_refuses_crop_border_with_crop_to(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaises(ValueError):
+                next(mrc.Import(None, ImportPath=folder, extension='mrc', Min=0, Max=1, CropBorder=8, CropTo=4080))
+
 
 if __name__ == '__main__':
     unittest.main()
