@@ -22,17 +22,26 @@ from nornir_buildmanager.metadata.migrate import compare_trees
 from nornir_buildmanager.metadata.sqlite_backend import DEFAULT_DB_FILENAME, SQLiteMetadataBackend
 from nornir_buildmanager.metadata.xml_backend import XMLMetadataBackend
 
-from .metadata_port_characterize_data import build_volume
+from .metadata_port_characterize_data import build_volume, record_container_sources
 
 FLAG = feature_flags.SHADOW_SQLITE_ENV
 
 
-@pytest.fixture(autouse=True)
-def _fresh_process_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Shadow on, parity checks on, and an empty signature cache, as in a newly started process."""
+@pytest.fixture(autouse=True, params=['xml', 'sqlite'])
+def read_source(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Shadow on, parity checks on, and an empty signature cache, as in a newly started process.
+
+    Every test runs with container reads on XML and on SQLite (metadata port stage 5 gate);
+    ``test_containers_load_from_the_parametrized_source`` fails if the read flag stops following the param.
+    """
     monkeypatch.setenv(FLAG, '1')
     monkeypatch.setenv(feature_flags.SHADOW_VERIFY_ENV, '1')
+    if request.param == 'sqlite':
+        monkeypatch.setenv(feature_flags.READ_SQLITE_ENV, '1')
+    else:
+        monkeypatch.delenv(feature_flags.READ_SQLITE_ENV, raising=False)
     monkeypatch.setattr(shadow_write, '_known_signatures', {})
+    return request.param
 
 
 def _volume(tmp_path: Any) -> str:
@@ -89,6 +98,16 @@ def _count_syncs(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return synced
 
 
+def test_containers_load_from_the_parametrized_source(monkeypatch, tmp_path, read_source) -> None:
+    root = _volume(tmp_path)
+    sources = record_container_sources(monkeypatch)
+
+    _load_all(root)
+
+    assert len(sources) > 1, 'the volume and its linked containers'
+    assert all(used is (read_source == 'sqlite') for used in sources.values()), sources
+
+
 def test_saves_record_each_container_signature(tmp_path) -> None:
     root = _volume(tmp_path)
     section = _section_dir(root)
@@ -117,13 +136,14 @@ def test_unchanged_files_cause_no_database_write(monkeypatch, tmp_path) -> None:
     root = _volume(tmp_path)
     synced = _count_syncs(monkeypatch)
     connections: list[str] = []
-    real_connect = SQLiteMetadataBackend._get_connection
 
-    def counting_connect(self):
-        connections.append(self.db_path)
-        return real_connect(self)
+    # Patched on shadow_write only: the SQLite read path opens its own connection per container load.
+    class CountingBackend(SQLiteMetadataBackend):
+        def _get_connection(self):
+            connections.append(self.db_path)
+            return super()._get_connection()
 
-    monkeypatch.setattr(SQLiteMetadataBackend, '_get_connection', counting_connect)
+    monkeypatch.setattr(shadow_write, 'SQLiteMetadataBackend', CountingBackend)
 
     _load_all(root)
     _load_all(root)

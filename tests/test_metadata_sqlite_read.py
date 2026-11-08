@@ -42,6 +42,7 @@ from .metadata_port_characterize_data import (
     canonical,
     merged_oracle,
     normalized_sha,
+    record_container_sources,
     snapshot,
 )
 
@@ -63,16 +64,7 @@ def _no_tails(element: Any) -> bool:
 @pytest.fixture
 def sources(monkeypatch) -> dict[str, bool]:
     """Container directory -> whether its latest load built the tree from SQLite."""
-    used: dict[str, bool] = {}
-    real = sqlite_read.load_container_element
-
-    def recording(container_dir: str, xml_root: ElementTree.Element) -> ElementTree.Element:
-        element = real(container_dir, xml_root)
-        used[os.path.abspath(container_dir)] = element is not xml_root
-        return element
-
-    monkeypatch.setattr(sqlite_read, 'load_container_element', recording)
-    return used
+    return record_container_sources(monkeypatch)
 
 
 def _db(root: str) -> contextlib.closing[sqlite3.Connection]:

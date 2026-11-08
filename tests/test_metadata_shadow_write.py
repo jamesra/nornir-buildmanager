@@ -30,7 +30,12 @@ from nornir_buildmanager.metadata.volume_metadata import MetadataNode
 from nornir_buildmanager.metadata.xml_backend import XMLMetadataBackend
 from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 
-from .metadata_port_characterize_data import build_volume, normalized_sha, snapshot
+from .metadata_port_characterize_data import (
+    build_volume,
+    normalized_sha,
+    record_container_sources,
+    snapshot,
+)
 
 FLAG = feature_flags.SHADOW_SQLITE_ENV
 
@@ -61,10 +66,19 @@ def _force_save(root: str, flag: str) -> None:
     vm.VolumeManager.Save(volume)
 
 
-@pytest.fixture(autouse=True)
-def _verify_parity(monkeypatch):
-    """Parity is opt-in in builds; these tests rely on it to report a wrong shadow."""
+@pytest.fixture(autouse=True, params=['xml', 'sqlite'])
+def read_source(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Parity is opt-in in builds; these tests rely on it to report a wrong shadow.
+
+    Every test runs with container reads on XML and on SQLite (metadata port stage 5 gate);
+    ``test_containers_load_from_the_parametrized_source`` fails if the read flag stops following the param.
+    """
     monkeypatch.setenv(feature_flags.SHADOW_VERIFY_ENV, '1')
+    if request.param == 'sqlite':
+        monkeypatch.setenv(feature_flags.READ_SQLITE_ENV, '1')
+    else:
+        monkeypatch.delenv(feature_flags.READ_SQLITE_ENV, raising=False)
+    return request.param
 
 
 def _differences(root: str) -> list:
@@ -97,6 +111,18 @@ def _no_shadow_warnings() -> Iterator[None]:
     finally:
         shadow_logger.removeHandler(handler)
     assert [r.getMessage() for r in handler.records] == []
+
+
+def test_containers_load_from_the_parametrized_source(monkeypatch, tmp_path, read_source):
+    monkeypatch.setenv(FLAG, '1')
+    root = os.path.join(str(tmp_path), 'vol')
+    build_volume(root)
+    sources = record_container_sources(monkeypatch)
+
+    _load(root).LoadAllLinkedNodes()
+
+    assert len(sources) > 1, 'the volume and its linked containers'
+    assert all(used is (read_source == 'sqlite') for used in sources.values()), sources
 
 
 @pytest.mark.parametrize('value, expected', [
@@ -312,19 +338,20 @@ def test_parity_reload_is_skipped_unless_verify_is_on(monkeypatch, tmp_path):
     monkeypatch.delenv(feature_flags.SHADOW_VERIFY_ENV, raising=False)
     root = os.path.join(str(tmp_path), 'vol')
     build_volume(root)
-    reloads: list[int] = []
-    real_reload = shadow_write.load_container_level
-    monkeypatch.setattr(shadow_write, 'load_container_level',
-                        lambda *args: reloads.append(1) or real_reload(*args))
+    checks: list[int] = []
+    real_compare = shadow_write.compare_trees
+    # shadow_write's own binding: the SQLite read path reloads rows and compares them through sqlite_read's.
+    monkeypatch.setattr(shadow_write, 'compare_trees',
+                        lambda *args: checks.append(1) or real_compare(*args))
 
     _edit_block_notes(root, 'unverified')
 
-    assert reloads == []
+    assert checks == []
     assert _differences(root) == [], 'the shadow is still written without the check'
 
     monkeypatch.setenv(feature_flags.SHADOW_VERIFY_ENV, '1')
     _edit_block_notes(root, 'verified')
-    assert reloads
+    assert checks
 
 
 def test_shadow_uses_the_written_bytes_instead_of_reading_the_file(monkeypatch, tmp_path):

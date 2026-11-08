@@ -21,6 +21,7 @@ from xml.etree import ElementTree
 
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager as vm
+from nornir_buildmanager.metadata import sqlite_read
 from nornir_buildmanager.metadatautils import GetOrCreateHistogramNodeHelper
 
 FIXED_DATE = '2020-01-02 03:04:05+00:00'
@@ -403,3 +404,20 @@ def ancestry_key(element: Any, parents: dict | None = None) -> tuple:
         chain.append((node.tag, tuple(sorted(node.attrib.items()))))
         node = parent
     return tuple(reversed(chain))
+
+
+def record_container_sources(monkeypatch: Any) -> dict[str, bool]:
+    """Return container directory -> whether its latest load built the tree from SQLite rows.
+
+    Patches ``sqlite_read.load_container_element`` through *monkeypatch*; the dict fills as containers load.
+    """
+    used: dict[str, bool] = {}
+    real = sqlite_read.load_container_element
+
+    def recording(container_dir: str, xml_root: ElementTree.Element) -> ElementTree.Element:
+        element = real(container_dir, xml_root)
+        used[os.path.abspath(container_dir)] = element is not xml_root
+        return element
+
+    monkeypatch.setattr(sqlite_read, 'load_container_element', recording)
+    return used
