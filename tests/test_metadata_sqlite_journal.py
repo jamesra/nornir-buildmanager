@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+import sys
 import tempfile
 
 import pytest
@@ -31,6 +32,11 @@ _segment = st.text(alphabet='abcxyz', min_size=1, max_size=3)
 _abs_path = st.lists(_segment, min_size=0, max_size=4).map(lambda parts: '/' + '/'.join(parts))
 _mount_table = st.lists(st.tuples(_abs_path, st.sampled_from(NETWORK_TYPES + LOCAL_TYPES)), max_size=6)
 
+# Windows never consults a mount table (choose_journal_mode asks for the drive type) and
+# os.path.realpath there turns '/data/...' into '<drive>:\\data\\...', so POSIX mount tables cannot match.
+posix_mounts_only = pytest.mark.skipif(sys.platform == 'win32',
+                                       reason='mount tables are POSIX; Windows decides by drive type')
+
 
 def _test_dir() -> str:
     root = os.path.join(os.environ.get('TESTOUTPUTPATH', tempfile.gettempdir()), 'test_metadata_sqlite_journal')
@@ -49,6 +55,20 @@ def _reference_mount(path: str, mounts: list[tuple[str, str]]) -> tuple[str, str
     return best[1] if best else None
 
 
+def _simulate_filesystem(monkeypatch: pytest.MonkeyPatch, fstype: str) -> str:
+    """Put every database path on a filesystem of type *fstype* and return the filesystem name the choice reports.
+
+    On Windows a network type becomes a remote drive, since the drive type decides there.
+    """
+    if sys.platform == 'win32':
+        remote = sqlite_journal.is_network_filesystem(fstype)
+        monkeypatch.setattr(sqlite_journal, '_windows_drive_is_remote', lambda drive: remote)
+        return 'remote drive' if remote else 'local drive'
+    monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', fstype)])
+    return fstype
+
+
+@posix_mounts_only
 @pytest.mark.parametrize('fstype', NETWORK_TYPES)
 def test_network_filesystems_use_rollback_journal(fstype: str) -> None:
     mounts = [('/', 'overlay'), ('/data', fstype)]
@@ -56,6 +76,7 @@ def test_network_filesystems_use_rollback_journal(fstype: str) -> None:
     assert choice == sqlite_journal.JournalChoice('DELETE', fstype, '/data')
 
 
+@posix_mounts_only
 @pytest.mark.parametrize('fstype', LOCAL_TYPES)
 def test_local_filesystems_use_wal(fstype: str) -> None:
     mounts = [('/', 'overlay'), ('/data', fstype)]
@@ -68,6 +89,7 @@ def test_unc_paths_use_rollback_journal_without_a_mount_table(path: str) -> None
     assert (choice.mode, choice.filesystem) == ('DELETE', 'UNC')
 
 
+@posix_mounts_only
 def test_unknown_filesystem_uses_rollback_journal(monkeypatch: pytest.MonkeyPatch) -> None:
     assert sqlite_journal.choose_journal_mode('/vol/VolumeData.db', []).mode == 'DELETE'
     monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: None)
@@ -83,6 +105,7 @@ def test_windows_drive_type_decides(monkeypatch: pytest.MonkeyPatch, remote: boo
     assert sqlite_journal.choose_journal_mode('//nas/share/VolumeData.db').mode == 'DELETE'
 
 
+@posix_mounts_only
 def test_nested_local_mount_inside_a_share_and_prefix_boundaries() -> None:
     mounts = [('/', 'ext4'), ('/mnt/share', 'cifs'), ('/mnt/share/cache', 'tmpfs')]
     assert sqlite_journal.choose_journal_mode('/mnt/share/cache/VolumeData.db', mounts).mode == 'WAL'
@@ -90,6 +113,7 @@ def test_nested_local_mount_inside_a_share_and_prefix_boundaries() -> None:
     assert sqlite_journal.choose_journal_mode('/mnt/shared/VolumeData.db', mounts).mode == 'WAL'
 
 
+@posix_mounts_only
 def test_symlink_into_a_share_is_resolved() -> None:
     with tempfile.TemporaryDirectory(dir=_test_dir()) as tmp:
         share = os.path.join(tmp, 'share')
@@ -136,7 +160,7 @@ def _journal_mode(db_path: str) -> str:
 @pytest.mark.parametrize('fstype, expected', [('ext4', 'WAL'), ('cifs', 'DELETE'), ('virtiofs', 'DELETE')])
 def test_backend_connection_applies_choice_and_busy_timeout(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
                                                             fstype: str, expected: str) -> None:
-    monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', fstype)])
+    filesystem = _simulate_filesystem(monkeypatch, fstype)
     with tempfile.TemporaryDirectory(dir=_test_dir()) as tmp, caplog.at_level(logging.INFO, sqlite_journal.__name__):
         backend = SQLiteMetadataBackend(tmp)
         backend.save(MetadataNode(tag='Volume', attribs={'Name': 'v'}))
@@ -148,16 +172,16 @@ def test_backend_connection_applies_choice_and_busy_timeout(monkeypatch: pytest.
         assert _journal_mode(backend.db_path) == expected
         assert not os.path.exists(backend.db_path + '-shm') or expected == 'WAL'
         logged = [r.getMessage() for r in caplog.records if backend.db_path in r.getMessage()]
-        assert len(logged) == 1 and expected in logged[0] and fstype in logged[0]
+        assert len(logged) == 1 and expected in logged[0] and filesystem in logged[0]
 
 
 def test_wal_database_moved_to_a_share_switches_to_rollback_journal(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory(dir=_test_dir()) as tmp:
         backend = SQLiteMetadataBackend(tmp)
-        monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'ext4')])
+        _simulate_filesystem(monkeypatch, 'ext4')
         backend.save(MetadataNode(tag='Volume'))
         assert _journal_mode(backend.db_path) == 'WAL'
-        monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'nfs')])
+        _simulate_filesystem(monkeypatch, 'nfs')
         loaded = backend.load()
         assert loaded is not None and loaded.tag == 'Volume'
         assert _journal_mode(backend.db_path) == 'DELETE'
@@ -166,17 +190,17 @@ def test_wal_database_moved_to_a_share_switches_to_rollback_journal(monkeypatch:
 def test_schema_version_read_on_a_share_leaves_wal(monkeypatch: pytest.MonkeyPatch) -> None:
     with tempfile.TemporaryDirectory(dir=_test_dir()) as tmp:
         backend = SQLiteMetadataBackend(tmp)
-        monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'ext4')])
+        _simulate_filesystem(monkeypatch, 'ext4')
         backend.save(MetadataNode(tag='Volume'))
         assert _journal_mode(backend.db_path) == 'WAL'
-        monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'cifs')])
+        _simulate_filesystem(monkeypatch, 'cifs')
         assert backend.get_schema_version() == 1
         assert _journal_mode(backend.db_path) == 'DELETE'
         assert not os.path.exists(backend.db_path + '-shm')
 
 
 def test_mode_sqlite_cannot_use_is_a_warning(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
-    monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'ext4')])
+    _simulate_filesystem(monkeypatch, 'ext4')
     conn = sqlite3.connect(':memory:')
     try:
         with caplog.at_level(logging.WARNING, sqlite_journal.__name__):
@@ -195,7 +219,7 @@ def test_wal_database_held_open_elsewhere_is_not_kept_on_a_share(monkeypatch: py
             holder.execute('CREATE TABLE t (x)')
             holder.execute('BEGIN')
             holder.execute('SELECT * FROM t').fetchall()
-            monkeypatch.setattr(sqlite_journal, 'read_mount_table', lambda: [('/', 'cifs')])
+            _simulate_filesystem(monkeypatch, 'cifs')
             conn = sqlite3.connect(db_path, timeout=0)
             try:
                 with pytest.raises(sqlite3.OperationalError, match='locked'):
