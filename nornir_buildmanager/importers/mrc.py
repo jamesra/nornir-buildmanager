@@ -56,10 +56,7 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     NoCrush = bool(kwargs.get('NoCrush', False))
     CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
-    CropBorder = shared.CropBorderForImport(kwargs.get('CropBorder', None))
-    CropTo = shared.CropBorderForImport(kwargs.get('CropTo', None))
-    if CropBorder and CropTo:
-        raise ValueError("-CropBorder and -CropTo cannot be combined")
+    CropTo = shared.CropToForImport(kwargs.get('CropTo', None))
     NoGainFirst = bool(kwargs.get('NoGainFirst', False))
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
@@ -94,7 +91,6 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                                               ContrastMap=ContrastMap,
                                               NoCrush=NoCrush,
                                               CrushK=CrushK,
-                                              CropBorder=CropBorder,
                                               CropTo=CropTo,
                                               NoGainFirst=NoGainFirst,
                                               read_path=lambda p=file_fullpath: staging.acquire(p),
@@ -260,7 +256,6 @@ class MRCImport:
                  debug: bool | None = None,
                  NoCrush: bool = False,
                  CrushK: float | None = None,
-                 CropBorder: int = 0,
                  CropTo: int = 0,
                  NoGainFirst: bool = False,
                  read_path: Callable[[], str] | None = None):
@@ -270,12 +265,11 @@ class MRCImport:
         into a ``Raw8`` filter of section-wide noise-step codes. ``NoCrush`` keeps the legacy
         contrast-stretched ``Raw16`` filter, as does an existing uncrushed ``Raw16`` import.
 
-        :param CropBorder: Pixels removed from every edge of each tile, for MRC frames with an artefact border.  The
-            Stage transforms place the cropped tile, so its offset moves by the border.  Applies to tiles this call
-            writes: tiles already exported keep the crop they were written with.
-        :param CropTo: Crop each frame symmetrically to this many pixels square, in place of ``CropBorder``: the border
-            is worked out from this MRC's frame, so a volume that mixes frame sizes needs one setting.  A frame already
-            this size (or smaller) is not cropped.
+        :param CropTo: Crop each frame symmetrically to this many pixels square, for MRC frames with an artefact border.
+            The border is worked out from this MRC's frame, so a volume that mixes frame sizes needs one setting.  A
+            frame already this size (or smaller) is not cropped.  The Stage transforms place the cropped tile, so its
+            offset moves by the border.  Applies to tiles this call writes: tiles already exported keep the crop they
+            were written with.
         :param NoGainFirst: Quantize tiles as captured.  By default crushed tiles are divided by their brightness gain,
             solved from the Stage overlaps, before they are quantized (the gain is recorded in the tile as a diagnostic;
             nothing downstream corrects with it).  A section whose crushed filter already exists keeps its kind.
@@ -311,8 +305,7 @@ class MRCImport:
         mrcfile: MRCFile = MRCFile.Load(mrc_fullpath)
         if CameraBpp is None:
             CameraBpp = mrcfile.bytes_per_pixel * 8
-        if CropTo:
-            CropBorder = shared.CropBorderForFrame(mrcfile.img_shape, CropTo)
+        CropBorder = shared.CropBorderForFrame(mrcfile.img_shape, CropTo)
 
         ExistingSectionInfo = shared.GetSectionInfo(mrc_fullpath)
         SectionNumber = ExistingSectionInfo.number

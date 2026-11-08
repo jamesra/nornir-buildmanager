@@ -917,17 +917,17 @@ CAMERA_BPP_IGNORED_WHEN_CRUSHING = (
     "measured noise and the raw counts, so a camera bit depth is unnecessary when crushing.")
 
 
-def CropBorderForImport(crop_border: int | str | None) -> int:
-    """The -CropBorder value of an import: pixels removed from every tile edge, 0 for none.
+def CropToForImport(crop_to: int | str | None) -> int:
+    """The -CropTo value of an import: the square size frames are cropped to, 0 for no cropping.
 
     :raises ValueError: when the value is negative or not a whole number.
     """
-    if crop_border is None or crop_border == '':
+    if crop_to is None or crop_to == '':
         return 0
-    border = int(crop_border)
-    if border < 0:
-        raise ValueError(f"-CropBorder must not be negative: {border}")
-    return border
+    size = int(crop_to)
+    if size < 0:
+        raise ValueError(f"-CropTo must not be negative: {size}")
+    return size
 
 
 def CropBorderForFrame(frame_shape: Sequence[int], crop_to: int) -> int:

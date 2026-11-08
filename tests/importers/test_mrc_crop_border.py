@@ -1,4 +1,4 @@
-"""-CropBorder: MRC tiles lose an artefact border on export and the Stage mosaic places the cropped tile."""
+"""-CropTo: MRC tiles lose an artefact border on export and the Stage mosaic places the cropped tile."""
 from __future__ import annotations
 
 import os
@@ -104,11 +104,11 @@ class TestCropBorderMarkerAndArgument(unittest.TestCase):
             self.assertEqual(mrc._exported_crop_border(level), 0)
 
     def test_argument_parsing(self) -> None:
-        self.assertEqual(shared.CropBorderForImport(None), 0)
-        self.assertEqual(shared.CropBorderForImport('8'), 8)
-        self.assertEqual(shared.CropBorderForImport(8), 8)
+        self.assertEqual(shared.CropToForImport(None), 0)
+        self.assertEqual(shared.CropToForImport('4080'), 4080)
+        self.assertEqual(shared.CropToForImport(4080), 4080)
         with self.assertRaises(ValueError):
-            shared.CropBorderForImport(-1)
+            shared.CropToForImport(-1)
 
     def test_crop_to_works_out_the_border_per_frame(self) -> None:
         self.assertEqual(shared.CropBorderForFrame((4096, 4096), 4080), 8)
@@ -123,11 +123,6 @@ class TestCropBorderMarkerAndArgument(unittest.TestCase):
             shared.CropBorderForFrame((4096, 4080), 4064)
         with self.assertRaises(ValueError):
             shared.CropBorderForFrame((4096, 4096), -1)
-
-    def test_import_refuses_crop_border_with_crop_to(self) -> None:
-        with tempfile.TemporaryDirectory() as folder:
-            with self.assertRaises(ValueError):
-                next(mrc.Import(None, ImportPath=folder, extension='mrc', Min=0, Max=1, CropBorder=8, CropTo=4080))
 
 
 if __name__ == '__main__':
