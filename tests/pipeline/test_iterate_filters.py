@@ -316,6 +316,40 @@ class StosTransformIterateTests(unittest.TestCase):
         ]
         self.assertEqual([candidate.attrib['Name'] for candidate in candidates], expected)
 
+    @given(
+        attribute=st.sampled_from(['ControlSectionNumber', 'MappedSectionNumber']),
+        sections=st.sets(st.integers(min_value=-1, max_value=52),
+                         max_size=iterate_filters.POINT_LOOKUP_MAX + 8),
+    )
+    @example(attribute='MappedSectionNumber', sections={7})
+    @example(attribute='ControlSectionNumber', sections={5, 6})
+    @settings(max_examples=60, deadline=None)
+    def test_bare_transform_iterate_returns_every_listed_transform(
+            self, attribute: str, sections: set[int]) -> None:
+        """XPath='Transform' under a SectionMappings yields every listed transform, not one per section number."""
+        mappings = XElementWrapper(tag='SectionMappings', attrib={'MappedSectionNumber': '7'})
+        for control in (6, 5, 8, 6):
+            mappings.append(XElementWrapper(tag='Transform', attrib={
+                'Name': f'{control}-7:{len(mappings)}',
+                'ControlSectionNumber': str(control),
+                'MappedSectionNumber': '7',
+            }))
+        iterate_node = etree.Element('Iterate', XPath='Transform', VariableName='TransformNode')
+        etree.SubElement(iterate_node, 'RequireSetMembership', {'Attribute': attribute, 'List': '#Sections'})
+        arg_set = mock.Mock()
+        arg_set.SubstituteStringVariables = lambda value: value
+        arg_set.TryGetSubstituteObject = (
+            lambda value: (True, sorted(sections)) if value == '#Sections' else (False, None))
+
+        candidates = iterate_filters.resolve_iterate_candidates(
+            mappings, 'Transform', iterate_node, arg_set, mappings, lambda *args, **kwargs: mappings)
+
+        expected = [
+            transform.attrib['Name'] for transform in mappings.findall('Transform')
+            if int(transform.attrib[attribute]) in sections
+        ]
+        self.assertEqual([candidate.attrib['Name'] for candidate in candidates], expected)
+
 
 class SortIterateCandidatesTests(unittest.TestCase):
     """Section iterate order is ascending number, independent of XML order."""

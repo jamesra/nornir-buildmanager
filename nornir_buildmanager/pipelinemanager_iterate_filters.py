@@ -23,16 +23,6 @@ if TYPE_CHECKING:
 POINT_LOOKUP_MAX = 32
 OR_PREDICATE_MAX = 8
 
-_STOS_TRANSFORM_XPATH = 'Block/StosGroup/SectionMappings/Transform'
-_DIRECT_XPATH_BASES = frozenset({
-    'Block/Section',
-    'Section',
-    'Channel',
-    'Filter',
-    'Block',
-    'Transform',
-    _STOS_TRANSFORM_XPATH,
-})
 _REGEX_METACHARACTERS = frozenset('.^$*+?{}[]\\|()')
 
 
@@ -92,11 +82,6 @@ def normalize_xpath_base(xpath: str) -> str:
     if '[' in xp:
         return xp.split('[', 1)[0]
     return xp
-
-
-def is_direct_iterate_xpath(xpath: str) -> bool:
-    """Return True when xpath is a v1 direct iterate path."""
-    return normalize_xpath_base(xpath) in _DIRECT_XPATH_BASES
 
 
 def _has_regex_metacharacters(value: str) -> bool:
@@ -388,33 +373,6 @@ def _try_point_lookup_candidates(
                 return candidates
             return None
 
-    transform_membership = None
-    for attribute in ('ControlSectionNumber', 'MappedSectionNumber'):
-        transform_membership = _membership_filter_for_attribute(filters, attribute)
-        if transform_membership is not None:
-            membership_attribute = attribute
-            break
-
-    if transform_membership is not None and base_xpath == 'Transform':
-        if not transform_membership.list_resolved:
-            return None
-        if transform_membership.allowed is not None and len(transform_membership.allowed) == 0:
-            return []
-
-        if transform_membership.allowed is None:
-            return None
-
-        allowed_values = transform_membership.allowed
-        assert allowed_values is not None
-        if len(allowed_values) <= POINT_LOOKUP_MAX:
-            candidates: list[XElementWrapper] = []
-            for value in allowed_values:
-                element = root_for_search.find(f"Transform[@{membership_attribute}='{value}']")
-                if element is not None and element_passes_iterate_filters(element, filters):
-                    candidates.append(element)
-            return candidates
-        return None
-
     literal_child_lookup = {
         'Channel': ('Channel', 'Name'),
         'Filter': ('Filter', 'Name'),
@@ -444,9 +402,9 @@ def _try_point_lookup_candidates(
                 candidates.append(element)
         return candidates
 
-    # Block/StosGroup/SectionMappings/Transform has no point lookup: its transforms sit three
-    # levels below the search root and every StosGroup holds one per section, so a single
-    # find per section number cannot serve it; the caller's filtered findall does.
+    # Transforms have no point lookup: a SectionMappings holds several transforms sharing a
+    # MappedSectionNumber (and every StosGroup one per section), so a single find per section
+    # number cannot serve them; the caller's filtered findall does.
     return None
 
 
@@ -519,10 +477,6 @@ def resolve_iterate_candidates(
     long_list_candidates = _try_long_list_section_candidates(root_for_search, base_xpath, filters)
     if long_list_candidates is not None:
         yield from long_list_candidates
-        return
-
-    if is_direct_iterate_xpath(xpath) and filters:
-        yield from _findall_filtered(root_for_search, xpath, filters)
         return
 
     if filters:
