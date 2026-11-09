@@ -350,20 +350,28 @@ class MRCImport:
         histogram_filename = f'Histogram-{SectionNumber}.xml'
         histogram_cache_path = os.path.join(serialem_utils.get_import_cache_path(source_dir), histogram_filename)
 
-        contrast_settings = shared.GetSectionContrastSettings(
-            section_number=SectionNumber,
-            contrast_map=ContrastMap,
-            contrast_cutoffs=ContrastCutoffs,
-            calculate_histogram=lambda: cls.CalculateHistogram(  # type: ignore[arg-type]
-                mrc_obj=mrcfile, bpp=bpp),
-            histogram_cache_path=histogram_cache_path,
-            cache_inputs=[mrc_fullpath],
-            histogram_stride=1,
-            legacy_histogram_cache_path=os.path.join(source_dir, histogram_filename))
+        resolved_contrast: list[shared.MinMaxGamma] = []
 
-        contrast_settings = shared.MinMaxGamma(min=np.around(contrast_settings.min),
-                                               max=np.around(contrast_settings.max),
-                                               gamma=contrast_settings.gamma)
+        def section_contrast() -> shared.MinMaxGamma:
+            """Contrast of the legacy tiles; the first call reads every pixel of the MRC unless a histogram is cached.
+
+            Crushed imports never call it: they take the code span from the tiles they write, as IDOC imports do.
+            """
+            if not resolved_contrast:
+                settings = shared.GetSectionContrastSettings(
+                    section_number=SectionNumber,
+                    contrast_map=ContrastMap,
+                    contrast_cutoffs=ContrastCutoffs,
+                    calculate_histogram=lambda: cls.CalculateHistogram(  # type: ignore[arg-type]
+                        mrc_obj=mrcfile, bpp=bpp),
+                    histogram_cache_path=histogram_cache_path,
+                    cache_inputs=[mrc_fullpath],
+                    histogram_stride=1,
+                    legacy_histogram_cache_path=os.path.join(source_dir, histogram_filename))
+                resolved_contrast.append(shared.MinMaxGamma(min=np.around(settings.min),
+                                                            max=np.around(settings.max),
+                                                            gamma=settings.gamma))
+            return resolved_contrast[0]
 
         flip_ud = flip_ud_for_section(SectionNumber, FlipList)
         staged: list[str] = []
@@ -411,15 +419,15 @@ class MRCImport:
 
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
 
+        override_span = None
         if crush_params is not None:
-            # Crushed tiles do not depend on the contrast settings; they become hints in code units.
-            filter_contrast = shared.MinMaxGamma(min=shared.CountsToCrushCodes(contrast_settings.min, crush_params),
-                                                 max=shared.CountsToCrushCodes(contrast_settings.max, crush_params),
-                                                 gamma=contrast_settings.gamma)
+            # Crushed tiles do not depend on the contrast settings, so no section histogram is read for them.
+            override_span = shared.CrushCodeSpanFromContrastOverride(ContrastMap.get(SectionNumber), crush_params)
             contrast_mismatch = crush_removed
             prettyoutput.Log(f"Crushing section {SectionNumber}: sigma {crush_params.sigma:.1f} counts, "
                              f"step {crush_params.step}, offset {crush_params.offset}, {crush_params.bits}-bit codes")
         else:
+            contrast_settings = section_contrast()
             filter_contrast = contrast_settings
             contrast_mismatch = crush_removed or channelObj.RemoveFilterOnContrastMismatch(
                 FilterName, contrast_settings.min, contrast_settings.max, contrast_settings.gamma)
@@ -432,17 +440,17 @@ class MRCImport:
                                                     shared.PlotHistogram,
                                                     histogram_cache_path,
                                                     SectionNumber,
-                                                    contrast_settings.min,
-                                                    contrast_settings.max, force_recreate=contrast_mismatch)
+                                                    section_contrast().min,
+                                                    section_contrast().max, force_recreate=contrast_mismatch)
 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
         if crush_params is not None:
             # No contrast is recorded or applied for crushed codes (James, 2026-11-05). Prune still needs the
-            # section's span in code units to keep its score scale, so that is all that is kept.
+            # section's span in code units to keep its score scale: from a contrast override now, else from the
+            # code histogram of the tiles written below.
             shared.ClearCrushedFilterContrast(filterObj)
-            span = filter_contrast.max - filter_contrast.min
-            if span > 0:
-                filterObj.CrushCodeSpan = span
+            if override_span is not None:
+                filterObj.CrushCodeSpan = override_span
             filterObj.BitsPerPixel = crush_params.bits
             shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first)
             (yield filterObj)
@@ -509,12 +517,18 @@ class MRCImport:
         if gain_first and crush_params is not None and import_gains is None:
             import_gains = cls.SolveGains(pixel_path, mrc_fullpath, histogram_cache_path, SectionNumber, CropBorder, flip_ud)
         crush_stats = cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
-                                       min_max_gamma=contrast_settings,
+                                       min_max_gamma=None if crush_params is not None else section_contrast(),
                                        flip_ud=flip_ud,
                                        crush_params=crush_params,
                                        crop_border=CropBorder,
                                        import_gains=import_gains if crush_params is not None else None)
         _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath, CropBorder)
+
+        if crush_params is not None and override_span is None and crush_stats is not None and crush_stats.tiles > 0:
+            span = shared.CrushCodeSpan(crush_stats.code_histogram, ContrastCutoffs)
+            if span is not None:
+                filterObj.CrushCodeSpan = span
+                (yield filterObj)
 
         # CodeHistogram and CrushDisplayMin/Max: from the export when it wrote every tile, else from the level-1 tiles.
         if crush_params is not None and shared.UpdateFilterCodeHistogram(
