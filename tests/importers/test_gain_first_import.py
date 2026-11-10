@@ -170,9 +170,8 @@ def _channel(**filters: _FakeFilter) -> Any:
 
 class TestGainFirstChoice(unittest.TestCase):
 
-    def test_new_section_is_gain_first_unless_declined(self) -> None:
+    def test_new_section_is_gain_first(self) -> None:
         self.assertTrue(shared.GainFirstAllowed(_channel()))
-        self.assertFalse(shared.GainFirstAllowed(_channel(), requested=False))
 
     def test_section_with_a_crushed_filter_made_without_it_keeps_its_kind(self) -> None:
         legacy = _FakeFilter(PARAMS.to_attributes())

@@ -1053,14 +1053,12 @@ def IsGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
     return filter_node is not None and filter_node.attrib.get(noise_crush.GAIN_FIRST_ATTRIB) == '1'
 
 
-def GainFirstAllowed(channel: ChannelNode, requested: bool = True) -> bool:
+def GainFirstAllowed(channel: ChannelNode) -> bool:
     """Whether a new crushed import of this channel should correct gains first.
 
     A channel that already holds a crushed filter imported without it keeps the old kind: re-importing to add sections
     must not make the crush parameters of the finished ones differ (``ResolveCrushMode`` would clean them).
     """
-    if not requested:
-        return False
     for name in ('Raw8', 'Raw16'):
         existing = channel.GetFilter(name)
         if existing is not None and CrushParams.from_attributes(existing.attrib) is not None \

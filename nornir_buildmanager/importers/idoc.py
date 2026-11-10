@@ -163,7 +163,6 @@ def Import(VolumeElement: VolumeNode,
     NoCrush = bool(kwargs.get('NoCrush', False))
     CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
-    NoGainFirst = bool(kwargs.get('NoGainFirst', False))
 
     _validate_contrast_cutoffs(ContrastCutoffs)
 
@@ -223,8 +222,7 @@ def Import(VolumeElement: VolumeNode,
                                                     CameraBpp=CameraBpp,
                                                     ContrastMap=ContrastMap,
                                                     NoCrush=NoCrush,
-                                                    CrushK=CrushK,
-                                                    NoGainFirst=NoGainFirst)
+                                                    CrushK=CrushK)
 
         completed_sections += 1
         if total_sections:
@@ -287,8 +285,7 @@ class SerialEMIDocImport:
                  CameraBpp: int | None = None,
                  debug: bool | None = None,
                  NoCrush: bool = False,
-                 CrushK: float | None = None,
-                 NoGainFirst: bool = False) -> Generator[XElementWrapper, None, None]:
+                 CrushK: float | None = None) -> Generator[XElementWrapper, None, None]:
         """
         Convert an idoc to a .mosaic and populate volume meta-data.
 
@@ -299,8 +296,8 @@ class SerialEMIDocImport:
         Tiles deeper than 8 bits are crushed by default (``nornir_imageregistration.noise_crush``):
         stored as section-wide noise-step codes rather than contrast-stretched 8-bit.
         ``NoCrush`` keeps the contrast stretch; ``CrushK`` sets the step in noise sigmas.  Crushed tiles are divided
-        by their brightness gain, solved from the Stage overlaps, before they are quantized (``NoGainFirst`` keeps them
-        as captured); the gain is recorded in the tile as a diagnostic that nothing downstream applies.
+        by their brightness gain, solved from the Stage overlaps, before they are quantized (always: there is no
+        option to quantize them as captured); the gain is recorded in the tile as a diagnostic that nothing downstream applies.
 
         :param ContrastCutoffs: (min, max) as 0-1 *fractions*, not percentages.
             Levelling uses ``AutoLevel(cutoffs[0], 1.0 - cutoffs[1])``, so (0.0, 1.0)
@@ -429,7 +426,7 @@ class SerialEMIDocImport:
         requested_crush = None
         if not NoCrush and ImageBpp > 8:
             crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
-            gain_first = shared.GainFirstAllowed(channelObj, not NoGainFirst)
+            gain_first = shared.GainFirstAllowed(channelObj)
             reused = shared.ExistingGainFirstParams(channelObj, CrushK) if gain_first else None
             noise_cache_inputs = source_tile_list + [idocFileFullPath]
             load_tile = lambda i: nornir_imageregistration.noise_crush.load_raw_tile(source_tile_list[i])

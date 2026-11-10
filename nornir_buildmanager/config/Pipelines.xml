@@ -32,13 +32,11 @@
                       help="Store contrast-stretched 8-bit tiles instead of noise-crushed codes.  By default tiles deeper than 8 bits are quantized to a section-wide step of CrushK noise sigmas (about 86% smaller than raw 16-bit).  An existing uncrushed Raw8 filter is never replaced either way."/>
             <Argument flag="-CrushK" dest="CrushK" type="float" default="2.5" required="False"
                       help="Crush step in noise sigmas (default 2.5, about 35-40 levels on TEM).  Larger values give smaller files and coarser intensity steps."/>
-            <Argument flag="-NoGainFirst" action="store_true" dest="NoGainFirst" required="False"
-                      help="Quantize tiles as captured.  By default each tile is divided by its brightness gain, solved from the Stage overlaps, before it is quantized, so a tile dimmed by the beam keeps its texture instead of collapsing into a few codes.  The gains are recorded in the tiles as diagnostics only.  A section that already holds a crushed filter keeps its kind either way."/>
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.idoc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension" Min="#MinValue" Max="#MaxValue"
-                    CameraBpp="#CameraBpp" Sections="#Sections" NoCrush="#NoCrush" CrushK="#CrushK" NoGainFirst="#NoGainFirst"/>
+                    CameraBpp="#CameraBpp" Sections="#Sections" NoCrush="#NoCrush" CrushK="#CrushK"/>
         <!-- Per-tile brightness gains (beam drift, white stripe) on Stage, for crushed filters only; skipped when
              the filter's gains are already current. Level 1: the only level an import writes. -->
         <Iterate VariableName="section_node" XPath="Block/Section">
@@ -86,15 +84,13 @@
                       help="Store the legacy contrast-stretched Raw16 tiles instead of noise-crushed codes in Raw8.  An existing uncrushed Raw16 import is never replaced either way."/>
             <Argument flag="-CrushK" dest="CrushK" type="float" default="2.5" required="False"
                       help="Crush step in noise sigmas (default 2.5).  Larger values give smaller files and coarser intensity steps."/>
-            <Argument flag="-NoGainFirst" action="store_true" dest="NoGainFirst" required="False"
-                      help="Quantize tiles as captured.  By default each tile is divided by its brightness gain, solved from the Stage overlaps, before it is quantized, so a tile dimmed by the beam keeps its texture instead of collapsing into a few codes.  The gains are recorded in the tiles as diagnostics only.  A section that already holds a crushed filter keeps its kind either way."/>
             <Argument flag="-CropTo" dest="CropTo" type="int" default="0" required="False"
                       help="Crop every frame symmetrically to this many pixels square, for MRC frames with an artefact border.  The border is worked out per MRC, so a volume that mixes frame sizes needs one setting (RC1: -CropTo 4080 crops the 4096 frames and leaves the 4080 frames alone).  A frame already this size is not cropped."/>
         </Arguments>
 
         <PythonCall Module="nornir_buildmanager.importers.mrc"
                     Function="Import" ImportPath="#ImportDir" extension="#extension"
-                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK" CropTo="#CropTo" NoGainFirst="#NoGainFirst"/>
+                    Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK" CropTo="#CropTo"/>
         <!-- Per-tile brightness gains (beam drift, white stripe) on Stage, for crushed filters only; skipped when
              the filter's gains are already current. Level 1: the only level an import writes. Only the sections
              whose MRC is in ImportDir (the walk covers the whole volume), and never a filter whose gains were

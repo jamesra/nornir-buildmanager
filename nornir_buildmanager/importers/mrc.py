@@ -57,7 +57,6 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
     CameraBpp = shared.CameraBppForImport(CameraBpp, NoCrush)
     CrushK = kwargs.get('CrushK', None)
     CropTo = shared.CropToForImport(kwargs.get('CropTo', None))
-    NoGainFirst = bool(kwargs.get('NoGainFirst', False))
 
     FlipList = nornir_buildmanager.importers.GetFlipList(ImportPath)
     histogramFilename = os.path.join(ImportPath, nornir_buildmanager.importers.DefaultHistogramFilename)
@@ -92,7 +91,6 @@ def Import(VolumeElement: VolumeNode, ImportPath: str, extension: str | None = N
                                               NoCrush=NoCrush,
                                               CrushK=CrushK,
                                               CropTo=CropTo,
-                                              NoGainFirst=NoGainFirst,
                                               read_path=lambda p=file_fullpath: staging.acquire(p),
                                               )
             finally:
@@ -268,7 +266,6 @@ class MRCImport:
                  NoCrush: bool = False,
                  CrushK: float | None = None,
                  CropTo: int = 0,
-                 NoGainFirst: bool = False,
                  read_path: Callable[[], str] | None = None):
         """Import one .mrc file as a section.
 
@@ -281,9 +278,6 @@ class MRCImport:
             frame already this size (or smaller) is not cropped.  The Stage transforms place the cropped tile, so its
             offset moves by the border.  Applies to tiles this call writes: tiles already exported keep the crop they
             were written with.
-        :param NoGainFirst: Quantize tiles as captured.  By default crushed tiles are divided by their brightness gain,
-            solved from the Stage overlaps, before they are quantized (the gain is recorded in the tile as a diagnostic;
-            nothing downstream corrects with it).  A section whose crushed filter already exists keeps its kind.
         :param read_path: Returns the path to export tiles from, typically a staged local copy of
             ``mrc_fullpath`` (source_staging); called only when tiles are missing. Names, notes, logs,
             caches, freshness checks and the noise sample always use ``mrc_fullpath``.
@@ -398,7 +392,7 @@ class MRCImport:
         requested_crush = None
         if not NoCrush and mrcfile.bytes_per_pixel > 1:
             crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
-            gain_first = shared.GainFirstAllowed(channelObj, not NoGainFirst)
+            gain_first = shared.GainFirstAllowed(channelObj)
             reused = shared.ExistingGainFirstParams(channelObj, CrushK) if gain_first else None
             if reused is not None:
                 requested_crush = reused  # a restart: the gains are solved only if tiles are still to be written
