@@ -523,14 +523,19 @@ class MRCImport:
         if (read_path is not None and not tiles_present) or staged:
             pixel_path = pixel_source()
 
-        if gain_first and crush_params is not None and import_gains is None:
+        # A legacy (uncrushed) filter created by this import is gain-first too; one that already exists keeps its kind.
+        legacy_gain_first = crush_params is None and (added_filter or shared.IsLegacyGainFirstFilter(filterObj))
+        if (gain_first and crush_params is not None or legacy_gain_first) and import_gains is None:
             import_gains = cls.SolveGains(pixel_path, mrc_fullpath, histogram_cache_path, SectionNumber, CropBorder, flip_ud)
+        if legacy_gain_first and import_gains is not None:
+            shared.SetLegacyGainFirstAttributes(filterObj, import_gains.checksum)
+            (yield filterObj)
         crush_stats = cls.ExportImages(pixel_path, LevelObj.FullPath, img_ext=OutputImageExt,
                                        min_max_gamma=None if crush_params is not None else section_contrast(),
                                        flip_ud=flip_ud,
                                        crush_params=crush_params,
                                        crop_border=CropBorder,
-                                       import_gains=import_gains if crush_params is not None else None)
+                                       import_gains=import_gains)
         _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath, CropBorder)
 
         if crush_params is not None and override_span is None and crush_stats is not None and crush_stats.tiles > 0:
@@ -703,7 +708,8 @@ class MRCImport:
                                min_max_gamma,
                                flip_ud,
                                crush_params,
-                               crop_border)
+                               crop_border,
+                               1.0 if import_gains is None else import_gains.applied(iTile))
                  for iTile in range(0, mrc_obj.num_tiles)]  # type: ignore[arg-type]
 
         _wait_for_tile_tasks(tasks, 'export')
@@ -747,8 +753,12 @@ class MRCImport:
                     min_max_gamma: shared.MinMaxGamma | None = None,
                     flip_ud: bool = DEFAULT_FLIP_UD,
                     crush_params: CrushParams | None = None,
-                    crop_border: int = 0) -> bool:
-        """Write one tile; crushed codes when *crush_params* is given, else the legacy contrast stretch."""
+                    crop_border: int = 0, gain: float = 1.0) -> bool:
+        """Write one tile; crushed codes when *crush_params* is given, else the legacy contrast stretch.
+
+        A gain-first legacy export divides the tile by ``gain`` before the stretch (the histogram and cutoffs that
+        set the stretch are unchanged); values the division pushes past the range are clipped.
+        """
         if isinstance(mrc_obj, str):
             mrc_obj = MRCFile.Load(mrc_obj)
 
@@ -780,6 +790,8 @@ class MRCImport:
             outliers = img > min_max_gamma.max
             img_clipped = np.clip(img, min_max_gamma.min, min_max_gamma.max)
             img = img.astype(np.float32)
+            if gain != 1.0:
+                img /= gain
             # img[outliers] /= 2.0
             scale = np.iinfo(dt).max / min_max_gamma.max
             if min_max_gamma.min > 0:
@@ -787,6 +799,8 @@ class MRCImport:
             else:
                 img *= scale
 
+            if gain != 1.0:
+                np.clip(img, 0, np.iinfo(dt).max, out=img)
             img = img.round().astype(dt, copy=False)
 
             with Image.fromarray(img).convert(mode='I') as im:

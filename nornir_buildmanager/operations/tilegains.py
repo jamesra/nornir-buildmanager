@@ -158,8 +158,8 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
             return None
     if _as_bool(CrushedOnly) and noise_crush.CrushParams.from_attributes(FilterNode.attrib) is None:
         return None
-    if FilterNode.attrib.get(noise_crush.GAIN_FIRST_ATTRIB) == '1':
-        Logger.info(f"TileGains: {FilterNode.FullPath} was gain-corrected before it was crushed; its gains are "
+    if FilterNode.attrib.get(noise_crush.GAIN_FIRST_ATTRIB) == '1' or FilterNode.attrib.get('GainFirst') == '1':
+        Logger.info(f"TileGains: {FilterNode.FullPath} was gain-corrected at import; its gains are "
                     f"diagnostic and are not applied again")
         return None
     source = f"{TransformNode.Name}:{TransformNode.attrib.get('Checksum', '')}"

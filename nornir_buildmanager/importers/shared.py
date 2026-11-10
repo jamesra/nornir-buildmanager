@@ -1053,6 +1053,24 @@ def IsGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
     return filter_node is not None and filter_node.attrib.get(noise_crush.GAIN_FIRST_ATTRIB) == '1'
 
 
+LEGACY_GAIN_FIRST_ATTRIB = 'GainFirst'
+LEGACY_GAINS_CHECKSUM_ATTRIB = 'GainsChecksum'
+
+
+def IsLegacyGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
+    """True when the uncrushed filter's tiles were divided by their brightness gain before the contrast stretch."""
+    return filter_node is not None and filter_node.attrib.get(LEGACY_GAIN_FIRST_ATTRIB) == '1'
+
+
+def SetLegacyGainFirstAttributes(filter_node: XElementWrapper, gains_checksum: str) -> None:
+    """Mark an uncrushed filter gain-first and record the checksum of the gains that were applied.
+
+    TileGains leaves such a filter alone: its correction would be applied twice.
+    """
+    setattr(filter_node, LEGACY_GAIN_FIRST_ATTRIB, '1')
+    setattr(filter_node, LEGACY_GAINS_CHECKSUM_ATTRIB, gains_checksum)
+
+
 def GainFirstAllowed(channel: ChannelNode) -> bool:
     """Whether a new crushed import of this channel should correct gains first.
 
