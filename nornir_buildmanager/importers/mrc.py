@@ -239,6 +239,17 @@ def _wait_for_tile_tasks(tasks: Sequence, operation: str) -> None:
             raise
 
 
+def stage_to_mosaic_offset(stage_pixels: NDArray[np.floating]) -> NDArray[np.floating]:
+    """Tile offset (Y, X) in the mosaic from the tile's stage position (X, Y) in pixels.
+
+    SerialEM's stage axes are not the camera's: the mosaic is the stage position transposed with Y negated, the same
+    placement the IDOC importer gets from MosaicFile.Write (translation (-Y, X)). Passing (X, Y) through as (Y, X)
+    placed left-right neighbours top-bottom (RC1_Crush, 2026-11-10), so the gain solve compared strips that do not overlap.
+    The nm-per-pixel scale per axis is already applied to the stage position.
+    """
+    return np.array((-stage_pixels[1], stage_pixels[0]), dtype=np.float64)
+
+
 class MRCImport:
     """
     Imports an .MRC file into a volume
@@ -819,7 +830,7 @@ class MRCImport:
 
         for (i, t) in enumerate(mrcfile.tile_meta):
             image_shape = mrcfile.img_shape - 2 * crop_border
-            pixel_position = t.pixel_coords + crop_border  # the cropped tile's origin is the border inside the frame
+            pixel_position = stage_to_mosaic_offset(t.pixel_coords) + crop_border  # the cropped tile's origin is the border inside the frame
             tile_transform = nornir_imageregistration.transforms.factory.CreateRigidTransform(
                 target_image_shape=image_shape,
                 source_image_shape=image_shape,

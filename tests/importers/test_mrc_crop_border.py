@@ -83,7 +83,7 @@ class TestCropBorderExport(unittest.TestCase):
         cropped_gap = (cropped.ImageToTransform[second].Transform(cropped_point)
                        - cropped.ImageToTransform[first].Transform(cropped_point))
         np.testing.assert_allclose(full_gap, cropped_gap, atol=1e-6)
-        np.testing.assert_allclose(full_gap, [[10.0, 30.0]], atol=1e-6)
+        np.testing.assert_allclose(full_gap, [[-30.0, 10.0]], atol=1e-6)  # stage (dx, dy) = (10, 30) lands at (dY, dX) = (-30, 10)
         # Re-based to the zero origin of the cropped tiles, the whole mosaic sits one border nearer the origin.
         np.testing.assert_allclose(cropped.ImageToTransform[first].Transform(cropped_point),
                                    full.ImageToTransform[first].Transform(frame_point) - BORDER, atol=1e-6)
