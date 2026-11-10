@@ -508,6 +508,9 @@ class SerialEMIDocImport:
             filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
             filterObj.BitsPerPixel = TargetBpp
 
+        # A legacy (uncrushed) filter created by this import is gain-first too; one that already exists keeps its kind.
+        legacy_gain_first = crush_params is None and (added_filter or shared.IsLegacyGainFirstFilter(filterObj))
+
         SupertileName = 'Stage'
         SupertileTransform = SupertileName + '.mosaic'
         SupertilePath = os.path.join(channelObj.FullPath, SupertileTransform)
@@ -589,6 +592,22 @@ class SerialEMIDocImport:
                 if span is not None:
                     filterObj.CrushCodeSpan = span
                     yield filterObj
+            elif legacy_gain_first:
+                # Each raw tile is divided by its gain, then the unchanged stretch (same histogram, cutoffs and
+                # CameraBpp). The gain goes through the CPU conversion; the batched GPU path has no per-tile gain.
+                if import_gains is None:
+                    import_gains = cls.SolveGains(IDocData, tile_numbers, source_tile_list,
+                                                  source_tile_list + [idocFileFullPath], Flip,
+                                                  histogram_cache_path, SectionNumber)
+                shared.SetLegacyGainFirstAttributes(filterObj, import_gains.checksum)
+                yield filterObj
+                nornir_imageregistration.ConvertImagesInDict(
+                    SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
+                    OutputBpp=TargetBpp, Invert=Invert, bDeleteOriginal=False,
+                    MinMax=[ActualMosaicMin, ActualMosaicMax], Gamma=Gamma,  # type: ignore[arg-type]
+                    progress_name=tile_progress_name,
+                    progress_task_key=tile_progress_key,
+                    SourceGains={source: import_gains.applied(n) for source, n in zip(source_tile_list, tile_numbers)})
             elif nornir_imageregistration.UsingCupy():
                 nornir_imageregistration.ConvertImagesInDictGpu(
                     SourceToMissingTargetMap, Flip=Flip, InputBpp=ImageBpp,
