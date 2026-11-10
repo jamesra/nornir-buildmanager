@@ -444,6 +444,10 @@ class MRCImport:
                                                     section_contrast().max, force_recreate=contrast_mismatch)
 
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
+        if added_filter:
+            # The channel holds the Filter_Link; saving only the filter left a re-import into a channel whose filter
+            # had been deleted with the Raw8 files written and no link, so later pipelines skipped the section.
+            (yield channelObj)
         if crush_params is not None:
             # No contrast is recorded or applied for crushed codes (James, 2026-11-05). Prune still needs the
             # section's span in code units to keep its score scale: from a contrast override now, else from the

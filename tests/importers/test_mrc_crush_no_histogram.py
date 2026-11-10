@@ -34,8 +34,8 @@ class TestCrushedImportSkipsTheHistogram(unittest.TestCase):
         volume = VolumeManager.Load(os.path.join(self._dir, 'volume'), Create=True)
         with mock.patch.object(mrc.MRCImport, 'CalculateHistogram',
                                side_effect=AssertionError('histogram read')) as histogram:
-            for _ in mrc.MRCImport.ToMosaic(volume, _SECTION, (0.0001, 0.9999)):
-                pass
+            for node in mrc.MRCImport.ToMosaic(volume, _SECTION, (0.0001, 0.9999)):
+                node.Save()  # as the pipeline does for each yielded node
         return volume, histogram
 
     @staticmethod
@@ -53,6 +53,27 @@ class TestCrushedImportSkipsTheHistogram(unittest.TestCase):
         filter_node = self._filter(volume)
         self.assertIsNotNone(filter_node.CrushCodeSpan)
         self.assertGreater(filter_node.CrushCodeSpan, 1)
+
+    def test_reimport_after_deleting_the_filter_saves_the_channel_link(self) -> None:
+        """RC1, 2026-11-10: with the Raw8 dir and its Filter_Link removed by hand, a re-import wrote the tiles but
+        the channel XML never regained the link."""
+        volume, _ = self._import()
+        channel = volume.find('Block').GetSection(1).GetChannel('TEM')
+        channel_xml = os.path.join(channel.FullPath, 'VolumeData.xml')
+        shutil.rmtree(self._filter(volume).FullPath)
+        with open(channel_xml, encoding='utf-8') as f:
+            text = f.read()
+        kept = [line for line in text.splitlines(keepends=True) if 'Path="Raw8"' not in line or 'Filter_Link' not in line]
+        self.assertLess(len(kept), len(text.splitlines(keepends=True)), 'no Filter_Link line to remove')
+        with open(channel_xml, 'w', encoding='utf-8') as f:
+            f.write(''.join(kept))
+
+        volume = VolumeManager.Load(os.path.join(self._dir, 'volume'))
+        with mock.patch.object(mrc.MRCImport, 'CalculateHistogram', side_effect=AssertionError('histogram read')):
+            for node in mrc.MRCImport.ToMosaic(volume, _SECTION, (0.0001, 0.9999)):
+                node.Save()  # as the pipeline does for each yielded node
+        with open(channel_xml, encoding='utf-8') as f:
+            self.assertIn('Filter_Link', f.read())
 
 
 if __name__ == '__main__':
