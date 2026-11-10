@@ -1,19 +1,19 @@
-"""Crushed builds: no histogram pre-pass, no contrast on crushed filters, a robust offset for signed sources.
+"""Crushed builds: no histogram pre-pass, a robust offset for signed sources.
 
-James, 2026-11-05: crushed imports need no section histogram before converting, and no contrast mapping may be
-applied to crushed filters anywhere. Prune keeps its score scale through ``CrushCodeSpan``. RC2 139 (int32 TIFs)
+James, 2026-11-05: crushed imports need no section histogram before converting. (Contrast stages now run on the
+Quantized filter to build Leveled; only the import itself records no contrast.) Prune keeps its score scale through ``CrushCodeSpan``. RC2 139 (int32 TIFs)
 got CrushOffset -15951 and 9-bit codes from one stray negative pixel; the offset now follows a robust minimum.
 """
 from __future__ import annotations
 
 import json
-import logging
 import os
 import tempfile
 from typing import Any, cast
 
 import nornir_pools
 import numpy as np
+import pytest
 from nornir_buildmanager.importers import shared
 from nornir_buildmanager.operations import setters, tile
 from nornir_buildmanager.operations.pruneobj import PruneObj
@@ -181,27 +181,31 @@ class TestNoContrastOnCrushedFilters:
         older = _filter_node(PARAMS.to_attributes(), MinIntensityCutoff=5.0, MaxIntensityCutoff=56.0)
         assert PruneObj.CrushedScoreScale(older) == 5.0
 
-    def test_contrast_stages_skip_crushed_filters(self):
+    def test_contrast_stages_no_longer_skip_crushed_filters(self):
+        """Crushed filters get Histogram/AdjustContrast (Leveled for TEMAlign); the stages run past the old skip."""
         crushed = _Filter(PARAMS.to_attributes())
         assert tile.IsCrushedFilter(crushed) and not tile.IsCrushedFilter(_Filter({}))
-        # AutolevelTiles would build Leveled from the crushed codes; it must not touch the filter at all.
-        crushed.TilePyramid = None  # any access would raise
-        assert list(tile.AutolevelTiles({}, cast(Any, crushed), cast(Any, None))) == []
-        assert list(tile.HistogramFilter({}, cast(Any, crushed), 4, cast(Any, None))) == []
+        crushed.TilePyramid = None  # reached only now that the stages do not return early
+        with pytest.raises(AttributeError):
+            list(tile.AutolevelTiles({}, cast(Any, crushed), cast(Any, None)))
+        with pytest.raises(AttributeError):
+            list(tile.HistogramFilter({}, cast(Any, crushed), 4, cast(Any, None)))
 
-    def test_set_contrast_refuses_crushed_filter(self, caplog):
+    def test_set_contrast_applies_to_crushed_filter(self):
         crushed = _Filter(PARAMS.to_attributes())
+
+        class _Reached(Exception):
+            pass
 
         class _Histogram:
             def FindParent(self, tag):
                 return crushed if tag == 'Filter' else None
 
             def GetOrCreateAutoLevelHint(self):
-                raise AssertionError('no contrast hint may be created for a crushed filter')
+                raise _Reached()
 
-        with caplog.at_level(logging.WARNING):
-            assert setters.SetContrastRange(_Histogram(), 1.0, 2.0, 1.0) is None
-        assert any('crushed' in r.getMessage() for r in caplog.records)
+        with pytest.raises(_Reached):
+            setters.SetContrastRange(_Histogram(), 1.0, 2.0, 1.0)
 
 
 class TestCrushSpanWherePruneReadsIt:

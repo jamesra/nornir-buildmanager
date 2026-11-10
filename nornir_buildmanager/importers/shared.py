@@ -988,9 +988,9 @@ def SectionCrushParams(noise: SectionNoise, histogram: Histogram | None, k: floa
                                          section_min=section_min)
 
 
-def CrushedFilterName(params: CrushParams) -> str:
-    """Filter that holds crushed tiles: Raw8 normally, Raw16 when the codes need more than 8 bits."""
-    return 'Raw8' if params.bits <= 8 else 'Raw16'
+CRUSHED_FILTER_NAME = 'Quantized'
+"""Filter that holds crushed tiles. Legacy contrast-stretched imports stay in Raw8/Raw16, so the two kinds never share
+a filter name and a volume can hold sections of both; AdjustContrast builds Leveled from either for TEMAlign."""
 
 
 def CountsToCrushCodes(value: float, params: CrushParams) -> float:
@@ -1070,51 +1070,14 @@ def SetLegacyGainFirstAttributes(filter_node: XElementWrapper, gains_checksum: s
     setattr(filter_node, LEGACY_GAINS_CHECKSUM_ATTRIB, gains_checksum)
 
 
-def RequireSameCrushKind(channel: ChannelNode, will_crush: bool) -> None:
-    """Refuse an import whose tiles would be of the other kind (crushed or legacy) than the volume's other sections.
-
-    A volume is either all crushed or all legacy: a crushed section has no Leveled filter, so TEMAlign silently drops
-    it from a legacy volume, and a legacy section is not a crushed one for the crush scripts. To repair a section of a
-    legacy volume use ``-NoCrush`` (gain-first); there is no override. The section being imported is not checked: its
-    own existing filter keeps its kind (``ResolveCrushMode``).
-
-    :raises NornirUserException: another section of the channel holds filters of the other kind.
-    """
-    section = channel.Parent
-    block = section.Parent if section is not None else None
-    if block is None:
-        return
-    for other in block.Sections:
-        if other.Number == section.Number:
-            continue
-        other_channel = other.GetChannel(channel.Name)
-        if other_channel is None:
-            continue
-        for name in ('Raw8', 'Raw16'):
-            existing = other_channel.GetFilter(name)
-            if existing is None:
-                continue
-            crushed = CrushParams.from_attributes(existing.attrib) is not None
-            if crushed != will_crush:
-                raise NornirUserException(
-                    f"Section {section.Number} would be imported {'crushed' if will_crush else 'legacy (-NoCrush)'}, "
-                    f"but section {other.Number} of this volume is {'crushed' if crushed else 'legacy'}. A volume is "
-                    f"either all crushed or all legacy: "
-                    f"{'import this section with -NoCrush (gain-first is automatic)' if crushed else 'import without -NoCrush, or reimport the volume'}.")
-
-
 def GainFirstAllowed(channel: ChannelNode) -> bool:
     """Whether a new crushed import of this channel should correct gains first.
 
     A channel that already holds a crushed filter imported without it keeps the old kind: re-importing to add sections
     must not make the crush parameters of the finished ones differ (``ResolveCrushMode`` would clean them).
     """
-    for name in ('Raw8', 'Raw16'):
-        existing = channel.GetFilter(name)
-        if existing is not None and CrushParams.from_attributes(existing.attrib) is not None \
-                and not IsGainFirstFilter(existing):
-            return False
-    return True
+    existing = channel.GetFilter(CRUSHED_FILTER_NAME)
+    return existing is None or CrushParams.from_attributes(existing.attrib) is None or IsGainFirstFilter(existing)
 
 
 def ExistingGainFirstParams(channel: ChannelNode, k: float | None) -> CrushParams | None:
@@ -1124,12 +1087,11 @@ def ExistingGainFirstParams(channel: ChannelNode, k: float | None) -> CrushParam
     solved only if tiles still have to be written.
     """
     wanted = noise_crush.DEFAULT_CRUSH_K if k is None else float(k)
-    for name in ('Raw8', 'Raw16'):
-        existing = channel.GetFilter(name)
-        if IsGainFirstFilter(existing):
-            params = CrushParams.from_attributes(existing.attrib)
-            if params is not None and params.k == wanted:
-                return params
+    existing = channel.GetFilter(CRUSHED_FILTER_NAME)
+    if IsGainFirstFilter(existing):
+        params = CrushParams.from_attributes(existing.attrib)
+        if params is not None and params.k == wanted:
+            return params
     return None
 
 

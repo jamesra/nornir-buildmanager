@@ -10,7 +10,6 @@ import math
 import nornir_buildmanager
 import nornir_buildmanager.volumemanager
 import nornir_shared.prettyoutput
-from nornir_imageregistration.noise_crush import CrushParams
 
 
 def SetFilterLock(Node, Locked, **kwargs):
@@ -74,12 +73,6 @@ def SetPruneThreshold(PruneNode, Value, **kwargs):
 
 def SetContrastRange(HistogramElement, MinValue, MaxValue, GammaValue, **kwargs):
     logger = logging.getLogger(__name__ + '.SetContrastRange')
-
-    filter_node = HistogramElement.FindParent('Filter') if HistogramElement is not None else None
-    if filter_node is not None and CrushParams.from_attributes(filter_node.attrib) is not None:
-        # No contrast is ever applied to crushed codes (James, 2026-11-05), so there is nothing to set.
-        logger.warning("SetContrast: %s is crushed; contrast is never applied to crushed codes", filter_node.FullPath)
-        return
 
     if math.isnan(MinValue):
         minStr = "Default/Unchanged"

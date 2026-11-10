@@ -175,17 +175,17 @@ class TestGainFirstChoice(unittest.TestCase):
 
     def test_section_with_a_crushed_filter_made_without_it_keeps_its_kind(self) -> None:
         legacy = _FakeFilter(PARAMS.to_attributes())
-        self.assertFalse(shared.GainFirstAllowed(_channel(Raw8=legacy)))
-        self.assertIsNone(shared.ExistingGainFirstParams(_channel(Raw8=legacy), None))
+        self.assertFalse(shared.GainFirstAllowed(_channel(Quantized=legacy)))
+        self.assertIsNone(shared.ExistingGainFirstParams(_channel(Quantized=legacy), None))
 
     def test_section_with_an_uncrushed_filter_is_not_blocked_here(self) -> None:
         """ResolveCrushMode already keeps an uncrushed filter; the gain-first choice has no say in it."""
-        self.assertTrue(shared.GainFirstAllowed(_channel(Raw8=_FakeFilter({'MinIntensityCutoff': '1'}))))
+        self.assertTrue(shared.GainFirstAllowed(_channel(Quantized=_FakeFilter({'MinIntensityCutoff': '1'}))))
 
     def test_existing_gain_first_filter_gives_its_params_when_k_matches(self) -> None:
         attrib = dict(PARAMS.to_attributes())
         attrib[noise_crush.GAIN_FIRST_ATTRIB] = '1'
-        channel = _channel(Raw8=_FakeFilter(attrib))
+        channel = _channel(Quantized=_FakeFilter(attrib))
         self.assertTrue(shared.GainFirstAllowed(channel))
         self.assertEqual(shared.ExistingGainFirstParams(channel, 2.5), PARAMS)
         self.assertIsNone(shared.ExistingGainFirstParams(channel, 3.0))

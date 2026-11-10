@@ -270,8 +270,8 @@ class MRCImport:
         """Import one .mrc file as a section.
 
         Tiles deeper than 8 bits are crushed by default (``nornir_imageregistration.noise_crush``)
-        into a ``Raw8`` filter of section-wide noise-step codes. ``NoCrush`` keeps the legacy
-        contrast-stretched ``Raw16`` filter, as does an existing uncrushed ``Raw16`` import.
+        into a ``Quantized`` filter of section-wide noise-step codes. ``NoCrush`` keeps the legacy
+        contrast-stretched ``Raw16`` filter (as before), and the two kinds can share a volume.
 
         :param CropTo: Crop each frame symmetrically to this many pixels square, for MRC frames with an artefact border.
             The border is worked out from this MRC's frame, so a volume that mixes frame sizes needs one setting.  A
@@ -390,8 +390,6 @@ class MRCImport:
         gain_first = False
         import_gains: shared.ImportTileGains | None = None
         requested_crush = None
-        if mrcfile.bytes_per_pixel > 1:  # 8-bit sections cannot be crushed, so they fit either kind of volume
-            shared.RequireSameCrushKind(channelObj, not NoCrush)
         if not NoCrush and mrcfile.bytes_per_pixel > 1:
             crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
             gain_first = shared.GainFirstAllowed(channelObj)
@@ -412,17 +410,7 @@ class MRCImport:
                                            lambda i: crop_tile(mrcfile.get_tile_as_numpy_memmap(i), CropBorder)),
                     Histogram.Load(histogram_cache_path) if os.path.exists(histogram_cache_path) else None,
                     k=crush_k)
-            crushed_filter_name = shared.CrushedFilterName(requested_crush)
-            legacy_filter = channelObj.GetFilter(FilterName)
-            if crushed_filter_name != FilterName and legacy_filter is not None and \
-                    CrushParams.from_attributes(legacy_filter.attrib) is None and \
-                    not channelObj.HasFilter(crushed_filter_name):
-                # Same rule as ResolveCrushMode: an existing uncrushed import is not replaced.
-                logger.info("Keeping existing uncrushed filter %s; remove it to crush this section",
-                            legacy_filter.FullPath)
-                requested_crush = None
-            else:
-                FilterName = crushed_filter_name
+            FilterName = shared.CRUSHED_FILTER_NAME
 
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
 
@@ -453,7 +441,7 @@ class MRCImport:
         [added_filter, filterObj] = channelObj.UpdateOrAddChildByAttrib(FilterNode.Create(Name=FilterName), 'Name')
         if added_filter:
             # The channel holds the Filter_Link; saving only the filter left a re-import into a channel whose filter
-            # had been deleted with the Raw8 files written and no link, so later pipelines skipped the section.
+            # had been deleted with the Quantized files written and no link, so later pipelines skipped the section.
             (yield channelObj)
         if crush_params is not None:
             # No contrast is recorded or applied for crushed codes (James, 2026-11-05). Prune still needs the

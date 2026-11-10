@@ -40,8 +40,8 @@ class TestCrushedImportSkipsTheHistogram(unittest.TestCase):
 
     @staticmethod
     def _filter(volume):
-        """The crushed Raw8 filter of section 1."""
-        return volume.find('Block').GetSection(1).GetChannel('TEM').GetFilter('Raw8')
+        """The crushed Quantized filter of section 1."""
+        return volume.find('Block').GetSection(1).GetChannel('TEM').GetFilter('Quantized')
 
     def test_crushed_import_never_calls_calculate_histogram(self) -> None:
         volume, histogram = self._import()
@@ -55,7 +55,7 @@ class TestCrushedImportSkipsTheHistogram(unittest.TestCase):
         self.assertGreater(filter_node.CrushCodeSpan, 1)
 
     def test_reimport_after_deleting_the_filter_saves_the_channel_link(self) -> None:
-        """RC1, 2026-11-10: with the Raw8 dir and its Filter_Link removed by hand, a re-import wrote the tiles but
+        """RC1, 2026-11-10: with the Quantized dir and its Filter_Link removed by hand, a re-import wrote the tiles but
         the channel XML never regained the link."""
         volume, _ = self._import()
         channel = volume.find('Block').GetSection(1).GetChannel('TEM')
@@ -63,7 +63,7 @@ class TestCrushedImportSkipsTheHistogram(unittest.TestCase):
         shutil.rmtree(self._filter(volume).FullPath)
         with open(channel_xml, encoding='utf-8') as f:
             text = f.read()
-        kept = [line for line in text.splitlines(keepends=True) if 'Path="Raw8"' not in line or 'Filter_Link' not in line]
+        kept = [line for line in text.splitlines(keepends=True) if 'Path="Quantized"' not in line or 'Filter_Link' not in line]
         self.assertLess(len(kept), len(text.splitlines(keepends=True)), 'no Filter_Link line to remove')
         with open(channel_xml, 'w', encoding='utf-8') as f:
             f.write(''.join(kept))

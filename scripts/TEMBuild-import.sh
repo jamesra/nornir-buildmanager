@@ -9,7 +9,7 @@
 #   2) Output folder for the new volume (VolumeData.xml root)
 #
 # Then runs ImportIDoc into the output folder, followed by the same sequential
-# Prune → Histogram → AdjustContrast → Mosaic → Assemble → MosaicReport →
+# Prune → Histogram → AdjustContrast (all on the crushed Quantized filter) → Mosaic → Assemble → MosaicReport →
 # CreateVikingXML chain as the launch config.
 #
 # Usage:
@@ -77,10 +77,10 @@ exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   -debug -computational_library "$COMP_LIB" "$@" \
   "$VOLUME_DIR" \
   ImportIDoc "${IMPORT_DIR}" \
-  --then Prune -InputFilter Raw8 -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \
-  --then Histogram -Filters Raw8 -InputTransform Prune -Downsample 4 -Channels TEM \
-  --then AdjustContrast -InputFilter Raw8 -OutputFilter Leveled -InputTransform Prune -Channels TEM \
-  --then Mosaic -InputFilter Leveled -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
-  --then Assemble -Channels TEM -Filters Leveled -Downsample 8,16,32 -NoInterlace -Transform Grid \
-  --then MosaicReport -PruneFilter Raw8 -ContrastFilter Raw8 -AssembleFilter Leveled -AssembleDownsample 16 -Output MosaicReport \
+  --then Prune -InputFilter Quantized -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \
+  --then Histogram -Filters Quantized -InputTransform Prune -Downsample 4 -Channels TEM \
+  --then AdjustContrast -InputFilter Quantized -OutputFilter Leveled -InputTransform Prune -Channels TEM \
+  --then Mosaic -InputFilter Quantized -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
+  --then Assemble -Channels TEM -Filters "(Quantized|Leveled)" -Downsample 8,16,32 -NoInterlace -Transform Grid \
+  --then MosaicReport -PruneFilter Quantized -ContrastFilter Quantized -AssembleFilter Leveled -AssembleDownsample 16 -Output MosaicReport \
   --then CreateVikingXML -OutputFile Mosaic

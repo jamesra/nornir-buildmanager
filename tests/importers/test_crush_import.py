@@ -96,10 +96,8 @@ class TestCrushHelpers(unittest.TestCase):
         params = CrushParams(k=2.5, step=50, sigma=20.0, offset=-100, bits=8, source_dtype='int16')
         self.assertAlmostEqual(shared.CountsToCrushCodes(400, params), 10.0)
 
-    def test_filter_name_follows_bits(self) -> None:
-        self.assertEqual(shared.CrushedFilterName(PARAMS), 'Raw8')
-        wide = CrushParams(k=2.5, step=1, sigma=0.4, offset=0, bits=12, source_dtype='uint16')
-        self.assertEqual(shared.CrushedFilterName(wide), 'Raw16')
+    def test_crushed_filter_name_is_quantized(self) -> None:
+        self.assertEqual(shared.CRUSHED_FILTER_NAME, 'Quantized')
 
     def test_section_params_use_histogram_top_bin(self) -> None:
         noise = shared.SectionNoise(sigma=4.0, sample_min=0, sample_max=500, source_dtype='uint16')

@@ -711,10 +711,7 @@ def _ClearInvalidHistogramElements(filterObj: FilterNode, transform_node: Transf
 
 def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: TransformNode, Downsample: float = 1,
                    OutputFilterName: str | None = None, **kwargs):
-    """Create a new filter using the histogram of the input filter. Crushed input filters are skipped."""
-
-    if SkipContrastStageForCrushedFilter(InputFilter, "AdjustContrast"):
-        return
+    """Create a new filter using the histogram of the input filter (crushed filters are read as their stored codes)."""
 
     [added_level, InputLevelNode] = InputFilter.TilePyramid.GetOrCreateLevel(Downsample)
     assert InputLevelNode is not None, "InputLevelNode must exist for AutolevelTiles"
@@ -741,12 +738,13 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
     OutputBpp = kwargs.get(
         'OutputBpp')  # None is passed if the user does not specify a value, a default value will never be read
 
+    InputBpp = ContrastStageBpp(InputFilter)
     if OutputBpp is None:
-        OutputBpp = InputFilter.BitsPerPixel
+        OutputBpp = InputBpp
 
     (MinIntensityCutoff, MaxIntensityCutoff, Gamma) = CutoffValuesForHistogram(HistogramElement, MinCutoffPercent,
                                                                                MaxCutoffPercent, Gamma,
-                                                                               Bpp=InputFilter.BitsPerPixel or 8)
+                                                                               Bpp=InputBpp or 8)
 
     # If the output filter already exists, find out if the user has specified the min and max pixel values explicitely.
     (saveFilter, OutputFilterNode) = channel_node.GetOrCreateFilter(OutputFilterName)
@@ -844,12 +842,8 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
     # if len(TilesToBuild) > 0:
     #    Pool = nornir_pools.GetGlobalClusterPool()
 
-    if InputFilter.BitsPerPixel == 8:
-        MinIntensityCutoff16bpp = MinIntensityCutoff
-        MaxIntensityCutoff16bpp = MaxIntensityCutoff
-    else:
-        MinIntensityCutoff16bpp = MinIntensityCutoff
-        MaxIntensityCutoff16bpp = MaxIntensityCutoff
+    MinIntensityCutoff16bpp = MinIntensityCutoff
+    MaxIntensityCutoff16bpp = MaxIntensityCutoff
 
     # In case the user swaps min/max cutoffs swap these values if needed
     if MaxIntensityCutoff16bpp < MinIntensityCutoff16bpp:
@@ -868,7 +862,7 @@ def AutolevelTiles(Parameters, InputFilter: FilterNode, transform_node: Transfor
     nornir_imageregistration.ConvertImagesInDictGpu(TilesToConvert,
                                                  MinMax=(MinIntensityCutoff16bpp, MaxIntensityCutoff16bpp),
                                                  Gamma=Gamma,
-                                                 InputBpp=InputFilter.BitsPerPixel,
+                                                 InputBpp=InputBpp,
                                                  OutputBpp=OutputBpp)
     #
     # #         cmd = 'convert \"' + InputImageFullPath + '\" ' + \
@@ -978,16 +972,17 @@ def IsCrushedFilter(filter_node) -> bool:
     return filter_node is not None and noise_crush.CrushParams.from_attributes(filter_node.attrib) is not None
 
 
-def SkipContrastStageForCrushedFilter(filter_node, stage: str) -> bool:
-    """Log and return True when a contrast stage is asked to run on a crushed filter.
+def ContrastStageBpp(filter_node) -> int | None:
+    """Bits per pixel of the tile images a contrast stage reads from *filter_node*.
 
-    No contrast mapping is applied to crushed codes anywhere (James, 2026-11-05): their histogram, the
-    contrast cutoffs and the Leveled filter built from them do not exist for crushed sections.
+    A crushed filter's ``BitsPerPixel`` is the width of its noise-step codes (e.g. 6), but the PNGs store them as
+    8-bit (or 16-bit when the codes need more), so histograms and conversions must use the stored depth.  The cutoffs
+    are then in code units, and Leveled is written as ordinary 8-bit pixels for registration.
     """
-    if not IsCrushedFilter(filter_node):
-        return False
-    prettyoutput.Log(f"{stage}: skipping crushed filter {filter_node.FullPath}; contrast is never applied to crushed codes")
-    return True
+    params = noise_crush.CrushParams.from_attributes(filter_node.attrib)
+    if params is None:
+        return None if filter_node.BitsPerPixel is None else int(filter_node.BitsPerPixel)
+    return 8 if params.bits <= 8 else 16
 
 
 def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, transform_node: TransformNode,
@@ -995,10 +990,8 @@ def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, 
     """Construct the intensity histogram for a filter.
 
     When no input tile can be read, publish an MQTT error and return so the
-    pipeline continues with the next element. Crushed filters are skipped (no contrast for crushed codes).
+    pipeline continues with the next element. A crushed filter's histogram is of its stored codes.
     """
-    if SkipContrastStageForCrushedFilter(filter_node, "Histogram"):
-        return
     NodeToSave = None
 
     [added_level, level_node] = filter_node.TilePyramid.GetOrCreateLevel(Downsample)
@@ -1054,9 +1047,7 @@ def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, 
     # RemoveOutdatedFile(TransformNode.FullPath, OutputHistogramXmlFullPath)
     # RemoveOutdatedFile(TransformNode.FullPath, OutputHistogramPngFilename)
 
-    Bpp = 16
-    if filter_node.BitsPerPixel is not None:
-        Bpp = int(filter_node.BitsPerPixel)
+    Bpp = ContrastStageBpp(filter_node) or 16
 
     NumBins = 2 << Bpp
     if NumBins > 2048:
