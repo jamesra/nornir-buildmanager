@@ -96,12 +96,15 @@
                     Function="Import" ImportPath="#ImportDir" extension="#extension"
                     Min="#MinValue" Max="#MaxValue" CameraBpp="#CameraBpp" NoCrush="#NoCrush" CrushK="#CrushK" CropTo="#CropTo" NoGainFirst="#NoGainFirst"/>
         <!-- Per-tile brightness gains (beam drift, white stripe) on Stage, for crushed filters only; skipped when
-             the filter's gains are already current. Level 1: the only level an import writes. -->
+             the filter's gains are already current. Level 1: the only level an import writes. Only the sections
+             whose MRC is in ImportDir (the walk covers the whole volume), and never a filter whose gains were
+             stamped from another transform. -->
         <Iterate VariableName="section_node" XPath="Block/Section">
             <Iterate VariableName="ChannelNode" XPath="Channel">
                 <Select VariableName="TransformNode" XPath="Transform[@Name='Stage']"/>
                 <Iterate VariableName="FilterNode" XPath="Filter">
-                    <PythonCall Function="tilegains.TileGains" Downsample="1" CrushedOnly="True" SkipIfCurrent="True"/>
+                    <PythonCall Function="tilegains.TileGains" Downsample="1" CrushedOnly="True" SkipIfCurrent="True"
+                                ImportDir="#ImportDir" ImportExtension="#extension" KeepOtherSource="True"/>
                 </Iterate>
             </Iterate>
         </Iterate>

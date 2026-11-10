@@ -16,6 +16,7 @@ Legacy (uncrushed) tiles have no chunk to hold a gain: the solve is logged and n
 """
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import time
@@ -24,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 import nornir_imageregistration
 import numpy as np
 from nornir_imageregistration import noise_crush, tile_gains
-from nornir_shared import prettyoutput
+from nornir_shared import files, prettyoutput
 from PIL import Image
 
 #: A rerun rewrites tile chunks only when some gain changed by more than this fraction (plan: ~0.5%).
@@ -106,8 +107,31 @@ def _as_bool(value) -> bool:
     return bool(value)
 
 
+@functools.lru_cache(maxsize=4)
+def _import_section_numbers(import_dir: str, extension: str) -> frozenset[int]:
+    """Section numbers of the files an import of ``import_dir`` reads (one scan per import, not one per filter)."""
+    from nornir_buildmanager.importers import shared  # imported here: the importers import this module's siblings
+    numbers: set[int] = set()
+    for (path, found) in files.RecurseSubdirectoriesGenerator(import_dir, RequiredFiles="*." + extension,
+                                                              ExcludeNames=[], ExcludedDownsampleLevels=[]):
+        for name in found or []:
+            try:
+                numbers.add(int(shared.GetSectionInfo(os.path.join(path, name)).number))
+            except Exception:  # noqa: BLE001 - a name that does not parse is reported by the importer itself
+                continue
+    return frozenset(numbers)
+
+
+def _section_number(FilterNode) -> int | None:
+    """Number of the section holding ``FilterNode`` (filter -> channel -> section), or None if it cannot be found."""
+    section = getattr(getattr(FilterNode, 'Parent', None), 'Parent', None)
+    number = getattr(section, 'Number', None)
+    return None if number is None else int(number)
+
+
 def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Logger | None = None,
-              CrushedOnly: bool | str = False, SkipIfCurrent: bool | str = False, **kwargs):
+              CrushedOnly: bool | str = False, SkipIfCurrent: bool | str = False, ImportDir: str | None = None,
+              ImportExtension: str | None = None, KeepOtherSource: bool | str = False, **kwargs):
     """
     Compute per-tile gains for ``FilterNode`` from the overlaps of ``TransformNode``'s mosaic and record them.
 
@@ -116,12 +140,22 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
     gains were already computed from this transform at its current checksum. ImportIDoc and ImportMRC call it with
     both, on ``Stage`` at level 1 (the only level an import writes; its tiles are still in the OS cache). Returns the
     filter node when its metadata changed, so the pipeline saves it.
+
+    ``ImportDir`` / ``ImportExtension`` limit the step to the sections that import reads: ImportMRC walks every section
+    of the volume, and the ones outside the batch must not be touched (RC1_Crush: a full pass restamped sections
+    already registered, at about 80 s each). ``KeepOtherSource`` leaves a filter alone whose gains were stamped from a
+    different transform (``Translated_Stage``: the layout registered after the import); an import must not move them
+    back onto ``Stage``.
     """
     if Logger is None:
         Logger = logging.getLogger(__name__)
     Downsample = int(Downsample)
     if TransformNode is None or FilterNode is None:
         return None
+    if ImportDir:
+        number = _section_number(FilterNode)
+        if number is None or number not in _import_section_numbers(str(ImportDir), str(ImportExtension or 'mrc')):
+            return None
     if _as_bool(CrushedOnly) and noise_crush.CrushParams.from_attributes(FilterNode.attrib) is None:
         return None
     if FilterNode.attrib.get(noise_crush.GAIN_FIRST_ATTRIB) == '1':
@@ -129,6 +163,10 @@ def TileGains(TransformNode, FilterNode, Downsample: int = 4, Logger: logging.Lo
                     f"diagnostic and are not applied again")
         return None
     source = f"{TransformNode.Name}:{TransformNode.attrib.get('Checksum', '')}"
+    stamped_from = FilterNode.attrib.get('TileGainsSource')
+    if _as_bool(KeepOtherSource) and stamped_from and stamped_from.split(':')[0] != TransformNode.Name:
+        Logger.info(f"TileGains: {FilterNode.FullPath} has gains from {stamped_from.split(':')[0]}; kept")
+        return None
     if _as_bool(SkipIfCurrent) and FilterNode.attrib.get('TileGainsSource') == source and \
             'TileGainsChecksum' in FilterNode.attrib:
         return None
