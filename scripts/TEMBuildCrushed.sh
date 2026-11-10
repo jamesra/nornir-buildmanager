@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # TEMBuildCrushed.sh
 #
-# TEMBuild.sh for volumes imported with noise crushing (the ImportIDoc / ImportMRC default, i.e. without
-# -NoCrush). Crushed tiles hold section-wide noise-step codes in the Quantized filter (legacy imports stay in
-# Raw8). The mosaic is built against Quantized exactly as for any crushed section; Histogram and AdjustContrast then
-# build a Leveled filter from the Quantized tiles so the standard TEMAlign scripts work on crushed and legacy
-# sections alike.
+# The mosaic build for crushed sections: noise-step codes in the Quantized filter (the ImportIDoc / ImportMRC
+# default, i.e. without -NoCrush). Sections without Quantized (legacy sections, in Raw8) are skipped;
+# TEMBuildLegacy.sh builds those, and TEMBuild.sh runs both.
 # Assumes the volume is already imported (VolumeData.xml present), without -CameraBpp.
 #
-# Differences from TEMBuild.sh:
-#   Prune/Histogram/AdjustContrast  read Quantized instead of Raw8 (AdjustContrast still writes Leveled)
-#   Mosaic          -InputFilter Quantized instead of Leveled (NCC is insensitive to the code scale)
-#   Assemble        -Filters Quantized and Leveled (the assembled codes, plus the Leveled images TEMAlign uses)
-#   MosaicReport    -AssembleFilter Leveled as in TEMBuild.sh
+# The mosaic is built and assembled on Quantized. AdjustAssembledContrast then writes the Leveled filter from the
+# assembled Quantized images (8-bit, mapped linearly over the display range CrushDisplayMin/Max the import recorded),
+# so TEMAlign reads Leveled images for crushed and legacy sections alike. Leveled has no tiles in crushed sections.
+#
+# Differences from TEMBuildLegacy.sh:
+#   Prune/Mosaic     read Quantized instead of Raw8 / Leveled (NCC is insensitive to the code scale)
+#   Histogram, AdjustContrast   not run; the import stores the code histogram and display range
+#   Assemble         -Filters Quantized
+#   AdjustAssembledContrast     Quantized assembled images -> Leveled assembled images
 # Prune keeps -DefaultThreshold 10.0: crushed scores are rescaled to the contrast-stretched 8-bit scale
 # with the filter's CrushCodeSpan (PruneObj.CrushedScoreScale).
 #
@@ -28,11 +30,10 @@
 # e.g. -start-at / -stop-after to run part of the chain (step number, Name#k, or a
 # Name that occurs once).
 #
-# Environment (optional overrides; defaults match TEMBuild.sh):
+# Environment (optional overrides; defaults match TEMBuildLegacy.sh):
 #   NORNIR_HEADLESS, PYTHONUNBUFFERED, NORNIR_MQTT_* ,
 #   NORNIR_COMPUTATIONAL_LIBRARY (default: cupy when a GPU is usable, else numpy),
-#   NORNIR_BUILD_PYTHON (python executable; default: python3 then python),
-#   NORNIR_CRUSHED_FILTER (default Quantized, the filter ImportIDoc/ImportMRC write for crushed tiles)
+#   NORNIR_BUILD_PYTHON (python executable; default: python3 then python)
 
 set -euo pipefail
 
@@ -48,12 +49,10 @@ VOLUME_DIR="$(resolve_volume_dir "$VOLUME_ARG")"
 PYTHON="$(resolve_python)"
 COMP_LIB="${NORNIR_COMPUTATIONAL_LIBRARY:-$(default_computational_library "$PYTHON")}"
 export_nornir_tem_env
-FILTER="${NORNIR_CRUSHED_FILTER:-Quantized}"
 
 echo "Volume folder : $VOLUME_DIR"
 echo "Python        : $PYTHON"
 echo "Compute lib   : $COMP_LIB"
-echo "Filter        : $FILTER"
 echo "Options       : ${*:-(none)}"
 echo
 
@@ -61,10 +60,9 @@ echo
 exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   -debug -computational_library "$COMP_LIB" "$@" \
   "$VOLUME_DIR" \
-  Prune -InputFilter "$FILTER" -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \
-  --then Histogram -Filters "$FILTER" -InputTransform Prune -Downsample 4 -Channels TEM \
-  --then AdjustContrast -InputFilter "$FILTER" -OutputFilter Leveled -InputTransform Prune -Channels TEM \
-  --then Mosaic -InputFilter "$FILTER" -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
-  --then Assemble -Channels TEM -Filters "($FILTER|Leveled)" -Downsample 8,16,32 -NoInterlace -Transform Grid \
-  --then MosaicReport -PruneFilter "$FILTER" -ContrastFilter "$FILTER" -AssembleFilter Leveled -AssembleDownsample 16 -Output MosaicReport \
+  Prune -InputFilter Quantized -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \
+  --then Mosaic -InputFilter Quantized -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
+  --then Assemble -Channels TEM -Filters Quantized -Downsample 8,16,32 -NoInterlace -Transform Grid \
+  --then AdjustAssembledContrast -InputFilter Quantized -OutputFilter Leveled -Channels TEM \
+  --then MosaicReport -PruneFilter Quantized -ContrastFilter Quantized -AssembleFilter Leveled -AssembleDownsample 16 -Output MosaicReport \
   --then CreateVikingXML -OutputFile Mosaic

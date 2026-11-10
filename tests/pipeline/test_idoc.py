@@ -389,7 +389,10 @@ class TestIDocSingleSectionImport(IDocTest):
         ChannelNode = SectionNode.GetChannel('TEM')
         self.assertIsNotNone(ChannelNode)
 
+        # Legacy (-NoCrush) imports write Raw8, crushed imports Quantized.
         FilterNode = ChannelNode.GetFilter('Raw8')
+        if FilterNode is None:
+            FilterNode = ChannelNode.GetFilter('Quantized')
         self.assertIsNotNone(FilterNode)
 
         return FilterNode
@@ -487,7 +490,7 @@ class TestIDocSingleSectionImport(IDocTest):
 
         FilterObj = self._getRawDataFilterNode(self.SectionNumber)
         params = CrushParams.from_attributes(FilterObj.attrib)
-        assert params is not None, "Raw8 has no crush attributes"
+        assert params is not None, "Quantized has no crush attributes"
         self.assertEqual(FilterObj.BitsPerPixel, params.bits)
         self.EnsureTilePyramidIsFull(FilterObj, 25)
 
@@ -507,13 +510,22 @@ class TestIDocSingleSectionImport(IDocTest):
         self.LoadMetaData()
         FilterObj = self._getRawDataFilterNode(self.SectionNumber)
         self.assertTrue(params.same_quantization(CrushParams.from_attributes(FilterObj.attrib)))
-        self.assertAlmostEqual(FilterObj.MinIntensityCutoff, TargetMinIntensity / params.step, delta=0.01)
-        self.assertAlmostEqual(FilterObj.MaxIntensityCutoff, TargetMaxIntensity / params.step, delta=0.01)
+        # Crushed filters carry no contrast (ClearCrushedFilterContrast, 2026-11-05); the override sets the Prune
+        # score span in codes instead.
+        self.assertIsNone(FilterObj.MinIntensityCutoff)
+        self.assertIsNone(FilterObj.MaxIntensityCutoff)
+        self.assertAlmostEqual(FilterObj.CrushCodeSpan, (TargetMaxIntensity - TargetMinIntensity) / params.step,
+                               delta=0.01)
         self.assertEqual({tile: os.path.getmtime(tile) for tile in tiles}, tile_mtimes)
 
-        self.RunHistogram(Transform='Stage')
-        self.RunAdjustContrast(Transform='Stage')
-        self.RunMosaic(Filter='Leveled', Transform='Stage')
+        # The TEMBuildCrushed chain: mosaic and assemble on the codes, then Leveled from the assembled images.
+        self.RunMosaic(Filter='Quantized', Transform='Stage')
+        self.RunAssemble(Channels='TEM', Filter='Quantized', TransformName='Grid', Levels=[8, 16])
+        self.RunAdjustAssembledContrast(Levels=[8, 16])
+        self.LoadMetaData()
+        leveled = self.ChannelData.GetFilter('Leveled')
+        self.assertFalse(leveled.HasTilePyramid)
+        self.assertEqual(leveled.MinIntensityCutoff, FilterObj.CrushDisplayRange[0])
 
     def tearDown(self):
         IDocTest.tearDown(self)
@@ -572,6 +584,8 @@ class TestIDocBuild(IDocTest, StosRebuildHelper):
         shutil.copytree(self.TestOutputPath, repro_path, copy_function=shutil.copy2)
 
     def test_i_doc_build_test(self):
+        # The legacy chain: contrast-stretched Raw8 tiles, AdjustContrast to Leveled tiles, Mosaic on Leveled.
+        self.IDocImportExtraArgs = ['-NoCrush']
         try:
             BruteLevel = 16
             GridLevelOne = 16

@@ -78,3 +78,15 @@ default_computational_library() {
     printf 'numpy\n'
   fi
 }
+
+tem_script() {
+  # Path of sibling TEM script $2 in folder $1: TEMBuildLegacy.sh in the repo, TEMBuildLegacy in the image
+  # (nornir-docker/prod/Dockerfile installs TEM*.sh without the extension).
+  local dir="$1"
+  local name="$2"
+  if [[ -f "$dir/$name.sh" ]]; then
+    printf '%s\n' "$dir/$name.sh"
+  else
+    printf '%s\n' "$dir/$name"
+  fi
+}

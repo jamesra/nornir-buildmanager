@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # TEMBuild.sh
 #
-# Linux equivalent of the VS Code launch config
-# "TEM Build: full sequence (sequential)".
+# Builds the mosaics of every section in a volume: runs TEMBuildLegacy.sh (sections with Raw8, contrast-stretched
+# tiles) and then TEMBuildCrushed.sh (sections with Quantized, crushed codes). Each chain skips the sections it
+# does not apply to, so a volume may mix both kinds. Both end with a Leveled filter that TEMAlign reads.
 # Assumes the volume is already imported (VolumeData.xml present).
 #
 # Prompts for a volume folder (or accept $1 / VOLUME_DIR).
@@ -13,48 +14,24 @@
 #   VOLUME_DIR=/storage4/MyVolume ./TEMBuild.sh
 #   ./TEMBuild.sh /storage4/MyVolume -start-at Mosaic
 #
-# Arguments after the volume folder are passed to nornir-build as global options,
-# e.g. -start-at / -stop-after to run part of the chain (step number, Name#k, or a
-# Name that occurs once).
+# Arguments after the volume folder are passed to both scripts as nornir-build global options. -start-at and
+# -stop-after apply to each chain separately, so use a stage name both chains have (Prune, Mosaic, Assemble,
+# MosaicReport, CreateVikingXML) or run TEMBuildLegacy.sh / TEMBuildCrushed.sh directly.
 #
-# Environment (optional overrides; defaults match the launch config):
-#   NORNIR_HEADLESS, PYTHONUNBUFFERED, NORNIR_MQTT_* ,
-#   NORNIR_COMPUTATIONAL_LIBRARY (default: cupy when a GPU is usable, else numpy),
-#   NORNIR_BUILD_PYTHON (python executable; default: python3 then python)
+# Environment: as TEMBuildLegacy.sh and TEMBuildCrushed.sh.
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_nornir_tem_common.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_nornir_tem_common.sh"
+source "$SCRIPT_DIR/_nornir_tem_common.sh"
 
-# First argument is the volume folder unless it is an option; the rest are global
-# nornir-build options (e.g. -start-at 2 -stop-after 9).
 VOLUME_ARG=""
 if [[ $# -gt 0 && "$1" != -* ]]; then
   VOLUME_ARG="$1"
   shift
 fi
 VOLUME_DIR="$(resolve_volume_dir "$VOLUME_ARG")"
-PYTHON="$(resolve_python)"
-COMP_LIB="${NORNIR_COMPUTATIONAL_LIBRARY:-$(default_computational_library "$PYTHON")}"
-export_nornir_tem_env
 
-echo "Volume folder : $VOLUME_DIR"
-echo "Python        : $PYTHON"
-echo "Compute lib   : $COMP_LIB"
-echo "Options       : ${*:-(none)}"
-echo
-
-# Same sequential chain as launch.json "TEM Build: full sequence (sequential)".
-# Volume path is first positional (legacy launch order); build reorders to subcommand-first.
-# Use -m nornir_buildmanager (not .build) to avoid runpy RuntimeWarning from package __init__ importing build.
-exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
-  -debug -computational_library "$COMP_LIB" "$@" \
-  "$VOLUME_DIR" \
-  Prune -InputFilter Raw8 -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \
-  --then Histogram -Filters Raw8 -InputTransform Prune -Downsample 4 -Channels TEM \
-  --then AdjustContrast -InputFilter Raw8 -OutputFilter Leveled -InputTransform Prune -Channels TEM \
-  --then Mosaic -InputFilter Leveled -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
-  --then Assemble -Channels TEM -Filters Leveled -Downsample 8,16,32 -NoInterlace -Transform Grid \
-  --then MosaicReport -PruneFilter Raw8 -ContrastFilter Raw8 -AssembleFilter Leveled -AssembleDownsample 16 -Output MosaicReport \
-  --then CreateVikingXML -OutputFile Mosaic
+bash "$(tem_script "$SCRIPT_DIR" TEMBuildLegacy)" "$VOLUME_DIR" "$@"
+exec bash "$(tem_script "$SCRIPT_DIR" TEMBuildCrushed)" "$VOLUME_DIR" "$@"

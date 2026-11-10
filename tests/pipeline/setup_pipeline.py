@@ -571,6 +571,15 @@ class NornirBuildTestBase(testbase.TestBase):
 
         return volumeNode
 
+    def RunAdjustAssembledContrast(self, Levels: list[int] | int, InputFilter: str = 'Quantized',
+                                   OutputFilter: str = 'Leveled'):
+        """Level a crushed filter's assembled images into OutputFilter and check every level has an image."""
+        volumeNode = self.RunBuild(self._CreateBuildArgs('AdjustAssembledContrast', '-InputFilter', InputFilter,
+                                                         '-OutputFilter', OutputFilter))
+        for image_set_node in EnumerateImageSets(self, volumeNode, None, OutputFilter):
+            self._VerifyImageSetHasExpectedLevels(image_set_node, ConvertLevelsToList(Levels))
+        return volumeNode
+
     def RunAssembleTiles(self, Channels=None, Filter=None, TransformName=None, Levels=2, Shape=[512, 512],
                          max_working_image_area=None):
         if Filter is None:
