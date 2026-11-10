@@ -1,7 +1,7 @@
 """-CameraBpp and noise crushing.
 
-1. ``CameraBppForImport`` drops -CameraBpp with a warning unless -NoCrush is set (James, 2026-11-05: it is
-   unnecessary when crushing).
+1. ``CameraBppForImport`` rejects -CameraBpp unless -NoCrush is set (James, 2026-11-10; it was dropped with a warning
+   from 2026-11-05, because it is unnecessary when crushing).
 2. What -CameraBpp could have changed in a crushed import (Build2 asked whether RC1_Crush, imported with
    -CameraBpp 14, needs reimporting). The crush is ``floor((raw - offset) / step)`` clipped to ``2**bits - 1``.
    sigma comes from the sampled tiles, step from k and sigma, offset from the dtype and the sampled minimum:
@@ -12,6 +12,8 @@
 import logging
 
 import numpy as np
+import pytest
+from nornir_buildmanager.exceptions import NornirUserException
 from nornir_buildmanager.importers import shared
 from nornir_imageregistration import noise_crush
 from nornir_imageregistration.image_stats import HistogramOfArray
@@ -33,10 +35,9 @@ def _histogram(tiles: list[np.ndarray], max_val: int):
 
 
 class TestCameraBppForImport:
-    def test_dropped_with_warning_when_crushing(self, caplog):
-        with caplog.at_level(logging.WARNING):
-            assert shared.CameraBppForImport(14, no_crush=False) is None
-        assert any('-CameraBpp 14 is ignored' in r.getMessage() for r in caplog.records)
+    def test_an_error_when_crushing(self):
+        with pytest.raises(NornirUserException, match='-CameraBpp 14 is not allowed with crush imports'):
+            shared.CameraBppForImport(14, no_crush=False)
 
     def test_kept_for_legacy_imports(self, caplog):
         with caplog.at_level(logging.WARNING):

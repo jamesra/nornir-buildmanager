@@ -1091,7 +1091,8 @@ class PlatformTest(NornirBuildTestBase):
 
     def RunIDocImport(self):
         buildArgs = self._CreateImportArgs('ImportIDoc', self.ImportedDataPath)
-        buildArgs.extend(['-CameraBpp', '14'])
+        if '-NoCrush' in self.IDocImportExtraArgs:  # -CameraBpp is an error with a crush import
+            buildArgs.extend(['-CameraBpp', '14'])
         buildArgs.extend(self.IDocImportExtraArgs)
         self.RunBuild(buildArgs)
 

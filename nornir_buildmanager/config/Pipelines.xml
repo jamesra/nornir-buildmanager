@@ -26,7 +26,7 @@
                       help="Section numbers to process.  If omitted all sections are processed.  Values are separated with commas and ranges are indicated by hyphens. Ex: '1,3,5-7' == [1,3,5,6,7]"
                       required="False"/>
             <Argument flag="-CameraBpp" dest="CameraBpp" type="int"
-                      help="Legacy (-NoCrush) imports only: the actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data.  Unnecessary when crushing (the default): it is ignored with a warning unless -NoCrush is set."
+                      help="Legacy (-NoCrush) imports only: the actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data.  Not allowed when crushing (the default): giving it without -NoCrush is an error."
                       required="False"/>
             <Argument flag="-NoCrush" action="store_true" dest="NoCrush" required="False"
                       help="Store contrast-stretched 8-bit tiles instead of noise-crushed codes.  By default tiles deeper than 8 bits are quantized to a section-wide step of CrushK noise sigmas (about 86% smaller than raw 16-bit).  An existing uncrushed Raw8 filter is never replaced either way."/>
@@ -78,7 +78,7 @@
                       help="Max intensity cutoff.  A value from 0.0 to 1.0" required="False"
                       default=".9999"/>
             <Argument flag="-CameraBpp" dest="CameraBpp" type="int"
-                      help="Legacy (-NoCrush) imports only: the actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data.  Unnecessary when crushing (the default): it is ignored with a warning unless -NoCrush is set."
+                      help="Legacy (-NoCrush) imports only: the actual bits-per-pixel of the camera.  Limits the range of image histograms being expanded beyond reason due to errors in input image data or meta-data.  Not allowed when crushing (the default): giving it without -NoCrush is an error."
                       required="False"/>
             <Argument flag="-NoCrush" action="store_true" dest="NoCrush" required="False"
                       help="Store the legacy contrast-stretched Raw16 tiles instead of noise-crushed codes in Raw8.  An existing uncrushed Raw16 import is never replaced either way."/>

@@ -912,8 +912,8 @@ def GetSectionNoise(histogram_cache_path: str,
     return noise
 
 
-CAMERA_BPP_IGNORED_WHEN_CRUSHING = (
-    "-CameraBpp {bpp} is ignored: it only applies to legacy (-NoCrush) imports. Crushed codes come from the "
+CAMERA_BPP_NOT_ALLOWED_WHEN_CRUSHING = (
+    "-CameraBpp {bpp} is not allowed with crush imports; it is only valid with -NoCrush. Crushed codes come from the "
     "measured noise and the raw counts, so a camera bit depth is unnecessary when crushing.")
 
 
@@ -955,18 +955,17 @@ def CropBorderForFrame(frame_shape: Sequence[int], crop_to: int) -> int:
 
 def CameraBppForImport(camera_bpp: int | None, no_crush: bool,
                        logger: logging.Logger | None = None) -> int | None:
-    """The -CameraBpp value an import should use: unchanged for -NoCrush, None (with a warning) otherwise.
+    """The -CameraBpp value an import should use: as given for -NoCrush; an error for a crush import.
 
     CameraBpp clamps the legacy contrast-stretch range. For crushed imports it changes nothing that matters
     (the crush step, offset and sigma never depend on it) but it can nudge the section histogram's top bin and
-    with it the crush bit depth, so it is dropped and the user is told it was unnecessary.
+    with it the crush bit depth, so giving it with a crush import fails before any work is done (James, 2026-11-10).
+
+    :raises NornirUserException: *camera_bpp* is given and *no_crush* is false.
     """
     if camera_bpp is None or no_crush:
         return camera_bpp
-    message = CAMERA_BPP_IGNORED_WHEN_CRUSHING.format(bpp=camera_bpp)
-    prettyoutput.LogErr(message)
-    (logger or logging.getLogger(__name__)).warning(message)
-    return None
+    raise NornirUserException(CAMERA_BPP_NOT_ALLOWED_WHEN_CRUSHING.format(bpp=camera_bpp))
 
 
 def SectionCrushParams(noise: SectionNoise, histogram: Histogram | None, k: float) -> CrushParams:
