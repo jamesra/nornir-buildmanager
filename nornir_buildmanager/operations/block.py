@@ -418,6 +418,11 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
     # SectionNode exposes Number (attrib), not SectionNumber — this line was never hit
     # while MatchChannelFilterPattern(...) is False always left the list empty.
     MissingChannelOrFilterSectionNumbers = [SectionNumberKey(s) for s in MissingChannelOrFilterSections]
+    if MissingChannelOrFilterSectionNumbers and Logger is not None:
+        # A section without the requested channel/filter (a crushed section has no Leveled) is silently left out of
+        # the registration; say so, naming the sections (RC3 516, 2026-11-10).
+        Logger.warning("Sections dropped from registration: no channel matching %r with a filter matching %r: %s",
+                       ChannelsRegEx, FiltersRegEx, ", ".join(str(n) for n in sorted(MissingChannelOrFilterSectionNumbers)))
     NonStosSectionNumbersSet = NonStosSectionNumbersSet.union(MissingChannelOrFilterSectionNumbers)
 
     # Identify the sections that can be control sections
