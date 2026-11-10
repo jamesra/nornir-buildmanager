@@ -424,6 +424,8 @@ class SerialEMIDocImport:
         import_gains: shared.ImportTileGains | None = None
         tile_numbers = cls.TileNumbers(IDocData.tiles)
         requested_crush = None
+        if ImageBpp > 8:  # 8-bit sections cannot be crushed, so they fit either kind of volume
+            shared.RequireSameCrushKind(channelObj, not NoCrush)
         if not NoCrush and ImageBpp > 8:
             crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
             gain_first = shared.GainFirstAllowed(channelObj)

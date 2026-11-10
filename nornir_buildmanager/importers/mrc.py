@@ -390,6 +390,8 @@ class MRCImport:
         gain_first = False
         import_gains: shared.ImportTileGains | None = None
         requested_crush = None
+        if mrcfile.bytes_per_pixel > 1:  # 8-bit sections cannot be crushed, so they fit either kind of volume
+            shared.RequireSameCrushKind(channelObj, not NoCrush)
         if not NoCrush and mrcfile.bytes_per_pixel > 1:
             crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
             gain_first = shared.GainFirstAllowed(channelObj)
