@@ -54,7 +54,7 @@ NOISE_CACHE_SUFFIX: str = '.noise.json'
 # Tiles sampled per section for the noise estimate; exposure is section-wide.
 NOISE_SAMPLE_TILES: int = 16
 # Per-tile brightness gains solved before the crush, next to Histogram.xml: Histogram.gains.json
-GAINS_CACHE_VERSION: int = 2
+GAINS_CACHE_VERSION: int = 3
 GAINS_CACHE_SUFFIX: str = '.gains.json'
 # Overlap statistics are measured on tiles reduced by this factor: the strips hold tens of thousands of pixels, and
 # stage error of hundreds of pixels barely moves a strip's median (RC3: gains at 8 matched level 1).
