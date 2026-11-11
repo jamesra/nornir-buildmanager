@@ -42,6 +42,13 @@ from .xml_backend import XMLMetadataBackend
 
 logger = logging.getLogger(__name__)
 
+# Volumes whose database could not be locked in this process. Each attempt waits out the busy
+# timeout (30 s) first, so a share whose locks always fail (Lobanova on /storage2 2026-11-11, likely
+# CIFS without nobrl) would stall every container save; after the first failure the shadow skips the volume
+# until the process ends. The XML is the source of truth and the next process re-syncs from it.
+_lock_failed_volumes: set[str] = set()
+_lock_failed_volumes_lock = threading.Lock()
+
 _VOLUME_DATA_FILENAME = 'VolumeData.xml'
 _VOLUME_TAG = 'Volume'
 
@@ -187,10 +194,49 @@ def _remember_signature(volume_root: str, key: str, signature: FileSignature) ->
         known[key] = signature
 
 
+def _is_lock_failure(e: BaseException) -> bool:
+    """True when SQLite itself could not lock the database for the whole busy timeout.
+
+    Writers already hold the volume's write lock, so this means the share's file locking does not work,
+    not contention. A ``WriteLockTimeout`` (another writer holding that lock) is not one: the next save
+    tries again.
+    """
+    return isinstance(e, sqlite3.OperationalError) and 'locked' in str(e)
+
+
+def _shadow_off_for(volume_root: str) -> bool:
+    with _lock_failed_volumes_lock:
+        return volume_root in _lock_failed_volumes
+
+
+def _turn_shadow_off(volume_root: str, container_dir: str, e: BaseException) -> None:
+    """Skip *volume_root*'s shadow for the rest of this process, logging it once."""
+    with _lock_failed_volumes_lock:
+        if volume_root in _lock_failed_volumes:
+            return
+        _lock_failed_volumes.add(volume_root)
+    logger.warning(
+        "SQLite shadow could not lock %s while syncing %s (%s); the shadow is off for this volume until this "
+        "process ends. VolumeData.xml saves are unaffected. On a CIFS share, mount it with nobrl; or set "
+        "%s=0 to turn the shadow off.",
+        os.path.join(volume_root, 'VolumeData.db'), container_dir, e, feature_flags.SHADOW_SQLITE_ENV,
+        exc_info=e)
+
+
 def _check_loaded_container(container_dir: str, loaded_xml: bytes, signature: FileSignature) -> None:
     volume_root = _cached_volume_root(container_dir)
-    if volume_root is None:
+    if volume_root is None or _shadow_off_for(volume_root):
         return
+    try:
+        _check_loaded_container_in(volume_root, container_dir, loaded_xml, signature)
+    except Exception as e:
+        if not _is_lock_failure(e):
+            raise
+        _turn_shadow_off(volume_root, container_dir, e)
+
+
+def _check_loaded_container_in(volume_root: str, container_dir: str, loaded_xml: bytes,
+                               signature: FileSignature) -> None:
     known = _volume_signatures(volume_root)
     if known is None:
         return  # No database yet; the first save bootstraps it from the files.
@@ -282,7 +328,20 @@ def _shadow_container(container_dir: str,
     if volume_root is None:
         logger.debug("No Volume at or above %s yet; SQLite shadow skipped", container_dir)
         return False
+    if _shadow_off_for(volume_root):
+        return False
+    try:
+        return _sync_container(volume_root, container_dir, saved_xml, written_signature)
+    except Exception as e:
+        if not _is_lock_failure(e):
+            raise
+        _turn_shadow_off(volume_root, container_dir, e)
+        return False
 
+
+def _sync_container(volume_root: str, container_dir: str, saved_xml: bytes | None,
+                    written_signature: FileSignature | None) -> bool:
+    """Body of :func:`_shadow_container` for a container below *volume_root*."""
     backend = SQLiteMetadataBackend(volume_root)
     # Held through the parity read so no other writer changes the container between upsert and compare.
     with backend.write_lock():
