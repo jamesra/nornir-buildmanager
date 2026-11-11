@@ -22,29 +22,35 @@ def Rename(OldNode, NewName, **kwargs):
     return None
 
 
-def MovePath(Node, NewPath, **kwargs):
+def MovePath(Node, NewPath: str, **kwargs):
+    """Move a node's file or directory to ``NewPath`` (a sibling name) and update its Path.
+
+    The move happens before ``Node.Path`` is set: a container's Path setter creates the new directory, and
+    ``shutil.move`` into an existing directory nests the source inside it (RC1_Crush 2026-11-11). An empty
+    destination directory is replaced; a non-empty one is left alone and the node is not moved.
+    """
     if Node.Path == NewPath:
         return None
 
-    if os.path.exists(Node.FullPath):
-        oldFullPath = Node.FullPath
+    oldFullPath = Node.FullPath
+    if not os.path.exists(oldFullPath):
         Node.Path = NewPath
+        return Node.Parent
 
-        logger = logging.getLogger(__name__ + '.MovePath')
+    logger = logging.getLogger(__name__ + '.MovePath')
+    newFullPath = os.path.join(os.path.dirname(oldFullPath.rstrip('/\\')), NewPath)
 
-        logger.info("Moving " + oldFullPath + "\n  to " + Node.FullPath)
+    if os.path.isdir(newFullPath):
+        if any(os.scandir(newFullPath)):
+            logger.error(f"Not moving {oldFullPath}: destination {newFullPath} already exists and is not empty")
+            return None
+        os.rmdir(newFullPath)
+    elif os.path.exists(newFullPath):
+        os.remove(newFullPath)
 
-        if os.path.exists(Node.FullPath):
-            if os.path.isdir(Node.FullPath):
-                shutil.move(oldFullPath, Node.FullPath)
-            else:
-                os.remove(Node.FullPath)
-                os.rename(oldFullPath, Node.FullPath)
-        else:
-            shutil.move(oldFullPath, Node.FullPath)
-    else:
-        Node.Path = NewPath
-
+    logger.info(f"Moving {oldFullPath}\n  to {newFullPath}")
+    shutil.move(oldFullPath, newFullPath)
+    Node.Path = NewPath
     return Node.Parent
 
 

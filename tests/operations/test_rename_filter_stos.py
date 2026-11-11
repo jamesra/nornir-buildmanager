@@ -100,6 +100,28 @@ def test_rename_filter_updates_transforms_and_files(base: str) -> None:
     assert not cleaned, reason
 
 
+def test_rename_filter_moves_folder_without_nesting(base: str) -> None:
+    # RC1_Crush 2026-11-11: the filter folder ended up at Quantized/Raw8 because setting a container's Path
+    # creates the new directory before shutil.move, which then moves the source inside it.
+    volume_dir, volume = _make_volume(base, {1: 'Raw8', 2: 'Raw8', 3: 'Quantized'})
+    VolumeManager.Save(volume)
+    channel_dir = os.path.join(volume_dir, 'TEM', '0001', 'TEM')
+    raw8_dir = os.path.join(channel_dir, 'Raw8')
+    assert os.path.isfile(os.path.join(raw8_dir, 'VolumeData.xml'))
+    os.makedirs(os.path.join(raw8_dir, 'Images'))
+    with open(os.path.join(raw8_dir, 'Images', 'marker.txt'), 'w') as f:
+        f.write('x')
+
+    build.Execute([volume_dir, '-debug', 'RenameFilter', '-InputFilter', 'Raw8', '-OutputFilter', 'Quantized'])
+
+    quantized_dir = os.path.join(channel_dir, 'Quantized')
+    assert not os.path.exists(raw8_dir)
+    assert not os.path.exists(os.path.join(quantized_dir, 'Raw8'))
+    assert os.path.isfile(os.path.join(quantized_dir, 'Images', 'marker.txt'))
+    filter_node = VolumeManager.Load(volume_dir).find("Block/Section[@Number='1']/Channel/Filter")
+    assert (filter_node.Name, filter_node.Path) == ('Quantized', 'Quantized')
+
+
 def test_section_that_still_has_the_old_filter_keeps_its_name(base: str) -> None:
     # Section 1 still holds Raw8 (legacy); section 2 has only Quantized.
     _, volume = _make_volume(base, {1: 'Raw8', 2: 'Quantized', 3: 'Raw8'})
