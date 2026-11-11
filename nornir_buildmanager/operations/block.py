@@ -1525,6 +1525,63 @@ def FixStosFilePaths(ControlFilter: FilterNode, MappedFilter: FilterNode, StosTr
                                     MappedFilter.GetMaskImage(Downsample).FullPath)  # type: ignore[union-attr]
 
 
+def _conventional_stos_name(t: TransformNode) -> str:
+    """The conventional .stos basename for a transform's current section, channel and filter attributes."""
+    return StosGroupNode.GenerateStosFilenameFromParts(
+        t.attrib.get('MappedSectionNumber'), t.attrib.get('ControlSectionNumber'),  # type: ignore[arg-type]
+        t.attrib.get('ControlChannelName'), t.attrib.get('ControlFilterName'),  # type: ignore[arg-type]
+        t.attrib.get('MappedChannelName'), t.attrib.get('MappedFilterName'))  # type: ignore[arg-type]
+
+
+def RenameStosTransformFilter(stos_transform_node: TransformNode, OldName: str, NewName: str,
+                              Logger: logging.Logger | None = None, **kwargs) -> XElementWrapper | None:
+    """Point a stos transform that names filter ``OldName`` at ``NewName`` after a RenameFilter or re-import.
+
+    A side (Control or Mapped) is updated only when its section's channel has ``NewName`` and no longer has
+    ``OldName``, so sections that still hold ``OldName`` (e.g. legacy Raw8 next to crushed Quantized) keep their
+    transforms. Without this a transform names a missing filter and validation deletes it unless it is locked
+    (SectionMappingsNode.CleanTransformsIfInvalid). The .stos file is renamed to the conventional name and its
+    image paths are pointed at the new filter when its images exist. The transform itself, and so its checksum,
+    is unchanged.
+    """
+    if Logger is None:
+        Logger = logging.getLogger(__name__ + '.RenameStosTransformFilter')
+
+    t = stos_transform_node
+    old_conventional_name = _conventional_stos_name(t)
+    changed = False
+    for side in ('Control', 'Mapped'):
+        attrib_name = side + 'FilterName'
+        if stos_transform_node.attrib.get(attrib_name) != OldName:
+            continue
+        filter_node = __GetFilter(stos_transform_node, int(stos_transform_node.attrib[side + 'SectionNumber']),
+                                  stos_transform_node.attrib.get(side + 'ChannelName'), NewName)
+        if filter_node is None or filter_node.Parent.GetFilter(OldName) is not None:  # type: ignore[union-attr]
+            continue
+        stos_transform_node.attrib[attrib_name] = NewName
+        changed = True
+
+    if not changed:
+        return None
+
+    stos_group = t.FindParent('StosGroup')
+    if isinstance(stos_group, StosGroupNode):
+        # Only files that follow the naming convention are renamed; hand-named .stos files keep their names.
+        if t.Path == old_conventional_name:
+            stos_group.EnsureConventionalStosPath(t, _conventional_stos_name(t))
+
+        (mapped_filter, _) = __MappedFilterForTransform(t)  # type: ignore[misc]
+        (control_filter, _) = __ControlFilterForTransform(t)  # type: ignore[misc]
+        downsample = int(stos_group.Downsample)
+        if (mapped_filter is not None and control_filter is not None and os.path.exists(t.FullPath)
+                and control_filter.GetImage(downsample) is not None
+                and mapped_filter.GetImage(downsample) is not None):
+            FixStosFilePaths(control_filter, mapped_filter, t, downsample)
+
+    Logger.info("Stos transform %s now names filter %s instead of %s", t.FullPath, NewName, OldName)
+    return t.Parent
+
+
 def RebaseCopiedStosPaths(StosFilePath: str,
                           ControlFilter: FilterNode,
                           MappedFilter: FilterNode,

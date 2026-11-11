@@ -411,7 +411,7 @@
         RegEx="#FiltersRegEx"/> <PythonCall Function="diagnostics.PrintImageSetsOlderThanTilePyramids" 
         node="#FilterNode"/> </Iterate> </Iterate> </Iterate> </Pipeline> -->
 
-    <Pipeline Name="RenameFilter" Help="Renames a filter" Description="Renames a filter across channels/sections and updates linked filter paths.">
+    <Pipeline Name="RenameFilter" Help="Renames a filter" Description="Renames a filter across channels/sections, updates linked filter paths, and points stos transforms that name the old filter at the new one.">
         <Arguments>
             <Argument flag="-InputFilter" dest="InputFilter" help="Existing filter name to rename (exact name match, not regex)"
                       required="True"/>
@@ -430,6 +430,19 @@
                  XPath="Block/Section/Channel/Filter[@Name='#NewName']">
             <PythonCall Function="general.MovePath" Node="#FilterNode"
                         NewPath="#NewName"/>
+        </Iterate>
+
+        <!-- Stos transforms record their filters by name.  Point them at the new name where a section has it and no
+             longer has the old one (also after a re-import into the new name).  Not validated: a transform naming a
+             missing filter would otherwise be cleaned before it can be renamed. -->
+        <Iterate VariableName="BlockNode" XPath="Block" Validate="False">
+            <Iterate VariableName="StosGroupNode" XPath="StosGroup" Validate="False">
+                <Iterate VariableName="StosTransformNode" XPath="SectionMappings/Transform" Validate="False">
+                    <PythonCall Function="block.RenameStosTransformFilter"
+                                stos_transform_node="#StosTransformNode" OldName="#InputFilter"
+                                NewName="#NewName"/>
+                </Iterate>
+            </Iterate>
         </Iterate>
     </Pipeline>
 
