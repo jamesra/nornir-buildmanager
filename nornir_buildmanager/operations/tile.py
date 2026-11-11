@@ -999,15 +999,16 @@ def display_range_lut(display_range: tuple[float, float], max_code: int) -> NDAr
     return numpy.clip(numpy.round(scaled), 0, 255).astype(numpy.uint8)
 
 
-def AutolevelAssembledImages(InputFilter: FilterNode, OutputFilterName: str, Logger: logging.Logger | None = None,
-                             **kwargs):
+def AutolevelAssembledImages(InputFilter: FilterNode, OutputFilterName: str, Levels: str | None = None,
+                             Logger: logging.Logger | None = None, **kwargs):
     """Write the output filter's ImageSet from a crushed filter's assembled images, mapped over its display range.
 
-    Every assembled level of ``InputFilter`` (codes) becomes an 8-bit image at the same level of ``OutputFilterName``
-    (normally Leveled), mapped linearly from the filter's ``CrushDisplayMin/Max``, so the registration stages that
-    read Leveled images work on crushed sections. The output has no tile pyramid. An image is rebuilt when its
-    assembled source or the display range changes. Sections whose filter is not crushed, has no display range or no
-    assembled images are skipped.
+    Each assembled level of ``InputFilter`` (codes) listed in ``Levels`` (comma-separated downsamples, as Assemble's
+    ``-Downsample``; empty or None means every assembled level) becomes an 8-bit image at the same level of
+    ``OutputFilterName`` (normally Leveled), mapped linearly from the filter's ``CrushDisplayMin/Max``, so the
+    registration stages that read Leveled images work on crushed sections. The output has no tile pyramid. An image
+    is rebuilt when its assembled source or the display range changes. Sections whose filter is not crushed, has no
+    display range or no assembled images are skipped, as are requested levels that were not assembled.
     """
     if Logger is None:
         Logger = logging.getLogger(__name__ + '.AutolevelAssembledImages')
@@ -1041,10 +1042,14 @@ def AutolevelAssembledImages(InputFilter: FilterNode, OutputFilterName: str, Log
         else:
             output_set.attrib[name] = value
 
+    requested = None if Levels is None or str(Levels).strip() == '' else \
+        frozenset(float(level) for level in _SortedNumberListFromLevelsParameter(Levels))
     lut = display_range_lut(display_range, params.max_code)
     output_name = OutputFilterNode.DefaultImageName(DefaultImageExtension)
     for input_image in list(input_set.Images):
         downsample = float(input_image.Parent.Downsample)  # type: ignore[union-attr]
+        if requested is not None and downsample not in requested:
+            continue
         source_checksum = nornir_shared.checksum.FilesizeChecksum(input_image.FullPath)
         output_image = output_set.GetImage(downsample)
         if (output_image is not None and not range_changed

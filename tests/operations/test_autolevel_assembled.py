@@ -61,8 +61,9 @@ def channel() -> Iterator[ChannelNode]:
     shutil.rmtree(base, ignore_errors=True)
 
 
-def _run(chan: ChannelNode) -> None:
-    for _ in tile.AutolevelAssembledImages(InputFilter=chan.GetFilter('Quantized'), OutputFilterName='Leveled'):
+def _run(chan: ChannelNode, levels: str | None = None) -> None:
+    for _ in tile.AutolevelAssembledImages(InputFilter=chan.GetFilter('Quantized'), OutputFilterName='Leveled',
+                                           Levels=levels):
         pass
 
 
@@ -111,6 +112,14 @@ def test_display_range_change_rebuilds(channel: ChannelNode) -> None:
     row = _leveled(channel, 8)[0]
     assert row[0] == 0 and row[63] == 255
     assert channel.GetFilter('Leveled').MinIntensityCutoff == 0.0
+
+
+def test_only_requested_levels_are_leveled(channel: ChannelNode) -> None:
+    _run(channel, '16,32')
+    leveled = channel.GetFilter('Leveled')
+    assert leveled.GetImage(16) is not None
+    assert leveled.GetImage(8) is None
+    assert leveled.GetImage(32) is None  # requested but never assembled
 
 
 def test_uncrushed_filter_is_skipped(channel: ChannelNode) -> None:

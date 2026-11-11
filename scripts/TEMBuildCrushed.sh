@@ -14,7 +14,7 @@
 #   Prune/Mosaic     read Quantized instead of Raw8 / Leveled (NCC is insensitive to the code scale)
 #   Histogram, AdjustContrast   not run; the import stores the code histogram and display range
 #   Assemble         -Filters Quantized
-#   AdjustAssembledContrast     Quantized assembled images -> Leveled assembled images
+#   AdjustAssembledContrast     Quantized assembled images -> Leveled assembled images, same -Downsample levels
 # Prune keeps -DefaultThreshold 10.0: crushed scores are rescaled to the contrast-stretched 8-bit scale
 # with the filter's CrushCodeSpan (PruneObj.CrushedScoreScale).
 #
@@ -63,6 +63,6 @@ exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   Prune -InputFilter Quantized -Downsample 4 -Channels TEM -DefaultThreshold 10.0 \
   --then Mosaic -InputFilter Quantized -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
   --then Assemble -Channels TEM -Filters Quantized -Downsample 8,16,32 -NoInterlace -Transform Grid \
-  --then AdjustAssembledContrast -InputFilter Quantized -OutputFilter Leveled -Channels TEM \
+  --then AdjustAssembledContrast -InputFilter Quantized -OutputFilter Leveled -Downsample 8,16,32 -Channels TEM \
   --then MosaicReport -PruneFilter Quantized -ContrastFilter Quantized -AssembleFilter Leveled -AssembleDownsample 16 -Output MosaicReport \
   --then CreateVikingXML -OutputFile Mosaic
