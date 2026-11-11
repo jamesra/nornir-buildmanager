@@ -582,7 +582,7 @@
                       help="Crushed filter whose assembled images are read" required="False"/>
             <Argument flag="-OutputFilter" dest="OutputFilter" default="Leveled"
                       help="Filter the 8-bit images are written to" required="False"/>
-            <Argument flag="-Downsample" dest="Levels" default=""
+            <Argument flag="-Downsample" dest="Levels" type="IntegerList"
                       help="Comma separated list of assembled downsample levels to level, as passed to Assemble.  If omitted every assembled level is leveled."
                       required="False"/>
         </Arguments>
@@ -594,8 +594,13 @@
                 <RequireMatch Attribute="Name" RegEx="#ChannelsRegEx"/>
 
                 <Select VariableName="FilterNode" XPath="Filter[@Name='#InputFilter']"/>
-                <PythonCall Function="tile.AutolevelAssembledImages" InputFilter="#FilterNode"
-                            OutputFilterName="#OutputFilter" Levels="#Levels"/>
+                <PythonCall Function="tile.PrepareAssembledContrastFilter" InputFilter="#FilterNode"
+                            OutputFilterName="#OutputFilter"/>
+                <Iterate VariableName="LevelNode" Root="FilterNode" XPath="ImageSet/Level">
+                    <RequireSetMembership Attribute="Downsample" List="#Levels"/>
+                    <PythonCall Function="tile.AutolevelAssembledImage" level_node="#LevelNode"
+                                OutputFilterName="#OutputFilter"/>
+                </Iterate>
             </Iterate>
         </Iterate>
     </Pipeline>

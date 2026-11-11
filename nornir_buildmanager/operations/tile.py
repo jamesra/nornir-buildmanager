@@ -999,26 +999,27 @@ def display_range_lut(display_range: tuple[float, float], max_code: int) -> NDAr
     return numpy.clip(numpy.round(scaled), 0, 255).astype(numpy.uint8)
 
 
-def AutolevelAssembledImages(InputFilter: FilterNode, OutputFilterName: str, Levels: str | None = None,
-                             Logger: logging.Logger | None = None, **kwargs):
-    """Write the output filter's ImageSet from a crushed filter's assembled images, mapped over its display range.
+#: Image attribute holding the display range (min,max) a leveled image was mapped with.
+LeveledDisplayRangeAttrib = 'SourceDisplayRange'
 
-    Each assembled level of ``InputFilter`` (codes) listed in ``Levels`` (comma-separated downsamples, as Assemble's
-    ``-Downsample``; empty or None means every assembled level) becomes an 8-bit image at the same level of
-    ``OutputFilterName`` (normally Leveled), mapped linearly from the filter's ``CrushDisplayMin/Max``, so the
-    registration stages that read Leveled images work on crushed sections. The output has no tile pyramid. An image
-    is rebuilt when its assembled source or the display range changes. Sections whose filter is not crushed, has no
-    display range or no assembled images are skipped, as are requested levels that were not assembled.
+
+def _display_range_text(display_range: tuple[float, float]) -> str:
+    return '%g,%g' % display_range
+
+
+def PrepareAssembledContrastFilter(InputFilter: FilterNode, OutputFilterName: str, **kwargs):
+    """Create or update the output filter AdjustAssembledContrast writes for a crushed filter.
+
+    The output (normally Leveled) gets 8-bit depth, the input's display range (``CrushDisplayMin/Max``) as its
+    contrast, its mask name and the input ImageSet's transform attributes. AutolevelAssembledImage then writes one
+    level at a time. A filter that is not crushed or has no display range is skipped.
     """
-    if Logger is None:
-        Logger = logging.getLogger(__name__ + '.AutolevelAssembledImages')
-
     params = noise_crush.CrushParams.from_attributes(InputFilter.attrib)
     display_range = InputFilter.CrushDisplayRange
-    if params is None or display_range is None or not InputFilter.HasImageset:
+    if params is None or display_range is None:
         prettyoutput.LogErr(
             f"AdjustAssembledContrast: skipping {InputFilter.FullPath}; it needs a crushed filter with a display "
-            f"range (CrushDisplayMin/Max) and assembled images")
+            f"range (CrushDisplayMin/Max)")
         return
 
     channel_node = cast(ChannelNode, InputFilter.Parent)
@@ -1026,10 +1027,8 @@ def AutolevelAssembledImages(InputFilter: FilterNode, OutputFilterName: str, Lev
     if added_filter:
         yield channel_node
 
-    (display_min, display_max) = display_range
-    range_changed = OutputFilterNode.IsContrastMismatched(display_min, display_max, 1.0)
     OutputFilterNode.BitsPerPixel = 8
-    OutputFilterNode.SetContrastValues(display_min, display_max, 1.0)
+    OutputFilterNode.SetContrastValues(display_range[0], display_range[1], 1.0)
     if InputFilter.MaskName is not None:
         OutputFilterNode.MaskName = InputFilter.MaskName
 
@@ -1042,38 +1041,64 @@ def AutolevelAssembledImages(InputFilter: FilterNode, OutputFilterName: str, Lev
         else:
             output_set.attrib[name] = value
 
-    requested = None if Levels is None or str(Levels).strip() == '' else \
-        frozenset(float(level) for level in _SortedNumberListFromLevelsParameter(Levels))
-    lut = display_range_lut(display_range, params.max_code)
-    output_name = OutputFilterNode.DefaultImageName(DefaultImageExtension)
-    for input_image in list(input_set.Images):
-        downsample = float(input_image.Parent.Downsample)  # type: ignore[union-attr]
-        if requested is not None and downsample not in requested:
-            continue
-        source_checksum = nornir_shared.checksum.FilesizeChecksum(input_image.FullPath)
-        output_image = output_set.GetImage(downsample)
-        if (output_image is not None and not range_changed
-                and output_image.attrib.get(LeveledSourceChecksumAttrib) == source_checksum):
-            continue
-
-        output_image = output_set.GetOrCreateImage(downsample, output_name, GenerateData=False)
-        os.makedirs(os.path.dirname(output_image.FullPath), exist_ok=True)
-        temp_path = output_image.FullPath + '.tmp.png'
-        with Image.open(input_image.FullPath) as im:
-            codes = numpy.asarray(im)
-        leveled = lut[numpy.minimum(codes, params.max_code)]
-        del codes
-        with Image.fromarray(leveled) as out_im:
-            out_im.save(temp_path, format='PNG')
-        del leveled
-        os.replace(temp_path, output_image.FullPath)
-
-        output_image.attrib[LeveledSourceChecksumAttrib] = source_checksum
-        output_image.attrib['Checksum'] = nornir_shared.checksum.FilesizeChecksum(output_image.FullPath)
-        output_image.AttributesChanged = True
-        Logger.info("Leveled %s from %s", output_image.FullPath, input_image.FullPath)
-
     yield OutputFilterNode
+
+
+def AutolevelAssembledImage(level_node: LevelNode, OutputFilterName: str, Logger: logging.Logger | None = None,
+                            **kwargs):
+    """Write one level of the output filter from the same level of a crushed filter's assembled images.
+
+    The codes are mapped linearly from the input filter's ``CrushDisplayMin/Max`` to 8 bits, so the registration
+    stages that read Leveled images work on crushed sections; the output has no tile pyramid. The image is rewritten
+    only when its assembled source or the display range changed. The pipeline chooses the levels
+    (AdjustAssembledContrast ``-Downsample``) and runs PrepareAssembledContrastFilter first; without the output
+    filter it made, the level is skipped.
+    """
+    if Logger is None:
+        Logger = logging.getLogger(__name__ + '.AutolevelAssembledImage')
+
+    InputFilter = cast(FilterNode, level_node.FindParent('Filter'))
+    params = noise_crush.CrushParams.from_attributes(InputFilter.attrib)
+    display_range = InputFilter.CrushDisplayRange
+    channel_node = cast(ChannelNode, InputFilter.Parent)
+    OutputFilterNode = channel_node.GetFilter(OutputFilterName)
+    if params is None or display_range is None or OutputFilterNode is None:
+        return None
+
+    downsample = float(level_node.Downsample)
+    input_image = InputFilter.Imageset.GetImage(downsample)
+    if input_image is None:
+        return None
+
+    source_checksum = nornir_shared.checksum.FilesizeChecksum(input_image.FullPath)
+    range_text = _display_range_text(display_range)
+    output_set = OutputFilterNode.Imageset
+    output_image = output_set.GetImage(downsample)
+    if (output_image is not None and os.path.exists(output_image.FullPath)
+            and output_image.attrib.get(LeveledSourceChecksumAttrib) == source_checksum
+            and output_image.attrib.get(LeveledDisplayRangeAttrib) == range_text):
+        return None
+
+    output_image = output_set.GetOrCreateImage(downsample, OutputFilterNode.DefaultImageName(DefaultImageExtension),
+                                               GenerateData=False)
+    os.makedirs(os.path.dirname(output_image.FullPath), exist_ok=True)
+    temp_path = output_image.FullPath + '.tmp.png'
+    lut = display_range_lut(display_range, params.max_code)
+    with Image.open(input_image.FullPath) as im:
+        codes = numpy.asarray(im)
+    leveled = lut[numpy.minimum(codes, params.max_code)]
+    del codes
+    with Image.fromarray(leveled) as out_im:
+        out_im.save(temp_path, format='PNG')
+    del leveled
+    os.replace(temp_path, output_image.FullPath)
+
+    output_image.attrib[LeveledSourceChecksumAttrib] = source_checksum
+    output_image.attrib[LeveledDisplayRangeAttrib] = range_text
+    output_image.attrib['Checksum'] = nornir_shared.checksum.FilesizeChecksum(output_image.FullPath)
+    output_image.AttributesChanged = True
+    Logger.info("Leveled %s from %s", output_image.FullPath, input_image.FullPath)
+    return OutputFilterNode
 
 
 def HistogramFilter(Parameters: dict, filter_node: FilterNode, Downsample: int, transform_node: TransformNode,
