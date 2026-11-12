@@ -518,7 +518,7 @@ class TestIDocSingleSectionImport(IDocTest):
                                delta=0.01)
         self.assertEqual({tile: os.path.getmtime(tile) for tile in tiles}, tile_mtimes)
 
-        # The TEMBuildCrushed chain: mosaic and assemble on the codes, then Leveled from the assembled images.
+        # The TEMBuild chain: mosaic and assemble on the codes, then Leveled from the assembled images.
         self.RunMosaic(Filter='Quantized', Transform='Stage')
         self.RunAssemble(Channels='TEM', Filter='Quantized', TransformName='Grid', Levels=[8, 16])
         self.RunAdjustAssembledContrast(Levels=[8, 16])

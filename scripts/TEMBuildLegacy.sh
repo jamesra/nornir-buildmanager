@@ -2,8 +2,7 @@
 # TEMBuildLegacy.sh
 #
 # The mosaic build for legacy sections: contrast-stretched tiles in Raw8 (imports with -NoCrush and imports made
-# before crushing). Sections without Raw8 (crushed sections, in Quantized) are skipped; TEMBuildCrushed.sh builds
-# those, and TEMBuild.sh runs both.
+# before crushing). Sections without Raw8 (crushed sections, in Quantized) are skipped; TEMBuild.sh builds those.
 # Linux equivalent of the VS Code launch config
 # "TEM Build: full sequence (sequential)".
 # Assumes the volume is already imported (VolumeData.xml present).

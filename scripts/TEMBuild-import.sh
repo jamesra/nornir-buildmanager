@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # TEMBuild-import.sh
 #
-# Imports SerialEM .idoc trees with TEMImport.sh, then builds every section's mosaic with TEMBuild.sh
-# (TEMBuildLegacy.sh for Raw8 sections, TEMBuildCrushed.sh for Quantized sections).
+# Imports SerialEM .idoc trees with TEMImport.sh (crushed, into Quantized), then builds every section's mosaic
+# with TEMBuild.sh. Sections imported with -NoCrush (Raw8) need TEMBuildLegacy.sh instead.
 #
 # Prompts for:
 #   1) Import folder containing SerialEM .idoc trees
