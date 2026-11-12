@@ -122,6 +122,47 @@ def test_rename_filter_moves_folder_without_nesting(base: str) -> None:
     assert (filter_node.Name, filter_node.Path) == ('Quantized', 'Quantized')
 
 
+def test_rename_filter_renames_manual_overrides(base: str) -> None:
+    # RC1_Crush 2026-11-11: 91 Grid16 hand fixes stayed Manual/*_ctrl-TEM_Raw8_map-TEM_Raw8.stos after the rename,
+    # so PathToManualTransform (which looks up Manual/<root basename>) no longer found them.
+    volume_dir, volume = _make_volume(base, {1: 'Raw8', 2: 'Raw8', 3: 'Raw8'})
+    VolumeManager.Save(volume)
+    group = cast(StosGroupNode, volume.find('Block/StosGroup'))
+    manual_text = STOS_TEXT.replace('vp 3 0 0 0', 'vp 3 0 5 7')
+    os.makedirs(group.ManualInputDirectory, exist_ok=True)
+    old_manual = os.path.join(group.ManualInputDirectory,
+                              StosGroupNode.GenerateStosFilenameFromParts(2, 1, 'TEM', 'Raw8', 'TEM', 'Raw8'))
+    with open(old_manual, 'w') as f:
+        f.write(manual_text)
+
+    build.Execute([volume_dir, '-debug', 'RenameFilter', '-InputFilter', 'Raw8', '-OutputFilter', 'Quantized'])
+
+    transform = _transforms(volume_dir)[(2, 1)]
+    group = cast(StosGroupNode, transform.FindParent('StosGroup'))
+    manual = group.PathToManualTransform(transform.FullPath)
+    assert manual is not None, os.listdir(group.ManualInputDirectory)
+    assert not os.path.exists(old_manual)
+    with open(manual) as f:
+        assert f.read() == manual_text
+
+
+def test_existing_manual_override_under_new_name_is_kept(base: str) -> None:
+    _, volume = _make_volume(base, {1: 'Quantized', 2: 'Quantized', 3: 'Quantized'})
+    group = cast(StosGroupNode, volume.find('Block/StosGroup'))
+    transform = next(t for t in group.findall('SectionMappings/Transform') if t.MappedSectionNumber == 2)
+    os.makedirs(group.ManualInputDirectory, exist_ok=True)
+    names = {kind: StosGroupNode.GenerateStosFilenameFromParts(2, 1, 'TEM', kind, 'TEM', kind)
+             for kind in ('Raw8', 'Quantized')}
+    for kind, name in names.items():
+        with open(os.path.join(group.ManualInputDirectory, name), 'w') as f:
+            f.write(kind)
+
+    assert block_ops.RenameStosTransformFilter(transform, 'Raw8', 'Quantized') is not None
+    for kind, name in names.items():
+        with open(os.path.join(group.ManualInputDirectory, name)) as f:
+            assert f.read() == kind
+
+
 def test_section_that_still_has_the_old_filter_keeps_its_name(base: str) -> None:
     # Section 1 still holds Raw8 (legacy); section 2 has only Quantized.
     _, volume = _make_volume(base, {1: 'Raw8', 2: 'Quantized', 3: 'Raw8'})

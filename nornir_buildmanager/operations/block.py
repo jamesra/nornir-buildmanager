@@ -1533,6 +1533,27 @@ def _conventional_stos_name(t: TransformNode) -> str:
         t.attrib.get('MappedChannelName'), t.attrib.get('MappedFilterName'))  # type: ignore[arg-type]
 
 
+def _rename_manual_override(stos_group: StosGroupNode, old_name: str, new_name: str,
+                            Logger: logging.Logger) -> str | None:
+    """Rename ``Manual/<old_name>`` to ``Manual/<new_name>`` so the hand fix still overrides the renamed transform.
+
+    PathToManualTransform finds an override by the group-root file's basename, so a Manual file left under the
+    old name would be silently ignored the next time that pair is refined (RC1_Crush Grid16, 2026-11-11). An
+    existing override under the new name is kept and the old one left in place. Returns the override path, or
+    None when there is none.
+    """
+    old_full = os.path.join(stos_group.ManualInputDirectory, old_name)
+    new_full = os.path.join(stos_group.ManualInputDirectory, new_name)
+    if old_name == new_name or not os.path.exists(old_full):
+        return new_full if os.path.exists(new_full) else None
+    if os.path.exists(new_full):
+        Logger.warning("Manual override %s not renamed: %s already exists", old_full, new_full)
+        return new_full
+    shutil.move(old_full, new_full)
+    Logger.info("Manual override %s renamed to %s", old_full, new_name)
+    return new_full
+
+
 def RenameStosTransformFilter(stos_transform_node: TransformNode, OldName: str, NewName: str,
                               Logger: logging.Logger | None = None, **kwargs) -> XElementWrapper | None:
     """Point a stos transform that names filter ``OldName`` at ``NewName`` after a RenameFilter or re-import.
@@ -1540,9 +1561,9 @@ def RenameStosTransformFilter(stos_transform_node: TransformNode, OldName: str, 
     A side (Control or Mapped) is updated only when its section's channel has ``NewName`` and no longer has
     ``OldName``, so sections that still hold ``OldName`` (e.g. legacy Raw8 next to crushed Quantized) keep their
     transforms. Without this a transform names a missing filter and validation deletes it unless it is locked
-    (SectionMappingsNode.CleanTransformsIfInvalid). The .stos file is renamed to the conventional name and its
-    image paths are pointed at the new filter when its images exist. The transform itself, and so its checksum,
-    is unchanged.
+    (SectionMappingsNode.CleanTransformsIfInvalid). The .stos file, and a hand fix under the group's Manual/
+    folder, are renamed to the conventional name and their image paths are pointed at the new filter when its
+    images exist. The transform itself, and so its checksum, is unchanged.
     """
     if Logger is None:
         Logger = logging.getLogger(__name__ + '.RenameStosTransformFilter')
@@ -1566,17 +1587,21 @@ def RenameStosTransformFilter(stos_transform_node: TransformNode, OldName: str, 
 
     stos_group = t.FindParent('StosGroup')
     if isinstance(stos_group, StosGroupNode):
+        old_path = t.Path
         # Only files that follow the naming convention are renamed; hand-named .stos files keep their names.
         if t.Path == old_conventional_name:
             stos_group.EnsureConventionalStosPath(t, _conventional_stos_name(t))
+        manual_path = _rename_manual_override(stos_group, old_path, t.Path, Logger)
 
         (mapped_filter, _) = __MappedFilterForTransform(t)  # type: ignore[misc]
         (control_filter, _) = __ControlFilterForTransform(t)  # type: ignore[misc]
         downsample = int(stos_group.Downsample)
-        if (mapped_filter is not None and control_filter is not None and os.path.exists(t.FullPath)
+        if (mapped_filter is not None and control_filter is not None
                 and control_filter.GetImage(downsample) is not None
                 and mapped_filter.GetImage(downsample) is not None):
-            FixStosFilePaths(control_filter, mapped_filter, t, downsample)
+            for stos_path in (t.FullPath, manual_path):
+                if stos_path is not None and os.path.exists(stos_path):
+                    FixStosFilePaths(control_filter, mapped_filter, t, downsample, StosFilePath=stos_path)
 
     Logger.info("Stos transform %s now names filter %s instead of %s", t.FullPath, NewName, OldName)
     return t.Parent
