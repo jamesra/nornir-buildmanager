@@ -162,10 +162,31 @@ def ImportStos(InputStosFullpath, BlockNode, GroupName,
     else:
         shutil.copy(InputStosFullpath, OutputFileFullPath)
 
+    _PointStosAtFilterImages(OutputFileFullPath, ControlFilter, MappedFilter, ControlDownsample)
+
     StosGroup.GetOrCreateSectionMapping(MappedSectionNumber)
     stosTransformNode = StosGroup.GetOrCreateStosTransformNode(ControlFilter, MappedFilter, Type, OutputFilename)
 
     return StosGroup
+
+
+def _PointStosAtFilterImages(StosFullPath: str, ControlFilter, MappedFilter, Downsample: int) -> bool:
+    """Rewrite the image and mask lines of an imported .stos to name the group's filter images at *Downsample*.
+
+    A copied .stos keeps the paths it was saved with, which are relative to the folder it was saved in; from the
+    StosGroup folder they name missing files (RC1_Crush Brute32, 2026-11-12). Masks are rewritten only when the
+    .stos has mask lines and both filters have a mask imageset. Returns True when the file changed.
+    """
+    from nornir_buildmanager.operations.block import UpdateStosImagePaths
+
+    control_mask = mapped_mask = None
+    if ControlFilter.MaskImageset is not None and MappedFilter.MaskImageset is not None:
+        control_mask = ControlFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)
+        mapped_mask = MappedFilter.MaskImageset.GetOrPredictImageFullPath(Downsample)
+    return UpdateStosImagePaths(StosFullPath,
+                                ControlFilter.Imageset.GetOrPredictImageFullPath(Downsample),
+                                MappedFilter.Imageset.GetOrPredictImageFullPath(Downsample),
+                                control_mask, mapped_mask)
 
 
 if __name__ == '__main__':
