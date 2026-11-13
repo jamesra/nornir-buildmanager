@@ -1607,6 +1607,105 @@ def RenameStosTransformFilter(stos_transform_node: TransformNode, OldName: str, 
     return t.Parent
 
 
+def RenameFilterImages(FilterNode: FilterNode, OldName: str, Logger: logging.Logger | None = None,
+                       **kwargs) -> XElementWrapper | None:
+    """Rename a renamed filter's assembled images from ``<section>_<channel>_<OldName>`` to the filter's name.
+
+    RenameFilter moves the filter folder but left the assembled images named after the old filter
+    (RC1_Crush ``Quantized/Images/032/0122_TEM_Raw8.png``). An image whose new name already exists is left alone.
+    Run :func:`RenameStosImageReferences` afterwards so .stos files name the renamed images.
+    """
+    if Logger is None:
+        Logger = logging.getLogger(__name__ + '.RenameFilterImages')
+    if FilterNode.Name == OldName or not FilterNode.HasImageset:
+        return None
+
+    changed = False
+    for image in list(FilterNode.Imageset.Images):
+        extension = os.path.splitext(image.Path)[1]
+        new_name = FilterNode.DefaultImageName(extension)
+        old_name = new_name[:-len(FilterNode.Name + extension)] + OldName + extension
+        if image.Path != old_name:
+            continue
+        old_full = image.FullPath
+        new_full = os.path.join(os.path.dirname(old_full), new_name)
+        if os.path.exists(old_full):
+            if os.path.exists(new_full):
+                Logger.warning("Image %s not renamed: %s already exists", old_full, new_full)
+                continue
+            shutil.move(old_full, new_full)
+        image.Path = new_name
+        changed = True
+        Logger.info("Image %s renamed to %s", old_full, new_name)
+
+    return FilterNode.Parent if changed else None
+
+
+def _renamed_filter_image_path(path: str | None, OldName: str, NewName: str) -> str | None:
+    """New path for a .stos image line that names an image of filter ``OldName`` renamed to ``NewName``.
+
+    Matches ``<channel dir>/<OldName or NewName>/Images/<level>/<prefix>_<OldName><ext>`` and also
+    ``<OldName>/Images/<level>/<any name>`` (the folder was moved), so lines naming levels that were never
+    assembled are fixed too. None when the line does not name such an image, or when the section still has an
+    ``OldName`` folder (that filter was not renamed).
+    """
+    if path is None:
+        return None
+    norm = os.path.normpath(path)
+    level_dir, base = os.path.split(norm)
+    images_dir = os.path.dirname(level_dir)
+    if os.path.basename(images_dir) != 'Images':
+        return None
+    filter_dir = os.path.dirname(images_dir)
+    filter_name = os.path.basename(filter_dir)
+    if filter_name not in (OldName, NewName):
+        return None
+    channel_dir = os.path.dirname(filter_dir)
+    if os.path.isdir(os.path.join(channel_dir, OldName)):
+        return None
+    stem, extension = os.path.splitext(base)
+    if stem.endswith(f"_{OldName}"):
+        base = stem[:-len(OldName)] + NewName + extension
+    elif filter_name == NewName:
+        return None
+    new_path = os.path.join(channel_dir, NewName, 'Images', os.path.basename(level_dir), base)
+    return None if os.path.normcase(new_path) == os.path.normcase(norm) else new_path
+
+
+def RenameStosImageReferences(StosGroupNode: StosGroupNode, OldName: str, NewName: str,
+                              Logger: logging.Logger | None = None, **kwargs) -> None:
+    """Point the image and mask lines of every .stos under a StosGroup folder at a renamed filter's images.
+
+    Covers the group root and its Manual/, Automatic/ and other subfolders, and lines naming image levels that were
+    never assembled, which :func:`RenameStosTransformFilter` (existing images only) does not reach. Only the path
+    lines change; the transform, and so its checksum, is kept.
+    """
+    if Logger is None:
+        Logger = logging.getLogger(__name__ + '.RenameStosImageReferences')
+    if OldName == NewName or not os.path.isdir(StosGroupNode.FullPath):
+        return
+
+    for dirpath, _, filenames in os.walk(StosGroupNode.FullPath):
+        for filename in filenames:
+            if not filename.lower().endswith('.stos'):
+                continue
+            stos_path = os.path.join(dirpath, filename)
+            try:
+                stos = stosfile.StosFile.Load(stos_path)
+            except (OSError, ValueError) as e:
+                Logger.warning("Skipping unreadable stos %s: %s", stos_path, e)
+                continue
+            changed = False
+            for attr in ('ControlImageFullPath', 'MappedImageFullPath', 'ControlMaskFullPath', 'MappedMaskFullPath'):
+                new_path = _renamed_filter_image_path(getattr(stos, attr), OldName, NewName)
+                if new_path is not None:
+                    setattr(stos, attr, new_path)
+                    changed = True
+            if changed:
+                stos.Save(stos_path)
+                Logger.info("Stos %s now names %s images", stos_path, NewName)
+
+
 def RebaseCopiedStosPaths(StosFilePath: str,
                           ControlFilter: FilterNode,
                           MappedFilter: FilterNode,

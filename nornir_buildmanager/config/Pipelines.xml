@@ -430,6 +430,9 @@
                  XPath="Block/Section/Channel/Filter[@Name='#NewName']">
             <PythonCall Function="general.MovePath" Node="#FilterNode"
                         NewPath="#NewName"/>
+            <!-- Assembled images are named <section>_<channel>_<filter>; rename those still named after the old filter. -->
+            <PythonCall Function="block.RenameFilterImages" FilterNode="#FilterNode"
+                        OldName="#InputFilter"/>
         </Iterate>
 
         <!-- Stos transforms record their filters by name.  Point them at the new name where a section has it and no
@@ -442,6 +445,10 @@
                                 stos_transform_node="#StosTransformNode" OldName="#InputFilter"
                                 NewName="#NewName"/>
                 </Iterate>
+                <!-- Every .stos in the group folder (root, Manual/, Automatic/, ...), including lines that name
+                     image levels that were never assembled. -->
+                <PythonCall Function="block.RenameStosImageReferences" StosGroupNode="#StosGroupNode"
+                            OldName="#InputFilter" NewName="#NewName"/>
             </Iterate>
         </Iterate>
     </Pipeline>

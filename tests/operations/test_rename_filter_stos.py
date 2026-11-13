@@ -25,8 +25,9 @@ from nornir_buildmanager.volumemanager import (
     VolumeManager,
     XContainerElementWrapper,
 )
+from nornir_imageregistration.files import stosfile
 
-STOS_TEXT = "control.png\nmapped.png\n0\n0\n1 1 1 1\n1 1 1 1\n\nRigid2DTransform_double_2_2 vp 3 0 0 0 fp 3 0 0 0\n"
+STOS_TEXT = "control.png\nmapped.png\n0\n0\n1 1 1 1\n1 1 1 1\nRigid2DTransform_double_2_2 vp 3 0 0 0 fp 3 0 0 0\n"
 
 
 def _section(block: BlockNode, number: int, filter_name: str) -> None:
@@ -161,6 +162,76 @@ def test_existing_manual_override_under_new_name_is_kept(base: str) -> None:
     for kind, name in names.items():
         with open(os.path.join(group.ManualInputDirectory, name)) as f:
             assert f.read() == kind
+
+
+def _add_assembled_image(volume: XContainerElementWrapper, section: int, downsample: int) -> str:
+    image_filter = cast(FilterNode, volume.find(f"Block/Section[@Number='{section}']/Channel/Filter"))
+    image = image_filter.Imageset.GetOrCreateImage(downsample, image_filter.DefaultImageName('.png'),
+                                                   GenerateData=False)
+    os.makedirs(os.path.dirname(image.FullPath), exist_ok=True)
+    with open(image.FullPath, 'w') as f:
+        f.write(f'image {section}')
+    return image.FullPath
+
+
+def _write_stos(path: str, control: str, mapped: str) -> None:
+    """A .stos naming *control* and *mapped* (relative to its folder) with masks."""
+    folder = os.path.dirname(path)
+    os.makedirs(folder, exist_ok=True)
+    lines = [line for line in STOS_TEXT.split('\n') if line]
+    lines[0], lines[1] = os.path.relpath(control, folder), os.path.relpath(mapped, folder)
+    mask = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(control)))),
+                        'Mask', 'Images', '016', 'mask.png')
+    lines[7:7] = ['two_user_supplied_masks:', os.path.relpath(mask, folder), os.path.relpath(mask, folder)]
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines))
+
+
+def test_rename_filter_renames_assembled_images_and_every_stos_reference(base: str) -> None:
+    # RC1_Crush 2026-11-13: after Raw8 -> Quantized the assembled images kept the Raw8 name, and .stos files in
+    # Grid8/SliceToVolume1 named levels that were never assembled (no image node to fix them from).
+    volume_dir, volume = _make_volume(base, {1: 'Raw8', 2: 'Raw8', 3: 'Raw8'})
+    images = {s: _add_assembled_image(volume, s, 16) for s in (1, 2)}
+    VolumeManager.Save(volume)
+    group = cast(StosGroupNode, volume.find('Block/StosGroup'))
+    level8 = {s: os.path.join(os.path.dirname(os.path.dirname(p)), '008', os.path.basename(p))
+              for s, p in images.items()}
+    for folder, paths in (('', images), ('Manual', images), ('Automatic', level8)):
+        _write_stos(os.path.join(group.FullPath, folder, 'extra_2-1.stos'), paths[1], paths[2])
+    transform_line = STOS_TEXT.strip().split('\n')[-1]
+
+    build.Execute([volume_dir, '-debug', 'RenameFilter', '-InputFilter', 'Raw8', '-OutputFilter', 'Quantized'])
+
+    volume = VolumeManager.Load(volume_dir)
+    for section in (1, 2):
+        image_filter = volume.find(f"Block/Section[@Number='{section}']/Channel/Filter")
+        image = image_filter.Imageset.GetImage(16)
+        assert image.Path == f'{section:04d}_TEM_Quantized.png'
+        with open(image.FullPath) as f:
+            assert f.read() == f'image {section}'
+    for folder in ('', 'Manual', 'Automatic'):
+        path = os.path.join(group.FullPath, folder, 'extra_2-1.stos')
+        with open(path) as f:
+            text = f.read()
+        assert 'Raw8' not in text, (path, text)
+        assert transform_line in text
+        stos = stosfile.StosFile.Load(path)
+        level = '008' if folder == 'Automatic' else '016'
+        assert os.path.normpath(stos.ControlImageFullPath).endswith(
+            os.path.join('Quantized', 'Images', level, '0001_TEM_Quantized.png'))
+        assert os.path.normpath(stos.ControlMaskFullPath).endswith(os.path.join('Mask', 'Images', '016', 'mask.png'))
+
+
+def test_stos_line_of_a_section_that_kept_the_old_filter_is_unchanged(base: str) -> None:
+    channel_dir = os.path.join(base, 'TEM', '0001', 'TEM')
+    os.makedirs(os.path.join(channel_dir, 'Raw8'))
+    line = os.path.join(channel_dir, 'Raw8', 'Images', '016', '0001_TEM_Raw8.png')
+    assert block_ops._renamed_filter_image_path(line, 'Raw8', 'Quantized') is None
+    other = os.path.join(base, 'TEM', '0002', 'TEM', 'Raw8', 'Images', '016', '0002_TEM_Raw8.png')
+    assert block_ops._renamed_filter_image_path(other, 'Raw8', 'Quantized') == os.path.join(
+        base, 'TEM', '0002', 'TEM', 'Quantized', 'Images', '016', '0002_TEM_Quantized.png')
+    mask = os.path.join(base, 'TEM', '0002', 'TEM', 'Mask', 'Images', '016', '0002_TEM_Mask.png')
+    assert block_ops._renamed_filter_image_path(mask, 'Raw8', 'Quantized') is None
 
 
 def test_section_that_still_has_the_old_filter_keeps_its_name(base: str) -> None:
