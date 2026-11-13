@@ -2505,7 +2505,7 @@ def __GenerateStosFileIfOutdated(InputTransformNode: TransformNode, OutputTransf
 
     if not os.path.exists(OutputTransformPath):
         result = __GenerateStosFile(InputTransformNode, spec)
-        result.Save(OutputTransformPath)  # type: ignore[union-attr]
+        result.Save(OutputTransformPath)
         return True
 
     return False
@@ -2538,8 +2538,8 @@ def __GenerateStosFile(InputTransformNode: TransformNode, spec: _StosOutputSpec)
        requested downsample as needed.
        :param spec: ``spec.use_masks`` True if masks should be included.  None if we should copy setting from
                     input stos transform
-       :rtype: bool
-       :return: A StosFile if a new file was needed, otherwise None
+       :return: The StosFile to save at the output path. When the input already names the requested images,
+                downsample and masks it is returned unchanged (it may be the group's Manual override).
     """
 
     stos_group_node = InputTransformNode.FindParent('StosGroup')
@@ -2582,8 +2582,10 @@ def __GenerateStosFile(InputTransformNode: TransformNode, spec: _StosOutputSpec)
                                                                   MappedMaskFullPath=MappedMaskImageFullPath)
 
         return ModifiedInputStos
-    else:
-        return None
+
+    # Same images, downsample and masks: the input is already the output. Returning None here crashed the caller's
+    # Save (RC1_Crush 123-122 Brute32 -> Grid32, 2026-11-13).
+    return InputStos
 
 
 def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath: str, ManualInputStosFullPath: str):

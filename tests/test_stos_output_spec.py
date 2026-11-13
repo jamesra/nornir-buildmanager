@@ -138,7 +138,8 @@ def _reference_generate_tail(InputStos, InputDownsample, OutputDownsample, Contr
                                                      MappedImageFullPath=MappedImageFullPath,
                                                      ControlMaskFullPath=ControlMaskImageFullPath,
                                                      MappedMaskFullPath=MappedMaskImageFullPath)
-    return None
+    # The pre-change body returned None here, which crashed the caller's Save (RC1_Crush 123-122, 2026-11-13).
+    return InputStos
 
 
 _downsample = st.sampled_from([1, 2, 4, 8, 16, 32])
@@ -219,7 +220,7 @@ def test_is_stos_node_outdated_matches_pre_change(data, downsample, use_masks, h
 @given(data=st.data(), downsample=_downsample, input_downsample=_downsample, use_masks=_use_masks,
        has_mask=st.booleans())
 def test_generate_stos_file_matches_pre_change(data, downsample, input_downsample, use_masks, has_mask) -> None:
-    """__GenerateStosFile passes the same paths and spacing to ChangeTransformPixelSpacing, or returns None."""
+    """__GenerateStosFile passes the same paths and spacing to ChangeTransformPixelSpacing, or returns the input."""
     input_stos = data.draw(_embedded_stos(downsample))
     group = mock.Mock(Downsample=float(input_downsample))
     group.Name = 'Grid'
@@ -233,6 +234,32 @@ def test_generate_stos_file_matches_pre_change(data, downsample, input_downsampl
         actual = _run(lambda f: generate(transform, block._StosOutputSpec(f[0], f[1], downsample, use_masks)),
                       has_mask)
     assert actual == expected
+
+
+def test_unchanged_input_is_saved_to_the_output_path() -> None:
+    """An input that already names the output images, downsample and masks is saved, not dropped.
+
+    RC1_Crush 123-122, Brute32 -> Grid32 (2026-11-13): __GenerateStosFile returned None for such an input and
+    __GenerateStosFileIfOutdated raised AttributeError on None.Save.
+    """
+    log: list[tuple[str, typing.Any]] = []
+    control = _FakeFilter('control', log)
+    mapped = _FakeFilter('mapped', log)
+    input_stos = _FakeStos(os.path.join(_ROOT, 'control', '32.png'), os.path.join(_ROOT, 'mapped', '32.png'),
+                           os.path.join(_ROOT, 'control_mask', '32.png'), os.path.join(_ROOT, 'mapped_mask', '32.png'))
+    input_stos.Save = mock.Mock()  # type: ignore[attr-defined]
+    group = mock.Mock(Downsample=32.0)
+    group.Name = 'Brute'
+    transform = mock.Mock(FullPath='input.stos')
+    transform.FindParent.return_value = group
+    output_path = os.path.join(_ROOT, 'Grid32', 'Automatic', 'pair.stos')
+    generate_if_outdated = getattr(block, '__GenerateStosFileIfOutdated')
+    with mock.patch.object(block.stosfile.StosFile, 'Load', return_value=input_stos), \
+            mock.patch.object(block.stosfile, 'stos_transform_maps_onto_control_image', return_value=True), \
+            mock.patch.object(block, 'IsStosFileOutdated', return_value=False), \
+            mock.patch.object(block.os.path, 'exists', return_value=False):
+        assert generate_if_outdated(transform, output_path, block._StosOutputSpec(control, mapped, 32, None))
+    input_stos.Save.assert_called_once_with(output_path)  # type: ignore[attr-defined]
 
 
 def test_mask_paths_without_masks_does_not_read_mask_imagesets() -> None:
