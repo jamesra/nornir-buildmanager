@@ -23,6 +23,7 @@ tiles at all remained -- so it is now logged.
 
 from __future__ import annotations
 
+import errno
 import os
 import tempfile
 import unittest
@@ -319,6 +320,66 @@ class TestAPartialDropIsReported(_SectionFixture):
 
         self.assertEqual(['000.tif', '002.tif', '003.tif', '004.tif', '005.tif'],
                          [t.Image for t in idoc.tiles])
+
+
+class TestAnUnreadableTileIsSkipped(_SectionFixture):
+    """RC3 0425B/4250453.tif: every byte zero, same size as its neighbours. It aborted the section import
+    (PIL.UnidentifiedImageError in the gain solve); the 2022 import left it out of the mosaic."""
+
+    def zero_tile(self, name: str) -> None:
+        path = os.path.join(self.directory, name)
+        size = os.path.getsize(path)
+        with open(path, 'wb') as handle:
+            handle.write(b'\0' * size)
+
+    def test_the_zero_filled_tile_is_dropped_and_named(self):
+        self.write_section(self.all_tiles())
+        self.zero_tile('003.tif')
+        idoc = IDoc.Load(os.path.join(self.directory, '1.idoc'), usecache=False)
+
+        with mock.patch('nornir_buildmanager.importers.idoc.prettyoutput.LogErr') as log:
+            idoc.RemoveMissingTiles(self.directory)
+
+        self.assertEqual(['000.tif', '001.tif', '002.tif', '004.tif', '005.tif'], [t.Image for t in idoc.tiles])
+        self.assertEqual([0, 1, 2, 4, 5], [t.TileIndex for t in idoc.tiles], 'survivors keep their idoc numbers')
+        log.assert_called_once()
+        message = log.call_args.args[0]
+        self.assertIn('003.tif', message)
+        self.assertIn('not readable images', message)
+        self.assertIn('1 of 6', message)
+
+    def test_missing_and_unreadable_are_reported_separately(self):
+        self.write_section([n for n in self.all_tiles() if n != '001.tif'])
+        self.zero_tile('004.tif')
+        idoc = IDoc.Load(os.path.join(self.directory, '1.idoc'), usecache=False)
+
+        with mock.patch('nornir_buildmanager.importers.idoc.prettyoutput.LogErr') as log:
+            idoc.RemoveMissingTiles(self.directory)
+
+        self.assertEqual(['000.tif', '002.tif', '003.tif', '005.tif'], [t.Image for t in idoc.tiles])
+        messages = [c.args[0] for c in log.call_args_list]
+        self.assertEqual(2, len(messages))
+        self.assertTrue(any('001.tif' in m and 'not on disk' in m for m in messages))
+        self.assertTrue(any('004.tif' in m and 'not readable' in m for m in messages))
+
+    def test_a_transient_share_error_is_retried_not_dropped(self):
+        self.write_section(self.all_tiles())
+        idoc = IDoc.Load(os.path.join(self.directory, '1.idoc'), usecache=False)
+        real_open = Image.open
+        refused: set[str] = set()
+
+        def busy_once(path, *args, **kwargs):
+            if path.endswith('002.tif') and path not in refused:
+                refused.add(path)
+                raise OSError(errno.EBUSY, 'busy')
+            return real_open(path, *args, **kwargs)
+
+        with mock.patch('nornir_buildmanager.importers.idoc.prettyoutput.LogErr') as log, \
+                mock.patch('nornir_buildmanager.importers.idoc.PIL.Image.open', side_effect=busy_once):
+            idoc.RemoveMissingTiles(self.directory)
+
+        self.assertEqual(6, len(idoc.tiles))
+        log.assert_not_called()
 
 
 if __name__ == '__main__':

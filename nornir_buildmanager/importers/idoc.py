@@ -45,6 +45,7 @@ import matplotlib.colors
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 import numpy as np
+import PIL.Image
 
 from nornir_shared.files import RemoveOutdatedFile
 from nornir_shared.histogram import *
@@ -54,7 +55,7 @@ import nornir_shared.plot as plot
 import nornir_pools
 
 import nornir_imageregistration
-from nornir_imageregistration import image_stats
+from nornir_imageregistration import image_stats, io_retry
 from nornir_imageregistration.files import mosaicfile
 from nornir_imageregistration.mosaic import Mosaic
 
@@ -1065,6 +1066,35 @@ class IDocTileData:
         self._Mean = val[2]
 
 
+_TILE_OK = 'ok'
+_TILE_MISSING = 'missing'
+_TILE_UNREADABLE = 'unreadable'
+
+
+def _open_tile_header(full_path: str) -> None:
+    """Read only the image header of ``full_path``; raises ``PIL.UnidentifiedImageError`` if it is not an image."""
+    with PIL.Image.open(full_path):
+        pass
+
+
+def _source_tile_state(full_path: str) -> str:
+    """Whether a source tile is on disk and its header names an image format (only the header is read).
+
+    Transient share errors are retried as tile reads are (``noise_crush.load_raw_tile``); any other OS error
+    propagates, since it says nothing about the file itself.
+    """
+    if not os.path.exists(full_path):
+        return _TILE_MISSING
+    try:
+        io_retry.call_with_io_retry(
+            lambda: _open_tile_header(full_path),
+            attempts=nornir_imageregistration.noise_crush.RAW_READ_ATTEMPTS,
+            base_delay=nornir_imageregistration.noise_crush.RAW_READ_BASE_DELAY, description=full_path)
+    except PIL.UnidentifiedImageError:
+        return _TILE_UNREADABLE
+    return _TILE_OK
+
+
 class IDoc:
     """Class that parses a SerialEM idoc file"""
 
@@ -1120,14 +1150,27 @@ class IDoc:
                     t.Max = maxPossible
 
     def RemoveMissingTiles(self, path: str):
-        # existingTiles = []
+        """Drop tiles whose image is absent from disk or is not an image file, logging each kind.
+
+        An unreadable file (e.g. a TIF of all zero bytes the scope left behind) used to abort the whole section
+        import at the first read; the 2022 importer left such tiles out, and so does this.
+        """
         with nornir_pools.InstrumentedThreadPoolExecutor('idoc-tiles') as executor:
-            results = executor.map(lambda tile: (tile, os.path.exists(os.path.join(path, tile.Image))), self.tiles,
-                                   chunksize=5)
+            results = executor.map(lambda tile: (tile, _source_tile_state(os.path.join(path, tile.Image))),
+                                   self.tiles, chunksize=5)
 
         results = list(results)
-        missing = [tile.Image for (tile, exists) in results if not exists]
-        self.tiles = [tile for (tile, exists) in results if exists]
+        missing = [tile.Image for (tile, state) in results if state == _TILE_MISSING]
+        unreadable = [tile.Image for (tile, state) in results if state == _TILE_UNREADABLE]
+        self.tiles = [tile for (tile, state) in results if state == _TILE_OK]
+
+        if unreadable:
+            shown = ', '.join(unreadable[:10])
+            if len(unreadable) > 10:
+                shown += f', and {len(unreadable) - 10} more'
+            prettyoutput.LogErr(
+                f"{len(unreadable)} of {len(results)} tiles named by the idoc are not readable images "
+                f"in {path} and will be skipped: {shown}")
 
         # A partial drop used to pass in silence -- the importer only reported the case where
         # nothing at all remained, so a section could import short by a few tiles with no
