@@ -191,8 +191,9 @@ def test_shadow_write_waits_for_the_lock_then_warns_and_xml_save_succeeds(monkey
           caplog.at_level(logging.WARNING, logger=shadow_write.__name__)):
         save_block_notes('while locked')
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert any(block_dir in r.getMessage() and r.exc_info is not None
-               and isinstance(r.exc_info[1], sqlite_write_lock.WriteLockTimeout) for r in warnings)
+    # One line, no traceback: contention is expected and the next load re-syncs (RC3, 2026-11-16).
+    assert any(block_dir in r.getMessage() and 'next time the container is loaded' in r.getMessage()
+               and r.exc_info is None for r in warnings)
     saved_block = XMLMetadataBackend(block_dir, single_file=True).load()
     assert saved_block is not None and saved_block.attribs['Notes'] == 'while locked'
     assert stored_block_notes() != 'while locked'
