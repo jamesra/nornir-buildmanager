@@ -865,14 +865,11 @@ def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str],
 
 
 def _gain_corrected_max(tile: NDArray, gain: float) -> float:
-    """The tile's largest value as it will be quantized: clipped pixels are not divided by the gain (``crush``)."""
+    """The tile's largest value as it will be quantized: nothing above the camera's clip value (``crush``)."""
     clip = noise_crush.source_clip_value(tile.dtype)
     if clip is None or gain == 1.0:
         return float(np.max(tile)) / gain
-    values = np.asarray(tile)
-    clipped = values == clip
-    unclipped_max = float(np.max(values[~clipped])) / gain if not clipped.all() else -math.inf
-    return max(unclipped_max, float(clip) if clipped.any() else -math.inf)
+    return min(float(np.max(tile)) / gain, float(clip))
 
 
 def GetSectionNoise(histogram_cache_path: str,
