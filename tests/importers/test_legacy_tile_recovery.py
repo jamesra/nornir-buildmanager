@@ -116,6 +116,20 @@ class TestAZeroByteTileIsRebuilt(_Section):
         self.assertEqual(os.path.getsize(self.raw_path(3)), 0)
 
 
+class TestClippedLegacyPixelsDoNotFailTheCheck(_Section):
+
+    def test_a_heavily_clipped_training_tile_still_matches(self) -> None:
+        """RC3 1113 tile 178: 7% of the Raw8 pixels at 0 or 255 gave correlation 0.899 for the right tile."""
+        self.truncate(3)
+        for i in (2, 4):
+            raw = self.originals[i].astype(np.float64)
+            stretched = np.clip((raw - 5200) / 1800, 0, 1)  # a narrow stretch: wide areas clip at 0 and 255
+            Image.fromarray(np.rint(stretched * 255).astype(np.uint8)[::-1, :]).save(
+                os.path.join(self.legacy_dir, f'{i:03d}.png'))
+        fit = recovery.fit_levels([t for t in recovery.section_tiles(self.idoc, self.legacy_dir) if t.index == 2])
+        self.assertGreater(fit.correlations[2], 0.99)
+
+
 class TestAMismatchedLegacyNumberingIsRefused(_Section):
 
     def test_shifted_legacy_names_are_refused(self) -> None:

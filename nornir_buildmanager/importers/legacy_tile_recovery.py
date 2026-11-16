@@ -121,10 +121,16 @@ def _load_legacy(path: str) -> NDArray:
     return image
 
 
-def _correlation(a: NDArray, b: NDArray) -> float:
-    a = a.astype(np.float64).ravel()
-    b = b.astype(np.float64).ravel()
-    if a.std() == 0 or b.std() == 0:
+def _correlation(raw: NDArray, legacy: NDArray) -> float:
+    """Correlation of a raw tile with its legacy tile over the legacy pixels the stretch did not clip (not 0 or 255).
+
+    Clipped legacy pixels hold a whole range of raw counts at one value, which lowers the correlation of correctly
+    matched tiles (RC3 1113 tile 178: 7.3% clipped, 0.899 with them, 1.000 without).
+    """
+    unclipped = ((legacy > 0) & (legacy < 255)).ravel()
+    a = raw.astype(np.float64).ravel()[unclipped]
+    b = legacy.astype(np.float64).ravel()[unclipped]
+    if a.size < 2 or a.std() == 0 or b.std() == 0:
         return 0.0
     return float(np.corrcoef(a, b)[0, 1])
 
