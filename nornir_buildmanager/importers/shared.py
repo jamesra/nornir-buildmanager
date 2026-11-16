@@ -898,6 +898,12 @@ def GetSectionNoise(histogram_cache_path: str,
 
     noise = SectionNoise(noise_crush.section_sigma(sigmas), sample_min, sample_max, source_dtype,
                          sample_low if math.isfinite(sample_low) else None)
+    no_noise = sum(1 for s in sigmas if not s > 0)
+    if no_noise:
+        consequence = ("the section is stored losslessly (step 1)" if noise.sigma == 0
+                       else "the noise is measured from the other tiles")
+        prettyoutput.Log(f"{no_noise} of {len(sigmas)} sampled tiles have no measurable noise (overexposed, clipped "
+                         f"or blank); {consequence}")
     meta = {'version': NOISE_CACHE_VERSION, 'method': noise_crush.SIGMA_METHOD,
             'inputs': _cache_input_basenames(cache_inputs), 'sigma': noise.sigma,
             'sample_min': noise.sample_min, 'sample_max': noise.sample_max, 'sample_low': noise.sample_low,

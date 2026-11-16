@@ -156,6 +156,35 @@ class TestGetSectionNoise(unittest.TestCase):
             shared.GetSectionNoise(hist_path, tiles, len(tiles), load)
             self.assertEqual(len(loads), 6)
 
+    @staticmethod
+    def _overexposed(tmp: str, name: str) -> str:
+        """A tile clipped at the camera maximum: every 2x2 block is flat, so its noise estimate is 0."""
+        path = os.path.join(tmp, name)
+        values = np.minimum(np.random.default_rng(1).normal(60000, 40, (256, 256)), 59900)
+        Image.fromarray(values.astype(np.uint16)).save(path)
+        return path
+
+    def test_overexposed_section_crushes_losslessly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = [self._overexposed(tmp, f'{i:03d}.tif') for i in range(3)]
+            hist_path = os.path.join(tmp, 'cache', 'Histogram.xml')
+            noise = shared.GetSectionNoise(hist_path, tiles, len(tiles),
+                                           lambda i: noise_crush.load_raw_tile(tiles[i]))
+            self.assertEqual(noise.sigma, 0.0)
+            params = shared.SectionCrushParams(noise, None, k=2.5)
+            self.assertEqual(params.step, 1)
+            tile = noise_crush.load_raw_tile(tiles[0])
+            np.testing.assert_array_equal(noise_crush.uncrush(noise_crush.crush(tile, params), params, np.float64),
+                                          tile + 0.5)
+            self.assertEqual(shared.GetSectionNoise(hist_path, tiles, len(tiles), lambda i: 1 / 0), noise)
+
+    def test_overexposed_tiles_do_not_set_the_section_noise(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = self._tiles(tmp, 1) + [self._overexposed(tmp, f'{i:03d}x.tif') for i in range(2)]
+            noise = shared.GetSectionNoise(os.path.join(tmp, 'cache', 'Histogram.xml'), tiles, len(tiles),
+                                           lambda i: noise_crush.load_raw_tile(tiles[i]))
+            self.assertAlmostEqual(noise.sigma, 40.0, delta=3.0)
+
     def test_unwritable_cache_still_returns_estimate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tiles = self._tiles(tmp, 1)
