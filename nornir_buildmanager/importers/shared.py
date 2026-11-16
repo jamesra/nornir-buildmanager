@@ -54,7 +54,11 @@ NOISE_CACHE_SUFFIX: str = '.noise.json'
 # Tiles sampled per section for the noise estimate; exposure is section-wide.
 NOISE_SAMPLE_TILES: int = 16
 # Per-tile brightness gains solved before the crush, next to Histogram.xml: Histogram.gains.json
-GAINS_CACHE_VERSION: int = 3
+GAINS_CACHE_VERSION: int = 4  # 4: mostly clipped tiles are recorded and quantized as captured
+#: A tile with more than this fraction of its pixels clipped (the source maximum) is overexposed film: its overlaps
+#: carry no gain, and the gain its capture-order neighbours lend it is meaningless (RC3 1606: 0.31-2.1 across pure
+#: film, a different grey per capture run). It is quantized as captured, like a tile too dim to correct.
+SATURATED_TILE_FRACTION: float = 0.5
 GAINS_CACHE_SUFFIX: str = '.gains.json'
 # Overlap statistics are measured on tiles reduced by this factor: the strips hold tens of thousands of pixels, and
 # stage error of hundreds of pixels barely moves a strip's median (RC3: gains at 8 matched level 1).
@@ -860,6 +864,17 @@ def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str],
         return None
 
 
+def _gain_corrected_max(tile: NDArray, gain: float) -> float:
+    """The tile's largest value as it will be quantized: clipped pixels are not divided by the gain (``crush``)."""
+    clip = noise_crush.source_clip_value(tile.dtype)
+    if clip is None or gain == 1.0:
+        return float(np.max(tile)) / gain
+    values = np.asarray(tile)
+    clipped = values == clip
+    unclipped_max = float(np.max(values[~clipped])) / gain if not clipped.all() else -math.inf
+    return max(unclipped_max, float(clip) if clipped.any() else -math.inf)
+
+
 def GetSectionNoise(histogram_cache_path: str,
                     cache_inputs: Sequence[str],
                     num_tiles: int,
@@ -890,7 +905,7 @@ def GetSectionNoise(histogram_cache_path: str,
         gain = 1.0 if tile_gains_applied is None else tile_gains_applied.get(iTile, 1.0)
         sigmas.append(noise_crush.estimate_noise_sigma(tile) / gain)  # the estimate scales with the counts
         sample_min = min(sample_min, float(np.min(tile)) / gain)
-        sample_max = max(sample_max, float(np.max(tile)) / gain)
+        sample_max = max(sample_max, _gain_corrected_max(tile, gain))
         if np.issubdtype(tile.dtype, np.signedinteger):
             sample_low = min(sample_low,
                              float(np.quantile(np.asarray(tile)[::4, ::4], SIGNED_OFFSET_QUANTILE)) / gain)
@@ -1107,9 +1122,12 @@ class ImportTileGains(NamedTuple):
     checksum: str
     residual_mad: float
     pairs_used: int
+    saturated: frozenset[int] = frozenset()
 
     def applied(self, tile: int) -> float:
-        """The divisor used for *tile*: its solved gain, or 1 for a tile too dim to amplify."""
+        """The divisor used for *tile*: its solved gain, or 1 for a tile too dim to amplify or mostly clipped."""
+        if tile in self.saturated:
+            return 1.0
         gain = self.solved.get(tile, 1.0)
         return gain if gain >= noise_crush.MIN_CORRECTABLE_GAIN else 1.0
 
@@ -1125,6 +1143,11 @@ class ImportTileGains(NamedTuple):
     def flagged(self) -> list[int]:
         """Tiles with essentially no beam, quantized as captured."""
         return sorted(t for t, g in self.solved.items() if g < noise_crush.MIN_CORRECTABLE_GAIN)
+
+
+def _import_gains_checksum(solved: Mapping[int, float], saturated: frozenset[int]) -> str:
+    """Checksum of the gains as applied to saturated tiles; unchanged from the solved gains when there are none."""
+    return tile_gains.gains_checksum({t: (1.0 if t in saturated else g) for t, g in solved.items()})
 
 
 def _gains_cache_path(histogram_cache_path: str) -> str:
@@ -1147,8 +1170,9 @@ def _load_fresh_gains_cache(gains_cache_path: str, cache_inputs: Sequence[str], 
         if input_mtimes_ns and files.is_significantly_newer(max(input_mtimes_ns), cache_mtime_ns):
             return None
         solved = {int(t): float(g) for t, g in meta['gains'].items()}
-        return ImportTileGains(solved, tile_gains.gains_checksum(solved), float(meta['residual_mad']),
-                               int(meta['pairs_used']))
+        saturated = frozenset(int(t) for t in meta['saturated'])
+        return ImportTileGains(solved, _import_gains_checksum(solved, saturated), float(meta['residual_mad']),
+                               int(meta['pairs_used']), saturated)
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError):
         return None
 
@@ -1172,15 +1196,26 @@ def SolveImportTileGains(histogram_cache_path: str,
     if cached is not None:
         return cached
 
+    clipped: dict[int, float] = {}
+
+    def read_and_measure_clipping(tile: int) -> NDArray:
+        image = read_tile(tile)
+        clipped[tile] = noise_crush.clipped_fraction(image)
+        return image
+
     started = time.perf_counter()
-    result = tile_gains.compute_tile_gains(placements, read_tile, downsample, low=0.5, high=float('inf'))
+    result = tile_gains.compute_tile_gains(placements, read_and_measure_clipping, downsample, low=0.5,
+                                           high=float('inf'))
     elapsed = time.perf_counter() - started
     solved = {int(t): round(float(g), 6) for t, g in result.gains.items()}
-    gains = ImportTileGains(solved, tile_gains.gains_checksum(solved), float(result.residual_mad),
-                            int(result.pairs_used))
+    saturated = frozenset(int(t) for t, f in clipped.items() if f > SATURATED_TILE_FRACTION and int(t) in solved)
+    gains = ImportTileGains(solved, _import_gains_checksum(solved, saturated), float(result.residual_mad),
+                            int(result.pairs_used), saturated)
     values = np.array(list(solved.values())) if solved else np.ones(1)
     label = '' if section_number is None else f"section {section_number}: "
     dim = f", {len(gains.flagged)} tiles too dim to correct" if gains.flagged else ''
+    if saturated:
+        dim += f", {len(saturated)} mostly clipped (quantized as captured)"
     unpaired = f", {len(result.tiles_without_pairs)} without usable overlaps (gain from capture-order ties)"         if result.tiles_without_pairs else ''
     prettyoutput.Log(f"Tile gains {label}{len(solved)} tiles, {result.pairs_used} overlaps "
                      f"({result.pairs_rejected} rejected, {result.pairs_skipped} without tissue), "
@@ -1188,7 +1223,8 @@ def SolveImportTileGains(histogram_cache_path: str,
     meta = {'version': GAINS_CACHE_VERSION, 'variant': variant, 'downsample': downsample,
             'inputs': _cache_input_basenames(cache_inputs), 'gains': {str(t): g for t, g in solved.items()},
             'residual_mad': gains.residual_mad, 'pairs_used': gains.pairs_used,
-            'solve_seconds': round(elapsed, 1), 'tiles_without_pairs': sorted(int(t) for t in result.tiles_without_pairs)}
+            'solve_seconds': round(elapsed, 1), 'tiles_without_pairs': sorted(int(t) for t in result.tiles_without_pairs),
+            'saturated': sorted(saturated)}
     try:
         os.makedirs(os.path.dirname(gains_cache_path) or '.', exist_ok=True)
         with open(gains_cache_path, 'w', encoding='utf-8') as f:

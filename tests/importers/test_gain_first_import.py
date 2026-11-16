@@ -97,6 +97,25 @@ class TestSolveImportTileGains(unittest.TestCase):
         self.assertLess(gains.solved_gain(CENTRE), noise_crush.MIN_CORRECTABLE_GAIN)
         self.assertAlmostEqual(gains.applied(0), gains.solved_gain(0))
 
+    def test_a_mostly_clipped_tile_is_quantized_as_captured(self) -> None:
+        """RC3 1606: overexposed film tiles took gains of 0.31-2.1 from capture-order ties; they now use 1."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = _tiles(GAINS)
+            tiles[CENTRE] = np.full((TILE, TILE), 65535, dtype=np.uint16)
+            tiles[CENTRE][:20, :20] = 60000  # a little film below the clip
+            tiles[5][:, :] = np.where(np.arange(TILE) < TILE // 4, 65535, tiles[5])  # a quarter clipped: still solved
+            gains = self._solve(tmp, tiles)
+            self.assertEqual(gains.saturated, frozenset({CENTRE}))
+            self.assertEqual(gains.applied(CENTRE), 1.0)
+            self.assertAlmostEqual(gains.applied(5), gains.solved_gain(5))
+            self.assertEqual(self._solve(tmp, tiles, reads=[]), gains)  # the cache keeps the saturated tiles
+
+    def test_a_section_without_clipped_tiles_keeps_its_gains_checksum(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gains = self._solve(tmp, _tiles(GAINS))
+        self.assertEqual(gains.saturated, frozenset())
+        self.assertEqual(gains.checksum, tile_gains.gains_checksum(gains.solved))
+
     def test_gains_are_cached_and_a_changed_variant_re_solves(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tiles = _tiles(GAINS)

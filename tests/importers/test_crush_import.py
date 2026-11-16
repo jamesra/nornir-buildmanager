@@ -188,6 +188,20 @@ class TestGetSectionNoise(unittest.TestCase):
                                           tile + 0.5)
             self.assertEqual(shared.GetSectionNoise(hist_path, tiles, len(tiles), lambda i: 1 / 0), noise)
 
+    def test_clipped_pixels_do_not_widen_a_gain_first_section(self) -> None:
+        """A clipped pixel is quantized undivided, so a dim tile's clip must not raise the section maximum."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = self._tiles(tmp, 2)
+            clipped = os.path.join(tmp, 'clipped.tif')
+            image = noise_crush.load_raw_tile(tiles[0]).copy()
+            image[:8, :8] = 65535
+            Image.fromarray(image).save(clipped)
+            tiles.append(clipped)
+            noise = shared.GetSectionNoise(os.path.join(tmp, 'cache', 'Histogram.xml'), tiles, len(tiles),
+                                           lambda i: noise_crush.load_raw_tile(tiles[i]),
+                                           tile_gains_applied={2: 0.25}, gains_checksum='g')
+            self.assertEqual(noise.sample_max, 65535.0)
+
     def test_overexposed_tiles_do_not_set_the_section_noise(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tiles = self._tiles(tmp, 1) + [self._overexposed(tmp, f'{i:03d}x.tif') for i in range(2)]
