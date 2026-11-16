@@ -141,8 +141,6 @@ class TestCrushStatsDuringConversion:
         assert stats is not None and stats.code_histogram[5:53].sum() == 4 * 64 * 64
         span = shared.CrushCodeSpan(stats.code_histogram, (0.0001, 0.9999))
         assert 46 <= span <= 48
-        node = _filter_node(params.to_attributes(), CrushCodeSpan=span)
-        assert 5.0 < PruneObj.CrushedScoreScale(node) < 6.0
 
 
 class _Filter:
@@ -175,11 +173,11 @@ class TestNoContrastOnCrushedFilters:
         shared.ClearCrushedFilterContrast(node)
         assert 'Gamma' not in node.attrib and node.AttributesChanged
 
-    def test_prune_scale_uses_the_span(self):
+    def test_prune_scores_are_in_noise_steps_whatever_the_span(self):
+        """Crushed prune scores are not rescaled by the span (RC3: the span differs per section; James, 2026-11-16)."""
         node = _filter_node(PARAMS.to_attributes(), CrushCodeSpan=51)
-        assert PruneObj.CrushedScoreScale(node) == 5.0
         older = _filter_node(PARAMS.to_attributes(), MinIntensityCutoff=5.0, MaxIntensityCutoff=56.0)
-        assert PruneObj.CrushedScoreScale(older) == 5.0
+        assert PruneObj.CrushedScoreUnits(node) == PruneObj.CrushedScoreUnits(older) == 'NoiseSteps'
 
     def test_contrast_stages_no_longer_skip_crushed_filters(self):
         """Crushed filters get Histogram/AdjustContrast (Leveled for TEMAlign); the stages run past the old skip."""
@@ -214,7 +212,6 @@ class TestCrushSpanWherePruneReadsIt:
     def test_setting_the_span_marks_the_filter_changed(self):
         node = _filter_node(PARAMS.to_attributes(), CrushCodeSpan=47.0004)
         assert node.AttributesChanged and node.attrib['CrushCodeSpan'] == '47'
-        assert abs(PruneObj.CrushedScoreScale(node) - 255.0 / 47) < 1e-9
 
     def test_contrast_override_sets_the_legacy_span(self):
         # RC2 1226: legacy Raw8 cutoffs 4500-9000 counts, crush step 259 -> 17.4 codes (legacy prune scale)

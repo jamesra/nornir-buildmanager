@@ -17,6 +17,9 @@ import nornir_shared.misc
 import nornir_shared.plot as plot
 import nornir_shared.prettyoutput as prettyoutput
 
+#: ``ScoreUnits`` of a crushed filter's Prune map: scores in stored codes, one code per noise step.
+CRUSHED_PRUNE_SCORE_UNITS = 'NoiseSteps'
+
 
 class PruneObj:
     """Executes ir-prune and produces a histogram"""
@@ -280,6 +283,8 @@ class PruneObj:
         SaveRequired = False
         PruneMapElement = FilterNode.GetChildByAttrib('Prune', 'Overlap', Overlap)
         PruneMapElement = transforms.RemoveOnMismatch(PruneMapElement, 'InputTransformChecksum', TransformNode.Checksum)
+        score_units = cls.CrushedScoreUnits(FilterNode)
+        PruneMapElement = cls.RemoveOnScoreUnitsMismatch(PruneMapElement, score_units)
 
         if not PruneMapElement is None:
             if LevelNode.TilesValidated is not None:
@@ -309,10 +314,9 @@ class PruneObj:
         TileToScore = Prune(files, Overlap)
         assert isinstance(TileToScore, dict)  # A list of files always yields a dict of scores
 
-        score_scale = cls.CrushedScoreScale(FilterNode)
-        if score_scale is not None:
-            TileToScore = {tile: score * score_scale for (tile, score) in TileToScore.items()}
-            PruneMapElement.attrib['CrushScoreScale'] = f'{score_scale:g}'
+        if score_units is not None:
+            PruneMapElement.attrib['ScoreUnits'] = score_units
+            PruneMapElement.attrib.pop('CrushScoreScale', None)
 
         prune = PruneObj(TileToScore)
 
@@ -324,30 +328,30 @@ class PruneObj:
         return FilterNode
 
     @staticmethod
-    def CrushedScoreScale(FilterNode) -> float | None:
-        """Factor that puts prune scores of crushed tiles on the contrast-stretched 8-bit scale.
+    def RemoveOnScoreUnitsMismatch(PruneMapElement, score_units: str | None):
+        """Clean a crushed filter's Prune map scored in other units (the old 8-bit rescale); return the map or None."""
+        if PruneMapElement is None or score_units is None or PruneMapElement.attrib.get('ScoreUnits') == score_units:
+            return PruneMapElement
+        PruneMapElement.Clean(reason=f"Crushed prune scores are now in {score_units}, not rescaled to 8 bits")
+        return None
 
-        Scores are sums of raw pixel standard deviations. A crushed filter stores
-        noise-step codes and records its intensity span in the same units (``CrushCodeSpan``,
-        or the contrast cutoffs on older filters), so stretching that span to 0-255 matches
-        what a ``-NoCrush`` import would have
-        scored and keeps existing ``-DefaultThreshold`` values meaningful.
-        None for filters that are not crushed.
+    @staticmethod
+    def CrushedScoreUnits(FilterNode) -> str | None:
+        """Units of a crushed filter's prune scores, recorded on its Prune map; None for a legacy filter.
+
+        Scores are sums of pixel standard deviations. A crushed tile is scored in its stored codes,
+        unscaled, and one code is one noise step (``k * sigma`` counts), so a featureless tile scores
+        about the same in every section and volume whatever its brightness or contrast span. Crushed
+        thresholds are therefore on their own scale, not the 8-bit scale of legacy tiles.
+
+        Scores used to be rescaled by ``255 / CrushCodeSpan`` to imitate the legacy scale, but the
+        span differs per section and from the legacy contrast cutoffs: on RC3 they came out 3-5x below
+        the 2022 scores, by a different factor in each section (James chose noise units, 2026-11-16).
+        A Prune map without these units was scored the old way and is recomputed.
         """
         if CrushParams.from_attributes(FilterNode.attrib) is None:
             return None
-
-        # Crushed filters carry no contrast values any more (no contrast mapping of crushed codes); the import
-        # records the span it measured from the converted tiles instead. Older crushed filters still have cutoffs.
-        span = FilterNode.CrushCodeSpan
-        if span is not None and span > 0:
-            return 255.0 / span
-
-        (min_cutoff, max_cutoff) = (FilterNode.MinIntensityCutoff, FilterNode.MaxIntensityCutoff)
-        if min_cutoff is None or max_cutoff is None or max_cutoff <= min_cutoff:
-            return 1.0
-
-        return 255.0 / (max_cutoff - min_cutoff)
+        return CRUSHED_PRUNE_SCORE_UNITS
 
     #
     def WritePruneMap(self, MapImageToScoreFile):

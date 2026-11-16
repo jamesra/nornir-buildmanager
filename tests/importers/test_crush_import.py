@@ -113,13 +113,23 @@ class TestCrushHelpers(unittest.TestCase):
         self.assertEqual(CrushParams.from_attributes(node.attrib), PARAMS)
         self.assertTrue(node.AttributesChanged)  # so the pipeline saves the filter
 
-    def test_prune_score_scale(self) -> None:
-        crushed = FilterNode.Create('Raw8', **PARAMS.to_attributes())
+    def test_a_prune_map_scored_the_old_way_is_recomputed(self) -> None:
+        old = _FakeFilter({'Overlap': '0.1', 'CrushScoreScale': '5.795'})
+        self.assertIsNone(PruneObj.RemoveOnScoreUnitsMismatch(old, 'NoiseSteps'))
+        self.assertIn('NoiseSteps', old.cleaned_reason or '')
+        current = _FakeFilter({'Overlap': '0.1', 'ScoreUnits': 'NoiseSteps'})
+        self.assertIs(PruneObj.RemoveOnScoreUnitsMismatch(current, 'NoiseSteps'), current)
+        legacy = _FakeFilter({'Overlap': '0.1'})
+        self.assertIs(PruneObj.RemoveOnScoreUnitsMismatch(legacy, None), legacy)
+        self.assertIsNone(legacy.cleaned_reason)
+
+    def test_prune_score_units(self) -> None:
+        crushed = FilterNode.Create('Quantized', **PARAMS.to_attributes())
         crushed.SetContrastValues(5.0, 56.0, None)
-        self.assertEqual(PruneObj.CrushedScoreScale(crushed), 5.0)
+        self.assertEqual(PruneObj.CrushedScoreUnits(crushed), 'NoiseSteps')
         legacy = FilterNode.Create('Raw8')
         legacy.SetContrastValues(5.0, 56.0, None)
-        self.assertIsNone(PruneObj.CrushedScoreScale(legacy))
+        self.assertIsNone(PruneObj.CrushedScoreUnits(legacy))
 
 
 class TestGetSectionNoise(unittest.TestCase):
