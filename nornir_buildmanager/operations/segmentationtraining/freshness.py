@@ -106,6 +106,8 @@ class ResolvedTileset:
     save_node: Any = None
     #: ``(downsample, tile coords) -> None``. Remote tilesets: make those tiles current in ``level_dirs``.
     fetch_tiles: Callable[[int, Iterable[tuple[int, int]]], None] | None = None
+    #: ``annotation_crops.crush_display.CrushInfo`` when the tiles hold quantized codes; the stitch shows them as display gray.
+    crush: Any = None
 
 
 @dataclass(frozen=True)

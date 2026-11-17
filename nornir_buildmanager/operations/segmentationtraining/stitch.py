@@ -10,7 +10,7 @@ import threading
 from collections import Counter
 from collections.abc import Iterable
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, NamedTuple
 
@@ -264,6 +264,9 @@ class TileLayout:
     postfix: str
     tile_x_dim: int
     tile_y_dim: int
+    #: 256-entry table mapping a stored quantized code to its display gray (``annotation_crops.crush_display``), or None.
+    #: Applied only when a tile is loaded for stitching; recovery and staging keep the stored codes.
+    display_lut: Any = field(default=None, compare=False, repr=False)
 
     def filename(self, ix: int, iy: int) -> str:
         """Tileset file name for grid cell (*ix*, *iy*)."""
@@ -627,7 +630,10 @@ def disk_tile_loader(
     recovery_dirs = list(finer_dirs) if finer_dirs else []
 
     def load(ix: int, iy: int) -> NDArray | None:
-        return _load_or_recover(ix, iy, level_dir, recovery_dirs, layout, repair_dir)
+        tile = _load_or_recover(ix, iy, level_dir, recovery_dirs, layout, repair_dir)
+        if tile is not None and layout.display_lut is not None:
+            tile = layout.display_lut[tile]
+        return tile
 
     return load
 

@@ -39,6 +39,8 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from annotation_crops.crush_display import CrushInfo
+
 from nornir_buildmanager.operations.segmentationtraining.atomic_io import (
     atomic_write_text,
     read_json_object,
@@ -171,6 +173,8 @@ class RemoteTileset:
     prefix: str
     postfix: str
     levels: Mapping[int, RemoteLevel]
+    #: Set when the tiles hold quantized codes (the VikingXML tileset has ``Crush*`` attributes); they need a display window.
+    crush: CrushInfo | None = None
 
     def _channel_filter(self) -> tuple[str, str]:
         """``Channel.Filter`` from the name; else ``Channel/Filter/...`` from the tileset path.
@@ -290,6 +294,7 @@ def parse_viking_xml(
                     prefix=node.get("FilePrefix") or "",
                     postfix=node.get("FilePostfix") or ".png",
                     levels=levels,
+                    crush=CrushInfo.from_element(node),
                 )
             )
     return RemoteVolume(

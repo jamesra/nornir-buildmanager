@@ -493,3 +493,18 @@ def test_tileset_channel_and_filter_from_name_or_path(name: str, path: str) -> N
 
     tileset = RemoteTileset(1, "", name, path, 512, 512, "", ".png", {})
     assert (tileset.channel, tileset.filter) == ("SEM", "Leveled")
+
+
+def test_a_quantized_tileset_carries_its_crush_parameters() -> None:
+    xml = (
+        '<Volume Name="V" path="http://h/V"><Sections><Section Number="1" Path="0001">'
+        '<Tileset name="TEM.Quantized" path="TEM/Quantized" TileXDim="8" TileYDim="8" FilePostfix=".png" '
+        'CrushVersion="1" CrushStep="40" CrushBits="6"><CodeHistogram>5 1 2 3</CodeHistogram>'
+        '<Level Downsample="1" path="001" GridDimX="1" GridDimY="1"/></Tileset>'
+        '<Tileset name="TEM.Leveled" path="TEM/Leveled" TileXDim="8" TileYDim="8">'
+        '<Level Downsample="1" path="001" GridDimX="1" GridDimY="1"/></Tileset>'
+        "</Section></Sections></Volume>"
+    )
+    by_name = {t.name: t for t in parse_viking_xml(xml, source="http://h/V/V.VikingXML").tilesets[1]}
+    assert by_name["TEM.Quantized"].crush is not None and by_name["TEM.Quantized"].crush.histogram == (5, 1, 2, 3)
+    assert by_name["TEM.Leveled"].crush is None

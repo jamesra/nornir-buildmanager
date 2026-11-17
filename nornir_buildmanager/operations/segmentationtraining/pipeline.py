@@ -7,7 +7,7 @@ import logging
 import math
 import os
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -355,6 +355,7 @@ def ExportSectionCrops(
     TilesetMtime: float | None = None,
     AvailableDownsamples: list[int] | None = None,
     TileFetcher: Callable[[int, Iterable[tuple[int, int]]], None] | None = None,
+    Crush: Any = None,
     VolumeName: str | None = None,
     Cleanup: bool = False,
     RefreshOData: bool = False,
@@ -422,6 +423,7 @@ def ExportSectionCrops(
                 mtime=TilesetMtime,
                 available=AvailableDownsamples,
                 fetch_tiles=TileFetcher,
+                crush=Crush,
             ),
             VolumeName=VolumeName,
             filter_node=filter_node,
@@ -551,6 +553,7 @@ def ExportRemoteSections(
             FilePostfix=tileset.postfix,
             AvailableDownsamples=sorted(tileset.levels),
             TileFetcher=tiles.fetch,
+            Crush=tileset.crush,
         )
     session.finish()
     prettyoutput.Log(f"ExportTrainingData: {session.summary()}")
@@ -860,7 +863,12 @@ def _prefetch_tiles(tileset: ResolvedTileset, requests: Iterable[tuple[int, Tile
 
 def _tile_layout(tileset: ResolvedTileset) -> TileLayout:
     """Tile naming and pixel size of *tileset*."""
-    return TileLayout(tileset.prefix, tileset.postfix, tileset.tile_shape.x, tileset.tile_shape.y)
+    lut = None
+    if tileset.crush is not None and tileset.crush.is_supported:
+        from annotation_crops.crush_display import display_lut
+
+        lut = display_lut(tileset.crush)
+    return TileLayout(tileset.prefix, tileset.postfix, tileset.tile_shape.x, tileset.tile_shape.y, lut)
 
 
 def _missing_tiles_for_plan(
@@ -1470,6 +1478,8 @@ class TilesetOverrides:
     available: list[int] | None = None
     #: ``(downsample, tile coords) -> None``: make those tiles current in ``level_dirs``.
     fetch_tiles: Callable[[int, Iterable[tuple[int, int]]], None] | None = None
+    #: Quantized-tile display parameters (``annotation_crops.crush_display.CrushInfo``), or None.
+    crush: Any = None
 
 
 def _resolve_tileset(
@@ -1496,6 +1506,7 @@ def _resolve_tileset(
             postfix=o.file_postfix or ".png",
             mtime=o.mtime,
             fetch_tiles=o.fetch_tiles,
+            crush=o.crush,
         )
     if filter_node is None or not hasattr(filter_node, "Tileset"):
         return _missing_tileset("ExportTrainingData needs a Filter with a Tileset", fail_missing)
@@ -1541,7 +1552,18 @@ def _resolve_tileset(
         postfix=postfix,
         mtime=resolved_mtime,
         save_node=save_node,
+        crush=o.crush or _filter_crush(filter_node),
     )
+
+
+def _filter_crush(filter_node: Any) -> Any:
+    """Display parameters of a quantized filter (its ``Crush*`` attributes and ``CodeHistogram``), or None."""
+    from annotation_crops.crush_display import CrushInfo
+
+    attributes = getattr(filter_node, "attrib", None)
+    if not isinstance(attributes, Mapping):
+        return None
+    return CrushInfo.from_attributes(attributes, getattr(filter_node, "CodeHistogram", None))
 
 
 def _missing_tileset(message: str, fail_missing: bool) -> None:

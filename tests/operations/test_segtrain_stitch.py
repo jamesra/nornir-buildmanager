@@ -477,3 +477,44 @@ def test_sweep_stitch_jobs_recovers_corrupt_tile_from_finer_dirs(tmp_path: Path)
         nornir_pools.ClosePools(timeout=10)
     expected = _downsample_quad(tuple(_constant_tile(value) for value in values))
     np.testing.assert_array_equal(np.array(Image.open(job.image_path), dtype=np.uint8), expected)
+
+
+def test_loader_shows_quantized_codes_as_display_gray_but_recovery_keeps_codes(tmp_path: Path) -> None:
+    """A quantized tileset's tiles hold codes; the stitch loads them through the shared display table, and a tile
+    rebuilt from finer levels is still written back as codes."""
+    from annotation_crops.crush_display import CrushInfo, display_lut
+
+    crush = CrushInfo(40, 0, 6, (10.0, 30.0), None)
+    lut = display_lut(crush)
+    layout = TileLayout(_PREFIX, _POSTFIX, _TILE, _TILE, lut)
+    coarser, finer = tmp_path / "4", tmp_path / "2"
+    for index, value in enumerate((10, 20, 30, 20)):
+        dy, dx = divmod(index, 2)
+        _write_tile(finer, dx, dy, value)
+    _write_tile(coarser, 1, 0, 20)
+    _corrupt_tile(coarser, 0, 0)
+
+    load = disk_tile_loader(str(coarser), layout, finer_dirs=[str(finer)])
+    assert int(load(1, 0)[0, 0]) == int(lut[20]) == 128
+    rebuilt = load(0, 0)
+    assert rebuilt is not None
+    # The repair on disk is the stored codes; what the loader returned is those codes through the table.
+    on_disk = np.array(Image.open(_tile_path(coarser, 0, 0)), dtype=np.uint8)
+    assert on_disk.max() <= 30 and on_disk.min() >= 10
+    np.testing.assert_array_equal(rebuilt, lut[on_disk])
+
+
+def test_a_layout_without_a_table_loads_tiles_as_stored(tmp_path: Path) -> None:
+    _write_tile(tmp_path, 0, 0, 77)
+    assert int(_loader(tmp_path)(0, 0)[0, 0]) == 77
+
+
+def test_crush_display_matches_the_gallery_copy() -> None:
+    """``annotation_crops/crush_display.py`` is kept identical here and in Sam2Trainer (like ``ignore.py``), so a card, a
+    crop and Viking show the same gray for a code. Skipped when the Sam2Trainer checkout is not beside this repo."""
+    here = Path(__file__).resolve()
+    ours = here.parents[2] / "annotation_crops" / "crush_display.py"
+    theirs = here.parents[4] / "Sam2Trainer" / "annotation_crops" / "crush_display.py"
+    if not theirs.is_file():
+        pytest.skip("no Sam2Trainer checkout beside nornir")
+    assert ours.read_bytes().replace(b"\r\n", b"\n") == theirs.read_bytes().replace(b"\r\n", b"\n")
