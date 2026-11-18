@@ -451,7 +451,6 @@ class SerialEMIDocImport:
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
 
         histogram_creation_task = None
-        override_span = None
         if crush_params is not None:
             (FilterMin, FilterMax, Gamma) = (None, None, None)
             (ActualMosaicMin, ActualMosaicMax) = (None, None)
@@ -499,9 +498,6 @@ class SerialEMIDocImport:
             shared.ClearCrushedFilterContrast(filterObj)
             filterObj.BitsPerPixel = crush_params.bits
             shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first)
-            override_span = shared.CrushCodeSpanFromContrastOverride(ContrastMap.get(SectionNumber), crush_params)
-            if override_span is not None:
-                filterObj.CrushCodeSpan = override_span
             yield filterObj
         else:
             filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)
@@ -586,8 +582,6 @@ class SerialEMIDocImport:
                                                 source_gains=source_gains)
                 span = None if crush_stats is None else shared.CrushCodeSpan(crush_stats.code_histogram,
                                                                              ContrastCutoffs)
-                if override_span is not None:
-                    span = None  # the section's contrast override sets the span (legacy prune scale)
                 if span is not None:
                     filterObj.CrushCodeSpan = span
                     yield filterObj

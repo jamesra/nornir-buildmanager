@@ -414,10 +414,8 @@ class MRCImport:
 
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
 
-        override_span = None
         if crush_params is not None:
             # Crushed tiles do not depend on the contrast settings, so no section histogram is read for them.
-            override_span = shared.CrushCodeSpanFromContrastOverride(ContrastMap.get(SectionNumber), crush_params)
             contrast_mismatch = crush_removed
             prettyoutput.Log(f"Crushing section {SectionNumber}: sigma {crush_params.sigma:.1f} counts, "
                              f"step {crush_params.step}, offset {crush_params.offset}, {crush_params.bits}-bit codes")
@@ -444,12 +442,9 @@ class MRCImport:
             # had been deleted with the Quantized files written and no link, so later pipelines skipped the section.
             (yield channelObj)
         if crush_params is not None:
-            # No contrast is recorded or applied for crushed codes (James, 2026-11-05). Prune still needs the
-            # section's span in code units to keep its score scale: from a contrast override now, else from the
-            # code histogram of the tiles written below.
+            # No contrast is recorded or applied for crushed codes (James, 2026-11-05), and the contrast-overrides
+            # file is not read for them (James, 2026-11-18).
             shared.ClearCrushedFilterContrast(filterObj)
-            if override_span is not None:
-                filterObj.CrushCodeSpan = override_span
             filterObj.BitsPerPixel = crush_params.bits
             shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first)
             (yield filterObj)
@@ -528,7 +523,7 @@ class MRCImport:
                                        import_gains=import_gains)
         _mark_export_complete(LevelObj.FullPath, num_tiles, mrc_fullpath, CropBorder)
 
-        if crush_params is not None and override_span is None and crush_stats is not None and crush_stats.tiles > 0:
+        if crush_params is not None and crush_stats is not None and crush_stats.tiles > 0:
             span = shared.CrushCodeSpan(crush_stats.code_histogram, ContrastCutoffs)
             if span is not None:
                 filterObj.CrushCodeSpan = span

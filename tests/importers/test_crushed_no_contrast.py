@@ -213,10 +213,3 @@ class TestCrushSpanWherePruneReadsIt:
         node = _filter_node(PARAMS.to_attributes(), CrushCodeSpan=47.0004)
         assert node.AttributesChanged and node.attrib['CrushCodeSpan'] == '47'
 
-    def test_contrast_override_sets_the_legacy_span(self):
-        # RC2 1226: legacy Raw8 cutoffs 4500-9000 counts, crush step 259 -> 17.4 codes (legacy prune scale)
-        params = CrushParams(k=2.5, step=259, sigma=103.8, offset=0, bits=8, source_dtype='uint16')
-        override = shared.ContrastValue(1226, 4500, 9000, 1.0)
-        assert abs(shared.CrushCodeSpanFromContrastOverride(override, params) - 4500 / 259) < 1e-9
-        assert shared.CrushCodeSpanFromContrastOverride(None, params) is None
-        assert shared.CrushCodeSpanFromContrastOverride(shared.ContrastValue(1226, 0, 0, 1.0), params) is None
