@@ -183,9 +183,11 @@ class TestRecoverNotesImportDir(unittest.TestCase):
 
 class TestTryAddNotesRoundTrip(unittest.TestCase):
 
-    def setUp(self) -> None:
+    def _fresh_channel(self) -> None:
+        """A new volume per example: Hypothesis runs setUp once per test, not per example, and a
+        repeated text is then (correctly) reported unchanged by TryAddNotes."""
         self._temp_dir = tempfile.mkdtemp(prefix='nornir-tryadd-notes-')
-        self.addCleanup(lambda: shutil.rmtree(self._temp_dir, ignore_errors=True))
+        self.addCleanup(shutil.rmtree, self._temp_dir, ignore_errors=True)
         self.volume = _load_volume(os.path.join(self._temp_dir, 'volume'))
         [_added_block, block] = self.volume.UpdateOrAddChildByAttrib(BlockNode.Create('TEM'), 'Name')
         [_added_section, section] = block.GetOrCreateSection(9)
@@ -199,6 +201,7 @@ class TestTryAddNotesRoundTrip(unittest.TestCase):
     ).filter(lambda value: value.strip()))
     @settings(max_examples=25, deadline=None)
     def test_notes_text_round_trips_to_file_and_xml(self, notes_text: str) -> None:
+        self._fresh_channel()
         _write_notes(self.source_dir, notes_text)
         self.assertTrue(TryAddNotes(self.channel, self.source_dir, None))
         copied = os.path.join(self.channel.FullPath, 'notes.txt')
