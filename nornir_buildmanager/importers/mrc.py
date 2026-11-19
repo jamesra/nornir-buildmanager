@@ -9,6 +9,7 @@ import collections
 import enum
 import errno
 import json
+import os
 import struct
 import sys
 import tempfile
@@ -246,6 +247,22 @@ def stage_to_mosaic_offset(stage_pixels: NDArray[np.floating]) -> NDArray[np.flo
     The nm-per-pixel scale per axis is already applied to the stage position.
     """
     return np.array((-stage_pixels[1], stage_pixels[0]), dtype=np.float64)
+
+
+def _save_tile(im: Image.Image, output_fullpath: str) -> None:
+    """Save an exported tile; a 32-bit ``I`` image goes to PNG as 16-bit grayscale.
+
+    Pillow before 13 wrote mode ``I`` to PNG as 16-bit (``I;16B``, values clipped to 0..65535);
+    Pillow 13 refuses mode ``I`` for PNG. Converting to ``I;16`` first writes the same file.
+    Other formats and modes are saved unchanged.
+    """
+    if im.mode == 'I' and os.path.splitext(output_fullpath)[1].lower() == '.png':
+        pixels = np.clip(np.asarray(im), 0, np.iinfo(np.uint16).max).astype(np.uint16)
+        with Image.fromarray(pixels) as im16:
+            im16.save(output_fullpath, compress_level=1)
+        return
+
+    im.save(output_fullpath, compress_level=1)
 
 
 class MRCImport:
@@ -766,7 +783,7 @@ class MRCImport:
                 # Orientation must not depend on whether contrast values were
                 # supplied; the contrast branch below flips the same way.
                 im = im.transpose(Image.Transpose.FLIP_TOP_BOTTOM)
-            im.save(output_fullpath, compress_level=1)
+            _save_tile(im, output_fullpath)
         else:
             # This mess is here because we can't really trust the min/max pixel values reported in the MRC file for a lot of our old data
             # t = mrcfile._repair_out_of_bounds_pixels(iTile, 14)
@@ -794,7 +811,7 @@ class MRCImport:
             img = img.round().astype(dt, copy=False)
 
             with Image.fromarray(img).convert(mode='I') as im:
-                im.save(output_fullpath, compress_level=1)
+                _save_tile(im, output_fullpath)
 
             del img
 
