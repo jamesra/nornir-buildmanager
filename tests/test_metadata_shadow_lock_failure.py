@@ -7,19 +7,46 @@ volume, once, for the rest of the process; the XML saves are unaffected.
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import os
 import sqlite3
+import sys
+import types
+from pathlib import Path
 from typing import Any, cast
 
-import nornir_buildmanager.volumemanager as vm
 import pytest
+
+import nornir_buildmanager.volumemanager as vm
 from nornir_buildmanager.metadata import feature_flags, shadow_write
 from nornir_buildmanager.metadata.sqlite_backend import SQLiteMetadataBackend
 from nornir_buildmanager.metadata.sqlite_write_lock import WriteLockTimeout
 from nornir_buildmanager.metadata.xml_backend import XMLMetadataBackend
 
-from .metadata_port_characterize_data import build_volume
+
+def _load_sibling(module_name: str) -> types.ModuleType:
+    """Load a module next to this file by path, not through the top-level ``tests`` package.
+
+    Umbrella pytest collects several checkouts that each contain a ``tests`` package, and
+    ``--import-mode=importlib`` keeps the first one in ``sys.modules``, so a relative import
+    of a helper here looks in the wrong tree. Cached under a buildmanager-specific name.
+    """
+    unique_name = f"nornir_buildmanager_tests_{module_name}"
+    if unique_name in sys.modules:
+        return sys.modules[unique_name]
+    path = Path(__file__).resolve().with_name(f"{module_name}.py")
+    spec = importlib.util.spec_from_file_location(unique_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[unique_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_metadata_port_characterize_data = _load_sibling("metadata_port_characterize_data")
+build_volume = _metadata_port_characterize_data.build_volume
 
 
 @pytest.fixture(autouse=True)

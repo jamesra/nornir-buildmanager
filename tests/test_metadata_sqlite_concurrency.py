@@ -12,13 +12,16 @@ folder on a network share; it works in a new subfolder there and removes it afte
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import os
 import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
+import types
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -37,8 +40,31 @@ from nornir_buildmanager.metadata.migrate import (
 from nornir_buildmanager.metadata.sqlite_backend import SQLiteMetadataBackend
 from nornir_buildmanager.metadata.volume_metadata import MetadataNode
 
-from .metadata_port_characterize_data import build_volume
-from .test_metadata_sqlite_write_lock import _held_by_other_process
+
+def _load_sibling(module_name: str) -> types.ModuleType:
+    """Load a module next to this file by path, not through the top-level ``tests`` package.
+
+    Umbrella pytest collects several checkouts that each contain a ``tests`` package, and
+    ``--import-mode=importlib`` keeps the first one in ``sys.modules``, so a relative import
+    of a helper here looks in the wrong tree. Cached under a buildmanager-specific name.
+    """
+    unique_name = f"nornir_buildmanager_tests_{module_name}"
+    if unique_name in sys.modules:
+        return sys.modules[unique_name]
+    path = Path(__file__).resolve().with_name(f"{module_name}.py")
+    spec = importlib.util.spec_from_file_location(unique_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[unique_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_metadata_port_characterize_data = _load_sibling("metadata_port_characterize_data")
+build_volume = _metadata_port_characterize_data.build_volume
+_test_metadata_sqlite_write_lock = _load_sibling("test_metadata_sqlite_write_lock")
+_held_by_other_process = _test_metadata_sqlite_write_lock._held_by_other_process
 
 NET_TEST_PATH_ENV = 'NORNIR_VOLUME_METADATA_NET_TEST_PATH'
 

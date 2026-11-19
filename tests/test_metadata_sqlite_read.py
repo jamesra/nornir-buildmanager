@@ -13,12 +13,16 @@ from rows also has no element tails (the indentation whitespace the parser keeps
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import logging
 import os
 import shutil
 import sqlite3
+import sys
 import tempfile
+import types
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from typing import Any, cast
 from xml.etree import ElementTree
 
@@ -35,16 +39,36 @@ from nornir_buildmanager.metadata.sqlite_backend import (
 )
 from nornir_buildmanager.volumemanager.container_storage import XmlContainerStorage
 
-from .metadata_port_characterize_data import (
-    XPATH_CASES,
-    ancestry_key,
-    build_volume,
-    canonical,
-    merged_oracle,
-    normalized_sha,
-    record_container_sources,
-    snapshot,
-)
+
+def _load_sibling(module_name: str) -> types.ModuleType:
+    """Load a module next to this file by path, not through the top-level ``tests`` package.
+
+    Umbrella pytest collects several checkouts that each contain a ``tests`` package, and
+    ``--import-mode=importlib`` keeps the first one in ``sys.modules``, so a relative import
+    of a helper here looks in the wrong tree. Cached under a buildmanager-specific name.
+    """
+    unique_name = f"nornir_buildmanager_tests_{module_name}"
+    if unique_name in sys.modules:
+        return sys.modules[unique_name]
+    path = Path(__file__).resolve().with_name(f"{module_name}.py")
+    spec = importlib.util.spec_from_file_location(unique_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[unique_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_metadata_port_characterize_data = _load_sibling("metadata_port_characterize_data")
+XPATH_CASES = _metadata_port_characterize_data.XPATH_CASES
+ancestry_key = _metadata_port_characterize_data.ancestry_key
+build_volume = _metadata_port_characterize_data.build_volume
+canonical = _metadata_port_characterize_data.canonical
+merged_oracle = _metadata_port_characterize_data.merged_oracle
+normalized_sha = _metadata_port_characterize_data.normalized_sha
+record_container_sources = _metadata_port_characterize_data.record_container_sources
+snapshot = _metadata_port_characterize_data.snapshot
 
 READ = feature_flags.READ_SQLITE_ENV
 SHADOW = feature_flags.SHADOW_SQLITE_ENV

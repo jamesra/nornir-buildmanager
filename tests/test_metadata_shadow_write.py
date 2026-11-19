@@ -8,11 +8,15 @@ and a broken database only produces a warning naming the container.
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import logging
 import os
 import sqlite3
+import sys
 import tempfile
+import types
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -30,12 +34,32 @@ from nornir_buildmanager.metadata.volume_metadata import MetadataNode
 from nornir_buildmanager.metadata.xml_backend import XMLMetadataBackend
 from nornir_buildmanager.volumemanager.xelementwrapper import XElementWrapper
 
-from .metadata_port_characterize_data import (
-    build_volume,
-    normalized_sha,
-    record_container_sources,
-    snapshot,
-)
+
+def _load_sibling(module_name: str) -> types.ModuleType:
+    """Load a module next to this file by path, not through the top-level ``tests`` package.
+
+    Umbrella pytest collects several checkouts that each contain a ``tests`` package, and
+    ``--import-mode=importlib`` keeps the first one in ``sys.modules``, so a relative import
+    of a helper here looks in the wrong tree. Cached under a buildmanager-specific name.
+    """
+    unique_name = f"nornir_buildmanager_tests_{module_name}"
+    if unique_name in sys.modules:
+        return sys.modules[unique_name]
+    path = Path(__file__).resolve().with_name(f"{module_name}.py")
+    spec = importlib.util.spec_from_file_location(unique_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[unique_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_metadata_port_characterize_data = _load_sibling("metadata_port_characterize_data")
+build_volume = _metadata_port_characterize_data.build_volume
+normalized_sha = _metadata_port_characterize_data.normalized_sha
+record_container_sources = _metadata_port_characterize_data.record_container_sources
+snapshot = _metadata_port_characterize_data.snapshot
 
 FLAG = feature_flags.SHADOW_SQLITE_ENV
 
