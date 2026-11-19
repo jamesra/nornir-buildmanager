@@ -422,20 +422,25 @@ class SerialEMIDocImport:
         # Crushed imports read no histogram first (James, 2026-11-05): the noise sample sets the step and depth,
         # the code histogram is accumulated while the tiles are converted, and no contrast is recorded or applied.
         gain_first = False
+        gains_changed = False
         import_gains: shared.ImportTileGains | None = None
         tile_numbers = cls.TileNumbers(IDocData.tiles)
         requested_crush = None
         if not NoCrush and ImageBpp > 8:
             crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
             gain_first = shared.GainFirstAllowed(channelObj)
-            reused = shared.ExistingGainFirstParams(channelObj, CrushK) if gain_first else None
             noise_cache_inputs = source_tile_list + [idocFileFullPath]
             load_tile = lambda i: nornir_imageregistration.noise_crush.load_raw_tile(source_tile_list[i])
-            if reused is not None:
-                requested_crush = reused  # a restart: the gains are solved only if tiles are still to be written
-            elif gain_first:
+            reused = None
+            if gain_first:
+                # Always known (from the cache on a restart), so tiles made with other gains are crushed again.
                 import_gains = cls.SolveGains(IDocData, tile_numbers, source_tile_list, noise_cache_inputs, Flip,
                                               histogram_cache_path, SectionNumber)
+                gains_changed = shared.CleanCrushedFilterIfGainsChanged(channelObj, import_gains.checksum, logger)
+                reused = shared.ExistingGainFirstParams(channelObj, CrushK)
+            if reused is not None:
+                requested_crush = reused  # a restart with the same gains keeps its parameters
+            elif gain_first:
                 requested_crush = shared.SectionCrushParams(
                     shared.GetSectionNoise(histogram_cache_path, noise_cache_inputs, len(source_tile_list), load_tile,
                                            tile_gains_applied={i: import_gains.applied(n)
@@ -449,6 +454,7 @@ class SerialEMIDocImport:
             FilterName = shared.CRUSHED_FILTER_NAME
 
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
+        crush_removed = crush_removed or gains_changed
 
         histogram_creation_task = None
         if crush_params is not None:
@@ -497,7 +503,8 @@ class SerialEMIDocImport:
         if crush_params is not None:
             shared.ClearCrushedFilterContrast(filterObj)
             filterObj.BitsPerPixel = crush_params.bits
-            shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first)
+            shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first,
+                                            gains_checksum=None if import_gains is None else import_gains.checksum)
             yield filterObj
         else:
             filterObj.SetContrastValues(FilterMin, FilterMax, Gamma)

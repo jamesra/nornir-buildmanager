@@ -388,16 +388,25 @@ class MRCImport:
             return staged[0]
 
         gain_first = False
+        gains_changed = False
         import_gains: shared.ImportTileGains | None = None
         requested_crush = None
         if not NoCrush and mrcfile.bytes_per_pixel > 1:
             crush_k = nornir_imageregistration.noise_crush.DEFAULT_CRUSH_K if CrushK is None else float(CrushK)
             gain_first = shared.GainFirstAllowed(channelObj)
-            reused = shared.ExistingGainFirstParams(channelObj, CrushK) if gain_first else None
+            reused = None
+            if gain_first:
+                # Always known, so tiles made with other gains are crushed again. A fresh cache needs no staged copy.
+                import_gains = shared.CachedImportTileGains(histogram_cache_path, [mrc_fullpath],
+                                                            cls.GainsVariant(CropBorder, flip_ud))
+                if import_gains is None:
+                    import_gains = cls.SolveGains(pixel_source(), mrc_fullpath, histogram_cache_path, SectionNumber,
+                                                  CropBorder, flip_ud)
+                gains_changed = shared.CleanCrushedFilterIfGainsChanged(channelObj, import_gains.checksum, logger)
+                reused = shared.ExistingGainFirstParams(channelObj, CrushK)
             if reused is not None:
-                requested_crush = reused  # a restart: the gains are solved only if tiles are still to be written
+                requested_crush = reused  # a restart with the same gains keeps its parameters
             elif gain_first:
-                import_gains = cls.SolveGains(pixel_source(), mrc_fullpath, histogram_cache_path, SectionNumber, CropBorder, flip_ud)
                 requested_crush = shared.SectionCrushParams(
                     shared.GetSectionNoise(histogram_cache_path, [mrc_fullpath], mrcfile.num_tiles,  # type: ignore[arg-type]
                                            lambda i: crop_tile(mrcfile.get_tile_as_numpy_memmap(i), CropBorder),
@@ -413,6 +422,7 @@ class MRCImport:
             FilterName = shared.CRUSHED_FILTER_NAME
 
         (crush_params, crush_removed) = shared.ResolveCrushMode(channelObj, FilterName, requested_crush, logger)
+        crush_removed = crush_removed or gains_changed
 
         if crush_params is not None:
             # Crushed tiles do not depend on the contrast settings, so no section histogram is read for them.
@@ -446,7 +456,8 @@ class MRCImport:
             # file is not read for them (James, 2026-11-18).
             shared.ClearCrushedFilterContrast(filterObj)
             filterObj.BitsPerPixel = crush_params.bits
-            shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first)
+            shared.SetFilterCrushAttributes(filterObj, crush_params, gain_first=gain_first,
+                                            gains_checksum=None if import_gains is None else import_gains.checksum)
             (yield filterObj)
         else:
             filterObj.SetContrastValues(filter_contrast.min, filter_contrast.max, filter_contrast.gamma)
@@ -557,7 +568,12 @@ class MRCImport:
             return np.array(img[::stride, ::stride])
 
         return shared.SolveImportTileGains(histogram_cache_path, [source_path], placements, read_tile,
-                                           f"crop{crop_border}-flip{int(flip_ud)}", section_number=section_number)
+                                           MRCImport.GainsVariant(crop_border, flip_ud), section_number=section_number)
+
+    @staticmethod
+    def GainsVariant(crop_border: int, flip_ud: bool) -> str:
+        """What besides the source decides the gains' tile geometry; part of the gains cache key."""
+        return f"crop{crop_border}-flip{int(flip_ud)}"
 
     def __init__(self):
         """

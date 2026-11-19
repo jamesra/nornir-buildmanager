@@ -218,6 +218,57 @@ class TestGainFirstChoice(unittest.TestCase):
         self.assertNotIn(noise_crush.GAIN_FIRST_ATTRIB, plain.__dict__)
 
 
+class _CleanableFilter(_FakeFilter):
+    def __init__(self, attrib: dict[str, str], locked: bool = False):
+        super().__init__(attrib)
+        self.Locked = locked
+        self.cleaned: list[str] = []
+
+    def Clean(self, reason: str) -> None:
+        self.cleaned.append(reason)
+
+
+class TestChangedGainsCrushTheWholeSectionAgain(unittest.TestCase):
+    """James, 2026-11-18: new gains used to reach only the tiles still to be written, mixing two sets of gains."""
+
+    @staticmethod
+    def _gain_first(checksum: str | None, locked: bool = False) -> _CleanableFilter:
+        attrib = {**PARAMS.to_attributes(), noise_crush.GAIN_FIRST_ATTRIB: '1'}
+        if checksum is not None:
+            attrib[shared.IMPORT_GAINS_CHECKSUM_ATTRIB] = checksum
+        return _CleanableFilter(attrib, locked)
+
+    def test_new_gains_clean_the_filter(self) -> None:
+        old = self._gain_first('aaa')
+        self.assertTrue(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=old), 'bbb', mock.Mock()))
+        self.assertEqual(len(old.cleaned), 1)
+
+    def test_same_gains_keep_the_filter(self) -> None:
+        same = self._gain_first('aaa')
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=same), 'aaa', mock.Mock()))
+        self.assertEqual(same.cleaned, [])
+
+    def test_a_filter_without_a_recorded_checksum_is_kept(self) -> None:
+        unknown = self._gain_first(None)
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=unknown), 'bbb', mock.Mock()))
+        self.assertEqual(unknown.cleaned, [])
+
+    def test_a_locked_filter_is_kept(self) -> None:
+        locked = self._gain_first('aaa', locked=True)
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=locked), 'bbb', mock.Mock()))
+        self.assertEqual(locked.cleaned, [])
+
+    def test_a_crushed_filter_made_without_gains_is_not_touched(self) -> None:
+        plain = _CleanableFilter(dict(PARAMS.to_attributes()))
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=plain), 'bbb', mock.Mock()))
+        self.assertEqual(plain.cleaned, [])
+
+    def test_the_checksum_is_recorded_on_a_gain_first_filter(self) -> None:
+        node = types.SimpleNamespace(attrib={})
+        shared.SetFilterCrushAttributes(cast(Any, node), PARAMS, gain_first=True, gains_checksum='ccc')
+        self.assertEqual(node.__dict__[shared.IMPORT_GAINS_CHECKSUM_ATTRIB], 'ccc')
+
+
 class TestTileGainsLeavesGainFirstAlone(unittest.TestCase):
 
     def test_gain_first_filter_is_skipped_so_the_correction_is_not_applied_twice(self) -> None:

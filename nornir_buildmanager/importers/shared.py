@@ -1053,16 +1053,20 @@ def ResolveCrushMode(channel: ChannelNode, filter_name: str, requested: CrushPar
     return requested, True
 
 
-def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams, gain_first: bool = False) -> None:
+def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams, gain_first: bool = False,
+                             gains_checksum: str | None = None) -> None:
     """Record *params* on the filter so later runs and readers know its tiles are crushed.
 
     *gain_first* marks tiles divided by their brightness gain before quantizing: their gains are diagnostic, and
-    TileGains leaves the filter alone (its correction would be applied twice).
+    TileGains leaves the filter alone (its correction would be applied twice). *gains_checksum* records which gains
+    those were, so a re-import whose gains differ crushes the section again (``CleanCrushedFilterIfGainsChanged``).
     """
     for (key, value) in params.to_attributes().items():
         setattr(filter_node, key, value)  # the wrapper marks the node changed, so the pipeline saves it
     if gain_first:
         setattr(filter_node, noise_crush.GAIN_FIRST_ATTRIB, '1')
+        if gains_checksum is not None:
+            setattr(filter_node, IMPORT_GAINS_CHECKSUM_ATTRIB, gains_checksum)
 
 
 def IsGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
@@ -1072,6 +1076,8 @@ def IsGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
 
 LEGACY_GAIN_FIRST_ATTRIB = 'GainFirst'
 LEGACY_GAINS_CHECKSUM_ATTRIB = 'GainsChecksum'
+#: Checksum of the import gains a gain-first crushed filter's tiles were divided by (same attribute as legacy filters).
+IMPORT_GAINS_CHECKSUM_ATTRIB = LEGACY_GAINS_CHECKSUM_ATTRIB
 
 
 def IsLegacyGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
@@ -1096,6 +1102,34 @@ def GainFirstAllowed(channel: ChannelNode) -> bool:
     """
     existing = channel.GetFilter(CRUSHED_FILTER_NAME)
     return existing is None or CrushParams.from_attributes(existing.attrib) is None or IsGainFirstFilter(existing)
+
+
+def CleanCrushedFilterIfGainsChanged(channel: ChannelNode, gains_checksum: str, logger: logging.Logger) -> bool:
+    """Clean the channel's gain-first crushed filter when its tiles were made with other gains; True if cleaned.
+
+    New gains (added, replaced or newer tiles, moved stage positions, a new gain solver) would otherwise reach only the
+    tiles still to be written, leaving a section of mixed gains (James, 2026-11-18: re-crush the whole section).
+    A filter that recorded no checksum (imported before 2026-11-18) takes the current one without being re-crushed:
+    its gains are unknown. A locked filter keeps its tiles.
+    """
+    filter_node = channel.GetFilter(CRUSHED_FILTER_NAME)
+    if not IsGainFirstFilter(filter_node):
+        return False
+    recorded = filter_node.attrib.get(IMPORT_GAINS_CHECKSUM_ATTRIB)
+    if recorded is None or recorded == gains_checksum:
+        return False
+    if filter_node.Locked:
+        logger.warning("Locked filter keeps tiles made with other gains (%s, now %s): %s", recorded, gains_checksum,
+                       filter_node.FullPath)
+        return False
+    filter_node.Clean(f"Tile gains changed ({recorded} -> {gains_checksum}): the section is crushed again")
+    return True
+
+
+def CachedImportTileGains(histogram_cache_path: str, cache_inputs: Sequence[str], variant: str,
+                          downsample: int = IMPORT_GAIN_DOWNSAMPLE) -> "ImportTileGains | None":
+    """The section's solved gains from the cache beside Histogram.xml when it is fresh, without reading any tile."""
+    return _load_fresh_gains_cache(_gains_cache_path(histogram_cache_path), cache_inputs, variant, downsample)
 
 
 def ExistingGainFirstParams(channel: ChannelNode, k: float | None) -> CrushParams | None:
