@@ -1403,7 +1403,7 @@
                       help="Transform defining images into mosaic" required="False"/>
             <Argument flag="-HighestDownsample" dest="HighestDownsample"
                       type="int"
-                      help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile."
+                      help="Highest level downsample to generate.  Defaults to the coarsest level: the whole section in one tile, or one row of tiles when the section is at least twice as long as wide."
                       required="False"/>
             <Argument flag="-Shape" dest="shape" default="512,512" type="IntegerPair"
                       help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions"
@@ -1454,7 +1454,7 @@
                       required="False"/>
             <Argument flag="-HighestDownsample" dest="HighestDownsample"
                       type="int"
-                      help="Highest level downsample to generate.  Defaults to the level required to show entire section on one tile."
+                      help="Highest level downsample to generate.  Defaults to the coarsest level: the whole section in one tile, or one row of tiles when the section is at least twice as long as wide."
                       required="False"/>
             <Argument flag="-Shape" dest="shape" default="512,512" type="IntegerPair"
                       help="The size the tiles passed as a comma-delimited pair of integers.  For example 256,512.  If a single number is passed it is used for both dimensions"

@@ -7,6 +7,7 @@ import collections
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, ALL_COMPLETED, FIRST_EXCEPTION, as_completed
 import glob
+import io
 import logging
 import math
 import os
@@ -27,6 +28,7 @@ from dataclasses import dataclass
 
 from numpy.typing import NDArray
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from collections.abc import Set as AbstractSet
 from typing import Any, Iterable, Sequence, cast
 
@@ -3746,6 +3748,134 @@ def get_temp_dir_for_tileset_level(level: nornir_buildmanager.volumemanager.Leve
     return result
 
 
+def tileset_final_downsample(width: float, height: float, tile_width: int, tile_height: int) -> int:
+    """Downsample of a tileset's coarsest level, for a section *width* x *height* pixels at downsample 1.
+
+    The whole section in one tile, unless that leaves the short side at most half a tile (no tall,
+    skinny column tiles): then the short side fills one tile and the long side takes a 1xN row of
+    tiles. A 1024x945 section with 1024x1024 tiles ends in one tile; 1024x2048 ends in 1x2 tiles.
+    Rounded up to an integer, so the level still fits, because Viking reads Downsample as an int.
+    """
+    across = width / tile_width
+    down = height / tile_height
+    long_side = max(across, down)
+    short_side = min(across, down)
+    fit_both = max(1, math.ceil(long_side))
+    if short_side / fit_both > 0.5:
+        return fit_both
+    return max(1, math.ceil(short_side))
+
+
+def _build_rescaled_tileset_level(source_level, dest_level, source_grid: tuple[int, int],
+                                  dest_grid: tuple[int, int], tile_dim: tuple[int, int], file_prefix: str,
+                                  file_postfix: str, temp_input_dir: str | None,
+                                  memory_inputs: tileset_functions.TileMemoryCache | None,
+                                  Logger: logging.Logger) -> None:
+    """Build *dest_level* by resampling all of *source_level* by source / dest downsample.
+
+    For the coarsest level, whose downsample need not be twice the finer one's, so the 2x2-parent
+    rule of :func:`BuildTilesetLevelWithPillow` does not apply. That level's downsample is under twice
+    the finer level's, so the finer level is at most about twice the final level's tiles per axis and
+    is composed in RAM whole. Tiles are read from memory, the temp directory, then the share.
+
+    :param source_grid: (rows, columns) of the finer level
+    :param dest_grid: (rows, columns) of the level built
+    :param tile_dim: (height, width) of a tile
+    """
+    tile_height, tile_width = tile_dim
+    composite: Image.Image | None = None
+    crush_texts: list[str] = []
+    for iy in range(source_grid[0]):
+        for ix in range(source_grid[1]):
+            name = nornir_buildmanager.templates.Current.GridTileName(file_prefix, ix, iy, file_postfix)
+            data: str | bytes | None = memory_inputs.get(name) if memory_inputs is not None else None
+            if data is None:
+                for directory in (temp_input_dir, source_level.FullPath):
+                    if directory is not None and os.path.isfile(os.path.join(directory, name)):
+                        data = os.path.join(directory, name)
+                        break
+            if data is None:
+                continue  # No tile here: empty space at the mosaic's edge
+            with Image.open(io.BytesIO(data) if isinstance(data, bytes) else data) as source:
+                source.load()
+                crush_text = getattr(source, 'text', {}).get(noise_crush.PNG_TEXT_KEY)
+                if crush_text:
+                    crush_texts.append(crush_text)
+                if composite is None:
+                    composite = Image.new(source.mode, (source_grid[1] * tile_width, source_grid[0] * tile_height),
+                                          color=0)
+                composite.paste(source, box=(ix * tile_width, iy * tile_height))
+
+    if composite is None:
+        Logger.warning("Tileset level %s not built: level %s has no tiles", dest_level.Downsample,
+                       source_level.FullPath)
+        return
+
+    # Resample over an exact box, so a pixel maps by exactly the downsample ratio, not by rounded sizes.
+    scale = float(source_level.Downsample) / float(dest_level.Downsample)
+    resized_size = (max(1, int(composite.size[0] * scale)), max(1, int(composite.size[1] * scale)))
+    resized = composite.resize(resized_size, resample=Image.Resampling.LANCZOS,
+                               box=(0, 0, resized_size[0] / scale, resized_size[1] / scale))
+    del composite
+    pnginfo = None
+    if crush_texts:
+        # Lanczos rings past the top code at sharp edges; codes above max_code do not exist.
+        max_code = noise_crush.CrushParams.from_json(crush_texts[0]).max_code
+        codes = numpy.asarray(resized)
+        if codes.max() > max_code:
+            resized = Image.fromarray(numpy.minimum(codes, max_code).astype(codes.dtype))
+        pnginfo = PngInfo()
+        pnginfo.add_text(noise_crush.PNG_TEXT_KEY, crush_texts[0])
+
+    canvas = Image.new(resized.mode, (dest_grid[1] * tile_width, dest_grid[0] * tile_height), color=0)
+    canvas.paste(resized, box=(0, 0))  # Clipped at the canvas edge: the excess is padding of the finer level
+    ensure_directory(dest_level.FullPath)
+    for iy in range(dest_grid[0]):
+        for ix in range(dest_grid[1]):
+            tile_image = canvas.crop((ix * tile_width, iy * tile_height, (ix + 1) * tile_width, (iy + 1) * tile_height))
+            encoded = io.BytesIO()
+            if pnginfo is not None:
+                tile_image.save(encoded, format='PNG', compress_level=noise_crush.PNG_COMPRESS_LEVEL, pnginfo=pnginfo)
+            else:
+                tile_image.save(encoded, format='PNG', optimize=True)
+            name = nornir_buildmanager.templates.Current.GridTileName(file_prefix, ix, iy, file_postfix)
+            tileset_functions.copy_tile_to_destination(encoded.getvalue(), os.path.join(dest_level.FullPath, name))
+
+
+def _build_final_tileset_level(tile_set_node, source_level, final_downsample: int, finest_grid: tuple[int, int],
+                               finest_downsample: float, temp_input_dir: str | None,
+                               memory_inputs: tileset_functions.TileMemoryCache | None, force: bool,
+                               Logger: logging.Logger):
+    """Build or check the coarsest level, at a downsample that need not be a power of 2 (tileset_final_downsample).
+
+    :param finest_grid: (rows, columns) of the finest level, at *finest_downsample*
+    :param force: Rebuild even if the level exists, because *source_level* was rebuilt in this run
+    """
+    grid = (math.ceil(finest_grid[0] * finest_downsample / final_downsample),
+            math.ceil(finest_grid[1] * finest_downsample / final_downsample))
+    new_level_node = nornir_buildmanager.volumemanager.LevelNode.Create(final_downsample)
+    [added, level] = tile_set_node.UpdateOrAddChildByAttrib(new_level_node, 'Downsample')
+    if not added:
+        if level.GridDimX != grid[1] or level.GridDimY != grid[0]:
+            force = True
+        elif not force:
+            valid, _reason = level.IsValid()
+            force = not valid
+        if not force:
+            return
+        level.Clean("Final tileset level is out of date")
+        [added, level] = tile_set_node.UpdateOrAddChildByAttrib(new_level_node, 'Downsample')
+    level.GridDimX = grid[1]
+    level.GridDimY = grid[0]
+    yield tile_set_node
+    _build_rescaled_tileset_level(
+        source_level, level, (int(source_level.GridDimY), int(source_level.GridDimX)), grid,
+        (tile_set_node.TileYDim, tile_set_node.TileXDim), tile_set_node.FilePrefix, tile_set_node.FilePostfix,
+        temp_input_dir, memory_inputs, Logger)
+    yield tile_set_node
+    prettyoutput.Log(f"\nTileset level {final_downsample} completed")
+
+
 # OK, now build/check the remaining levels of the tile pyramids
 def BuildTilesetPyramid(tile_set_node, HighestDownsample=None, pool=None, Logger: logging.Logger | None = None, **kwargs):
     """@TileSetNode"""
@@ -3773,6 +3903,19 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
     TileWidth = tile_set_node.TileXDim
     TileHeight = tile_set_node.TileYDim
 
+    # The coarsest level (tileset_final_downsample) from the finest level's grid; partial edge tiles make
+    # the section size an overestimate of at most one tile per axis.
+    final_downsample: int | None = None
+    finest_grid = (0, 0)
+    finest_downsample = float(MinResolutionLevel.Downsample)
+    if hasattr(MinResolutionLevel, 'GridDimX') and hasattr(MinResolutionLevel, 'GridDimY'):
+        finest_grid = (int(MinResolutionLevel.GridDimY), int(MinResolutionLevel.GridDimX))
+        final_downsample = tileset_final_downsample(finest_grid[1] * TileWidth * finest_downsample,
+                                                    finest_grid[0] * TileHeight * finest_downsample,
+                                                    TileWidth, TileHeight)
+    pyramid_complete = False  # True when the power-of-2 levels stopped at the final downsample
+    level_rebuilt = False  # The current MinResolutionLevel was (re)built in this run
+
     while MinResolutionLevel is not None:
 
         # The grid attributes are missing if the meta-data was created but there are no tiles
@@ -3780,11 +3923,12 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
             prettyoutput.Log("Tileset incomplete: " + tile_set_node.FullPath)
             break
 
-            # If the tileset is already a single tile, then do not downsample
-        if MinResolutionLevel.GridDimX == 1 and MinResolutionLevel.GridDimY == 1:
+        if HighestDownsample is not None and (MinResolutionLevel.Downsample >= float(HighestDownsample)):
             break
 
-        if HighestDownsample is not None and (MinResolutionLevel.Downsample >= float(HighestDownsample)):
+        # Power-of-2 levels stop before passing the coarsest level's downsample
+        if final_downsample is None or MinResolutionLevel.Downsample * 2 > final_downsample:
+            pyramid_complete = True
             break
 
         ShrinkFactor = 0.5
@@ -3793,10 +3937,6 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
 
         newXDim = int(math.ceil(newXDim))
         newYDim = int(math.ceil(newYDim))
-
-        # If there is only one tile in the next level, try to find a thumbnail image and change the downsample level
-        if newXDim == 1 and newYDim == 1:
-            break
 
         # Need to call ir-assemble
         new_level_node = nornir_buildmanager.volumemanager.LevelNode.Create(MinResolutionLevel.Downsample * 2)
@@ -3886,14 +4026,24 @@ def _build_tileset_pyramid_levels(tile_set_node, HighestDownsample=None, pool=No
             # This was a lot of work, make sure it is saved before queueing the next level
             yield tile_set_node
             prettyoutput.Log("\nTileset level %d completed" % NextLevelNode.Downsample)
+            level_rebuilt = True
         else:
             logging.info("Level was already generated " + str(tile_set_node))
             if memory_inputs is not None:
                 memory_inputs.clear()
             memory_inputs = None  # The next level reads this one from the share
+            level_rebuilt = False
 
         input_temp_dir = output_temp_dir
         MinResolutionLevel = NextLevelNode
+
+    if (pyramid_complete and final_downsample is not None and final_downsample > MinResolutionLevel.Downsample
+            and (HighestDownsample is None or final_downsample <= float(HighestDownsample))):
+        yield from _build_final_tileset_level(
+            tile_set_node, MinResolutionLevel, final_downsample, finest_grid, finest_downsample,
+            input_temp_dir, memory_inputs, force=level_rebuilt, Logger=Logger)
+    if memory_inputs is not None:
+        memory_inputs.clear()
 
     tileset_functions.ClearTempDirectories(temp_level_paths)
     return

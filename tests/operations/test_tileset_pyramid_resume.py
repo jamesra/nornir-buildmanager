@@ -104,6 +104,10 @@ class TestTilesetPyramidResume(unittest.TestCase):
             level2 = _Level(root, 2, (2, 2))
             level2.write((x, y) for x in range(2) for y in range(2))
             tile_set.levels[2] = level2
+            # The pyramid ends in one tile (tileset_final_downsample): downsample 4 for a 4x4 grid
+            level4 = _Level(root, 4, (1, 1))
+            level4.write([(0, 0)])
+            tile_set.levels[4] = level4
 
             with mock.patch.object(tile_ops, 'BuildTilesetLevelWithPillow') as build, \
                     mock.patch.object(tile_ops, 'get_temp_dir_for_tileset_level', return_value=os.path.join(root, 'tmp')), \
@@ -122,6 +126,10 @@ class TestTilesetPyramidResume(unittest.TestCase):
             level2 = _Level(root, 2, (2, 2))
             level2.write((x, y) for x in range(2) for y in range(2))
             tile_set.levels[2] = level2
+            # The pyramid ends in one tile (tileset_final_downsample): downsample 4 for a 4x4 grid
+            level4 = _Level(root, 4, (1, 1))
+            level4.write([(0, 0)])
+            tile_set.levels[4] = level4
 
             with mock.patch.object(tile_ops, 'BuildTilesetLevelWithPillow') as build, \
                     mock.patch.object(tile_ops, 'get_temp_dir_for_tileset_level', return_value=os.path.join(root, 'tmp')), \
@@ -134,8 +142,9 @@ class TestTilesetPyramidResume(unittest.TestCase):
                 list(tile_ops._build_tileset_pyramid_levels(tile_set))
 
             build.assert_not_called()
-            self.assertEqual(lineage.call_count, 1)
+            self.assertEqual(lineage.call_count, 2)  # Once per level (2 and 4), on the first run only
             self.assertEqual(level2.attrib.get(tile_ops.LINEAGE_COMPLETE_ATTRIB), '1')
+            self.assertEqual(level4.attrib.get(tile_ops.LINEAGE_COMPLETE_ATTRIB), '1')
 
 
 if __name__ == '__main__':
