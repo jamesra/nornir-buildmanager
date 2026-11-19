@@ -11,10 +11,8 @@ import PIL
 import PIL.Image
 import numpy as np
 
-import dm4
-import dm4.dm4file
 import nornir_buildmanager.importers
-from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.exceptions import NornirMissingDependencyException, NornirUserException
 from nornir_buildmanager.importers import GetFileNameForTileNumber
 import nornir_buildmanager.templates
 from nornir_buildmanager.volumemanager import *
@@ -24,6 +22,26 @@ import nornir_imageregistration.transforms.factory
 import nornir_pools
 import nornir_shared
 import nornir_shared.prettyoutput as prettyoutput
+
+try:
+    import dm4
+    import dm4.dm4file
+except ImportError as _dm4_import_error:  # the optional 'dm4' extra is not installed
+    dm4 = None
+    _DM4_IMPORT_ERROR: ImportError | None = _dm4_import_error
+else:
+    _DM4_IMPORT_ERROR = None
+
+DM4_MISSING_MESSAGE = ("The DM4 importer needs the 'dm4' package, the optional dm4 extra of nornir_buildmanager, "
+                       "which is not installed. Install it with: pip install -e dm4 (from the nornir monorepo) or "
+                       "pip install \"nornir_buildmanager[dm4]\".")
+
+
+def _require_dm4() -> None:
+    """Raise NornirMissingDependencyException naming the missing extra when the dm4 package is not installed."""
+    if _DM4_IMPORT_ERROR is not None:
+        raise NornirMissingDependencyException(DM4_MISSING_MESSAGE) from _DM4_IMPORT_ERROR
+
 
 DimensionScale = collections.namedtuple('DimensionScale', ('UnitsPerPixel', 'Units'))
 
@@ -35,6 +53,8 @@ transforms_changed = {}  # A cache of transforms that need updated checksums
 
 def Import(VolumeElement, ImportPath, extension=None, *args, **kwargs):
     '''Import the specified directory into the volume'''
+
+    _require_dm4()
 
     if extension is None:
         extension = 'dm4'
@@ -190,6 +210,7 @@ class DM4FileHandler(object):
         return self._tags
 
     def __init__(self, dm4fullpath):
+        _require_dm4()
         # DM4File.open is a context manager; enter it and keep the handle until close().
         self._dm4_cm = dm4.dm4file.DM4File.open(dm4fullpath)  # type: ignore[attr-defined]
         self._dm4file = self._dm4_cm.__enter__()

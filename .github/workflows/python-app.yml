@@ -43,6 +43,7 @@ jobs:
         python -m pip install "nornir_shared @ git+https://github.com/jamesra/nornir-shared.git@dev"
         python -m pip install "nornir_pools @ git+https://github.com/jamesra/nornir-pools.git@master" --no-deps
         python -m pip install "nornir_imageregistration @ git+https://github.com/jamesra/nornir-imageregistration.git@dev" --no-deps
+        python -m pip install "dm4 @ git+https://github.com/jamesra/dm4.git@master"
         python -m pip install . --no-deps
         python -c "import nornir_shared.mqtt_telemetry; import nornir_buildmanager; print('install ok')"
 

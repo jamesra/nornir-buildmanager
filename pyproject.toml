@@ -37,6 +37,9 @@ nornir-build = "nornir_buildmanager.build:Execute"
 nornir-migrate-volume = "nornir_buildmanager.metadata.migrate:main"
 
 [project.optional-dependencies]
+# DM4 (Gatan Digital Micrograph) import. Optional, but every default install includes it:
+# the monorepo dev install and the nornir-docker images run `pip install -e dm4`.
+dm4 = ["dm4 @ git+https://github.com/jamesra/dm4.git@master"]
 gpu = ["cupy >= 13.0"]
 psutil = [
     "psutil >= 7.0.0"
