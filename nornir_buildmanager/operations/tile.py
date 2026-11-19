@@ -119,6 +119,50 @@ def EstimateMaxTempImageArea() -> int:
     return estimated_max_temp_image_area
 
 
+# The CuPy pool limit this process last set for tile assembly; a limit set by anything else is left alone.
+_assembly_pool_limit: int | None = None
+
+
+def _release_cupy_cache() -> None:
+    """Return this process's cached CuPy device and pinned blocks to the driver, so other processes can use them."""
+    cp = nornir_imageregistration.cp
+    pool = getattr(cp, 'get_default_memory_pool', None)
+    if pool is None:
+        return
+    pool().free_all_blocks()
+    pinned_pool = getattr(cp, 'get_default_pinned_memory_pool', None)
+    if pinned_pool is not None:
+        pinned_pool().free_all_blocks()
+
+
+def _cap_cupy_pool_for_assembly(Logger: logging.Logger) -> None:
+    """Cap this process's CuPy pool at the device memory free now, before a section's level 001 is assembled.
+
+    Each CuPy pool keeps its peak, so on a GPU shared by several AssembleTiles processes the first one to
+    peak holds the memory the others need. With a limit, the pool returns its cached blocks before it would
+    grow past what was free when the section started. The share is the one StosBrute GPU workers use for one
+    worker: free memory less a reserve and one CUDA context. Recomputed for every section, after this
+    process's own cache is returned, so a lane that finished elsewhere is counted.
+    """
+    global _assembly_pool_limit
+    if not nornir_imageregistration.UsingCupy():
+        return
+    pool = nornir_imageregistration.cp.get_default_memory_pool()  # pyright: ignore[reportAttributeAccessIssue]
+    current = int(pool.get_limit())
+    if current != 0 and current != _assembly_pool_limit:
+        return
+    # Imported here: stos_brute_pairs imports stos_brute, which is slow to load.
+    from nornir_buildmanager.operations.stos_brute_pairs import gpu_worker_pool_limit
+    _release_cupy_cache()
+    limit = gpu_worker_pool_limit(1)
+    if limit is None:
+        return
+    pool.set_limit(size=int(limit))
+    _assembly_pool_limit = int(pool.get_limit())
+    Logger.info("CuPy pool for tile assembly capped at %.1f GiB (device memory free at the start of the section)",
+                limit / 2 ** 30)
+
+
 def VerifyImages(tile_pyramid_node: TilePyramidNode, **kwargs) -> TilePyramidNode | None:
     """Eliminate any image files which cannot be parsed by Image Magick's identify command"""
     PyramidLevels = nornir_shared.misc.SortedListFromDelimited(kwargs.get('Levels', [1, 2, 4, 8, 16, 32, 64, 128, 256]))
@@ -2476,6 +2520,8 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
 
     if LevelOne is None:
         try:
+            _cap_cupy_pool_for_assembly(Logger)
+
             # Need to call ir-assemble
             LevelOne = nornir_buildmanager.volumemanager.LevelNode.Create(Level=1)
             [added, LevelOne] = tile_set_node.UpdateOrAddChildByAttrib(LevelOne, 'Downsample')
@@ -2629,6 +2675,9 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
         finally:
             # Stage pools must not leak when assemble raises (#142).
             nornir_pools.ReleaseStagePools()
+            # Another process sharing the GPU can use what this section no longer needs.
+            if nornir_imageregistration.UsingCupy():
+                _release_cupy_cache()
 
     return filter_node
 
