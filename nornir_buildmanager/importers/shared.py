@@ -54,7 +54,11 @@ NOISE_CACHE_SUFFIX: str = '.noise.json'
 # Tiles sampled per section for the noise estimate; exposure is section-wide.
 NOISE_SAMPLE_TILES: int = 16
 # Per-tile brightness gains solved before the crush, next to Histogram.xml: Histogram.gains.json
-GAINS_CACHE_VERSION: int = 3
+GAINS_CACHE_VERSION: int = 4  # 4: mostly clipped tiles are recorded and quantized as captured
+#: A tile with more than this fraction of its pixels clipped (the source maximum) is overexposed film: its overlaps
+#: carry no gain, and the gain its capture-order neighbours lend it is meaningless (RC3 1606: 0.31-2.1 across pure
+#: film, a different grey per capture run). It is quantized as captured, like a tile too dim to correct.
+SATURATED_TILE_FRACTION: float = 0.5
 GAINS_CACHE_SUFFIX: str = '.gains.json'
 # Overlap statistics are measured on tiles reduced by this factor: the strips hold tens of thousands of pixels, and
 # stage error of hundreds of pixels barely moves a strip's median (RC3: gains at 8 matched level 1).
@@ -860,6 +864,14 @@ def _load_fresh_noise_cache(noise_cache_path: str, cache_inputs: Sequence[str],
         return None
 
 
+def _gain_corrected_max(tile: NDArray, gain: float) -> float:
+    """The tile's largest value as it will be quantized: nothing above the camera's clip value (``crush``)."""
+    clip = noise_crush.source_clip_value(tile.dtype)
+    if clip is None or gain == 1.0:
+        return float(np.max(tile)) / gain
+    return min(float(np.max(tile)) / gain, float(clip))
+
+
 def GetSectionNoise(histogram_cache_path: str,
                     cache_inputs: Sequence[str],
                     num_tiles: int,
@@ -890,7 +902,7 @@ def GetSectionNoise(histogram_cache_path: str,
         gain = 1.0 if tile_gains_applied is None else tile_gains_applied.get(iTile, 1.0)
         sigmas.append(noise_crush.estimate_noise_sigma(tile) / gain)  # the estimate scales with the counts
         sample_min = min(sample_min, float(np.min(tile)) / gain)
-        sample_max = max(sample_max, float(np.max(tile)) / gain)
+        sample_max = max(sample_max, _gain_corrected_max(tile, gain))
         if np.issubdtype(tile.dtype, np.signedinteger):
             sample_low = min(sample_low,
                              float(np.quantile(np.asarray(tile)[::4, ::4], SIGNED_OFFSET_QUANTILE)) / gain)
@@ -898,6 +910,12 @@ def GetSectionNoise(histogram_cache_path: str,
 
     noise = SectionNoise(noise_crush.section_sigma(sigmas), sample_min, sample_max, source_dtype,
                          sample_low if math.isfinite(sample_low) else None)
+    no_noise = sum(1 for s in sigmas if not s > 0)
+    if no_noise:
+        consequence = ("the section is stored losslessly (step 1)" if noise.sigma == 0
+                       else "the noise is measured from the other tiles")
+        prettyoutput.Log(f"{no_noise} of {len(sigmas)} sampled tiles have no measurable noise (overexposed, clipped "
+                         f"or blank); {consequence}")
     meta = {'version': NOISE_CACHE_VERSION, 'method': noise_crush.SIGMA_METHOD,
             'inputs': _cache_input_basenames(cache_inputs), 'sigma': noise.sigma,
             'sample_min': noise.sample_min, 'sample_max': noise.sample_max, 'sample_low': noise.sample_low,
@@ -1035,16 +1053,20 @@ def ResolveCrushMode(channel: ChannelNode, filter_name: str, requested: CrushPar
     return requested, True
 
 
-def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams, gain_first: bool = False) -> None:
+def SetFilterCrushAttributes(filter_node: XElementWrapper, params: CrushParams, gain_first: bool = False,
+                             gains_checksum: str | None = None) -> None:
     """Record *params* on the filter so later runs and readers know its tiles are crushed.
 
     *gain_first* marks tiles divided by their brightness gain before quantizing: their gains are diagnostic, and
-    TileGains leaves the filter alone (its correction would be applied twice).
+    TileGains leaves the filter alone (its correction would be applied twice). *gains_checksum* records which gains
+    those were, so a re-import whose gains differ crushes the section again (``CleanCrushedFilterIfGainsChanged``).
     """
     for (key, value) in params.to_attributes().items():
         setattr(filter_node, key, value)  # the wrapper marks the node changed, so the pipeline saves it
     if gain_first:
         setattr(filter_node, noise_crush.GAIN_FIRST_ATTRIB, '1')
+        if gains_checksum is not None:
+            setattr(filter_node, IMPORT_GAINS_CHECKSUM_ATTRIB, gains_checksum)
 
 
 def IsGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
@@ -1054,6 +1076,8 @@ def IsGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
 
 LEGACY_GAIN_FIRST_ATTRIB = 'GainFirst'
 LEGACY_GAINS_CHECKSUM_ATTRIB = 'GainsChecksum'
+#: Checksum of the import gains a gain-first crushed filter's tiles were divided by (same attribute as legacy filters).
+IMPORT_GAINS_CHECKSUM_ATTRIB = LEGACY_GAINS_CHECKSUM_ATTRIB
 
 
 def IsLegacyGainFirstFilter(filter_node: XElementWrapper | None) -> bool:
@@ -1080,6 +1104,34 @@ def GainFirstAllowed(channel: ChannelNode) -> bool:
     return existing is None or CrushParams.from_attributes(existing.attrib) is None or IsGainFirstFilter(existing)
 
 
+def CleanCrushedFilterIfGainsChanged(channel: ChannelNode, gains_checksum: str, logger: logging.Logger) -> bool:
+    """Clean the channel's gain-first crushed filter when its tiles were made with other gains; True if cleaned.
+
+    New gains (added, replaced or newer tiles, moved stage positions, a new gain solver) would otherwise reach only the
+    tiles still to be written, leaving a section of mixed gains (James, 2026-11-18: re-crush the whole section).
+    A filter that recorded no checksum (imported before 2026-11-18) takes the current one without being re-crushed:
+    its gains are unknown. A locked filter keeps its tiles.
+    """
+    filter_node = channel.GetFilter(CRUSHED_FILTER_NAME)
+    if not IsGainFirstFilter(filter_node):
+        return False
+    recorded = filter_node.attrib.get(IMPORT_GAINS_CHECKSUM_ATTRIB)
+    if recorded is None or recorded == gains_checksum:
+        return False
+    if filter_node.Locked:
+        logger.warning("Locked filter keeps tiles made with other gains (%s, now %s): %s", recorded, gains_checksum,
+                       filter_node.FullPath)
+        return False
+    filter_node.Clean(f"Tile gains changed ({recorded} -> {gains_checksum}): the section is crushed again")
+    return True
+
+
+def CachedImportTileGains(histogram_cache_path: str, cache_inputs: Sequence[str], variant: str,
+                          downsample: int = IMPORT_GAIN_DOWNSAMPLE) -> "ImportTileGains | None":
+    """The section's solved gains from the cache beside Histogram.xml when it is fresh, without reading any tile."""
+    return _load_fresh_gains_cache(_gains_cache_path(histogram_cache_path), cache_inputs, variant, downsample)
+
+
 def ExistingGainFirstParams(channel: ChannelNode, k: float | None) -> CrushParams | None:
     """The crush parameters of this channel's gain-first filter when they were made with the same ``k``, else None.
 
@@ -1101,9 +1153,12 @@ class ImportTileGains(NamedTuple):
     checksum: str
     residual_mad: float
     pairs_used: int
+    saturated: frozenset[int] = frozenset()
 
     def applied(self, tile: int) -> float:
-        """The divisor used for *tile*: its solved gain, or 1 for a tile too dim to amplify."""
+        """The divisor used for *tile*: its solved gain, or 1 for a tile too dim to amplify or mostly clipped."""
+        if tile in self.saturated:
+            return 1.0
         gain = self.solved.get(tile, 1.0)
         return gain if gain >= noise_crush.MIN_CORRECTABLE_GAIN else 1.0
 
@@ -1119,6 +1174,11 @@ class ImportTileGains(NamedTuple):
     def flagged(self) -> list[int]:
         """Tiles with essentially no beam, quantized as captured."""
         return sorted(t for t, g in self.solved.items() if g < noise_crush.MIN_CORRECTABLE_GAIN)
+
+
+def _import_gains_checksum(solved: Mapping[int, float], saturated: frozenset[int]) -> str:
+    """Checksum of the gains as applied to saturated tiles; unchanged from the solved gains when there are none."""
+    return tile_gains.gains_checksum({t: (1.0 if t in saturated else g) for t, g in solved.items()})
 
 
 def _gains_cache_path(histogram_cache_path: str) -> str:
@@ -1141,8 +1201,9 @@ def _load_fresh_gains_cache(gains_cache_path: str, cache_inputs: Sequence[str], 
         if input_mtimes_ns and files.is_significantly_newer(max(input_mtimes_ns), cache_mtime_ns):
             return None
         solved = {int(t): float(g) for t, g in meta['gains'].items()}
-        return ImportTileGains(solved, tile_gains.gains_checksum(solved), float(meta['residual_mad']),
-                               int(meta['pairs_used']))
+        saturated = frozenset(int(t) for t in meta['saturated'])
+        return ImportTileGains(solved, _import_gains_checksum(solved, saturated), float(meta['residual_mad']),
+                               int(meta['pairs_used']), saturated)
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError, AttributeError):
         return None
 
@@ -1166,15 +1227,26 @@ def SolveImportTileGains(histogram_cache_path: str,
     if cached is not None:
         return cached
 
+    clipped: dict[int, float] = {}
+
+    def read_and_measure_clipping(tile: int) -> NDArray:
+        image = read_tile(tile)
+        clipped[tile] = noise_crush.clipped_fraction(image)
+        return image
+
     started = time.perf_counter()
-    result = tile_gains.compute_tile_gains(placements, read_tile, downsample, low=0.5, high=float('inf'))
+    result = tile_gains.compute_tile_gains(placements, read_and_measure_clipping, downsample, low=0.5,
+                                           high=float('inf'))
     elapsed = time.perf_counter() - started
     solved = {int(t): round(float(g), 6) for t, g in result.gains.items()}
-    gains = ImportTileGains(solved, tile_gains.gains_checksum(solved), float(result.residual_mad),
-                            int(result.pairs_used))
+    saturated = frozenset(int(t) for t, f in clipped.items() if f > SATURATED_TILE_FRACTION and int(t) in solved)
+    gains = ImportTileGains(solved, _import_gains_checksum(solved, saturated), float(result.residual_mad),
+                            int(result.pairs_used), saturated)
     values = np.array(list(solved.values())) if solved else np.ones(1)
     label = '' if section_number is None else f"section {section_number}: "
     dim = f", {len(gains.flagged)} tiles too dim to correct" if gains.flagged else ''
+    if saturated:
+        dim += f", {len(saturated)} mostly clipped (quantized as captured)"
     unpaired = f", {len(result.tiles_without_pairs)} without usable overlaps (gain from capture-order ties)"         if result.tiles_without_pairs else ''
     prettyoutput.Log(f"Tile gains {label}{len(solved)} tiles, {result.pairs_used} overlaps "
                      f"({result.pairs_rejected} rejected, {result.pairs_skipped} without tissue), "
@@ -1182,7 +1254,8 @@ def SolveImportTileGains(histogram_cache_path: str,
     meta = {'version': GAINS_CACHE_VERSION, 'variant': variant, 'downsample': downsample,
             'inputs': _cache_input_basenames(cache_inputs), 'gains': {str(t): g for t, g in solved.items()},
             'residual_mad': gains.residual_mad, 'pairs_used': gains.pairs_used,
-            'solve_seconds': round(elapsed, 1), 'tiles_without_pairs': sorted(int(t) for t in result.tiles_without_pairs)}
+            'solve_seconds': round(elapsed, 1), 'tiles_without_pairs': sorted(int(t) for t in result.tiles_without_pairs),
+            'saturated': sorted(saturated)}
     try:
         os.makedirs(os.path.dirname(gains_cache_path) or '.', exist_ok=True)
         with open(gains_cache_path, 'w', encoding='utf-8') as f:
@@ -1413,19 +1486,6 @@ def UpdateFilterCodeHistogram(filter_node: FilterNode, params: CrushParams, cuto
     if histogram is None:
         return False
     return SetFilterCodeHistogram(filter_node, histogram, cutoffs)
-
-
-def CrushCodeSpanFromContrastOverride(override: ContrastValue | None, params: CrushParams) -> float | None:
-    """Span in codes from a section's contrast override (ContrastOverrides / histogram cutoffs file), or None.
-
-    A legacy import stretched [Min, Max] counts to 0-255, so the prune scores of that import (and the thresholds tuned
-    on them) scale with 255 / (Max - Min). Using the same counts for a crushed section reproduces that scale: on four
-    RC2 reimports the legacy-cutoff span put crushed scores at 221-231x the 2015 scores (legacy: about 217x), where the
-    0.0001/0.9999 code-histogram span gave 98-209x (2026-11-05). No contrast is applied; only Prune reads the span.
-    """
-    if override is None or override.Max is None or override.Min is None or override.Max <= override.Min:
-        return None
-    return (float(override.Max) - float(override.Min)) / float(params.step)
 
 
 def ClearCrushedFilterContrast(filter_node: FilterNode) -> None:

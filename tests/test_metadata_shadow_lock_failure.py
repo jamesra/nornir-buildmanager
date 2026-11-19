@@ -84,3 +84,6 @@ def test_other_errors_still_warn_per_save(monkeypatch, tmp_path, caplog, patched
 
     assert sum('shadow write failed' in r.getMessage() for r in caplog.records) >= 2
     assert shadow_write._lock_failed_volumes == set()
+    # Contention is one line; anything else keeps its traceback.
+    tracebacks = [r for r in caplog.records if 'shadow write failed' in r.getMessage() and r.exc_info]
+    assert (len(tracebacks) == 0) == isinstance(error, WriteLockTimeout)

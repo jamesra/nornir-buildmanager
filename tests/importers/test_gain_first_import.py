@@ -97,6 +97,25 @@ class TestSolveImportTileGains(unittest.TestCase):
         self.assertLess(gains.solved_gain(CENTRE), noise_crush.MIN_CORRECTABLE_GAIN)
         self.assertAlmostEqual(gains.applied(0), gains.solved_gain(0))
 
+    def test_a_mostly_clipped_tile_is_quantized_as_captured(self) -> None:
+        """RC3 1606: overexposed film tiles took gains of 0.31-2.1 from capture-order ties; they now use 1."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = _tiles(GAINS)
+            tiles[CENTRE] = np.full((TILE, TILE), 65535, dtype=np.uint16)
+            tiles[CENTRE][:20, :20] = 60000  # a little film below the clip
+            tiles[5][:, :] = np.where(np.arange(TILE) < TILE // 4, 65535, tiles[5])  # a quarter clipped: still solved
+            gains = self._solve(tmp, tiles)
+            self.assertEqual(gains.saturated, frozenset({CENTRE}))
+            self.assertEqual(gains.applied(CENTRE), 1.0)
+            self.assertAlmostEqual(gains.applied(5), gains.solved_gain(5))
+            self.assertEqual(self._solve(tmp, tiles, reads=[]), gains)  # the cache keeps the saturated tiles
+
+    def test_a_section_without_clipped_tiles_keeps_its_gains_checksum(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            gains = self._solve(tmp, _tiles(GAINS))
+        self.assertEqual(gains.saturated, frozenset())
+        self.assertEqual(gains.checksum, tile_gains.gains_checksum(gains.solved))
+
     def test_gains_are_cached_and_a_changed_variant_re_solves(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tiles = _tiles(GAINS)
@@ -197,6 +216,57 @@ class TestGainFirstChoice(unittest.TestCase):
         plain = types.SimpleNamespace(attrib={})
         shared.SetFilterCrushAttributes(cast(Any, plain), PARAMS)
         self.assertNotIn(noise_crush.GAIN_FIRST_ATTRIB, plain.__dict__)
+
+
+class _CleanableFilter(_FakeFilter):
+    def __init__(self, attrib: dict[str, str], locked: bool = False):
+        super().__init__(attrib)
+        self.Locked = locked
+        self.cleaned: list[str] = []
+
+    def Clean(self, reason: str) -> None:
+        self.cleaned.append(reason)
+
+
+class TestChangedGainsCrushTheWholeSectionAgain(unittest.TestCase):
+    """James, 2026-11-18: new gains used to reach only the tiles still to be written, mixing two sets of gains."""
+
+    @staticmethod
+    def _gain_first(checksum: str | None, locked: bool = False) -> _CleanableFilter:
+        attrib = {**PARAMS.to_attributes(), noise_crush.GAIN_FIRST_ATTRIB: '1'}
+        if checksum is not None:
+            attrib[shared.IMPORT_GAINS_CHECKSUM_ATTRIB] = checksum
+        return _CleanableFilter(attrib, locked)
+
+    def test_new_gains_clean_the_filter(self) -> None:
+        old = self._gain_first('aaa')
+        self.assertTrue(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=old), 'bbb', mock.Mock()))
+        self.assertEqual(len(old.cleaned), 1)
+
+    def test_same_gains_keep_the_filter(self) -> None:
+        same = self._gain_first('aaa')
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=same), 'aaa', mock.Mock()))
+        self.assertEqual(same.cleaned, [])
+
+    def test_a_filter_without_a_recorded_checksum_is_kept(self) -> None:
+        unknown = self._gain_first(None)
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=unknown), 'bbb', mock.Mock()))
+        self.assertEqual(unknown.cleaned, [])
+
+    def test_a_locked_filter_is_kept(self) -> None:
+        locked = self._gain_first('aaa', locked=True)
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=locked), 'bbb', mock.Mock()))
+        self.assertEqual(locked.cleaned, [])
+
+    def test_a_crushed_filter_made_without_gains_is_not_touched(self) -> None:
+        plain = _CleanableFilter(dict(PARAMS.to_attributes()))
+        self.assertFalse(shared.CleanCrushedFilterIfGainsChanged(_channel(Quantized=plain), 'bbb', mock.Mock()))
+        self.assertEqual(plain.cleaned, [])
+
+    def test_the_checksum_is_recorded_on_a_gain_first_filter(self) -> None:
+        node = types.SimpleNamespace(attrib={})
+        shared.SetFilterCrushAttributes(cast(Any, node), PARAMS, gain_first=True, gains_checksum='ccc')
+        self.assertEqual(node.__dict__[shared.IMPORT_GAINS_CHECKSUM_ATTRIB], 'ccc')
 
 
 class TestTileGainsLeavesGainFirstAlone(unittest.TestCase):

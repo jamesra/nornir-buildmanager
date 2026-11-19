@@ -113,13 +113,23 @@ class TestCrushHelpers(unittest.TestCase):
         self.assertEqual(CrushParams.from_attributes(node.attrib), PARAMS)
         self.assertTrue(node.AttributesChanged)  # so the pipeline saves the filter
 
-    def test_prune_score_scale(self) -> None:
-        crushed = FilterNode.Create('Raw8', **PARAMS.to_attributes())
+    def test_a_prune_map_scored_the_old_way_is_recomputed(self) -> None:
+        old = _FakeFilter({'Overlap': '0.1', 'CrushScoreScale': '5.795'})
+        self.assertIsNone(PruneObj.RemoveOnScoreUnitsMismatch(old, 'NoiseSteps'))
+        self.assertIn('NoiseSteps', old.cleaned_reason or '')
+        current = _FakeFilter({'Overlap': '0.1', 'ScoreUnits': 'NoiseSteps'})
+        self.assertIs(PruneObj.RemoveOnScoreUnitsMismatch(current, 'NoiseSteps'), current)
+        legacy = _FakeFilter({'Overlap': '0.1'})
+        self.assertIs(PruneObj.RemoveOnScoreUnitsMismatch(legacy, None), legacy)
+        self.assertIsNone(legacy.cleaned_reason)
+
+    def test_prune_score_units(self) -> None:
+        crushed = FilterNode.Create('Quantized', **PARAMS.to_attributes())
         crushed.SetContrastValues(5.0, 56.0, None)
-        self.assertEqual(PruneObj.CrushedScoreScale(crushed), 5.0)
+        self.assertEqual(PruneObj.CrushedScoreUnits(crushed), 'NoiseSteps')
         legacy = FilterNode.Create('Raw8')
         legacy.SetContrastValues(5.0, 56.0, None)
-        self.assertIsNone(PruneObj.CrushedScoreScale(legacy))
+        self.assertIsNone(PruneObj.CrushedScoreUnits(legacy))
 
 
 class TestGetSectionNoise(unittest.TestCase):
@@ -155,6 +165,49 @@ class TestGetSectionNoise(unittest.TestCase):
             os.utime(tiles[1], (future, future))
             shared.GetSectionNoise(hist_path, tiles, len(tiles), load)
             self.assertEqual(len(loads), 6)
+
+    @staticmethod
+    def _overexposed(tmp: str, name: str) -> str:
+        """A tile clipped at the camera maximum: every 2x2 block is flat, so its noise estimate is 0."""
+        path = os.path.join(tmp, name)
+        values = np.minimum(np.random.default_rng(1).normal(60000, 40, (256, 256)), 59900)
+        Image.fromarray(values.astype(np.uint16)).save(path)
+        return path
+
+    def test_overexposed_section_crushes_losslessly(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = [self._overexposed(tmp, f'{i:03d}.tif') for i in range(3)]
+            hist_path = os.path.join(tmp, 'cache', 'Histogram.xml')
+            noise = shared.GetSectionNoise(hist_path, tiles, len(tiles),
+                                           lambda i: noise_crush.load_raw_tile(tiles[i]))
+            self.assertEqual(noise.sigma, 0.0)
+            params = shared.SectionCrushParams(noise, None, k=2.5)
+            self.assertEqual(params.step, 1)
+            tile = noise_crush.load_raw_tile(tiles[0])
+            np.testing.assert_array_equal(noise_crush.uncrush(noise_crush.crush(tile, params), params, np.float64),
+                                          tile + 0.5)
+            self.assertEqual(shared.GetSectionNoise(hist_path, tiles, len(tiles), lambda i: 1 / 0), noise)
+
+    def test_clipped_pixels_do_not_widen_a_gain_first_section(self) -> None:
+        """A clipped pixel is quantized undivided, so a dim tile's clip must not raise the section maximum."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = self._tiles(tmp, 2)
+            clipped = os.path.join(tmp, 'clipped.tif')
+            image = noise_crush.load_raw_tile(tiles[0]).copy()
+            image[:8, :8] = 65535
+            Image.fromarray(image).save(clipped)
+            tiles.append(clipped)
+            noise = shared.GetSectionNoise(os.path.join(tmp, 'cache', 'Histogram.xml'), tiles, len(tiles),
+                                           lambda i: noise_crush.load_raw_tile(tiles[i]),
+                                           tile_gains_applied={2: 0.25}, gains_checksum='g')
+            self.assertEqual(noise.sample_max, 65535.0)
+
+    def test_overexposed_tiles_do_not_set_the_section_noise(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = self._tiles(tmp, 1) + [self._overexposed(tmp, f'{i:03d}x.tif') for i in range(2)]
+            noise = shared.GetSectionNoise(os.path.join(tmp, 'cache', 'Histogram.xml'), tiles, len(tiles),
+                                           lambda i: noise_crush.load_raw_tile(tiles[i]))
+            self.assertAlmostEqual(noise.sigma, 40.0, delta=3.0)
 
     def test_unwritable_cache_still_returns_estimate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

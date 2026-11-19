@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import os
 import sys
 from typing import ClassVar
@@ -20,6 +21,14 @@ from nornir_buildmanager.volumemanager.xresourceelementwrapper import XResourceE
 from nornir_shared import prettyoutput as prettyoutput
 from nornir_shared.files import ensure_directory
 import nornir_pools
+
+
+def _log_removed_link(path: str, e: IOError) -> None:
+    """A link whose VolumeData.xml is missing is dropped and the pipeline rebuilds it, so that case is a warning."""
+    if isinstance(e, FileNotFoundError):
+        logging.getLogger(__name__).warning("Removing link to %s: its VolumeData.xml is missing (%s)", path, e)
+    else:
+        prettyoutput.LogErr(f"Removing link node after IOError loading linked XML file: {path}\n{e}")
 
 
 def _save_link_element(tag: str, attrib: dict) -> ElementTree.Element:
@@ -193,9 +202,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
             loaded_element = self._load_wrap_setparent_link_element(SubContainerPath)
         except IOError as e:
             self.remove(link_node)
-            # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-            prettyoutput.LogErr(
-                "Removing link node after IOError loading linked XML file: {0}\n{1}".format(fullpath, str(e)))
+            _log_removed_link(SubContainerPath, e)
             return None
         except ElementTree.ParseError as e:
             # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
@@ -256,10 +263,7 @@ class XContainerElementWrapper(XResourceElementWrapper):
                     (wrapped, wrapped_loaded_element) = task.result()
                 except IOError as e:
                     self.remove(link_node)
-                    # logger = logging.getLogger(__name__ + '.' + '_load_link_element')
-                    prettyoutput.LogErr(
-                        "Removing link node after IOError loading linked XML file: {0}\n{1}".format(task_fullpath,
-                                                                                                   str(e)))
+                    _log_removed_link(task_fullpath, e)
                     continue
                 except ElementTree.ParseError as e:
                     # logger = logging.getLogger(__name__ + '.' + '_load_link_element')

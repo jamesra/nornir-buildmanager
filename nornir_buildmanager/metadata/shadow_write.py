@@ -37,6 +37,7 @@ from .sqlite_backend import (
     sync_node,
     update_node,
 )
+from .sqlite_write_lock import WriteLockTimeout
 from .volume_metadata import MetadataNode
 from .xml_backend import XMLMetadataBackend
 
@@ -277,6 +278,10 @@ def after_container_saved(container_dir: str,
         return
     try:
         _shadow_container(os.path.abspath(container_dir), saved_xml, written_signature)
+    except WriteLockTimeout as e:
+        # Contention, not a fault: one line, no traceback (build watchers grep for tracebacks; RC3, 2026-11-16).
+        logger.warning("SQLite shadow write failed for container %s: %s; the SQLite copy is refreshed the next "
+                       "time the container is loaded", container_dir, e)
     except Exception as e:
         logger.warning("SQLite shadow write failed for container %s: %s", container_dir, e, exc_info=True)
 

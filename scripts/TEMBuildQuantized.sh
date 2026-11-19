@@ -15,10 +15,10 @@
 #   Histogram, AdjustContrast   not run; the import stores the code histogram and display range
 #   Assemble         -Filters Quantized
 #   AdjustAssembledContrast     Quantized assembled images -> Leveled assembled images, same -Downsample levels
-#   Prune            -DefaultThreshold 2000 instead of 10.0 (James, 2026-11-12). Crushed scores are rescaled to
-#                    the contrast-stretched 8-bit scale with the filter's CrushCodeSpan (PruneObj.CrushedScoreScale),
-#                    so they match legacy scores within ~1% (KTEF_Candidates). 10.0 pruned nothing there: the
-#                    lowest tile scored 1151.
+#   Prune            -DefaultThreshold 400 instead of 10.0 (James, 2026-11-16). Crushed scores are in noise steps
+#                    (stored codes, unscaled; PruneObj.CrushedScoreUnits), not the legacy 8-bit scale. On 7 RC3
+#                    sections blank, resin and fold tiles scored 130-510 and full tissue at least 686; 400 keeps
+#                    the low-contrast tissue of 1005 (median 579).
 #
 # Prompts for a volume folder (or accept $1 / VOLUME_DIR).
 #
@@ -62,7 +62,7 @@ echo
 exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   -debug -computational_library "$COMP_LIB" "$@" \
   "$VOLUME_DIR" \
-  Prune -InputFilter Quantized -Downsample 4 -Channels TEM -DefaultThreshold 2000 \
+  Prune -InputFilter Quantized -Downsample 4 -Channels TEM -DefaultThreshold 400 \
   --then Mosaic -InputFilter Quantized -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
   --then Assemble -Channels TEM -Filters Quantized -Downsample 8,16,32 -NoInterlace -Transform Grid \
   --then AdjustAssembledContrast -InputFilter Quantized -OutputFilter Leveled -Downsample 8,16,32 -Channels TEM \
