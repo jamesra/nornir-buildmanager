@@ -64,7 +64,7 @@ exec "$PYTHON" -Xfrozen_modules=off -m nornir_buildmanager \
   "$VOLUME_DIR" \
   Prune -InputFilter Quantized -Downsample 4 -Channels TEM -DefaultThreshold 400 \
   --then Mosaic -InputFilter Quantized -RegistrationDownsample 4 -InputTransform Prune -OutputTransform Grid -Channels TEM \
-  --then Assemble -Channels TEM -Filters Quantized -Downsample 8,16,32 -NoInterlace -Transform Grid \
-  --then AdjustAssembledContrast -InputFilter Quantized -OutputFilter Leveled -Downsample 8,16,32 -Channels TEM \
+  --then Assemble -Channels TEM -Filters Quantized -Downsample 16,32 -NoInterlace -Transform Grid \
+  --then AdjustAssembledContrast -InputFilter Quantized -OutputFilter Leveled -Downsample 16,32 -Channels TEM \
   --then MosaicReport -PruneFilter Quantized -ContrastFilter Quantized -AssembleFilter Leveled -AssembleDownsample 16 -Output MosaicReport \
   --then CreateVikingXML -OutputFile Mosaic
