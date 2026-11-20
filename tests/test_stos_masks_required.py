@@ -125,6 +125,75 @@ class TestUnmaskedBrutesAreRecomputed(unittest.TestCase):
         self.assertFalse(block.brute_stos_needs_replacement(group, mock.Mock(), mock.Mock(), True))
 
 
+def _lm_filter(path: str = 'LM/Raw8'):
+    """A filter with no Assemble Mask filter, as in an LM volume."""
+    f = mock.Mock(FullPath=path, MaskName=None, DefaultMaskName='Mask')
+    f.GetMaskFilter.return_value = None
+    return f
+
+
+class TestFiltersWithoutAMaskRegisterFullFrame(unittest.TestCase):
+    """James chose a full-frame mask when a filter has no Mask filter (2026-11-20, "142: B")."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        logged = mock.patch.object(block, '_full_frame_mask_filters_logged', set())
+        logged.start()
+        self.addCleanup(logged.stop)
+
+    def test_a_pair_uses_masks_only_when_both_filters_have_one(self) -> None:
+        self.assertTrue(block.pair_uses_masks(mock.Mock(), mock.Mock()))
+        self.assertFalse(block.pair_uses_masks(mock.Mock(), _lm_filter()))
+        self.assertFalse(block.pair_uses_masks(_lm_filter(), _lm_filter('LM/Raw8b')))
+
+    def test_the_fallback_is_logged_once_per_filter(self) -> None:
+        lm = _lm_filter()
+        with mock.patch.object(block.prettyoutput, 'Log') as log:
+            block.pair_uses_masks(lm, mock.Mock())
+            block.pair_uses_masks(mock.Mock(), lm)
+        self.assertEqual(1, log.call_count)
+        self.assertIn('LM/Raw8', log.call_args.args[0])
+        self.assertIn('full-frame', log.call_args.args[0])
+
+    def test_the_default_mask_filter_counts_when_mask_name_is_unset(self) -> None:
+        f = mock.Mock(FullPath='TEM/Leveled', MaskName=None, DefaultMaskName='Mask')
+        block.pair_uses_masks(f, f)
+        f.GetMaskFilter.assert_called_with('Mask')
+
+    def test_an_unmasked_brute_of_an_lm_pair_is_kept(self) -> None:
+        path = os.path.join(self._tmp.name, 'pair.stos')
+        _write_stos(path, masks=False)
+        group = mock.Mock()
+        group.GetStosTransformNode.return_value = SimpleNamespace(FullPath=path, attrib={})
+        group.AreStosInputImagesOutdated.return_value = False
+        group.PathToManualTransform.return_value = None
+        lm = _lm_filter()
+        self.assertFalse(block.brute_stos_needs_replacement(group, lm, lm, True))
+        self.assertFalse(group.AreStosInputImagesOutdated.call_args.kwargs['MaskRequired'])
+
+    def _refine_context(self, use_masks: bool, stos_path: str):
+        return SimpleNamespace(use_masks=use_masks, input_stos_path=stos_path,
+                               output_stos_path=stos_path + '.out', output_stos_node=mock.Mock(),
+                               decision=block.stosgroup_workers.RefineScanDecision.REFINE)
+
+    def test_refine_of_an_lm_pair_runs_without_masks(self) -> None:
+        path = os.path.join(self._tmp.name, 'pair.stos')
+        _write_stos(path, masks=False)
+        refine = mock.Mock(side_effect=MissingMaskError('stop here'))
+        with self.assertRaisesRegex(MissingMaskError, 'stop here'):
+            block._run_refine_or_manual_copy(self._refine_context(False, path), refine, {})
+        refine.assert_called_once()
+
+    def test_refine_of_a_masked_pair_still_refuses_an_unmasked_input(self) -> None:
+        path = os.path.join(self._tmp.name, 'pair.stos')
+        _write_stos(path, masks=False)
+        refine = mock.Mock()
+        with self.assertRaisesRegex(MissingMaskError, 'names no masks'):
+            block._run_refine_or_manual_copy(self._refine_context(True, path), refine, {})
+        refine.assert_not_called()
+
+
 class TestPipelinesHaveNoMaskSwitch(unittest.TestCase):
 
     def setUp(self) -> None:

@@ -78,18 +78,27 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
         return "6872_small"
 
     def testAlignSectionsPipeline(self):
-        """LM images imported whole never run Assemble, so they have no mask to register with.
+        """LM images imported whole never run Assemble, so they have no Mask filter.
 
-        Every .stos registration uses the Assemble masks (James, 2026-11-20), so AlignSections
-        stops on the first pair instead of registering it unmasked.
+        Such a pair registers with a full-frame mask (James, 2026-11-20, "142: B"): the brute
+        runs and its .stos names no masks.
         """
         buildArgs = [self.TestOutputPath, '-debug', 'AlignSections', \
                      '-Downsample', '16', \
                      '-Center', '5', \
                      '-Channels', 'LeveledShading.*']
-        with self.assertRaises(nornir_buildmanager.operations.stos_brute_pairs.StosBrutePairError) as stopped:
-            self.RunBuild(buildArgs)
-        self.assertIsInstance(stopped.exception.__cause__, nornir_buildmanager.exceptions.MissingMaskError)
+        VolumeObj = self.RunBuild(buildArgs)
+
+        StosMapNode = VolumeObj.find("Block/StosMap")
+        self.assertIsNotNone(StosMapNode, "Stos pipeline did not complete")
+
+        StosGroupNode = VolumeObj.find("Block/StosGroup")
+        self.assertIsNotNone(StosGroupNode, "Stos pipeline did not complete")
+
+        stos_paths = [t.FullPath for t in StosGroupNode.findall('SectionMappings/Transform')]
+        self.assertTrue(stos_paths, "AlignSections registered no pairs")
+        for path in stos_paths:
+            self.assertFalse(StosFile.Load(path).HasMasks, f"{path}: an LM pair has no Assemble mask to name")
 
 
 class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):
