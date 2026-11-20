@@ -682,17 +682,26 @@ def _overridden_units_per_pixel(filter_node: FilterNode,
 
 
 def _brute_stos_was_masked(stos_node: TransformNode) -> bool:
-    """True when an existing StosBrute .stos was registered with masks (it names mask files).
-
-    Masks are always used now, but brutes registered without them before that stay current
-    until James decides whether to recompute them (pending, 2026-11-20). So mask freshness only
-    invalidates a brute that used masks; an unmasked brute is judged on its images alone, as
-    before.
-    """
+    """True when an existing StosBrute .stos was registered with masks (it names mask files)."""
     try:
         return bool(stosfile.StosFile.Load(stos_node.FullPath).HasMasks)
     except (OSError, ValueError):
         return False
+
+
+def _is_unmasked_brute(
+        stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
+        stos_node: TransformNode) -> bool:
+    """True for a StosBrute .stos registered without masks and not copied from a Manual override.
+
+    Every brute uses the Assemble masks now, and James chose to recompute the older unmasked
+    ones (2026-11-20, "95) Yes"). Mask checksums alone cannot find them: AddChecksumsToStos
+    stamps the filters' mask checksums whether or not the registration used the masks. A
+    Manual override is kept as it is, masked or not; recomputing it would only copy it again.
+    """
+    if _brute_stos_was_masked(stos_node):
+        return False
+    return stos_group.PathToManualTransform(stos_node.FullPath) is None
 
 
 def brute_stos_needs_replacement(
@@ -710,6 +719,8 @@ def brute_stos_needs_replacement(
     """
     stos_node = stos_group.GetStosTransformNode(control_filter, mapped_filter)
     if stos_node is None:
+        return True
+    if _is_unmasked_brute(stos_group, stos_node):
         return True
     if stos_group.AreStosInputImagesOutdated(
             stos_node, control_filter, mapped_filter,
@@ -787,8 +798,11 @@ def prepare_filter_to_filter_brute_registration(
 
     stosNode = stos_group.GetStosTransformNode(control_filter, mapped_filter)
     if stosNode is not None:
-        if stos_group.AreStosInputImagesOutdated(stosNode, control_filter, mapped_filter,
-                                                 MaskRequired=use_masks and _brute_stos_was_masked(stosNode)):
+        if _is_unmasked_brute(stos_group, stosNode):
+            stosNode.Clean("Registered without the Assemble masks")
+            stosNode = None
+        elif stos_group.AreStosInputImagesOutdated(stosNode, control_filter, mapped_filter,
+                                                   MaskRequired=use_masks and _brute_stos_was_masked(stosNode)):
             stosNode.Clean("Input Images are Outdated")
             stosNode = None
         else:

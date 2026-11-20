@@ -3,7 +3,7 @@
 StosBrute used masks only with ``-UseMasks`` and refine could be told ``-IgnoreMasks``. Now
 masks are always on, a missing mask stops the stage (MissingMaskError) instead of skipping
 the pair, and refine refuses an input .stos that names no masks. A StosBrute .stos that was
-registered without masks stays current: whether to recompute those is James's call.
+registered without masks is recomputed, unless it came from a Manual override.
 """
 from __future__ import annotations
 
@@ -91,29 +91,38 @@ class TestRefineRefusesUnmaskedInput(unittest.TestCase):
             block._require_stos_masks(path)
 
 
-class TestUnmaskedBrutesStayCurrent(unittest.TestCase):
-    """Until James decides, mask freshness only invalidates brutes that used masks."""
+class TestUnmaskedBrutesAreRecomputed(unittest.TestCase):
+    """James chose to recompute brutes registered without masks (2026-11-20, "95) Yes")."""
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
 
-    def _needs_replacement(self, masks: bool) -> dict:
+    def _group(self, masks: bool, manual: str | None = None):
         path = os.path.join(self._tmp.name, 'pair.stos')
         _write_stos(path, masks=masks)
-        node = SimpleNamespace(FullPath=path, attrib={})
+        node = SimpleNamespace(FullPath=path, attrib={'InputTransformChecksum': 'x'} if manual else {})
         group = mock.Mock()
         group.GetStosTransformNode.return_value = node
         group.AreStosInputImagesOutdated.return_value = False
-        group.PathToManualTransform.return_value = None
-        block.brute_stos_needs_replacement(group, mock.Mock(), mock.Mock(), True)
-        return group.AreStosInputImagesOutdated.call_args.kwargs
+        group.PathToManualTransform.return_value = manual
+        return group
 
-    def test_an_unmasked_brute_is_judged_on_its_images_only(self) -> None:
-        self.assertFalse(self._needs_replacement(masks=False)['MaskRequired'])
+    def test_an_unmasked_brute_is_recomputed(self) -> None:
+        group = self._group(masks=False)
+        self.assertTrue(block.brute_stos_needs_replacement(group, mock.Mock(), mock.Mock(), True))
 
     def test_a_masked_brute_also_checks_its_masks(self) -> None:
-        self.assertTrue(self._needs_replacement(masks=True)['MaskRequired'])
+        group = self._group(masks=True)
+        self.assertFalse(block.brute_stos_needs_replacement(group, mock.Mock(), mock.Mock(), True))
+        self.assertTrue(group.AreStosInputImagesOutdated.call_args.kwargs['MaskRequired'])
+
+    def test_an_unmasked_manual_override_is_kept(self) -> None:
+        manual = os.path.join(self._tmp.name, 'manual.stos')
+        _write_stos(manual, masks=False)
+        group = self._group(masks=False, manual=manual)
+        group.GetStosTransformNode.return_value.attrib['InputTransformChecksum'] =             stosfile.StosFile.LoadChecksum(manual)
+        self.assertFalse(block.brute_stos_needs_replacement(group, mock.Mock(), mock.Mock(), True))
 
 
 class TestPipelinesHaveNoMaskSwitch(unittest.TestCase):
