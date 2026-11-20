@@ -8,6 +8,8 @@ import os
 import unittest
 
 from nornir_buildmanager.operations.block import *
+import nornir_buildmanager.exceptions
+import nornir_buildmanager.operations.stos_brute_pairs
 import nornir_buildmanager.volumemanager.blocknode
 from nornir_imageregistration import StosFile
 from ..setup_pipeline import CopySetupTestBase, EmptyVolumeTestBase
@@ -76,18 +78,18 @@ class SliceToSliceRegistrationBruteOnlyTest(test_sectionimage.ImportLMImages):
         return "6872_small"
 
     def testAlignSectionsPipeline(self):
-        # Import the files
+        """LM images imported whole never run Assemble, so they have no mask to register with.
+
+        Every .stos registration uses the Assemble masks (James, 2026-11-20), so AlignSections
+        stops on the first pair instead of registering it unmasked.
+        """
         buildArgs = [self.TestOutputPath, '-debug', 'AlignSections', \
                      '-Downsample', '16', \
                      '-Center', '5', \
                      '-Channels', 'LeveledShading.*']
-        VolumeObj = self.RunBuild(buildArgs)
-
-        StosMapNode = VolumeObj.find("Block/StosMap")
-        self.assertIsNotNone(StosMapNode, "Stos pipeline did not complete")
-
-        StosGroupNode = VolumeObj.find("Block/StosGroup")
-        self.assertIsNotNone(StosGroupNode, "Stos pipeline did not complete")
+        with self.assertRaises(nornir_buildmanager.operations.stos_brute_pairs.StosBrutePairError) as stopped:
+            self.RunBuild(buildArgs)
+        self.assertIsInstance(stopped.exception.__cause__, nornir_buildmanager.exceptions.MissingMaskError)
 
 
 class SliceToSliceRegistrationSkipBrute(CopySetupTestBase):

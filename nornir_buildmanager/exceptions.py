@@ -36,3 +36,11 @@ class NornirRethrownException(Exception):
     """
     def __init__(self, **kwargs):
         super(NornirRethrownException, self).__init__(**kwargs)
+
+
+class MissingMaskError(NornirUserException):
+    """A slice-to-slice registration needs the Assemble mask of a section and it is missing.
+
+    Every .stos registration runs with the masks Assemble writes (James, 2026-11-20), so a
+    missing or unbuildable mask stops the stage instead of letting the pair run unmasked.
+    """

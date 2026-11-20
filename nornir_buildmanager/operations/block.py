@@ -20,7 +20,7 @@ import time
 import typing
 from enum import Enum
 
-from nornir_buildmanager.exceptions import NornirUserException
+from nornir_buildmanager.exceptions import MissingMaskError, NornirUserException
 import nornir_buildmanager.no_delete as _no_delete_mod
 from nornir_buildmanager.metadatautils import *
 import nornir_buildmanager.operations.helpers.mosaicvolume as mosaicvolume
@@ -556,7 +556,11 @@ def GetOrCreateRegistrationImageNodes(filter_node: FilterNode, downsample: float
 
     Returns:
         Tuple of (image_node, mask_node) for the filter at the given downsample level.
-        If any required node cannot be created or found, returns (None, None).
+        If the image cannot be created or found, returns (None, None).
+
+    Raises:
+        MissingMaskError: ``get_mask`` is set and the Assemble mask cannot be created or its
+            file is missing. Registrations always use the mask, so the caller must not go on.
     """
     if logger is None:
         logger = logging.getLogger(__name__ + ".FilterToFilterBruteRegistration")
@@ -581,9 +585,18 @@ def GetOrCreateRegistrationImageNodes(filter_node: FilterNode, downsample: float
     # Get or create the mask node if requested
     mask_image_node = None
     if get_mask:
-        mask_image_node = filter_node.GetOrCreateMaskImage(downsample)
+        try:
+            mask_image_node = filter_node.GetOrCreateMaskImage(downsample)
+        except MissingMaskError:
+            raise
+        except NornirUserException as e:
+            raise MissingMaskError(
+                f"No Assemble mask for {filter_node.FullPath} at downsample {downsample}: {e}") from e
         if not _validate_node(mask_image_node, "Mask image", filter_node.FullPath):
-            return None, None
+            path = mask_image_node.FullPath if mask_image_node is not None else filter_node.FullPath
+            raise MissingMaskError(
+                f"Assemble mask missing for {filter_node.FullPath} at downsample {downsample}: {path}. "
+                "Slice-to-slice registration always uses the mask; re-run Assemble for this section.")
 
     return image_node, mask_image_node
 
@@ -668,6 +681,20 @@ def _overridden_units_per_pixel(filter_node: FilterNode,
     return override.apply(x), override.apply(y)
 
 
+def _brute_stos_was_masked(stos_node: TransformNode) -> bool:
+    """True when an existing StosBrute .stos was registered with masks (it names mask files).
+
+    Masks are always used now, but brutes registered without them before that stay current
+    until James decides whether to recompute them (pending, 2026-11-20). So mask freshness only
+    invalidates a brute that used masks; an unmasked brute is judged on its images alone, as
+    before.
+    """
+    try:
+        return bool(stosfile.StosFile.Load(stos_node.FullPath).HasMasks)
+    except (OSError, ValueError):
+        return False
+
+
 def brute_stos_needs_replacement(
         stos_group: nornir_buildmanager.volumemanager.StosGroupNode,
         control_filter: nornir_buildmanager.volumemanager.FilterNode,
@@ -685,7 +712,8 @@ def brute_stos_needs_replacement(
     if stos_node is None:
         return True
     if stos_group.AreStosInputImagesOutdated(
-            stos_node, control_filter, mapped_filter, MaskRequired=use_masks):
+            stos_node, control_filter, mapped_filter,
+            MaskRequired=use_masks and _brute_stos_was_masked(stos_node)):
         return True
 
     attrib = getattr(stos_node, 'attrib', {}) or {}
@@ -759,7 +787,8 @@ def prepare_filter_to_filter_brute_registration(
 
     stosNode = stos_group.GetStosTransformNode(control_filter, mapped_filter)
     if stosNode is not None:
-        if stos_group.AreStosInputImagesOutdated(stosNode, control_filter, mapped_filter, MaskRequired=use_masks):
+        if stos_group.AreStosInputImagesOutdated(stosNode, control_filter, mapped_filter,
+                                                 MaskRequired=use_masks and _brute_stos_was_masked(stosNode)):
             stosNode.Clean("Input Images are Outdated")
             stosNode = None
         else:
@@ -799,9 +828,13 @@ def prepare_filter_to_filter_brute_registration(
                                                                                      get_mask=use_masks, logger=logger)
         (MappedImageNode, MappedMaskImageNode) = GetOrCreateRegistrationImageNodes(mapped_filter, stos_group.Downsample,
                                                                                    get_mask=use_masks, logger=logger)
+    except MissingMaskError:
+        raise
     except NornirUserException as e:
         prettyoutput.LogErr(str(e))
         return None
+    if ControlImageNode is None or MappedImageNode is None:
+        return None  # GetOrCreateRegistrationImageNodes logged which image is missing
 
     if stosNode is None:
         stosNode = stos_group.CreateStosTransformNode(control_filter, mapped_filter, output_type, output_path)
@@ -846,11 +879,10 @@ def prepare_filter_to_filter_brute_registration(
 
     warped_scale = _IsotropicWarpedImageScaleFactor(control_filter, mapped_filter,
                                                     pixel_spacing_overrides, logger)
-    control_mask_path = None
-    mapped_mask_path = None
-    if not (ControlMaskImageNode is None and MappedMaskImageNode is None):
-        control_mask_path = ControlMaskImageNode.FullPath if ControlMaskImageNode is not None else None
-        mapped_mask_path = MappedMaskImageNode.FullPath if MappedMaskImageNode is not None else None
+    control_mask_path = ControlMaskImageNode.FullPath if ControlMaskImageNode is not None else None
+    mapped_mask_path = MappedMaskImageNode.FullPath if MappedMaskImageNode is not None else None
+    if use_masks and (control_mask_path is None or mapped_mask_path is None):
+        raise MissingMaskError(f"StosBrute {os.path.basename(stosNode.FullPath)}: no Assemble mask")
 
     job = stos_brute_pairs.StosBrutePairJob(
         pair_name=os.path.basename(stosNode.FullPath),
@@ -937,7 +969,8 @@ def StosBrute(Parameters: dict, mapping_node: MappingNode, block_node: BlockNode
     # Additional arguments for stos-brute
     argstring = misc.ArgumentsFromDict(Parameters)
 
-    UseMasks = Parameters.get("UseMasks", False)
+    UseMasks = True  # every .stos registration uses the Assemble masks (James, 2026-11-20)
+    Parameters.pop("UseMasks", None)
 
     ControlNumber = mapping_node.Control
     AdjacentSections = mapping_node.Mapped
@@ -1123,7 +1156,7 @@ def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: Block
     os.makedirs(stos_group_node.FullPath, exist_ok=True)
 
     pair_tasks = _enumerate_brute_pair_tasks(mappings, block_node, ChannelsRegEx, FiltersRegEx,
-                                             stos_group_node, Parameters.get("UseMasks", False), Logger)
+                                             stos_group_node, True, Logger)
     total_pairs = sum(1 for t in pair_tasks if t.needs_work)
     executor = _create_stos_brute_executor(_parse_gpu_workers(GpuWorkers), total_pairs, Logger)
     yield from _stos_brute_pairs(Parameters, pair_tasks, len(mappings), stos_group_node, Method, Logger,
@@ -1182,7 +1215,7 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
     if AngleSearchRange == "None":
         AngleSearchRange = None
     TestForFlip = not bool(kwargs.get('NoFlipCheck', False))
-    UseMasks = Parameters.get("UseMasks", False)
+    UseMasks = True  # every .stos registration uses the Assemble masks (James, 2026-11-20)
     pixel_spacing_overrides = kwargs.get('PixelSpacingOverrides', None)
 
     total_pairs = sum(1 for t in pair_tasks if t.needs_work)
@@ -1292,8 +1325,10 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
 
             gpu_pool = (f", GPU pool {result.gpu_pool_bytes / 2 ** 20:.0f} MB"
                         if result.gpu_pool_bytes is not None else "")
-            Logger.info("StosBrute %s: %s; %.1f s in process %d%s", result.pair_name, result.describe(),
-                        result.elapsed_seconds, result.pid, gpu_pool)
+            Logger.info("StosBrute %s: %s; %.1f s in process %d%s; masks %s, %s", result.pair_name,
+                        result.describe(), result.elapsed_seconds, result.pid, gpu_pool,
+                        prepared.job.target_mask_path if prepared.job is not None else None,
+                        prepared.job.source_mask_path if prepared.job is not None else None)
             if result.ambiguous:
                 ambiguous.append(result.pair_name)
                 Logger.warning("StosBrute %s: ambiguous pose (weight %.2f < %.1f); it may differ between "
@@ -2718,8 +2753,26 @@ def __SelectAutomaticOrManualStosFilePath(AutomaticInputStosFullPath: str, Manua
     return AutomaticInputStosFullPath
 
 
+def _require_stos_masks(InputStosFullPath: str) -> None:
+    """Log the masks a refine input names; raise MissingMaskError when it names none or one is missing.
+
+    Every .stos registration uses the Assemble masks (James, 2026-11-20). The pipeline writes
+    them into the scaled input; this check makes sure no refine starts without them.
+    """
+    stos = stosfile.StosFile.Load(InputStosFullPath)
+    name = os.path.basename(InputStosFullPath)
+    if not stos.HasMasks:
+        raise MissingMaskError(f"Refine input {InputStosFullPath} names no masks; "
+                               "slice-to-slice registration always uses the Assemble masks.")
+    for mask in (stos.ControlMaskFullPath, stos.MappedMaskFullPath):
+        if not mask or not os.path.exists(mask):
+            raise MissingMaskError(f"Refine input {name}: Assemble mask missing: {mask}")
+    prettyoutput.Log(f'{name} masks: control {stos.ControlMaskFullPath}, mapped {stos.MappedMaskFullPath}')
+
+
 def __RunIrStosGridCmd(InputStosFullPath: str, OutputStosFullPath: str, **kwargs):
     """Run SCI's original stos refinement algorithm"""
+    _require_stos_masks(InputStosFullPath)
     argstring = misc.ArgumentsFromDict(kwargs)
     StosGridTemplate = 'ir-stos-grid -save %(OutputStosFullPath)s -load %(InputStosFullPath)s ' + argstring
 
@@ -2780,6 +2833,7 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
         kwargs['outputDir'] = os.path.dirname(OutputStosFullPath)
 
     prettyoutput.Log(f'Refining {InputStosFullPath} to {OutputStosFullPath}')
+    _require_stos_masks(InputStosFullPath)
 
     try:
         local_distortion_correction.RefineStosFile(InputStos=InputStosFullPath,
@@ -2805,7 +2859,7 @@ def __RunPythonGridRefinementCmd(InputStosFullPath: str, OutputStosFullPath: str
         prettyoutput.LogErr(f'Failed to merge refine quality summary for {OutputStosFullPath}: {quality_err}')
 
 
-def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: StosGroupNode, UseMasks: bool,
+def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: StosGroupNode,
                      Downsample: int = 32,
                      ControlFilterPattern: str | None = None, MappedFilterPattern: str | None = None,
                      OutputStosGroup=None,
@@ -2821,7 +2875,7 @@ def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: Stos
                          Parameters=Parameters,
                          mapping_node=mapping_node,
                          InputGroupNode=InputGroupNode,
-                         UseMasks=UseMasks,
+                         UseMasks=True,  # every .stos registration uses the Assemble masks
                          Downsample=Downsample,
                          ControlFilterPattern=ControlFilterPattern,
                          MappedFilterPattern=MappedFilterPattern,
@@ -2830,7 +2884,7 @@ def IrStosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode: Stos
                          )
 
 
-def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, IgnoreMasks, Downsample=32,
+def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, Downsample=32,
                    ControlFilterPattern=None, MappedFilterPattern=None, OutputStosGroup=None,
                    Type=None, MappedSections: None | list[int] | frozenset[int] = None, **kwargs) -> typing.Generator[
     XElementWrapper, None, None]:
@@ -2857,7 +2911,7 @@ def StosGridRefine(Parameters, mapping_node: MappingNode, InputGroupNode, Ignore
                          PrefetchFunc=image_prefetch.prefetch_stos_images,
                          mapping_node=mapping_node,
                          InputGroupNode=InputGroupNode,
-                         UseMasks=not IgnoreMasks,
+                         UseMasks=True,  # every .stos registration uses the Assemble masks
                          Downsample=Downsample,
                          ControlFilterPattern=ControlFilterPattern,
                          MappedFilterPattern=MappedFilterPattern,
@@ -2945,6 +2999,8 @@ def _enumerate_stos_grid_refine_candidates(
                     ControlFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
                 GetOrCreateRegistrationImageNodes(
                     MappedFilter, OutputDownsample, get_mask=UseMasks, logger=Logger)
+            except MissingMaskError:
+                raise
             except NornirUserException as e:
                 prettyoutput.LogErr(str(e))
                 continue
@@ -3102,6 +3158,8 @@ def _run_refine_or_manual_copy(
 
     try:
         RefineFunc(context.input_stos_path, context.output_stos_path, **refine_kwargs)
+    except MissingMaskError:
+        raise  # a missing mask stops the stage; never refine without it
     except Exception as e:
         # Refine runs one slice at a time, so re-raising aborted the whole stage on
         # the first bad slice and no sibling slice ever ran. The two checks below
@@ -4554,10 +4612,14 @@ def __GetFirstMatchingFilter(block_node, section_number, channel_name, filter_pa
 #     return sectionNode.MatchChannelFilterPattern(channelPattern, filterPattern)
 
 
-def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, OutputGroupName: str, UseMasks: bool,
+def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, OutputGroupName: str,
+                   UseMasks: bool | None = None,
                    workers: int | None = None,
                    **kwargs):
     """Take a stos group node, scale the transforms, and save in new stosgroup.
+
+    Every scaled .stos names the Assemble masks: ``UseMasks`` is ignored (kept so old
+    callers still bind) and a filter without a mask raises :class:`MissingMaskError`.
 
     Cross-filter STOS creation used to live here; keep that as a separate helper
     if it returns, rather than re-expanding this scaler.
@@ -4623,13 +4685,13 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
         if not os.path.exists(output_stos_node.FullPath):
             control_image_path = ControlFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
             mapped_image_path = MappedFilter.Imageset.GetOrPredictImageFullPath(OutputDownsample)
-            control_mask_path = None
-            mapped_mask_path = None
-            if UseMasks is not False:
-                if ControlFilter.MaskImageset is not None:
-                    control_mask_path = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
-                if MappedFilter.MaskImageset is not None:
-                    mapped_mask_path = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+            if ControlFilter.MaskImageset is None or MappedFilter.MaskImageset is None:
+                raise MissingMaskError(
+                    f"ScaleStosGroup {os.path.basename(InputTransformNode.FullPath)}: "
+                    f"{ControlFilter.FullPath if ControlFilter.MaskImageset is None else MappedFilter.FullPath} "
+                    "has no Assemble mask. Every .stos must name the masks; re-run Assemble for that section.")
+            control_mask_path = ControlFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
+            mapped_mask_path = MappedFilter.MaskImageset.GetOrPredictImageFullPath(OutputDownsample)
 
             job_context = _ScaleStosJobContext(
                 output_stos_node=output_stos_node,
@@ -4649,7 +4711,7 @@ def ScaleStosGroup(InputStosGroupNode: StosGroupNode, OutputDownsample: int, Out
                     mapped_image_path,
                     control_mask_path,
                     mapped_mask_path,
-                    UseMasks,
+                    True,  # always name the Assemble masks
                 ),
                 kwargs={},
                 context=job_context,

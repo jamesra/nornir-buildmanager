@@ -302,10 +302,12 @@ class TestScaleAndBlendProgress(unittest.TestCase):
 
         control_filter = mock.Mock()
         control_filter.Imageset.GetOrPredictImageFullPath.return_value = "/c.png"
-        control_filter.MaskImageset = None
+        # Every scaled .stos names the Assemble masks; a filter without one raises.
+        control_filter.MaskImageset.GetOrPredictImageFullPath.return_value = "/c_mask.png"
         mapped_filter = mock.Mock()
         mapped_filter.Imageset.GetOrPredictImageFullPath.return_value = "/m.png"
-        mapped_filter.MaskImageset = None
+        # Every scaled .stos names the Assemble masks; a filter without one raises.
+        mapped_filter.MaskImageset.GetOrPredictImageFullPath.return_value = "/m_mask.png"
 
         def exists(path: str) -> bool:
             if path == input_transform.FullPath:
