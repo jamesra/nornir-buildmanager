@@ -4,6 +4,7 @@ Created on May 22, 2012
 @author: Jamesan
 """
 import collections
+import contextlib
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED, ALL_COMPLETED, FIRST_EXCEPTION, as_completed
 import glob
@@ -30,6 +31,7 @@ from numpy.typing import NDArray
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 from collections.abc import Set as AbstractSet
+from collections.abc import Callable, Iterator
 from typing import Any, Iterable, Sequence, cast
 
 from nornir_imageregistration.pillow_helpers import load_image_array
@@ -163,6 +165,56 @@ def _cap_cupy_pool_for_assembly(Logger: logging.Logger) -> None:
     _assembly_pool_limit = int(pool.get_limit())
     Logger.info("CuPy pool for tile assembly capped at %.1f GiB (device memory free at the start of the section)",
                 limit / 2 ** 30)
+
+
+@contextlib.contextmanager
+def _numpy_backend() -> Iterator[None]:
+    """Run the block on the NumPy backend, then restore the backend that was active."""
+    previous = nornir_imageregistration.GetActiveComputationLib()
+    nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.numpy)
+    try:
+        yield
+    finally:
+        nornir_imageregistration.SetActiveComputationLib(previous)
+
+
+def _optimized_tiles_with_numpy_fallback(
+        mosaic_tileset: nornir_imageregistration.mosaic_tileset.MosaicTileset,
+        load_mosaic_tileset: Callable[[], nornir_imageregistration.mosaic_tileset.MosaicTileset],
+        *, target_space_scale: float, tile_dims: NDArray, max_temp_image_area: int | None,
+        section_label: str, Logger: logging.Logger) -> Iterator[tuple[int, int, NDArray]]:
+    """Yield a section's optimized tiles; if the GPU stays out of memory, finish the section on NumPy.
+
+    GenerateOptimizedTiles already retries a strip after returning cached GPU memory and waiting (about 2.5 min
+    in all). Another pipeline on the same GPU can hold its memory far longer (RC1's masked StosBrute next to
+    RC3's AssembleTiles on srv, 2026-11-21: 12.8 GB allocated, 403 MB more failed, and the whole batch stopped).
+    Then this process's GPU cache is returned, the tileset is reloaded on NumPy, and the tiles not yet yielded
+    are assembled there. Tiles already yielded are final and are not yielded again.
+    """
+    done: set[tuple[int, int]] = set()
+    try:
+        for iRow, iCol, tile_image in mosaic_tileset.GenerateOptimizedTiles(
+                target_space_scale=target_space_scale, tile_dims=tile_dims,
+                max_temp_image_area=max_temp_image_area):
+            done.add((iRow, iCol))
+            yield iRow, iCol, tile_image
+        return
+    except Exception as e:
+        if not (nornir_imageregistration.UsingCupy()
+                and nornir_imageregistration.mosaic_tileset._is_gpu_out_of_memory(e)):
+            raise
+        Logger.warning("Section %s: GPU still out of memory after the strip retries (%s); assembling the "
+                       "section's remaining tiles on NumPy (%d done on the GPU)", section_label, e, len(done))
+    for tile in mosaic_tileset.values():  # the caller still holds the tileset; drop its GPU images
+        tile.ReleaseLoadedImage()
+    _release_cupy_cache()
+    with _numpy_backend():
+        for iRow, iCol, tile_image in load_mosaic_tileset().GenerateOptimizedTiles(
+                target_space_scale=target_space_scale, tile_dims=tile_dims,
+                max_temp_image_area=max_temp_image_area):
+            if (iRow, iCol) in done:
+                continue
+            yield iRow, iCol, tile_image
 
 
 def VerifyImages(tile_pyramid_node: TilePyramidNode, **kwargs) -> TilePyramidNode | None:
@@ -2537,12 +2589,16 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
             # pool = nornir_pools.GetGlobalThreadPool()
             # pool = nornir_pools.GetThreadPool("IOPool", num_threads=multiprocessing.cpu_count() * 2)
 
-            mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
             expected_scale = 1.0 / LevelOne.Downsample
 
-            mosaicTileset = nornir_imageregistration.mosaic_tileset.CreateFromMosaic(
-                mosaic, image_folder=InputLevelNode.FullPath, image_to_source_space_scale=expected_scale,
-                tile_value_scale=crush_params.max_code if crush_params is not None else None)
+            def _load_mosaic_tileset() -> nornir_imageregistration.mosaic_tileset.MosaicTileset:
+                """Load the section's mosaic tileset on the active backend."""
+                mosaic = nornir_imageregistration.Mosaic.LoadFromMosaicFile(InputTransformNode.FullPath)
+                return nornir_imageregistration.mosaic_tileset.CreateFromMosaic(
+                    mosaic, image_folder=InputLevelNode.FullPath, image_to_source_space_scale=expected_scale,
+                    tile_value_scale=crush_params.max_code if crush_params is not None else None)
+
+            mosaicTileset = _load_mosaic_tileset()
 
             scaled_fixed_bounding_box_shape = numpy.ceil(
                 mosaicTileset.TargetBoundingBox.shape / (1.0 / expected_scale)).astype(numpy.int64)
@@ -2619,10 +2675,13 @@ def AssembleTilesetNumpy(Parameters: dict, filter_node: FilterNode, pyramid_node
                     output_io_wait_backpressure_s += time.perf_counter() - t_wait
 
             try:
-                for iRow, iCol, tile_image in mosaicTileset.GenerateOptimizedTiles(
+                for iRow, iCol, tile_image in _optimized_tiles_with_numpy_fallback(
+                        mosaicTileset, _load_mosaic_tileset,
                         target_space_scale=1.0 / InputLevelNode.Downsample,
                         tile_dims=tile_dims,
-                        max_temp_image_area=max_temp_image_area):
+                        max_temp_image_area=max_temp_image_area,
+                        section_label=str(section_node.Number) if section_node is not None else '?',
+                        Logger=Logger):
                     tilename = nornir_buildmanager.templates.Current.GridTileName(
                         tile_set_node.FilePrefix, iCol, iRow, tile_set_node.FilePostfix)
                     temp_output_tile_fullpath = os.path.join(temp_level_dir, tilename)
