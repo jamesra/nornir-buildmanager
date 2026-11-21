@@ -361,13 +361,35 @@ def _release_gpu_memory() -> None:
     cp.get_default_pinned_memory_pool().free_all_blocks()  # pyright: ignore[reportAttributeAccessIssue]
 
 
+GPU_WORKER_OOM_DEFERRALS: int = 6
+"""Times a pair the GPU still had no memory for (after ``GPU_WORKER_OOM_RETRY_WAITS_S``) goes back to the end of a
+worker's queue before it is registered on NumPy. A full-resolution masked grid on NumPy takes hours (RC1, 2026-11-21:
+one such pair had run 34 min on 3 cores and was not done), so the GPU gets about 40 minutes more to free memory first."""
+
+
+class GpuOutOfMemoryDeferredError(RuntimeError):
+    """The GPU had no memory for a pair after every retry; the executor queues it again later."""
+
+    pair_name: str
+
+    def __init__(self, message: str, pair_name: str) -> None:
+        super().__init__(message)
+        self.pair_name = pair_name
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (GpuOutOfMemoryDeferredError, (str(self), self.pair_name))
+
+
 def _run_pair_with_gpu_oom_fallback(job: StosBrutePairJob,
-                                    sleep: Callable[[float], None] = time.sleep) -> StosBrutePairResult:
-    """Register *job* on CuPy; on GPU out-of-memory retry after waits, then register it on NumPy.
+                                    sleep: Callable[[float], None] = time.sleep,
+                                    numpy_fallback: bool = True) -> StosBrutePairResult:
+    """Register *job* on CuPy; on GPU out-of-memory retry after waits, then defer it or register it on NumPy.
 
     RC1 (2026-11-21, 3 workers + RC3 AssembleTiles on one 24 GB card): Thrust's sort in ``cupy.median``
     allocates outside the capped pool, failed with ``std::bad_alloc``, and four pairs stopped the stage.
-    A pair that never gets GPU memory is slow on NumPy but finishes; the worker goes back to CuPy afterwards.
+    Without *numpy_fallback* a pair still short of memory raises :class:`GpuOutOfMemoryDeferredError` so the
+    executor can queue it again; with it the pair is registered on NumPy (slow, but it finishes) and the
+    worker goes back to CuPy afterwards.
     """
     is_oom = nornir_imageregistration.mosaic_tileset._is_gpu_out_of_memory
     for wait_s in GPU_WORKER_OOM_RETRY_WAITS_S:
@@ -385,6 +407,11 @@ def _run_pair_with_gpu_oom_fallback(job: StosBrutePairJob,
     except Exception as e:
         if not is_oom(e):
             raise
+        if not numpy_fallback:
+            _release_gpu_memory()
+            raise GpuOutOfMemoryDeferredError(
+                f"StosBrute pair {job.pair_name}: GPU still out of memory after "
+                f"{len(GPU_WORKER_OOM_RETRY_WAITS_S)} retries ({type(e).__name__}: {e})", job.pair_name) from e
         _logger.warning("StosBrute pair %s: GPU still out of memory after %d retries (%s); registering it on "
                         "NumPy", job.pair_name, len(GPU_WORKER_OOM_RETRY_WAITS_S), e)
     _release_gpu_memory()
@@ -407,9 +434,11 @@ def _cuda_context_usable() -> bool:
         return False
 
 
-def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob) -> StosBrutePairResult:
+def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob, numpy_fallback: bool = False) -> StosBrutePairResult:
     """GPU worker entry point: refuse NumPy fallback and poisoned contexts, then register the pair.
 
+    A pair the GPU has no memory for raises :class:`GpuOutOfMemoryDeferredError` unless
+    *numpy_fallback* (the executor's last deferral), when it is registered on NumPy.
     After a failure the worker probes its CUDA context. A sticky CUDA error leaves every
     later call failing, so the worker marks itself poisoned, raises
     :class:`GpuWorkerPoisonedError` and refuses further jobs until the executor replaces it.
@@ -423,7 +452,9 @@ def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob) -> StosBrutePairRes
         raise RuntimeError(f"StosBrute GPU worker {os.getpid()} is not on CuPy (activation or runtime "
                            f"probe failed); pair {job.pair_name} not registered")
     try:
-        return _run_pair_with_gpu_oom_fallback(job)
+        return _run_pair_with_gpu_oom_fallback(job, numpy_fallback=numpy_fallback)
+    except GpuOutOfMemoryDeferredError:
+        raise
     except Exception as e:
         if _cuda_context_usable():
             raise
@@ -442,6 +473,7 @@ class _LaneJob:
     job: StosBrutePairJob
     future: concurrent.futures.Future[StosBrutePairResult]
     poison_retries: int = 0
+    oom_deferrals: int = 0
 
 
 class GpuWorkerPairExecutor:
@@ -513,7 +545,8 @@ class GpuWorkerPairExecutor:
         self._lane_jobs[lane].append(lane_job)
         pool = self._lanes[lane]
         try:
-            inner = pool.submit(run_stos_brute_pair_on_gpu_worker, lane_job.job)
+            inner = pool.submit(run_stos_brute_pair_on_gpu_worker, lane_job.job,
+                                lane_job.oom_deferrals >= GPU_WORKER_OOM_DEFERRALS)
         except BrokenProcessPool as e:
             # The worker died between jobs; report it through the same path as a running job.
             inner = concurrent.futures.Future()
@@ -558,6 +591,14 @@ class GpuWorkerPairExecutor:
                     or (inner.cancelled() and retired):
                 # Refused by, or lost with, a poisoned worker: not this pair's fault.
                 self._retire_lane(lane, pool, error)
+                retry = True
+            elif isinstance(error, GpuOutOfMemoryDeferredError):
+                # Behind the other queued pairs, on the least busy worker: the GPU gets time to free memory
+                # while the workers keep registering.
+                lane_job.oom_deferrals += 1
+                lane = min(range(self.workers), key=lambda i: len(self._lane_jobs[i]))
+                _logger.warning("StosBrute pair %s: GPU out of memory; queued again (%d of %d, then NumPy)",
+                                lane_job.job.pair_name, lane_job.oom_deferrals, GPU_WORKER_OOM_DEFERRALS)
                 retry = True
             else:
                 retry = False

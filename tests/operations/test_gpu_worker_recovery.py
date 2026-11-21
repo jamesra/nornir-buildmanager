@@ -31,9 +31,12 @@ def _result(job: stos_brute_pairs.StosBrutePairJob) -> stos_brute_pairs.StosBrut
 class _ScriptedWorkers:
     """Stands in for the worker entry point; each lane (thread pool) is one 'process'."""
 
-    def __init__(self, poison_on: dict[str, int]) -> None:
+    def __init__(self, poison_on: dict[str, int], oom_on: dict[str, int] | None = None) -> None:
         #: pair name -> how many times running it poisons the worker
         self.poison_on = dict(poison_on)
+        #: pair name -> how many GPU runs of it end out of memory
+        self.oom_on = dict(oom_on or {})
+        self.calls: list[tuple[str, bool]] = []
         self.poisoned_threads: set[int] = set()
         self.lanes_created = 0
         self.lock = threading.Lock()
@@ -42,9 +45,14 @@ class _ScriptedWorkers:
         self.lanes_created += 1
         return concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
-    def run(self, job: stos_brute_pairs.StosBrutePairJob) -> stos_brute_pairs.StosBrutePairResult:
+    def run(self, job: stos_brute_pairs.StosBrutePairJob,
+            numpy_fallback: bool = False) -> stos_brute_pairs.StosBrutePairResult:
         me = threading.get_ident()
         with self.lock:
+            self.calls.append((job.pair_name, numpy_fallback))
+            if self.oom_on.get(job.pair_name, 0) > 0 and not numpy_fallback:
+                self.oom_on[job.pair_name] -= 1
+                raise stos_brute_pairs.GpuOutOfMemoryDeferredError('still out of memory', job.pair_name)
             if me in self.poisoned_threads:
                 raise stos_brute_pairs.GpuWorkerPoisonedError('refused', job.pair_name, caused_here=False)
             if self.poison_on.get(job.pair_name, 0) > 0:
@@ -92,6 +100,46 @@ def test_ordinary_failure_is_reported_without_replacing_the_worker() -> None:
     assert isinstance(futures['ordinary-failure'].exception(), ValueError)
     assert futures['a'].result().pair_name == 'a'
     assert workers.lanes_created == 2
+
+
+def test_out_of_memory_pair_is_queued_again_while_other_pairs_run() -> None:
+    # RC1 2026-11-21: a pair moved to NumPy in its worker ran for hours and the other workers idled.
+    workers = _ScriptedWorkers({}, oom_on={'big': 2})
+    futures = _run(workers, ['big', 'a', 'b', 'c'])
+
+    assert all(f.exception() is None for f in futures.values())
+    big_runs = [fallback for name, fallback in workers.calls if name == 'big']
+    assert big_runs == [False, False, False], 'retried on the GPU, never on NumPy'
+    assert workers.lanes_created == 2
+
+
+def test_pair_that_never_gets_gpu_memory_finishes_on_numpy() -> None:
+    deferrals = stos_brute_pairs.GPU_WORKER_OOM_DEFERRALS
+    workers = _ScriptedWorkers({}, oom_on={'big': 100})
+    futures = _run(workers, ['big', 'a'])
+
+    assert futures['big'].result().pair_name == 'big'
+    big_runs = [fallback for name, fallback in workers.calls if name == 'big']
+    assert big_runs == [False] * deferrals + [True]
+
+
+def test_deferred_error_survives_pickling() -> None:
+    import pickle
+    copy = pickle.loads(pickle.dumps(stos_brute_pairs.GpuOutOfMemoryDeferredError('msg', 'p')))
+    assert (str(copy), copy.pair_name) == ('msg', 'p')
+
+
+def test_worker_defers_an_out_of_memory_pair_unless_told_to_use_numpy(monkeypatch: pytest.MonkeyPatch,
+                                                                      fresh_worker_state) -> None:
+    monkeypatch.setattr(stos_brute_pairs, 'run_stos_brute_pair',
+                        mock.Mock(side_effect=MemoryError('std::bad_alloc')))
+    monkeypatch.setattr(stos_brute_pairs, '_release_gpu_memory', lambda: None)
+    monkeypatch.setattr(stos_brute_pairs, 'GPU_WORKER_OOM_RETRY_WAITS_S', (0.0,))
+    monkeypatch.setattr(stos_brute_pairs, '_cuda_context_usable', mock.Mock(side_effect=AssertionError('probed')))
+
+    with pytest.raises(stos_brute_pairs.GpuOutOfMemoryDeferredError):
+        stos_brute_pairs.run_stos_brute_pair_on_gpu_worker(_job('big'))
+    assert stos_brute_pairs._worker_poisoned is None
 
 
 def test_pool_limit_is_an_equal_share_less_a_context() -> None:

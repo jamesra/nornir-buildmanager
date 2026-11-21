@@ -1251,9 +1251,10 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
                       save_interval_seconds: float = STOS_BRUTE_SAVE_INTERVAL_SECONDS, **kwargs):
     """Prepare each pair here, compute it on *executor*, publish it here; save in batches.
 
-    Prepare and finish touch the volume tree, so they stay in this process and run in
-    ``pair_tasks`` order; only :func:`stos_brute_pairs.run_stos_brute_pair` goes to the
-    executor, with at most ``executor.max_in_flight`` jobs submitted. Yields the StosGroup
+    Prepare and finish touch the volume tree, so they stay in this process. Pairs are
+    prepared in ``pair_tasks`` order and published as they finish; only
+    :func:`stos_brute_pairs.run_stos_brute_pair` goes to the executor, with at most
+    ``executor.max_in_flight`` jobs submitted. Yields the StosGroup
     for saving at most every ``save_interval_seconds``, at the end and before raising.
     A failed pair stops new submissions; submitted pairs still finish and are saved, then
     :class:`stos_brute_pairs.StosBrutePairError` names every failed pair. Shuts the
@@ -1360,7 +1361,15 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
             if not in_flight:
                 break
 
-            task, prepared, future = in_flight.popleft()
+            # Publish whichever pair finishes first (oldest first among finished ones). Waiting on the oldest
+            # left every other worker idle behind one slow pair (RC1, 2026-11-21: a pair on the NumPy fallback).
+            finished = next((entry for entry in in_flight if entry[2].done()), None)
+            if finished is None:
+                concurrent.futures.wait([entry[2] for entry in in_flight],
+                                        return_when=concurrent.futures.FIRST_COMPLETED)
+                finished = next(entry for entry in in_flight if entry[2].done())
+            in_flight.remove(finished)
+            task, prepared, future = finished
             pair_name = prepared.job.pair_name if prepared.job is not None else str(task)
             try:
                 result = future.result()

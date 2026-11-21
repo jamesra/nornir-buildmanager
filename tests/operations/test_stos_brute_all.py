@@ -5,6 +5,7 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import os
+import threading
 import time
 from pathlib import Path
 from unittest import mock
@@ -360,6 +361,50 @@ def test_loop_order_is_prepare_compute_finish_per_pair(tmp_path: Path) -> None:
     assert events == ['prepare a', 'compute a', 'finish a', 'prepare b', 'compute b', 'finish b']
     assert executor.shutdowns == [False]
     assert (tmp_path / 'a.stos').read_text() == 'a'
+
+
+class _SlowFirstExecutor(_RecordingExecutor):
+    """Leaves pair 'slow' running until the pairs submitted after it have been published."""
+
+    max_in_flight: int = 3
+
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self.slow: tuple[stos_brute_pairs.StosBrutePairJob, concurrent.futures.Future] | None = None
+
+    def submit(self, job: stos_brute_pairs.StosBrutePairJob) -> concurrent.futures.Future:
+        if job.pair_name != 'slow':
+            return super().submit(job)
+        self.events.append('compute slow')
+        self.slow = (job, concurrent.futures.Future())
+        return self.slow[1]
+
+    def finish_slow(self) -> None:
+        """Complete the slow pair, as its worker would."""
+        assert self.slow is not None
+        job, future = self.slow
+        Path(job.staging_path).write_text(job.pair_name)
+        future.set_result(stos_brute_pairs.StosBrutePairResult(job.pair_name, job.staging_path, 0.0, os.getpid()))
+
+
+def test_loop_publishes_finished_pairs_while_an_earlier_pair_still_runs(tmp_path: Path) -> None:
+    """RC1 2026-11-21: one slow pair (NumPy fallback) at the head of the queue left every other worker idle."""
+    tasks, prepared, group = _loop_fixture(_fake_jobs(tmp_path, ['slow', 'a', 'b']))
+    published: list[str] = []
+    executor = _SlowFirstExecutor([])
+    record = _finish_recording(published)
+
+    def _finish(stos_group, prep, control, mapped):
+        node = record(stos_group, prep, control, mapped)
+        if published == ['a', 'b']:
+            threading.Timer(0.05, executor.finish_slow).start()
+        return node
+
+    patches = _patched_loop(lambda **kwargs: prepared.pop(0), _finish)
+    with patches[0], patches[1], patches[2], patches[3]:
+        list(block_mod._stos_brute_pairs({}, tasks, 3, group, _LOG_POLAR, mock.Mock(), executor))
+    assert published == ['a', 'b', 'slow']
+    assert (tmp_path / 'slow.stos').read_text() == 'slow'
 
 
 class _WeightedExecutor(_RecordingExecutor):
