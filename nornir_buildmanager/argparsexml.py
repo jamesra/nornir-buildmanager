@@ -53,6 +53,27 @@ def _ConvertValueToPythonType(val: str, type: Type | None = None) -> bool | int 
     return val
 
 
+class _EnumNameParser:
+    """argparse ``type`` for an Enum: accepts a member name (any case), optionally as ``EnumType.Name``."""
+
+    _enum_type: enum.EnumType
+
+    def __init__(self, enum_type: enum.EnumType) -> None:
+        self._enum_type = enum_type
+        self.__name__ = enum_type.__name__  # argparse names the type in "invalid <name> value" errors
+
+    def __call__(self, val: str) -> enum.Enum:
+        if isinstance(val, self._enum_type):
+            return val
+        name = str(val).strip().rsplit('.', maxsplit=1)[-1]
+        for member in self._enum_type:  # type: ignore[attr-defined]
+            if member.name.lower() == name.lower():
+                return member
+        raise argparse.ArgumentTypeError(
+            f"invalid {self._enum_type.__name__} value: {val!r} (choose from "
+            f"{', '.join(e.name for e in self._enum_type)})")  # type: ignore[attr-defined]
+
+
 def _AddArgumentNodeToParser(parser, argNode):
     """Returns a dictionary that can be added to a parser"""
 
@@ -101,7 +122,11 @@ def _AddArgumentNodeToParser(parser, argNode):
 
             # If the type is an Enum, add the choices to the argument automatically
             if isinstance(found_type, enum.EnumType):
-                attribDictCopy['choices'] = list(found_type)  # [e.name for e in found_type]
+                # argparse calls type(value); Enum(value) looks up by value (1, 2), so no command-line
+                # string matched. Parse by member name instead, and show names in the help.
+                attribDictCopy[key] = _EnumNameParser(found_type)
+                attribDictCopy['choices'] = list(found_type)
+                attribDictCopy.setdefault('metavar', '{' + ','.join(e.name for e in found_type) + '}')
                 if 'default' in attribDictCopy:
                     try:
                         # Convert the default to the matching enum value in case we've already populated the default value
