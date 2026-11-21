@@ -494,12 +494,13 @@ def test_auto_gpu_worker_count_is_cores_capped_by_gpu_memory() -> None:
 def test_auto_workers_pool_cap_fits_a_masked_ds64_pair() -> None:
     """Automatic workers each get a pool cap above the 2.92 GB one masked ds64 pair held (RC1, 2026-11-21).
 
-    RC1's GPU had ~8.6 GB in use by another lane; with the old 1.5 GB budget every pair hit the ~1.2 GB cap.
+    RC1's GPU had ~8.6 GB in use by another lane; with the old 1.5 GB budget every pair hit the ~1.2 GB cap,
+    and a 2.7 GB cap (-GpuWorkers 4) failed too. Expect at least 4 GB.
     """
     gib = 2 ** 30
     for free in (int(14.4 * gib), int(22.9 * gib), 6 * gib):
         workers = stos_brute_pairs.auto_gpu_worker_count(128, free)
-        assert stos_brute_pairs.gpu_worker_pool_limit(workers, free) >= int(2.92 * gib), (free, workers)
+        assert stos_brute_pairs.gpu_worker_pool_limit(workers, free) >= 4 * gib, (free, workers)
 
 
 def test_create_executor_policy(monkeypatch: pytest.MonkeyPatch) -> None:
