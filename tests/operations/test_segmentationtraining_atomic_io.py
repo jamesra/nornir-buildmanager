@@ -77,3 +77,42 @@ def test_atomic_write_text_replaces_and_ignores_stale_temp(tmp_path: Path) -> No
     atomic_write_text(path, "new\n")
     assert path.read_bytes() == _on_disk("new\n")
     assert _leftover_temps(tmp_path) == []
+
+
+def test_a_replace_refused_while_the_target_is_briefly_held_open_is_retried(monkeypatch, tmp_path: Path) -> None:
+    """On SMB, Windows refuses os.replace while a scanner holds the target open; the write retries, then lands."""
+    from nornir_buildmanager.operations.segmentationtraining import atomic_io
+
+    real_replace = os.replace
+    refusals = iter([PermissionError(13, "Access is denied"), PermissionError(13, "Access is denied")])
+
+    def flaky_replace(src, dst):
+        error = next(refusals, None)
+        if error is not None:
+            raise error
+        real_replace(src, dst)
+
+    monkeypatch.setattr(atomic_io.os, "replace", flaky_replace)
+    monkeypatch.setattr(atomic_io.time, "sleep", lambda _s: None)
+    target = tmp_path / "manifest.jsonl"
+    target.write_text("old\n", encoding="utf-8")
+
+    atomic_write_text(target, "new\n")
+
+    assert target.read_text(encoding="utf-8") == "new\n"
+    assert _leftover_temps(tmp_path) == []
+
+
+def test_a_target_that_stays_locked_still_raises(monkeypatch, tmp_path: Path) -> None:
+    from nornir_buildmanager.operations.segmentationtraining import atomic_io
+
+    def locked(src, dst):
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(atomic_io.os, "replace", locked)
+    monkeypatch.setattr(atomic_io.time, "sleep", lambda _s: None)
+
+    import pytest
+
+    with pytest.raises(PermissionError):
+        atomic_write_text(tmp_path / "manifest.jsonl", "new\n")

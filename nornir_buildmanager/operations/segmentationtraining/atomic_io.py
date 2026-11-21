@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,23 @@ MANIFEST_FILENAME = "manifest.jsonl"
 """Name of the per-export manifest file; the trainer reads it by this name, so it must not change."""
 
 
+REPLACE_RETRY_DELAYS_S = (0.05, 0.2, 0.5, 1.0, 2.0, 4.0)
+"""Waits between ``os.replace`` attempts. On an SMB share (Y:), Windows refuses to replace a file that another handle
+still holds open (an antivirus scan or indexer of the file just written) with ``PermissionError`` (WinError 5); the
+handle closes within seconds. The 2026-11-20 set v4 exports of RC2 and RPC2 died on this in ``_purge_empty_section``."""
+
+
+def _replace(temp: Path, path: Path) -> None:
+    """``os.replace(temp, path)``, retried while Windows reports the target as in use."""
+    for delay in REPLACE_RETRY_DELAYS_S:
+        try:
+            os.replace(temp, path)
+            return
+        except PermissionError:
+            time.sleep(delay)
+    os.replace(temp, path)
+
+
 def atomic_write_text(path: Path, text: str) -> None:
     """Write ``text`` (utf-8, platform newlines) to ``path`` through ``<name>.tmp`` and ``os.replace``.
 
@@ -24,7 +42,7 @@ def atomic_write_text(path: Path, text: str) -> None:
     """
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(text, encoding="utf-8")
-    os.replace(temp, path)
+    _replace(temp, path)
 
 
 def atomic_save_png(image: Image.Image, path: Path) -> None:
@@ -35,7 +53,7 @@ def atomic_save_png(image: Image.Image, path: Path) -> None:
     """
     temp = path.with_name(path.name + ".tmp")
     image.save(temp, format="PNG")
-    os.replace(temp, path)
+    _replace(temp, path)
 
 
 def write_text_if_changed(path: Path, text: str) -> bool:
