@@ -138,18 +138,23 @@ def run_stos_brute_pair(job: StosBrutePairJob) -> StosBrutePairResult:
         'method': method,
     }
 
-    if method == nornir_imageregistration.settings.SliceToSliceMethod.BruteForce:
-        alignment = stos_brute.SliceToSliceRigidRegistration(**common)
-    elif method == nornir_imageregistration.settings.SliceToSliceMethod.LogPolar:
-        # Match Pyre Operations→Log Polar (Fast): overlap 0.75 and max dim 818.
-        # Independent of computation backend (NumPy or CuPy).
-        alignment = stos_brute.SliceToSliceRigidRegistration(
-            **common,
-            MinOverlap=stos_brute.LOGPOLAR_PIPELINE_MIN_OVERLAP,
-            LargestDimension=stos_brute.LOGPOLAR_PIPELINE_LARGEST_DIMENSION,
-        )
-    else:
-        raise ValueError("Unknown method " + str(method))
+    # Names the pair in the search's own log lines (weak pose, coarse-grid fallback); parallel workers interleave.
+    label_token = stos_brute.PAIR_LOG_LABEL.set(job.pair_name)
+    try:
+        if method == nornir_imageregistration.settings.SliceToSliceMethod.BruteForce:
+            alignment = stos_brute.SliceToSliceRigidRegistration(**common)
+        elif method == nornir_imageregistration.settings.SliceToSliceMethod.LogPolar:
+            # Match Pyre Operations→Log Polar (Fast): overlap 0.75 and max dim 818.
+            # Independent of computation backend (NumPy or CuPy).
+            alignment = stos_brute.SliceToSliceRigidRegistration(
+                **common,
+                MinOverlap=stos_brute.LOGPOLAR_PIPELINE_MIN_OVERLAP,
+                LargestDimension=stos_brute.LOGPOLAR_PIPELINE_LARGEST_DIMENSION,
+            )
+        else:
+            raise ValueError("Unknown method " + str(method))
+    finally:
+        stos_brute.PAIR_LOG_LABEL.reset(label_token)
 
     # Close thread pools to prevent workers from sticking around and slowing the rest of the run.
     # Process pools stay warm; all tasks must finish before continuing (ReleaseStagePools waits first).
