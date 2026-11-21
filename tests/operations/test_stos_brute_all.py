@@ -11,6 +11,7 @@ from unittest import mock
 
 import nornir_buildmanager.operations.block as block_mod
 import nornir_imageregistration
+import nornir_imageregistration.mosaic_tileset
 import nornir_imageregistration.settings
 import numpy as np
 import pytest
@@ -602,3 +603,54 @@ def test_gpu_worker_executor_cancel_stops_workers(image_pair: dict[str, str], tm
     executor.shutdown(cancel_pending=True)
     assert time.perf_counter() - started < 60
     assert not all(f.done() and not f.cancelled() and f.exception() is None for f in futures)
+
+
+def _oom_fallback_job() -> stos_brute_pairs.StosBrutePairJob:
+    """A job object for the OOM tests; run_stos_brute_pair is mocked, so only pair_name is read."""
+    return mock.Mock(spec=stos_brute_pairs.StosBrutePairJob, pair_name='9-8')
+
+
+def test_gpu_oom_pair_is_retried_after_releasing_memory():
+    """RC1 2026-11-21: Thrust's std::bad_alloc in cupy.median stopped the stage; the pair must be retried."""
+    done = mock.Mock(name='result')
+    calls = [MemoryError('std::bad_alloc: cudaErrorMemoryAllocation: out of memory'), done]
+    waits: list[float] = []
+    with mock.patch.object(stos_brute_pairs, 'run_stos_brute_pair', side_effect=calls) as run, \
+            mock.patch.object(stos_brute_pairs, '_release_gpu_memory') as release, \
+            mock.patch.object(stos_brute_pairs.nornir_imageregistration, 'SetActiveComputationLib') as set_lib:
+        assert stos_brute_pairs._run_pair_with_gpu_oom_fallback(_oom_fallback_job(), sleep=waits.append) is done
+    assert run.call_count == 2
+    assert release.call_count == 1
+    assert waits == [stos_brute_pairs.GPU_WORKER_OOM_RETRY_WAITS_S[0]]
+    set_lib.assert_not_called()
+
+
+def test_gpu_oom_pair_finishes_on_numpy_when_the_gpu_stays_full():
+    done = mock.Mock(name='result')
+    retries = len(stos_brute_pairs.GPU_WORKER_OOM_RETRY_WAITS_S)
+    calls: list[object] = [MemoryError('std::bad_alloc')] * (retries + 1) + [done]
+    libs: list[object] = []
+    with mock.patch.object(stos_brute_pairs, 'run_stos_brute_pair', side_effect=calls) as run, \
+            mock.patch.object(stos_brute_pairs, '_release_gpu_memory'), \
+            mock.patch.object(stos_brute_pairs.nornir_imageregistration, 'SetActiveComputationLib',
+                              side_effect=lambda lib, **_: libs.append(lib)):
+        assert stos_brute_pairs._run_pair_with_gpu_oom_fallback(_oom_fallback_job(), sleep=lambda _s: None) is done
+    assert run.call_count == retries + 2
+    lib = nornir_imageregistration.ComputationLib
+    assert libs == [lib.numpy, lib.cupy]  # NumPy for this pair, then back to CuPy for the next
+
+
+def test_a_non_memory_error_is_not_retried():
+    with mock.patch.object(stos_brute_pairs, 'run_stos_brute_pair', side_effect=ValueError('bad input')) as run, \
+            mock.patch.object(stos_brute_pairs, '_release_gpu_memory') as release, \
+            pytest.raises(ValueError):
+        stos_brute_pairs._run_pair_with_gpu_oom_fallback(_oom_fallback_job(), sleep=lambda _s: None)
+    assert run.call_count == 1
+    release.assert_not_called()
+
+
+def test_a_host_memory_error_is_not_a_gpu_oom():
+    """A plain host MemoryError (no bad_alloc text) is not retried as a GPU shortage."""
+    _is_gpu_out_of_memory = nornir_imageregistration.mosaic_tileset._is_gpu_out_of_memory
+    assert _is_gpu_out_of_memory(MemoryError('std::bad_alloc'))
+    assert not _is_gpu_out_of_memory(MemoryError('Unable to allocate 3.2 GiB for an array'))

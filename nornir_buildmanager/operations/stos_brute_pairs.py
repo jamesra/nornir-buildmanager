@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import nornir_imageregistration
+import nornir_imageregistration.mosaic_tileset
 import nornir_imageregistration.settings
 import nornir_pools
 import nornir_shared.misc
@@ -343,6 +344,53 @@ def _init_gpu_pair_worker(log_queue: Any, log_level: int, pool_limit: int | None
         nornir_imageregistration.cp.get_default_memory_pool().set_limit(size=int(pool_limit))  # pyright: ignore[reportAttributeAccessIssue]
 
 
+GPU_WORKER_OOM_RETRY_WAITS_S: tuple[float, ...] = (5.0, 30.0, 120.0)
+"""Waits before re-running a pair the GPU had no memory for. The GPU is shared (other lanes, other pipelines);
+memory held by another process is often returned within minutes."""
+
+
+def _release_gpu_memory() -> None:
+    """Return this process's cached CuPy device and pinned blocks to the driver."""
+    cp = nornir_imageregistration.cp
+    cp.get_default_memory_pool().free_all_blocks()  # pyright: ignore[reportAttributeAccessIssue]
+    cp.get_default_pinned_memory_pool().free_all_blocks()  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def _run_pair_with_gpu_oom_fallback(job: StosBrutePairJob,
+                                    sleep: Callable[[float], None] = time.sleep) -> StosBrutePairResult:
+    """Register *job* on CuPy; on GPU out-of-memory retry after waits, then register it on NumPy.
+
+    RC1 (2026-11-21, 3 workers + RC3 AssembleTiles on one 24 GB card): Thrust's sort in ``cupy.median``
+    allocates outside the capped pool, failed with ``std::bad_alloc``, and four pairs stopped the stage.
+    A pair that never gets GPU memory is slow on NumPy but finishes; the worker goes back to CuPy afterwards.
+    """
+    is_oom = nornir_imageregistration.mosaic_tileset._is_gpu_out_of_memory
+    for wait_s in GPU_WORKER_OOM_RETRY_WAITS_S:
+        try:
+            return run_stos_brute_pair(job)
+        except Exception as e:
+            if not is_oom(e):
+                raise
+            _logger.warning("StosBrute pair %s: GPU out of memory (%s: %s); returning cached GPU memory and "
+                            "retrying in %.0f s", job.pair_name, type(e).__name__, e, wait_s)
+            _release_gpu_memory()
+            sleep(wait_s)
+    try:
+        return run_stos_brute_pair(job)
+    except Exception as e:
+        if not is_oom(e):
+            raise
+        _logger.warning("StosBrute pair %s: GPU still out of memory after %d retries (%s); registering it on "
+                        "NumPy", job.pair_name, len(GPU_WORKER_OOM_RETRY_WAITS_S), e)
+    _release_gpu_memory()
+    nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.numpy)
+    try:
+        return run_stos_brute_pair(job)
+    finally:
+        nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.cupy,
+                                                         allow_in_child=True)
+
+
 def _cuda_context_usable() -> bool:
     """True if this process's CUDA context still runs work (a sticky error fails every call)."""
     try:
@@ -370,7 +418,7 @@ def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob) -> StosBrutePairRes
         raise RuntimeError(f"StosBrute GPU worker {os.getpid()} is not on CuPy (activation or runtime "
                            f"probe failed); pair {job.pair_name} not registered")
     try:
-        return run_stos_brute_pair(job)
+        return _run_pair_with_gpu_oom_fallback(job)
     except Exception as e:
         if _cuda_context_usable():
             raise
