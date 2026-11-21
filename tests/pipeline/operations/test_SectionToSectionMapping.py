@@ -119,6 +119,14 @@ class SectionToSectionMappingTest(test_sectionimage.ImportLMImages):
         # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=1, Logger=self.Logger)
         # self.StosMapGeneratorWithInvalidCheck(center, adjacentThreshold=2, Logger=self.Logger)
 
+    def testOutputStosMapNameKeyword(self):
+        """The map takes the name Pipelines.xml passes as OutputStosMapName (AlignSections -OutputStosMap)."""
+        BlockNode = self._GetResetBlockNode()
+        CreateOrUpdateSectionToSectionMapping(
+            Parameters={'NumAdjacentSections': 1, 'CenterSection': 4}, block_node=BlockNode,
+            ChannelsRegEx="*", FiltersRegEx="*", Logger=self.Logger, OutputStosMapName='MaskedBruteChain')
+        self.assertIsNotNone(BlockNode.find("StosMap[@Name='MaskedBruteChain']"))
+
     def testChangeCenterForStosMap(self):
         '''Creates a stosmap, then updates the center and ensures the new stosmap reflects the change'''
         # Create a stos-map, then

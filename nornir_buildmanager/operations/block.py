@@ -380,7 +380,11 @@ def CreateOrUpdateSectionToSectionMapping(Parameters,
     to the align pipeline which forwards it to this function
         @BlockNode"""
     NumAdjacentSections = int(Parameters.get('NumAdjacentSections', '1'))
-    StosMapName = Parameters.get('OutputStosMapName', 'PotentialRegistrationChain')  # type: str
+    # Pipelines.xml passes the name as a PythonCall attribute, which arrives in kwargs. Reading only Parameters
+    # named the map PotentialRegistrationChain whatever -OutputStosMap said; the pipeline's Select for the
+    # requested name then matched nothing and StosBruteAll was skipped (RC1, 2026-11-21).
+    StosMapName: str = kwargs.get('OutputStosMapName') or Parameters.get('OutputStosMapName',
+                                                                        'PotentialRegistrationChain')
 
     _center = Parameters.get('CenterSection', None)
     CenterSectionParameter: int | None = None
