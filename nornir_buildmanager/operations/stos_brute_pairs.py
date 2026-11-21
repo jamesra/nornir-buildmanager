@@ -240,8 +240,11 @@ class InProcessPairExecutor:
 GPU_WORKER_JOBS_PER_WORKER: int = 2
 
 #: Device memory one GPU worker needs: its CUDA context plus its CuPy pool after a pair.
-#: Measured 1.2-1.3 GB per worker on srv (RTX 4500 Ada, RC3 ds64 pairs), rounded up.
-GPU_WORKER_DEVICE_BYTES: int = int(1.5 * 2 ** 30)
+#: Masked NCC scoring (stage 3) holds more spectra than phase correlation did: one masked BruteForce pair at
+#: RC1 ds64 size (1860x1830, flip tested) left a 2.92 GB pool (workstation, 2026-11-21), plus the context
+#: (``GPU_WORKER_CONTEXT_BYTES``). The old 1.5 GB, measured on phase correlation (1.2-1.3 GB per worker on
+#: srv, RC3 ds64), capped pools at about 1.2 GB and every RC1 pair failed with out-of-memory.
+GPU_WORKER_DEVICE_BYTES: int = int(3.5 * 2 ** 30)
 
 #: Device memory left free when sizing the automatic worker count (main process, others).
 GPU_WORKER_RESERVE_BYTES: int = 2 ** 30
