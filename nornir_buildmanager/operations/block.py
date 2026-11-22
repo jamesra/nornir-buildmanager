@@ -351,20 +351,23 @@ def UpdateStosMapWithRegistrationTree(StosMap: nornir_buildmanager.volumemanager
                 Logger.info("\tAdded %d <- %d" % (rt_node.SectionNumber, rt_mapped.SectionNumber))
                 Modified = True
 
-    # Part three, remove nodes existing in the StosMap, but not the RT
-    for mapping in StosMap.Mappings:
+    # Part three, remove nodes existing in the StosMap, but not the RT.
+    # list(): removing while iterating the live children would skip the next mapping.
+    for mapping in list(StosMap.Mappings):
         control_section = mapping.Control
         if control_section not in RT.Nodes:
             StosMap.RemoveMapping(control_section)  # type: ignore[arg-type]
             Logger.info(f"\tRemoved missing control section {control_section}")
+            Modified = True
             continue
 
         rt_node = RT.Nodes[control_section]
         rt_node_mapped_sections = frozenset(rt_node.ChildSectionNumbers)
         missing_sections = mapping.Mapped - rt_node_mapped_sections
-        for missing_section in missing_sections:
+        for missing_section in sorted(missing_sections):
             mapping.RemoveMapping(missing_section)
             Logger.info(f"\tRemoved mapping for missing mapped section {control_section} <- {missing_section}")
+            Modified = True
 
     return Modified
 
@@ -1210,6 +1213,56 @@ def StosBruteAll(Parameters: dict, stos_map_node: StosMapNode, block_node: Block
     executor = _create_stos_brute_executor(_parse_gpu_workers(GpuWorkers), total_pairs, Logger)
     yield from _stos_brute_pairs(Parameters, pair_tasks, len(mappings), stos_group_node, Method, Logger,
                                  executor, **kwargs)
+
+
+@dataclass(frozen=True)
+class _SinglePairMapping:
+    """Stands in for a StosMap Mapping so StosBrutePair reuses StosBruteAll's pair enumeration."""
+
+    Control: int
+    Mapped: tuple[int, ...]
+
+
+def StosBrutePair(Parameters: dict, block_node: BlockNode, ControlSection: int, MappedSection: int,
+                  FiltersRegEx: str, Logger: logging.Logger, **kwargs):
+    """Brute-register one section pair into a StosGroup, without a StosMap (StosBrutePair).
+
+    Same prepare, compute and finish path as :func:`StosBruteAll` (masks on, flip check on,
+    :attr:`SliceToSliceMethod.BruteForce`), one pair in this process. The StosMaps are not
+    changed. A current StosBrute file for the pair is kept, as in StosBruteAll.
+    Raises :class:`NornirUserException` when a section or a matching filter is missing.
+    """
+    ControlSection = int(ControlSection)
+    MappedSection = int(MappedSection)
+    if ControlSection == MappedSection:
+        raise NornirUserException(f"StosBrutePair: -Control and -Mapped are both {ControlSection}")
+    for number in (ControlSection, MappedSection):
+        if block_node.GetSection(number) is None:
+            raise NornirUserException(f"StosBrutePair: section {number} is not in block {block_node.Name}")
+
+    Downsample = int(Parameters.get('Downsample', 32))
+    OutputStosGroupName = kwargs.get('OutputGroup', 'StosBrute')
+    (added, stos_group_node) = block_node.GetOrCreateStosGroup(OutputStosGroupName, downsample=Downsample)
+    stos_group_node.CreateDirectories()
+    if added:
+        (yield block_node)
+    os.makedirs(stos_group_node.FullPath, exist_ok=True)
+
+    mappings = [_SinglePairMapping(Control=ControlSection, Mapped=(MappedSection,))]
+    pair_tasks = _enumerate_brute_pair_tasks(mappings, block_node, '*', FiltersRegEx,  # type: ignore[arg-type]
+                                             stos_group_node, True, Logger)
+    if not pair_tasks:
+        raise NornirUserException(f"StosBrutePair: no filter matching '{FiltersRegEx}' in both section "
+                                  f"{ControlSection} and section {MappedSection}")
+    if not any(t.needs_work for t in pair_tasks):
+        Logger.info("StosBrutePair: %d <- %d is already current in %s; delete its .stos to recompute",
+                    ControlSection, MappedSection, stos_group_node.Name)
+
+    kwargs['NoFlipCheck'] = False
+    kwargs.pop('Method', None)
+    yield from _stos_brute_pairs(Parameters, pair_tasks, len(mappings), stos_group_node,
+                                 nornir_imageregistration.settings.SliceToSliceMethod.BruteForce, Logger,
+                                 stos_brute_pairs.InProcessPairExecutor(), **kwargs)
 
 
 def _parse_gpu_workers(gpu_workers: typing.Any) -> int:

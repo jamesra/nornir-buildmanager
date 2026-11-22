@@ -2043,6 +2043,33 @@
         </PythonCall>
     </Pipeline>
 
+    <Pipeline Name="StosBrutePair"
+              Help="Brute-registers one section pair into a StosGroup, the same way AlignSections registers every pair of its StosMap (masks on, flip check on, BruteForce).  No StosMap is changed.  A current .stos for the pair is kept; delete it to recompute." Description="Brute-registers one control/mapped section pair." Epilog="Example: nornir-build StosBrutePair /data/volume -Control 307 -Mapped 306 -Downsample 64 -Filters Blob">
+        <Arguments>
+            <Argument flag="-Control" dest="ControlSection" type="int"
+                      help="Control section number" required="True"/>
+            <Argument flag="-Mapped" dest="MappedSection" type="int"
+                      help="Mapped section number" required="True"/>
+            <Argument flag="-Downsample" dest="StosBruteDownsample" type="int"
+                      help="Downsample level of the images to register" required="True"/>
+            <Argument flag="-Filters" default="(?![M|m]ask)" dest="FiltersRegEx"
+                      type="str" help="Regular expression describing filters to be aligned"
+                      required="False"/>
+            <Argument flag="-OutputGroup" default="StosBrute" dest="OutputGroup"
+                      type="str" help="StosGroup name; the downsample is appended (StosBrute64)"
+                      required="False"/>
+        </Arguments>
+
+        <Select Required="True" VariableName="block_node" XPath="Block"/>
+        <PythonCall Function="block.StosBrutePair" block_node="#block_node"
+                    ControlSection="#ControlSection" MappedSection="#MappedSection"
+                    FiltersRegEx="#FiltersRegEx" OutputGroup="#OutputGroup#StosBruteDownsample">
+            <Parameters>
+                <Entry Name="Downsample" Value="#StosBruteDownsample"/>
+            </Parameters>
+        </PythonCall>
+    </Pipeline>
+
     <Pipeline Name="AssembleStosOverlays"
               Help="Assembles registered images for .stos files in a group.  Typically this is done so quality of registration at that stage can be assessed.">
         <Arguments>
