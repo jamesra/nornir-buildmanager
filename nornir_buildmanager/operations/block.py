@@ -1357,7 +1357,6 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
             with contextlib.suppress(FileNotFoundError):
                 os.remove(staging)
 
-    max_in_flight = max(1, int(executor.max_in_flight))
     in_flight: collections.deque[tuple[_BrutePairTask, BrutePairPrepared,
                                        concurrent.futures.Future[stos_brute_pairs.StosBrutePairResult]]] = \
         collections.deque()
@@ -1368,7 +1367,8 @@ def _stos_brute_pairs(Parameters: dict, pair_tasks: list[_BrutePairTask], mappin
     last_save = time.monotonic()
     try:
         while True:
-            while not failures and len(in_flight) < max_in_flight:
+            # Read each time: the GPU executor allows more while pairs wait to run alone on the GPU.
+            while not failures and len(in_flight) < max(1, int(executor.max_in_flight)):
                 task = next(pending, None)
                 if task is None:
                     break

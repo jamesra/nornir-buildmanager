@@ -13,10 +13,13 @@ CuPy on the shared GPU, so each pair's host-side work runs on its own core.
 
 from __future__ import annotations
 
+import collections
 import concurrent.futures
+import contextlib
 import logging
 import multiprocessing
 import os
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -334,8 +337,15 @@ def gpu_worker_pool_limit(workers: int, free_bytes: int | None = None) -> int | 
     return max(GPU_WORKER_MIN_POOL_BYTES, share)
 
 
+#: This GPU worker's own pool cap (set by :func:`_init_gpu_pair_worker`); an exclusive pair raises the cap
+#: for its run and restores this afterwards.
+_worker_pool_limit: int | None = None
+
+
 def _init_gpu_pair_worker(log_queue: Any, log_level: int, pool_limit: int | None = None) -> None:
     """Spawned worker initializer: queue logging, CuPy through the child opt-in, pool cap."""
+    global _worker_pool_limit
+    _worker_pool_limit = pool_limit
     if log_queue is not None:
         nornir_shared.misc.ConfigureWorkerQueueLogging(log_queue=log_queue, level=log_level)
     try:
@@ -380,6 +390,39 @@ class GpuOutOfMemoryDeferredError(RuntimeError):
         return (GpuOutOfMemoryDeferredError, (str(self), self.pair_name))
 
 
+class GpuPoolCapExceededError(RuntimeError):
+    """A pair needs more than its worker's pool cap; the executor runs it alone with the GPU's free memory."""
+
+    pair_name: str
+
+    def __init__(self, message: str, pair_name: str) -> None:
+        super().__init__(message)
+        self.pair_name = pair_name
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (GpuPoolCapExceededError, (str(self), self.pair_name))
+
+
+#: CuPy's pool OutOfMemoryError text when a limit is set (CuPy 14: "Out of memory allocating N bytes
+#: (allocated so far: M bytes, limit set to: L bytes).").
+_POOL_LIMIT_OOM = re.compile(r'allocating ([\d,]+) bytes \(allocated so far: ([\d,]+) bytes, '
+                             r'limit set to: ([\d,]+) bytes\)')
+
+
+def _is_pool_cap_exceeded(error: BaseException) -> bool:
+    """True if *error* is CuPy refusing an allocation because it would pass the pool's own cap.
+
+    Waiting does not help such a pair: it needs more than the cap however idle the GPU is
+    (RC3-v2, 2026-11-22: 35 pairs at 4.8 GB + 186 MB > 4.99 GB, each retried for ~40 min,
+    32 then ran on NumPy). A device that is simply full reports no limit, or a total within it.
+    """
+    match = _POOL_LIMIT_OOM.search(str(error))
+    if match is None:
+        return False
+    size, allocated, limit = (int(g.replace(',', '')) for g in match.groups())
+    return size + allocated > limit
+
+
 def _run_pair_with_gpu_oom_fallback(job: StosBrutePairJob,
                                     sleep: Callable[[float], None] = time.sleep,
                                     numpy_fallback: bool = True) -> StosBrutePairResult:
@@ -389,31 +432,50 @@ def _run_pair_with_gpu_oom_fallback(job: StosBrutePairJob,
     allocates outside the capped pool, failed with ``std::bad_alloc``, and four pairs stopped the stage.
     Without *numpy_fallback* a pair still short of memory raises :class:`GpuOutOfMemoryDeferredError` so the
     executor can queue it again; with it the pair is registered on NumPy (slow, but it finishes) and the
-    worker goes back to CuPy afterwards.
+    worker goes back to CuPy afterwards. A pair over the pool's own cap is not retried (waiting cannot help):
+    without *numpy_fallback* it raises :class:`GpuPoolCapExceededError`, with it it goes straight to NumPy.
     """
     is_oom = nornir_imageregistration.mosaic_tileset._is_gpu_out_of_memory
+
+    def _over_cap(e: Exception) -> bool:
+        """A pool-cap OOM: no wait helps. Without NumPy fallback the executor runs the pair alone."""
+        if not _is_pool_cap_exceeded(e):
+            return False
+        _release_gpu_memory()
+        if not numpy_fallback:
+            raise GpuPoolCapExceededError(f"StosBrute pair {job.pair_name} needs more GPU memory than this "
+                                          f"worker's pool cap ({type(e).__name__}: {e})", job.pair_name) from e
+        _logger.warning("StosBrute pair %s: needs more GPU memory than the pool cap allows (%s); registering it "
+                        "on NumPy", job.pair_name, e)
+        return True
+
     for wait_s in GPU_WORKER_OOM_RETRY_WAITS_S:
         try:
             return run_stos_brute_pair(job)
         except Exception as e:
             if not is_oom(e):
                 raise
+            if _over_cap(e):
+                break
             _logger.warning("StosBrute pair %s: GPU out of memory (%s: %s); returning cached GPU memory and "
                             "retrying in %.0f s", job.pair_name, type(e).__name__, e, wait_s)
             _release_gpu_memory()
             sleep(wait_s)
-    try:
-        return run_stos_brute_pair(job)
-    except Exception as e:
-        if not is_oom(e):
-            raise
-        if not numpy_fallback:
-            _release_gpu_memory()
-            raise GpuOutOfMemoryDeferredError(
-                f"StosBrute pair {job.pair_name}: GPU still out of memory after "
-                f"{len(GPU_WORKER_OOM_RETRY_WAITS_S)} retries ({type(e).__name__}: {e})", job.pair_name) from e
-        _logger.warning("StosBrute pair %s: GPU still out of memory after %d retries (%s); registering it on "
-                        "NumPy", job.pair_name, len(GPU_WORKER_OOM_RETRY_WAITS_S), e)
+    else:
+        try:
+            return run_stos_brute_pair(job)
+        except Exception as e:
+            if not is_oom(e):
+                raise
+            if not _over_cap(e):
+                if not numpy_fallback:
+                    _release_gpu_memory()
+                    raise GpuOutOfMemoryDeferredError(
+                        f"StosBrute pair {job.pair_name}: GPU still out of memory after "
+                        f"{len(GPU_WORKER_OOM_RETRY_WAITS_S)} retries ({type(e).__name__}: {e})",
+                        job.pair_name) from e
+                _logger.warning("StosBrute pair %s: GPU still out of memory after %d retries (%s); registering "
+                                "it on NumPy", job.pair_name, len(GPU_WORKER_OOM_RETRY_WAITS_S), e)
     _release_gpu_memory()
     nornir_imageregistration.SetActiveComputationLib(nornir_imageregistration.ComputationLib.numpy)
     try:
@@ -434,11 +496,28 @@ def _cuda_context_usable() -> bool:
         return False
 
 
-def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob, numpy_fallback: bool = False) -> StosBrutePairResult:
+def _set_pool_limit(limit: int | None) -> None:
+    """Cap this process's CuPy pool at *limit* bytes (None or 0: no cap)."""
+    nornir_imageregistration.cp.get_default_memory_pool().set_limit(size=int(limit or 0))  # pyright: ignore[reportAttributeAccessIssue]
+
+
+def _exclusive_pool_limit() -> int:
+    """Pool cap for a pair run alone: the device's free memory less ``GPU_WORKER_RESERVE_BYTES``."""
+    free_bytes = int(nornir_imageregistration.cp.cuda.runtime.memGetInfo()[0])  # pyright: ignore[reportAttributeAccessIssue]
+    return max(GPU_WORKER_MIN_POOL_BYTES, free_bytes - GPU_WORKER_RESERVE_BYTES)
+
+
+def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob, numpy_fallback: bool = False,
+                                      exclusive: bool = False) -> StosBrutePairResult:
     """GPU worker entry point: refuse NumPy fallback and poisoned contexts, then register the pair.
 
     A pair the GPU has no memory for raises :class:`GpuOutOfMemoryDeferredError` unless
-    *numpy_fallback* (the executor's last deferral), when it is registered on NumPy.
+    *numpy_fallback* (the executor's last deferral), when it is registered on NumPy. A pair
+    over this worker's pool cap raises :class:`GpuPoolCapExceededError` at once. With
+    *exclusive* (the executor made every other worker idle) the cap is raised to the GPU's
+    free memory for this pair, which falls back to NumPy only if even that is too small.
+    The worker returns its pool to the driver after every pair, so an idle worker holds
+    only its CUDA context and an exclusive pair gets the memory.
     After a failure the worker probes its CUDA context. A sticky CUDA error leaves every
     later call failing, so the worker marks itself poisoned, raises
     :class:`GpuWorkerPoisonedError` and refuses further jobs until the executor replaces it.
@@ -452,8 +531,21 @@ def run_stos_brute_pair_on_gpu_worker(job: StosBrutePairJob, numpy_fallback: boo
         raise RuntimeError(f"StosBrute GPU worker {os.getpid()} is not on CuPy (activation or runtime "
                            f"probe failed); pair {job.pair_name} not registered")
     try:
-        return _run_pair_with_gpu_oom_fallback(job, numpy_fallback=numpy_fallback)
-    except GpuOutOfMemoryDeferredError:
+        if exclusive:
+            _release_gpu_memory()
+            limit = _exclusive_pool_limit()
+            _logger.info("StosBrute pair %s: registering it alone on the GPU with a %.1f GB pool cap",
+                         job.pair_name, limit / 2 ** 30)
+            _set_pool_limit(limit)
+        try:
+            return _run_pair_with_gpu_oom_fallback(job, numpy_fallback=numpy_fallback or exclusive)
+        finally:
+            # A poisoned context fails these too; the probe below reports that, not this.
+            with contextlib.suppress(Exception):
+                _release_gpu_memory()
+                if exclusive:
+                    _set_pool_limit(_worker_pool_limit)
+    except (GpuOutOfMemoryDeferredError, GpuPoolCapExceededError):
         raise
     except Exception as e:
         if _cuda_context_usable():
@@ -474,6 +566,8 @@ class _LaneJob:
     future: concurrent.futures.Future[StosBrutePairResult]
     poison_retries: int = 0
     oom_deferrals: int = 0
+    #: Over a worker's pool cap: runs alone, with the GPU's free memory, once every other worker is idle.
+    exclusive: bool = False
 
 
 class GpuWorkerPairExecutor:
@@ -491,9 +585,14 @@ class GpuWorkerPairExecutor:
     resubmitted, and the job that poisoned it is retried ``GPU_WORKER_POISON_RETRIES``
     times before its error is reported. RC2 (2026-11-02) lost 259 pairs to one poisoned
     worker before this.
+
+    A pair that needs more than the pool cap (:class:`GpuPoolCapExceededError`) is held
+    until no worker has a job, then registered alone with the GPU's free memory; pairs
+    submitted meanwhile wait for it. Held pairs don't count against ``max_in_flight``, so
+    the other pairs keep every worker busy until then.
     """
 
-    max_in_flight: int
+    _base_in_flight: int
     description: str
     workers: int
     pool_limit: int | None
@@ -502,6 +601,9 @@ class GpuWorkerPairExecutor:
     _lane_jobs: list[list[_LaneJob]]
     _lock: threading.RLock
     _closed: bool
+    _oversize: collections.deque[_LaneJob]
+    _held: collections.deque[_LaneJob]
+    _exclusive_running: bool
     _log_queue: Any = None
     _log_level: int = logging.INFO
 
@@ -510,7 +612,7 @@ class GpuWorkerPairExecutor:
         if workers < 1:
             raise ValueError(f"workers must be >= 1, got {workers}")
         self.workers = int(workers)
-        self.max_in_flight = GPU_WORKER_JOBS_PER_WORKER * self.workers
+        self._base_in_flight = GPU_WORKER_JOBS_PER_WORKER * self.workers
         self.pool_limit = pool_limit if pool_limit is not None else gpu_worker_pool_limit(self.workers)
         limit_text = (f", {self.pool_limit / 2 ** 30:.1f} GB GPU pool cap each"
                       if self.pool_limit is not None else "")
@@ -518,8 +620,17 @@ class GpuWorkerPairExecutor:
         self._lane_factory = lane_factory if lane_factory is not None else self._spawn_lane
         self._lock = threading.RLock()
         self._closed = False
+        self._oversize = collections.deque()
+        self._held = collections.deque()
+        self._exclusive_running = False
         self._lanes = [self._lane_factory() for _ in range(self.workers)]
         self._lane_jobs = [[] for _ in range(self.workers)]
+
+    @property
+    def max_in_flight(self) -> int:
+        """Jobs the caller may have outstanding: two per worker, plus the pairs waiting to run alone."""
+        with self._lock:
+            return self._base_in_flight + len(self._oversize) + int(self._exclusive_running)
 
     def _spawn_lane(self) -> concurrent.futures.ProcessPoolExecutor:
         """One spawned CuPy worker, built through nornir_pools so its settings match other pools."""
@@ -536,9 +647,29 @@ class GpuWorkerPairExecutor:
         """Queue *job* on the worker with the fewest outstanding jobs."""
         lane_job = _LaneJob(job=job, future=concurrent.futures.Future())
         with self._lock:
-            lane = min(range(self.workers), key=lambda i: len(self._lane_jobs[i]))
-            self._submit_to_lane(lane, lane_job)
+            if self._exclusive_running:
+                self._held.append(lane_job)
+            else:
+                lane = min(range(self.workers), key=lambda i: len(self._lane_jobs[i]))
+                self._submit_to_lane(lane, lane_job)
         return lane_job.future
+
+    def _start_exclusive_if_idle(self) -> None:
+        """Run the next oversize pair alone once no worker has a job; the caller holds ``_lock``."""
+        if self._closed or self._exclusive_running or not self._oversize                 or any(self._lane_jobs[i] for i in range(self.workers)):
+            return
+        lane_job = self._oversize.popleft()
+        lane_job.exclusive = True
+        self._exclusive_running = True
+        _logger.info("StosBrute pair %s: every GPU worker is idle; registering it alone", lane_job.job.pair_name)
+        self._submit_to_lane(0, lane_job)
+
+    def _end_exclusive(self) -> None:
+        """An exclusive pair is done: release the pairs held behind it; the caller holds ``_lock``."""
+        self._exclusive_running = False
+        while self._held:
+            lane = min(range(self.workers), key=lambda i: len(self._lane_jobs[i]))
+            self._submit_to_lane(lane, self._held.popleft())
 
     def _submit_to_lane(self, lane: int, lane_job: _LaneJob) -> None:
         """Send *lane_job* to *lane*'s worker; the caller holds ``_lock``."""
@@ -546,7 +677,7 @@ class GpuWorkerPairExecutor:
         pool = self._lanes[lane]
         try:
             inner = pool.submit(run_stos_brute_pair_on_gpu_worker, lane_job.job,
-                                lane_job.oom_deferrals >= GPU_WORKER_OOM_DEFERRALS)
+                                lane_job.oom_deferrals >= GPU_WORKER_OOM_DEFERRALS, lane_job.exclusive)
         except BrokenProcessPool as e:
             # The worker died between jobs; report it through the same path as a running job.
             inner = concurrent.futures.Future()
@@ -592,6 +723,14 @@ class GpuWorkerPairExecutor:
                 # Refused by, or lost with, a poisoned worker: not this pair's fault.
                 self._retire_lane(lane, pool, error)
                 retry = True
+            elif isinstance(error, GpuPoolCapExceededError) and not lane_job.exclusive:
+                self._oversize.append(lane_job)
+                _logger.warning("StosBrute pair %s needs more GPU memory than the %s pool cap; it will run "
+                                "alone once the other GPU workers are idle (%d waiting)", lane_job.job.pair_name,
+                                f"{self.pool_limit / 2 ** 30:.1f} GB" if self.pool_limit is not None else "worker",
+                                len(self._oversize))
+                self._start_exclusive_if_idle()
+                return
             elif isinstance(error, GpuOutOfMemoryDeferredError):
                 # Behind the other queued pairs, on the least busy worker: the GPU gets time to free memory
                 # while the workers keep registering.
@@ -605,6 +744,9 @@ class GpuWorkerPairExecutor:
             if retry:
                 self._submit_to_lane(lane, lane_job)
                 return
+            if lane_job.exclusive:
+                self._end_exclusive()
+            self._start_exclusive_if_idle()
         if error is not None:
             lane_job.future.set_exception(error)
         elif inner.cancelled():
@@ -622,11 +764,15 @@ class GpuWorkerPairExecutor:
                 _terminate_pool(pool)
             else:
                 pool.shutdown(wait=True)
-        if cancel_pending:
-            with self._lock:
-                abandoned = [lane_job for jobs in self._lane_jobs for lane_job in jobs]
-            for lane_job in abandoned:
-                lane_job.future.cancel()
+        with self._lock:
+            # Oversize and held pairs never reached a worker; their futures must not stay pending.
+            abandoned = list(self._oversize) + list(self._held)
+            self._oversize.clear()
+            self._held.clear()
+            if cancel_pending:
+                abandoned += [lane_job for jobs in self._lane_jobs for lane_job in jobs]
+        for lane_job in abandoned:
+            lane_job.future.cancel()
 
 
 def _terminate_pool(pool: concurrent.futures.ProcessPoolExecutor) -> None:
