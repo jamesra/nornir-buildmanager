@@ -872,6 +872,12 @@ class PipelineManager:
 
             SelectedVolumeElem = RootForSearch.find(xpath)
             if SelectedVolumeElem is None:
+                # Required="True": no match is an error that stops the pipeline (non-zero exit), not a silent
+                # skip. RC1 2026-11-21: AlignSections' StosMap Select missed, StosBruteAll never ran, exit 0.
+                if PipelineNode.attrib.get('Required', 'False').lower() in ('true', '1', 'y', 'yes'):
+                    raise PipelineError(VolumeElem=RootForSearch, PipelineNode=PipelineNode,
+                                        message=f"Required Select matched nothing: XPath {xpath} under "
+                                                f"{getattr(RootForSearch, 'FullPath', RootForSearch)}")
                 raise PipelineSelectFailed(PipelineNode=PipelineNode, VolumeElem=RootForSearch, xpath=xpath)
 
             # Containers will be tested at load time.  The load linked element code checks containers

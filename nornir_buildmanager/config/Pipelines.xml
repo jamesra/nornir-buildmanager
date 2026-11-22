@@ -1527,7 +1527,7 @@
             <Argument flag="-Output" dest="OutputPath" type="str"
                       default="StosReport.html" help="Name of report html file" required="False"/>
         </Arguments>
-        <Select VariableName="ReportingElement" XPath="Block/StosGroup[@Name='#StosGroup']"/>
+        <Select Required="True" VariableName="ReportingElement" XPath="Block/StosGroup[@Name='#StosGroup']"/>
         <PythonCall Function="reporting.GenerateTableReport"
                     OutputFile="#OutputPath" RowXPath="SectionMappings"
                     RowLabelAttrib="MappedSectionNumber" MaxImageWidth="512"
@@ -2026,7 +2026,7 @@
             </Parameters>
         </PythonCall>
 
-        <Select Root="block_node" VariableName="StosMapNodeObj"
+        <Select Required="True" Root="block_node" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#OutputStosMap']"/>
         <!-- One call per block: StosBruteAll registers the pairs of every mapping and saves the
              StosGroup in batches, instead of an Iterate over Mapping calling block.StosBrute. -->
@@ -2055,9 +2055,9 @@
         </Arguments>
 
         <Select VariableName="BlockNode" XPath="Block"/>
-        <Select VariableName="GroupNodeObj" Root="BlockNode"
+        <Select Required="True" VariableName="GroupNodeObj" Root="BlockNode"
                 XPath="StosGroup[@Name='#StosGroup#InputDownsample']"/>
-        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+        <Select Required="True" Root="BlockNode" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#StosMap']"/>
         <PythonCall Function="block.AssembleStosOverlays"
                     group_node="#GroupNodeObj" stos_map_node="#StosMapNodeObj"/>
@@ -2081,9 +2081,9 @@
         </Arguments>
 
         <Select VariableName="BlockNode" XPath="Block"/>
-        <Select VariableName="GroupNodeObj" Root="BlockNode"
+        <Select Required="True" VariableName="GroupNodeObj" Root="BlockNode"
                 XPath="StosGroup[@Name='#StosGroup#InputDownsample']"/>
-        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+        <Select Required="True" Root="BlockNode" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#StosMap']"/>
         <PythonCall Function="block.CalculateStosGroupWarpMeasurementImages"
                     group_node="#GroupNodeObj" stos_map_node="#StosMapNodeObj" MaxReportedAngle="#MaxReportedAngle"
@@ -2106,9 +2106,9 @@
         </Arguments>
 
         <Select VariableName="BlockNode" XPath="Block"/>
-        <Select VariableName="GroupNodeObj" Root="BlockNode"
+        <Select Required="True" VariableName="GroupNodeObj" Root="BlockNode"
                 XPath="StosGroup[@Name='#StosGroup#InputDownsample']"/>
-        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+        <Select Required="True" Root="BlockNode" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#StosMap']"/>
         <PythonCall Function="block.ScoreStosGroupQuality"
                     group_node="#GroupNodeObj" stos_map_node="#StosMapNodeObj"
@@ -2130,9 +2130,9 @@
         </Arguments>
 
         <Select VariableName="BlockNode" XPath="Block"/>
-        <Select VariableName="GroupNodeObj" Root="BlockNode"
+        <Select Required="True" VariableName="GroupNodeObj" Root="BlockNode"
                 XPath="StosGroup[@Name='#StosGroup#InputDownsample']"/>
-        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+        <Select Required="True" Root="BlockNode" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#InputStosMap']"/>
         <PythonCall Function="block.SelectBestRegistrationChain"
                     InputGroupNode="#GroupNodeObj" InputStosMapNode="#StosMapNodeObj"
@@ -2176,10 +2176,10 @@
         </Arguments>
 
         <Select VariableName="BlockNode" XPath="Block"/>
-        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+        <Select Required="True" Root="BlockNode" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#StosMap']"/>
 
-        <Select VariableName="InputGroupNode" Root="BlockNode"
+        <Select Required="True" VariableName="InputGroupNode" Root="BlockNode"
                 XPath="StosGroup[@Name='#InputGroup#InputDownsample']"/>
         <Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"
                  XPath="Mapping">
@@ -2255,10 +2255,10 @@
         </Arguments>
 
         <Select VariableName="BlockNode" XPath="Block"/>
-        <Select Root="BlockNode" VariableName="StosMapNodeObj"
+        <Select Required="True" Root="BlockNode" VariableName="StosMapNodeObj"
                 XPath="StosMap[@Name='#StosMap']"/>
 
-        <Select VariableName="InputGroupNode" Root="BlockNode"
+        <Select Required="True" VariableName="InputGroupNode" Root="BlockNode"
                 XPath="StosGroup[@Name='#InputGroup#InputDownsample']"/>
         <Iterate Root="StosMapNodeObj" VariableName="MappingNodeObj"
                  XPath="Mapping">
